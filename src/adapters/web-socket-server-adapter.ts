@@ -83,7 +83,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       this.onWebSocketClientClose(client)
     })
 
-    client.on('pong', () => this.onWebSocketClientPong.bind(this)(client))
+    client.on('pong', () => this.onWebSocketClientPong.call(this, client))
   }
 
   private async onWebSocketClientMessage(client: WebSocket, message: Message) {

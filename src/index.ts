@@ -1,8 +1,9 @@
 import * as http from 'http'
 import { WebSocketServer } from 'ws'
+
 import { getDbClient } from './database/client'
 import { EventRepository } from './repositories/event-repository'
-import { WebSocketServerAdapter } from './relay/web-socket-server-adapter'
+import { WebSocketServerAdapter } from './adapters/web-socket-server-adapter'
 import { SubscribeMessageHandler } from './handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from './handlers/unsubscribe-message-handler'
 import { EventMessageHandler } from './handlers/event-message-handler'
