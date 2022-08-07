@@ -1,5 +1,5 @@
-import { Event, CanonicalEvent } from 'types/event'
-import { SubscriptionFilter } from 'types/subscription'
+import { CanonicalEvent, Event } from './types/event'
+import { SubscriptionFilter } from './types/subscription'
 
 export const serializeEvent = (event: Partial<Event>): CanonicalEvent => [
   0,
@@ -36,9 +36,24 @@ export const isEventMatchingFilter =
       return false
     }
 
-    // TODO: support #e and #p tags
-    // if (Array.isArray(filter['#e']) && filter['#e'].length) {
-    //   filter['#e'].event.tags.some()
-    // }
+    // NIP-01: Support #e and #p tags
+    // NIP-12: Support generic tag queries
+    const isGenericTagQuery = (key: string) => /^#[a-z]$/.test(key)
+
+    if (
+      Object.entries(filter)
+        .filter(
+          ([key, criteria]) =>
+            isGenericTagQuery(key) && Array.isArray(criteria),
+        )
+        .some(([key, criteria]) => {
+          return !event.tags.some(
+            (tag) => tag[0] === key[1] && criteria.includes(tag[1]),
+          )
+        })
+    ) {
+      return false
+    }
+
     return true
   }
