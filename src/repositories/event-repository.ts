@@ -83,17 +83,12 @@ export class EventRepository implements IEventRepository {
       event_signature: pipe(prop('sig'), toBuffer),
     })(event)
 
-    return void this.dbClient('events')
+    return this.dbClient('events')
       .insert(row)
       .onConflict('event_id')
       .ignore()
       .then(
-        (result) => {
-          return (result as any).rowCount
-        },
-        (error) => {
-          console.error('mistakes were made', error)
-        },
+        (({ rowCount }: { rowCount: number }) => rowCount) as any,
       )
   }
 }
