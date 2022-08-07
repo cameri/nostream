@@ -8,7 +8,6 @@
     "allowSyntheticDefaultImports": true,
     "target": "es6",
     "outDir": "./dist",
-    "baseUrl": "./src",
     "moduleResolution": "Node",
     "types": ["node", "mocha"],
     "typeRoots": ["./node_modules/@types"],
@@ -23,6 +22,11 @@
   "ts-node": {
     "transpileOnly": true
   },
-  "include": ["src"],
-  "exclude": ["node_modules", "test"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
