@@ -14,16 +14,29 @@ NIPs with a relay-specific implementation are listed here.
 - [ ] NIP-03: OpenTimestams Attestations for Events
 - [ ] NIP-04: Encrypted Direct Message
 - [ ] NIP-05: Mapping Nostr keys to DNS identifiers
+- [ ] NIP-06: Basic key derivation from mnemonic seed phrase
 - [ ] NIP-09: Event deletion
 - [ ] NIP-11: Relay information document
 - [ ] NIP-12: Generic tag queries
-- [ ] NIP-13: Alias (_experimental_)
-- [ ] NIP-14: Reputation scheme (_experimental_)
-- [ ] NIP-15: Relating events to resources (_experimental_)
+- [ ] NIP-13: Proof of Work
+- [ ] NIP-14: Subject tag in text events.
+- [x] NIP-15: End of Stored Events Notice
+- [ ] NIP-16: Event Treatment
+- [ ] NIP-25: Reactions
 
 ## Quick Start
 
-TBD
+Install dependencies:
+
+  ```
+  npm install
+  ```
+
+To start in development mode:
+
+  ```
+  npm run dev
+  ```
 
 ## Configuration
 

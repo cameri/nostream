@@ -8,11 +8,9 @@ export const eventMessageSchema = Schema.array().ordered(
   eventSchema.required(),
 )
 
-export const reqMessageSchema = Schema.array().ordered(
-  Schema.string().valid('REQ').required(),
-  Schema.string().required(),
-  filterSchema.required(),
-)
+export const reqMessageSchema = Schema.array()
+  .ordered(Schema.string().valid('REQ').required(), Schema.string().required())
+  .items(filterSchema.required())
 
 export const closeMessageSchema = Schema.array().ordered(
   Schema.string().valid('CLOSE').required(),

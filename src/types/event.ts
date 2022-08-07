@@ -18,6 +18,18 @@ export interface Event {
   content: string
 }
 
+export interface DBEvent {
+  id: string
+  event_id: Buffer
+  event_pubkey: Buffer
+  event_kind: number
+  event_created_at: number
+  event_content: string
+  event_tags: Tag[]
+  event_signature: Buffer
+  first_seen: Date
+}
+
 export interface CanonicalEvent {
   0: 0
   1: string
