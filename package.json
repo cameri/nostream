@@ -15,7 +15,8 @@
     "db:migrate:rollback": "knex migrate:rollback",
     "db:seed": "knex seed:run",
     "start": "npm run build && node dist/index.js",
-    "test": "mocha -r ts-node/register 'test/**/*.spec.ts'"
+    "test": "mocha -r ts-node/register 'test/**/*.spec.ts'",
+    "test:watch": "npm run test -- --min --watch --watch-files src/**/*,test/**/*"
   },
   "repository": {
     "type": "git",
