@@ -11,13 +11,13 @@ export enum MessageType {
 }
 
 export type Message =
-  | SubscriptionMessage
+  | SubscribeMessage
   | IncomingEventMessage
   | UnsubscribeMessage
   | Notice
   | EndOfStoredEventsNotice
 
-export type SubscriptionMessage = {
+export type SubscribeMessage = {
   [index in Range<2, 100>]: SubscriptionFilter
 } & {
   0: MessageType.REQ

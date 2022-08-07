@@ -30,6 +30,7 @@ export const eventSchema = Schema.object({
   tags: Schema.array().items(tagSchema).required(),
   content: Schema.string()
     .max(64 * 1024) // 64 kB
+    .allow('')
     .required(),
   sig: signatureSchema.required(),
 })

@@ -47,7 +47,7 @@ export class EventRepository implements IEventRepository {
 
     const [query, ...subqueries] = queries
     if (subqueries.length) {
-      query.union(subqueries)
+      query.union(subqueries, true)
     }
 
     console.log('Query', query.toString())
@@ -68,7 +68,7 @@ export class EventRepository implements IEventRepository {
     )
   }
 
-  public async create(event: Event): Promise<void> {
+  public async create(event: Event): Promise<number> {
     console.log('Creating event', event)
 
     const toJSON = (input: any) => JSON.stringify(input)
@@ -87,8 +87,13 @@ export class EventRepository implements IEventRepository {
       .insert(row)
       .onConflict('event_id')
       .ignore()
-      .then((number) => {
-        console.log(`Rows added`, (number as any).rowCount)
-      })
+      .then(
+        (result) => {
+          return (result as any).rowCount
+        },
+        (error) => {
+          console.error('mistakes were made', error)
+        },
+      )
   }
 }
