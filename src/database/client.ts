@@ -16,14 +16,13 @@ const createDbConfig = (
     min: 2,
     max: 3,
     idleTimeoutMillis: 10000,
-    afterCreate: function (conn, done) {
-      conn.query('LISTEN event_added', function (err) {
-        if (err) {
-          done(err, conn)
-        }
-        conn.on('notification', onNotificationCallback)
-        done(err, conn)
+    afterCreate: function (connection, callback) {
+      connection.on('error', function (error) {
+        console.error('PG error', error)
       })
+      connection.query('LISTEN event_added')
+      connection.on('notification', onNotificationCallback)
+      callback(null, connection)
     },
   },
   acquireConnectionTimeout: 2000,

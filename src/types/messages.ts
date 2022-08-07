@@ -1,3 +1,4 @@
+import { Range } from './base'
 import { Event } from './event'
 import { SubscriptionId, SubscriptionFilter } from './subscription'
 
@@ -6,6 +7,7 @@ export enum MessageType {
   EVENT = 'EVENT',
   CLOSE = 'CLOSE',
   NOTICE = 'NOTICE',
+  EOSE = 'EOSE',
 }
 
 export type Message =
@@ -13,12 +15,14 @@ export type Message =
   | IncomingEventMessage
   | UnsubscribeMessage
   | Notice
+  | EndOfStoredEventsNotice
 
-export interface SubscriptionMessage {
+export type SubscriptionMessage = {
+  [index in Range<2, 100>]: SubscriptionFilter
+} & {
   0: MessageType.REQ
   1: SubscriptionId
-  2: SubscriptionFilter
-}
+} & Array<SubscriptionFilter>
 
 export interface IncomingEventMessage {
   0: MessageType.EVENT
@@ -39,4 +43,9 @@ export interface UnsubscribeMessage {
 export interface Notice {
   0: MessageType.NOTICE
   1: string
+}
+
+export interface EndOfStoredEventsNotice {
+  0: MessageType.EOSE
+  1: SubscriptionId
 }
