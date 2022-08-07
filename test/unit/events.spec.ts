@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 import { Event, CanonicalEvent } from '../../src/types/event'
-import { isEventMatchingFilter, serializeEvent } from '../../src/event'
+import { isEventMatchingFilter, isEventSignatureValid, serializeEvent } from '../../src/event'
 import { EventKinds } from '../../src/constants/base'
 
 describe('serializeEvent', () => {
@@ -196,5 +196,35 @@ describe('isEventMatchingFilter', () => {
       expect(isEventMatchingFilter({ '#r': ['something else'] })(event)).to.be
         .false
     })
+  })
+})
+
+describe('isEventSignatureValid', () => {
+  let event: Event
+
+  beforeEach(() => {
+    event = {
+      'id': 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef',
+      'pubkey': '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+      'created_at': 1648339664,
+      'kind': 1,
+      'tags': [],
+      'content': 'learning terraform rn!',
+      'sig': 'ec8b2bc640c8c7e92fbc0e0a6f539da2635068a99809186f15106174d727456132977c78f3371d0ab01c108173df75750f33d8e04c4d7980bbb3fb70ba1e3848'
+    }
+  })
+
+  it('resolves with true if event has a valid signature', async () => {
+    expect(
+      await isEventSignatureValid(event)
+    ).to.be.true
+  })
+
+  it('resolves with false if event has a valid signature', async () => {
+    event.id = '1234567890123456789012345678901234567890123456789012345678901234'
+
+    expect(
+      await isEventSignatureValid(event)
+    ).to.be.false
   })
 })

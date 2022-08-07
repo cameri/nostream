@@ -1,3 +1,4 @@
+import * as secp256k1 from '@noble/secp256k1'
 import { CanonicalEvent, Event } from './types/event'
 import { SubscriptionFilter } from './types/subscription'
 
@@ -57,3 +58,7 @@ export const isEventMatchingFilter =
 
     return true
   }
+
+export const isEventSignatureValid = async (event: Event): Promise<boolean> => {
+  return secp256k1.schnorr.verify(event.sig, event.id, event.pubkey)
+}

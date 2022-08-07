@@ -24,12 +24,42 @@ NIPs with a relay-specific implementation are listed here.
 - [ ] NIP-16: Event Treatment
 - [ ] NIP-25: Reactions
 
+## Requirements
+
+- PostgreSQL
+- Node
+- Typescript
+
 ## Quick Start
+
+Set the following environment variables:
+
+  ```
+  DB_HOST=localhost
+  DB_PORT=5432
+  DB_NAME=nostr-ts-relay
+  DB_USER=postgres
+  DB_PASSWORD=postgres
+  ```
+
+Create `nostr-ts-relay` database:
+
+  ```
+  $ psql -h $DB_HOST -p $DB_PORT -U $DB_USER -W
+  postgres=# create database nostr-ts-relay;
+  postgres=# quit
+  ```
 
 Install dependencies:
 
   ```
   npm install
+  ```
+
+Run migrations:
+
+  ```
+  npm run db:migrate
   ```
 
 To start in development mode:
