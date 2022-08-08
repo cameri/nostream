@@ -17,9 +17,9 @@ const adapter = new WebSocketServerAdapter(
   server,
   wss,
 )
-adapter.addMessageHandler(new SubscribeMessageHandler(adapter, eventRepository))
-adapter.addMessageHandler(new UnsubscribeMessageHandler(adapter))
-adapter.addMessageHandler(new EventMessageHandler(adapter, eventRepository))
+adapter.addMessageHandler(new SubscribeMessageHandler(eventRepository))
+adapter.addMessageHandler(new UnsubscribeMessageHandler())
+adapter.addMessageHandler(new EventMessageHandler(eventRepository))
 
 const port = Number(process.env.SERVER_PORT) || 8008
 adapter.listen(port)

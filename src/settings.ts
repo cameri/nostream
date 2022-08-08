@@ -51,7 +51,7 @@ const createSettings = (): Settings => {
   try {
     return createSettingsFromFile(defaultSettings)
   } catch (err) {
-    console.error(`Unable to read config file. Reason: %s`, err.message)
+    console.error('Unable to read config file. Reason: %s', err.message)
 
     return defaultSettings
   }

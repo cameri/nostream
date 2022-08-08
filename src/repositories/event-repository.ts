@@ -4,6 +4,7 @@ import { applySpec, pipe, prop } from 'ramda'
 import { DBEvent, Event } from '../types/event'
 import { IEventRepository } from '../types/repositories'
 import { SubscriptionFilter } from '../types/subscription'
+import { isGenericTagQuery } from '../utils/filter'
 
 const toBuffer = (input: any) => Buffer.from(input, 'hex')
 
@@ -42,6 +43,17 @@ export class EventRepository implements IEventRepository {
         builder.orderBy('event_created_at', 'asc')
       }
 
+      Object.entries(filter)
+        .filter(([key, criteria]) => isGenericTagQuery(key) && Array.isArray(criteria))
+        .forEach(([key, criteria]) => {
+          builder.andWhere(function (bd) {
+            criteria.forEach((criterion) => {
+              bd.orWhereRaw('"event_tags" @> ?', [JSON.stringify([[key[1], criterion]])])
+            })
+          })
+        })
+
+
       return builder
     })
 
@@ -52,8 +64,8 @@ export class EventRepository implements IEventRepository {
 
     console.log('Query', query.toString())
 
-    return query.then((rows) =>
-      rows.map(
+    return query.then((rows) => {
+      const result = rows.map(
         (row) =>
           applySpec({
             id: pipe(prop('event_id'), fromBuffer),
@@ -64,8 +76,12 @@ export class EventRepository implements IEventRepository {
             tags: prop('event_tags'),
             sig: pipe(prop('event_signature'), fromBuffer),
           })(row) as Event,
-      ),
-    )
+      )
+
+      console.debug('result', result[0])
+
+      return result
+    })
   }
 
   public async create(event: Event): Promise<number> {
