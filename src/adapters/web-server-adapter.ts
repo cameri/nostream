@@ -30,7 +30,7 @@ export class WebServerAdapter implements IWebServerAdapter {
         description,
         pubkey,
         contact,
-        supported_nips: [11],
+        supported_nips: [11, 12, 15],
         software: packageJson.repository.url,
         version: packageJson.version,
       }
