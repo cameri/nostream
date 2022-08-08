@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 import { Event, CanonicalEvent } from '../../src/types/event'
-import { isEventMatchingFilter, isEventSignatureValid, serializeEvent } from '../../src/event'
+import { isEventMatchingFilter, isEventSignatureValid, serializeEvent } from '../../src/utils/event'
 import { EventKinds } from '../../src/constants/base'
 
 describe('serializeEvent', () => {

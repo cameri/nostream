@@ -6,18 +6,14 @@ import { IWebSocketServerAdapter } from '../types/servers'
 
 
 export class UnsubscribeMessageHandler implements IMessageHandler {
-  public constructor(
-    private readonly adapter: IWebSocketServerAdapter,
-  ) { }
-
   public canHandleMessageType(messageType: MessageType): boolean {
     return messageType === MessageType.CLOSE
   }
 
-  public async handleMessage(message: UnsubscribeMessage, client: WebSocket): Promise<boolean> {
+  public async handleMessage(message: UnsubscribeMessage, client: WebSocket, adapter: IWebSocketServerAdapter): Promise<boolean> {
     const subscriptionId = message[1]
 
-    this.adapter.getSubscriptions(client)?.delete(subscriptionId)
+    adapter.getSubscriptions(client)?.delete(subscriptionId)
 
     return true
   }

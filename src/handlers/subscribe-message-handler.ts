@@ -11,7 +11,6 @@ import { SubscriptionId, SubscriptionFilter } from '../types/subscription'
 
 export class SubscribeMessageHandler implements IMessageHandler {
   public constructor(
-    private readonly adapter: IWebSocketServerAdapter,
     private readonly eventRepository: IEventRepository,
   ) { }
 
@@ -19,13 +18,13 @@ export class SubscribeMessageHandler implements IMessageHandler {
     return messageType === MessageType.REQ
   }
 
-  public async handleMessage(message: SubscribeMessage, client: WebSocket): Promise<boolean> {
+  public async handleMessage(message: SubscribeMessage, client: WebSocket, adapter: IWebSocketServerAdapter): Promise<boolean> {
     const subscriptionId = message[1] as SubscriptionId
     const filters = message.slice(2) as SubscriptionFilter[]
 
-    const exists = this.adapter.getSubscriptions(client)?.get(subscriptionId)
+    const exists = adapter.getSubscriptions(client)?.get(subscriptionId)
 
-    this.adapter.getSubscriptions(client)?.set(subscriptionId, filters)
+    adapter.getSubscriptions(client)?.set(subscriptionId, filters)
 
     console.log(
       `Subscription ${subscriptionId} ${exists ? 'updated' : 'created'

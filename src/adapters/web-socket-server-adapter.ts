@@ -1,7 +1,7 @@
 import { Server } from 'http'
 import WebSocket, { WebSocketServer } from 'ws'
 
-import { isEventMatchingFilter } from '../event'
+import { isEventMatchingFilter } from '../utils/event'
 import { createOutgoingEventMessage } from '../messages'
 import { Event } from '../types/event'
 import { IMessageHandler } from '../types/message-handlers'
@@ -68,6 +68,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   private onWebSocketServerConnection(client: WebSocket) {
+    this.heartbeats.set(client, true)
     this.subscriptions.set(client, new Map())
 
     client.on('message', (raw: WebSocket.RawData) => {
@@ -89,7 +90,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   private async onWebSocketClientMessage(client: WebSocket, message: Message) {
     for (const handler of this.handlers) {
       if (handler.canHandleMessageType(message[0])) {
-        const handled = await handler.handleMessage(message, client)
+        const handled = await handler.handleMessage(message, client, this)
         if (handled) {
           break
         }
@@ -104,6 +105,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   private onWebSocketServerHeartbeat() {
     this.webSocketServer.clients.forEach((client) => {
       if (!this.heartbeats.get(client)) {
+        console.warn('terminating client')
         client.terminate()
         return
       }
