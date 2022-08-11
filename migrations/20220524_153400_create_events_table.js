@@ -1,7 +1,7 @@
 exports.up = function (knex) {
   return knex.schema.createTable('events', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'))
-    table.binary('event_id').unique().notNullable()
+    table.binary('event_id').unique().notNullable().index()
     table.binary('event_pubkey').notNullable().index()
     table.integer('event_kind').unsigned().notNullable().index()
     table.integer('event_created_at').unsigned().notNullable().index()

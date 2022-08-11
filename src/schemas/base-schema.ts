@@ -1,10 +1,10 @@
 import Schema from 'joi'
 
-export const pubkeySchema = Schema.string().length(64)
+export const pubkeySchema = Schema.string().case('lower').hex().length(64)
 
 export const kindSchema = Schema.number().min(0).multiple(1)
 
-export const signatureSchema = Schema.string().length(128)
+export const signatureSchema = Schema.string().case('lower').hex().length(128)
 
 export const subscriptionSchema = Schema.string().min(1).max(255)
 

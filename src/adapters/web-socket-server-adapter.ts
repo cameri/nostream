@@ -3,12 +3,13 @@ import WebSocket, { WebSocketServer } from 'ws'
 
 import { isEventMatchingFilter } from '../utils/event'
 import { createOutgoingEventMessage } from '../messages'
-import { Event } from '../types/event'
-import { IMessageHandler } from '../types/message-handlers'
-import { Message } from '../types/messages'
-import { IWebSocketServerAdapter } from '../types/servers'
-import { SubscriptionId, SubscriptionFilter } from '../types/subscription'
+import { Event } from '../@types/event'
+import { IAbortable, IMessageHandler } from '../@types/message-handlers'
+import { Message } from '../@types/messages'
+import { IWebSocketServerAdapter } from '../@types/servers'
+import { SubscriptionId, SubscriptionFilter } from '../@types/subscription'
 import { WebServerAdapter } from './web-server-adapter'
+import { Factory } from '../@types/base'
 
 const WSS_CLIENT_HEALTH_PROBE_INTERVAL = 30000
 
@@ -26,6 +27,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   public constructor(
     webServer: Server,
     private readonly webSocketServer: WebSocketServer,
+    private readonly messageHandlerFactory: Factory<IMessageHandler, [Message, IWebSocketServerAdapter]>,
   ) {
     super(webServer)
 
@@ -36,10 +38,6 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     this.webSocketServer.on('connection', this.onWebSocketServerConnection.bind(this))
     this.webSocketServer.on('close', this.onWebSocketServerClose.bind(this))
     this.heartbeatInterval = setInterval(this.onWebSocketServerHeartbeat.bind(this), WSS_CLIENT_HEALTH_PROBE_INTERVAL)
-  }
-
-  public addMessageHandler(messageHandler: IMessageHandler): void {
-    this.handlers.push(messageHandler)
   }
 
   public getSubscriptions(client: WebSocket): Map<string, SubscriptionFilter[]> | undefined {
@@ -71,34 +69,34 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     this.heartbeats.set(client, true)
     this.subscriptions.set(client, new Map())
 
-    client.on('message', (raw: WebSocket.RawData) => {
-      try {
-        const message = JSON.parse(raw.toString('utf-8'))
-        this.onWebSocketClientMessage(client, message)
-      } catch (error) {
-        console.error('Unable to parse message', raw.toString('utf-8'))
-      }
-    })
+    client.on('message', (raw: WebSocket.RawData) => this.onWebSocketClientMessage(client, raw))
 
-    client.on('close', (_code: number) => {
-      this.onWebSocketClientClose(client)
-    })
+    client.on('close', (code: number) => this.onWebSocketClientClose(client, code))
 
-    client.on('pong', () => this.onWebSocketClientPong.call(this, client))
+    client.on('pong', (data: Buffer) => this.onWebSocketClientPong(client, data))
   }
 
-  private async onWebSocketClientMessage(client: WebSocket, message: Message) {
-    for (const handler of this.handlers) {
-      if (handler.canHandleMessageType(message[0])) {
-        const handled = await handler.handleMessage(message, client, this)
-        if (handled) {
-          break
-        }
+  private async onWebSocketClientMessage(client: WebSocket, raw: WebSocket.RawData) {
+    let abort
+    try {
+      const message = JSON.parse(raw.toString('utf-8'))
+      const messageHandler = this.messageHandlerFactory([message, this]) as IMessageHandler & IAbortable
+      if (typeof messageHandler.abort === 'function') {
+        abort = messageHandler.abort.bind(messageHandler)
+        client.once('close', abort)
+      }
+
+      await messageHandler?.handleMessage(message, client)
+    } catch (error) {
+      console.error(`Unable to handle message: ${error.message}`)
+    } finally {
+      if (abort) {
+        client.removeEventListener('close', abort)
       }
     }
   }
 
-  private onWebSocketClientPong(client: WebSocket) {
+  private onWebSocketClientPong(client: WebSocket, _data: Buffer) {
     this.heartbeats.set(client, true)
   }
 
@@ -116,10 +114,12 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   private onWebSocketServerClose() {
+    console.debug('websocket server closing')
     clearInterval(this.heartbeatInterval)
   }
 
-  private onWebSocketClientClose(client: WebSocket) {
+  private onWebSocketClientClose(client: WebSocket, code: number) {
+    console.debug('client closing', code)
     this.subscriptions.delete(client)
 
     client.removeAllListeners()

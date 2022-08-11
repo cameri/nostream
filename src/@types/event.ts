@@ -1,5 +1,5 @@
 import { EventKinds } from '../constants/base'
-import { Pubkey, TagName } from '../types/base'
+import { Pubkey, TagName } from './base'
 
 export type EventId = string
 
