@@ -1,38 +1,32 @@
-import { IMessageHandler } from '../types/message-handlers'
-import { MessageType, IncomingEventMessage } from '../types/messages'
-import { IWebSocketServerAdapter } from '../types/servers'
-import { IEventRepository } from '../types/repositories'
-import { isEventSignatureValid } from '../utils/event'
+import { IMessageHandler, IEventStrategy } from '../@types/message-handlers'
+import { IncomingEventMessage } from '../@types/messages'
 import { WebSocket } from 'ws'
+import { Event } from '../@types/event'
+import { Factory } from '../@types/base'
+import { isEventSignatureValid } from '../utils/event'
 
 export class EventMessageHandler implements IMessageHandler {
   public constructor(
-    private readonly eventRepository: IEventRepository,
+    private readonly strategy: Factory<IEventStrategy<[Event, WebSocket], Promise<boolean>>, Event>
   ) { }
 
-  public canHandleMessageType(messageType: MessageType): boolean {
-    return messageType === MessageType.EVENT
-  }
+  public async handleMessage(message: IncomingEventMessage, client: WebSocket): Promise<void> {
+    const [, event] = message
+    if (!await isEventSignatureValid(event)) {
+      console.warn(`Event ${event.id} from ${event.pubkey} with signature ${event.sig} is not valid`)
+      return
+    }
 
-  public async handleMessage(message: IncomingEventMessage, _client: WebSocket, adapter: IWebSocketServerAdapter): Promise<boolean> {
-    if (!await isEventSignatureValid(message[1])) {
-      console.warn(`Event ${message[1].id} from ${message[1].pubkey} with signature ${message[1].sig} is not valid`)
+    const strategy = this.strategy(event)
+
+    if (typeof strategy?.execute !== 'function') {
       return
     }
 
     try {
-      const count = await this.eventRepository.create(message[1])
-      if (!count) {
-        return true
-      }
-
-      await adapter.broadcastEvent(message[1])
-
-      return true
+      await strategy.execute([event, client])
     } catch (error) {
-      console.error(`Unable to add event. Reason: ${error.message}`)
-
-      return false
+      console.error('Error handling message:', message, error)
     }
   }
 }

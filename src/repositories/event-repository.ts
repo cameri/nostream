@@ -1,19 +1,18 @@
 import { Knex } from 'knex'
-import { applySpec, pipe, prop } from 'ramda'
+import { applySpec, omit, pipe, prop } from 'ramda'
+import { PassThrough } from 'stream'
 
-import { DBEvent, Event } from '../types/event'
-import { IEventRepository } from '../types/repositories'
-import { SubscriptionFilter } from '../types/subscription'
+import { DBEvent, Event } from '../@types/event'
+import { IEventRepository } from '../@types/repositories'
+import { SubscriptionFilter } from '../@types/subscription'
 import { isGenericTagQuery } from '../utils/filter'
+import { toBuffer, toJSON } from '../utils/transforms'
 
-const toBuffer = (input: any) => Buffer.from(input, 'hex')
-
-const fromBuffer = (input: Buffer) => input.toString('hex')
 
 export class EventRepository implements IEventRepository {
   public constructor(private readonly dbClient: Knex) {}
 
-  public async findByfilters(filters: SubscriptionFilter[]): Promise<Event[]> {
+  public findByfilters(filters: SubscriptionFilter[]): PassThrough {
     const queries = filters.map((filter) => {
       const builder = this.dbClient<DBEvent>('events')
 
@@ -53,7 +52,6 @@ export class EventRepository implements IEventRepository {
           })
         })
 
-
       return builder
     })
 
@@ -62,31 +60,30 @@ export class EventRepository implements IEventRepository {
       query.union(subqueries, true)
     }
 
-    console.log('Query', query.toString())
-
-    return query.then((rows) => {
-      const result = rows.map(
-        (row) =>
-          applySpec({
-            id: pipe(prop('event_id'), fromBuffer),
-            kind: prop('event_kind'),
-            pubkey: pipe(prop('event_pubkey'), fromBuffer),
-            created_at: prop('event_created_at'),
-            content: prop('event_content'),
-            tags: prop('event_tags'),
-            sig: pipe(prop('event_signature'), fromBuffer),
-          })(row) as Event,
-      )
-
-      console.debug('result', result[0])
-
-      return result
-    })
+    return query.stream()
   }
 
   public async create(event: Event): Promise<number> {
-    console.log('Creating event', event)
 
+    const row = applySpec({
+      event_id: pipe(prop('id'), toBuffer),
+      event_pubkey: pipe(prop('pubkey'), toBuffer),
+      event_created_at: prop('created_at'),
+      event_kind: prop('kind'),
+      event_tags: pipe(prop('tags'), toJSON),
+      event_content: prop('content'),
+      event_signature: pipe(prop('sig'), toBuffer),
+    })(event)
+
+    return this.dbClient('events')
+      .insert(row)
+      .onConflict()
+      .ignore()
+      .then(prop('rowCount') as () => number)
+  }
+
+
+  public async upsert(event: Event): Promise<number> {
     const toJSON = (input: any) => JSON.stringify(input)
 
     const row = applySpec({
@@ -101,10 +98,10 @@ export class EventRepository implements IEventRepository {
 
     return this.dbClient('events')
       .insert(row)
-      .onConflict('event_id')
-      .ignore()
-      .then(
-        (({ rowCount }: { rowCount: number }) => rowCount) as any,
-      )
+      // NIP-16: Replaceable Events
+      .onConflict(this.dbClient.raw('(event_pubkey, event_kind) WHERE event_kind = 0 OR event_kind >= 10000 AND event_kind < 2000'))
+      .merge(omit(['event_pubkey', 'event_kind'])(row))
+      .where('events.event_created_at', '<', row.event_created_at)
+      .then(prop('rowCount') as () => number)
   }
 }

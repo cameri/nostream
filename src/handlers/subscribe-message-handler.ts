@@ -1,30 +1,39 @@
+import { pipeline } from 'node:stream/promises'
 import { inspect } from 'util'
 import { WebSocket } from 'ws'
 
 import { createOutgoingEventMessage, createEndOfStoredEventsNoticeMessage } from '../messages'
-import { IMessageHandler } from '../types/message-handlers'
-import { MessageType, SubscribeMessage } from '../types/messages'
-import { IWebSocketServerAdapter } from '../types/servers'
-import { IEventRepository } from '../types/repositories'
-import { SubscriptionId, SubscriptionFilter } from '../types/subscription'
+import { IAbortable, IMessageHandler } from '../@types/message-handlers'
+import { SubscribeMessage } from '../@types/messages'
+import { IWebSocketServerAdapter } from '../@types/servers'
+import { IEventRepository } from '../@types/repositories'
+import { SubscriptionId, SubscriptionFilter } from '../@types/subscription'
+import { toNostrEvent } from '../utils/event'
+import { streamEach, streamMap } from '../utils/transforms'
+import { Event } from '../@types/event'
 
 
-export class SubscribeMessageHandler implements IMessageHandler {
+export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
+  private readonly abortController: AbortController
+
   public constructor(
+    private readonly adapter: IWebSocketServerAdapter,
     private readonly eventRepository: IEventRepository,
-  ) { }
-
-  public canHandleMessageType(messageType: MessageType): boolean {
-    return messageType === MessageType.REQ
+  ) {
+    this.abortController = new AbortController()
   }
 
-  public async handleMessage(message: SubscribeMessage, client: WebSocket, adapter: IWebSocketServerAdapter): Promise<boolean> {
+  public abort(): void {
+    this.abortController.abort()
+  }
+
+  public async handleMessage(message: SubscribeMessage, client: WebSocket): Promise<void> {
     const subscriptionId = message[1] as SubscriptionId
     const filters = message.slice(2) as SubscriptionFilter[]
 
-    const exists = adapter.getSubscriptions(client)?.get(subscriptionId)
+    const exists = this.adapter.getSubscriptions(client)?.get(subscriptionId)
 
-    adapter.getSubscriptions(client)?.set(subscriptionId, filters)
+    this.adapter.getSubscriptions(client)?.set(subscriptionId, filters)
 
     console.log(
       `Subscription ${subscriptionId} ${exists ? 'updated' : 'created'
@@ -32,31 +41,29 @@ export class SubscribeMessageHandler implements IMessageHandler {
       inspect(filters)
     )
 
-    // TODO: search for matching events on the DB, then send ESOE
+    const sendEvent = (event: Event) => client.send(JSON.stringify(createOutgoingEventMessage(subscriptionId, event)))
+    const sendEOSE = () => client.send(JSON.stringify(createEndOfStoredEventsNoticeMessage(subscriptionId)))
 
-    return this.eventRepository.findByfilters(filters).then(
-      (events) => {
-        events.forEach((event) => {
-          client.send(
-            JSON.stringify(
-              createOutgoingEventMessage(subscriptionId, event)
-            )
-          )
-        })
-        console.debug(`Sent ${events.length} events to:`, subscriptionId)
-        client.send(
-          JSON.stringify(
-            createEndOfStoredEventsNoticeMessage(subscriptionId)
-          )
-        )
-        console.debug('Sent EOSE to:', subscriptionId)
-        return true
-      },
-      (error) => {
-        console.error('Unable to find by filters: ', error)
-        return true
+    const findEvents = this.eventRepository.findByfilters(filters)
+    try {
+      await pipeline(
+        findEvents,
+        streamMap(toNostrEvent),
+        streamEach(
+          sendEvent,
+          sendEOSE, // NIP-15: End of Stored Events Notice
+        ),
+        {
+          signal: this.abortController.signal,
+        },
+      )
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('AbortError when finding events')
+        findEvents.end()
       }
-    )
+      throw error
+    }
   }
 
 }

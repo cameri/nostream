@@ -1,15 +1,16 @@
 import { IncomingMessage, Server, ServerResponse } from 'http'
-import { Duplex } from 'stream'
+import { Duplex, EventEmitter } from 'stream'
 
 import packageJson from '../../package.json'
 import { Settings } from '../settings'
-import { IWebServerAdapter } from '../types/servers'
+import { IWebServerAdapter } from '../@types/servers'
 
-export class WebServerAdapter implements IWebServerAdapter {
+export class WebServerAdapter extends EventEmitter implements IWebServerAdapter {
 
   public constructor(
     private readonly webServer: Server,
   ) {
+    super()
     this.webServer.on('request', this.onWebServerRequest.bind(this))
     this.webServer.on('clientError', this.onWebServerSocketError.bind(this))
   }
@@ -20,7 +21,7 @@ export class WebServerAdapter implements IWebServerAdapter {
   }
 
   private onWebServerRequest(request: IncomingMessage, response: ServerResponse) {
-    if (request.headers['accept'] === 'application/nostr+json') {
+    if (request.method === 'GET' && request.headers['accept'] === 'application/nostr+json') {
       const {
         info: { name, description, pubkey, contact },
       } = Settings
@@ -30,7 +31,7 @@ export class WebServerAdapter implements IWebServerAdapter {
         description,
         pubkey,
         contact,
-        supported_nips: [11, 12, 15],
+        supported_nips: [11, 12, 15, 16],
         software: packageJson.repository.url,
         version: packageJson.version,
       }
@@ -38,7 +39,8 @@ export class WebServerAdapter implements IWebServerAdapter {
       response.setHeader('content-type', 'application/nostr+json')
       response.end(JSON.stringify(relayInformationDocument))
     } else {
-      response.end()
+      response.setHeader('content-type', 'application/text')
+      response.end('Please use a Nostr client to connect.')
     }
   }
 

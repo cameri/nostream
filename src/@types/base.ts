@@ -13,3 +13,5 @@ export type Range<F extends number, T extends number> = Exclude<
   Enumerate<T>,
   Enumerate<F>
 >
+
+export type Factory<TOutput = any, TInput = any> = (input: TInput) => TOutput

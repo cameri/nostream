@@ -1,22 +1,14 @@
 import { readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
+import { mergeDeepRight } from 'ramda'
 
 import packageJson from '../package.json'
+import { ISettings } from './@types/settings'
 
-interface Info {
-  relay_url?: string
-  name?: string
-  description?: string
-  pubkey?: string
-  contact?: string
-}
+let _settings: ISettings
 
-interface Settings {
-  info: Info
-}
-
-const getDefaultSettings = (): Settings => ({
+const getDefaultSettings = (): ISettings => ({
   info: {
     relay_url: undefined,
     name: `Unnamed ${packageJson.name}`,
@@ -24,9 +16,30 @@ const getDefaultSettings = (): Settings => ({
     pubkey: undefined,
     contact: undefined,
   },
+  limits: {
+    event: {
+      eventId: {
+        minimumZeroBits: 0,
+      },
+      kind: {
+        whitelist: [],
+        blacklist: [],
+      },
+      pubkey: {
+        whitelist: [],
+        blacklist: [],
+      },
+    },
+    client: {
+      subscription: {
+        maximumCount: 10,
+        maximumFilters: 5,
+      },
+    },
+  },
 })
 
-const createSettingsFromFile = (defaults: Settings) => {
+const createSettingsFromFile = (defaults: ISettings) => {
   const contents = JSON.parse(
     readFileSync(
       join(
@@ -37,23 +50,22 @@ const createSettingsFromFile = (defaults: Settings) => {
     ),
   )
 
-  return {
-    info: {
-      ...defaults.info,
-      ...contents.info,
-    },
-  }
+  return mergeDeepRight(defaults, contents)
 }
 
-const createSettings = (): Settings => {
-  const defaultSettings = getDefaultSettings()
 
+const createSettings = (): ISettings => {
   try {
-    return createSettingsFromFile(defaultSettings)
+    if (_settings) {
+      return _settings
+    }
+    _settings = createSettingsFromFile(getDefaultSettings())
+
+    return _settings
   } catch (err) {
     console.error('Unable to read config file. Reason: %s', err.message)
 
-    return defaultSettings
+    return getDefaultSettings()
   }
 }
 

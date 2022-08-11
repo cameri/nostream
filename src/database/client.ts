@@ -1,4 +1,5 @@
 import 'pg'
+import 'pg-query-stream'
 import knex, { Knex } from 'knex'
 
 const createDbConfig = (): Knex.Config => ({

@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 
-import { Event } from '../types/event'
+import { Event } from '../@types/event'
 import { serializeEvent } from './serialize-event'
 
 export const getEventHash = (event: Event) => {
