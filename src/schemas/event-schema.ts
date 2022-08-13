@@ -1,5 +1,6 @@
 import Schema from 'joi'
 import {
+  idSchema,
   kindSchema,
   pubkeySchema,
   signatureSchema,
@@ -23,11 +24,11 @@ import {
  */
 export const eventSchema = Schema.object({
   // NIP-01
-  id: Schema.string().length(64).required(),
+  id: idSchema.required(),
   pubkey: pubkeySchema.required(),
   created_at: Schema.number().min(0).multiple(1).required(),
   kind: kindSchema.required(),
-  tags: Schema.array().items(tagSchema).required(),
+  tags: Schema.array().items(tagSchema).max(20).required(),
   content: Schema.string()
     .max(64 * 1024) // 64 kB
     .allow('')

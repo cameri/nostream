@@ -4,7 +4,7 @@ import {
   EndOfStoredEventsNotice,
   MessageType,
   Notice,
-  OutgoingEventMessage,
+  OutgoingMessage,
 } from './@types/messages'
 
 export const createNotice = (notice: string): Notice => {
@@ -14,7 +14,7 @@ export const createNotice = (notice: string): Notice => {
 export const createOutgoingEventMessage = (
   subscriptionId: SubscriptionId,
   event: Event,
-): OutgoingEventMessage => {
+): OutgoingMessage => {
   return [MessageType.EVENT, subscriptionId, event]
 }
 

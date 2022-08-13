@@ -3,7 +3,7 @@ import { Duplex, EventEmitter } from 'stream'
 
 import packageJson from '../../package.json'
 import { Settings } from '../settings'
-import { IWebServerAdapter } from '../@types/servers'
+import { IWebServerAdapter } from '../@types/adapters'
 
 export class WebServerAdapter extends EventEmitter implements IWebServerAdapter {
 
@@ -13,6 +13,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
     super()
     this.webServer.on('request', this.onWebServerRequest.bind(this))
     this.webServer.on('clientError', this.onWebServerSocketError.bind(this))
+    this.webServer.on('close', this.onClose.bind(this))
   }
 
   public listen(port: number): void {
@@ -49,5 +50,10 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
       return
     }
     socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
+  }
+
+  private onClose() {
+    console.log('web server closing')
+    this.webServer.removeAllListeners()
   }
 }
