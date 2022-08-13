@@ -103,7 +103,7 @@ describe('NIP-01', () => {
       tags: [
         { message: 'must be an array', transform: assocPath(['tags'], null), },
         { message: 'is required', transform: omit(['tags']), },
-        { message: 'must contain less than or equal to 20 items', transform: assocPath(['tags'], range(0, 21).map(() => (['x', 'x']))) },
+        { message: 'must contain less than or equal to 500 items', transform: assocPath(['tags'], range(0, 501).map(() => (['x', 'x']))) },
       ],
       'tags[0]': [
         { message: 'must be an array', transform: assocPath(['tags', 0], null), },
