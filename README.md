@@ -9,18 +9,17 @@ The project master repository is available on [GitHub](https://github.com/Cameri
 
 NIPs with a relay-specific implementation are listed here.
 
-- [ ] NIP-01: Basic protocol flow description
-- [ ] NIP-02: Contact list and petnames
+- [x] NIP-01: Basic protocol flow description
+- [x] NIP-02: Contact list and petnames
 - [ ] NIP-03: OpenTimestams Attestations for Events
-- [ ] NIP-04: Encrypted Direct Message
+- [x] NIP-04: Encrypted Direct Message
 - [ ] NIP-05: Mapping Nostr keys to DNS identifiers
-- [ ] NIP-06: Basic key derivation from mnemonic seed phrase
 - [ ] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
 - [x] NIP-12: Generic tag queries
 - [ ] NIP-13: Proof of Work
 - [x] NIP-15: End of Stored Events Notice
-- [ ] NIP-16: Event Treatment
+- [x] NIP-16: Event Treatment
 - [ ] NIP-25: Reactions
 
 ## Requirements
