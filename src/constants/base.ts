@@ -5,4 +5,5 @@ export enum EventKinds {
   CONTACT_LIST = 3,
   ENCRYPTED_DIRECT_MESSAGE = 4,
   DELETE = 5,
+  REACTION = 7,
 }
