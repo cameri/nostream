@@ -1,25 +1,23 @@
-import { WebSocket } from 'ws'
 import { Event } from '../../@types/event'
 import { IEventStrategy } from '../../@types/message-handlers'
 import { IEventRepository } from '../../@types/repositories'
-import { IWebSocketServerAdapter } from '../../@types/servers'
+import { IWebSocketAdapter } from '../../@types/adapters'
 
 
-export class ReplaceableEventStrategy implements IEventStrategy<[Event, WebSocket], Promise<boolean>> {
+export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<boolean>> {
   public constructor(
-    private readonly adapter: IWebSocketServerAdapter,
+    private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
   ) { }
 
-  public async execute([event,]: [Event, WebSocket]): Promise<boolean> {
-    console.log('Replaceable event')
+  public async execute(event: Event): Promise<boolean> {
     try {
       const count = await this.eventRepository.upsert(event)
       if (!count) {
         return true
       }
 
-      await this.adapter.broadcastEvent(event)
+      await this.webSocket.getWebSocketServer().broadcastEvent(event)
 
       return true
     } catch (error) {

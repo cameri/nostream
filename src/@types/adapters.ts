@@ -1,13 +1,20 @@
 import { EventEmitter } from 'node:stream'
 import { WebSocket } from 'ws'
 import { Event } from './event'
-import { SubscriptionFilter, SubscriptionId } from './subscription'
+import { OutgoingMessage } from './messages'
 
 export interface IWebSocketServerAdapter {
-  getSubscriptions(client: WebSocket): Map<SubscriptionId, SubscriptionFilter[]> | undefined
+  getConnectedClients(): number
+  getClients(): Set<WebSocket>
   broadcastEvent(event: Event): Promise<void>
 }
 
 export interface IWebServerAdapter extends EventEmitter {
   listen(port: number)
+}
+
+
+export interface IWebSocketAdapter extends EventEmitter {
+  getWebSocketServer(): IWebSocketServerAdapter
+  sendMessage(message: OutgoingMessage): void
 }

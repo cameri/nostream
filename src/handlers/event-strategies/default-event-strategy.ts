@@ -1,24 +1,23 @@
-import { WebSocket } from 'ws'
+import { IWebSocketAdapter } from '../../@types/adapters'
 import { Event } from '../../@types/event'
 import { IEventStrategy } from '../../@types/message-handlers'
 import { IEventRepository } from '../../@types/repositories'
-import { IWebSocketServerAdapter } from '../../@types/servers'
 
 
-export class DefaultEventStrategy implements IEventStrategy<[Event, WebSocket], Promise<boolean>> {
+export class DefaultEventStrategy implements IEventStrategy<Event, Promise<boolean>> {
   public constructor(
-    private readonly adapter: IWebSocketServerAdapter,
+    private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
   ) { }
 
-  public async execute([event,]: [Event, WebSocket]): Promise<boolean> {
+  public async execute(event: Event): Promise<boolean> {
     try {
       const count = await this.eventRepository.create(event)
       if (!count) {
         return true
       }
 
-      await this.adapter.broadcastEvent(event)
+      await this.webSocket.getWebSocketServer().broadcastEvent(event)
 
       return true
     } catch (error) {

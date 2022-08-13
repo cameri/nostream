@@ -1,9 +1,7 @@
-import { WebSocket } from 'ws'
-
-import { Message } from './messages'
+import { IncomingMessage } from './messages'
 
 export interface IMessageHandler {
-  handleMessage(message: Message, client: WebSocket): Promise<void>
+  handleMessage(message: IncomingMessage): Promise<void>
 }
 
 export interface IAbortable {

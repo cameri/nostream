@@ -27,11 +27,11 @@ interface CreatedAtLimits {
   /**
    * Maximum number of seconds allowed before the current unix timestamp
    */
-  maximumNegativeSkew?: number
+  maximumNegativeDelta?: number
   /**
    * Maximum number of seconds allowed after the current unix timestamp
    */
-  maximumPositiveSkew?: number
+  maximumPositiveDelta?: number
 }
 
 interface EventLimits {

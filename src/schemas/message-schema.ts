@@ -1,7 +1,7 @@
 import Schema from 'joi'
 import { subscriptionSchema } from './base-schema'
 import { eventSchema } from './event-schema'
-import { filterSchema } from './request-schema'
+import { filterSchema } from './filter-schema'
 
 export const eventMessageSchema = Schema.array().ordered(
   Schema.string().valid('EVENT').required(),

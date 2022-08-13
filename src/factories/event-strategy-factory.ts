@@ -1,4 +1,3 @@
-import { WebSocket } from 'ws'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { EphemeralEventStrategy } from '../handlers/event-strategies/ephemeral-event-strategy'
 import { NullEventStrategy } from '../handlers/event-strategies/null-event-strategy copy'
@@ -7,14 +6,13 @@ import { Factory } from '../@types/base'
 import { Event } from '../@types/event'
 import { IEventStrategy } from '../@types/message-handlers'
 import { IEventRepository } from '../@types/repositories'
-import { IWebSocketServerAdapter } from '../@types/servers'
 import { isEphemeralEvent, isNullEvent, isReplaceableEvent } from '../utils/event'
+import { IWebSocketAdapter } from '../@types/adapters'
 
 
-export const createEventStrategyFactory = (
-  adapter: IWebSocketServerAdapter,
+export const eventStrategyFactory = (
   eventRepository: IEventRepository,
-): Factory<IEventStrategy<[Event, WebSocket], Promise<boolean>>, Event> => (event: Event) => {
+): Factory<IEventStrategy<Event, Promise<boolean>>, [Event, IWebSocketAdapter]> => ([event, adapter]: [Event, IWebSocketAdapter]) => {
   if (isReplaceableEvent(event)) {
     return new ReplaceableEventStrategy(adapter, eventRepository)
   } else if (isEphemeralEvent(event)) {

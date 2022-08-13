@@ -10,11 +10,14 @@ export enum MessageType {
   EOSE = 'EOSE',
 }
 
-export type Message =
+export type IncomingMessage =
   | SubscribeMessage
   | IncomingEventMessage
   | UnsubscribeMessage
   | Notice
+
+export type OutgoingMessage =
+  | OutgoingEventMessage
   | EndOfStoredEventsNotice
 
 export type SubscribeMessage = {
