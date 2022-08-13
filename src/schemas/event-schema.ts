@@ -28,7 +28,7 @@ export const eventSchema = Schema.object({
   pubkey: pubkeySchema.required(),
   created_at: Schema.number().min(0).multiple(1).required(),
   kind: kindSchema.required(),
-  tags: Schema.array().items(tagSchema).max(20).required(),
+  tags: Schema.array().items(tagSchema).max(500).required(),
   content: Schema.string()
     .max(64 * 1024) // 64 kB
     .allow('')
