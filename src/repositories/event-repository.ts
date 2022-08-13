@@ -9,6 +9,8 @@ import { isGenericTagQuery } from '../utils/filter'
 import { toBuffer, toJSON } from '../utils/transforms'
 
 
+const evenLengthTruncate = (input: string) => input.substring(0, input.length >> 1 << 1)
+
 export class EventRepository implements IEventRepository {
   public constructor(private readonly dbClient: Knex) {}
 
@@ -17,11 +19,36 @@ export class EventRepository implements IEventRepository {
       const builder = this.dbClient<DBEvent>('events')
 
       if (Array.isArray(filter.authors)) {
-        builder.whereIn('event_pubkey', filter.authors.map(toBuffer))
+        builder.andWhere(function (bd) {
+          bd.whereIn(
+            'event_pubkey',
+            filter.authors.filter((author) => author.length === 64).map(toBuffer)
+          )
+
+          for (const author of filter.authors.filter((author) => author.length < 64)) {
+            const prefix = evenLengthTruncate(author)
+            if (prefix.length) {
+              bd.orWhereRaw('substring("event_pubkey" from 1 for ?) = ?', [prefix.length >> 1, toBuffer(prefix)])
+            }
+
+          }
+        })
       }
 
       if (Array.isArray(filter.ids)) {
-        builder.whereIn('event_id', filter.ids.map(toBuffer))
+        builder.andWhere(function (bd) {
+          bd.whereIn(
+            'event_id',
+            filter.ids.filter((id) => id.length === 64).map(toBuffer)
+          )
+
+          for (const id of filter.ids.filter((id) => id.length < 64)) {
+            const prefix = evenLengthTruncate(id)
+            if (prefix.length) {
+              bd.orWhereRaw('substring("event_id" from 1 for ?) = ?', [prefix.length >> 1, toBuffer(prefix)])
+            }
+          }
+        })
       }
 
       if (Array.isArray(filter.kinds)) {
@@ -59,6 +86,8 @@ export class EventRepository implements IEventRepository {
     if (subqueries.length) {
       query.union(subqueries, true)
     }
+
+    console.log('query', query.toString())
 
     return query.stream()
   }
