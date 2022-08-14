@@ -1,0 +1,49 @@
+{
+  "all": true,
+  "cache": true,
+  "check-coverage": true,
+  "branches": 80,
+  "lines": 80,
+  "functions": 80,
+  "statements": 80,
+  "watermarks": {
+    "lines": [
+      80,
+      95
+    ],
+    "functions": [
+      80,
+      95
+    ],
+    "branches": [
+      80,
+      95
+    ],
+    "statements": [
+      80,
+      95
+    ]
+  },
+  "report-dir": ".coverage",
+  "extension": [
+    ".ts"
+  ],
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/@types",
+    "src/constants"
+  ],
+  "require": [
+    "ts-node/register/transpile-only",
+    "source-map-support/register"
+  ],
+  "reporter": [
+    "text",
+    "text-summary",
+    "html"
+  ],
+  "instrument": true,
+  "sourceMap": true
+}

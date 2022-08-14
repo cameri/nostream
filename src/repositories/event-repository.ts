@@ -6,7 +6,7 @@ import { DBEvent, Event } from '../@types/event'
 import { IEventRepository } from '../@types/repositories'
 import { SubscriptionFilter } from '../@types/subscription'
 import { isGenericTagQuery } from '../utils/filter'
-import { toBuffer, toJSON } from '../utils/transforms'
+import { toBuffer, toJSON } from '../utils/transform'
 
 
 const evenLengthTruncate = (input: string) => input.substring(0, input.length >> 1 << 1)

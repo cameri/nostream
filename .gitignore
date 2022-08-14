@@ -3,6 +3,11 @@ logs
 *.log
 npm-debug.log*
 
+# Coverage
+.nyc_output
+.test-report
+.coverage
+
 # Dependency directories
 node_modules/
 
