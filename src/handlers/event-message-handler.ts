@@ -13,6 +13,7 @@ export class EventMessageHandler implements IMessageHandler {
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
     const [, event] = message
+    console.log('Received event:', event)
     if (!await isEventSignatureValid(event) || !isEventIdValid(event)) {
       console.warn(`Event ${event.id} from ${event.pubkey} with signature ${event.sig} is not valid`)
       return

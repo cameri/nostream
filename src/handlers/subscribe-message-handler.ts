@@ -7,7 +7,7 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import { IEventRepository } from '../@types/repositories'
 import { SubscriptionId, SubscriptionFilter } from '../@types/subscription'
 import { toNostrEvent } from '../utils/event'
-import { streamEach, streamMap } from '../utils/transforms'
+import { streamEach, streamEnd, streamMap } from '../utils/stream'
 import { Event } from '../@types/event'
 
 
@@ -39,10 +39,8 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       await pipeline(
         findEvents,
         streamMap(toNostrEvent),
-        streamEach(
-          sendEvent,
-          sendEOSE, // NIP-15: End of Stored Events Notice
-        ),
+        streamEach(sendEvent),
+        streamEnd(sendEOSE), // NIP-15: End of Stored Events Notice
         {
           signal: this.abortController.signal,
         },

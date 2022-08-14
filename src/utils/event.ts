@@ -4,7 +4,7 @@ import { applySpec, pipe, prop } from 'ramda'
 import { CanonicalEvent, Event } from '../@types/event'
 import { SubscriptionFilter } from '../@types/subscription'
 import { isGenericTagQuery } from './filter'
-import { fromBuffer } from './transforms'
+import { fromBuffer } from './stream'
 
 export const serializeEvent = (event: Partial<Event>): CanonicalEvent => [
   0,
@@ -26,7 +26,7 @@ export const toNostrEvent = applySpec({
 })
 
 export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Event): boolean => {
-  const startsWith = (input: string | undefined) => (prefix) => input?.startsWith(prefix)
+  const startsWith = (input: string) => (prefix) => input.startsWith(prefix)
 
   if (Array.isArray(filter.ids) && (
     !filter.ids.some(startsWith(event.id))
