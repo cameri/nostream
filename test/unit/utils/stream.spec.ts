@@ -1,7 +1,6 @@
 import * as chai from 'chai'
 import * as sinon from 'sinon'
 import sinonChai from 'sinon-chai'
-import { PassThrough } from 'stream'
 
 import { streamEach, streamEnd, streamMap } from '../../../src/utils/stream'
 
