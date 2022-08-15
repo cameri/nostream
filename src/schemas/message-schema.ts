@@ -21,7 +21,6 @@ export const closeMessageSchema = Schema.array().ordered(
   subscriptionSchema.required().label('subscriptionId'),
 ).label('CLOSE message')
 
-
 export const messageSchema = Schema.alternatives()
   .conditional(Joi.ref('.'), {
     switch: [

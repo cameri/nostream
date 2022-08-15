@@ -3,7 +3,7 @@ import { applySpec, omit, pipe, prop } from 'ramda'
 import { PassThrough } from 'stream'
 
 import { DBEvent, Event } from '../@types/event'
-import { IEventRepository } from '../@types/repositories'
+import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { SubscriptionFilter } from '../@types/subscription'
 import { isGenericTagQuery } from '../utils/filter'
 import { toBuffer, toJSON } from '../utils/transform'
@@ -14,7 +14,10 @@ const evenLengthTruncate = (input: string) => input.substring(0, input.length >>
 export class EventRepository implements IEventRepository {
   public constructor(private readonly dbClient: Knex) {}
 
-  public findByfilters(filters: SubscriptionFilter[]): PassThrough {
+  public findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]> {
+    if (!Array.isArray(filters) || !filters.length) {
+      throw new Error('Filters cannot be empty')
+    }
     const queries = filters.map((filter) => {
       const builder = this.dbClient<DBEvent>('events')
 
@@ -89,7 +92,7 @@ export class EventRepository implements IEventRepository {
 
     console.log('query', query.toString())
 
-    return query.stream()
+    return query
   }
 
   public async create(event: Event): Promise<number> {

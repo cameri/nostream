@@ -4,7 +4,7 @@ import { applySpec, pipe, prop } from 'ramda'
 import { CanonicalEvent, Event } from '../@types/event'
 import { SubscriptionFilter } from '../@types/subscription'
 import { isGenericTagQuery } from './filter'
-import { fromBuffer } from './stream'
+import { fromBuffer } from './transform'
 
 export const serializeEvent = (event: Partial<Event>): CanonicalEvent => [
   0,

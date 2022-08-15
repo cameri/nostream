@@ -27,7 +27,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     this.client
       .on('message', this.onClientMessage.bind(this))
-      .once('close', this.onClientClose.bind(this))
+      .on('close', this.onClientClose.bind(this))
       .on('pong', this.onClientPong.bind(this))
 
     this
@@ -91,7 +91,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       const messageHandler = this.createMessageHandler([message, this]) as IMessageHandler & IAbortable
       if (typeof messageHandler.abort === 'function') {
         abort = messageHandler.abort.bind(messageHandler)
-        this.client.once('close', abort)
+        this.client.prependOnceListener('close', abort)
       }
 
       await messageHandler?.handleMessage(message)
@@ -105,7 +105,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       }
     } finally {
       if (abort) {
-        this.client.removeEventListener('close', abort)
+        this.client.removeListener('close', abort)
       }
     }
   }
@@ -120,5 +120,6 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     console.debug(`client disconnected code ${code} - ${connected}/${this.webSocketServer.getClients().size} clients connected`)
 
     this.removeAllListeners()
+    this.client.removeAllListeners()
   }
 }

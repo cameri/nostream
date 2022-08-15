@@ -34,7 +34,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const sendEvent = (event: Event) => this.webSocket.sendMessage(createOutgoingEventMessage(subscriptionId, event))
     const sendEOSE = () => this.webSocket.sendMessage(createEndOfStoredEventsNoticeMessage(subscriptionId))
 
-    const findEvents = this.eventRepository.findByfilters(filters)
+    const findEvents = this.eventRepository.findByFilters(filters).stream()
     try {
       await pipeline(
         findEvents,
