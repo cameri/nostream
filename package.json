@@ -10,6 +10,7 @@
     "prebuild": "npm run lint",
     "build": "npm run clean && tsc",
     "build:check": "tsc --noEmit",
+    "lint": "eslint ./src ./test --ext .ts",
     "lint:fix": "npm run lint -- --fix",
     "db:migrate": "knex migrate:latest",
     "db:migrate:rollback": "knex migrate:rollback",
