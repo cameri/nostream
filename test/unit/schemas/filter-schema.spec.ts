@@ -33,7 +33,7 @@ describe('NIP-01', () => {
         { message: 'must be an array', transform: assocPath(['ids'], null), },
         { message: 'must contain less than or equal to 256 items', transform: assocPath(['ids'], range(0, 257).map(() => 'f')), },
       ],
-      'ids[0]': [
+      prefixOrId: [
         { message: 'length must be less than or equal to 64 characters long', transform: assocPath(['ids', 0], 'f'.repeat(65)), },
         { message: 'must only contain hexadecimal characters', transform: assocPath(['ids', 0], 'not hex'), },
         { message: 'is not allowed to be empty', transform: assocPath(['ids', 0], ''), },
@@ -42,7 +42,7 @@ describe('NIP-01', () => {
         { message: 'must be an array', transform: assocPath(['authors'], null), },
         { message: 'must contain less than or equal to 256 items', transform: assocPath(['authors'], range(0, 257).map(() => 'f')), },
       ],
-      'authors[0]': [
+      prefixOrAuthor: [
         { message: 'length must be less than or equal to 64 characters long', transform: assocPath(['authors', 0], 'f'.repeat(65)), },
         { message: 'must only contain hexadecimal characters', transform: assocPath(['authors', 0], 'not hex'), },
         { message: 'is not allowed to be empty', transform: assocPath(['authors', 0], ''), },
@@ -51,7 +51,7 @@ describe('NIP-01', () => {
         { message: 'must be an array', transform: assocPath(['kinds'], null), },
         { message: 'must contain less than or equal to 20 items', transform: assocPath(['kinds'], range(0, 21).map(() => 1)), },
       ],
-      'kinds[0]': [
+      kind: [
         { message: 'must be greater than or equal to 0', transform: assocPath(['kinds', 0], -1), },
         { message: 'must be a number', transform: assocPath(['kinds', 0], null), },
         { message: 'must be a multiple of 1', transform: assocPath(['kinds', 0], Math.PI), },

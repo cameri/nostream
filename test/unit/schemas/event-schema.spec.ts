@@ -105,16 +105,16 @@ describe('NIP-01', () => {
         { message: 'is required', transform: omit(['tags']), },
         { message: 'must contain less than or equal to 500 items', transform: assocPath(['tags'], range(0, 501).map(() => (['x', 'x']))) },
       ],
-      'tags[0]': [
+      tag: [
         { message: 'must be an array', transform: assocPath(['tags', 0], null), },
         { message: 'must contain less than or equal to 10 items', transform: assocPath(['tags', 0], range(0, 11).map(() => 'x')) },
       ],
-      'tags[0][0]': [
+      identifier: [
         { message: 'must be a string', transform: assocPath(['tags', 0, 0], null), },
         { message: 'length must be less than or equal to 255 characters long', transform: assocPath(['tags', 0, 0], ' '.repeat(256)), },
         { message: 'is not allowed to be empty', transform: assocPath(['tags', 0, 0], ''), },
       ],
-      'tags[0][1]': [
+      value: [
         { message: 'must be a string', transform: assocPath(['tags', 0, 1], null), },
         { message: 'length must be less than or equal to 1024 characters long', transform: assocPath(['tags', 0, 1], ' '.repeat(1024 + 1)), },
       ],
