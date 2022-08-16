@@ -116,7 +116,10 @@ export class EventRepository implements IEventRepository {
   }
 
   public async create(event: Event): Promise<number> {
+    return this.insert(event).then(prop('rowCount') as () => number)
+  }
 
+  private insert(event: Event): Knex.QueryBuilder {
     const row = applySpec({
       event_id: pipe(prop('id'), toBuffer),
       event_pubkey: pipe(prop('pubkey'), toBuffer),
@@ -131,7 +134,6 @@ export class EventRepository implements IEventRepository {
       .insert(row)
       .onConflict()
       .ignore()
-      .then(prop('rowCount') as () => number)
   }
 
 
