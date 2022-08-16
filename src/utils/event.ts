@@ -3,6 +3,7 @@ import { applySpec, pipe, prop } from 'ramda'
 
 import { CanonicalEvent, Event } from '../@types/event'
 import { SubscriptionFilter } from '../@types/subscription'
+import { EventKinds } from '../constants/base'
 import { isGenericTagQuery } from './filter'
 import { fromBuffer } from './transform'
 
@@ -94,4 +95,8 @@ export const isEphemeralEvent = (event: Event): boolean => {
 
 export const isNullEvent = (event: Event): boolean => {
   return event.kind === Number.MAX_SAFE_INTEGER
+}
+
+export const isDeleteEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.DELETE
 }

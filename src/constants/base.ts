@@ -7,3 +7,8 @@ export enum EventKinds {
   DELETE = 5,
   REACTION = 7,
 }
+
+export enum EventTags {
+  Event = 'e',
+  Pubkey = 'p',
+}

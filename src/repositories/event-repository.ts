@@ -1,7 +1,7 @@
 import { Knex } from 'knex'
-import { __, applySpec, equals, modulo, omit, pipe, prop, cond, always, groupBy, T, evolve, forEach, isEmpty, forEachObjIndexed, isNil, complement, toPairs, filter, nth, ifElse, invoker } from 'ramda'
+import { __, applySpec, equals, modulo, omit, pipe, prop, cond, always, groupBy, T, evolve, forEach, isEmpty, forEachObjIndexed, isNil, complement, toPairs, filter, nth, ifElse, invoker, identity } from 'ramda'
 
-import { DBEvent, Event } from '../@types/event'
+import { DBEvent, Event, EventId } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { SubscriptionFilter } from '../@types/subscription'
 import { isGenericTagQuery } from '../utils/filter'
@@ -155,5 +155,16 @@ export class EventRepository implements IEventRepository {
       .merge(omit(['event_pubkey', 'event_kind'])(row))
       .where('events.event_created_at', '<', row.event_created_at)
       .then(prop('rowCount') as () => number)
+  }
+
+  public async deleteByPubkeyAndIds(pubkey: string, ids: EventId[]): Promise<number> {
+    const query = this.dbClient('events')
+      .where({
+        event_pubkey: pubkey,
+      })
+      .whereIn('event_id', ids)
+      .delete()
+
+    return query.then(identity)
   }
 }

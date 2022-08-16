@@ -32,7 +32,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
         description,
         pubkey,
         contact,
-        supported_nips: [1, 2, 4, 11, 12, 15, 16],
+        supported_nips: [1, 2, 4, 9, 11, 12, 15, 16],
         software: packageJson.repository.url,
         version: packageJson.version,
       }
