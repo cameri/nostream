@@ -5,7 +5,7 @@ import { SubscriptionFilter } from './subscription'
 export type ExposedPromiseKeys = 'then' | 'catch' | 'finally'
 
 export interface IQueryResult<T> extends Pick<Promise<T>, keyof Promise<T> & ExposedPromiseKeys> {
-  stream(): PassThrough & AsyncIterable<T>
+  stream(options?: Record<string, any>): PassThrough & AsyncIterable<T>
 }
 
 export interface IEventRepository {
