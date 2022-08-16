@@ -14,7 +14,7 @@ NIPs with a relay-specific implementation are listed here.
 - [ ] NIP-03: OpenTimestams Attestations for Events
 - [x] NIP-04: Encrypted Direct Message
 - [ ] NIP-05: Mapping Nostr keys to DNS identifiers
-- [ ] NIP-09: Event deletion
+- [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
 - [x] NIP-12: Generic tag queries
 - [ ] NIP-13: Proof of Work

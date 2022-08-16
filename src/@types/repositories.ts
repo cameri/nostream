@@ -1,5 +1,6 @@
 import { PassThrough } from 'stream'
-import { DBEvent, Event } from './event'
+import { Pubkey } from './base'
+import { DBEvent, Event, EventId } from './event'
 import { SubscriptionFilter } from './subscription'
 
 export type ExposedPromiseKeys = 'then' | 'catch' | 'finally'
@@ -12,4 +13,5 @@ export interface IEventRepository {
   create(event: Event): Promise<number>
   upsert(event: Event): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
+  deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
 }

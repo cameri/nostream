@@ -3,7 +3,9 @@ import { Pubkey, TagName } from './base'
 
 export type EventId = string
 
-export interface Tag {
+export type Tag = TagBase | []
+
+export interface TagBase {
   0: TagName
   [index: number]: string
 }

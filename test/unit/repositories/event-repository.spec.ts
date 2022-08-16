@@ -11,7 +11,7 @@ const { expect } = chai
 
 import { EventRepository } from '../../../src/repositories/event-repository'
 
-describe.only('EventRepository', () => {
+describe('EventRepository', () => {
   let repository: IEventRepository
   let sandbox: sinon.SinonSandbox
 
