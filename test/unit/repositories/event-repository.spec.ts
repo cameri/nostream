@@ -1,7 +1,8 @@
 import * as chai from 'chai'
-import knex from 'knex'
+import knex, { Knex } from 'knex'
 import * as sinon from 'sinon'
 import sinonChai from 'sinon-chai'
+import { Event } from '../../../src/@types/event'
 import { IEventRepository } from '../../../src/@types/repositories'
 import { SubscriptionFilter } from '../../../src/@types/subscription'
 
@@ -14,20 +15,23 @@ import { EventRepository } from '../../../src/repositories/event-repository'
 describe('EventRepository', () => {
   let repository: IEventRepository
   let sandbox: sinon.SinonSandbox
+  let dbClient: Knex
 
   beforeEach(() => {
     sandbox = sinon.createSandbox()
 
-    repository = new EventRepository(knex({
+    dbClient = knex({
       client: 'pg'
-    }))
+    })
+
+    repository = new EventRepository(dbClient)
   })
 
   afterEach(() => {
     sandbox.restore()
   })
 
-  describe('findByFilters', () => {
+  describe('.findByFilters', () => {
     it('returns a function with stream and then', () => {
       expect(repository.findByFilters([{}])).to.have.property('stream')
       expect(repository.findByFilters([{}])).to.have.property('then')
@@ -357,6 +361,76 @@ describe('EventRepository', () => {
 
         expect(query).to.equal('(select * from "events" where "event_kind" in (1)) union (select * from "events" where (substring("event_id" from 1 for 3) BETWEEN E\'\\\\xaaaaa0\' AND E\'\\\\xaaaaaf\') order by "event_created_at" asc) union (select * from "events" where (substring("event_pubkey" from 1 for 3) BETWEEN E\'\\\\xbbbbb0\' AND E\'\\\\xbbbbbf\') order by "event_created_at" asc) union (select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc) union (select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc) union (select * from "events" order by "event_created_at" DESC limit 1000) order by "event_created_at" asc')
       })
+    })
+  })
+
+  describe('.create', () => {
+    let insertStub: sinon.SinonStub
+    beforeEach(() => {
+      insertStub = sandbox.stub(repository, 'insert' as any)
+    })
+
+    it('calls insert with given event and returns row count', async () => {
+      const event: Event = {
+        id: '6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407',
+        pubkey:
+          '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+        created_at: 1648351380,
+        kind: 1,
+        tags: [
+          [
+            'p',
+            '8355095016fddbe31fcf1453b26f613553e9758cf2263e190eac8fd96a3d3de9',
+            'wss://nostr-pub.wellorder.net',
+          ],
+          [
+            'e',
+            '7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96',
+            'wss://nostr-relay.untethr.me',
+          ],
+        ],
+        content:
+          "I've set up mirroring between relays: https://i.imgur.com/HxCDipB.png",
+        sig: 'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768',
+      }
+
+      insertStub.returns({ then: sinon.stub().yields({ rowCount: 1 }) })
+
+      const result = await repository.create(event)
+
+      expect(insertStub).to.have.been.calledOnceWithExactly(event)
+      expect(result).to.equal(1)
+    })
+  })
+
+  describe('.insert', () => {
+    it('inserts event if there is no conflict', () => {
+      const event: Event = {
+        id: '6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407',
+        pubkey:
+          '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+        created_at: 1648351380,
+        kind: 1,
+        tags: [
+          [
+            'p',
+            '8355095016fddbe31fcf1453b26f613553e9758cf2263e190eac8fd96a3d3de9',
+            'wss://nostr-pub.wellorder.net',
+          ],
+          [
+            'e',
+            '7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96',
+            'wss://nostr-relay.untethr.me',
+          ],
+        ],
+        content:
+          "I've set up mirroring between relays: https://i.imgur.com/HxCDipB.png",
+        sig: 'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768',
+      }
+
+      const query = (repository as any).insert(event).toString()
+
+      expect(query).to.equal('insert into "events" ("event_content", "event_created_at", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags") values (\'I\'\'ve set up mirroring between relays: https://i.imgur.com/HxCDipB.png\', 1648351380, X\'6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407\', 1, X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\', X\'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768\', \'[["p","8355095016fddbe31fcf1453b26f613553e9758cf2263e190eac8fd96a3d3de9","wss://nostr-pub.wellorder.net"],["e","7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96","wss://nostr-relay.untethr.me"]]\') on conflict do nothing')
     })
   })
 })
