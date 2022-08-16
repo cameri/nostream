@@ -1,6 +1,5 @@
 import { Knex } from 'knex'
-import { applySpec, omit, pipe, prop } from 'ramda'
-import { PassThrough } from 'stream'
+import { __, applySpec, equals, modulo, omit, pipe, prop, cond, always, groupBy, T, evolve, forEach, isEmpty, forEachObjIndexed, isNil, complement, toPairs, filter, nth, ifElse, invoker } from 'ramda'
 
 import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
@@ -8,8 +7,18 @@ import { SubscriptionFilter } from '../@types/subscription'
 import { isGenericTagQuery } from '../utils/filter'
 import { toBuffer, toJSON } from '../utils/transform'
 
+const even = pipe(modulo(__, 2), equals(0))
 
-const evenLengthTruncate = (input: string) => input.substring(0, input.length >> 1 << 1)
+const groupByLengthSpec = groupBy(
+  pipe(
+    prop('length'),
+    cond([
+      [equals(64), always('exact')],
+      [even, always('even')],
+      [T, always('odd')],
+    ])
+  )
+)
 
 export class EventRepository implements IEventRepository {
   public constructor(private readonly dbClient: Knex) {}
@@ -18,69 +27,82 @@ export class EventRepository implements IEventRepository {
     if (!Array.isArray(filters) || !filters.length) {
       throw new Error('Filters cannot be empty')
     }
-    const queries = filters.map((filter) => {
+    const queries = filters.map((currentFilter) => {
       const builder = this.dbClient<DBEvent>('events')
 
-      if (Array.isArray(filter.authors)) {
-        builder.andWhere(function (bd) {
-          bd.whereIn(
-            'event_pubkey',
-            filter.authors.filter((author) => author.length === 64).map(toBuffer)
-          )
-
-          for (const author of filter.authors.filter((author) => author.length < 64)) {
-            const prefix = evenLengthTruncate(author)
-            if (prefix.length) {
-              bd.orWhereRaw('substring("event_pubkey" from 1 for ?) = ?', [prefix.length >> 1, toBuffer(prefix)])
-            }
-
-          }
+      forEachObjIndexed((tableField: string, filterName: string) => {
+        builder.andWhere((bd) => {
+          cond([
+            [isEmpty, () => void bd.whereRaw('1 = 0')],
+            [
+              complement(isNil),
+              pipe(
+                groupByLengthSpec,
+                evolve({
+                  exact: (pubkeys: string[]) => void bd.whereIn(tableField, pubkeys.map(toBuffer)),
+                  even: forEach((prefix: string) => void bd.orWhereRaw(
+                    `substring("${tableField}" from 1 for ?) = ?`,
+                    [prefix.length >> 1, toBuffer(prefix)]
+                  )),
+                  odd: forEach((prefix: string) => void bd.orWhereRaw(
+                    `substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`,
+                    [
+                      (prefix.length >> 1) + 1,
+                      `\\x${prefix}0`,
+                      `\\x${prefix}f`
+                    ],
+                  )),
+                }),
+              ),
+            ],
+          ])(currentFilter[filterName] as string[])
         })
+      })({
+        authors: 'event_pubkey',
+        ids: 'event_id',
+      })
+
+      if (Array.isArray(currentFilter.kinds)) {
+        builder.whereIn('event_kind', currentFilter.kinds)
       }
 
-      if (Array.isArray(filter.ids)) {
-        builder.andWhere(function (bd) {
-          bd.whereIn(
-            'event_id',
-            filter.ids.filter((id) => id.length === 64).map(toBuffer)
-          )
-
-          for (const id of filter.ids.filter((id) => id.length < 64)) {
-            const prefix = evenLengthTruncate(id)
-            if (prefix.length) {
-              bd.orWhereRaw('substring("event_id" from 1 for ?) = ?', [prefix.length >> 1, toBuffer(prefix)])
-            }
-          }
-        })
+      if (typeof currentFilter.since === 'number') {
+        builder.where('event_created_at', '>=', currentFilter.since)
       }
 
-      if (Array.isArray(filter.kinds)) {
-        builder.whereIn('event_kind', filter.kinds)
+      if (typeof currentFilter.until === 'number') {
+        builder.where('event_created_at', '<=', currentFilter.until)
       }
 
-      if (typeof filter.since === 'number') {
-        builder.where('event_created_at', '>=', filter.since)
-      }
-
-      if (typeof filter.until === 'number') {
-        builder.where('event_created_at', '<=', filter.until)
-      }
-
-      if (typeof filter.limit === 'number') {
-        builder.limit(filter.limit).orderBy('event_created_at', 'DESC')
+      if (typeof currentFilter.limit === 'number') {
+        builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC')
       } else {
         builder.orderBy('event_created_at', 'asc')
       }
 
-      Object.entries(filter)
-        .filter(([key, criteria]) => isGenericTagQuery(key) && Array.isArray(criteria))
-        .forEach(([key, criteria]) => {
-          builder.andWhere(function (bd) {
-            criteria.forEach((criterion) => {
-              bd.orWhereRaw('"event_tags" @> ?', [JSON.stringify([[key[1], criterion]])])
-            })
+      const andWhereRaw = invoker(1, 'andWhereRaw')
+      const orWhereRaw = invoker(2, 'orWhereRaw')
+
+
+      pipe(
+        toPairs,
+        filter(pipe(nth(0), isGenericTagQuery)) as any,
+        forEach(([filterName, criteria]: [string, string[]]) => {
+          builder.andWhere((bd) => {
+            ifElse(
+              isEmpty,
+              () => andWhereRaw('1 = 0', bd),
+              forEach((criterion: string[]) => void orWhereRaw(
+                '"event_tags" @> ?',
+                [
+                  JSON.stringify([[filterName[1], criterion]]) as any
+                ],
+                bd,
+              )),
+            )(criteria)
           })
-        })
+        }),
+      )(currentFilter as any)
 
       return builder
     })
@@ -89,8 +111,6 @@ export class EventRepository implements IEventRepository {
     if (subqueries.length) {
       query.union(subqueries, true)
     }
-
-    console.log('query', query.toString())
 
     return query
   }
