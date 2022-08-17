@@ -3,7 +3,7 @@ import { applySpec, pipe, prop } from 'ramda'
 
 import { CanonicalEvent, Event } from '../@types/event'
 import { SubscriptionFilter } from '../@types/subscription'
-import { EventKinds } from '../constants/base'
+import { EventKinds, EventTags } from '../constants/base'
 import { isGenericTagQuery } from './filter'
 import { fromBuffer } from './transform'
 
@@ -29,6 +29,8 @@ export const toNostrEvent = applySpec({
 export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Event): boolean => {
   const startsWith = (input: string) => (prefix) => input.startsWith(prefix)
 
+  // NIP-01: Basic protocol flow description
+
   if (Array.isArray(filter.ids) && (
     !filter.ids.some(startsWith(event.id))
   )) {
@@ -51,6 +53,18 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
   }
 
   if (typeof filter.until === 'number' && event.created_at > filter.until) {
+    return false
+  }
+
+  // NIP-27: Multicast
+  const targetMulticastGroups: string[] = event.tags.reduce(
+    (acc, tag) => (tag[0] === EventTags.Multicast)
+      ? [...acc, tag[1]]
+      : acc,
+    [] as string[]
+  )
+
+  if (targetMulticastGroups.length && !Array.isArray(filter['#m'])) {
     return false
   }
 

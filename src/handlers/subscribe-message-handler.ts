@@ -6,9 +6,10 @@ import { SubscribeMessage } from '../@types/messages'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { IEventRepository } from '../@types/repositories'
 import { SubscriptionId, SubscriptionFilter } from '../@types/subscription'
-import { toNostrEvent } from '../utils/event'
-import { streamEach, streamEnd, streamMap } from '../utils/stream'
+import { isEventMatchingFilter, toNostrEvent } from '../utils/event'
+import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
 import { Event } from '../@types/event'
+import { anyPass, map } from 'ramda'
 
 
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
@@ -39,6 +40,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       await pipeline(
         findEvents,
         streamMap(toNostrEvent),
+        streamFilter(anyPass(map(isEventMatchingFilter)(filters))),
         streamEach(sendEvent),
         streamEnd(sendEOSE), // NIP-15: End of Stored Events Notice
         {

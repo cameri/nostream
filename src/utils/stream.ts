@@ -15,6 +15,17 @@ export const streamEach = (writeFn: (chunk: any) => void) => new PassThrough({
   },
 })
 
+export const streamFilter = (predicate: (chunk: any) => boolean) => new Transform({
+  objectMode: true,
+  transform(chunk, _encoding, callback) {
+    if (predicate(chunk)) {
+      return callback(null, chunk)
+    }
+
+    callback()
+  },
+})
+
 export const streamEnd = (finalFn: () => void) => new PassThrough({
   objectMode: true,
   final(callback) {

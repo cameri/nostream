@@ -1,14 +1,6 @@
 import { EventKinds } from '../constants/base'
-import { Pubkey, TagName } from './base'
+import { EventId, Pubkey, Tag } from './base'
 
-export type EventId = string
-
-export type Tag = TagBase & string[]
-
-export interface TagBase {
-  0: TagName
-  [index: number]: string
-}
 
 export interface Event {
   id: EventId
