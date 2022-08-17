@@ -13,7 +13,6 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-02: Contact list and petnames
 - [ ] NIP-03: OpenTimestams Attestations for Events
 - [x] NIP-04: Encrypted Direct Message
-- [ ] NIP-05: Mapping Nostr keys to DNS identifiers
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
 - [x] NIP-12: Generic tag queries
@@ -21,6 +20,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-15: End of Stored Events Notice
 - [x] NIP-16: Event Treatment
 - [ ] NIP-25: Reactions
+- [x] NIP-27: Multicasting (Experimental)
 
 ## Requirements
 

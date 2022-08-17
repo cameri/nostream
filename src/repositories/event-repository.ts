@@ -1,7 +1,8 @@
 import { Knex } from 'knex'
 import { __, applySpec, equals, modulo, omit, pipe, prop, cond, always, groupBy, T, evolve, forEach, isEmpty, forEachObjIndexed, isNil, complement, toPairs, filter, nth, ifElse, invoker, identity } from 'ramda'
+import { EventId } from '../@types/base'
 
-import { DBEvent, Event, EventId } from '../@types/event'
+import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { SubscriptionFilter } from '../@types/subscription'
 import { isGenericTagQuery } from '../utils/filter'
@@ -82,7 +83,6 @@ export class EventRepository implements IEventRepository {
 
       const andWhereRaw = invoker(1, 'andWhereRaw')
       const orWhereRaw = invoker(2, 'orWhereRaw')
-
 
       pipe(
         toPairs,

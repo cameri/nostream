@@ -1,6 +1,5 @@
 import { EventKinds } from '../constants/base'
-import { Pubkey } from './base'
-import { EventId } from './event'
+import { EventId, Pubkey } from './base'
 
 export type SubscriptionId = string
 

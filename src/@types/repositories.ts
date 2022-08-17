@@ -1,6 +1,6 @@
 import { PassThrough } from 'stream'
-import { Pubkey } from './base'
-import { DBEvent, Event, EventId } from './event'
+import { EventId, Pubkey } from './base'
+import { DBEvent, Event } from './event'
 import { SubscriptionFilter } from './subscription'
 
 export type ExposedPromiseKeys = 'then' | 'catch' | 'finally'

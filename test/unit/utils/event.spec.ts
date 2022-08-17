@@ -76,6 +76,7 @@ describe('NIP-01', () => {
       it('returns true if ids with prefix matches event', () => {
         const event: Event = {
           id: '7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96',
+          tags: [],
         } as any
         const prefix = '7377fa81fc6c'
 
@@ -86,6 +87,7 @@ describe('NIP-01', () => {
       it('returns false if ids with prefix does not matches event', () => {
         const event: Event = {
           id: '7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96',
+          tags: [],
         } as any
         const prefix = '001122'
 
@@ -112,6 +114,7 @@ describe('NIP-01', () => {
       it('returns true if authors with prefix matches event', () => {
         const event: Event = {
           pubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+          tags: [],
         } as any
         const prefix = '22e804d'
 
@@ -122,6 +125,7 @@ describe('NIP-01', () => {
       it('returns false if authors with prefix does not matches event', () => {
         const event: Event = {
           pubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+          tags: [],
         } as any
         const prefix = '001122'
 
@@ -328,5 +332,58 @@ describe('isNullEvent', () => {
 
   it('returns false if kind does not equal max safe integer', () => {
     expect(isNullEvent({ kind: Number.MAX_SAFE_INTEGER - 1 } as any)).to.be.false
+  })
+})
+
+describe('NIP-27', () => {
+  describe('isEventMatchingFilter', () => {
+    describe('#m filter', () => {
+      let event: Event
+      beforeEach(() => {
+        event = {
+          tags: [
+            [
+              'm',
+              'group',
+            ],
+          ],
+        } as any
+      })
+
+      it('returns true given non-multicast event and there is no #m filter', () => {
+        event.tags = []
+        expect(isEventMatchingFilter({})(event)).to.be.true
+      })
+
+      it('returns true given multicast event and contained in #m filter', () => {
+        expect(isEventMatchingFilter({ '#m': ['group'] })(event)).to.be.true
+      })
+
+      it('returns true given multicast event and contained second in #m filter', () => {
+        expect(isEventMatchingFilter({ '#m': ['some group', 'group'] })(event)).to.be.true
+      })
+
+      it('returns false given multicast event and not contained in #m filter', () => {
+        expect(isEventMatchingFilter({ '#m': ['other group'] })(event)).to.be.false
+      })
+
+      it('returns false if given multicast event and there is no #m filter', () => {
+        expect(isEventMatchingFilter({})(event)).to.be.false
+      })
+
+      it('returns false if given multicast event and #m filter is empty', () => {
+        expect(isEventMatchingFilter({ '#m': [] })(event)).to.be.false
+      })
+
+      it('returns false given non-multicast event and filter contains some group', () => {
+        event.tags = []
+        expect(isEventMatchingFilter({ '#m': ['group'] })(event)).to.be.false
+      })
+
+      it('returns false given non-multicast event and filter is empty', () => {
+        event.tags = []
+        expect(isEventMatchingFilter({ '#m': [] })(event)).to.be.false
+      })
+    })
   })
 })

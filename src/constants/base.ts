@@ -11,4 +11,5 @@ export enum EventKinds {
 export enum EventTags {
   Event = 'e',
   Pubkey = 'p',
+  Multicast = 'm',
 }
