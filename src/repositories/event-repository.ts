@@ -153,7 +153,7 @@ export class EventRepository implements IEventRepository {
     return this.dbClient('events')
       .insert(row)
       // NIP-16: Replaceable Events
-      .onConflict(this.dbClient.raw('(event_pubkey, event_kind) WHERE event_kind = 0 OR event_kind >= 10000 AND event_kind < 2000'))
+      .onConflict(this.dbClient.raw('(event_pubkey, event_kind) WHERE event_kind = 0 OR event_kind = 3 OR event_kind >= 10000 AND event_kind < 2000'))
       .merge(omit(['event_pubkey', 'event_kind'])(row))
       .where('events.event_created_at', '<', row.event_created_at)
       .then(prop('rowCount') as () => number)
