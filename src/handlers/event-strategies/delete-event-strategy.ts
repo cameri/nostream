@@ -1,7 +1,7 @@
 import { Event } from '../../@types/event'
-import { IEventStrategy } from '../../@types/message-handlers'
-import { IEventRepository } from '../../@types/repositories'
 import { EventTags } from '../../constants/base'
+import { IEventRepository } from '../../@types/repositories'
+import { IEventStrategy } from '../../@types/message-handlers'
 
 
 export class DeleteEventStrategy implements IEventStrategy<Event, Promise<boolean>> {

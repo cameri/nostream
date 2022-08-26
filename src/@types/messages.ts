@@ -1,6 +1,6 @@
-import { Range } from './base'
+import { SubscriptionFilter, SubscriptionId } from './subscription'
 import { Event } from './event'
-import { SubscriptionId, SubscriptionFilter } from './subscription'
+import { Range } from './base'
 
 export enum MessageType {
   REQ = 'REQ',

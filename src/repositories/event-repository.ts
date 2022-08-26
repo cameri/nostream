@@ -1,12 +1,39 @@
+import {
+  __,
+  always,
+  applySpec,
+  complement,
+  cond,
+  equals,
+  evolve,
+  filter,
+  forEach,
+  forEachObjIndexed,
+  groupBy,
+  identity,
+  ifElse,
+  invoker,
+  is,
+  isEmpty,
+  isNil,
+  modulo,
+  nth,
+  omit,
+  pipe,
+  prop,
+  propSatisfies,
+  T,
+  toPairs,
+} from 'ramda'
 import { Knex } from 'knex'
-import { __, applySpec, equals, modulo, omit, pipe, prop, cond, always, groupBy, T, evolve, forEach, isEmpty, forEachObjIndexed, isNil, complement, toPairs, filter, nth, ifElse, invoker, identity } from 'ramda'
-import { EventId } from '../@types/base'
 
 import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
-import { SubscriptionFilter } from '../@types/subscription'
-import { isGenericTagQuery } from '../utils/filter'
 import { toBuffer, toJSON } from '../utils/transform'
+import { EventDelegatorMetadataKey } from '../constants/base'
+import { EventId } from '../@types/base'
+import { isGenericTagQuery } from '../utils/filter'
+import { SubscriptionFilter } from '../@types/subscription'
 
 const even = pipe(modulo(__, 2), equals(0))
 
@@ -31,7 +58,7 @@ export class EventRepository implements IEventRepository {
     const queries = filters.map((currentFilter) => {
       const builder = this.dbClient<DBEvent>('events')
 
-      forEachObjIndexed((tableField: string, filterName: string) => {
+      forEachObjIndexed((tableFields: string[], filterName: string) => {
         builder.andWhere((bd) => {
           cond([
             [isEmpty, () => void bd.whereRaw('1 = 0')],
@@ -40,27 +67,38 @@ export class EventRepository implements IEventRepository {
               pipe(
                 groupByLengthSpec,
                 evolve({
-                  exact: (pubkeys: string[]) => void bd.whereIn(tableField, pubkeys.map(toBuffer)),
-                  even: forEach((prefix: string) => void bd.orWhereRaw(
-                    `substring("${tableField}" from 1 for ?) = ?`,
-                    [prefix.length >> 1, toBuffer(prefix)]
-                  )),
-                  odd: forEach((prefix: string) => void bd.orWhereRaw(
-                    `substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`,
-                    [
-                      (prefix.length >> 1) + 1,
-                      `\\x${prefix}0`,
-                      `\\x${prefix}f`
-                    ],
-                  )),
+                  exact: (pubkeys: string[]) =>
+                    tableFields.forEach((tableField) =>
+                      void bd.orWhereIn(tableField, pubkeys.map(toBuffer))
+                    ),
+                  even: forEach((prefix: string) =>
+                    tableFields.forEach((tableField) =>
+                      void bd.orWhereRaw(
+                        `substring("${tableField}" from 1 for ?) = ?`,
+                        [prefix.length >> 1, toBuffer(prefix)]
+                      )
+                    )
+                  ),
+                  odd: forEach((prefix: string) =>
+                    tableFields.forEach((tableField) =>
+                      void bd.orWhereRaw(
+                        `substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`,
+                        [
+                          (prefix.length >> 1) + 1,
+                          `\\x${prefix}0`,
+                          `\\x${prefix}f`,
+                        ],
+                      )
+                    )
+                  ),
                 }),
               ),
             ],
           ])(currentFilter[filterName] as string[])
         })
       })({
-        authors: 'event_pubkey',
-        ids: 'event_id',
+        authors: ['event_pubkey', 'event_delegator'],
+        ids: ['event_id'],
       })
 
       if (Array.isArray(currentFilter.kinds)) {
@@ -95,7 +133,7 @@ export class EventRepository implements IEventRepository {
               forEach((criterion: string[]) => void orWhereRaw(
                 '"event_tags" @> ?',
                 [
-                  JSON.stringify([[filterName[1], criterion]]) as any
+                  JSON.stringify([[filterName[1], criterion]]) as any,
                 ],
                 bd,
               )),
@@ -111,6 +149,7 @@ export class EventRepository implements IEventRepository {
     if (subqueries.length) {
       query.union(subqueries, true)
     }
+    console.log(query.toString())
 
     return query
   }
@@ -128,6 +167,11 @@ export class EventRepository implements IEventRepository {
       event_tags: pipe(prop('tags'), toJSON),
       event_content: prop('content'),
       event_signature: pipe(prop('sig'), toBuffer),
+      event_delegator: ifElse(
+        propSatisfies(is(String), EventDelegatorMetadataKey),
+        pipe(prop(EventDelegatorMetadataKey as any), toBuffer),
+        always(null),
+      ),
     })(event)
 
     return this.dbClient('events')
@@ -148,6 +192,11 @@ export class EventRepository implements IEventRepository {
       event_tags: pipe(prop('tags'), toJSON),
       event_content: prop('content'),
       event_signature: pipe(prop('sig'), toBuffer),
+      event_delegator: ifElse(
+        propSatisfies(is(String), EventDelegatorMetadataKey),
+        pipe(prop(EventDelegatorMetadataKey as any), toBuffer),
+        always(null),
+      ),
     })(event)
 
     return this.dbClient('events')

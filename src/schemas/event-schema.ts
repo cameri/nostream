@@ -1,4 +1,5 @@
 import Schema from 'joi'
+
 import {
   idSchema,
   kindSchema,

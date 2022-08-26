@@ -1,7 +1,7 @@
-import { IWebSocketAdapter } from '../../@types/adapters'
 import { Event } from '../../@types/event'
-import { IEventStrategy } from '../../@types/message-handlers'
 import { IEventRepository } from '../../@types/repositories'
+import { IEventStrategy } from '../../@types/message-handlers'
+import { IWebSocketAdapter } from '../../@types/adapters'
 
 
 export class DefaultEventStrategy implements IEventStrategy<Event, Promise<boolean>> {

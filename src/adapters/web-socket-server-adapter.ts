@@ -1,11 +1,11 @@
-import { Server } from 'http'
+import { IncomingMessage, Server } from 'http'
 import WebSocket, { OPEN, WebSocketServer } from 'ws'
 
-import { Event } from '../@types/event'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
-import { WebServerAdapter } from './web-server-adapter'
+import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { propEq } from 'ramda'
+import { WebServerAdapter } from './web-server-adapter'
 
 
 const WSS_CLIENT_HEALTH_PROBE_INTERVAL = 30000
@@ -18,7 +18,10 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   public constructor(
     webServer: Server,
     private readonly webSocketServer: WebSocketServer,
-    private readonly createWebSocketAdapter: Factory<IWebSocketAdapter, [WebSocket, IWebSocketServerAdapter]>
+    private readonly createWebSocketAdapter: Factory<
+      IWebSocketAdapter,
+      [WebSocket, IncomingMessage, IWebSocketServerAdapter]
+    >
   ) {
     super(webServer)
 
@@ -49,10 +52,10 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     })
   }
 
-  private onWebSocketServerConnection(client: WebSocket) {
+  private onWebSocketServerConnection(client: WebSocket, req: IncomingMessage) {
     console.debug(`new client - ${this.getConnectedClients()} connected / ${this.webSocketServer.clients.size} total`)
 
-    this.webSocketsAdapters.set(client, this.createWebSocketAdapter([client, this]))
+    this.webSocketsAdapters.set(client, this.createWebSocketAdapter([client, req, this]))
   }
 
   private onWebSocketServerHeartbeat() {

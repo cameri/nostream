@@ -1,4 +1,4 @@
-import { EventKinds } from '../constants/base'
+import { EventDelegatorMetadataKey, EventKinds } from '../constants/base'
 import { EventId, Pubkey, Tag } from './base'
 
 
@@ -10,6 +10,7 @@ export interface Event {
   tags: Tag[]
   sig: string
   content: string
+  [EventDelegatorMetadataKey]?: Pubkey
 }
 
 export interface DBEvent {
@@ -21,6 +22,7 @@ export interface DBEvent {
   event_content: string
   event_tags: Tag[]
   event_signature: Buffer
+  event_delegator?: Buffer | null
   first_seen: Date
 }
 

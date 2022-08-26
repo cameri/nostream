@@ -1,23 +1,27 @@
 import { EventEmitter } from 'stream'
+import { IncomingMessage as IncomingHttpMessage } from 'http'
 import { WebSocket } from 'ws'
 
-import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
-import { Factory } from '../@types/base'
-import { Event } from '../@types/event'
-import { IMessageHandler, IAbortable } from '../@types/message-handlers'
+import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, OutgoingMessage } from '../@types/messages'
+import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
-import { createOutgoingEventMessage } from '../messages'
-import { messageSchema } from '../schemas/message-schema'
-import { isEventMatchingFilter } from '../utils/event'
 import { attemptValidation } from '../utils/validation'
+import { createOutgoingEventMessage } from '../utils/messages'
+import { Event } from '../@types/event'
+import { Factory } from '../@types/base'
+import { isEventMatchingFilter } from '../utils/event'
+import { messageSchema } from '../schemas/message-schema'
 
 export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter {
+  private id: string
+  private clientAddress: string
   private alive: boolean
   private subscriptions: Map<SubscriptionId, Set<SubscriptionFilter>>
 
   public constructor(
     private readonly client: WebSocket,
+    private readonly request: IncomingHttpMessage,
     private readonly webSocketServer: IWebSocketServerAdapter,
     private readonly createMessageHandler: Factory<IMessageHandler, [IncomingMessage, IWebSocketAdapter]>,
   ) {
@@ -25,10 +29,18 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.alive = true
     this.subscriptions = new Map()
 
+    this.id = Buffer.from(request.headers['sec-websocket-key'], 'base64').toString('hex')
+    this.clientAddress = request.headers['x-forwarded-for'] as string
+
+    console.log('id', this.id, 'clientAddress', this.clientAddress)
+    console.log('listener count:', this.client.listenerCount('close'))
+
     this.client
       .on('message', this.onClientMessage.bind(this))
       .on('close', this.onClientClose.bind(this))
       .on('pong', this.onClientPong.bind(this))
+
+    console.log('+listener count:', this.client.listenerCount('close'))
 
     this
       .on('heartbeat', this.onHeartbeat.bind(this))
@@ -60,6 +72,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public sendMessage(message: OutgoingMessage): void {
+    console.log('sending message', message)
     this.client.send(JSON.stringify(message))
   }
 
@@ -86,12 +99,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     try {
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf-8')))
 
-      console.debug('message received:', message[0])
-
       const messageHandler = this.createMessageHandler([message, this]) as IMessageHandler & IAbortable
       if (typeof messageHandler.abort === 'function') {
         abort = messageHandler.abort.bind(messageHandler)
         this.client.prependOnceListener('close', abort)
+        console.log('+listener count:', this.client.listenerCount('close'))
       }
 
       await messageHandler?.handleMessage(message)
@@ -107,6 +119,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       if (abort) {
         this.client.removeListener('close', abort)
       }
+      console.log('-listener count:', this.client.listenerCount('close'))
     }
   }
 
@@ -121,5 +134,6 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     this.removeAllListeners()
     this.client.removeAllListeners()
+    console.log('-listener count:', this.client.listenerCount('close'))
   }
 }

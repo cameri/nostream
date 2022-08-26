@@ -1,6 +1,6 @@
-import { IWebSocketAdapter } from '../../@types/adapters'
 import { Event } from '../../@types/event'
 import { IEventStrategy } from '../../@types/message-handlers'
+import { IWebSocketAdapter } from '../../@types/adapters'
 
 
 export class EphemeralEventStrategy implements IEventStrategy<Event, Promise<boolean>> {

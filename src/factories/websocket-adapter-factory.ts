@@ -1,15 +1,18 @@
+import { IncomingMessage } from 'http'
 import { WebSocket } from 'ws'
-import { IWebSocketServerAdapter } from '../@types/adapters'
+
 import { IEventRepository } from '../@types/repositories'
-import { WebSocketAdapter } from '../adapters/web-socket-adapter'
+import { IWebSocketServerAdapter } from '../@types/adapters'
 import { messageHandlerFactory } from './message-handler-factory'
+import { WebSocketAdapter } from '../adapters/web-socket-adapter'
 
 
 export const webSocketAdapterFactory = (
   eventRepository: IEventRepository,
-) => ([client, webSocketServerAdapter]: [WebSocket, IWebSocketServerAdapter,]) =>
+) => ([client, request, webSocketServerAdapter]: [WebSocket, IncomingMessage, IWebSocketServerAdapter]) =>
     new WebSocketAdapter(
       client,
+      request,
       webSocketServerAdapter,
       messageHandlerFactory(eventRepository)
     )

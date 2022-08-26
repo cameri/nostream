@@ -1,11 +1,11 @@
 import { expect } from 'chai'
 import { range } from 'ramda'
-import { Event } from '../../../src/@types/event'
 
+import { Event } from '../../../src/@types/event'
+import { getEvents } from '../data/events'
 import { IncomingMessage } from '../../../src/@types/messages'
 import { messageSchema } from '../../../src/schemas/message-schema'
 import { validateSchema } from '../../../src/utils/validation'
-import { getEvents } from '../data/events'
 
 describe('NIP-01', () => {
   let message: IncomingMessage
@@ -20,7 +20,7 @@ describe('NIP-01', () => {
         events.forEach((event) => {
           message = [
             'EVENT',
-            event
+            event,
           ] as any
 
           const result = validateSchema(messageSchema)(message)

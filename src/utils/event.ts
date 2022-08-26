@@ -1,11 +1,12 @@
 import * as secp256k1 from '@noble/secp256k1'
-import { applySpec, pipe, prop } from 'ramda'
+import { applySpec, converge, curry, mergeLeft, nth, omit, pipe, prop, reduceBy } from 'ramda'
 
 import { CanonicalEvent, Event } from '../@types/event'
-import { SubscriptionFilter } from '../@types/subscription'
 import { EventKinds, EventTags } from '../constants/base'
-import { isGenericTagQuery } from './filter'
 import { fromBuffer } from './transform'
+import { isGenericTagQuery } from './filter'
+import { Rune } from './runes'
+import { SubscriptionFilter } from '../@types/subscription'
 
 export const serializeEvent = (event: Partial<Event>): CanonicalEvent => [
   0,
@@ -41,13 +42,6 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
     return false
   }
 
-  if (
-    Array.isArray(filter.authors) &&
-    !filter.authors.some(startsWith(event.pubkey))
-  ) {
-    return false
-  }
-
   if (typeof filter.since === 'number' && event.created_at < filter.since) {
     return false
   }
@@ -56,17 +50,33 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
     return false
   }
 
-  // NIP-27: Multicast
-  const targetMulticastGroups: string[] = event.tags.reduce(
-    (acc, tag) => (tag[0] === EventTags.Multicast)
-      ? [...acc, tag[1]]
-      : acc,
-    [] as string[]
-  )
+  if (Array.isArray(filter.authors)) {
+    if (
+      !filter.authors.some(startsWith(event.pubkey))
+    ) {
+      if (isDelegatedEvent(event)) {
+        const delegation = event.tags.find((tag) => tag[0] === EventTags.Delegation)
 
-  if (targetMulticastGroups.length && !Array.isArray(filter['#m'])) {
-    return false
+        if (!filter.authors.some(startsWith(delegation[1]))) {
+          return false
+        }
+      } else {
+        return false
+      }
+    }
   }
+
+  // NIP-27: Multicast
+  // const targetMulticastGroups: string[] = event.tags.reduce(
+  //   (acc, tag) => (tag[0] === EventTags.Multicast)
+  //     ? [...acc, tag[1]]
+  //     : acc,
+  //   [] as string[]
+  // )
+
+  // if (targetMulticastGroups.length && !Array.isArray(filter['#m'])) {
+  //   return false
+  // }
 
   // NIP-01: Support #e and #p tags
   // NIP-12: Support generic tag queries
@@ -87,6 +97,61 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
   }
 
   return true
+}
+
+export const isDelegatedEvent = (event: Event): boolean => {
+  return event.tags.some((tag) => tag.length === 4 && tag[0] === EventTags.Delegation)
+}
+
+export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
+  const delegation = event.tags.find((tag) => tag.length === 4 && tag[0] === EventTags.Delegation)
+  if (!delegation) {
+    return false
+  }
+
+  const serializedDelegationTag = `nostr:${delegation[0]}:${event.pubkey}:${delegation[2]}`
+
+  const token = await secp256k1.utils.sha256(Buffer.from(serializedDelegationTag))
+
+  // Token generation to be decided:
+  // const serializedDelegationTag = [
+  //   delegation[0], // 'delegation'
+  //   delegation[1], // <delegator>
+  //   event.pubkey,  // <delegatee>
+  //   delegation[2], // <rules>
+  // ]
+  // const token = await secp256k1.utils.sha256(Buffer.from(JSON.stringify(serializedDelegationTag)))
+
+  // Validate delegation signature
+  const verification = await secp256k1.schnorr.verify(delegation[3], token, delegation[1])
+  if (!verification) {
+    return false
+  }
+
+  // Validate rune
+  const runifiedEvent = (converge(
+    curry(mergeLeft),
+    [
+      omit(['tags']),
+      pipe(
+        prop('tags') as any,
+        reduceBy(
+          (acc, tag) => ([...acc, tag[1]]),
+          [],
+          nth(0),
+        ),
+      ),
+    ],
+  ) as any)(event)
+
+  try {
+    const [result] = Rune.from(delegation[2]).test(runifiedEvent)
+
+    return result
+  } catch (error) {
+    console.error('Invalid rune')
+    return false
+  }
 }
 
 export const isEventIdValid = async (event: Event): Promise<boolean> => {
