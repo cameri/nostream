@@ -4,7 +4,7 @@ export const streamMap = (fn: (chunk) => any) => new Transform({
   objectMode: true,
   transform(chunk, _encoding, callback) {
     callback(null, fn(chunk))
-  }
+  },
 })
 
 export const streamEach = (writeFn: (chunk: any) => void) => new PassThrough({

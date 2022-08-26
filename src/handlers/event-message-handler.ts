@@ -1,8 +1,9 @@
-import { IMessageHandler, IEventStrategy } from '../@types/message-handlers'
-import { IncomingEventMessage } from '../@types/messages'
+import { EventDelegatorMetadataKey, EventTags } from '../constants/base'
+import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
+import { isDelegatedEvent, isDelegatedEventValid, isEventIdValid, isEventSignatureValid } from '../utils/event'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
-import { isEventIdValid, isEventSignatureValid } from '../utils/event'
+import { IncomingEventMessage } from '../@types/messages'
 import { IWebSocketAdapter } from '../@types/adapters'
 
 export class EventMessageHandler implements IMessageHandler {
@@ -17,6 +18,16 @@ export class EventMessageHandler implements IMessageHandler {
     if (!await isEventSignatureValid(event) || !isEventIdValid(event)) {
       console.warn(`Event ${event.id} from ${event.pubkey} with signature ${event.sig} is not valid`)
       return
+    }
+
+    if (isDelegatedEvent(event)) {
+      if (await isDelegatedEventValid(event)) {
+        const [, delegator] = event.tags.find((tag) => tag.length === 4 && tag[0] === EventTags.Delegation)
+        event[EventDelegatorMetadataKey] = delegator
+      } else {
+        console.warn(`Delegated event ${event.id} from ${event.pubkey} is not valid`)
+        return
+      }
     }
 
     const strategy = this.strategyFactory([event, this.webSocket])

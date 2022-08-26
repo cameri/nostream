@@ -1,6 +1,17 @@
 import { expect } from 'chai'
-import { Event, CanonicalEvent } from '../../../src/@types/event'
-import { isEphemeralEvent, isEventIdValid, isEventMatchingFilter, isEventSignatureValid, isNullEvent, isReplaceableEvent, serializeEvent } from '../../../src/utils/event'
+
+import { CanonicalEvent, Event } from '../../../src/@types/event'
+import {
+  isDelegatedEvent,
+  isDelegatedEventValid,
+  isEphemeralEvent,
+  isEventIdValid,
+  isEventMatchingFilter,
+  isEventSignatureValid,
+  isNullEvent,
+  isReplaceableEvent,
+  serializeEvent,
+} from '../../../src/utils/event'
 import { EventKinds } from '../../../src/constants/base'
 
 describe('NIP-01', () => {
@@ -226,7 +237,7 @@ describe('NIP-01', () => {
         'kind': 1,
         'tags': [],
         'content': 'learning terraform rn!',
-        'sig': 'ec8b2bc640c8c7e92fbc0e0a6f539da2635068a99809186f15106174d727456132977c78f3371d0ab01c108173df75750f33d8e04c4d7980bbb3fb70ba1e3848'
+        'sig': 'ec8b2bc640c8c7e92fbc0e0a6f539da2635068a99809186f15106174d727456132977c78f3371d0ab01c108173df75750f33d8e04c4d7980bbb3fb70ba1e3848',
       }
     })
 
@@ -256,7 +267,7 @@ describe('NIP-01', () => {
         'kind': 1,
         'tags': [],
         'content': 'learning terraform rn!',
-        'sig': 'ec8b2bc640c8c7e92fbc0e0a6f539da2635068a99809186f15106174d727456132977c78f3371d0ab01c108173df75750f33d8e04c4d7980bbb3fb70ba1e3848'
+        'sig': 'ec8b2bc640c8c7e92fbc0e0a6f539da2635068a99809186f15106174d727456132977c78f3371d0ab01c108173df75750f33d8e04c4d7980bbb3fb70ba1e3848',
       }
     })
 
@@ -335,55 +346,89 @@ describe('isNullEvent', () => {
   })
 })
 
-describe('NIP-27', () => {
-  describe('isEventMatchingFilter', () => {
-    describe('#m filter', () => {
-      let event: Event
-      beforeEach(() => {
-        event = {
-          tags: [
-            [
-              'm',
-              'group',
-            ],
-          ],
-        } as any
-      })
+// describe('NIP-27', () => {
+//   describe('isEventMatchingFilter', () => {
+//     describe('#m filter', () => {
+//       let event: Event
+//       beforeEach(() => {
+//         event = {
+//           tags: [
+//             [
+//               'm',
+//               'group',
+//             ],
+//           ],
+//         } as any
+//       })
 
-      it('returns true given non-multicast event and there is no #m filter', () => {
-        event.tags = []
-        expect(isEventMatchingFilter({})(event)).to.be.true
-      })
+//       it('returns true given non-multicast event and there is no #m filter', () => {
+//         event.tags = []
+//         expect(isEventMatchingFilter({})(event)).to.be.true
+//       })
 
-      it('returns true given multicast event and contained in #m filter', () => {
-        expect(isEventMatchingFilter({ '#m': ['group'] })(event)).to.be.true
-      })
+//       it('returns true given multicast event and contained in #m filter', () => {
+//         expect(isEventMatchingFilter({ '#m': ['group'] })(event)).to.be.true
+//       })
 
-      it('returns true given multicast event and contained second in #m filter', () => {
-        expect(isEventMatchingFilter({ '#m': ['some group', 'group'] })(event)).to.be.true
-      })
+//       it('returns true given multicast event and contained second in #m filter', () => {
+//         expect(isEventMatchingFilter({ '#m': ['some group', 'group'] })(event)).to.be.true
+//       })
 
-      it('returns false given multicast event and not contained in #m filter', () => {
-        expect(isEventMatchingFilter({ '#m': ['other group'] })(event)).to.be.false
-      })
+//       it('returns false given multicast event and not contained in #m filter', () => {
+//         expect(isEventMatchingFilter({ '#m': ['other group'] })(event)).to.be.false
+//       })
 
-      it('returns false if given multicast event and there is no #m filter', () => {
-        expect(isEventMatchingFilter({})(event)).to.be.false
-      })
+//       it('returns false if given multicast event and there is no #m filter', () => {
+//         expect(isEventMatchingFilter({})(event)).to.be.false
+//       })
 
-      it('returns false if given multicast event and #m filter is empty', () => {
-        expect(isEventMatchingFilter({ '#m': [] })(event)).to.be.false
-      })
+//       it('returns false if given multicast event and #m filter is empty', () => {
+//         expect(isEventMatchingFilter({ '#m': [] })(event)).to.be.false
+//       })
 
-      it('returns false given non-multicast event and filter contains some group', () => {
-        event.tags = []
-        expect(isEventMatchingFilter({ '#m': ['group'] })(event)).to.be.false
-      })
+//       it('returns false given non-multicast event and filter contains some group', () => {
+//         event.tags = []
+//         expect(isEventMatchingFilter({ '#m': ['group'] })(event)).to.be.false
+//       })
 
-      it('returns false given non-multicast event and filter is empty', () => {
-        event.tags = []
-        expect(isEventMatchingFilter({ '#m': [] })(event)).to.be.false
-      })
+//       it('returns false given non-multicast event and filter is empty', () => {
+//         event.tags = []
+//         expect(isEventMatchingFilter({ '#m': [] })(event)).to.be.false
+//       })
+//     })
+//   })
+// })
+
+describe('NIP-26', () => {
+  let event: Event
+  beforeEach(() => {
+    event = {
+      'id': 'a080fd288b60ac2225ff2e2d815291bd730911e583e177302cc949a15dc2b2dc',
+      'pubkey': '62903b1ff41559daf9ee98ef1ae67cc52f301bb5ce26d14baba3052f649c3f49',
+      'created_at': 1660896109,
+      'kind': 1,
+      'tags': [
+        [
+          'delegation',
+          '86f0689bd48dcd19c67a19d994f938ee34f251d8c39976290955ff585f2db42e',
+          'kind=1&created_at>1640995200',
+          'c33c88ba78ec3c760e49db591ac5f7b129e3887c8af7729795e85a0588007e5ac89b46549232d8f918eefd73e726cb450135314bfda419c030d0b6affe401ec1',
+        ],
+      ],
+      'content': 'Hello world',
+      'sig': 'cd4a3cd20dc61dcbc98324de561a07fd23b3d9702115920c0814b5fb822cc5b7c5bcdaf3fa326d24ed50c5b9c8214d66c75bae34e3a84c25e4d122afccb66eb6',
+    }
+  })
+
+  describe('isDelegatedEvent', () => {
+    it('returns true if event contains delegation tag', () => {
+      expect(isDelegatedEvent(event)).to.be.true
+    })
+  })
+
+  describe('isDelegatedEventValid', () => {
+    it('resolves with true if delegated event is valid', async () => {
+      expect(await isDelegatedEventValid(event)).to.be.true
     })
   })
 })

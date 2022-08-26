@@ -1,6 +1,6 @@
 module.exports = {
   extension: ['ts'],
-  require: ['ts-node/register', 'source-map-support/register'],
+  require: ['ts-node/register'],
   reporter: 'mochawesome',
   slow: 75,
   sorted: true,

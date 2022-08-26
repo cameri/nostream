@@ -1,9 +1,9 @@
-import Joi from 'joi'
 import Schema from 'joi'
-import { MessageType } from '../@types/messages'
-import { subscriptionSchema } from './base-schema'
+
 import { eventSchema } from './event-schema'
 import { filterSchema } from './filter-schema'
+import { MessageType } from '../@types/messages'
+import { subscriptionSchema } from './base-schema'
 
 export const eventMessageSchema = Schema.array().ordered(
   Schema.string().valid('EVENT').required(),
@@ -22,10 +22,19 @@ export const closeMessageSchema = Schema.array().ordered(
 ).label('CLOSE message')
 
 export const messageSchema = Schema.alternatives()
-  .conditional(Joi.ref('.'), {
+  .conditional(Schema.ref('.'), {
     switch: [
-      { is: Joi.array().ordered(Joi.string().equal(MessageType.EVENT)).items(Joi.any()), then: eventMessageSchema },
-      { is: Joi.array().ordered(Joi.string().equal(MessageType.REQ)).items(Joi.any()), then: reqMessageSchema },
-      { is: Joi.array().ordered(Joi.string().equal(MessageType.CLOSE)).items(Joi.any()), then: closeMessageSchema },
+      {
+        is: Schema.array().ordered(Schema.string().equal(MessageType.EVENT)).items(Schema.any()),
+        then: eventMessageSchema,
+      },
+      {
+        is: Schema.array().ordered(Schema.string().equal(MessageType.REQ)).items(Schema.any()),
+        then: reqMessageSchema,
+      },
+      {
+        is: Schema.array().ordered(Schema.string().equal(MessageType.CLOSE)).items(Schema.any()),
+        then: closeMessageSchema,
+      },
     ],
   })

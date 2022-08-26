@@ -1,9 +1,9 @@
-import { IncomingMessage, Server, ServerResponse } from 'http'
 import { Duplex, EventEmitter } from 'stream'
-
+import { IncomingMessage, Server, ServerResponse } from 'http'
 import packageJson from '../../package.json'
-import { Settings } from '../settings'
+
 import { IWebServerAdapter } from '../@types/adapters'
+import { Settings } from '../utils/settings'
 
 export class WebServerAdapter extends EventEmitter implements IWebServerAdapter {
 
@@ -12,8 +12,8 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   ) {
     super()
     this.webServer.on('request', this.onWebServerRequest.bind(this))
-    this.webServer.on('clientError', this.onWebServerSocketError.bind(this))
-    this.webServer.on('close', this.onClose.bind(this))
+      .on('clientError', this.onWebServerSocketError.bind(this))
+      .on('close', this.onClose.bind(this))
   }
 
   public listen(port: number): void {
@@ -32,7 +32,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
         description,
         pubkey,
         contact,
-        supported_nips: [1, 2, 4, 9, 11, 12, 15, 16],
+        supported_nips: [1, 2, 4, 9, 11, 12, 15, 16, 26],
         software: packageJson.repository.url,
         version: packageJson.version,
       }

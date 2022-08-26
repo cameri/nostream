@@ -1,10 +1,10 @@
-import { EventMessageHandler } from '../handlers/event-message-handler'
-import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
-import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
 import { IncomingMessage, MessageType } from '../@types/messages'
+import { EventMessageHandler } from '../handlers/event-message-handler'
+import { eventStrategyFactory } from './event-strategy-factory'
 import { IEventRepository } from '../@types/repositories'
 import { IWebSocketAdapter } from '../@types/adapters'
-import { eventStrategyFactory } from './event-strategy-factory'
+import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
+import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
 
 
 export const messageHandlerFactory = (

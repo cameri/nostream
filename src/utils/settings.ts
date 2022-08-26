@@ -1,10 +1,10 @@
-import { readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { mergeDeepRight } from 'ramda'
+import { readFileSync } from 'fs'
 
-import packageJson from '../package.json'
-import { ISettings } from './@types/settings'
+import { ISettings } from '../@types/settings'
+import packageJson from '../../package.json'
 
 let _settings: ISettings
 

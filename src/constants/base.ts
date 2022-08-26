@@ -11,5 +11,9 @@ export enum EventKinds {
 export enum EventTags {
   Event = 'e',
   Pubkey = 'p',
-  Multicast = 'm',
+  //  Multicast = 'm',
+  Delegation = 'delegation',
 }
+
+export const EventDelegatorMetadataKey = Symbol('Delegator')
+

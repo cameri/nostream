@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:stream'
 import { WebSocket } from 'ws'
+
 import { Event } from './event'
 import { OutgoingMessage } from './messages'
 

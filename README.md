@@ -20,7 +20,8 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-15: End of Stored Events Notice
 - [x] NIP-16: Event Treatment
 - [ ] NIP-25: Reactions
-- [x] NIP-27: Multicasting (Experimental)
+- [x] NIP-26: Delegated Event Signing
+- [ ] NIP-27: Restricted Events (Experimental)
 
 ## Requirements
 
