@@ -109,24 +109,6 @@ export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
     return false
   }
 
-  const serializedDelegationTag = `nostr:${delegation[0]}:${event.pubkey}:${delegation[2]}`
-
-  const token = await secp256k1.utils.sha256(Buffer.from(serializedDelegationTag))
-
-  // Token generation to be decided:
-  // const serializedDelegationTag = [
-  //   delegation[0], // 'delegation'
-  //   delegation[1], // <delegator>
-  //   event.pubkey,  // <delegatee>
-  //   delegation[2], // <rules>
-  // ]
-  // const token = await secp256k1.utils.sha256(Buffer.from(JSON.stringify(serializedDelegationTag)))
-
-  // Validate delegation signature
-  const verification = await secp256k1.schnorr.verify(delegation[3], token, delegation[1])
-  if (!verification) {
-    return false
-  }
 
   // Validate rune
   const runifiedEvent = (converge(
@@ -144,14 +126,32 @@ export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
     ],
   ) as any)(event)
 
+  let result: boolean
   try {
-    const [result] = Rune.from(delegation[2]).test(runifiedEvent)
-
-    return result
+    [result] = Rune.from(delegation[2]).test(runifiedEvent)
   } catch (error) {
-    console.error('Invalid rune')
-    return false
+    result = false
   }
+
+  if (!result) {
+    return false
+  }  
+
+  const serializedDelegationTag = `nostr:${delegation[0]}:${event.pubkey}:${delegation[2]}`
+
+  const token = await secp256k1.utils.sha256(Buffer.from(serializedDelegationTag))
+
+  // Token generation to be decided:
+  // const serializedDelegationTag = [
+  //   delegation[0], // 'delegation'
+  //   delegation[1], // <delegator>
+  //   event.pubkey,  // <delegatee>
+  //   delegation[2], // <rules>
+  // ]
+  // const token = await secp256k1.utils.sha256(Buffer.from(JSON.stringify(serializedDelegationTag)))
+
+  // Validate delegation signature
+  return secp256k1.schnorr.verify(delegation[3], token, delegation[1])
 }
 
 export const isEventIdValid = async (event: Event): Promise<boolean> => {

@@ -2,7 +2,7 @@ import * as chai from 'chai'
 import * as sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
-import { streamEach, streamEnd, streamMap } from '../../../src/utils/stream'
+import { streamEach, streamEnd, streamFilter, streamMap } from '../../../src/utils/stream'
 
 chai.use(sinonChai)
 
@@ -54,3 +54,20 @@ describe('streamEnd', () => {
   })
 })
 
+describe('streamFilter', () => {
+  it('passes elements that pass the given predicate downstream', () => {
+    const spy = sinon.spy()
+
+    const stream = streamFilter(({ a }) => a > 1 && a < 4)
+    stream.on('data', spy)
+    stream.write({ a: 1 })
+    stream.write({ a: 2 })
+    stream.write({ a: 3 })
+    stream.write({ a: 4 })
+    stream.end()
+
+    expect(spy).to.have.been.calledTwice
+    expect(spy.firstCall).to.have.been.calledWithExactly({ a: 2 })
+    expect(spy.secondCall).to.have.been.calledWithExactly({ a: 3 })
+  })
+})

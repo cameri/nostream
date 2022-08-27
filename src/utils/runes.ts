@@ -16,7 +16,7 @@ export class Alternative {
     }
 
     if (!new Set(['!', '=', '/', '^', '$', '~', '<', '>', '}', '{', '#']).has(this.cond)) {
-      throw new Error('Cond not valid')
+      throw new Error('Cond is not valid')
     }
   }
 
@@ -69,23 +69,13 @@ export class Alternative {
         }
       case '{':
         return why(val < this.value, this.field, `is the same or ordered after ${this.value}`)
-      case '{':
+      case '}':
         return why(val > this.value, this.field, `is the same or ordered before ${this.value}`)
-      default:
-        throw new Error('Invalid condition')
     }
   }
 
   public encode(): string {
     return `${this.field}${this.cond}${this.value.replace(/[\\|&]/g, '\\$&')}`
-  }
-
-  public valueOf(): string {
-    return this.encode()
-  }
-
-  public toString() {
-    return this.encode()
   }
 
   public static decode(encodedStr: string): [Alternative, string] {
@@ -133,7 +123,6 @@ export class Alternative {
 
     return new Alternative(field, cond, value)
   }
-
 }
 
 export class Restriction {
@@ -160,14 +149,6 @@ export class Restriction {
 
   public encode(): string {
     return this.alternatives.map((alternative) => alternative.encode()).join('|')
-  }
-
-  public valueOf(): string {
-    return this.encode()
-  }
-
-  public toString() {
-    return this.encode()
   }
 
   public static decode(encodedStr: string): [Restriction, string] {
@@ -217,14 +198,6 @@ export class Rune {
 
   public encode() {
     return this.restrictions.map((restriction) => restriction.encode()).join('&')
-  }
-
-  public valueOf() {
-    return this.encode()
-  }
-
-  public toString() {
-    return this.encode()
   }
 
   public static from(encodedStr: string): Rune {
