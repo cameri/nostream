@@ -4,6 +4,7 @@ import { CanonicalEvent, Event } from '../../../src/@types/event'
 import {
   isDelegatedEvent,
   isDelegatedEventValid,
+  isDeleteEvent,
   isEphemeralEvent,
   isEventIdValid,
   isEventMatchingFilter,
@@ -429,6 +430,59 @@ describe('NIP-26', () => {
   describe('isDelegatedEventValid', () => {
     it('resolves with true if delegated event is valid', async () => {
       expect(await isDelegatedEventValid(event)).to.be.true
+    })
+
+    it('resolves with false if no delegation tag is found', async () => {
+      event.tags = []
+      expect(await isDelegatedEventValid(event)).to.be.false
+    })
+
+    it('resolves with false if delegation signature is invalid', async () => {
+      event.tags[0][3] = 'f'
+      expect(await isDelegatedEventValid(event)).to.be.false
+    })
+
+    it('resolves with false if delegation rule is not a valid rune', async () => {
+      event.tags[0][2] = '@'
+      expect(await isDelegatedEventValid(event)).to.be.false
+    })
+
+
+    it('resolves with false if no delegation rule does not match', async () => {
+      event.tags[0][2] = 'a=1'
+      expect(await isDelegatedEventValid(event)).to.be.false
+    })
+  })
+
+  describe('isEventMatchingFilter', () => {
+    it('returns true if author is delegator', () => {
+      expect(
+        isEventMatchingFilter({ authors: ['86f0689bd48dcd19c67a19d994f938ee34f251d8c39976290955ff585f2db42e'] })(event)
+      ).to.be.true
+    })
+
+    it('returns false if author is not delegator', () => {
+      expect(
+        isEventMatchingFilter({ authors: ['e8b487c079b0f67c695ae6c4c2552a47f38adfa2533cc5926bd2c102942fdcb7'] })(event)
+      ).to.be.false
+    })
+  })
+})
+
+describe('NIP-09', () => {
+  describe('isDeleteEvent', () => {
+    it('returns true if event is kind 5', () => {
+      const event: Event = {
+        kind: 5,
+      } as any
+      expect(isDeleteEvent(event)).to.be.true
+    })
+
+    it('returns false if event is not kind 5', () => {
+      const event: Event = {
+        kind: 5 * 100000,
+      } as any
+      expect(isDeleteEvent(event)).to.be.false
     })
   })
 })
