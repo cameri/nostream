@@ -3,7 +3,7 @@ import sinon from 'sinon'
 
 import { Alternative } from '../../../src/utils/runes'
 
-describe.only('Alternative', () => {
+describe('Alternative', () => {
   describe('constructor', () => {
     it('throw error if field has punctuations', () => {
       expect(() => new Alternative('%', '=', 'value')).to.throw(Error, 'Field is not valid')
