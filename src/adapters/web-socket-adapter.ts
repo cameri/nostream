@@ -32,15 +32,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.id = Buffer.from(request.headers['sec-websocket-key'], 'base64').toString('hex')
     this.clientAddress = request.headers['x-forwarded-for'] as string
 
-    console.log('id', this.id, 'clientAddress', this.clientAddress)
-    console.log('listener count:', this.client.listenerCount('close'))
-
     this.client
       .on('message', this.onClientMessage.bind(this))
       .on('close', this.onClientClose.bind(this))
       .on('pong', this.onClientPong.bind(this))
-
-    console.log('+listener count:', this.client.listenerCount('close'))
 
     this
       .on('heartbeat', this.onHeartbeat.bind(this))
@@ -72,7 +67,6 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public sendMessage(message: OutgoingMessage): void {
-    console.log('sending message', message)
     this.client.send(JSON.stringify(message))
   }
 
@@ -103,7 +97,6 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       if (typeof messageHandler.abort === 'function') {
         abort = messageHandler.abort.bind(messageHandler)
         this.client.prependOnceListener('close', abort)
-        console.log('+listener count:', this.client.listenerCount('close'))
       }
 
       await messageHandler?.handleMessage(message)
@@ -119,7 +112,6 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       if (abort) {
         this.client.removeListener('close', abort)
       }
-      console.log('-listener count:', this.client.listenerCount('close'))
     }
   }
 
@@ -134,6 +126,5 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     this.removeAllListeners()
     this.client.removeAllListeners()
-    console.log('-listener count:', this.client.listenerCount('close'))
   }
 }
