@@ -14,7 +14,6 @@ module.exports = {
     '@typescript-eslint/interface-name-prefix': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-    'no-console': 'off',
     semi: ['error', 'never'],
     quotes: ['error', 'single', { avoidEscape: true }],
     'sort-imports': ['error', {

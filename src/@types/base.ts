@@ -1,3 +1,5 @@
+import { Knex } from 'knex'
+
 export type EventId = string
 export type Pubkey = string
 export type TagName = string
@@ -22,3 +24,5 @@ export type Range<F extends number, T extends number> = Exclude<
 >
 
 export type Factory<TOutput = any, TInput = any> = (input: TInput) => TOutput
+
+export type DatabaseClient = Knex

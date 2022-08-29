@@ -2,7 +2,7 @@ import Joi from 'joi'
 
 const getValidationConfig = () => ({
   abortEarly: true,
-  stripUnknown: true,
+  stripUnknown: false,
   convert: false,
 })
 

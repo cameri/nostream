@@ -10,12 +10,12 @@ import {
   forEach,
   forEachObjIndexed,
   groupBy,
-  identity,
   ifElse,
   invoker,
   is,
   isEmpty,
   isNil,
+  map,
   modulo,
   nth,
   omit,
@@ -25,13 +25,12 @@ import {
   T,
   toPairs,
 } from 'ramda'
-import { Knex } from 'knex'
 
+import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
 import { EventDelegatorMetadataKey } from '../constants/base'
-import { EventId } from '../@types/base'
 import { isGenericTagQuery } from '../utils/filter'
 import { SubscriptionFilter } from '../@types/subscription'
 
@@ -49,7 +48,7 @@ const groupByLengthSpec = groupBy(
 )
 
 export class EventRepository implements IEventRepository {
-  public constructor(private readonly dbClient: Knex) {}
+  public constructor(private readonly dbClient: DatabaseClient) { }
 
   public findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]> {
     if (!Array.isArray(filters) || !filters.length) {
@@ -149,7 +148,6 @@ export class EventRepository implements IEventRepository {
     if (subqueries.length) {
       query.union(subqueries, true)
     }
-    console.log(query.toString())
 
     return query
   }
@@ -158,7 +156,7 @@ export class EventRepository implements IEventRepository {
     return this.insert(event).then(prop('rowCount') as () => number)
   }
 
-  private insert(event: Event): Knex.QueryBuilder {
+  private insert(event: Event) {
     const row = applySpec({
       event_id: pipe(prop('id'), toBuffer),
       event_pubkey: pipe(prop('pubkey'), toBuffer),
@@ -181,7 +179,7 @@ export class EventRepository implements IEventRepository {
   }
 
 
-  public async upsert(event: Event): Promise<number> {
+  public upsert(event: Event): Promise<number> {
     const toJSON = (input: any) => JSON.stringify(input)
 
     const row = applySpec({
@@ -199,13 +197,18 @@ export class EventRepository implements IEventRepository {
       ),
     })(event)
 
-    return this.dbClient('events')
+    const query = this.dbClient('events')
       .insert(row)
       // NIP-16: Replaceable Events
       .onConflict(this.dbClient.raw('(event_pubkey, event_kind) WHERE event_kind = 0 OR event_kind = 3 OR event_kind >= 10000 AND event_kind < 2000'))
       .merge(omit(['event_pubkey', 'event_kind'])(row))
       .where('events.event_created_at', '<', row.event_created_at)
-      .then(prop('rowCount') as () => number)
+
+    const promise = query.then(prop('rowCount') as () => number)
+
+    promise.toString = () => query.toString()
+
+    return promise
   }
 
   public deleteByPubkeyAndIds(pubkey: string, ids: EventId[]): Promise<number> {

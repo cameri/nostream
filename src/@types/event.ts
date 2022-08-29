@@ -24,6 +24,7 @@ export interface DBEvent {
   event_signature: Buffer
   event_delegator?: Buffer | null
   first_seen: Date
+  deleted_at: Date
 }
 
 export interface CanonicalEvent {

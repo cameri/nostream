@@ -1,6 +1,6 @@
 import * as chai from 'chai'
 import * as sinon from 'sinon'
-import knex, { Knex } from 'knex'
+import knex from 'knex'
 import sinonChai from 'sinon-chai'
 
 import { Event } from '../../../src/@types/event'
@@ -11,12 +11,13 @@ chai.use(sinonChai)
 
 const { expect } = chai
 
+import { DatabaseClient } from '../../../src/@types/base'
 import { EventRepository } from '../../../src/repositories/event-repository'
 
 describe('EventRepository', () => {
   let repository: IEventRepository
   let sandbox: sinon.SinonSandbox
-  let dbClient: Knex
+  let dbClient: DatabaseClient
 
   beforeEach(() => {
     sandbox = sinon.createSandbox()
@@ -440,6 +441,24 @@ describe('EventRepository', () => {
       const query = repository.deleteByPubkeyAndIds('001122', ['aabbcc', 'ddeeff']).toString()
 
       expect(query).to.equal('update "events" set "deleted_at" = now() where "event_pubkey" = X\'001122\' and "event_id" in (X\'aabbcc\', X\'ddeeff\') and "deleted_at" is null')
+    })
+  })
+
+  describe('upsert', () => {
+    it('replaces event based on event_pubkey and event_kind', () => {
+      const event: Event = {
+        'id': 'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a',
+        'pubkey': '55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503',
+        'created_at': 1564498626,
+        'kind': 0,
+        'tags': [],
+        'content': '{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}',
+        'sig': 'd1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9',
+      }
+
+      const query = repository.upsert(event).toString()
+
+      expect(query).to.equal('insert into "events" ("event_content", "event_created_at", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags") values (\'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, NULL, X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\') on conflict (event_pubkey, event_kind) WHERE event_kind = 0 OR event_kind = 3 OR event_kind >= 10000 AND event_kind < 2000 do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"event_delegator" = NULL where "events"."event_created_at" < 1564498626')
     })
   })
 })
