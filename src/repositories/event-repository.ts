@@ -208,14 +208,15 @@ export class EventRepository implements IEventRepository {
       .then(prop('rowCount') as () => number)
   }
 
-  public async deleteByPubkeyAndIds(pubkey: string, ids: EventId[]): Promise<number> {
-    const query = this.dbClient('events')
+  public deleteByPubkeyAndIds(pubkey: string, ids: EventId[]): Promise<number> {
+    return this.dbClient('events')
       .where({
-        event_pubkey: pubkey,
+        event_pubkey: toBuffer(pubkey),
       })
-      .whereIn('event_id', ids)
-      .delete()
-
-    return query.then(identity)
+      .whereIn('event_id', map(toBuffer)(ids))
+      .whereNull('deleted_at')
+      .update({
+        deleted_at: this.dbClient.raw('now()'),
+      })
   }
 }
