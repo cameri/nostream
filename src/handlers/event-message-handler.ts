@@ -9,7 +9,7 @@ import { IWebSocketAdapter } from '../@types/adapters'
 export class EventMessageHandler implements IMessageHandler {
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
-    private readonly strategyFactory: Factory<IEventStrategy<Event, Promise<boolean>>, [Event, IWebSocketAdapter]>
+    private readonly strategyFactory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>
   ) { }
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {

@@ -52,7 +52,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
     socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
   }
 
-  private onClose() {
+  protected onClose() {
     console.log('web server closing')
     this.webServer.removeAllListeners()
   }
