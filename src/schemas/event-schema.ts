@@ -35,4 +35,4 @@ export const eventSchema = Schema.object({
     .allow('')
     .required(),
   sig: signatureSchema.required(),
-})
+}).unknown(false)

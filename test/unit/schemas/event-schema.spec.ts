@@ -56,6 +56,14 @@ describe('NIP-01', () => {
       expect(result.value).to.deep.equal(event)
     })
 
+
+    it('returns error if unknown key is provided', () => {
+      Object.assign(event, { unknown: 1 })
+
+      expect(validateSchema(eventSchema)(event)).to.have.nested.property('error.message', '"unknown" is not allowed')
+    })
+
+
     const cases = {
       id: [
         { message: 'must be a string', transform: assocPath(['id'], null) },
