@@ -5,7 +5,7 @@ import { CanonicalEvent, Event } from '../@types/event'
 import { EventKinds, EventTags } from '../constants/base'
 import { fromBuffer } from './transform'
 import { isGenericTagQuery } from './filter'
-import { Rune } from './runes'
+import { RuneLike } from './runes/rune-like'
 import { SubscriptionFilter } from '../@types/subscription'
 
 export const serializeEvent = (event: Partial<Event>): CanonicalEvent => [
@@ -128,7 +128,7 @@ export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
 
   let result: boolean
   try {
-    [result] = Rune.from(delegation[2]).test(runifiedEvent)
+    [result] = RuneLike.from(delegation[2]).test(runifiedEvent)
   } catch (error) {
     result = false
   }
