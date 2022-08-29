@@ -12,6 +12,7 @@ import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { isEventMatchingFilter } from '../utils/event'
 import { messageSchema } from '../schemas/message-schema'
+import { WebSocketAdapterEvent } from '../constants/adapter'
 
 export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter {
   private id: string
@@ -41,11 +42,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on('heartbeat', this.onHeartbeat.bind(this))
       .on('subscribe', this.onSubscribed.bind(this))
       .on('unsubscribe', this.onUnsubscribed.bind(this))
-      .on('broadcast', this.onBroadcast.bind(this))
-  }
-
-  public getWebSocketServer(): IWebSocketServerAdapter {
-    return this.webSocketServer
+      .on(WebSocketAdapterEvent.Send, this.onSend.bind(this))
+      .on(WebSocketAdapterEvent.Broadcast, this.onBroadcast.bind(this))
   }
 
   public onUnsubscribed(subscriptionId: string): void {
@@ -57,6 +55,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public onBroadcast(event: Event): void {
+    this.webSocketServer.emit('broadcast', event)
+  }
+
+  public onSend(event: Event): void {
     this.subscriptions.forEach((filters, subscriptionId) => {
       if (
         Array.from(filters).map(isEventMatchingFilter).some((Matches) => Matches(event))

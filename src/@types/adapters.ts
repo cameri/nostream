@@ -1,13 +1,9 @@
 import { EventEmitter } from 'node:stream'
 import { WebSocket } from 'ws'
 
-import { Event } from './event'
-import { OutgoingMessage } from './messages'
-
-export interface IWebSocketServerAdapter {
+export interface IWebSocketServerAdapter extends EventEmitter {
   getConnectedClients(): number
   getClients(): Set<WebSocket>
-  broadcastEvent(event: Event): Promise<void>
 }
 
 export interface IWebServerAdapter extends EventEmitter {
@@ -15,7 +11,4 @@ export interface IWebServerAdapter extends EventEmitter {
 }
 
 
-export interface IWebSocketAdapter extends EventEmitter {
-  getWebSocketServer(): IWebSocketServerAdapter
-  sendMessage(message: OutgoingMessage): void
-}
+export type IWebSocketAdapter = EventEmitter
