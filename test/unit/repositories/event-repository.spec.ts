@@ -434,4 +434,12 @@ describe('EventRepository', () => {
       expect(query).to.equal('insert into "events" ("event_content", "event_created_at", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags") values (\'I\'\'ve set up mirroring between relays: https://i.imgur.com/HxCDipB.png\', 1648351380, NULL, X\'6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407\', 1, X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\', X\'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768\', \'[["p","8355095016fddbe31fcf1453b26f613553e9758cf2263e190eac8fd96a3d3de9","wss://nostr-pub.wellorder.net"],["e","7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96","wss://nostr-relay.untethr.me"]]\') on conflict do nothing')
     })
   })
+
+  describe('deleteByPubkeyAndIds', () => {
+    it('marks event as deleted by pubkey & event_id if not deleted', () => {
+      const query = repository.deleteByPubkeyAndIds('001122', ['aabbcc', 'ddeeff']).toString()
+
+      expect(query).to.equal('update "events" set "deleted_at" = now() where "event_pubkey" = X\'001122\' and "event_id" in (X\'aabbcc\', X\'ddeeff\') and "deleted_at" is null')
+    })
+  })
 })
