@@ -13,7 +13,7 @@ import { ReplaceableEventStrategy } from '../handlers/event-strategies/replaceab
 
 export const eventStrategyFactory = (
   eventRepository: IEventRepository,
-): Factory<IEventStrategy<Event, Promise<boolean>>, [Event, IWebSocketAdapter]> =>
+): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
   ([event, adapter]: [Event, IWebSocketAdapter]) => {
     if (isReplaceableEvent(event)) {
       return new ReplaceableEventStrategy(adapter, eventRepository)
@@ -22,7 +22,7 @@ export const eventStrategyFactory = (
     } else if (isNullEvent(event)) {
       return new NullEventStrategy()
     } else if (isDeleteEvent(event)) {
-      return new DeleteEventStrategy(eventRepository)
+      return new DeleteEventStrategy(adapter, eventRepository)
     }
 
     return new DefaultEventStrategy(adapter, eventRepository)

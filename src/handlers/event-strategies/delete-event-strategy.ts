@@ -13,22 +13,17 @@ export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>>
   ) { }
 
   public async execute(event: Event): Promise<void> {
+    await this.eventRepository.create(event)
+
     const eTags = event.tags.filter((tag) => tag[0] === EventTags.Event)
 
-    if (!eTags.length) {
-      return
+    if (eTags.length) {
+      await this.eventRepository.deleteByPubkeyAndIds(
+        event.pubkey,
+        eTags.map((tag) => tag[1])
+      )
     }
 
-    const count = await this.eventRepository.create(event)
-    if (!count) {
-      return
-    }
-
-    await this.eventRepository.deleteByPubkeyAndIds(
-      event.pubkey,
-      eTags.map((tag) => tag[1])
-    )
     this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
   }
-
 }
