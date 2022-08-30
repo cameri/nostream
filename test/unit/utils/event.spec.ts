@@ -9,7 +9,6 @@ import {
   isEventIdValid,
   isEventMatchingFilter,
   isEventSignatureValid,
-  isNullEvent,
   isReplaceableEvent,
   serializeEvent,
 } from '../../../src/utils/event'
@@ -334,16 +333,6 @@ describe('NIP-16', () => {
     it('returns false if event is not replaceable', () => {
       expect(isEphemeralEvent({ kind: 30000 } as any)).to.be.false
     })
-  })
-})
-
-describe('isNullEvent', () => {
-  it('returns true if kind equals max safe integer', () => {
-    expect(isNullEvent({ kind: Number.MAX_SAFE_INTEGER } as any)).to.be.true
-  })
-
-  it('returns false if kind does not equal max safe integer', () => {
-    expect(isNullEvent({ kind: Number.MAX_SAFE_INTEGER - 1 } as any)).to.be.false
   })
 })
 
