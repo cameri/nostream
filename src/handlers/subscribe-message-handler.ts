@@ -10,6 +10,7 @@ import { Event } from '../@types/event'
 import { IEventRepository } from '../@types/repositories'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { SubscribeMessage } from '../@types/messages'
+import { WebSocketAdapterEvent } from '../constants/adapter'
 
 
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
@@ -30,10 +31,12 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const subscriptionId = message[1] as SubscriptionId
     const filters = message.slice(2) as SubscriptionFilter[]
 
-    this.webSocket.emit('subscribe', subscriptionId, new Set(filters))
+    this.webSocket.emit(WebSocketAdapterEvent.Subscribe, subscriptionId, new Set(filters))
 
-    const sendEvent = (event: Event) => this.webSocket.sendMessage(createOutgoingEventMessage(subscriptionId, event))
-    const sendEOSE = () => this.webSocket.sendMessage(createEndOfStoredEventsNoticeMessage(subscriptionId))
+    const sendEvent = (event: Event) =>
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createOutgoingEventMessage(subscriptionId, event))
+    const sendEOSE = () =>
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEndOfStoredEventsNoticeMessage(subscriptionId))
 
     const findEvents = this.eventRepository.findByFilters(filters).stream()
     try {

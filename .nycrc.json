@@ -33,7 +33,8 @@
   ],
   "exclude": [
     "src/@types",
-    "src/constants"
+    "src/constants",
+    "src/database"
   ],
   "require": [
     "ts-node/register",
