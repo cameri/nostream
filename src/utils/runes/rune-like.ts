@@ -1,9 +1,10 @@
+import { IRestriction, IRuneLike } from '../../@types/runes'
 import { Restriction } from './restriction'
 
 
-export class RuneLike {
+export class RuneLike implements IRuneLike {
   public constructor(
-    private readonly restrictions: Restriction[] = []
+    private readonly restrictions: IRestriction[]
   ) { }
 
   public test(values: Record<string, unknown>): [boolean, string] {
@@ -17,13 +18,13 @@ export class RuneLike {
     return [true, '']
   }
 
-  public encode() {
+  public encode(): string {
     return this.restrictions.map((restriction) => restriction.encode()).join('&')
   }
 
-  public static from(encodedStr: string): RuneLike {
-    const restrictions: Restriction[] = []
-    let restriction: Restriction
+  public static from(encodedStr: string): IRuneLike {
+    const restrictions: IRestriction[] = []
+    let restriction: IRestriction
     let encStr = encodedStr.replace(/\s+/g, '')
 
     while (encStr.length) {

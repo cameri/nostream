@@ -1,3 +1,4 @@
+import { IAlternative } from '../../@types/runes'
 
 const punctuations = /[!"#\$%&'()*+-.\/:;<=>?@\[\\\]^`{|}~]/
 
@@ -5,7 +6,7 @@ const hasPunctuation = (input) => punctuations.test(input)
 
 // Reference: https://github.com/rustyrussell/runes/blob/master/runes/runes.py
 
-export class Alternative {
+export class Alternative implements IAlternative {
   public constructor(
     private readonly field: string,
     private readonly cond: string,
@@ -78,7 +79,7 @@ export class Alternative {
     return `${this.field}${this.cond}${this.value.replace(/[\\|&]/g, '\\$&')}`
   }
 
-  public static decode(encodedStr: string): [Alternative, string] {
+  public static decode(encodedStr: string): [IAlternative, string] {
     let cond = undefined
     let endOff = 0
 
@@ -118,7 +119,7 @@ export class Alternative {
     return [new Alternative(field, cond, value), encodedStr.slice(endOff)]
   }
 
-  public static from(encodedStr: string): Alternative {
+  public static from(encodedStr: string): IAlternative {
     const [field, cond, value] = encodedStr.replace(/\s+/g, '').split(new RegExp(`(${punctuations.source})`, 'g'))
 
     return new Alternative(field, cond, value)

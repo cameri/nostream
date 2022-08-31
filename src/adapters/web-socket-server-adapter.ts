@@ -36,13 +36,23 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     this.heartbeatInterval = setInterval(this.onHeartbeat.bind(this), WSS_CLIENT_HEALTH_PROBE_INTERVAL)
   }
 
+  public async terminate(): Promise<void> {
+    return void Promise.all(
+      [
+        ...Array.from(this.webSocketServer.clients).map((webSocket: WebSocket) =>
+          webSocket.terminate()
+        ),
+      ],
+    )
+  }
+
   private onBroadcast(event: Event) {
     this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
       if (!propEq('readyState', OPEN)(webSocket)) {
         return
       }
 
-      this.webSocketsAdapters.get(webSocket).emit(WebSocketAdapterEvent.Send, event)
+      this.webSocketsAdapters.get(webSocket).emit(WebSocketAdapterEvent.Event, event)
     })
   }
 
@@ -62,14 +72,19 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
 
   private onHeartbeat() {
     console.debug(`heartbeat - ${this.getConnectedClients()} connected / ${this.webSocketServer.clients.size} total`)
-    this.webSocketServer.clients.forEach((webSocket) => this.webSocketsAdapters.get(webSocket).emit('heartbeat'))
+    this.webSocketServer.clients.forEach((webSocket) =>
+      this.webSocketsAdapters.get(webSocket).emit(WebSocketAdapterEvent.Heartbeat)
+    )
   }
 
   protected onClose() {
+    this.webSocketServer.clients.forEach((webSocket: WebSocket) =>
+
+      webSocket.terminate()
+    )
     console.debug('websocket server closing')
     clearInterval(this.heartbeatInterval)
     this.webSocketServer.removeAllListeners()
     super.onClose()
   }
-
 }

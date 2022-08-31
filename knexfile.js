@@ -7,7 +7,7 @@ module.exports = {
     password: process.env.DB_PASSWORD ?? 'postgres',
     database: process.env.DB_NAME ?? 'nostr-ts-relay',
   },
-  pool: { min: 0, max: 7 },
+  pool: { min: 4, max: 16 },
   seeds: {
     directory: './seeds',
   },

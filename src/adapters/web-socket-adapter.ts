@@ -6,13 +6,13 @@ import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, OutgoingMessage } from '../@types/messages'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
+import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
 import { attemptValidation } from '../utils/validation'
 import { createOutgoingEventMessage } from '../utils/messages'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { isEventMatchingFilter } from '../utils/event'
 import { messageSchema } from '../schemas/message-schema'
-import { WebSocketAdapterEvent } from '../constants/adapter'
 
 export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter {
   private id: string
@@ -39,11 +39,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on('pong', this.onClientPong.bind(this))
 
     this
-      .on('heartbeat', this.onHeartbeat.bind(this))
-      .on('subscribe', this.onSubscribed.bind(this))
-      .on('unsubscribe', this.onUnsubscribed.bind(this))
-      .on(WebSocketAdapterEvent.Send, this.onSend.bind(this))
+      .on(WebSocketAdapterEvent.Heartbeat, this.onHeartbeat.bind(this))
+      .on(WebSocketAdapterEvent.Subscribe, this.onSubscribed.bind(this))
+      .on(WebSocketAdapterEvent.Unsubscribe, this.onUnsubscribed.bind(this))
+      .on(WebSocketAdapterEvent.Event, this.onSendEvent.bind(this))
       .on(WebSocketAdapterEvent.Broadcast, this.onBroadcast.bind(this))
+      .on(WebSocketAdapterEvent.Message, this.onSendMessage.bind(this))
   }
 
   public onUnsubscribed(subscriptionId: string): void {
@@ -55,10 +56,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public onBroadcast(event: Event): void {
-    this.webSocketServer.emit('broadcast', event)
+    this.webSocketServer.emit(WebSocketServerAdapterEvent.Broadcast, event)
   }
 
-  public onSend(event: Event): void {
+  public onSendEvent(event: Event): void {
     this.subscriptions.forEach((filters, subscriptionId) => {
       if (
         Array.from(filters).map(isEventMatchingFilter).some((Matches) => Matches(event))
@@ -68,8 +69,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     })
   }
 
-  public sendMessage(message: OutgoingMessage): void {
+  private sendMessage(message: OutgoingMessage): void {
     this.client.send(JSON.stringify(message))
+  }
+
+  private onSendMessage(message: OutgoingMessage): void {
+    this.sendMessage(message)
   }
 
   public onHeartbeat(): void {

@@ -172,10 +172,6 @@ export const isEphemeralEvent = (event: Event): boolean => {
   return event.kind >= 20000 && event.kind < 30000
 }
 
-export const isNullEvent = (event: Event): boolean => {
-  return event.kind === Number.MAX_SAFE_INTEGER
-}
-
 export const isDeleteEvent = (event: Event): boolean => {
   return event.kind === EventKinds.DELETE
 }
