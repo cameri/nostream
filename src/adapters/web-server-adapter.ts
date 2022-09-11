@@ -53,7 +53,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   }
 
   protected onClose() {
-    console.log('web server closing')
+    console.log(`worker ${process.pid} web server closing`)
     this.webServer.removeAllListeners()
   }
 }
