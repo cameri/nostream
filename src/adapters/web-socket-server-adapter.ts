@@ -28,10 +28,12 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
 
     this.webSocketsAdapters = new WeakMap()
 
-    this.webSocketServer
-      .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))
-      .on(WebSocketServerAdapterEvent.Close, this.onClose.bind(this))
+    this
       .on(WebSocketServerAdapterEvent.Broadcast, this.onBroadcast.bind(this))
+
+    this.webSocketServer
+      .on(WebSocketServerAdapterEvent.Close, this.onClose.bind(this))
+      .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))
 
     this.heartbeatInterval = setInterval(this.onHeartbeat.bind(this), WSS_CLIENT_HEALTH_PROBE_INTERVAL)
   }
@@ -56,33 +58,27 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     })
   }
 
-  public getClients(): Set<WebSocket.WebSocket> {
-    return this.webSocketServer.clients
-  }
-
   public getConnectedClients(): number {
     return Array.from(this.webSocketServer.clients).filter(propEq('readyState', OPEN)).length
   }
 
   private onConnection(client: WebSocket, req: IncomingMessage) {
-    console.debug(`new client - ${this.getConnectedClients()} connected / ${this.webSocketServer.clients.size} total`)
-
+    console.debug(`worker ${process.pid} - new client - ${this.webSocketServer.clients.size} clients`)
     this.webSocketsAdapters.set(client, this.createWebSocketAdapter([client, req, this]))
   }
 
   private onHeartbeat() {
-    console.debug(`heartbeat - ${this.getConnectedClients()} connected / ${this.webSocketServer.clients.size} total`)
     this.webSocketServer.clients.forEach((webSocket) =>
       this.webSocketsAdapters.get(webSocket).emit(WebSocketAdapterEvent.Heartbeat)
     )
   }
 
+
   protected onClose() {
     this.webSocketServer.clients.forEach((webSocket: WebSocket) =>
-
       webSocket.terminate()
     )
-    console.debug('websocket server closing')
+    console.debug(`worker ${process.pid} - websocket server closing`)
     clearInterval(this.heartbeatInterval)
     this.webSocketServer.removeAllListeners()
     super.onClose()

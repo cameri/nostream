@@ -20,6 +20,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private alive: boolean
   private subscriptions: Map<SubscriptionId, Set<SubscriptionFilter>>
 
+  private sent = 0
+  private received = 0
+
   public constructor(
     private readonly client: WebSocket,
     private readonly request: IncomingHttpMessage,
@@ -30,8 +33,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.alive = true
     this.subscriptions = new Map()
 
-    this.id = Buffer.from(request.headers['sec-websocket-key'], 'base64').toString('hex')
-    this.clientAddress = request.headers['x-forwarded-for'] as string
+    this.id = Buffer.from(this.request.headers['sec-websocket-key'], 'base64').toString('hex')
+    this.clientAddress = this.request.headers['x-forwarded-for'] as string
 
     this.client
       .on('message', this.onClientMessage.bind(this))
@@ -70,6 +73,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private sendMessage(message: OutgoingMessage): void {
+    this.sent++
     this.client.send(JSON.stringify(message))
   }
 
@@ -92,6 +96,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private terminate(): void {
+    console.debug(`worker ${process.pid} - terminating client`)
     this.client.terminate()
   }
 
@@ -106,14 +111,16 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         this.client.prependOnceListener('close', abort)
       }
 
+      this.received++
+
       await messageHandler?.handleMessage(message)
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        console.error('Message handler aborted')
+        console.error(`worker ${process.pid} - message handler aborted`)
       } else if (error instanceof Error && error.name === 'ValidationError') {
-        console.error('Invalid message', (error as any).annotate())
+        console.error(`worker ${process.pid} -  invalid message`, (error as any).annotate())
       } else {
-        console.error(`Unable to handle message: ${error.message}`)
+        console.error(`worker ${process.pid} - unable to handle message: ${error.message}`)
       }
     } finally {
       if (abort) {
@@ -128,8 +135,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   private onClientClose(code: number) {
     this.alive = false
-    const connected = this.webSocketServer.getConnectedClients()
-    console.debug(`client disconnected code ${code} - ${connected}/${this.webSocketServer.getClients().size} clients connected`)
+    console.debug(`worker ${process.pid} - client disconnected with code ${code}`)
 
     this.removeAllListeners()
     this.client.removeAllListeners()
