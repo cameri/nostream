@@ -10,10 +10,11 @@ interface Info {
 }
 
 interface EventIdLimits {
-  minimumZeroBits?: number
+  minLeadingZeroBits?: number
 }
 
 interface PubkeyLimits {
+  minLeadingZeroBits: number
   whitelist?: Pubkey[]
   blacklist?: Pubkey[]
 }
@@ -27,11 +28,11 @@ interface CreatedAtLimits {
   /**
    * Maximum number of seconds allowed before the current unix timestamp
    */
-  maximumNegativeDelta?: number
+  maxNegativeDelta?: number
   /**
    * Maximum number of seconds allowed after the current unix timestamp
    */
-  maximumPositiveDelta?: number
+  maxPositiveDelta?: number
 }
 
 interface EventLimits {
@@ -42,8 +43,8 @@ interface EventLimits {
 }
 
 interface ClientSubscriptionLimits {
-  maximumCount?: number
-  maximumFilters?: number
+  maxSubscriptions?: number
+  maxFilters?: number
 }
 
 interface ClientLimits {
