@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:stream'
+import { SubscriptionFilter } from './subscription'
 
 export interface IWebSocketServerAdapter extends EventEmitter {
   getConnectedClients(): number
@@ -10,4 +11,6 @@ export interface IWebServerAdapter extends EventEmitter {
 }
 
 
-export type IWebSocketAdapter = EventEmitter
+export type IWebSocketAdapter = EventEmitter & {
+  getSubscriptions(): Map<string, Set<SubscriptionFilter>>
+}

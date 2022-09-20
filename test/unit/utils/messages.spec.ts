@@ -1,12 +1,12 @@
 import { expect } from 'chai'
 
-import { createEndOfStoredEventsNoticeMessage, createNotice, createOutgoingEventMessage } from '../../../src/utils/messages'
+import { createEndOfStoredEventsNoticeMessage, createNoticeMessage, createOutgoingEventMessage } from '../../../src/utils/messages'
 import { Event } from '../../../src/@types/event'
 import { MessageType } from '../../../src/@types/messages'
 
 describe('createNotice', () => {
   it('returns a notice message', () => {
-    expect(createNotice('some notice')).to.deep.equal([MessageType.NOTICE, 'some notice'])
+    expect(createNoticeMessage('some notice')).to.deep.equal([MessageType.NOTICE, 'some notice'])
   })
 })
 
