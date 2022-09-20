@@ -14,11 +14,12 @@ export type IncomingMessage =
   | SubscribeMessage
   | IncomingEventMessage
   | UnsubscribeMessage
-  | Notice
+
 
 export type OutgoingMessage =
   | OutgoingEventMessage
   | EndOfStoredEventsNotice
+  | NoticeMessage
 
 export type SubscribeMessage = {
   [index in Range<2, 100>]: SubscriptionFilter
@@ -44,7 +45,7 @@ export interface UnsubscribeMessage {
   1: SubscriptionId
 }
 
-export interface Notice {
+export interface NoticeMessage {
   0: MessageType.NOTICE
   1: string
 }
