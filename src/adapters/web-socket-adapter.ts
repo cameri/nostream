@@ -2,13 +2,13 @@ import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
 import { WebSocket } from 'ws'
 
+import { createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, OutgoingMessage } from '../@types/messages'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
 import { attemptValidation } from '../utils/validation'
-import { createOutgoingEventMessage } from '../utils/messages'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { isEventMatchingFilter } from '../utils/event'
@@ -119,6 +119,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         console.error(`worker ${process.pid} - message handler aborted`)
       } else if (error instanceof Error && error.name === 'ValidationError') {
         console.error(`worker ${process.pid} -  invalid message`, (error as any).annotate())
+        this.sendMessage(createNoticeMessage(`Invalid message: ${error.message}`))
       } else {
         console.error(`worker ${process.pid} - unable to handle message: ${error.message}`)
       }
