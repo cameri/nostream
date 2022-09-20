@@ -73,13 +73,13 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     )
   }
 
-
   protected onClose() {
     this.webSocketServer.clients.forEach((webSocket: WebSocket) =>
       webSocket.terminate()
     )
     console.debug(`worker ${process.pid} - websocket server closing`)
     clearInterval(this.heartbeatInterval)
+    this.removeAllListeners()
     this.webSocketServer.removeAllListeners()
     super.onClose()
   }
