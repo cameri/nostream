@@ -79,5 +79,17 @@ export class EventMessageHandler implements IMessageHandler {
         return `insufficient proof of work: pubkey has less than ${limits.pubkey.minLeadingZeroBits} leading zero bits`
       }
     }
+
+    if (limits.kind.blacklist.length > 0) {
+      if (limits.kind.blacklist.includes(event.kind)) {
+        return `event kind ${event.kind} is not allowed`
+      }
+    }
+
+    if (limits.kind.whitelist.length > 0) {
+      if (!limits.kind.whitelist.includes(event.kind)) {
+        return `event kind ${event.kind} is not allowed`
+      }
+    }
   }
 }
