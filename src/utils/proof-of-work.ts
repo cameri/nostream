@@ -14,13 +14,13 @@ export function getLeadingZeroBits(hash: Buffer) {
 function msb(b: number) {
   let n = 0
 
-	if (b == 0) {
-		return 8
+  if (b == 0) {
+    return 8
   }
 
-	while (b >>= 1) {
-		n++
+  while (b >>= 1) {
+    n++
   }
 
-	return 7 - n
+  return 7 - n
 }
