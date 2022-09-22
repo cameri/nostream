@@ -16,12 +16,11 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
 - [x] NIP-12: Generic tag queries
-- [ ] NIP-13: Proof of Work
+- [x] NIP-13: Proof of Work
 - [x] NIP-15: End of Stored Events Notice
 - [x] NIP-16: Event Treatment
-- [ ] NIP-25: Reactions
-- [x] NIP-26: Delegated Event Signing
-- [ ] NIP-27: Restricted Events (Experimental)
+- [x] NIP-22: Event `created_at` Limits
+- [x] NIP-26: Delegated Event Signing (DRAFT)
 
 ## Requirements
 

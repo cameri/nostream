@@ -1,6 +1,6 @@
 {
   "name": "nostr-ts-relay",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A nostr relay written in Typescript.",
   "main": "src/index.ts",
   "scripts": {
@@ -61,12 +61,12 @@
     "uuid": "^8.3.2"
   },
   "dependencies": {
-    "@noble/secp256k1": "1.6.3",
-    "joi": "^17.6.0",
-    "knex": "^2.0.0",
-    "pg": "^8.7.3",
+    "@noble/secp256k1": "1.7.0",
+    "joi": "17.6.1",
+    "knex": "2.3.0",
+    "pg": "8.8.0",
     "pg-query-stream": "4.2.3",
-    "ramda": "^0.28.0",
-    "ws": "^8.5.0"
+    "ramda": "0.28.0",
+    "ws": "8.9.0"
   }
 }
