@@ -38,7 +38,7 @@ const getDefaultSettings = (): ISettings => ({
       },
       createdAt: {
         maxPositiveDelta: 900, // +15 min
-        maxNegativeDelta: 31536000, // -1 year
+        maxNegativeDelta: 0, // disabled
       },
     },
     client: {

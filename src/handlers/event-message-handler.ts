@@ -1,6 +1,6 @@
 import { EventDelegatorMetadataKey, EventTags } from '../constants/base'
+import { getEventProofOfWork, getPubkeyProofOfWork, isDelegatedEvent, isDelegatedEventValid, isEventIdValid, isEventSignatureValid } from '../utils/event'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
-import { isDelegatedEvent, isDelegatedEventValid, isEventIdValid, isEventSignatureValid } from '../utils/event'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { IncomingEventMessage } from '../@types/messages'
@@ -65,6 +65,18 @@ export class EventMessageHandler implements IMessageHandler {
     if (limits.createdAt.maxNegativeDelta > 0) {
       if (event.created_at < now - limits.createdAt.maxNegativeDelta) {
         return `created_at is more than ${limits.createdAt.maxNegativeDelta} seconds in the past`
+      }
+    }
+
+    if (limits.eventId.minLeadingZeroBits > 0) {
+      if (getEventProofOfWork(event) < limits.eventId.minLeadingZeroBits) {
+        return `insufficient proof of work: eventId has less than ${limits.eventId.minLeadingZeroBits} leading zero bits`
+      }
+    }
+
+    if (limits.pubkey.minLeadingZeroBits > 0) {
+      if (getPubkeyProofOfWork(event.pubkey) < limits.pubkey.minLeadingZeroBits) {
+        return `insufficient proof of work: pubkey has less than ${limits.pubkey.minLeadingZeroBits} leading zero bits`
       }
     }
   }
