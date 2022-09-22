@@ -4,7 +4,9 @@ import { applySpec, converge, curry, mergeLeft, nth, omit, pipe, prop, reduceBy 
 import { CanonicalEvent, Event } from '../@types/event'
 import { EventKinds, EventTags } from '../constants/base'
 import { fromBuffer } from './transform'
+import { getLeadingZeroBits } from './proof-of-work'
 import { isGenericTagQuery } from './filter'
+import { Pubkey } from '../@types/base'
 import { RuneLike } from './runes/rune-like'
 import { SubscriptionFilter } from '../@types/subscription'
 
@@ -135,7 +137,7 @@ export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
 
   if (!result) {
     return false
-  }  
+  }
 
   const serializedDelegationTag = `nostr:${delegation[0]}:${event.pubkey}:${delegation[2]}`
 
@@ -174,4 +176,12 @@ export const isEphemeralEvent = (event: Event): boolean => {
 
 export const isDeleteEvent = (event: Event): boolean => {
   return event.kind === EventKinds.DELETE
+}
+
+export const getEventProofOfWork = (event: Event): number => {
+  return getLeadingZeroBits(Buffer.from(event.id, 'hex'))
+}
+
+export const getPubkeyProofOfWork = (pubkey: Pubkey): number => {
+  return getLeadingZeroBits(Buffer.from(pubkey, 'hex'))
 }
