@@ -70,13 +70,25 @@ export class EventMessageHandler implements IMessageHandler {
 
     if (limits.eventId.minLeadingZeroBits > 0) {
       if (getEventProofOfWork(event) < limits.eventId.minLeadingZeroBits) {
-        return `insufficient proof of work: eventId has less than ${limits.eventId.minLeadingZeroBits} leading zero bits`
+        return `insufficient proof of work: event Id has less than ${limits.eventId.minLeadingZeroBits} leading zero bits`
       }
     }
 
     if (limits.pubkey.minLeadingZeroBits > 0) {
       if (getPubkeyProofOfWork(event.pubkey) < limits.pubkey.minLeadingZeroBits) {
         return `insufficient proof of work: pubkey has less than ${limits.pubkey.minLeadingZeroBits} leading zero bits`
+      }
+    }
+
+    if (limits.pubkey.blacklist.length > 0) {
+      if (limits.pubkey.blacklist.includes(event.pubkey)) {
+        return `pubkey ${event.pubkey} is not allowed`
+      }
+    }
+
+    if (limits.pubkey.whitelist.length > 0) {
+      if (!limits.pubkey.whitelist.includes(event.pubkey)) {
+        return `pubkey ${event.pubkey} is not allowed`
       }
     }
 
