@@ -4,14 +4,15 @@ import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { IncomingEventMessage } from '../@types/messages'
+import { ISettings } from '../@types/settings'
 import { IWebSocketAdapter } from '../@types/adapters'
-import { Settings } from '../utils/settings'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
 export class EventMessageHandler implements IMessageHandler {
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
-    private readonly strategyFactory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>
+    private readonly strategyFactory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>,
+    private readonly settings: ISettings
   ) { }
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
@@ -55,7 +56,7 @@ export class EventMessageHandler implements IMessageHandler {
 
   private canAcceptEvent(event: Event): string | undefined {
     const now = Math.floor(Date.now()/1000)
-    const limits = Settings.limits.event
+    const limits = this.settings.limits.event
     if (limits.createdAt.maxPositiveDelta > 0) {
       if (event.created_at > now + limits.createdAt.maxPositiveDelta) {
         return `created_at is more than ${limits.createdAt.maxPositiveDelta} seconds in the future`
