@@ -7,19 +7,19 @@
     "dev": "ts-node src/index.ts",
     "dev:watch": "nodemon --watch src src/index.ts",
     "clean": "rimraf ./dist",
-    "prebuild": "npm run lint",
-    "build": "npm run clean && tsc",
+    "build": "tsc --project tsconfig.build.json",
     "build:check": "tsc --noEmit",
     "lint": "eslint ./src ./test --ext .ts",
     "lint:fix": "npm run lint -- --fix",
     "db:migrate": "knex migrate:latest",
     "db:migrate:rollback": "knex migrate:rollback",
     "db:seed": "knex seed:run",
-    "start": "npm run build && node dist/index.js",
+    "start": "node dist/index.js",
     "test": "mocha 'test/**/*.spec.ts'",
     "test:watch": "npm run test -- --min --watch --watch-files src/**/*,test/**/*",
     "cover": "nyc npm run test",
-    "cover:watch": "nyc npm run test"
+    "cover:watch": "nyc npm run test",
+    "docker:build": "docker build -t nostr-ts-relay ."
   },
   "repository": {
     "type": "git",
