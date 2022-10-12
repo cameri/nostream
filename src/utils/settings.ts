@@ -1,4 +1,4 @@
-import { copyFileSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import cluster from 'cluster'
 import { homedir } from 'os'
 import { join } from 'path'
@@ -67,6 +67,11 @@ const createSettings = (): ISettings => {
     if (_settings) {
       return _settings
     }
+
+    if (!existsSync(path)) {
+      saveSettings(path, defaults)
+    }
+
     _settings = mergeDeepRight(defaults, loadSettings(path))
 
     return _settings
