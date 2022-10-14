@@ -45,6 +45,16 @@ if (cluster.isPrimary) {
     process.exit(0)
   }
 
+  cluster.on('message', (source, message) => {
+    for (const worker of Object.values(cluster.workers)) {
+      if (source.id === worker.id) {
+        continue
+      }
+
+      worker.send(message)
+    }
+  })
+
   process.on('SIGINT', exitHandler)
   process.on('uncaughtException', exitHandler)
 } else if (cluster.isWorker) {
@@ -75,6 +85,10 @@ if (cluster.isPrimary) {
 
   process.on('SIGINT', exitHandler)
   process.on('uncaughtException', exitHandler)
+
+  process.on('message', (message: { eventName: string, event: unknown }) => {
+    adapter.emit(message.eventName, message.event)
+  })
 
   console.log(`worker ${process.pid} - listening on port ${port}`)
 }
