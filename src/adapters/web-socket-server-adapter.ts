@@ -34,7 +34,10 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     this.webSocketServer
       .on(WebSocketServerAdapterEvent.Close, this.onClose.bind(this))
       .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))
-
+      .on('error', (err) => {
+        console.error('error', err)
+        throw err
+      })
     this.heartbeatInterval = setInterval(this.onHeartbeat.bind(this), WSS_CLIENT_HEALTH_PROBE_INTERVAL)
   }
 
