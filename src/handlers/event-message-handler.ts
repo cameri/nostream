@@ -1,44 +1,37 @@
-import { EventDelegatorMetadataKey, EventTags } from '../constants/base'
-import { getEventProofOfWork, getPubkeyProofOfWork, isDelegatedEvent, isDelegatedEventValid, isEventIdValid, isEventSignatureValid } from '../utils/event'
+import { EventKindsRange, ISettings } from '../@types/settings'
+import { getEventProofOfWork, getPubkeyProofOfWork, isEventIdValid, isEventSignatureValid } from '../utils/event'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
+import { createNoticeMessage } from '../utils/messages'
 import { Event } from '../@types/event'
+import { EventKinds } from '../constants/base'
 import { Factory } from '../@types/base'
 import { IncomingEventMessage } from '../@types/messages'
-import { ISettings } from '../@types/settings'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
 export class EventMessageHandler implements IMessageHandler {
   public constructor(
-    private readonly webSocket: IWebSocketAdapter,
-    private readonly strategyFactory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>,
+    protected readonly webSocket: IWebSocketAdapter,
+    protected readonly strategyFactory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>,
     private readonly settings: ISettings
   ) { }
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
     const [, event] = message
 
-    const reason = this.canAcceptEvent(event)
+    console.debug('Received event', event)
+
+    let reason = await this.isEventValid(event)
     if (reason) {
-      this.webSocket.emit(WebSocketAdapterEvent.Message, `Event rejected: ${reason}`)
-      console.error(`Event ${event.id} rejected. Reason: ${reason}`)
+      console.warn(`Event ${event.id} rejected. Reason: ${reason}`)
       return
     }
 
-    console.log('Received event:', event)
-    if (!await isEventSignatureValid(event) || !isEventIdValid(event)) {
-      console.warn(`Event ${event.id} from ${event.pubkey} with signature ${event.sig} is not valid`)
+    reason = this.canAcceptEvent(event)
+    if (reason) {
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Event rejected: ${reason}`))
+      console.warn(`Event ${event.id} rejected. Reason: ${reason}`)
       return
-    }
-
-    if (isDelegatedEvent(event)) {
-      if (await isDelegatedEventValid(event)) {
-        const [, delegator] = event.tags.find((tag) => tag.length === 4 && tag[0] === EventTags.Delegation)
-        event[EventDelegatorMetadataKey] = delegator
-      } else {
-        console.warn(`Delegated event ${event.id} from ${event.pubkey} is not valid`)
-        return
-      }
     }
 
     const strategy = this.strategyFactory([event, this.webSocket])
@@ -54,7 +47,7 @@ export class EventMessageHandler implements IMessageHandler {
     }
   }
 
-  private canAcceptEvent(event: Event): string | undefined {
+  protected canAcceptEvent(event: Event): string | undefined {
     const now = Math.floor(Date.now()/1000)
     const limits = this.settings.limits.event
     if (limits.createdAt.maxPositiveDelta > 0) {
@@ -81,28 +74,42 @@ export class EventMessageHandler implements IMessageHandler {
       }
     }
 
-    if (limits.pubkey.blacklist.length > 0) {
-      if (limits.pubkey.blacklist.includes(event.pubkey)) {
+    if (limits.pubkey.whitelist.length > 0) {
+      if (!limits.pubkey.whitelist.some((prefix) => event.pubkey.startsWith(prefix))) {
         return `pubkey ${event.pubkey} is not allowed`
       }
     }
 
-    if (limits.pubkey.whitelist.length > 0) {
-      if (!limits.pubkey.whitelist.includes(event.pubkey)) {
+    if (limits.pubkey.blacklist.length > 0) {
+      if (limits.pubkey.blacklist.some((prefix) => event.pubkey.startsWith(prefix))) {
         return `pubkey ${event.pubkey} is not allowed`
+      }
+    }
+
+    const isEventKindMatch = (item: EventKinds | EventKindsRange) =>
+      typeof item === 'number'
+      ? item === event.kind
+      : event.kind >= item[0] && event.kind <= item[1]
+
+    if (limits.kind.whitelist.length > 0) {
+      if (!limits.kind.whitelist.some(isEventKindMatch)) {
+        return `event kind ${event.kind} is not allowed`
       }
     }
 
     if (limits.kind.blacklist.length > 0) {
-      if (limits.kind.blacklist.includes(event.kind)) {
+      if (limits.kind.blacklist.some(isEventKindMatch)) {
         return `event kind ${event.kind} is not allowed`
       }
     }
+  }
 
-    if (limits.kind.whitelist.length > 0) {
-      if (!limits.kind.whitelist.includes(event.kind)) {
-        return `event kind ${event.kind} is not allowed`
-      }
+  protected async isEventValid(event: Event): Promise<string | undefined> {
+    if (!await isEventIdValid(event)) {
+      return `Event with id ${event.id} from ${event.pubkey} is not valid`
+    }
+    if (!await isEventSignatureValid(event)) {
+      return `Event with id ${event.id} from ${event.pubkey} has invalid signature`
     }
   }
 }

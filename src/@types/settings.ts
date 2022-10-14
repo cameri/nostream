@@ -1,7 +1,7 @@
 import { EventKinds } from '../constants/base'
 import { Pubkey } from './base'
 
-interface Info {
+export interface Info {
   relay_url?: string
   name?: string
   description?: string
@@ -9,22 +9,24 @@ interface Info {
   contact?: string
 }
 
-interface EventIdLimits {
+export interface EventIdLimits {
   minLeadingZeroBits?: number
 }
 
-interface PubkeyLimits {
+export interface PubkeyLimits {
   minLeadingZeroBits: number
   whitelist?: Pubkey[]
   blacklist?: Pubkey[]
 }
 
-interface KindLimits {
-  whitelist?: EventKinds[]
-  blacklist?: EventKinds[]
+export type EventKindsRange = [EventKinds, EventKinds]
+
+export interface KindLimits {
+  whitelist?: (EventKinds | EventKindsRange)[]
+  blacklist?: (EventKinds | EventKindsRange)[]
 }
 
-interface CreatedAtLimits {
+export interface CreatedAtLimits {
   /**
    * Maximum number of seconds allowed before the current unix timestamp
    */
@@ -35,23 +37,23 @@ interface CreatedAtLimits {
   maxPositiveDelta?: number
 }
 
-interface EventLimits {
+export interface EventLimits {
   eventId?: EventIdLimits
   pubkey?: PubkeyLimits
   kind?: KindLimits
   createdAt?: CreatedAtLimits
 }
 
-interface ClientSubscriptionLimits {
+export interface ClientSubscriptionLimits {
   maxSubscriptions?: number
   maxFilters?: number
 }
 
-interface ClientLimits {
+export interface ClientLimits {
   subscription?: ClientSubscriptionLimits
 }
 
-interface Limits {
+export interface Limits {
   client?: ClientLimits
   event?: EventLimits
 }
