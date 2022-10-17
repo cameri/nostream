@@ -17,28 +17,32 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "ts-node src/index.ts",
-    "dev:watch": "nodemon --watch src src/index.ts",
     "clean": "rimraf ./dist",
     "build": "tsc --project tsconfig.build.json",
-    "build:check": "tsc --noEmit",
+    "prestart": "npm run build",
+    "start": "cd dist && node src/index.js",
+    "build:check": "npm run build -- --noEmit",
     "lint": "eslint ./src ./test --ext .ts",
     "lint:fix": "npm run lint -- --fix",
     "db:migrate": "knex migrate:latest",
     "db:migrate:rollback": "knex migrate:rollback",
     "db:seed": "knex seed:run",
-    "start": "node dist/index.js",
     "test": "mocha 'test/**/*.spec.ts'",
     "test:watch": "npm run test -- --min --watch --watch-files src/**/*,test/**/*",
     "cover": "nyc npm run test",
-    "cover:watch": "nyc npm run test",
-    "docker:build": "docker build -t nostr-ts-relay ."
+    "docker:build": "docker build -t nostr-ts-relay .",
+    "predocker:compose:up": "[ -d \"$HOME/.nostr\" ] || mkdir -p $HOME/.nostr",
+    "docker:compose:up": "NOSTR_CONFIG_DIR=$HOME/.nostrx docker compose up --build",
+    "docker:compose:down": "docker compose down",
+    "docker:compose:rm": "docker compose rm"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Cameri/nostr-ts-relay.git"
   },
   "keywords": [
-    "nostr"
+    "nostr",
+    "relay"
   ],
   "author": "Ricardo Arturo Cabral Mejía",
   "license": "MIT",
@@ -67,15 +71,15 @@
     "rimraf": "^3.0.2",
     "sinon-chai": "^3.7.0",
     "source-map-support": "^0.5.21",
-    "ts-node": "^10.7.0",
+    "ts-node": "^10.9.1",
     "ts-node-dev": "^1.1.8",
-    "typescript": "^4.6.3",
+    "typescript": "4.6",
     "uuid": "^8.3.2"
   },
   "dependencies": {
     "@noble/secp256k1": "1.7.0",
     "joi": "17.6.1",
-    "knex": "2.3.0",
+    "knex": "^2.3.0",
     "pg": "8.8.0",
     "pg-query-stream": "4.2.3",
     "ramda": "0.28.0",
