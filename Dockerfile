@@ -1,10 +1,10 @@
-FROM node:18-alpine3.15 as build
+FROM node:18-alpine3.16 as build
 
 WORKDIR /build
 
 COPY ["package.json", "package-lock.json", "./"]
 
-RUN npm install
+RUN npm install --quiet
 
 COPY . .
 
@@ -24,7 +24,7 @@ WORKDIR /app
 
 COPY --from=build /build/dist .
 
-RUN npm install --omit=dev
+RUN npm install --omit=dev --quiet
 
 USER 1000:1000
 
