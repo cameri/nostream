@@ -16,6 +16,7 @@ const newWorker = (): Worker => {
 
 if (cluster.isPrimary) {
   console.log(`${packageJson.name}@${packageJson.version}`)
+  console.log(`supported NIPs: ${packageJson.supportedNips}`)
   console.log(`primary ${process.pid} - running`)
 
   const numCpus = cpus().length
