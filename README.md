@@ -3,6 +3,8 @@
 This is a [nostr](https://github.com/fiatjaf/nostr) relay, written in
 Typescript.
 
+This implementation is production-ready. See below for supported features.
+
 The project master repository is available on [GitHub](https://github.com/Cameri/nostr-ts-relay).
 
 ## Features
@@ -27,30 +29,38 @@ NIPs with a relay-specific implementation are listed here.
 - PostgreSQL
 - Node
 - Typescript
+- Docker (optional, version 20 or higher)
 
-## Quick Start
+## Quick Start (Docker)
+
+  ```
+  npm run docker:compose:up
+  ```
+
+## Quick Start (Standalone)
 
 Set the following environment variables:
 
   ```
   DB_HOST=localhost
   DB_PORT=5432
-  DB_NAME=nostr-ts-relay
+  DB_NAME=nostr_ts_relay
   DB_USER=postgres
   DB_PASSWORD=postgres
   ```
 
-Create `nostr-ts-relay` database:
+Create `nostr_ts_relay` database:
 
   ```
   $ psql -h $DB_HOST -p $DB_PORT -U $DB_USER -W
-  postgres=# create database nostr-ts-relay;
+  postgres=# create database nostr_ts_relay;
   postgres=# quit
   ```
 
 Install dependencies:
 
   ```
+  npm install -g knex
   npm install
   ```
 
@@ -60,15 +70,30 @@ Run migrations:
   npm run db:migrate
   ```
 
+Create ~/.nostr folder:
+
+  ```
+  mkdir ~/.nostr
+  ```
+
 To start in development mode:
 
   ```
   npm run dev
   ```
 
+Or, start in production mode:
+
+  ```
+  npm run start
+  ```
+
 ## Configuration
 
-TBD
+You can change the default folder by setting the `NOSTR_CONFIG_DIR` environment variable to a different path.
+
+Run nostr-ts-relay using one of the quick-start guides at least once and `~/.nostr/settings.json` will be created.
+Any changes made to the settings file will be read on the next start.
 
 ## Dev Channel
 

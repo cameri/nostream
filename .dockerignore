@@ -1,0 +1,14 @@
+dist
+node_modules
+.test-report
+.coverage
+seeds
+test
+.eslint*
+.mocha*
+.nvmrc
+.nycrc*
+docker-compose.yml
+Dockerfile
+*.env
+*.md

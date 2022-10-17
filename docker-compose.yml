@@ -1,55 +1,60 @@
 services:
   relay:
     build: .
+    container_name: nostr-ts-relay
     environment:
       DB_HOST: db
       DB_PORT: 5432
-      DB_USER: nostr-ts-relay
-      DB_PASSWORD: nostr-ts-relay
-      DB_NAME: nostr-ts-relay
-      NOSTR_CONFIG_DIR: /nostr
+      DB_USER: nostr_ts_relay
+      DB_PASSWORD: nostr_ts_relay
+      DB_NAME: nostr_ts_relay
+      NOSTR_CONFIG_DIR: /home/node/
+    user: node:node
     volumes:
-      - nostr-config:/nostr
+      - $HOME/.nostr:/home/node/
     ports:
       - "8008:8008"
     depends_on:
       db:
         condition: service_healthy
-      migration:
+      migrations:
         condition: service_completed_successfully
     networks:
       - nostr-ts-relay
     restart: always
   db:
     image: postgres
+    container_name: db
     environment:
-      POSTGRES_USER: nostr-ts-relay
-      POSTGRES_PASSWORD: nostr-ts-relay
+      POSTGRES_USER: nostr_ts_relay
+      POSTGRES_PASSWORD: nostr_ts_relay
     volumes:
-      - postgres-data:/var/lib/postgresql/data/
+      - pgdata:/var/lib/postgresql/data/
     networks:
       - nostr-ts-relay
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nostr-ts-relay"]
+      test: ["CMD-SHELL", "pg_isready -U nostr_ts_relay"]
       interval: 5s
       timeout: 5s
       retries: 5
-  migration:
+  migrations:
     image: node:18-alpine3.15
+    container_name: migrations
     environment:
       DB_HOST: db
       DB_PORT: 5432
-      DB_USER: nostr-ts-relay
-      DB_PASSWORD: nostr-ts-relay
-      DB_NAME: nostr-ts-relay
+      DB_USER: nostr_ts_relay
+      DB_PASSWORD: nostr_ts_relay
+      DB_NAME: nostr_ts_relay
     entrypoint:
       - sh
       - -c
-      - 'sleep 5s && cd code/ && npm install -g knex && npm run db:migrate'
-    restart: on-failure
+      - 'cd code && npm install -g knex@2.3.0 && npm install knex --quiet && npm run db:migrate'
     volumes:
-      - .:/code
+      - ./package.json:/code/package.json
+      - ./migrations:/code/migrations
+      - ./knexfile.js:/code/knexfile.js
     depends_on:
       - db
     networks:
@@ -59,5 +64,4 @@ networks:
   nostr-ts-relay:
 
 volumes:
-  postgres-data:
-  nostr-config:
+  pgdata:
