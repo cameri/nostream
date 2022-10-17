@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws'
 
 import { EventRepository } from './repositories/event-repository'
 import { getDbClient } from './database/client'
-import { saveSettingsOnExit } from './utils/settings'
+import packageJson from '../package.json'
 import { webSocketAdapterFactory } from './factories/websocket-adapter-factory'
 import { WebSocketServerAdapter } from './adapters/web-socket-server-adapter'
 
@@ -15,6 +15,7 @@ const newWorker = (): Worker => {
 }
 
 if (cluster.isPrimary) {
+  console.log(`${packageJson.name}@${packageJson.version}`)
   console.log(`primary ${process.pid} - running`)
 
   const numCpus = cpus().length
@@ -37,14 +38,6 @@ if (cluster.isPrimary) {
     console.log('worker ' + newPID + ' born.')
   })
 
-  const exitHandler = () => {
-    console.log('Primary exiting')
-
-    saveSettingsOnExit()
-
-    process.exit(0)
-  }
-
   cluster.on('message', (source, message) => {
     for (const worker of Object.values(cluster.workers)) {
       if (source.id === worker.id) {
@@ -55,8 +48,10 @@ if (cluster.isPrimary) {
     }
   })
 
-  process.on('SIGINT', exitHandler)
-  process.on('uncaughtException', exitHandler)
+  process.on('SIGTERM', () => {
+    console.log('exiting...')
+    process.exit(0)
+  })
 } else if (cluster.isWorker) {
   const port = Number(process.env.SERVER_PORT) || 8008
 
@@ -74,6 +69,7 @@ if (cluster.isPrimary) {
   adapter.listen(port)
 
   const exitHandler = () => {
+    console.log(`worker ${process.pid} - exiting`)
     wss.close(() => {
       server.close(() => {
         dbClient.destroy(() => {
@@ -84,6 +80,8 @@ if (cluster.isPrimary) {
   }
 
   process.on('SIGINT', exitHandler)
+  process.on('SIGHUP', exitHandler)
+  process.on('SIGTERM', exitHandler)
   process.on('uncaughtException', exitHandler)
 
   process.on('message', (message: { eventName: string, event: unknown }) => {
