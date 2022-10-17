@@ -1,5 +1,4 @@
-import { copyFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
-import cluster from 'cluster'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { mergeDeepRight } from 'ramda'
@@ -19,8 +18,8 @@ const getDefaultSettings = (): ISettings => ({
     relay_url: undefined,
     name: `Unnamed ${packageJson.name}`,
     description: packageJson.description,
-    pubkey: undefined,
-    contact: undefined,
+    pubkey: '',
+    contact: '',
   },
   limits: {
     event: {
@@ -51,11 +50,10 @@ const getDefaultSettings = (): ISettings => ({
 })
 
 const loadSettings = (path: string) => {
-  console.log('loading settings', path)
   return JSON.parse(
     readFileSync(
       path,
-      { encoding: 'utf8' },
+      { encoding: 'utf-8' },
     ),
   )
 }
@@ -83,7 +81,6 @@ const createSettings = (): ISettings => {
 }
 
 export const saveSettings = (path: string, settings: ISettings) => {
-  console.log('saving settings')
   return writeFileSync(
     path,
     JSON.stringify(settings, null, 2),
@@ -91,20 +88,3 @@ export const saveSettings = (path: string, settings: ISettings) => {
   )
 }
 export const Settings = createSettings()
-
-export const saveSettingsOnExit = () => {
-  if (cluster.isWorker) {
-    return
-  }
-
-  const path = getSettingsFilePath()
-  const backupPath = getSettingsFilePath(`settings-${Date.now()}.json`)
-
-  try {
-    copyFileSync(path, backupPath)
-    saveSettings(path, Settings)
-    unlinkSync(backupPath)
-  } catch (error) {
-    console.error('Unable to write config file. Reason: %s', error.message)
-  }
-}
