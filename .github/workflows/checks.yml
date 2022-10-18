@@ -1,8 +1,8 @@
-name: Checks
+name: CI Checks
 
 on:
   pull_request:
-    types: [opened, labeled, unlabeled, synchronize]
+    types: [opened, synchronize]
   push:
     branches: [main]
 
