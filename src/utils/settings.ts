@@ -6,20 +6,20 @@ import { mergeDeepRight } from 'ramda'
 import { ISettings } from '../@types/settings'
 import packageJson from '../../package.json'
 
-const getSettingsFilePath = (filename = 'settings.json') => join(
+export const getSettingsFilePath = (filename = 'settings.json'): string => join(
   process.env.NOSTR_CONFIG_DIR ?? join(homedir(), '.nostr'),
   filename,
 )
 
 let _settings: ISettings
 
-const getDefaultSettings = (): ISettings => ({
+export const getDefaultSettings = (): ISettings => ({
   info: {
-    relay_url: undefined,
-    name: `Unnamed ${packageJson.name}`,
+    relay_url: `wss://${packageJson.name}.your-domain.com`,
+    name: `${packageJson.name}.your-domain.com`,
     description: packageJson.description,
     pubkey: '',
-    contact: '',
+    contact: 'operator@your-domain.com',
   },
   limits: {
     event: {
