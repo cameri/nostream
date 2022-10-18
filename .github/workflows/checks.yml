@@ -71,8 +71,9 @@ jobs:
         run: npm ci
       - name: Run coverage
         run: npm run cover
-      - uses: romeovs/lcov-reporter-action@v0.2.16
+      - name: Coveralls
+        uses: coverallsapp/github-action@master
         with:
-          lcov-file: ./.coverage/lcov.info
-          delete-old-comments: true
-          github-token: ${{ secrets.LCOV_REPORTER_GITHUB_TOKEN }}
+          path-to-lcov: ./.coverage/lcov.info
+          flag-name: Unit
+          github-token: ${{ secrets.GITHUB_TOKEN }}
