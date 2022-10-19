@@ -13,9 +13,6 @@
   <a href="https://github.com/Cameri/nostr-ts-relay/blob/main/LICENSE">
     <img alt="GitHub license" src="https://img.shields.io/github/license/Cameri/nostr-ts-relay" />
   </a>
-  <a href="https://github.com/chaijs/chai/releases">
-    <img alt="tag:?" src="https://img.shields.io/github/tag/Cameri/nostr-ts-rel.svg?style=flat-square" />
-  </a>
   <a href='https://coveralls.io/github/Cameri/nostr-ts-relay?branch=main'>
     <img  alt='Coverage Status' src='https://coveralls.io/repos/github/Cameri/nostr-ts-relay/badge.svg?branch=main' />
   </a>
