@@ -76,7 +76,7 @@ jobs:
   build-and-push-image:
     name: Build and push container image
     runs-on: ubuntu-latest
-    needs: [coverage]
+    needs: [coverage, test]
     permissions:
       contents: read
       packages: write

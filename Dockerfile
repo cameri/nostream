@@ -10,8 +10,6 @@ COPY . .
 
 RUN npm run build
 
-RUN ls -hal
-
 FROM node:18-alpine3.15
 
 LABEL org.opencontainers.image.title="Nostr Typescript Relay"
