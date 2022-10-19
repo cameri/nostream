@@ -2,6 +2,7 @@
 
 <p align="center">
 <a href='https://coveralls.io/github/Cameri/nostr-ts-relay?branch=main'><img src='https://coveralls.io/repos/github/Cameri/nostr-ts-relay/badge.svg?branch=main' alt='Coverage Status' /></a>
+<a href='https://github.com/Cameri/nostr-ts-relay/actions'><img src='https://github.com/Cameri/nostr-ts-relay/actions/workflows/checks.yml/badge.svg?branch=main&event=push' alt='Build status' /></a>
 </p>
 
 This is a [nostr](https://github.com/fiatjaf/nostr) relay, written in
