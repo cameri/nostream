@@ -14,6 +14,13 @@ RUN ls -hal
 
 FROM node:18-alpine3.15
 
+LABEL org.opencontainers.image.title="Nostr Typescript Relay"
+LABEL org.opencontainers.image.source=https://github.com/Cameri/nostr-ts-relay
+LABEL org.opencontainers.image.description="nostr-ts-relay"
+LABEL org.opencontainers.image.authors="Ricardo Arturo Cabral Mejía"
+LABEL org.opencontainers.image.licenses=MIT
+
+
 ENV DB_HOST=localhost
 ENV DB_PORT=5432
 ENV DB_NAME=nostr-ts-relay
