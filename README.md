@@ -1,8 +1,27 @@
 # [nostr-ts-relay](https://github.com/Cameri/nostr-ts-relay)
 
 <p align="center">
-<a href='https://coveralls.io/github/Cameri/nostr-ts-relay?branch=main'><img src='https://coveralls.io/repos/github/Cameri/nostr-ts-relay/badge.svg?branch=main' alt='Coverage Status' /></a>
-<a href='https://github.com/Cameri/nostr-ts-relay/actions'><img src='https://github.com/Cameri/nostr-ts-relay/actions/workflows/checks.yml/badge.svg?branch=main&event=push' alt='Build status' /></a>
+  <a href="https://github.com/Cameri/nostr-ts-relay/issues">
+    <img alt="GitHub issues" src="https://img.shields.io/github/issues/Cameri/nostr-ts-relay?style=plastic" />
+  </a>
+  <a href="https://github.com/Cameri/nostr-ts-relay/stargazers">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/Cameri/nostr-ts-relay" />
+  </a>
+  <a href="https://github.com/Cameri/nostr-ts-relay/network">
+    <img alt="GitHub forks" src="https://img.shields.io/github/forks/Cameri/nostr-ts-relay" />
+  </a>
+  <a href="https://github.com/Cameri/nostr-ts-relay/blob/main/LICENSE">
+    <img alt="GitHub license" src="https://img.shields.io/github/license/Cameri/nostr-ts-relay" />
+  </a>
+  <a href="https://github.com/chaijs/chai/releases">
+    <img alt="tag:?" src="https://img.shields.io/github/tag/Cameri/nostr-ts-rel.svg?style=flat-square" />
+  </a>
+  <a href='https://coveralls.io/github/Cameri/nostr-ts-relay?branch=main'>
+    <img  alt='Coverage Status' src='https://coveralls.io/repos/github/Cameri/nostr-ts-relay/badge.svg?branch=main' />
+  </a>
+  <a href='https://github.com/Cameri/nostr-ts-relay/actions'>
+    <img alt='Build status' src='https://github.com/Cameri/nostr-ts-relay/actions/workflows/checks.yml/badge.svg?branch=main&event=push' />
+  </a>
 </p>
 
 This is a [nostr](https://github.com/fiatjaf/nostr) relay, written in
@@ -102,7 +121,9 @@ Any changes made to the settings file will be read on the next start.
 
 ## Dev Channel
 
-For development discussions, please feel free to use the [Nostr Telegram Channel](https://t.me/nostr_protocol).
+For development discussions, please use the [Nostr Typescript Relay Dev Channel](https://t.me/nostr_ts_relay).
+
+For discussions about the protocol, please feel free to use the [Nostr Telegram Channel](https://t.me/nostr_protocol).
 
 ## License
 
