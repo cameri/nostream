@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    container:
+      image: node:18-alpine3.16
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install package dependencies
+        run: npm ci
+      - name: Run ESLint
+        run: npm run lint
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    container:
+      image: node:18-alpine3.16
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install package dependencies
+        run: npm ci
+      - name: Run ESLint
+        run: npm run build
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    container:
+      image: node:18-alpine3.16
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install package dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm run test
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    container:
+      image: node:18-alpine3.16
+    needs: [build]
+    environment: development
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install package dependencies
+        run: npm ci
+      - name: Run coverage
+        run: npm run cover
