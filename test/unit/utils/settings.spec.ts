@@ -1,11 +1,13 @@
 import { expect } from 'chai'
+import fs from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
+import Sinon from 'sinon'
 
-import { getDefaultSettings, getSettingsFilePath } from '../../../src/utils/settings'
+import { SettingsStatic } from '../../../src/utils/settings'
 
-describe('Settings', () => {
-  describe('getSettingsFilePath', () => {
+describe('SettingsStatic', () => {
+  describe('.getSettingsFilePath', () => {
     let originalEnv: NodeJS.ProcessEnv
 
     beforeEach(() => {
@@ -18,40 +20,39 @@ describe('Settings', () => {
     })
 
     it('returns string ending with settings.json by default', () => {
-      expect(getSettingsFilePath()).to.be.a('string').and.to.match(/settings\.json$/)
+      expect(SettingsStatic.getSettingsFilePath()).to.be.a('string').and.to.match(/settings\.json$/)
     })
 
     it('returns string ending with given string', () => {
-      expect(getSettingsFilePath('ending')).to.be.a('string').and.to.match(/ending$/)
+      expect(SettingsStatic.getSettingsFilePath('ending')).to.be.a('string').and.to.match(/ending$/)
     })
 
     it('returns path begins with user\'s home dir by default', () => {
-      expect(getSettingsFilePath()).to.be.a('string').and.equal(`${join(homedir(), '.nostr')}/settings.json`)
+      expect(SettingsStatic.getSettingsFilePath()).to.be.a('string').and.equal(`${join(homedir(), '.nostr')}/settings.json`)
     })
 
     it('returns path with NOSTR_CONFIG_DIR if set', () => {
       process.env.NOSTR_CONFIG_DIR = '/some/path'
 
-      expect(getSettingsFilePath()).to.be.a('string').and.equal('/some/path/settings.json')
+      expect(SettingsStatic.getSettingsFilePath()).to.be.a('string').and.equal('/some/path/settings.json')
     })
   })
 
-  describe('getDefaultSettings', () => {
+  describe('.getDefaultSettings', () => {
     it('returns object with info', () => {
-      expect(getDefaultSettings())
+      expect(SettingsStatic.getDefaultSettings())
         .to.have.property('info')
         .and.to.deep.equal({
           relay_url: 'wss://nostr-ts-relay.your-domain.com',
           name: 'nostr-ts-relay.your-domain.com',
           description: 'A nostr relay written in Typescript.',
-          pubkey: '',
+          pubkey: 'replace-with-your-pubkey',
           contact: 'operator@your-domain.com',
         })
     })
 
-
     it('returns object with default limits', () => {
-      expect(getDefaultSettings())
+      expect(SettingsStatic.getDefaultSettings())
         .to.have.property('limits')
         .and.to.deep.equal({
           event: {
@@ -82,15 +83,156 @@ describe('Settings', () => {
     })
   })
 
-  // describe('loadSettings', () => {
+  describe('.loadSettings', () => {
+    let readFileSyncStub: Sinon.SinonStub
 
-  // })
+    beforeEach(() => {
+      readFileSyncStub = Sinon.stub(fs, 'readFileSync')
+    })
 
-  // describe('createSettings', () => {
+    afterEach(() => {
+      readFileSyncStub.restore()
+    })
 
-  // })
+    it('loads settings from given path', () => {
+      readFileSyncStub.returns('"content"')
 
-  // describe('saveSettings', () => {
+      expect(SettingsStatic.loadSettings('/some/path')).to.equal('content')
 
-  // })
+      expect(readFileSyncStub).to.have.been.calledOnceWithExactly(
+        '/some/path',
+        { encoding: 'utf-8' }
+      )
+    })
+  })
+
+  describe('.createSettings', () => {
+    let existsSyncStub: Sinon.SinonStub
+    let getSettingsFilePathStub: Sinon.SinonStub
+    let getDefaultSettingsStub: Sinon.SinonStub
+    let saveSettingsStub: Sinon.SinonStub
+    let loadSettingsStub: Sinon.SinonStub
+
+    let sandbox: Sinon.SinonSandbox
+
+    beforeEach(() => {
+      SettingsStatic._settings = undefined
+
+      sandbox = Sinon.createSandbox()
+
+      existsSyncStub = sandbox.stub(fs, 'existsSync')
+      getSettingsFilePathStub = sandbox.stub(SettingsStatic, 'getSettingsFilePath')
+      getDefaultSettingsStub = sandbox.stub(SettingsStatic, 'getDefaultSettings')
+      saveSettingsStub = sandbox.stub(SettingsStatic, 'saveSettings')
+      loadSettingsStub = sandbox.stub(SettingsStatic, 'loadSettings')
+    })
+
+    afterEach(() => {
+      sandbox.restore()
+    })
+
+    it('creates settings from default if settings file is missing', () => {
+      getDefaultSettingsStub.returns({})
+      getSettingsFilePathStub.returns('/some/path/settings.json')
+      existsSyncStub.returns(false)
+
+      expect(SettingsStatic.createSettings()).to.deep.equal({})
+
+      expect(existsSyncStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
+      expect(getSettingsFilePathStub).to.have.been.calledOnce
+      expect(getDefaultSettingsStub).to.have.been.calledOnce
+      expect(saveSettingsStub).to.have.been.calledOnceWithExactly(
+        '/some/path/settings.json',
+        {},
+      )
+      expect(loadSettingsStub).not.to.have.been.called
+    })
+
+    it('returns default settings if saving settings file throws', () => {
+      const error = new Error('mistakes were made')
+      const defaults = Symbol()
+      getSettingsFilePathStub.returns('/some/path/settings.json')
+      getDefaultSettingsStub.returns(defaults)
+      saveSettingsStub.throws(error)
+      existsSyncStub.returns(false)
+
+      expect(SettingsStatic.createSettings()).to.equal(defaults)
+
+      expect(existsSyncStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
+      expect(getSettingsFilePathStub).to.have.been.calledOnce
+      expect(getDefaultSettingsStub).to.have.been.calledOnce
+      expect(saveSettingsStub).to.have.been.calledOnceWithExactly(
+        '/some/path/settings.json',
+        defaults,
+      )
+      expect(loadSettingsStub).not.to.have.been.called
+    })
+
+    it('loads settings from file if settings file is exists', () => {
+      getDefaultSettingsStub.returns({})
+      loadSettingsStub.returns({})
+      getSettingsFilePathStub.returns('/some/path/settings.json')
+      existsSyncStub.returns(true)
+
+      expect(SettingsStatic.createSettings()).to.deep.equal({})
+
+      expect(existsSyncStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
+      expect(getSettingsFilePathStub).to.have.been.calledOnce
+      expect(getDefaultSettingsStub).to.have.been.calledOnce
+      expect(saveSettingsStub).not.to.have.been.called
+      expect(loadSettingsStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
+    })
+
+    it('returns defaults if loading settings file throws', () => {
+      const defaults = Symbol()
+      const error = new Error('mistakes were made')
+      getDefaultSettingsStub.returns(defaults)
+      loadSettingsStub.throws(error)
+      getSettingsFilePathStub.returns('/some/path/settings.json')
+      existsSyncStub.returns(true)
+
+      expect(SettingsStatic.createSettings()).to.equal(defaults)
+
+      expect(existsSyncStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
+      expect(getSettingsFilePathStub).to.have.been.calledOnce
+      expect(getDefaultSettingsStub).to.have.been.calledOnce
+      expect(saveSettingsStub).not.to.have.been.called
+      expect(loadSettingsStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
+    })
+
+    it('returns cached settings if set', () => {
+      const cachedSettings = Symbol()
+      SettingsStatic._settings = cachedSettings as any
+
+      expect(SettingsStatic.createSettings()).to.equal(cachedSettings)
+
+      expect(getSettingsFilePathStub).not.to.have.been.calledOnce
+      expect(getDefaultSettingsStub).not.to.have.been.calledOnce
+      expect(existsSyncStub).not.to.have.been.called
+      expect(saveSettingsStub).not.to.have.been.called
+      expect(loadSettingsStub).not.to.have.been.called
+    })
+  })
+
+  describe('.saveSettings', () => {
+    let writeFileSyncStub: Sinon.SinonStub
+
+    beforeEach(() => {
+      writeFileSyncStub = Sinon.stub(fs, 'writeFileSync')
+    })
+
+    afterEach(() => {
+      writeFileSyncStub.restore()
+    })
+
+    it('saves settings to given path', () => {
+      SettingsStatic.saveSettings('/some/path/settings.json', {key: 'value'} as any)
+
+      expect(writeFileSyncStub).to.have.been.calledOnceWithExactly(
+        '/some/path/settings.json',
+        '{\n  "key": "value"\n}',
+        { encoding: 'utf-8' }
+      )
+    })
+  })
 })

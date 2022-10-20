@@ -1,4 +1,5 @@
 import { IncomingMessage, MessageType } from '../@types/messages'
+import { createSettings } from './settings-factory'
 import { DelegatedEventMessageHandler } from '../handlers/delegated-event-message-handler'
 import { delegatedEventStrategyFactory } from './delegated-event-strategy-factory'
 import { EventMessageHandler } from '../handlers/event-message-handler'
@@ -6,7 +7,6 @@ import { eventStrategyFactory } from './event-strategy-factory'
 import { IEventRepository } from '../@types/repositories'
 import { isDelegatedEvent } from '../utils/event'
 import { IWebSocketAdapter } from '../@types/adapters'
-import { Settings } from '../utils/settings'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
 
@@ -17,13 +17,17 @@ export const messageHandlerFactory = (
     case MessageType.EVENT:
       {
         if (isDelegatedEvent(message[1])) {
-          return new DelegatedEventMessageHandler(adapter, delegatedEventStrategyFactory(eventRepository), Settings)
+          return new DelegatedEventMessageHandler(
+            adapter,
+            delegatedEventStrategyFactory(eventRepository),
+            createSettings
+          )
         }
 
-        return new EventMessageHandler(adapter, eventStrategyFactory(eventRepository), Settings)
+        return new EventMessageHandler(adapter, eventStrategyFactory(eventRepository), createSettings)
       }
     case MessageType.REQ:
-      return new SubscribeMessageHandler(adapter, eventRepository)
+      return new SubscribeMessageHandler(adapter, eventRepository, createSettings)
     case MessageType.CLOSE:
       return new UnsubscribeMessageHandler(adapter,)
     default:
