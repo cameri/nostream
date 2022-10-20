@@ -5,6 +5,7 @@ import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
+import { ISettings } from '../@types/settings'
 import { propEq } from 'ramda'
 import { WebServerAdapter } from './web-server-adapter'
 
@@ -22,9 +23,10 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     private readonly createWebSocketAdapter: Factory<
       IWebSocketAdapter,
       [WebSocket, IncomingMessage, IWebSocketServerAdapter]
-    >
+    >,
+    settings: () => ISettings,
   ) {
-    super(webServer)
+    super(webServer, settings)
 
     this.webSocketsAdapters = new WeakMap()
 

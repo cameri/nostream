@@ -4,6 +4,7 @@ import http from 'http'
 import process from 'process'
 import { WebSocketServer } from 'ws'
 
+import { createSettings } from './factories/settings-factory'
 import { EventRepository } from './repositories/event-repository'
 import { getDbClient } from './database/client'
 import packageJson from '../package.json'
@@ -64,7 +65,8 @@ if (cluster.isPrimary) {
   const adapter = new WebSocketServerAdapter(
     server,
     wss,
-    webSocketAdapterFactory(eventRepository)
+    webSocketAdapterFactory(eventRepository),
+    createSettings,
   )
 
   adapter.listen(port)

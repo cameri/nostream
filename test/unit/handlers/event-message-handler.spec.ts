@@ -64,7 +64,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         webSocket as any,
         strategyFactoryStub,
-        {} as any,
+        () => ({}) as any,
       )
     })
 
@@ -168,7 +168,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         {} as any,
         () => null,
-        settings,
+        () => settings,
       )
     })
 

@@ -2,13 +2,14 @@ import { Duplex, EventEmitter } from 'stream'
 import { IncomingMessage, Server, ServerResponse } from 'http'
 import packageJson from '../../package.json'
 
+import { ISettings } from '../@types/settings'
 import { IWebServerAdapter } from '../@types/adapters'
-import { Settings } from '../utils/settings'
 
 export class WebServerAdapter extends EventEmitter implements IWebServerAdapter {
 
   public constructor(
     private readonly webServer: Server,
+    private readonly settings: () => ISettings,
   ) {
     super()
     this.webServer.on('request', this.onWebServerRequest.bind(this))
@@ -25,7 +26,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
     if (request.method === 'GET' && request.headers['accept'] === 'application/nostr+json') {
       const {
         info: { name, description, pubkey, contact },
-      } = Settings
+      } = this.settings()
 
       const relayInformationDocument = {
         name,

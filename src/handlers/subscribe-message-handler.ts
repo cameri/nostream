@@ -8,8 +8,8 @@ import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { Event } from '../@types/event'
 import { IEventRepository } from '../@types/repositories'
+import { ISettings } from '../@types/settings'
 import { IWebSocketAdapter } from '../@types/adapters'
-import { Settings } from '../utils/settings'
 import { SubscribeMessage } from '../@types/messages'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
@@ -19,6 +19,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
+    private readonly settings: () => ISettings,
   ) {
     this.abortController = new AbortController()
   }
@@ -66,7 +67,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   }
 
   private canSubscribe(subscriptionId: string, filters: SubscriptionFilter[]): string | undefined {
-    const maxSubscriptions = Settings.limits.client.subscription.maxSubscriptions
+    const maxSubscriptions = this.settings().limits.client.subscription.maxSubscriptions
     if (maxSubscriptions > 0) {
       const subscriptions = this.webSocket.getSubscriptions()
       if (!subscriptions.has(subscriptionId) && subscriptions.size + 1 > maxSubscriptions) {
@@ -74,7 +75,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       }
     }
 
-    const maxFilters = Settings.limits.client.subscription.maxFilters
+    const maxFilters = this.settings().limits.client.subscription.maxFilters
     if (maxFilters > 0) {
       if (filters.length > maxFilters) {
         return `Too many filters: Number of filters per susbscription must be less or equal to ${maxFilters}`
