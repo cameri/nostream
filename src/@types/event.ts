@@ -10,6 +10,9 @@ export interface Event {
   tags: Tag[]
   sig: string
   content: string
+}
+
+export interface DelegatedEvent extends Event {
   [EventDelegatorMetadataKey]?: Pubkey
 }
 
