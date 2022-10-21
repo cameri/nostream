@@ -1,6 +1,8 @@
+import { mergeDeepLeft } from 'ramda'
+
+import { DelegatedEvent, Event } from '../@types/event'
 import { EventDelegatorMetadataKey, EventTags } from '../constants/base'
 import { createNoticeMessage } from '../utils/messages'
-import { Event } from '../@types/event'
 import { EventMessageHandler } from './event-message-handler'
 import { IMessageHandler } from '../@types/message-handlers'
 import { IncomingEventMessage } from '../@types/messages'
@@ -25,23 +27,28 @@ export class DelegatedEventMessageHandler extends EventMessageHandler implements
     }
 
     const [, delegator] = event.tags.find((tag) => tag.length === 4 && tag[0] === EventTags.Delegation)
-    event[EventDelegatorMetadataKey] = delegator
+    const delegatedEvent: DelegatedEvent = mergeDeepLeft(
+      event,
+      {
+        [EventDelegatorMetadataKey]: delegator,
+      }
+    )
 
-    const strategy = this.strategyFactory([event, this.webSocket])
+    const strategy = this.strategyFactory([delegatedEvent, this.webSocket])
 
     if (typeof strategy?.execute !== 'function') {
       return
     }
 
     try {
-      await strategy.execute(event)
+      await strategy.execute(delegatedEvent)
     } catch (error) {
       console.error('Error handling message:', message, error)
     }
   }
 
   protected async isEventValid(event: Event): Promise<string | undefined> {
-    const reason = super.isEventValid(event)
+    const reason = await super.isEventValid(event)
     if (reason) {
       return reason
     }
