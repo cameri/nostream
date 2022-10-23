@@ -12,5 +12,5 @@ export interface IWebServerAdapter extends EventEmitter {
 
 
 export type IWebSocketAdapter = EventEmitter & {
-  getSubscriptions(): Map<string, Set<SubscriptionFilter>>
+  getSubscriptions(): Map<string, SubscriptionFilter[]>
 }

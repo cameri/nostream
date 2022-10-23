@@ -29,6 +29,7 @@ export type SubscribeMessage = {
 } & Array<SubscriptionFilter>
 
 export type IncomingEventMessage = EventMessage & [MessageType.EVENT, Event]
+
 export interface EventMessage {
   0: MessageType.EVENT
   1: Event
