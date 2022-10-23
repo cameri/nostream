@@ -18,7 +18,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private id: string
   private clientAddress: string
   private alive: boolean
-  private subscriptions: Map<SubscriptionId, Set<SubscriptionFilter>>
+  private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
 
   private sent = 0
   private received = 0
@@ -54,7 +54,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.subscriptions.delete(subscriptionId)
   }
 
-  public onSubscribed(subscriptionId: string, filters: Set<SubscriptionFilter>): void {
+  public onSubscribed(subscriptionId: string, filters: SubscriptionFilter[]): void {
     this.subscriptions.set(subscriptionId, filters)
   }
 
@@ -69,7 +69,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   public onSendEvent(event: Event): void {
     this.subscriptions.forEach((filters, subscriptionId) => {
       if (
-        Array.from(filters).map(isEventMatchingFilter).some((Matches) => Matches(event))
+        filters.map(isEventMatchingFilter).some((Matches) => Matches(event))
       ) {
         this.sendMessage(createOutgoingEventMessage(subscriptionId, event))
       }
@@ -95,7 +95,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.client.ping()
   }
 
-  public getSubscriptions(): Map<string, Set<SubscriptionFilter>> {
+  public getSubscriptions(): Map<string, SubscriptionFilter[]> {
     return new Map(this.subscriptions)
   }
 
