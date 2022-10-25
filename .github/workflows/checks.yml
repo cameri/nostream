@@ -53,7 +53,7 @@ jobs:
       - name: Install package dependencies
         run: npm ci
       - name: Run tests
-        run: npm run test
+        run: npm run test:unit
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
