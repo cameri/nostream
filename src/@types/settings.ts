@@ -58,7 +58,12 @@ export interface Limits {
   event?: EventLimits
 }
 
+export interface Worker {
+  count: number
+}
+
 export interface ISettings {
   info: Info
+  workers?: Worker
   limits?: Limits
 }
