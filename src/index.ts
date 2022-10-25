@@ -12,4 +12,3 @@ export const run = (isPrimary: boolean) => {
 if (require.main === module) {
   run(cluster.isPrimary)()
 }
-

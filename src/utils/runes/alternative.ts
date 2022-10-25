@@ -1,6 +1,6 @@
 import { IAlternative } from '../../@types/runes'
 
-const punctuations = /[!"#\$%&'()*+-.\/:;<=>?@\[\\\]^`{|}~]/
+const punctuations = /[!"#$%&'()*+-./:;<=>?@[\\\]^`{|}~]/
 
 const hasPunctuation = (input) => punctuations.test(input)
 
@@ -54,19 +54,21 @@ export class Alternative implements IAlternative {
         return why(values[this.field].includes(this.value), this.field, `does not contain ${this.value}`)
       case '<':
       case '>':
-        const actualInt = Number.parseInt(val)
-        if (Number.isNaN(actualInt)) {
-          return why(false, this.field, 'not an integer field')
-        }
-        const restrictionVal = Number.parseInt(this.value)
-        if (Number.isNaN(restrictionVal)) {
-          return why(false, this.field, 'not a valid integer')
-        }
+        {
+          const actualInt = Number.parseInt(val)
+          if (Number.isNaN(actualInt)) {
+            return why(false, this.field, 'not an integer field')
+          }
+          const restrictionVal = Number.parseInt(this.value)
+          if (Number.isNaN(restrictionVal)) {
+            return why(false, this.field, 'not a valid integer')
+          }
 
-        if (this.cond === '<') {
-          return why(actualInt < restrictionVal, this.field, `>= ${restrictionVal}`)
-        } else {
-          return why(actualInt > restrictionVal, this.field, `<= ${restrictionVal}`)
+          if (this.cond === '<') {
+            return why(actualInt < restrictionVal, this.field, `>= ${restrictionVal}`)
+          } else {
+            return why(actualInt > restrictionVal, this.field, `<= ${restrictionVal}`)
+          }
         }
       case '{':
         return why(val < this.value, this.field, `is the same or ordered after ${this.value}`)
