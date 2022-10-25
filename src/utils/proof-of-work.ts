@@ -18,6 +18,7 @@ function msb(b: number) {
     return 8
   }
 
+  // eslint-disable-next-line no-cond-assign
   while (b >>= 1) {
     n++
   }
