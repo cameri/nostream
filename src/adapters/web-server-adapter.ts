@@ -18,7 +18,6 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   }
 
   public listen(port: number): void {
-    console.log('Listening on port:', port)
     this.webServer.listen(port)
   }
 

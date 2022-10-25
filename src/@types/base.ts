@@ -26,3 +26,7 @@ export type Range<F extends number, T extends number> = Exclude<
 export type Factory<TOutput = any, TInput = any> = (input: TInput) => TOutput
 
 export type DatabaseClient = Knex
+
+export interface IRunnable {
+  run(): void
+}
