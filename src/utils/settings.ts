@@ -25,6 +25,9 @@ export class SettingsStatic {
         pubkey: 'replace-with-your-pubkey',
         contact: 'operator@your-domain.com',
       },
+      workers: {
+        count: 0,
+      },
       limits: {
         event: {
           eventId: {
