@@ -1,6 +1,10 @@
 # [nostr-ts-relay](https://github.com/Cameri/nostr-ts-relay)
 
 <p align="center">
+  <img alt="nostr-ts-relay logo" height="256px" width="256px" src="https://user-images.githubusercontent.com/378886/198158439-86e0345a-adc8-4efe-b0ab-04ff3f74c1b2.jpg" />
+</p>
+
+<p align="center">
   <a href="https://github.com/Cameri/nostr-ts-relay/issues">
     <img alt="GitHub issues" src="https://img.shields.io/github/issues/Cameri/nostr-ts-relay?style=plastic" />
   </a>
