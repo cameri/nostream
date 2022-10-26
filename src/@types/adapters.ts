@@ -1,13 +1,13 @@
 import { EventEmitter } from 'node:stream'
 import { SubscriptionFilter } from './subscription'
 
-export interface IWebSocketServerAdapter extends EventEmitter {
+export interface IWebSocketServerAdapter extends EventEmitter, IWebServerAdapter {
   getConnectedClients(): number
-  terminate(): Promise<void>
+  close(callback: () => void): void
 }
 
 export interface IWebServerAdapter extends EventEmitter {
-  listen(port: number)
+  listen(port: number): void
 }
 
 
