@@ -1,0 +1,35 @@
+{
+  "info": {
+    "relay_url": "wss://nostr-ts-relay.your-domain.com",
+    "name": "nostr-ts-relay.your-domain.com",
+    "description": "A nostr relay written in Typescript.",
+    "pubkey": "replace-with-your-pubkey",
+    "contact": "operator@your-domain.com"
+  },
+  "limits": {
+    "event": {
+      "eventId": {
+        "minLeadingZeroBits": 0
+      },
+      "kind": {
+        "whitelist": [],
+        "blacklist": []
+      },
+      "pubkey": {
+        "minLeadingZeroBits": 0,
+        "whitelist": [],
+        "blacklist": []
+      },
+      "createdAt": {
+        "maxPositiveDelta": 900,
+        "maxNegativeDelta": 0
+      }
+    },
+    "client": {
+      "subscription": {
+        "maxSubscriptions": 10,
+        "maxFilters": 10
+      }
+    }
+  }
+}
