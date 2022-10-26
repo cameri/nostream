@@ -8,7 +8,7 @@ import { IWebServerAdapter } from '../@types/adapters'
 export class WebServerAdapter extends EventEmitter implements IWebServerAdapter {
 
   public constructor(
-    private readonly webServer: Server,
+    protected readonly webServer: Server,
     private readonly settings: () => ISettings,
   ) {
     super()

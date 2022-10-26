@@ -43,14 +43,10 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     this.heartbeatInterval = setInterval(this.onHeartbeat.bind(this), WSS_CLIENT_HEALTH_PROBE_INTERVAL)
   }
 
-  public async terminate(): Promise<void> {
-    return void Promise.all(
-      [
-        ...Array.from(this.webSocketServer.clients).map((webSocket: WebSocket) =>
-          webSocket.terminate()
-        ),
-      ],
-    )
+  public close(callback: () => void): void {
+    this.webSocketServer.close(() => {
+      this.webServer.close(callback)
+    })
   }
 
   private onBroadcast(event: Event) {
