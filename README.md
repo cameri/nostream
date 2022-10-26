@@ -116,8 +116,10 @@ You can change the default folder by setting the `NOSTR_CONFIG_DIR` environment 
 Run nostr-ts-relay using one of the quick-start guides at least once and `~/.nostr/settings.json` will be created.
 Any changes made to the settings file will be read on the next start.
 
-See [CONFIGURATION.md](CONFIGURATION.md) for a detailed explanation of each environment variable and setting.
+A sample settings file is included at the project root under the name `settings.sample.json`. Feel free to copy it to `~/.nostr/settings.json`
+if you would like to have a settings file before running the relay first.
 
+See [CONFIGURATION.md](CONFIGURATION.md) for a detailed explanation of each environment variable and setting.
 ## Dev Channel
 
 For development discussions, please use the [Nostr Typescript Relay Dev Channel](https://t.me/nostr_ts_relay).
