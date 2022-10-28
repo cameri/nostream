@@ -138,9 +138,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.alive = true
   }
 
-  private onClientClose(code: number) {
+  private onClientClose() {
     this.alive = false
-    console.debug(`worker ${process.pid} - client disconnected with code ${code}`)
 
     this.removeAllListeners()
     this.client.removeAllListeners()
