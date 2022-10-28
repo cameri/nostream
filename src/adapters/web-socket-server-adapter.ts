@@ -64,7 +64,6 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   private onConnection(client: WebSocket, req: IncomingMessage) {
-    console.debug(`worker ${process.pid} - new client - ${this.webSocketServer.clients.size} clients`)
     this.webSocketsAdapters.set(client, this.createWebSocketAdapter([client, req, this]))
   }
 

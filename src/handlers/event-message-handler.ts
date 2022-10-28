@@ -19,8 +19,6 @@ export class EventMessageHandler implements IMessageHandler {
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
     const [, event] = message
 
-    console.debug('Received event', event)
-
     let reason = await this.isEventValid(event)
     if (reason) {
       console.warn(`Event ${event.id} rejected. Reason: ${reason}`)
