@@ -4,6 +4,7 @@ node_modules
 .coverage
 seeds
 test
+!test/integration
 .eslint*
 .mocha*
 .nvmrc
