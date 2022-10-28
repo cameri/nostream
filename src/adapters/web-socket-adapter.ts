@@ -1,3 +1,4 @@
+import cluster from 'cluster'
 import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
 import { WebSocket } from 'ws'
@@ -60,10 +61,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public onBroadcast(event: Event): void {
     this.webSocketServer.emit(WebSocketServerAdapterEvent.Broadcast, event)
-    process.send({
-      eventName: WebSocketServerAdapterEvent.Broadcast,
-      event,
-    })
+    if (cluster.isWorker) {
+      process.send({
+        eventName: WebSocketServerAdapterEvent.Broadcast,
+        event,
+      })
+    }
   }
 
   public onSendEvent(event: Event): void {

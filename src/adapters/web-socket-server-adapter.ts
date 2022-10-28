@@ -44,6 +44,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   public close(callback: () => void): void {
+    this.onClose()
     this.webSocketServer.close(() => {
       this.webServer.close(callback)
     })

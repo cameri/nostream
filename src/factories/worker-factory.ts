@@ -9,7 +9,7 @@ import { getDbClient } from '../database/client'
 import { webSocketAdapterFactory } from './websocket-adapter-factory'
 import { WebSocketServerAdapter } from '../adapters/web-socket-server-adapter'
 
-export const workerFactory = () => {
+export const workerFactory = (): AppWorker => {
   const dbClient = getDbClient()
   const eventRepository = new EventRepository(dbClient)
 
