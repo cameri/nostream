@@ -90,7 +90,7 @@ export class EventRepository implements IEventRepository {
                       )
                     )
                   ),
-                }),
+                } as any),
               ),
             ],
           ])(currentFilter[filterName] as string[])

@@ -9,7 +9,7 @@
     "target": "es6",
     "outDir": "./dist",
     "moduleResolution": "Node",
-    "types": ["node", "mocha"],
+    "types": ["node", "mocha", "@cucumber/cucumber"],
     "typeRoots": ["./node_modules/@types"],
     "incremental": true,
     "declarationMap": true,

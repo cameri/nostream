@@ -6,7 +6,7 @@ export class AppWorker implements IRunnable {
     private readonly process: NodeJS.Process,
     private readonly adapter: IWebSocketServerAdapter
   ) {
-    process
+    this.process
       .on('message', this.onMessage.bind(this))
       .on('SIGINT', this.onExit.bind(this))
       .on('SIGHUP', this.onExit.bind(this))
@@ -34,11 +34,12 @@ export class AppWorker implements IRunnable {
 
   private onExit() {
     console.log(`worker ${process.pid} - exiting`)
-    this.adapter.close(() => {
-      // dbClient.destroy(() => {
-      //   process.exit(0)
-      // })
-      process.exit(0)
+    this.close(() => {
+      this.process.exit(0)
     })
+  }
+
+  public close(callback?: () => void) {
+    this.adapter.close(callback)
   }
 }

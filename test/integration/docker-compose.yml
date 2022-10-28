@@ -1,0 +1,64 @@
+services:
+  tests:
+    build:
+      context: ../../
+      dockerfile: Dockerfile.test
+    env_file:
+      - ../../test.env
+    environment:
+      NOSTR_CONFIG_DIR: /code
+    volumes:
+      - ../../src:/code/src
+      - ../../test:/code/test
+    working_dir: /code
+    ports:
+      - "8008:8008"
+    command:
+      ["sh", "-c", "whoami && pwd && ls -hall test/integration && npm run test:integration"]
+    depends_on:
+      db-test:
+        condition: service_healthy
+      migrations-test:
+        condition: service_completed_successfully
+    networks:
+      - nostr-ts-relay-test
+    links:
+      - db-test
+  db-test:
+    image: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nostr_ts_relay_test
+    networks:
+      - nostr-ts-relay-test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      timeout: 5s
+      start_period: 5s
+      retries: 0
+  migrations-test:
+    image: node:18-alpine3.16
+    environment:
+      DB_HOST: db-test
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: nostr_ts_relay_test
+    entrypoint:
+      - sh
+      - -c
+      - 'cd code && npm install -g knex@2.3.0 && npm install knex --quiet && npm run db:migrate'
+    volumes:
+      - ../../package.json:/code/package.json
+      - ../../migrations:/code/migrations
+      - ../../knexfile.js:/code/knexfile.js
+    depends_on:
+      - db-test
+    networks:
+      - nostr-ts-relay-test
+    links:
+      - db-test
+
+networks:
+  nostr-ts-relay-test:
