@@ -27,7 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: node:18-alpine3.16
-    needs: [lint]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
@@ -38,12 +37,11 @@ jobs:
         run: npm ci
       - name: Run ESLint
         run: npm run build
-  test:
-    name: Tests
+  test-and-cover:
+    name: Unit Tests
     runs-on: ubuntu-latest
     container:
       image: node:18-alpine3.16
-    needs: [build]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
@@ -52,23 +50,9 @@ jobs:
           cache: npm
       - name: Install package dependencies
         run: npm ci
-      - name: Run tests
+      - name: Run unit tests
         run: npm run test:unit
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    container:
-      image: node:18-alpine3.16
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - name: Install package dependencies
-        run: npm ci
-      - name: Run coverage
+      - name: Run coverage for unit tests
         run: npm run cover
       - name: Coveralls
         uses: coverallsapp/github-action@master
@@ -76,3 +60,18 @@ jobs:
           path-to-lcov: ./.coverage/lcov.info
           flag-name: Unit
           github-token: ${{ secrets.GITHUB_TOKEN }}
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    container:
+      image: node:18-alpine3.16
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install package dependencies
+        run: npm ci
+      - name: Run integration tests
+        run: npm run docker:test:integration
