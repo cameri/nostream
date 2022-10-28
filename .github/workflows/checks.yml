@@ -63,15 +63,10 @@ jobs:
   test-integration:
     name: Integration Tests
     runs-on: ubuntu-latest
-    container:
-      image: node:18-alpine3.16
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
         with:
           node-version-file: .nvmrc
-          cache: npm
-      - name: Install package dependencies
-        run: npm ci
       - name: Run integration tests
         run: npm run docker:test:integration
