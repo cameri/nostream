@@ -65,7 +65,6 @@ When(/I send a set_metadata event as (\w+)/, async function(name: string) {
 
   this.parameters.events = this.parameters.events ?? []
   this.parameters.events.push(event)
-  throw new Error('mistakes were made')
 })
 
 Then(/I receive a set_metadata event from (\w+)/, async function(author: string) {
