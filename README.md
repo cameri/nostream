@@ -47,19 +47,25 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-15: End of Stored Events Notice
 - [x] NIP-16: Event Treatment
 - [x] NIP-22: Event `created_at` Limits
-- [x] NIP-26: Delegated Event Signing (DRAFT)
+- [x] NIP-26: Delegated Event Signing
 
 ## Requirements
 
-- PostgreSQL
-- Node
+- PostgreSQL (For standalone steps only)
+- Node v18
 - Typescript
-- Docker (optional, version 20 or higher)
+- Docker (For docker steps only, version 20 or higher)
 
-## Quick Start (Docker)
+## Quick Start (Docker Compose) (Best)
 
+  Start with:
   ```
-  npm run docker:compose:up
+  npm run docker:compose:start &
+  ```
+
+  Stop the server with:
+  ```
+  npm run docker:compose:stop
   ```
 
 ## Quick Start (Standalone)
@@ -89,7 +95,7 @@ Install dependencies:
   npm install
   ```
 
-Run migrations:
+Run migrations (at least once and after pulling new changes):
 
   ```
   npm run db:migrate
@@ -112,6 +118,96 @@ Or, start in production mode:
   ```
   npm run start
   ```
+
+To clean up the build, coverage and test reports run:
+
+  ```
+  npm run clean
+  ```
+## Tests
+
+### Unit tests
+
+Run unit tests with:
+
+  ```
+  npm run test:unit
+  ```
+
+Or, run unit tests in watch mode:
+
+  ```
+  npm run test:unit:watch
+  ```
+
+To get unit test coverage run:
+
+  ```
+  npm run cover:unit
+  ```
+
+To see the unit tests report open `.test-reports/unit/index.html` with a browser:
+  ```
+  open .test-reports/unit/index.html
+  ```
+
+To see the unit tests coverage report open `.coverage/unit/lcov-report/index.html` with a browser:
+  ```
+  open .coverage/unit/lcov-report/index.html
+  ```
+
+### Integration tests (Docker Compose)
+
+Run integration tests with:
+
+  ```
+  npm run docker:test:integration
+  ```
+
+And to get integration test coverage run:
+
+  ```
+  npm run docker:cover:integration
+  ```
+
+### Integration tests (Standalone)
+
+Set the following environment variables:
+
+  ```
+  DB_HOST=localhost
+  DB_PORT=5432
+  DB_NAME=nostr_ts_relay_test
+  DB_USER=postgres
+  DB_PASSWORD=postgres
+  DB_MIN_POOL_SIZE=1
+  DB_MAX_POOL_SIZE=2
+  ```
+
+Then run the integration tests:
+
+  ```
+  npm run test:integration
+  ```
+
+To see the integration tests report open `.test-reports/integration/report.html` with a browser:
+  ```
+  open .test-reports/integration/report.html
+  ```
+
+To get the integration test coverage run:
+
+  ```
+  npm run cover:integration
+  ```
+
+To see the integration test coverage report open `.coverage/integration/lcov-report/index.html` with a browser.
+
+  ```
+  open .coverage/integration/lcov-report/index.html
+  ```
+
+To see the
 
 ## Configuration
 
