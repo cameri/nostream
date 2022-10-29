@@ -57,6 +57,7 @@ jobs:
   test-integrations-and-cover:
     name: Integration Tests and Coverage
     runs-on: ubuntu-latest
+    environment: test
     needs:
       - lint
       - build-check
