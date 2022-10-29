@@ -3,6 +3,7 @@ const base = [
   '--require-module ts-node/register',
   '--require test/integration/features/**/*.ts',
   '--require test/integration/features/*.ts',
+  '--publish-quiet',
 ].join(' ')
 
 const config = [
