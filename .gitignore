@@ -5,7 +5,7 @@ npm-debug.log*
 
 # Coverage
 .nyc_output
-.test-report
+.test-reports
 .coverage
 
 # Dependency directories

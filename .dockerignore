@@ -1,6 +1,7 @@
 dist
 node_modules
-.test-report
+.github
+.test-reports
 .coverage
 seeds
 test
@@ -8,7 +9,7 @@ test
 .eslint*
 .mocha*
 .nvmrc
-.nycrc*
+.nyc_output
 docker-compose.yml
 Dockerfile
 *.env

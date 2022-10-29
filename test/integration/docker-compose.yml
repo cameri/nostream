@@ -15,11 +15,11 @@ services:
     volumes:
       - ../../src:/code/src
       - ../../test:/code/test
+      - ../../.coverage:/code/.coverage
+      - ../../.test-reports:/code/.test-reports
     working_dir: /code
     ports:
       - "8008:8008"
-    command:
-      ["npm", "run", "test:integration"]
     depends_on:
       db-test:
         condition: service_healthy
