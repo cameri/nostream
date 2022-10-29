@@ -54,6 +54,7 @@ jobs:
           path-to-lcov: ./.coverage/unit/lcov.info
           flag-name: Unit
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel: true
   test-integrations-and-cover:
     name: Integration Tests and Coverage
     runs-on: ubuntu-latest
@@ -80,4 +81,6 @@ jobs:
         with:
           path-to-lcov: ./.coverage/integration/lcov.info
           flag-name: Integration
+          parallel: true
+          parallel-finished: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
