@@ -2,9 +2,12 @@ name: CI Checks
 
 on:
   pull_request:
-    types: [opened, synchronize]
   push:
     branches: [main]
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -46,8 +49,10 @@ jobs:
         run: npm ci
       - name: Run unit tests
         run: npm run test:unit
+        continue-on-error: true
       - name: Run coverage for unit tests
         run: npm run cover:unit
+        continue-on-error: true
       - name: Coveralls
         uses: coverallsapp/github-action@master
         with:
@@ -70,17 +75,16 @@ jobs:
           node-version-file: .nvmrc
       - name: Run integration tests
         run: npm run docker:test:integration
+        continue-on-error: true
       - uses: deblockt/cucumber-report-annotations-action@v1.7
-        if: ${{ always() }}
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}
           path: .test-reports/integration/report.json
       - name: Run coverage for integration tests
         run: npm run docker:cover:integration
-        if: ${{ always() }}
+        continue-on-error: true
       - name: Coveralls
         uses: coverallsapp/github-action@master
-        if: ${{ always() }}
         with:
           path-to-lcov: .coverage/integration/lcov.info
           flag-name: Integration
