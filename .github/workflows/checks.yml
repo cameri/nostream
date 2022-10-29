@@ -70,6 +70,10 @@ jobs:
         run: npm run docker:test:integration
       - name: Run coverage for integration tests
         run: npm run docker:cover:integration
+      - uses: deblockt/cucumber-report-annotations-action@v1.7
+        with:
+          access-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ".test-reports/integration/report.json"
       - name: Coveralls
         uses: coverallsapp/github-action@master
         with:
