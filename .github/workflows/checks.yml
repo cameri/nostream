@@ -89,5 +89,15 @@ jobs:
           path-to-lcov: .coverage/integration/lcov.info
           flag-name: Integration
           parallel: true
-          parallel-finished: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
+  finish:
+    name: Finish
+    needs: [test-units-and-cover, test-integrations-and-cover]
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+    - name: Coveralls Finished
+      uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        parallel-finished: true
