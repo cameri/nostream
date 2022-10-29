@@ -7,7 +7,6 @@ seeds
 test
 !test/integration
 .eslint*
-.mocha*
 .nvmrc
 .nyc_output
 docker-compose.yml
