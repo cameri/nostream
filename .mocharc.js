@@ -3,11 +3,10 @@ module.exports = {
   require: ['ts-node/register'],
   reporter: 'mochawesome',
   slow: 75,
-  sorted: true,
   'inline-diff': true,
   diff: true,
   'reporter-option': [
-    'reportDir=.test-report',
+    'reportDir=.test-reports/unit',
     'reportFilename=index',
     'quiet=true',
     'json=false',
