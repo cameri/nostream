@@ -12,7 +12,8 @@
     15,
     16,
     22,
-    26
+    26,
+    33
   ],
   "main": "src/index.ts",
   "scripts": {
