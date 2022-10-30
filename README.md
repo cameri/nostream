@@ -38,7 +38,6 @@ NIPs with a relay-specific implementation are listed here.
 
 - [x] NIP-01: Basic protocol flow description
 - [x] NIP-02: Contact list and petnames
-- [ ] NIP-03: OpenTimestams Attestations for Events
 - [x] NIP-04: Encrypted Direct Message
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
@@ -48,10 +47,11 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-16: Event Treatment
 - [x] NIP-22: Event `created_at` Limits
 - [x] NIP-26: Delegated Event Signing
+- [x] NIP-33: Parameterized Replaceable Events
 
 ## Requirements
 
-- PostgreSQL (For standalone steps only)
+- PostgreSQL 15.0 (For standalone steps only)
 - Node v18
 - Typescript
 - Docker (For docker steps only, version 20 or higher)
