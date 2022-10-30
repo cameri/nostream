@@ -174,6 +174,10 @@ export const isEphemeralEvent = (event: Event): boolean => {
   return event.kind >= 20000 && event.kind < 30000
 }
 
+export const isParameterizedReplaceableEvent = (event: Event): boolean => {
+  return event.kind >= 30000 && event.kind < 40000
+}
+
 export const isDeleteEvent = (event: Event): boolean => {
   return event.kind === EventKinds.DELETE
 }

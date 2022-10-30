@@ -9,6 +9,7 @@ import {
   isEventIdValid,
   isEventMatchingFilter,
   isEventSignatureValid,
+  isParameterizedReplaceableEvent,
   isReplaceableEvent,
   serializeEvent,
 } from '../../../src/utils/event'
@@ -472,6 +473,18 @@ describe('NIP-09', () => {
         kind: 5 * 100000,
       } as any
       expect(isDeleteEvent(event)).to.be.false
+    })
+  })
+})
+
+describe('NIP-33', () => {
+  describe('isParameterizedReplaceableEvent', () => {
+    it('returns true if event is a parameterized replaceable event', () => {
+      expect(isParameterizedReplaceableEvent({ kind: 30000 } as any)).to.be.true
+    })
+
+    it('returns false if event is a parameterized replaceable event', () => {
+      expect(isParameterizedReplaceableEvent({ kind: 40000 } as any)).to.be.false
     })
   })
 })

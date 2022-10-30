@@ -19,6 +19,7 @@ import {
   modulo,
   nth,
   omit,
+  paths,
   pipe,
   prop,
   propSatisfies,
@@ -28,10 +29,10 @@ import {
 
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
+import { EventDeduplicationMetadataKey, EventDelegatorMetadataKey } from '../constants/base'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
-import { EventDelegatorMetadataKey } from '../constants/base'
 import { isGenericTagQuery } from '../utils/filter'
 import { SubscriptionFilter } from '../@types/subscription'
 
@@ -157,11 +158,11 @@ export class EventRepository implements IEventRepository {
   }
 
   public async create(event: Event): Promise<number> {
-    debug('creating event: %o', event)
     return this.insert(event).then(prop('rowCount') as () => number)
   }
 
   private insert(event: Event) {
+    debug('inserting event: %o', event)
     const row = applySpec({
       event_id: pipe(prop('id'), toBuffer),
       event_pubkey: pipe(prop('pubkey'), toBuffer),
@@ -186,6 +187,7 @@ export class EventRepository implements IEventRepository {
 
   public upsert(event: Event): Promise<number> {
     debug('upserting event: %o', event)
+
     const toJSON = (input: any) => JSON.stringify(input)
 
     const row = applySpec({
@@ -201,13 +203,23 @@ export class EventRepository implements IEventRepository {
         pipe(prop(EventDelegatorMetadataKey as any), toBuffer),
         always(null),
       ),
+      event_deduplication: ifElse(
+        propSatisfies(isNil, EventDeduplicationMetadataKey),
+        pipe(paths([['pubkey'], ['kind']]), toJSON),
+        pipe(prop(EventDeduplicationMetadataKey as any), toJSON),
+      ),
     })(event)
 
     const query = this.dbClient('events')
       .insert(row)
       // NIP-16: Replaceable Events
-      .onConflict(this.dbClient.raw('(event_pubkey, event_kind) WHERE event_kind = 0 OR event_kind = 3 OR event_kind >= 10000 AND event_kind < 2000'))
-      .merge(omit(['event_pubkey', 'event_kind'])(row))
+      // NIP-33: Parameterized Replaceable Events
+      .onConflict(
+        this.dbClient.raw(
+          '(event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000)'
+        )
+      )
+      .merge(omit(['event_pubkey', 'event_kind', 'event_deduplication'])(row))
       .where('events.event_created_at', '<', row.event_created_at)
 
     const promise = query.then(prop('rowCount') as () => number)

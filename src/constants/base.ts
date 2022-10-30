@@ -13,7 +13,8 @@ export enum EventTags {
   Pubkey = 'p',
   //  Multicast = 'm',
   Delegation = 'delegation',
+  Deduplication = 'd',
 }
 
 export const EventDelegatorMetadataKey = Symbol('Delegator')
-
+export const EventDeduplicationMetadataKey = Symbol('Deduplication')
