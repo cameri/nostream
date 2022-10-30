@@ -1,4 +1,4 @@
-import { EventDelegatorMetadataKey, EventKinds } from '../constants/base'
+import { EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventKinds } from '../constants/base'
 import { EventId, Pubkey, Tag } from './base'
 
 
@@ -16,6 +16,10 @@ export interface DelegatedEvent extends Event {
   [EventDelegatorMetadataKey]?: Pubkey
 }
 
+export interface ParameterizedReplaceableEvent extends Event {
+  [EventDeduplicationMetadataKey]: string[]
+}
+
 export interface DBEvent {
   id: string
   event_id: Buffer
@@ -26,6 +30,7 @@ export interface DBEvent {
   event_tags: Tag[]
   event_signature: Buffer
   event_delegator?: Buffer | null
+  event_deduplication?: string | null
   first_seen: Date
   deleted_at: Date
 }
