@@ -70,10 +70,10 @@ export class SettingsStatic {
   }
 
   public static createSettings(): ISettings {
-    debug('creating settings')
     if (SettingsStatic._settings) {
       return SettingsStatic._settings
     }
+    debug('creating settings')
     const path = SettingsStatic.getSettingsFilePath()
     const defaults = SettingsStatic.getDefaultSettings()
     try {
