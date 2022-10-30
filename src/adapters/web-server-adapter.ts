@@ -1,27 +1,39 @@
 import { Duplex, EventEmitter } from 'stream'
 import { IncomingMessage, Server, ServerResponse } from 'http'
+
 import packageJson from '../../package.json'
 
+import { createLogger } from '../factories/logger-factory'
 import { ISettings } from '../@types/settings'
 import { IWebServerAdapter } from '../@types/adapters'
 
-export class WebServerAdapter extends EventEmitter implements IWebServerAdapter {
+const debug = createLogger('web-server-adapter')
 
+export class WebServerAdapter extends EventEmitter implements IWebServerAdapter {
   public constructor(
     protected readonly webServer: Server,
     private readonly settings: () => ISettings,
   ) {
+    debug('web server starting')
     super()
-    this.webServer.on('request', this.onWebServerRequest.bind(this))
-      .on('clientError', this.onWebServerSocketError.bind(this))
-      .on('close', this.onClose.bind(this))
+    this.webServer
+      .on('request', this.onRequest.bind(this))
+      .on('clientError', this.onError.bind(this))
+      .once('close', this.onClose.bind(this))
+      .once('listening', this.onListening.bind(this))
   }
 
   public listen(port: number): void {
+    debug('attempt to listen on port %d', port)
     this.webServer.listen(port)
   }
 
-  private onWebServerRequest(request: IncomingMessage, response: ServerResponse) {
+  private onListening() {
+    debug('listening for incoming connections')
+  }
+
+  private onRequest(request: IncomingMessage, response: ServerResponse) {
+    debug('request received: %o', request)
     if (request.method === 'GET' && request.headers['accept'] === 'application/nostr+json') {
       const {
         info: { name, description, pubkey, contact },
@@ -38,14 +50,17 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
       }
 
       response.setHeader('content-type', 'application/nostr+json')
-      response.end(JSON.stringify(relayInformationDocument))
+      const body = JSON.stringify(relayInformationDocument)
+      response.end(body)
     } else {
       response.setHeader('content-type', 'application/text')
       response.end('Please use a Nostr client to connect.')
     }
+    debug('send response: %o', response)
   }
 
-  private onWebServerSocketError(error: Error, socket: Duplex) {
+  private onError(error: Error, socket: Duplex) {
+    debug('socket error: %o', error)
     if (error['code'] === 'ECONNRESET' || !socket.writable) {
       return
     }
@@ -53,7 +68,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   }
 
   protected onClose() {
-    console.log(`worker ${process.pid} web server closing`)
+    debug('stopped listening to incoming connections')
     this.webServer.removeAllListeners()
   }
 }

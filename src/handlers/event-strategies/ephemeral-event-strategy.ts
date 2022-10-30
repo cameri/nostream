@@ -1,8 +1,10 @@
+import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { IEventStrategy } from '../../@types/message-handlers'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
+const debug = createLogger('ephemeral-event-strategy')
 
 export class EphemeralEventStrategy implements IEventStrategy<Event, Promise<void>> {
   public constructor(
@@ -10,6 +12,7 @@ export class EphemeralEventStrategy implements IEventStrategy<Event, Promise<voi
   ) { }
 
   public async execute(event: Event): Promise<void> {
+    debug('received event: %o', event)
     this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
   }
 }

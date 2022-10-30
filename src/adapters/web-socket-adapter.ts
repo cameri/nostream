@@ -10,19 +10,19 @@ import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
 import { attemptValidation } from '../utils/validation'
+import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { isEventMatchingFilter } from '../utils/event'
 import { messageSchema } from '../schemas/message-schema'
 
+const debug = createLogger('web-socket-adapter')
+
 export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter {
-  private id: string
-  private clientAddress: string
+  public clientId: string
+  // private clientAddress: string
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
-
-  private sent = 0
-  private received = 0
 
   public constructor(
     private readonly client: WebSocket,
@@ -34,8 +34,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.alive = true
     this.subscriptions = new Map()
 
-    this.id = Buffer.from(this.request.headers['sec-websocket-key'], 'base64').toString('hex')
-    this.clientAddress = this.request.headers['x-forwarded-for'] as string
+    this.clientId = Buffer.from(this.request.headers['sec-websocket-key'], 'base64').toString('hex')
+    // this.clientAddress = this.request.headers['x-forwarded-for'] as string
 
     this.client
       .on('message', this.onClientMessage.bind(this))
@@ -48,20 +48,30 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on(WebSocketAdapterEvent.Unsubscribe, this.onUnsubscribed.bind(this))
       .on(WebSocketAdapterEvent.Event, this.onSendEvent.bind(this))
       .on(WebSocketAdapterEvent.Broadcast, this.onBroadcast.bind(this))
-      .on(WebSocketAdapterEvent.Message, this.onSendMessage.bind(this))
+      .on(WebSocketAdapterEvent.Message, this.sendMessage.bind(this))
+
+    debug('client %s connected', this.clientId)
+  }
+
+  public getClientId(): string {
+    return this.clientId
   }
 
   public onUnsubscribed(subscriptionId: string): void {
+    debug('client %s unsubscribed %s', this.clientId, subscriptionId)
     this.subscriptions.delete(subscriptionId)
   }
 
   public onSubscribed(subscriptionId: string, filters: SubscriptionFilter[]): void {
+    debug('client %s subscribed %s to %o', this.clientId, subscriptionId, filters)
     this.subscriptions.set(subscriptionId, filters)
   }
 
   public onBroadcast(event: Event): void {
+    debug('client %s broadcast event: %o', this.clientId, event)
     this.webSocketServer.emit(WebSocketServerAdapterEvent.Broadcast, event)
     if (cluster.isWorker) {
+      debug('client %s broadcast event to primary: %o', this.clientId, event)
       process.send({
         eventName: WebSocketServerAdapterEvent.Broadcast,
         event,
@@ -80,22 +90,20 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private sendMessage(message: OutgoingMessage): void {
-    this.sent++
+    debug('sending message to client %s: %o', this.clientId, message)
     this.client.send(JSON.stringify(message))
-  }
-
-  private onSendMessage(message: OutgoingMessage): void {
-    this.sendMessage(message)
   }
 
   public onHeartbeat(): void {
     if (!this.alive) {
+      debug('client %s pong timed out', this.clientId)
       this.terminate()
       return
     }
 
     this.alive = false
     this.client.ping()
+    debug('client %s ping', this.clientId)
   }
 
   public getSubscriptions(): Map<string, SubscriptionFilter[]> {
@@ -103,12 +111,13 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private terminate(): void {
-    console.debug(`worker ${process.pid} - terminating client`)
+    debug('terminating client %s', this.clientId)
     this.client.terminate()
+    debug('client %s terminated', this.clientId)
   }
 
   private async onClientMessage(raw: Buffer) {
-    let abort
+    let abort: () => void
     try {
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf-8')))
 
@@ -118,17 +127,15 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         this.client.prependOnceListener('close', abort)
       }
 
-      this.received++
-
       await messageHandler?.handleMessage(message)
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        console.error(`worker ${process.pid} - message handler aborted`)
+        debug('message handler aborted')
       } else if (error instanceof Error && error.name === 'ValidationError') {
-        console.error(`worker ${process.pid} -  invalid message`, (error as any).annotate())
+        debug('invalid message: %o', (error as any).annotate())
         this.sendMessage(createNoticeMessage(`Invalid message: ${error.message}`))
       } else {
-        console.error(`worker ${process.pid} - unable to handle message: ${error.message}`)
+        debug('unable to handle message: %o', error)
       }
     } finally {
       if (abort) {
@@ -138,13 +145,17 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private onClientPong() {
+    debug('client %s pong', this.clientId)
     this.alive = true
   }
 
   private onClientClose() {
+    debug('client %s closing', this.clientId)
     this.alive = false
 
     this.removeAllListeners()
     this.client.removeAllListeners()
+
+    debug('client %s closed', this.clientId)
   }
 }

@@ -30,6 +30,7 @@ import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
+import { createLogger } from '../factories/logger-factory'
 import { EventDelegatorMetadataKey } from '../constants/base'
 import { isGenericTagQuery } from '../utils/filter'
 import { SubscriptionFilter } from '../@types/subscription'
@@ -47,10 +48,13 @@ const groupByLengthSpec = groupBy(
   )
 )
 
+const debug = createLogger('event-repository')
+
 export class EventRepository implements IEventRepository {
   public constructor(private readonly dbClient: DatabaseClient) { }
 
   public findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]> {
+    debug('querying for %o', filters)
     if (!Array.isArray(filters) || !filters.length) {
       throw new Error('Filters cannot be empty')
     }
@@ -153,6 +157,7 @@ export class EventRepository implements IEventRepository {
   }
 
   public async create(event: Event): Promise<number> {
+    debug('creating event: %o', event)
     return this.insert(event).then(prop('rowCount') as () => number)
   }
 
@@ -180,6 +185,7 @@ export class EventRepository implements IEventRepository {
 
 
   public upsert(event: Event): Promise<number> {
+    debug('upserting event: %o', event)
     const toJSON = (input: any) => JSON.stringify(input)
 
     const row = applySpec({
@@ -212,6 +218,7 @@ export class EventRepository implements IEventRepository {
   }
 
   public deleteByPubkeyAndIds(pubkey: string, ids: EventId[]): Promise<number> {
+    debug('deleting events from %s: %o', pubkey, ids)
     return this.dbClient('events')
       .where({
         event_pubkey: toBuffer(pubkey),

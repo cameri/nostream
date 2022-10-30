@@ -1,6 +1,7 @@
 import { EventKindsRange, ISettings } from '../@types/settings'
 import { getEventProofOfWork, getPubkeyProofOfWork, isEventIdValid, isEventSignatureValid } from '../utils/event'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
+import { createLogger } from '../factories/logger-factory'
 import { createNoticeMessage } from '../utils/messages'
 import { Event } from '../@types/event'
 import { EventKinds } from '../constants/base'
@@ -8,6 +9,8 @@ import { Factory } from '../@types/base'
 import { IncomingEventMessage } from '../@types/messages'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { WebSocketAdapterEvent } from '../constants/adapter'
+
+const debug = createLogger('event-message-handler')
 
 export class EventMessageHandler implements IMessageHandler {
   public constructor(
@@ -17,18 +20,20 @@ export class EventMessageHandler implements IMessageHandler {
   ) { }
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
+    debug('received message: %o', message)
     const [, event] = message
 
     let reason = await this.isEventValid(event)
     if (reason) {
-      console.warn(`Event ${event.id} rejected. Reason: ${reason}`)
+      debug('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Event rejected: ${reason}`))
       return
     }
 
     reason = this.canAcceptEvent(event)
     if (reason) {
+      debug('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Event rejected: ${reason}`))
-      console.warn(`Event ${event.id} rejected. Reason: ${reason}`)
       return
     }
 
@@ -41,7 +46,7 @@ export class EventMessageHandler implements IMessageHandler {
     try {
       await strategy.execute(event)
     } catch (error) {
-      console.error('Error handling message:', message, error)
+      debug('error handling message %o: %o', message, error)
     }
   }
 

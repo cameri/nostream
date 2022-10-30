@@ -3,12 +3,14 @@ import WebSocket, { OPEN, WebSocketServer } from 'ws'
 
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
+import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { ISettings } from '../@types/settings'
 import { propEq } from 'ramda'
 import { WebServerAdapter } from './web-server-adapter'
 
+const debug = createLogger('web-socket-server-adapter')
 
 const WSS_CLIENT_HEALTH_PROBE_INTERVAL = 30000
 
@@ -36,9 +38,9 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     this.webSocketServer
       .on(WebSocketServerAdapterEvent.Close, this.onClose.bind(this))
       .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))
-      .on('error', (err) => {
-        console.error('error', err)
-        throw err
+      .on('error', (error) => {
+        debug('error: %o', error)
+        throw error
       })
     this.heartbeatInterval = setInterval(this.onHeartbeat.bind(this), WSS_CLIENT_HEALTH_PROBE_INTERVAL)
   }
@@ -55,8 +57,9 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       if (!propEq('readyState', OPEN)(webSocket)) {
         return
       }
-
-      this.webSocketsAdapters.get(webSocket).emit(WebSocketAdapterEvent.Event, event)
+      const webSocketAdapter = this.webSocketsAdapters.get(webSocket)
+      debug('broadcasting event to client %s: %o', webSocketAdapter.getClientId(), event)
+      webSocketAdapter.emit(WebSocketAdapterEvent.Event, event)
     })
   }
 
@@ -65,6 +68,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   private onConnection(client: WebSocket, req: IncomingMessage) {
+    debug('client connected: %o', req.headers)
     this.webSocketsAdapters.set(client, this.createWebSocketAdapter([client, req, this]))
   }
 
@@ -75,13 +79,15 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   protected onClose() {
-    this.webSocketServer.clients.forEach((webSocket: WebSocket) =>
-      webSocket.terminate()
-    )
-    console.debug(`worker ${process.pid} - websocket server closing`)
+    debug('closing')
     clearInterval(this.heartbeatInterval)
+    this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
+      debug('terminating client')
+      webSocket.terminate()
+    })
     this.removeAllListeners()
     this.webSocketServer.removeAllListeners()
     super.onClose()
+    debug('closed')
   }
 }

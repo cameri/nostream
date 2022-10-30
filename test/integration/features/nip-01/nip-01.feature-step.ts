@@ -13,6 +13,7 @@ import { createHmac } from 'crypto'
 import sinonChai from 'sinon-chai'
 
 import { Event } from '../../../../src/@types/event'
+import { getDbClient } from '../../../../src/database/client'
 import { MessageType } from '../../../../src/@types/messages'
 import { serializeEvent } from '../../../../src/utils/event'
 import { SubscriptionFilter } from '../../../../src/@types/subscription'
@@ -21,42 +22,82 @@ chai.use(sinonChai)
 const { expect } = chai
 
 Before(async function () {
-  const ws = new WebSocket('ws://localhost:8008')
-  this.parameters.ws = ws
-  await new Promise((resolve, reject) => {
-    ws
-      .once('open', resolve)
-      .once('error', reject)
+  this.parameters.identities = {}
+  this.parameters.subscriptions = {}
+  this.parameters.clients = {}
+})
+
+After(async function () {
+  this.parameters.subscriptions = {}
+  Object.values(this.parameters.clients).forEach((ws: WebSocket) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.close()
+    }
   })
+  this.parameters.clients = {}
+
+  const dbClient = getDbClient()
+  await Promise.all(
+    Object.values(this.parameters.identities)
+      .map(async (identity: { pubkey: string }) => dbClient('events').where({ event_pubkey: Buffer.from(identity.pubkey, 'hex') }).del())
+  )
+  this.parameters.identities = {}
 })
 
-After(function () {
-  const ws = this.parameters.ws as WebSocket
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.close()
-  }
+Given(/someone is (\w+)/, async function(name: string) {
+  const connection = connect(name)
+  this.parameters.identities[name] = this.parameters.identities[name] ?? createIdentity(name)
+  this.parameters.clients[name] = await connection
+  this.parameters.subscriptions[name] = []
 })
 
-Given(/I am (\w+)/, function(name: string) {
-  this.parameters.authors = this.parameters.authors ?? {}
-  this.parameters.authors[name] = this.parameters.authors[name] ?? createIdentity(name)
-})
-
-When(/I subscribe to author (\w+)/, async function(this: World<Record<string, any>>, name: string) {
-  const ws = this.parameters.ws as WebSocket
-  const pubkey = this.parameters.authors[name].pubkey
-  this.parameters.subscriptions = this.parameters.subscriptions ?? []
+When(/(\w+) subscribes to author (\w+)$/, async function(this: World<Record<string, any>>, from: string, to: string) {
+  const ws = this.parameters.clients[from] as WebSocket
+  const pubkey = this.parameters.identities[to].pubkey
   const subscription = { name: `test-${Math.random()}`, filters: [{ authors: [pubkey] }] }
-  this.parameters.subscriptions.push(subscription)
+  this.parameters.subscriptions[from].push(subscription)
+
+  await createSubscription(ws, subscription.name, subscription.filters)
+})
+
+When(/(\w+) subscribes to author (\w+) with a limit of (\d+)/, async function(this: World<Record<string, any>>, from: string, to: string, limit: string) {
+  const ws = this.parameters.clients[from] as WebSocket
+  const pubkey = this.parameters.identities[to].pubkey
+  const subscription = { name: `test-${Math.random()}`, filters: [{ authors: [pubkey], limit: Number(limit) }] }
+  this.parameters.subscriptions[from].push(subscription)
+
+  await createSubscription(ws, subscription.name, subscription.filters)
+})
+
+When(/(\w+) subscribes to text_note events/, async function(this: World<Record<string, any>>, name: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const subscription = { name: `test-${Math.random()}`, filters: [{ kinds: [1] }] }
+  this.parameters.subscriptions[name].push(subscription)
+
+  await createSubscription(ws, subscription.name, subscription.filters)
+})
+
+When(/(\w+) subscribes to any event since (\d+) until (\d+)/, async function(this: World<Record<string, any>>, name: string, since: string, until: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const subscription = { name: `test-${Math.random()}`, filters: [{ since: Number(since), until: Number(until) }] }
+  this.parameters.subscriptions[name].push(subscription)
+
+  await createSubscription(ws, subscription.name, subscription.filters)
+})
+
+When(/(\w+) subscribes to tag (\w) with "(.*?)"$/, async function(this: World<Record<string, any>>, name: string, tag: string, value: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const subscription = { name: `test-${Math.random()}`, filters: [{ [`#${tag}`]: [value] }] }
+  this.parameters.subscriptions[name].push(subscription)
 
   await createSubscription(ws, subscription.name, subscription.filters)
 
   await waitForEOSE(ws, subscription.name)
 })
 
-When(/I send a set_metadata event as (\w+)/, async function(name: string) {
-  const ws = this.parameters.ws as WebSocket
-  const { pubkey, privkey } = this.parameters.authors[name]
+When(/(\w+) sends a set_metadata event/, async function(name: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const { pubkey, privkey } = this.parameters.identities[name]
 
   const content = JSON.stringify({ name })
   const event: Event = await createEvent({ pubkey, kind: 0, content }, privkey)
@@ -67,19 +108,156 @@ When(/I send a set_metadata event as (\w+)/, async function(name: string) {
   this.parameters.events.push(event)
 })
 
-Then(/I receive a set_metadata event from (\w+)/, async function(author: string) {
-  const expectedEvent = this.parameters.events.pop()
-  const subscription = this.parameters.subscriptions[this.parameters.subscriptions.length - 1]
-  const receivedEvent = await waitForNextEvent(this.parameters.ws, subscription.name)
-  expect(receivedEvent.pubkey).to.equal(this.parameters.authors[author].pubkey)
-  expect(receivedEvent).to.deep.equal(expectedEvent)
+When(/^(\w+) sends a text_note event with content "([^"]+)"$/, async function(name: string, content: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const { pubkey, privkey } = this.parameters.identities[name]
+
+  const event: Event = await createEvent({ pubkey, kind: 1, content }, privkey)
+
+  await sendEvent(ws, event)
 })
+
+When(/^(\w+) sends a text_note event with content "([^"]+)" and tag (\w) containing "([^"]+)"$/, async function(
+  name: string,
+  content: string,
+  tag: string,
+  value: string,
+) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const { pubkey, privkey } = this.parameters.identities[name]
+
+  const event: Event = await createEvent({ pubkey, kind: 1, content, tags: [[tag, value]] }, privkey)
+
+  await sendEvent(ws, event)
+})
+
+When(/^(\w+) sends a text_note event with content "([^"]+)" on (\d+)$/, async function(
+  name: string,
+  content: string,
+  createdAt: string,
+) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const { pubkey, privkey } = this.parameters.identities[name]
+
+  const event: Event = await createEvent({ pubkey, kind: 1, content, created_at: Number(createdAt) }, privkey)
+
+  await sendEvent(ws, event)
+})
+
+When(/(\w+) sends a text_note event with invalid signature/, async function(name: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const { pubkey, privkey } = this.parameters.identities[name]
+
+  const event: Event = await createEvent({ pubkey, kind: 1, content: "I'm cheating" }, privkey)
+
+  event.sig = 'f'.repeat(128)
+
+  await sendEvent(ws, event)
+})
+
+When(/(\w+) sends a recommend_server event with content "(.+?)"/, async function(name: string, content: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const { pubkey, privkey } = this.parameters.identities[name]
+
+  const event: Event = await createEvent({ pubkey, kind: 2, content }, privkey)
+
+  await sendEvent(ws, event)
+})
+
+Then(/(\w+) receives a set_metadata event from (\w+)/, async function(name: string, author: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
+  const receivedEvent = await waitForNextEvent(ws, subscription.name)
+
+  expect(receivedEvent.kind).to.equal(0)
+  expect(receivedEvent.pubkey).to.equal(this.parameters.identities[author].pubkey)
+})
+
+Then(/(\w+) receives a text_note event from (\w+) with content "(.+?)"/, async function(name: string, author: string, content: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
+  const receivedEvent = await waitForNextEvent(ws, subscription.name)
+
+  expect(receivedEvent.kind).to.equal(1)
+  expect(receivedEvent.pubkey).to.equal(this.parameters.identities[author].pubkey)
+  expect(receivedEvent.content).to.equal(content)
+})
+
+Then(/(\w+) receives a text_note event from (\w+) with content "(.+?)" on (\d+)/, async function(
+  name: string,
+  author: string,
+  content: string,
+  createdAt: string,
+) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
+  const receivedEvent = await waitForNextEvent(ws, subscription.name)
+
+  expect(receivedEvent.kind).to.equal(1)
+  expect(receivedEvent.pubkey).to.equal(this.parameters.identities[author].pubkey)
+  expect(receivedEvent.content).to.equal(content)
+  expect(receivedEvent.created_at).to.equal(Number(createdAt))
+})
+
+Then(/(\w+) receives (\d+) text_note events from (\w+)/, async function(
+  name: string,
+  count: string,
+  author: string,
+) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
+  const events = await waitForEventCount(ws, subscription.name, Number(count), true)
+
+  expect(events.length).to.equal(2)
+  expect(events[0].kind).to.equal(1)
+  expect(events[1].kind).to.equal(1)
+  expect(events[0].pubkey).to.equal(this.parameters.identities[author].pubkey)
+  expect(events[1].pubkey).to.equal(this.parameters.identities[author].pubkey)
+})
+
+Then(/(\w+) receives a recommend_server event from (\w+) with content "(.+?)"/, async function(name: string, author: string, content: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
+  const receivedEvent = await waitForNextEvent(ws, subscription.name)
+
+  expect(receivedEvent.kind).to.equal(2)
+  expect(receivedEvent.pubkey).to.equal(this.parameters.identities[author].pubkey)
+  expect(receivedEvent.content).to.equal(content)
+})
+
+Then(/(\w+) receives a notice with (.*)/, async function(name: string, pattern: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const actualNotice = await waitForNotice(ws)
+
+  expect(actualNotice).to.contain(pattern)
+})
+
+async function connect(_name: string) {
+  const host = 'ws://localhost:8008'
+  const ws = new WebSocket(host)
+  await new Promise<void>((resolve, reject) => {
+    ws
+      // .on('message', (data: RawData) => {
+      //   console.log(`${name} received`, JSON.parse(data.toString('utf-8')))
+      // })
+      .once('open', () => {
+        resolve()
+      })
+      .once('error', reject)
+      .once('close', () => {
+        ws.removeAllListeners()
+      })
+  })
+  return ws
+}
+
+let eventCount = 0
 
 async function createEvent(input: Partial<Event>, privkey: any): Promise<Event> {
   const event: Event = {
     pubkey: input.pubkey,
     kind: input.kind,
-    created_at: input.created_at ?? Math.floor(Date.now() / 1000),
+    created_at: input.created_at ?? Math.floor(Date.now() / 1000) + eventCount++,
     content: input.content ?? '',
     tags: input.tags ?? [],
   } as any
@@ -174,6 +352,82 @@ async function sendEvent(ws: WebSocket, event: Event) {
 
 async function waitForNextEvent(ws: WebSocket, subscription: string): Promise<Event> {
   return new Promise((resolve, reject) => {
+    ws.on('message', onMessage)
+    ws.once('error', onError)
+
+    function cleanup() {
+      ws.removeListener('message', onMessage)
+      ws.removeListener('error', onError)
+    }
+
+    function onError(error: Error) {
+      reject(error)
+      cleanup()
+    }
+
+    function onMessage(raw: RawData) {
+      const message = JSON.parse(raw.toString('utf-8'))
+      if (message[0] === MessageType.EVENT && message[1] === subscription) {
+        resolve(message[2])
+        cleanup()
+      } else if (message[0] === MessageType.NOTICE) {
+        reject(new Error(message[1]))
+        cleanup()
+      }
+    }
+  })
+}
+
+async function waitForEventCount(
+  ws: WebSocket,
+  subscription: string,
+  count = 1,
+  eose = false,
+): Promise<Event[]> {
+  const events = []
+
+  return new Promise((resolve, reject) => {
+    ws.on('message', onMessage)
+    ws.once('error', onError)
+    function cleanup() {
+      ws.removeListener('message', onMessage)
+      ws.removeListener('error', onError)
+    }
+
+    function onError(error: Error) {
+      reject(error)
+      cleanup()
+    }
+    function onMessage(raw: RawData) {
+      const message = JSON.parse(raw.toString('utf-8'))
+      if (message[0] === MessageType.EVENT && message[1] === subscription) {
+        events.push(message[2])
+        if (!eose && events.length === count) {
+          resolve(events)
+          cleanup()
+        } else if (events.length > count) {
+          reject(new Error(`Expected ${count} but got ${events.length} events`))
+          cleanup()
+        }
+      } else if (message[0] === MessageType.EOSE && message[1] === subscription) {
+        if (!eose) {
+          reject(new Error('Expected event but received EOSE'))
+        } else if (events.length !== count) {
+          reject(new Error(`Expected ${count} but got ${events.length} events before EOSE`))
+        } else {
+          resolve(events)
+        }
+        cleanup()
+      } else if (message[0] === MessageType.NOTICE) {
+        reject(new Error(message[1]))
+        cleanup()
+      }
+    }
+  })
+}
+
+async function waitForNotice(ws: WebSocket): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     function cleanup() {
       ws.removeListener('message', onMessage)
       ws.removeListener('error', onError)
@@ -186,16 +440,13 @@ async function waitForNextEvent(ws: WebSocket, subscription: string): Promise<Ev
     ws.once('error', onError)
 
     function onMessage(raw: RawData) {
-      ws.removeListener('error', onError)
       const message = JSON.parse(raw.toString('utf-8'))
-      if (message[0] === MessageType.EVENT && message[1] === subscription) {
-        resolve(message[2])
-        cleanup()
-      } else if (message[0] === MessageType.NOTICE) {
-        reject(new Error(message[1]))
+      if (message[0] === MessageType.NOTICE) {
+        resolve(message[1])
         cleanup()
       }
     }
+
     ws.on('message', onMessage)
   })
 }
