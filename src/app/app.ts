@@ -1,10 +1,13 @@
 import { Cluster, Worker } from 'cluster'
 import { cpus } from 'os'
 
+import { createLogger } from '../factories/logger-factory'
 import { IRunnable } from '../@types/base'
 import { ISettings } from '../@types/settings'
 import packageJson from '../../package.json'
 import { Serializable } from 'child_process'
+
+const debug = createLogger('app-primary')
 
 export class App implements IRunnable {
   public constructor(
@@ -12,47 +15,54 @@ export class App implements IRunnable {
     private readonly cluster: Cluster,
     private readonly settingsFactory: () => ISettings,
   ) {
+    debug('starting')
+
     this.cluster
       .on('message', this.onClusterMessage.bind(this))
       .on('exit', this.onClusterExit.bind(this))
 
     this.process
       .on('SIGTERM', this.onExit.bind(this))
+
+    debug('started')
   }
 
   public run(): void {
-    console.log(`${packageJson.name}@${packageJson.version}`)
-    console.log(`supported NIPs: ${packageJson.supportedNips}`)
-    console.log(`primary ${this.process.pid} - running`)
+    debug('running %s version %s', packageJson.name, packageJson.version)
+    debug('supported NIPs: %o', packageJson.supportedNips)
 
     const workerCount = this.settingsFactory().workers?.count || cpus().length
 
     for (let i = 0; i < workerCount; i++) {
+      debug('starting worker')
       this.cluster.fork()
     }
   }
 
   private onClusterMessage(source: Worker, message: Serializable) {
+    debug('message received from worker %s: %o', source.process.pid, message)
     for (const worker of Object.values(this.cluster.workers)) {
       if (source.id === worker.id) {
         continue
       }
 
+      debug('sending message to worker %s: %o', worker.process.pid, message)
       worker.send(message)
     }
   }
 
   private onClusterExit(deadWorker: Worker, code: number, signal: string)  {
-      console.log(`worker ${deadWorker.process.pid} - exiting`)
-      if (code === 0 || signal === 'SIGINT') {
-        return
-      }
-
-      this.cluster.fork()
+    debug('worker %s died', deadWorker.process.pid)
+    if (code === 0 || signal === 'SIGINT') {
+      return
+    }
+    debug('starting worker')
+    const newWorker = this.cluster.fork()
+    debug('started worker %s', newWorker.process.pid)
   }
 
   private onExit() {
-    console.log('exiting...')
+    debug('exiting')
     this.process.exit(0)
   }
 }

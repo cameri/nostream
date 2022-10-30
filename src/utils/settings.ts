@@ -3,9 +3,11 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { mergeDeepRight } from 'ramda'
 
+import { createLogger } from '../factories/logger-factory'
 import { ISettings } from '../@types/settings'
 import packageJson from '../../package.json'
 
+const debug = createLogger('settings')
 export class SettingsStatic {
   static _settings: ISettings
 
@@ -58,6 +60,7 @@ export class SettingsStatic {
   }
 
   public static loadSettings(path: string) {
+    debug('loading settings from %s', path)
     return JSON.parse(
       fs.readFileSync(
         path,
@@ -67,6 +70,7 @@ export class SettingsStatic {
   }
 
   public static createSettings(): ISettings {
+    debug('creating settings')
     if (SettingsStatic._settings) {
       return SettingsStatic._settings
     }
@@ -86,13 +90,14 @@ export class SettingsStatic {
 
       return SettingsStatic._settings
     } catch (error) {
-      console.error('Unable to read config file. Reason: %s', error.message)
+      debug('error reading config file at %s: %o', path, error)
 
       return defaults
     }
   }
 
   public static saveSettings(path: string, settings: ISettings) {
+    debug('saving settings to %s: %o', path, settings)
     return fs.writeFileSync(
       path,
       JSON.stringify(settings, null, 2),

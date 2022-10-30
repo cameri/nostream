@@ -1,6 +1,9 @@
 import 'pg'
 import 'pg-query-stream'
 import knex, { Knex } from 'knex'
+import { createLogger } from '../factories/logger-factory'
+
+const debug = createLogger('database-client')
 
 const createDbConfig = (): Knex.Config => ({
   client: 'pg',
@@ -20,9 +23,12 @@ const createDbConfig = (): Knex.Config => ({
 })
 
 let client: Knex
+
 export const getDbClient = () => {
   if (!client) {
-    client = knex(createDbConfig())
+    const config = createDbConfig()
+    debug('config: %o', config)
+    client = knex(config)
   }
 
   return client

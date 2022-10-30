@@ -1,6 +1,9 @@
 import { IRunnable } from '../@types/base'
 import { IWebSocketServerAdapter } from '../@types/adapters'
 
+import { createLogger } from '../factories/logger-factory'
+
+const debug = createLogger('app-worker')
 export class AppWorker implements IRunnable {
   public constructor(
     private readonly process: NodeJS.Process,
@@ -19,27 +22,27 @@ export class AppWorker implements IRunnable {
     const port = Number(process.env.SERVER_PORT) || 8008
 
     this.adapter.listen(port)
-
-    console.log(`worker ${process.pid} - listening on port ${port}`)
   }
 
   private onMessage(message: { eventName: string, event: unknown }): void {
+    debug('broadcast message received: %o', message)
     this.adapter.emit(message.eventName, message.event)
   }
 
   private onError(error: Error) {
-    console.error(`worker ${process.pid} - error`, error)
+    debug('error: %o', error)
     throw error
   }
 
   private onExit() {
-    console.log(`worker ${process.pid} - exiting`)
+    debug('exiting')
     this.close(() => {
       this.process.exit(0)
     })
   }
 
   public close(callback?: () => void) {
+    debug('closing')
     this.adapter.close(callback)
   }
 }

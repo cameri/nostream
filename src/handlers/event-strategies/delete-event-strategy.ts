@@ -1,3 +1,4 @@
+import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { EventTags } from '../../constants/base'
 import { IEventRepository } from '../../@types/repositories'
@@ -5,6 +6,7 @@ import { IEventStrategy } from '../../@types/message-handlers'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
+const debug = createLogger('delete-event-strategy')
 
 export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>> {
   public constructor(
@@ -13,6 +15,7 @@ export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>>
   ) { }
 
   public async execute(event: Event): Promise<void> {
+    debug('received event: %o', event)
     await this.eventRepository.create(event)
 
     const eTags = event.tags.filter((tag) => tag[0] === EventTags.Event)
