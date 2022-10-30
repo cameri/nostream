@@ -6,12 +6,15 @@ import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { isEventMatchingFilter, toNostrEvent } from '../utils/event'
 import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
+import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { IEventRepository } from '../@types/repositories'
 import { ISettings } from '../@types/settings'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { SubscribeMessage } from '../@types/messages'
 import { WebSocketAdapterEvent } from '../constants/adapter'
+
+const debug = createLogger('subscribe-message-handler')
 
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private readonly abortController: AbortController
@@ -29,21 +32,24 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   }
 
   public async handleMessage(message: SubscribeMessage): Promise<void> {
+    debug('received message: %o', message)
     const subscriptionId = message[1] as SubscriptionId
     const filters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
 
     const reason = this.canSubscribe(subscriptionId, filters)
     if (reason) {
+      debug('subscription %s with %o rejected: %s', subscriptionId, filters, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Subscription request rejected: ${reason}`))
       return
     }
 
     this.webSocket.emit(WebSocketAdapterEvent.Subscribe, subscriptionId, filters)
 
-    return this.fetchAndSend(subscriptionId, filters)
+    await this.fetchAndSend(subscriptionId, filters)
   }
 
   private async fetchAndSend(subscriptionId: string, filters: SubscriptionFilter[]): Promise<void> {
+    debug('fetching events for subscription %s with %o', subscriptionId, filters)
     const sendEvent = (event: Event) =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createOutgoingEventMessage(subscriptionId, event))
     const sendEOSE = () =>
@@ -65,7 +71,10 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       )
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
+        debug('aborted: %o', error)
         findEvents.end()
+      } else {
+        debug('error streaming events: %o', error)
       }
       throw error
     }

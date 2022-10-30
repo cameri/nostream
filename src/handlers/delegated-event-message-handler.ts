@@ -2,6 +2,7 @@ import { mergeDeepLeft } from 'ramda'
 
 import { DelegatedEvent, Event } from '../@types/event'
 import { EventDelegatorMetadataKey, EventTags } from '../constants/base'
+import { createLogger } from '../factories/logger-factory'
 import { createNoticeMessage } from '../utils/messages'
 import { EventMessageHandler } from './event-message-handler'
 import { IMessageHandler } from '../@types/message-handlers'
@@ -9,20 +10,23 @@ import { IncomingEventMessage } from '../@types/messages'
 import { isDelegatedEventValid } from '../utils/event'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
+const debug = createLogger('delegated-event-message-handler')
+
 export class DelegatedEventMessageHandler extends EventMessageHandler implements IMessageHandler {
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
     const [, event] = message
 
     let reason = this.canAcceptEvent(event)
     if (reason) {
+      debug('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Event rejected: ${reason}`))
-      console.warn(`Event ${event.id} rejected. Reason: ${reason}`)
       return
     }
 
     reason = await this.isEventValid(event)
     if (reason) {
-      console.warn(`Event ${event.id} rejected. Reason: ${reason}`)
+      debug('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Event rejected: ${reason}`))
       return
     }
 
@@ -43,7 +47,7 @@ export class DelegatedEventMessageHandler extends EventMessageHandler implements
     try {
       await strategy.execute(delegatedEvent)
     } catch (error) {
-      console.error('Error handling message:', message, error)
+      debug('error handling message %o: %o', message, error)
     }
   }
 

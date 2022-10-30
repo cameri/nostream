@@ -1,9 +1,11 @@
+import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { IEventRepository } from '../../@types/repositories'
 import { IEventStrategy } from '../../@types/message-handlers'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
+const debug = createLogger('replaceable-event-strategy')
 
 export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<void>> {
   public constructor(
@@ -12,6 +14,7 @@ export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<v
   ) { }
 
   public async execute(event: Event): Promise<void> {
+    debug('received event: %o', event)
     const count = await this.eventRepository.upsert(event)
     if (!count) {
       return
