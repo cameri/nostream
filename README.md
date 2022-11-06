@@ -5,6 +5,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Cameri/nostr-ts-relay/releases">
+    <img alt="GitHub release" src="https://img.shields.io/github/v/release/Cameri/nostr-ts-relay">
+  </a>
   <a href="https://github.com/Cameri/nostr-ts-relay/issues">
     <img alt="GitHub issues" src="https://img.shields.io/github/issues/Cameri/nostr-ts-relay?style=plastic" />
   </a>
