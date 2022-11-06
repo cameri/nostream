@@ -104,7 +104,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [finish]
+    needs: [test-integrations-and-cover]
     if: github.ref == 'refs/heads/master'
     steps:
       - name: Checkout repository
