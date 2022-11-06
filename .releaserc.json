@@ -5,6 +5,16 @@
       "preset": "conventionalcommits"
     }],
     "@semantic-release/release-notes-generator",
-    "@semantic-release/github"
+    "@semantic-release/github",
+    ["semantic-release-telegram", {
+      "name": "nostr-ts-relay",
+      "chats": [ -1001670974037 ],
+      "templates": {
+        "success" : "A new version of <a href='{repository_url}'>{name}</a> has been released. Current version is <b>{version}</b>"
+      },
+      "assets" : [
+        { "glob": [ "./*" ], "name": "nostr-ts-relay-{version}.zip" }
+      ]
+    }]
   ]
 }

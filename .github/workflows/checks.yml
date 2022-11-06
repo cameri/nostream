@@ -90,8 +90,8 @@ jobs:
           flag-name: Integration
           parallel: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
-  finish:
-    name: Finish
+  post-tests:
+    name: Post Tests
     needs: [test-units-and-cover, test-integrations-and-cover]
     runs-on: ubuntu-latest
     if: ${{ always() }}
@@ -101,3 +101,18 @@ jobs:
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         parallel-finished: true
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [finish]
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: .nvmrc
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
