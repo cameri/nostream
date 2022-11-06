@@ -58,12 +58,21 @@ NIPs with a relay-specific implementation are listed here.
 
 ## Quick Start (Docker Compose) (Best)
 
-  Start with:
+Install Docker following the [official guide](https://docs.docker.com/engine/install/).
+You may have to uninstall Docker if you installed it using a different guide.
+
+Clone repository and enter directory:
+  ```
+  git clone git@github.com:Cameri/nostr-ts-relay.git
+  cd nostr-ts-relay
+  ```
+
+Start with:
   ```
   npm run docker:compose:start &
   ```
 
-  Stop the server with:
+Stop the server with:
   ```
   npm run docker:compose:stop
   ```
@@ -86,6 +95,12 @@ Create `nostr_ts_relay` database:
   $ psql -h $DB_HOST -p $DB_PORT -U $DB_USER -W
   postgres=# create database nostr_ts_relay;
   postgres=# quit
+  ```
+
+Clone repository and enter directory:
+  ```
+  git clone git@github.com:Cameri/nostr-ts-relay.git
+  cd nostr-ts-relay
   ```
 
 Install dependencies:
@@ -128,6 +143,11 @@ To clean up the build, coverage and test reports run:
 
 ### Unit tests
 
+Open a terminal and change to the project's directory:
+  ```
+  cd /path/to/nostr-ts-relay
+  ```
+
 Run unit tests with:
 
   ```
@@ -158,6 +178,11 @@ To see the unit tests coverage report open `.coverage/unit/lcov-report/index.htm
 
 ### Integration tests (Docker Compose)
 
+Open a terminal and change to the project's directory:
+  ```
+  cd /path/to/nostr-ts-relay
+  ```
+
 Run integration tests with:
 
   ```
@@ -171,6 +196,11 @@ And to get integration test coverage run:
   ```
 
 ### Integration tests (Standalone)
+
+Open a terminal and change to the project's directory:
+  ```
+  cd /path/to/nostr-ts-relay
+  ```
 
 Set the following environment variables:
 
@@ -206,8 +236,6 @@ To see the integration test coverage report open `.coverage/integration/lcov-rep
   ```
   open .coverage/integration/lcov-report/index.html
   ```
-
-To see the
 
 ## Configuration
 
