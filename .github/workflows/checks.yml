@@ -112,6 +112,8 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version-file: .nvmrc
+      - name: Install package dependencies
+        run: npm ci
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
