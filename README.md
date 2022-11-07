@@ -14,6 +14,7 @@
   <a href="https://github.com/Cameri/nostr-ts-relay/stargazers">
     <img alt="GitHub stars" src="https://img.shields.io/github/stars/Cameri/nostr-ts-relay" />
   </a>
+  <img alt="GitHub top language" src="https://img.shields.io/github/languages/top/Cameri/nostr-ts-relay">
   <a href="https://github.com/Cameri/nostr-ts-relay/network">
     <img alt="GitHub forks" src="https://img.shields.io/github/forks/Cameri/nostr-ts-relay" />
   </a>
