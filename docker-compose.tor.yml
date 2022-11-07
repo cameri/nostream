@@ -1,0 +1,15 @@
+services:
+  tor:
+    image: lncm/tor:0.4.7.9@sha256:86c2fe9d9099e6376798979110b8b9a3ee5d8adec27289ac4a5ee892514ffe92
+    container_name: tor
+    user: toruser
+    depends_on:
+      - relay
+    volumes:
+      - ${PWD}/tor/torrc:/etc/tor/torrc
+      - ${HOME}/.nostr/tor/data:/var/lib/tor
+    restart: on-failure
+    stop_grace_period: 10m30s
+    networks:
+      default:
+        ipv4_address: 10.10.10.253
