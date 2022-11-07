@@ -33,7 +33,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   }
 
   private onRequest(request: IncomingMessage, response: ServerResponse) {
-    debug('request received: %o', request)
+    debug('request received: %O', request.rawHeaders)
     if (request.method === 'GET' && request.headers['accept'] === 'application/nostr+json') {
       const {
         info: { name, description, pubkey, contact },
@@ -56,7 +56,6 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
       response.setHeader('content-type', 'application/text')
       response.end('Please use a Nostr client to connect.')
     }
-    debug('send response: %o', response)
   }
 
   private onError(error: Error, socket: Duplex) {
