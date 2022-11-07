@@ -17,6 +17,7 @@ import { isEventMatchingFilter } from '../utils/event'
 import { messageSchema } from '../schemas/message-schema'
 
 const debug = createLogger('web-socket-adapter')
+const debugHeartbeat = debug.extend('heartbeat')
 
 export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter {
   public clientId: string
@@ -103,7 +104,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     this.alive = false
     this.client.ping()
-    debug('client %s ping', this.clientId)
+    debugHeartbeat('client %s ping', this.clientId)
   }
 
   public getSubscriptions(): Map<string, SubscriptionFilter[]> {
@@ -145,7 +146,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private onClientPong() {
-    debug('client %s pong', this.clientId)
+    debugHeartbeat('client %s pong', this.clientId)
     this.alive = true
   }
 
