@@ -28,8 +28,24 @@ export class App implements IRunnable {
   }
 
   public run(): void {
-    debug('running %s version %s', packageJson.name, packageJson.version)
-    debug('supported NIPs: %o', packageJson.supportedNips)
+    console.log(`
+ ███▄    █ ▒█████    ██████ ▄▄▄█████▓ ██▀███       ▄▄▄█████▓ ██████       ██▀███  ▓█████  ██▓    ▄▄▄     ▓██   ██▓
+ ██ ▀█   █▒██▒  ██▒▒██    ▒ ▓  ██▒ ▓▒▓██ ▒ ██▒     ▓  ██▒ ▓▒██    ▒      ▓██ ▒ ██▒▓█   ▀ ▓██▒   ▒████▄    ▒██  ██▒
+▓██  ▀█ ██▒██░  ██▒░ ▓██▄   ▒ ▓██░ ▒░▓██ ░▄█ ▒ ███ ▒ ▓██░ ▒░ ▓██▄    ███ ▓██ ░▄█ ▒▒███   ▒██░   ▒██  ▀█▄   ▒██ ██░
+▓██▒  ▐▌██▒██   ██░  ▒   ██▒░ ▓██▓ ░ ▒██▀▀█▄    ▒░ ░ ▓██▓ ░  ▒   ██▒  ▒░ ▒██▀▀█▄  ▒▓█  ▄ ▒██░   ░██▄▄▄▄██  ░ ▐██▓░
+▒██░   ▓██░ ████▓▒░▒██████▒▒  ▒██▒ ░ ░██▓ ▒██▒  ░    ▒██▒ ░▒██████▒▒  ░  ░██▓ ▒██▒░▒████▒░██████▒▓█   ▓██▒ ░ ██▒▓░
+░ ▒░   ▒ ▒░ ▒░▒░▒░ ▒ ▒▓▒ ▒ ░  ▒ ░░   ░ ▒▓ ░▒▓░       ▒ ░░  ▒ ▒▓▒ ▒ ░     ░ ▒▓ ░▒▓░░░ ▒░ ░░ ▒░▓  ░▒▒   ▓▒█░  ██▒▒▒
+░ ░░   ░ ▒░ ░ ▒ ▒░ ░ ░▒  ░ ░    ░      ░▒ ░ ▒░         ░   ░ ░▒  ░ ░       ░▒ ░ ▒░ ░ ░  ░░ ░ ▒  ░ ▒   ▒▒ ░▓██ ░▒░
+   ░   ░ ░░ ░ ░ ▒  ░  ░  ░    ░        ░░   ░        ░     ░  ░  ░         ░░   ░    ░     ░ ░    ░   ▒   ▒ ▒ ░░
+         ░    ░ ░        ░              ░                        ░          ░        ░  ░    ░  ░     ░  ░░ ░
+                                                                                                          ░ ░`)
+    const width = 114
+    const logCentered = (input: string, width: number) => {
+      const start = (width >> 1) - (input.length >> 1)
+      console.log(' '.repeat(start), input)
+    }
+    logCentered(`v${packageJson.version} by Cameri`, width)
+    logCentered(`NIPs implemented: ${packageJson.supportedNips}`, width)
 
     const workerCount = this.settingsFactory().workers?.count || cpus().length
 
@@ -37,6 +53,10 @@ export class App implements IRunnable {
       debug('starting worker')
       this.cluster.fork()
     }
+
+    logCentered(`${workerCount} workers started`, 114)
+
+    debug('settings: %O', this.settingsFactory())
   }
 
   private onClusterMessage(source: Worker, message: Serializable) {
