@@ -1,4 +1,13 @@
-import { After, AfterAll, Before, BeforeAll, Given, When, World } from '@cucumber/cucumber'
+import {
+  After,
+  AfterAll,
+  Before,
+  BeforeAll,
+  Given,
+  Then,
+  When,
+  World,
+} from '@cucumber/cucumber'
 import WebSocket from 'ws'
 
 import { connect, createIdentity, createSubscription } from './helpers'
@@ -70,4 +79,10 @@ When(/(\w+) subscribes to author (\w+)$/, async function(this: World<Record<stri
   this.parameters.subscriptions[from].push(subscription)
 
   await createSubscription(ws, subscription.name, subscription.filters)
+})
+
+Then(/(\w+) unsubscribes from author \w+/, async function(from: string) {
+  const ws = this.parameters.clients[from] as WebSocket
+  const subscription = this.parameters.subscriptions[from].pop()
+  ws.send(JSON.stringify(['CLOSE', subscription.name]))
 })

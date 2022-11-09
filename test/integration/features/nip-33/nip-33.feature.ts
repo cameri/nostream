@@ -33,12 +33,6 @@ Then(
   expect(receivedEvent.tags[0]).to.deep.equal([tagName, tagValue])
 })
 
-Then(/(\w+) unsubscribes from author \w+/, async function(from: string) {
-  const ws = this.parameters.clients[from] as WebSocket
-  const subscription = this.parameters.subscriptions[from].pop()
-  ws.send(JSON.stringify(['CLOSE', subscription.name]))
-})
-
 Then(/(\w+) receives (\d+) parameterized_replaceable_event_0 events? from (\w+) with content "([^"]+?)" and EOSE/, async function(
   name: string,
   count: string,
