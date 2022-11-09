@@ -13,10 +13,8 @@ Feature: NIP-36 Event treatment
   Scenario: Charlie sends an ephemeral event
     Given someone called Charlie
     And Charlie subscribes to author Charlie
-    When Charlie sends a ephemeral_event_0 event with content "created"
-    Then Charlie receives a ephemeral_event_0 event from Charlie with content "created"
-    When Charlie sends a ephemeral_event_0 event with content "updated"
-    Then Charlie receives a ephemeral_event_0 event from Charlie with content "updated"
+    When Charlie sends a ephemeral_event_0 event with content "now you see me"
+    Then Charlie receives a ephemeral_event_0 event from Charlie with content "now you see me"
     Then Charlie unsubscribes from author Charlie
     When Charlie subscribes to author Charlie
     Then Charlie receives 0 ephemeral_event_0 events and EOSE
