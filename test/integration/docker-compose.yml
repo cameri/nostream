@@ -18,8 +18,6 @@ services:
       - ../../.coverage:/code/.coverage
       - ../../.test-reports:/code/.test-reports
     working_dir: /code
-    ports:
-      - "8008:8008"
     depends_on:
       db-test:
         condition: service_healthy
