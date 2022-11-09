@@ -318,11 +318,19 @@ describe('NIP-12', () => {
 describe('NIP-16', () => {
   describe('isReplaceableEvent', () => {
     it('returns true if event is replaceable', () => {
-      expect(isReplaceableEvent({ kind: 10000 } as any)).to.be.true
+      expect(isReplaceableEvent({ kind: EventKinds.REPLACEABLE_FIRST } as any)).to.be.true
+    })
+
+    it('returns true if event is set_metadata', () => {
+      expect(isReplaceableEvent({ kind: EventKinds.SET_METADATA } as any)).to.be.true
+    })
+
+    it('returns true if event is contact_list', () => {
+      expect(isReplaceableEvent({ kind: EventKinds.CONTACT_LIST } as any)).to.be.true
     })
 
     it('returns false if event is not replaceable', () => {
-      expect(isReplaceableEvent({ kind: 20000 } as any)).to.be.false
+      expect(isReplaceableEvent({ kind: EventKinds.REPLACEABLE_LAST + 1 } as any)).to.be.false
     })
   })
 

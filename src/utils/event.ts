@@ -167,7 +167,7 @@ export const isEventSignatureValid = async (event: Event): Promise<boolean> => {
 }
 
 export const isReplaceableEvent = (event: Event): boolean => {
-  return event.kind >= 10000 && event.kind < 20000
+  return event.kind === 0 || event.kind === 3 || (event.kind >= 10000 && event.kind < 20000)
 }
 
 export const isEphemeralEvent = (event: Event): boolean => {
