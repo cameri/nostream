@@ -53,7 +53,6 @@ Feature: NIP-01
     When Bob sends a text_note event with content "Nostr FTW!" and tag t containing "NostrNovember"
     Then Alice receives a text_note event from Bob with content "Nostr FTW!"
 
-  @Debug
   Scenario: Alice is interested to Bob's text_note events and Charlie's set_metadata events
     Given someone called Alice
     And someone called Bob
