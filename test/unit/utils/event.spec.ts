@@ -21,7 +21,7 @@ describe('NIP-01', () => {
       const event: Partial<Event> = {
         pubkey: 'pubkey',
         created_at: 1000,
-        kind: EventKinds.TEXT_NODE,
+        kind: EventKinds.TEXT_NOTE,
         tags: [['tag name', 'tag content']],
         content: 'content',
       }
@@ -30,7 +30,7 @@ describe('NIP-01', () => {
         0,
         'pubkey',
         1000,
-        EventKinds.TEXT_NODE,
+        EventKinds.TEXT_NOTE,
         [['tag name', 'tag content']],
         'content',
       ]

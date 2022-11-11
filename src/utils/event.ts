@@ -167,15 +167,18 @@ export const isEventSignatureValid = async (event: Event): Promise<boolean> => {
 }
 
 export const isReplaceableEvent = (event: Event): boolean => {
-  return event.kind === 0 || event.kind === 3 || (event.kind >= 10000 && event.kind < 20000)
+  return event.kind === EventKinds.SET_METADATA
+    || event.kind === EventKinds.CONTACT_LIST
+    || (event.kind >= EventKinds.REPLACEABLE_FIRST && event.kind <= EventKinds.REPLACEABLE_LAST)
 }
 
 export const isEphemeralEvent = (event: Event): boolean => {
-  return event.kind >= 20000 && event.kind < 30000
+  return event.kind >= EventKinds.EPHEMERAL_FIRST && event.kind <= EventKinds.EPHEMERAL_LAST
 }
 
 export const isParameterizedReplaceableEvent = (event: Event): boolean => {
-  return event.kind >= 30000 && event.kind < 40000
+  return event.kind >= EventKinds.PARAMETERIZED_REPLACEABLE_FIRST
+    && event.kind <= EventKinds.PARAMETERIZED_REPLACEABLE_LAST
 }
 
 export const isDeleteEvent = (event: Event): boolean => {
