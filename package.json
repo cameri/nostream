@@ -103,8 +103,8 @@
   "dependencies": {
     "@noble/secp256k1": "1.7.0",
     "debug": "4.3.4",
-    "joi": "17.6.1",
-    "knex": "^2.3.0",
+    "joi": "17.6.3",
+    "knex": "2.3.0",
     "pg": "8.8.0",
     "pg-query-stream": "4.2.3",
     "ramda": "0.28.0",
