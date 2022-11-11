@@ -19,7 +19,7 @@ export class AppWorker implements IRunnable {
   }
 
   public run(): void {
-    const port = Number(process.env.SERVER_PORT) || 8008
+    const port = Number(process.env.PORT) || 8008
 
     this.adapter.listen(port)
   }
