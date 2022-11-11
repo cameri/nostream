@@ -36,6 +36,8 @@ This implementation is production-ready. See below for supported features.
 
 The project master repository is available on [GitHub](https://github.com/Cameri/nostr-ts-relay).
 
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template/BWx8DY?referralCode=qVdmfO)
+
 ## Features
 
 NIPs with a relay-specific implementation are listed here.
