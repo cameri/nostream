@@ -6,7 +6,7 @@ The following environment variables can be set:
 
 | Name             | Description                    | Default           |
 |------------------|--------------------------------|-------------------|
-| SERVER_PORT      | Relay's server port            | 8008              |
+| PORT             | Relay's server port            | 8008              |
 | DB_HOST          | PostgresSQL Hostname           |                   |
 | DB_PORT          | PostgreSQL Port                |                   |
 | DB_USER          | PostgreSQL Username            |                   |
