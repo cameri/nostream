@@ -222,11 +222,11 @@ export class EventRepository implements IEventRepository {
       .merge(omit(['event_pubkey', 'event_kind', 'event_deduplication'])(row))
       .where('events.event_created_at', '<', row.event_created_at)
 
-    const promise = query.then(prop('rowCount') as () => number)
-
-    promise.toString = () => query.toString()
-
-    return promise
+    return {
+      then: <T1, T2>(onfulfilled: (value: number) => T1 | PromiseLike<T1>, onrejected: (reason: any) => T2 | PromiseLike<T2>) => query.then(prop('rowCount') as () => number).then(onfulfilled, onrejected),
+      catch: <T>(onrejected: (reason: any) => T | PromiseLike<T>) => query.catch(onrejected),
+      toString: (): string => query.toString(),
+    } as Promise<number>
   }
 
   public deleteByPubkeyAndIds(pubkey: string, ids: EventId[]): Promise<number> {

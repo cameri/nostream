@@ -31,6 +31,6 @@ export const messageHandlerFactory = (
     case MessageType.CLOSE:
       return new UnsubscribeMessageHandler(adapter,)
     default:
-      throw new Error(`Unknown message type: ${String(message[0])}`)
+      throw new Error(`Unknown message type: ${String(message[0]).substring(0, 64)}`)
   }
 }
