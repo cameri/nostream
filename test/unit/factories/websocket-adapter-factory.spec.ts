@@ -28,7 +28,7 @@ describe('webSocketAdapterFactory', () => {
     onStub.returns(client)
     const request: IncomingMessage = {
       headers: {
-        'sec-websocket-key': Buffer.from('key', 'utf-8').toString('base64'),
+        'sec-websocket-key': Buffer.from('key', 'utf8').toString('base64'),
       },
     } as any
     const webSocketServerAdapter: IWebSocketServerAdapter = {} as any

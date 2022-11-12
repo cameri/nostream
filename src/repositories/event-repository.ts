@@ -158,7 +158,7 @@ export class EventRepository implements IEventRepository {
   }
 
   public async create(event: Event): Promise<number> {
-    return this.insert(event).then(prop('rowCount') as () => number)
+    return this.insert(event).then(prop('rowCount') as () => number, () => 0)
   }
 
   private insert(event: Event) {

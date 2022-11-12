@@ -97,7 +97,7 @@ export async function waitForEOSE(ws: WebSocket, subscription: string): Promise<
     ws.once('error', onError)
 
     function onMessage(raw: RawData) {
-      const message = JSON.parse(raw.toString('utf-8'))
+      const message = JSON.parse(raw.toString('utf8'))
       if (message[0] === MessageType.EOSE && message[1] === subscription) {
         resolve()
         cleanup()
@@ -139,7 +139,7 @@ export async function waitForNextEvent(ws: WebSocket, subscription: string): Pro
     }
 
     function onMessage(raw: RawData) {
-      const message = JSON.parse(raw.toString('utf-8'))
+      const message = JSON.parse(raw.toString('utf8'))
       if (message[0] === MessageType.EVENT && message[1] === subscription) {
         resolve(message[2])
         cleanup()
@@ -172,7 +172,7 @@ export async function waitForEventCount(
       cleanup()
     }
     function onMessage(raw: RawData) {
-      const message = JSON.parse(raw.toString('utf-8'))
+      const message = JSON.parse(raw.toString('utf8'))
       if (message[0] === MessageType.EVENT && message[1] === subscription) {
         events.push(message[2])
         if (!eose && events.length === count) {
@@ -213,7 +213,7 @@ export async function waitForNotice(ws: WebSocket): Promise<void> {
     ws.once('error', onError)
 
     function onMessage(raw: RawData) {
-      const message = JSON.parse(raw.toString('utf-8'))
+      const message = JSON.parse(raw.toString('utf8'))
       if (message[0] === MessageType.NOTICE) {
         resolve(message[1])
         cleanup()

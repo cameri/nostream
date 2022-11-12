@@ -13,6 +13,7 @@ export const workerFactory = (): AppWorker => {
   const dbClient = getDbClient()
   const eventRepository = new EventRepository(dbClient)
 
+  // deepcode ignore HttpToHttps: <please specify a reason of ignoring this>
   const server = http.createServer()
   const webSocketServer = new WebSocketServer({
     server,

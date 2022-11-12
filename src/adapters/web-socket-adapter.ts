@@ -120,7 +120,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private async onClientMessage(raw: Buffer) {
     let abort: () => void
     try {
-      const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf-8')))
+      const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf8')))
 
       const messageHandler = this.createMessageHandler([message, this]) as IMessageHandler & IAbortable
       if (typeof messageHandler.abort === 'function') {
