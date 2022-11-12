@@ -8,11 +8,10 @@ services:
       DB_USER: nostr_ts_relay
       DB_PASSWORD: nostr_ts_relay
       DB_NAME: nostr_ts_relay
-      DB_MIN_POOL_SIZE: 1
-      DB_MAX_POOL_SIZE: 2
+      DB_MIN_POOL_SIZE: 2
+      DB_MAX_POOL_SIZE: 10
       NOSTR_CONFIG_DIR: /home/node/
       PORT: 8008
-      DEBUG: worker:event-message-handler,worker:web-socket-server-adapter
     user: node:node
     volumes:
       - $HOME/.nostr:/home/node/
