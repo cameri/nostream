@@ -11,7 +11,7 @@ services:
       DB_MIN_POOL_SIZE: 1
       DB_MAX_POOL_SIZE: 2
       NOSTR_CONFIG_DIR: /home/node/
-      SERVER_PORT: 8008
+      PORT: 8008
       DEBUG: worker:event-message-handler,worker:web-socket-server-adapter
     user: node:node
     volumes:
@@ -56,9 +56,8 @@ services:
     entrypoint:
       - sh
       - -c
-      - 'cd code && npm install -g knex@2.3.0 && npm install knex --quiet && npm run db:migrate'
+      - 'cd code && npm install --no-save --quiet knex@2.3.0 pg@8.8.0 && npx knex migrate:latest'
     volumes:
-      - ./package.json:/code/package.json
       - ./migrations:/code/migrations
       - ./knexfile.js:/code/knexfile.js
     depends_on:

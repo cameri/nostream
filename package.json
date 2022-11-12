@@ -44,11 +44,10 @@
     "tor:docker:compose:start": "docker compose -f docker-compose.yml -f docker-compose.tor.yml up --build --remove-orphans",
     "tor:hostname": "cat $HOME/.nostr/tor/data/nostr-ts-relay/hostname",
     "tor:docker:compose:stop": "docker compose -f docker-compose.yml -f docker-compose.tor.yml down",
-    "predocker:integration:run": "docker compose -f ./test/integration/docker-compose.yml up -d --quiet-pull --build --remove-orphans",
-    "docker:integration:run": "docker compose -f ./test/integration/docker-compose.yml run tests",
-    "postdocker:integration:run": "docker compose -f ./test/integration/docker-compose.yml down",
+    "docker:integration:run": "docker compose -f ./test/integration/docker-compose.yml run --rm tests",
     "docker:test:integration": "npm run docker:integration:run -- npm run test:integration",
-    "docker:cover:integration": "npm run docker:integration:run -- npm run cover:integration"
+    "docker:cover:integration": "npm run docker:integration:run -- npm run cover:integration",
+    "postdocker:integration:run": "docker compose -f ./test/integration/docker-compose.yml down"
   },
   "repository": {
     "type": "git",
@@ -105,7 +104,7 @@
     "@noble/secp256k1": "1.7.0",
     "debug": "4.3.4",
     "joi": "17.6.1",
-    "knex": "2.3.0",
+    "knex": "^2.3.0",
     "pg": "8.8.0",
     "pg-query-stream": "4.2.3",
     "ramda": "0.28.0",

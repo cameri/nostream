@@ -22,7 +22,7 @@ let worker: AppWorker
 let dbClient: DatabaseClient
 
 BeforeAll({ timeout: 6000 }, async function () {
-  process.env.SERVER_PORT = '18808'
+  process.env.PORT = '18808'
   dbClient = getDbClient()
   await dbClient.raw('SELECT 1=1')
 

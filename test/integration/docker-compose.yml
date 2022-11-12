@@ -51,9 +51,8 @@ services:
     entrypoint:
       - sh
       - -c
-      - 'cd code && npm install -g knex@2.3.0 && npm install knex --quiet && npm run db:migrate'
+      - 'cd code && npm install --no-save --quiet knex@2.3.0 pg@8.8.0 && npx knex migrate:latest'
     volumes:
-      - ../../package.json:/code/package.json
       - ../../migrations:/code/migrations
       - ../../knexfile.js:/code/knexfile.js
     depends_on:
