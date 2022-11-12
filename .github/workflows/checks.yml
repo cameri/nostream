@@ -49,12 +49,13 @@ jobs:
         run: npm ci
       - name: Run unit tests
         run: npm run test:unit
-        continue-on-error: true
       - name: Run coverage for unit tests
         run: npm run cover:unit
+        if: ${{ always() }}
         continue-on-error: true
       - name: Coveralls
         uses: coverallsapp/github-action@master
+        if: ${{ always() }}
         with:
           path-to-lcov: ./.coverage/unit/lcov.info
           flag-name: Unit
@@ -74,21 +75,24 @@ jobs:
           node-version-file: .nvmrc
       - name: Run integration tests
         run: npm run docker:test:integration
+      - name: Generate Cucumber report annotations
+        uses: deblockt/cucumber-report-annotations-action@v1.7
+        if: ${{ always() }}
         continue-on-error: true
-      - uses: deblockt/cucumber-report-annotations-action@v1.7
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}
           path: .test-reports/integration/report.json
       - name: Run coverage for integration tests
         run: npm run docker:cover:integration
-        continue-on-error: true
       - name: Coveralls
         uses: coverallsapp/github-action@master
+        if: ${{ always() }}
         with:
           path-to-lcov: .coverage/integration/lcov.info
           flag-name: Integration
           parallel: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
   post-tests:
     name: Post Tests
     needs: [test-units-and-cover, test-integrations-and-cover]
