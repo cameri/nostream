@@ -17,8 +17,10 @@ node_modules/
 # Optional npm cache directory
 .npm
 
-# Optional eslint cache
+# Caches
 .eslintcache
+.dccache
+.DS_Store
 
 # generate output
 dist
