@@ -62,48 +62,7 @@ export class EventRepository implements IEventRepository {
     const queries = filters.map((currentFilter) => {
       const builder = this.dbClient<DBEvent>('events')
 
-      forEachObjIndexed((tableFields: string[], filterName: string) => {
-        builder.andWhere((bd) => {
-          cond([
-            [isEmpty, () => void bd.whereRaw('1 = 0')],
-            [
-              complement(isNil),
-              pipe(
-                groupByLengthSpec,
-                evolve({
-                  exact: (pubkeys: string[]) =>
-                    tableFields.forEach((tableField) =>
-                      void bd.orWhereIn(tableField, pubkeys.map(toBuffer))
-                    ),
-                  even: forEach((prefix: string) =>
-                    tableFields.forEach((tableField) =>
-                      void bd.orWhereRaw(
-                        `substring("${tableField}" from 1 for ?) = ?`,
-                        [prefix.length >> 1, toBuffer(prefix)]
-                      )
-                    )
-                  ),
-                  odd: forEach((prefix: string) =>
-                    tableFields.forEach((tableField) =>
-                      void bd.orWhereRaw(
-                        `substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`,
-                        [
-                          (prefix.length >> 1) + 1,
-                          `\\x${prefix}0`,
-                          `\\x${prefix}f`,
-                        ],
-                      )
-                    )
-                  ),
-                } as any),
-              ),
-            ],
-          ])(currentFilter[filterName] as string[])
-        })
-      })({
-        authors: ['event_pubkey', 'event_delegator'],
-        ids: ['event_id'],
-      })
+      this.forEachObIndex(builder, currentFilter)
 
       if (Array.isArray(currentFilter.kinds)) {
         builder.whereIn('event_kind', currentFilter.kinds)
@@ -156,6 +115,53 @@ export class EventRepository implements IEventRepository {
 
     return query
   }
+
+  public forEachObIndex(builder, currentFilter) {
+    forEachObjIndexed((tableFields: string[], filterName: string) => {
+      builder.andWhere((bd) => {
+        cond([
+          [isEmpty, () => void bd.whereRaw('1 = 0')],
+          [
+            complement(isNil),
+            pipe(
+              groupByLengthSpec,
+              evolve({
+                exact: (pubkeys: string[]) =>
+                  tableFields.forEach((tableField) =>
+                    void bd.orWhereIn(tableField, pubkeys.map(toBuffer))
+                  ),
+                even: forEach((prefix: string) =>
+                  tableFields.forEach((tableField) =>
+                    void bd.orWhereRaw(
+                      `substring("${tableField}" from 1 for ?) = ?`,
+                      [prefix.length >> 1, toBuffer(prefix)]
+                    )
+                  )
+                ),
+                odd: forEach((prefix: string) =>
+                  tableFields.forEach((tableField) =>
+                    void bd.orWhereRaw(
+                      `substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`,
+                      [
+                        (prefix.length >> 1) + 1,
+                        `\\x${prefix}0`,
+                        `\\x${prefix}f`,
+                      ],
+                    )
+                  )
+                ),
+              } as any),
+            ),
+          ],
+        ])(currentFilter[filterName] as string[])
+      })
+    })({
+      authors: ['event_pubkey', 'event_delegator'],
+      ids: ['event_id'],
+    })
+  }
+
+
 
   public async create(event: Event): Promise<number> {
     return this.insert(event).then(prop('rowCount') as () => number, () => 0)
