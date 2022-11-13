@@ -1,14 +1,20 @@
 ## Author Saransh Sharma @cynsar foundation
 FROM node:18-alpine3.16 as build
 
-ARG DB_HOST
-ARG DB_PORT
-ARG DB_NAME
-ARG DB_USER
-ARG DB_PASSWORD
+ARG PGHOST
+ARG PGPORT
+ARG PGDATABASE
+ARG PGUSER
+ARG PGPASSWORD
 
 WORKDIR /build
 
+## Build Setup for Railways
+ENV DB_HOST=$PGHOST
+ENV DB_PORT=$PGPORT
+ENV DB_NAME=$PGDATABASE
+ENV DB_USER=$PGUSER
+ENV DB_PASSWORD=$PGPASSWORD
 
 COPY ["package.json", "package-lock.json","knexfile.js","./"]
 
@@ -37,13 +43,6 @@ LABEL org.opencontainers.image.source=https://github.com/Cameri/nostr-ts-relay
 LABEL org.opencontainers.image.description="nostr-ts-relay"
 LABEL org.opencontainers.image.authors="Ricardo Arturo Cabral Mejía"
 LABEL org.opencontainers.image.licenses=MIT
-
-## Build Setup for Railways
-ENV DB_HOST=$DB_HOST
-ENV DB_PORT=$DB_PORT
-ENV DB_NAME=$DB_NAME
-ENV DB_USER=$DB_USER
-ENV DB_PASSWORD=$DB_PASSWORD
 
 
 WORKDIR /app
