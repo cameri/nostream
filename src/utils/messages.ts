@@ -27,6 +27,6 @@ export const createEndOfStoredEventsNoticeMessage = (
 }
 
 // NIP-20
-export const createCommandResult = (eventId: EventId, successful: boolean, message = '') => {
+export const createCommandResult = (eventId: EventId, successful: boolean, message: string) => {
   return [MessageType.OK, eventId, successful, message]
 }

@@ -12,12 +12,14 @@ import { EventTags } from '../../../../src/constants/base'
 import { IEventRepository } from '../../../../src/@types/repositories'
 import { IEventStrategy } from '../../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../../src/@types/adapters'
+import { MessageType } from '../../../../src/@types/messages'
 import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
 
 const { expect } = chai
 
 describe('DeleteEventStrategy', () => {
   const event: Event = {
+    id: 'id',
     pubkey: 'pubkey',
     tags: [
       [EventTags.Event, 'event id 1'],
@@ -79,15 +81,31 @@ describe('DeleteEventStrategy', () => {
       expect(eventRepositoryDeleteByPubkeyAndIdsStub).not.to.have.been.called
     })
 
-    it('broadcast event', async () => {
-      eventRepositoryCreateStub.resolves()
+    it('broadcast event if created', async () => {
+      eventRepositoryCreateStub.resolves(1)
 
       await strategy.execute(event)
 
       expect(eventRepositoryCreateStub).to.have.been.calledOnceWithExactly(event)
-      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
+      expect(webSocketEmitStub).to.have.been.calledTwice
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(
+        WebSocketAdapterEvent.Message,
+        [MessageType.OK, 'id', true, '']
+      )
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(
         WebSocketAdapterEvent.Broadcast,
         event
+      )
+    })
+
+    it('does not broadcast event if duplicate', async () => {
+      eventRepositoryCreateStub.resolves(0)
+
+      await strategy.execute(event)
+
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
+        WebSocketAdapterEvent.Message,
+        [MessageType.OK, 'id', true, 'duplicate:']
       )
     })
 

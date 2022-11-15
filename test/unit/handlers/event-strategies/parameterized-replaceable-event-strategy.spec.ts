@@ -11,6 +11,7 @@ import { EventRepository } from '../../../../src/repositories/event-repository'
 import { IEventRepository } from '../../../../src/@types/repositories'
 import { IEventStrategy } from '../../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../../src/@types/adapters'
+import { MessageType } from '../../../../src/@types/messages'
 import { ParameterizedReplaceableEventStrategy } from '../../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
 import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
 
@@ -18,6 +19,7 @@ const { expect } = chai
 
 describe('ParameterizedReplaceableEventStrategy', () => {
   const event: Event = {
+    id: 'id',
     tags: [
       [EventTags.Deduplication, 'dedup'],
     ],
@@ -82,9 +84,25 @@ describe('ParameterizedReplaceableEventStrategy', () => {
       await strategy.execute(event)
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
-      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
+      expect(webSocketEmitStub).to.have.been.calledTwice
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(
+        WebSocketAdapterEvent.Message,
+        [MessageType.OK, 'id', true, '']
+      )
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(
         WebSocketAdapterEvent.Broadcast,
         event
+      )
+    })
+
+    it('does not broadcast event if event is duplicate', async () => {
+      eventRepositoryUpsertStub.resolves(0)
+
+      await strategy.execute(event)
+
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
+        WebSocketAdapterEvent.Message,
+        [MessageType.OK, 'id', true, 'duplicate:']
       )
     })
 

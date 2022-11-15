@@ -223,3 +223,28 @@ export async function waitForNotice(ws: WebSocket): Promise<void> {
     ws.on('message', onMessage)
   })
 }
+
+export async function waitForCommand(ws: WebSocket): Promise<any> {
+  return new Promise<void>((resolve, reject) => {
+    function cleanup() {
+      ws.removeListener('message', onMessage)
+      ws.removeListener('error', onError)
+    }
+
+    function onError(error: Error) {
+      reject(error)
+      cleanup()
+    }
+    ws.once('error', onError)
+
+    function onMessage(raw: RawData) {
+      const message = JSON.parse(raw.toString('utf8'))
+      if (message[0] === MessageType.OK) {
+        resolve(message)
+        cleanup()
+      }
+    }
+
+    ws.on('message', onMessage)
+  })
+}

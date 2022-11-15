@@ -11,6 +11,7 @@ import {
   createEvent,
   createSubscription,
   sendEvent,
+  waitForCommand,
   waitForEOSE,
   waitForEventCount,
   waitForNextEvent,
@@ -236,4 +237,11 @@ Then(/(\w+) receives a notice with (.*)/, async function(name: string, pattern: 
   const actualNotice = await waitForNotice(ws)
 
   expect(actualNotice).to.contain(pattern)
+})
+
+Then(/(\w+) receives an? (\w+) result/, async function(name: string, successful: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const command = await waitForCommand(ws)
+
+  expect(command[2]).to.equal(successful === 'successful')
 })

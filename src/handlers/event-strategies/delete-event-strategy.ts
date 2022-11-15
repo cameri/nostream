@@ -21,7 +21,7 @@ export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>>
     this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, (count) ? '' : 'duplicate:'))
 
     const ids = event.tags.reduce(
-      (eventIds, tag) => (tag.length >= 2 && tag[0] === EventTags.Event && tag[1].length === 64)
+      (eventIds, tag) => (tag.length >= 2 && tag[0] === EventTags.Event)
         ? [...eventIds, tag[1]]
         : eventIds,
       [] as string[]

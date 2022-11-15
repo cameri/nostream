@@ -30,6 +30,9 @@ describe('webSocketAdapterFactory', () => {
       headers: {
         'sec-websocket-key': Buffer.from('key', 'utf8').toString('base64'),
       },
+      socket: {
+        remoteAddress: '::1',
+      },
     } as any
     const webSocketServerAdapter: IWebSocketServerAdapter = {} as any
 
