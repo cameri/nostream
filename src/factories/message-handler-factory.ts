@@ -7,6 +7,7 @@ import { eventStrategyFactory } from './event-strategy-factory'
 import { IEventRepository } from '../@types/repositories'
 import { isDelegatedEvent } from '../utils/event'
 import { IWebSocketAdapter } from '../@types/adapters'
+import { slidingWindowRateLimiterFactory } from './rate-limiter-factory'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
 
@@ -20,11 +21,17 @@ export const messageHandlerFactory = (
           return new DelegatedEventMessageHandler(
             adapter,
             delegatedEventStrategyFactory(eventRepository),
-            createSettings
+            createSettings,
+            slidingWindowRateLimiterFactory,
           )
         }
 
-        return new EventMessageHandler(adapter, eventStrategyFactory(eventRepository), createSettings)
+        return new EventMessageHandler(
+          adapter,
+          eventStrategyFactory(eventRepository),
+          createSettings,
+          slidingWindowRateLimiterFactory,
+        )
       }
     case MessageType.REQ:
       return new SubscribeMessageHandler(adapter, eventRepository, createSettings)
