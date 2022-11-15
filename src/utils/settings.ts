@@ -4,10 +4,12 @@ import { join } from 'path'
 import { mergeDeepRight } from 'ramda'
 
 import { createLogger } from '../factories/logger-factory'
+import { EventKinds } from '../constants/base'
 import { ISettings } from '../@types/settings'
 import packageJson from '../../package.json'
 
 const debug = createLogger('settings')
+
 export class SettingsStatic {
   static _settings: ISettings
 
@@ -48,12 +50,52 @@ export class SettingsStatic {
             maxPositiveDelta: 900,
             maxNegativeDelta: 0, // disabled
           },
+          rateLimits: [
+            {
+              kinds: [EventKinds.TEXT_NOTE],
+              period: 60000,
+              rate: 60,
+            },
+            {
+              kinds: [[EventKinds.EPHEMERAL_FIRST, EventKinds.EPHEMERAL_LAST]],
+              period: 60000,
+              rate: 240,
+            },
+            {
+              period: 3600000,
+              rate: 3600,
+            },
+            {
+              period: 86400000,
+              rate: 86400,
+            },
+          ],
         },
         client: {
           subscription: {
             maxSubscriptions: 10,
             maxFilters: 10,
           },
+        },
+        message: {
+          rateLimits: [
+            {
+              period: 60000, // minute
+              rate: 240,
+            },
+            {
+              period: 3600000, // hour
+              rate: 3600,
+            },
+            {
+              period: 86400000, // day
+              rate: 86400,
+            },
+          ],
+          ipWhitelist: [
+            '::1', // local host
+            '::ffff:10.10.10.1', // host running docker
+          ],
         },
       },
     }

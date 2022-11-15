@@ -21,6 +21,12 @@ export interface PubkeyLimits {
 
 export type EventKindsRange = [EventKinds, EventKinds]
 
+export interface EventRateLimit {
+  kinds?: (EventKinds | [EventKinds, EventKinds])[]
+  rate: number
+  period: number
+}
+
 export interface KindLimits {
   whitelist?: (EventKinds | EventKindsRange)[]
   blacklist?: (EventKinds | EventKindsRange)[]
@@ -42,6 +48,7 @@ export interface EventLimits {
   pubkey?: PubkeyLimits
   kind?: KindLimits
   createdAt?: CreatedAtLimits
+  rateLimits?: EventRateLimit[]
 }
 
 export interface ClientSubscriptionLimits {
@@ -53,9 +60,20 @@ export interface ClientLimits {
   subscription?: ClientSubscriptionLimits
 }
 
+export interface MessageRateLimit {
+  rate: number
+  period: number
+}
+
+export interface MessageLimits {
+  rateLimits?: MessageRateLimit[]
+  ipWhitelist?: string[]
+}
+
 export interface Limits {
   client?: ClientLimits
   event?: EventLimits
+  message?: MessageLimits
 }
 
 export interface Worker {
