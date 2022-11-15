@@ -3,6 +3,8 @@ services:
     build: .
     container_name: nostr-ts-relay
     environment:
+      PORT: 8008
+      NOSTR_CONFIG_DIR: /home/node/
       DB_HOST: db
       DB_PORT: 5432
       DB_USER: nostr_ts_relay
@@ -10,14 +12,19 @@ services:
       DB_NAME: nostr_ts_relay
       DB_MIN_POOL_SIZE: 2
       DB_MAX_POOL_SIZE: 10
-      NOSTR_CONFIG_DIR: /home/node/
-      PORT: 8008
+      REDIS_HOST: cache
+      REDIS_PORT: 6379
+      REDIS_USER: default
+      REDIS_PASSWORD: nostr_ts_relay
+      DEBUG: "worker:*"
     user: node:node
     volumes:
       - $HOME/.nostr:/home/node/
     ports:
       - 8008:8008
     depends_on:
+      cache:
+        condition: service_healthy
       db:
         condition: service_healthy
       migrations:
@@ -41,6 +48,21 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nostr_ts_relay"]
       interval: 5s
+      timeout: 5s
+      retries: 5
+  cache:
+    image: redis:7.0.5-alpine3.16
+    container_name: cache
+    volumes:
+      - cache:/data
+    command: redis-server --save 20 1 --loglevel warning --requirepass nostr_ts_relay
+    networks:
+      default:
+        ipv4_address: 10.10.10.4
+    restart: always
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping", "|", "grep", "PONG" ]
+      interval: 1s
       timeout: 5s
       retries: 5
   migrations:
@@ -75,3 +97,4 @@ networks:
 
 volumes:
   pgdata:
+  cache:
