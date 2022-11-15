@@ -23,7 +23,7 @@ export type Range<F extends number, T extends number> = Exclude<
   Enumerate<F>
 >
 
-export type Factory<TOutput = any, TInput = any> = (input: TInput) => TOutput
+export type Factory<TOutput = any, TInput = void> = (input: TInput) => TOutput
 
 export type DatabaseClient = Knex
 

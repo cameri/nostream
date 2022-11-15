@@ -13,6 +13,8 @@ import { attemptValidation } from '../utils/validation'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
+import { IRateLimiter } from '../@types/utils'
+import { ISettings } from '../@types/settings'
 import { isEventMatchingFilter } from '../utils/event'
 import { messageSchema } from '../schemas/message-schema'
 
@@ -21,7 +23,7 @@ const debugHeartbeat = debug.extend('heartbeat')
 
 export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter {
   public clientId: string
-  // private clientAddress: string
+  private clientAddress: string
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
 
@@ -30,13 +32,17 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     private readonly request: IncomingHttpMessage,
     private readonly webSocketServer: IWebSocketServerAdapter,
     private readonly createMessageHandler: Factory<IMessageHandler, [IncomingMessage, IWebSocketAdapter]>,
+    private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
+    private readonly settingsFactory: Factory<ISettings>,
   ) {
     super()
     this.alive = true
     this.subscriptions = new Map()
 
     this.clientId = Buffer.from(this.request.headers['sec-websocket-key'], 'base64').toString('hex')
-    // this.clientAddress = this.request.headers['x-forwarded-for'] as string
+    this.clientAddress = (this.request.headers['x-forwarded-for'] ?? this.request.socket.remoteAddress) as string
+
+    debug('client %s from address %s', this.clientId, this.clientAddress)
 
     this.client
       .on('message', this.onClientMessage.bind(this))
@@ -120,10 +126,15 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private async onClientMessage(raw: Buffer) {
     let abort: () => void
     try {
+      if (await this.isRateLimited(this.clientAddress)) {
+        this.sendMessage(createNoticeMessage('rate limited'))
+        return
+      }
+
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf8')))
 
       const messageHandler = this.createMessageHandler([message, this]) as IMessageHandler & IAbortable
-      if (typeof messageHandler.abort === 'function') {
+      if (typeof messageHandler?.abort === 'function') {
         abort = messageHandler.abort.bind(messageHandler)
         this.client.prependOnceListener('close', abort)
       }
@@ -143,6 +154,36 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         this.client.removeListener('close', abort)
       }
     }
+  }
+
+  private async isRateLimited(client: string): Promise<boolean> {
+    const {
+      rateLimits,
+      ipWhitelist = [],
+    } = this.settingsFactory().limits?.message ?? {}
+
+    if (ipWhitelist.includes(client)) {
+      debug('rate limit check %s: skipped', client)
+      return false
+    }
+
+    const rateLimiter = this.slidingWindowRateLimiter()
+
+    const hit = (period: number, rate: number) =>
+      rateLimiter.hit(
+        `${client}:message:${period}`,
+        1,
+        { period: period, rate: rate },
+      )
+
+    const hits = await Promise.all(
+      rateLimits
+        .map(({ period, rate }) =>  hit(period, rate))
+    )
+
+    debug('rate limit check %s: %o = %o', client, rateLimits.map(({ period }) => period), hits)
+
+    return hits.some((thresholdCrossed) => thresholdCrossed)
   }
 
   private onClientPong() {

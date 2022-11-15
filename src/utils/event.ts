@@ -2,11 +2,11 @@ import * as secp256k1 from '@noble/secp256k1'
 import { applySpec, converge, curry, mergeLeft, nth, omit, pipe, prop, reduceBy } from 'ramda'
 
 import { CanonicalEvent, Event } from '../@types/event'
+import { EventId, Pubkey } from '../@types/base'
 import { EventKinds, EventTags } from '../constants/base'
 import { fromBuffer } from './transform'
 import { getLeadingZeroBits } from './proof-of-work'
 import { isGenericTagQuery } from './filter'
-import { Pubkey } from '../@types/base'
 import { RuneLike } from './runes/rune-like'
 import { SubscriptionFilter } from '../@types/subscription'
 
@@ -143,16 +143,6 @@ export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
 
   const token = await secp256k1.utils.sha256(Buffer.from(serializedDelegationTag))
 
-  // Token generation to be decided:
-  // const serializedDelegationTag = [
-  //   delegation[0], // 'delegation'
-  //   delegation[1], // <delegator>
-  //   event.pubkey,  // <delegatee>
-  //   delegation[2], // <rules>
-  // ]
-  // const token = await secp256k1.utils.sha256(Buffer.from(JSON.stringify(serializedDelegationTag)))
-
-  // Validate delegation signature
   return secp256k1.schnorr.verify(delegation[3], token, delegation[1])
 }
 
@@ -185,8 +175,8 @@ export const isDeleteEvent = (event: Event): boolean => {
   return event.kind === EventKinds.DELETE
 }
 
-export const getEventProofOfWork = (event: Event): number => {
-  return getLeadingZeroBits(Buffer.from(event.id, 'hex'))
+export const getEventProofOfWork = (eventId: EventId): number => {
+  return getLeadingZeroBits(Buffer.from(eventId, 'hex'))
 }
 
 export const getPubkeyProofOfWork = (pubkey: Pubkey): number => {
