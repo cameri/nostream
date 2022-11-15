@@ -1,6 +1,6 @@
 {
   "name": "nostr-ts-relay",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "description": "A nostr relay written in Typescript.",
   "supportedNips": [
     1,
