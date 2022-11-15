@@ -52,14 +52,20 @@ export class SettingsStatic {
           },
           rateLimits: [
             {
-              kinds: [EventKinds.TEXT_NOTE],
+              kinds: [
+                [EventKinds.SET_METADATA, EventKinds.DELETE],
+                EventKinds.REACTION,
+                [EventKinds.CHANNEL_CREATION, EventKinds.CHANNEL_RESERVED_LAST],
+                [EventKinds.REPLACEABLE_FIRST, EventKinds.REPLACEABLE_LAST],
+                [EventKinds.PARAMETERIZED_REPLACEABLE_FIRST, EventKinds.PARAMETERIZED_REPLACEABLE_LAST],
+              ],
               period: 60000,
               rate: 60,
             },
             {
               kinds: [[EventKinds.EPHEMERAL_FIRST, EventKinds.EPHEMERAL_LAST]],
               period: 60000,
-              rate: 240,
+              rate: 600,
             },
             {
               period: 3600000,
@@ -80,15 +86,15 @@ export class SettingsStatic {
         message: {
           rateLimits: [
             {
-              period: 60000, // minute
-              rate: 240,
+              period: 60000,
+              rate: 600,
             },
             {
-              period: 3600000, // hour
+              period: 3600000,
               rate: 3600,
             },
             {
-              period: 86400000, // day
+              period: 86400000,
               rate: 86400,
             },
           ],

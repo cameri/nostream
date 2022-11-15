@@ -11,12 +11,15 @@ import { EventRepository } from '../../../../src/repositories/event-repository'
 import { IEventRepository } from '../../../../src/@types/repositories'
 import { IEventStrategy } from '../../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../../src/@types/adapters'
+import { MessageType } from '../../../../src/@types/messages'
 import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
 
 const { expect } = chai
 
 describe('DefaultEventStrategy', () => {
-  const event: Event = {} as any
+  const event: Event = {
+    id: 'id',
+  } as any
   let webSocket: IWebSocketAdapter
   let eventRepository: IEventRepository
 
@@ -59,9 +62,26 @@ describe('DefaultEventStrategy', () => {
       await strategy.execute(event)
 
       expect(eventRepositoryCreateStub).to.have.been.calledOnceWithExactly(event)
-      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
+      expect(webSocketEmitStub).to.have.been.calledTwice
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(
+        WebSocketAdapterEvent.Message,
+        [MessageType.OK, 'id', true, '']
+      )
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(
         WebSocketAdapterEvent.Broadcast,
         event
+      )
+    })
+
+    it('does not broadcast event if event is duplicate', async () => {
+      eventRepositoryCreateStub.resolves(0)
+
+      await strategy.execute(event)
+
+      expect(eventRepositoryCreateStub).to.have.been.calledOnceWithExactly(event)
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
+        WebSocketAdapterEvent.Message,
+        ['OK', 'id', true, 'duplicate:']
       )
     })
 

@@ -1,6 +1,6 @@
 import EventEmitter from 'events'
 
-import Sinon, { SinonFakeTimers } from 'sinon'
+import Sinon, { SinonFakeTimers, SinonStub } from 'sinon'
 import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
 
@@ -49,6 +49,7 @@ describe('EventMessageHandler', () => {
     let strategyFactoryStub: Sinon.SinonStub
     let onMessageSpy: Sinon.SinonSpy
     let strategyExecuteStub: Sinon.SinonStub
+    let isRateLimitedStub: Sinon.SinonStub
 
     beforeEach(() => {
       canAcceptEventStub = sandbox.stub(EventMessageHandler.prototype, 'canAcceptEvent' as any)
@@ -61,10 +62,12 @@ describe('EventMessageHandler', () => {
       webSocket = new EventEmitter()
       webSocket.on(WebSocketAdapterEvent.Message, onMessageSpy)
       message = [MessageType.EVENT, event]
+      isRateLimitedStub = sandbox.stub(EventMessageHandler.prototype, 'isRateLimited' as any)
       handler = new EventMessageHandler(
         webSocket as any,
         strategyFactoryStub,
         () => ({}) as any,
+        () => ({ hit: async () => false })
       )
     })
 
@@ -80,7 +83,21 @@ describe('EventMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(canAcceptEventStub).to.have.been.calledOnceWithExactly(event)
-      expect(onMessageSpy).to.have.been.calledOnceWithExactly(['NOTICE', 'Event rejected: reason'])
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
+        [MessageType.OK, event.id, false, 'reason'],
+      )
+      expect(strategyFactoryStub).not.to.have.been.called
+    })
+
+    it('rejects event if rate-limited', async () => {
+      isRateLimitedStub.resolves(true)
+
+      await handler.handleMessage(message)
+
+      expect(isRateLimitedStub).to.have.been.calledOnceWithExactly(event)
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
+        [MessageType.OK, event.id, false, 'rate-limited: slow down'],
+      )
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
@@ -128,6 +145,7 @@ describe('EventMessageHandler', () => {
     it('does not reject if strategy rejects', async () => {
       isEventValidStub.returns(undefined)
       canAcceptEventStub.returns(undefined)
+
       strategyExecuteStub.rejects()
 
       return expect(handler.handleMessage(message)).to.eventually.be.fulfilled
@@ -169,6 +187,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         () => null,
         () => settings,
+        () => ({ hit: async () => false })
       )
     })
 
@@ -192,7 +211,7 @@ describe('EventMessageHandler', () => {
 
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('created_at is more than 100 seconds in the future')
+          ).to.equal('rejected: created_at is more than 100 seconds in the future')
         })
       })
 
@@ -211,7 +230,7 @@ describe('EventMessageHandler', () => {
 
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('created_at is more than 100 seconds in the past')
+          ).to.equal('rejected: created_at is more than 100 seconds in the past')
         })
       })
     })
@@ -237,7 +256,7 @@ describe('EventMessageHandler', () => {
           event.id = '00' + 'f'.repeat(62)
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('insufficient proof of work: event Id has less than 16 leading zero bits')
+          ).to.equal('pow: difficulty 8<16')
         })
       })
     })
@@ -263,7 +282,7 @@ describe('EventMessageHandler', () => {
           event.pubkey = '0'.repeat(2) + 'f'.repeat(62)
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('insufficient proof of work: pubkey has less than 16 leading zero bits')
+          ).to.equal('pow: pubkey difficulty 8<16')
         })
       })
 
@@ -296,7 +315,7 @@ describe('EventMessageHandler', () => {
           event.pubkey = 'aabbcc'
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('pubkey aabbcc is not allowed')
+          ).to.equal('blocked: pubkey not allowed')
         })
 
         it('returns reason if pubkey is blacklisted by prefix', () => {
@@ -304,7 +323,7 @@ describe('EventMessageHandler', () => {
           event.pubkey = 'aa55ccddeeff'
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('pubkey aa55ccddeeff is not allowed')
+          ).to.equal('blocked: pubkey not allowed')
         })
       })
 
@@ -337,7 +356,7 @@ describe('EventMessageHandler', () => {
           event.pubkey = 'aabbcc'
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('pubkey aabbcc is not allowed')
+          ).to.equal('blocked: pubkey not allowed')
         })
 
         it('returns reason if pubkey is not whitelisted by prefix', () => {
@@ -345,7 +364,7 @@ describe('EventMessageHandler', () => {
           event.pubkey = 'aabbccddeeff'
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('pubkey aabbccddeeff is not allowed')
+          ).to.equal('blocked: pubkey not allowed')
         })
       })
     })
@@ -380,7 +399,7 @@ describe('EventMessageHandler', () => {
           event.kind = 4
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('event kind 4 is not allowed')
+          ).to.equal('blocked: event kind 4 not allowed')
         })
       })
 
@@ -414,7 +433,7 @@ describe('EventMessageHandler', () => {
           event.kind = 3
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('event kind 3 is not allowed')
+          ).to.equal('blocked: event kind 3 not allowed')
         })
 
         it('returns reason if kind is blacklisted and whitelisted', () => {
@@ -423,7 +442,7 @@ describe('EventMessageHandler', () => {
           event.kind = 3
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('event kind 3 is not allowed')
+          ).to.equal('blocked: event kind 3 not allowed')
         })
 
         it('returns reason if kind is not whitelisted', () => {
@@ -431,7 +450,7 @@ describe('EventMessageHandler', () => {
           event.kind = 4
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('event kind 4 is not allowed')
+          ).to.equal('blocked: event kind 4 not allowed')
         })
 
         it('returns reason if kind is not whitelisted in range', () => {
@@ -439,7 +458,7 @@ describe('EventMessageHandler', () => {
           event.kind = 6
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('event kind 6 is not allowed')
+          ).to.equal('blocked: event kind 6 not allowed')
         })
       })
     })
@@ -464,12 +483,148 @@ describe('EventMessageHandler', () => {
 
     it('returns reason if event id is not valid', () => {
       event.id = 'wrong'
-      return expect((handler as any).isEventValid(event)).to.eventually.equal('Event with id wrong from 55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503 is not valid')
+      return expect((handler as any).isEventValid(event)).to.eventually.equal('invalid: event id does not match')
     })
 
     it('returns reason if event signature is not valid', () => {
       event.sig = 'wrong'
-      return expect((handler as any).isEventValid(event)).to.eventually.equal('Event with id e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a from 55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503 has invalid signature')
+      return expect((handler as any).isEventValid(event)).to.eventually.equal('invalid: event signature verification failed')
+    })
+  })
+
+  describe('isRateLimited', () => {
+    let eventLimits: EventLimits
+    let settings: ISettings
+    let rateLimiterHitStub: SinonStub
+
+    beforeEach(() => {
+      eventLimits = {
+        rateLimits: [],
+      }
+      settings = {
+        limits: {
+          event: eventLimits,
+        },
+      } as any
+      rateLimiterHitStub = sandbox.stub()
+      handler = new EventMessageHandler(
+        {} as any,
+        () => null,
+        () => settings,
+        () => ({ hit: rateLimiterHitStub })
+      )
+    })
+
+    it('returns undefined if rate limits setting is not set', async () => {
+      eventLimits.rateLimits = undefined
+      return expect((handler as any).isRateLimited(event)).to.eventually.be.undefined
+    })
+
+    it('returns undefined if rate limits setting is empty', async () => {
+      eventLimits.rateLimits = []
+      return expect((handler as any).isRateLimited(event)).to.eventually.be.undefined
+    })
+
+    it('calls hit with given rate limit settings', async () => {
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+        {
+          kinds: [0],
+          period: 60000,
+          rate: 2,
+        },
+        {
+          kinds: [[10, 20]],
+          period: 86400000,
+          rate: 3,
+        },
+      ]
+
+      await (handler as any).isRateLimited(event)
+
+      expect(rateLimiterHitStub).to.have.been.calledThrice
+      expect(rateLimiterHitStub.firstCall).to.have.been.calledWithExactly(
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:60000',
+        1,
+        {
+          period: 60000,
+          rate: 1,
+        }
+      )
+      expect(rateLimiterHitStub.secondCall).to.have.been.calledWithExactly(
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:60000:[0]',
+        1,
+        {
+          period: 60000,
+          rate: 2,
+        }
+      )
+      expect(rateLimiterHitStub.thirdCall).to.have.been.calledWithExactly(
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:86400000:[[10,20]]',
+        1,
+        {
+          period: 86400000,
+          rate: 3,
+        }
+      )
+    })
+
+
+    it('fulfills with false if not rate limited', async () => {
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+        {
+          kinds: [0],
+          period: 60000,
+          rate: 2,
+        },
+        {
+          kinds: [[10, 20]],
+          period: 86400000,
+          rate: 3,
+        },
+      ]
+
+      rateLimiterHitStub.resolves(false)
+
+      const actualResult = await (handler as any).isRateLimited(event)
+
+      expect(rateLimiterHitStub).to.have.been.calledThrice
+      expect(actualResult).to.be.false
+    })
+
+    it('fulfills with true if rate limited by second rate limit setting', async () => {
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+        {
+          kinds: [0],
+          period: 60000,
+          rate: 2,
+        },
+        {
+          kinds: [[10, 20]],
+          period: 86400000,
+          rate: 3,
+        },
+      ]
+
+      rateLimiterHitStub.onFirstCall().resolves(false)
+      rateLimiterHitStub.onSecondCall().resolves(true)
+      rateLimiterHitStub.onThirdCall().resolves(false)
+
+      const actualResult = await (handler as any).isRateLimited(event)
+
+      expect(rateLimiterHitStub).to.have.been.calledThrice
+      expect(actualResult).to.be.true
     })
   })
 })

@@ -27,7 +27,7 @@ Feature: NIP-01
   Scenario: Alice can't post a text_note event with an invalid signature
     Given someone called Alice
     When Alice sends a text_note event with invalid signature
-    Then Alice receives a notice with invalid signature
+    Then Alice receives an unsuccessful result
 
   Scenario: Alice and Bob exchange text_note events
     Given someone called Alice

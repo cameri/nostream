@@ -129,7 +129,7 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   protected async isRateLimited(event: Event): Promise<boolean> {
-    const rateLimits = this.settings().limits.event?.rateLimits
+    const rateLimits = this.settings().limits?.event?.rateLimits
     if (!rateLimits || !rateLimits.length) {
       return
     }

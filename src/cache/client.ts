@@ -1,15 +1,19 @@
 import { createClient, RedisClientOptions } from 'redis'
-import { Cache } from '../@types/cache'
+import { CacheClient } from '../@types/cache'
 
 export const getCacheConfig = (): RedisClientOptions => ({
   url: `redis://${process.env.REDIS_USER}:${process.env.REDIS_PASSWORD}@${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`,
   password: process.env.REDIS_PASSWORD,
 })
 
-export const getCacheClient = (): Cache => {
-  const config = getCacheConfig()
+let instance: CacheClient = undefined
 
-  const client = createClient(config)
+export const getCacheClient = (): CacheClient => {
+  if (!instance) {
+    const config = getCacheConfig()
 
-  return client
+    instance = createClient(config)
+  }
+
+  return instance
 }

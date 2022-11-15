@@ -12,7 +12,9 @@ import WebSocket from 'ws'
 
 import { connect, createIdentity, createSubscription } from './helpers'
 import { AppWorker } from '../../../src/app/worker'
+import { CacheClient } from '../../../src/@types/cache'
 import { DatabaseClient } from '../../../src/@types/base'
+import { getCacheClient } from '../../../src/cache/client'
 import { getDbClient } from '../../../src/database/client'
 import { SettingsStatic } from '../../../src/utils/settings'
 import { workerFactory } from '../../../src/factories/worker-factory'
@@ -20,9 +22,11 @@ import { workerFactory } from '../../../src/factories/worker-factory'
 let worker: AppWorker
 
 let dbClient: DatabaseClient
+let cacheClient: CacheClient
 
 BeforeAll({ timeout: 6000 }, async function () {
   process.env.PORT = '18808'
+  cacheClient = getCacheClient()
   dbClient = getDbClient()
   await dbClient.raw('SELECT 1=1')
 
@@ -35,7 +39,10 @@ BeforeAll({ timeout: 6000 }, async function () {
 
 AfterAll(async function() {
   worker.close(async () => {
-    await dbClient.destroy()
+    await Promise.all([
+      cacheClient.disconnect(),
+      dbClient.destroy(),
+    ])
   })
 })
 

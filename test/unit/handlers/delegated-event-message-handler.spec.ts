@@ -50,6 +50,7 @@ describe('DelegatedEventMessageHandler', () => {
     let strategyFactoryStub: Sinon.SinonStub
     let onMessageSpy: Sinon.SinonSpy
     let strategyExecuteStub: Sinon.SinonStub
+    let isRateLimitedStub: Sinon.SinonStub
 
     beforeEach(() => {
       canAcceptEventStub = sandbox.stub(DelegatedEventMessageHandler.prototype, 'canAcceptEvent' as any)
@@ -62,10 +63,12 @@ describe('DelegatedEventMessageHandler', () => {
       webSocket = new EventEmitter()
       webSocket.on(WebSocketAdapterEvent.Message, onMessageSpy)
       message = [MessageType.EVENT, event]
+      isRateLimitedStub = sandbox.stub(EventMessageHandler.prototype, 'isRateLimited' as any)
       handler = new DelegatedEventMessageHandler(
         webSocket as any,
         strategyFactoryStub,
         () => ({}) as any,
+        () => ({ hit: async () => false }),
       )
     })
 
@@ -81,7 +84,14 @@ describe('DelegatedEventMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(canAcceptEventStub).to.have.been.calledOnceWithExactly(event)
-      expect(onMessageSpy).to.have.been.calledOnceWithExactly(['NOTICE', 'Event rejected: reason'])
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
+        [
+          MessageType.OK,
+          'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+          false,
+          'reason',
+        ],
+      )
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
@@ -92,6 +102,18 @@ describe('DelegatedEventMessageHandler', () => {
 
       expect(isEventValidStub).to.have.been.calledOnceWithExactly(event)
       expect(onMessageSpy).not.to.have.been.calledOnceWithExactly()
+      expect(strategyFactoryStub).not.to.have.been.called
+    })
+
+    it('rejects event if rate-limited', async () => {
+      isRateLimitedStub.resolves(true)
+
+      await handler.handleMessage(message)
+
+      expect(isRateLimitedStub).to.have.been.calledOnceWithExactly(event)
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
+        [MessageType.OK, event.id, false, 'rate-limited: slow down'],
+      )
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
@@ -177,7 +199,7 @@ describe('DelegatedEventMessageHandler', () => {
       parentIsEventValidStub.resolves(undefined)
 
       event.tags[0][3] = 'wrong sig'
-      return expect((handler as any).isEventValid(event)).to.eventually.equal('Event with id a080fd288b60ac2225ff2e2d815291bd730911e583e177302cc949a15dc2b2dc from 62903b1ff41559daf9ee98ef1ae67cc52f301bb5ce26d14baba3052f649c3f49 is invalid delegated event')
+      return expect((handler as any).isEventValid(event)).to.eventually.equal('invalid: delegation verification failed')
     })
   })
 })
