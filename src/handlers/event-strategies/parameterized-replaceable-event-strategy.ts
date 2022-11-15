@@ -1,5 +1,6 @@
 import { Event, ParameterizedReplaceableEvent } from '../../@types/event'
 import { EventDeduplicationMetadataKey, EventTags } from '../../constants/base'
+import { createCommandResult } from '../../utils/messages'
 import { createLogger } from '../../factories/logger-factory'
 import { IEventRepository } from '../../@types/repositories'
 import { IEventStrategy } from '../../@types/message-handlers'
@@ -8,7 +9,8 @@ import { WebSocketAdapterEvent } from '../../constants/adapter'
 
 const debug = createLogger('parameterized-replaceable-event-strategy')
 
-export class ParameterizedReplaceableEventStrategy implements IEventStrategy<Event, Promise<void>> {
+export class ParameterizedReplaceableEventStrategy
+  implements IEventStrategy<Event, Promise<void>> {
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
@@ -25,10 +27,10 @@ export class ParameterizedReplaceableEventStrategy implements IEventStrategy<Eve
     }
 
     const count = await this.eventRepository.upsert(parameterizedReplaceableEvent)
-    if (!count) {
-      return
-    }
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, (count) ? '' : 'duplicate:'))
 
-    this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
+    if (count) {
+      this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
+    }
   }
 }

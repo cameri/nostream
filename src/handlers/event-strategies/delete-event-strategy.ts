@@ -1,3 +1,4 @@
+import { createCommandResult } from '../../utils/messages'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { EventTags } from '../../constants/base'
@@ -16,17 +17,25 @@ export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>>
 
   public async execute(event: Event): Promise<void> {
     debug('received event: %o', event)
-    await this.eventRepository.create(event)
+    const count = await this.eventRepository.create(event)
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, (count) ? '' : 'duplicate:'))
 
-    const eTags = event.tags.filter((tag) => tag[0] === EventTags.Event)
+    const ids = event.tags.reduce(
+      (eventIds, tag) => (tag.length >= 2 && tag[0] === EventTags.Event && tag[1].length === 64)
+        ? [...eventIds, tag[1]]
+        : eventIds,
+      [] as string[]
+    )
 
-    if (eTags.length) {
+    if (ids.length) {
       await this.eventRepository.deleteByPubkeyAndIds(
         event.pubkey,
-        eTags.map((tag) => tag[1])
+        ids
       )
     }
 
-    this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
+    if (count) {
+      this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
+    }
   }
 }

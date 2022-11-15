@@ -1,3 +1,4 @@
+import { createCommandResult } from '../../utils/messages'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { IEventRepository } from '../../@types/repositories'
@@ -16,9 +17,10 @@ export class DefaultEventStrategy implements IEventStrategy<Event, Promise<void>
   public async execute(event: Event): Promise<void> {
     debug('received event: %o', event)
     const count = await this.eventRepository.create(event)
-    if (!count) {
-      return
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, (count) ? '' : 'duplicate:'))
+
+    if (count) {
+      this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
     }
-    this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
   }
 }
