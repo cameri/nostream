@@ -79,6 +79,15 @@ describe('SettingsStatic', () => {
               maxFilters: 10,
             },
           },
+          message: {
+            dailyRate: 86400,
+            hourlyRate: 3600,
+            minutelyRate: 240,
+            ipWhitelist: [
+              '::1',
+              '::ffff:10.10.10.1',
+            ],
+          },
         })
     })
   })
