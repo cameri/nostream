@@ -33,7 +33,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   }
 
   private onRequest(request: IncomingMessage, response: ServerResponse) {
-    debug('request received: %O', request.rawHeaders)
+    debug('request received: %O', request.headers)
     if (request.method === 'GET' && request.headers['accept'] === 'application/nostr+json') {
       const {
         info: { name, description, pubkey, contact },
