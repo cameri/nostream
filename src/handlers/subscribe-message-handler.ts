@@ -33,7 +33,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   public async handleMessage(message: SubscribeMessage): Promise<void> {
     debug('received message: %o', message)
-    const subscriptionId = message[1] as SubscriptionId
+    const subscriptionId = message[1]
     const filters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
 
     const reason = this.canSubscribe(subscriptionId, filters)

@@ -63,16 +63,12 @@ export class EventMessageHandler implements IMessageHandler {
   protected canAcceptEvent(event: Event): string | undefined {
     const now = Math.floor(Date.now()/1000)
     const limits = this.settings().limits.event
-    if (limits.createdAt.maxPositiveDelta > 0) {
-      if (event.created_at > now + limits.createdAt.maxPositiveDelta) {
-        return `rejected: created_at is more than ${limits.createdAt.maxPositiveDelta} seconds in the future`
-      }
+    if (limits.createdAt.maxPositiveDelta > 0 && event.created_at > now + limits.createdAt.maxPositiveDelta) {
+      return `rejected: created_at is more than ${limits.createdAt.maxPositiveDelta} seconds in the future`
     }
 
-    if (limits.createdAt.maxNegativeDelta > 0) {
-      if (event.created_at < now - limits.createdAt.maxNegativeDelta) {
-        return `rejected: created_at is more than ${limits.createdAt.maxNegativeDelta} seconds in the past`
-      }
+    if (limits.createdAt.maxNegativeDelta > 0 && event.created_at < now - limits.createdAt.maxNegativeDelta) {
+      return `rejected: created_at is more than ${limits.createdAt.maxNegativeDelta} seconds in the past`
     }
 
     if (limits.eventId.minLeadingZeroBits > 0) {
@@ -89,16 +85,18 @@ export class EventMessageHandler implements IMessageHandler {
       }
     }
 
-    if (limits.pubkey.whitelist.length > 0) {
-      if (!limits.pubkey.whitelist.some((prefix) => event.pubkey.startsWith(prefix))) {
-        return 'blocked: pubkey not allowed'
-      }
+    if (
+      limits.pubkey.whitelist.length > 0
+      && !limits.pubkey.whitelist.some((prefix) => event.pubkey.startsWith(prefix))
+    ) {
+      return 'blocked: pubkey not allowed'
     }
 
-    if (limits.pubkey.blacklist.length > 0) {
-      if (limits.pubkey.blacklist.some((prefix) => event.pubkey.startsWith(prefix))) {
-        return 'blocked: pubkey not allowed'
-      }
+    if (
+      limits.pubkey.blacklist.length > 0
+      && limits.pubkey.blacklist.some((prefix) => event.pubkey.startsWith(prefix))
+    ) {
+      return 'blocked: pubkey not allowed'
     }
 
     const isEventKindMatch = (item: EventKinds | EventKindsRange) =>
@@ -106,16 +104,12 @@ export class EventMessageHandler implements IMessageHandler {
       ? item === event.kind
       : event.kind >= item[0] && event.kind <= item[1]
 
-    if (limits.kind.whitelist.length > 0) {
-      if (!limits.kind.whitelist.some(isEventKindMatch)) {
-        return `blocked: event kind ${event.kind} not allowed`
-      }
+    if (limits.kind.whitelist.length > 0 && !limits.kind.whitelist.some(isEventKindMatch)) {
+      return `blocked: event kind ${event.kind} not allowed`
     }
 
-    if (limits.kind.blacklist.length > 0) {
-      if (limits.kind.blacklist.some(isEventKindMatch)) {
-        return `blocked: event kind ${event.kind} not allowed`
-      }
+    if (limits.kind.blacklist.length > 0 && limits.kind.blacklist.some(isEventKindMatch)) {
+      return `blocked: event kind ${event.kind} not allowed`
     }
   }
 
@@ -152,13 +146,10 @@ export class EventMessageHandler implements IMessageHandler {
       )
     }
 
-    const hits = await Promise.all(
-      rateLimits
-        .map(async (rateLimit) => ({ ...rateLimit, active: await hit(rateLimit) }))
-    )
+    const hits = await Promise.all(rateLimits.map(hit))
 
     debug('rate limit check %s: %o', event.pubkey, hits)
 
-    return hits.some(({ active }) => active)
+    return hits.some((active) => active)
   }
 }

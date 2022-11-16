@@ -73,11 +73,11 @@ export class EventRepository implements IEventRepository {
                 evolve({
                   exact: (pubkeys: string[]) =>
                     tableFields.forEach((tableField) =>
-                      void bd.orWhereIn(tableField, pubkeys.map(toBuffer))
+                      bd.orWhereIn(tableField, pubkeys.map(toBuffer))
                     ),
                   even: forEach((prefix: string) =>
                     tableFields.forEach((tableField) =>
-                      void bd.orWhereRaw(
+                      bd.orWhereRaw(
                         `substring("${tableField}" from 1 for ?) = ?`,
                         [prefix.length >> 1, toBuffer(prefix)]
                       )
@@ -85,7 +85,7 @@ export class EventRepository implements IEventRepository {
                   ),
                   odd: forEach((prefix: string) =>
                     tableFields.forEach((tableField) =>
-                      void bd.orWhereRaw(
+                      bd.orWhereRaw(
                         `substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`,
                         [
                           (prefix.length >> 1) + 1,
