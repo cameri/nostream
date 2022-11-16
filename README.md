@@ -51,18 +51,25 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-13: Proof of Work
 - [x] NIP-15: End of Stored Events Notice
 - [x] NIP-16: Event Treatment
+- [x] NIP-20: Command Results
 - [x] NIP-22: Event `created_at` Limits
 - [x] NIP-26: Delegated Event Signing
 - [x] NIP-33: Parameterized Replaceable Events
 
 ## Requirements
 
-- PostgreSQL 15.0 (For standalone steps only)
+### Standalone setup
+- PostgreSQL 15.0
+- Redis
 - Node v18
 - Typescript
-- Docker (For docker steps only, version 20 or higher)
 
-## Quick Start (Docker Compose) (Best)
+### Docker setups
+- Node v18
+- Docker v20.10
+- Docker compose v2.10
+
+## Quick Start (Docker Compose)
 
 Install Docker following the [official guide](https://docs.docker.com/engine/install/).
 You may have to uninstall Docker if you installed it using a different guide.
@@ -75,7 +82,7 @@ Clone repository and enter directory:
 
 Start with:
   ```
-  npm run docker:compose:start &
+  npm run docker:compose:start -- --detach
   ```
 
 Stop the server with:
@@ -84,6 +91,7 @@ Stop the server with:
   ```
 
 ## Quick Start (over Tor)
+`Docker` `Tor`
 
 Install Docker following the [official guide](https://docs.docker.com/engine/install/).
 You may have to uninstall Docker if you installed it using a different guide.
@@ -96,7 +104,7 @@ Clone repository and enter directory:
 
 Start with:
   ```
-  npm run tor:docker:compose:start &
+  npm run tor:docker:compose:start
   ```
 
 Print the Tor hostname:
@@ -119,6 +127,10 @@ Set the following environment variables:
   DB_NAME=nostr_ts_relay
   DB_USER=postgres
   DB_PASSWORD=postgres
+  REDIS_HOST=localhost
+  REDIS_PORT=6379
+  REDIS_USER=default
+  REDIS_PASSWORD=nostr_ts_relay
   ```
 
 Create `nostr_ts_relay` database:
@@ -127,6 +139,15 @@ Create `nostr_ts_relay` database:
   $ psql -h $DB_HOST -p $DB_PORT -U $DB_USER -W
   postgres=# create database nostr_ts_relay;
   postgres=# quit
+  ```
+
+Start Redis and use `redis-cli` to set the default password and verify:
+  ```
+  $ redis-cli
+  127.0.0.1:6379> CONFIG SET requirepass "nostr_ts_relay"
+  OK
+  127.0.0.1:6379> AUTH nostr_ts_relay
+  Ok
   ```
 
 Clone repository and enter directory:
