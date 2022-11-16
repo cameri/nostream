@@ -24,7 +24,7 @@
     "prestart": "npm run build",
     "start": "cd dist && node src/index.js",
     "build:check": "npm run build -- --noEmit",
-    "lint": "eslint ./src ./test --ext .ts",
+    "lint": "eslint -o .lint-reports/eslint.json -f json --ext .ts ./src ./test",
     "lint:fix": "npm run lint -- --fix",
     "db:migrate": "knex migrate:latest",
     "db:migrate:rollback": "knex migrate:rollback",
