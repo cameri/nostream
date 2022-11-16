@@ -3,6 +3,9 @@ logs
 *.log
 npm-debug.log*
 
+# Linter
+.lint-reports/
+
 # Coverage
 .nyc_output
 .test-reports
