@@ -11,18 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  sonarcloud:
-    name: Sonarcloud
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
-    - name: SonarCloud Scan
-      uses: sonarsource/sonarcloud-github-action@master
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -106,6 +94,20 @@ jobs:
           parallel: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
+
+  sonarcloud:
+    name: Sonarcloud
+    needs: [test-units-and-cover, test-integrations-and-cover]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: SonarCloud Scan
+      uses: sonarsource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
   post-tests:
     name: Post Tests
     needs: [test-units-and-cover, test-integrations-and-cover]
