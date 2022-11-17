@@ -24,6 +24,9 @@
   <a href='https://coveralls.io/github/Cameri/nostr-ts-relay?branch=main'>
     <img  alt='Coverage Status' src='https://coveralls.io/repos/github/Cameri/nostr-ts-relay/badge.svg?branch=main' />
   </a>
+  <a href='https://sonarcloud.io/project/overview?id=Cameri_nostr-ts-relay'>
+    <img alt='Sonarcloud quality gate' src='https://sonarcloud.io/api/project_badges/measure?project=Cameri_nostr-ts-relay&metric=alert_status' />
+  </a>
   <a href='https://github.com/Cameri/nostr-ts-relay/actions'>
     <img alt='Build status' src='https://github.com/Cameri/nostr-ts-relay/actions/workflows/checks.yml/badge.svg?branch=main&event=push' />
   </a>
