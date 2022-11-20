@@ -114,7 +114,6 @@ jobs:
       name: Download unit & integration coverage reports
       with:
         path: .coverage
-    - run: ls -Rl .coverage
     - name: SonarCloud Scan
       uses: sonarsource/sonarcloud-github-action@master
       env:
