@@ -177,6 +177,9 @@ describe('EventMessageHandler', () => {
           blacklist: [],
           whitelist: [],
         },
+        content: {
+          maxLength: 0,
+        },
       }
       settings = {
         limits: {
@@ -212,6 +215,55 @@ describe('EventMessageHandler', () => {
           expect(
             (handler as any).canAcceptEvent(event)
           ).to.equal('rejected: created_at is more than 100 seconds in the future')
+        })
+      })
+
+      describe('maxNegativeDelta', () => {
+        it('returns undefined if maxNegativeDelta is zero', () => {
+          eventLimits.createdAt.maxNegativeDelta = 0
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
+        })
+
+        it('returns reason if createdDate is too far in the past', () => {
+          eventLimits.createdAt.maxNegativeDelta = 100
+          event.created_at -= 101
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.equal('rejected: created_at is more than 100 seconds in the past')
+        })
+      })
+    })
+
+    describe('content', () => {
+      describe('maxLength', () => {
+        it('returns undefined if maxLength is zero', () => {
+          eventLimits.content.maxLength = 0
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
+        })
+
+        it('returns undefned if content is not too long', () => {
+          eventLimits.content.maxLength = 100
+          event.content = 'x'.repeat(100)
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
+        })
+
+        it('returns reason if content is too long', () => {
+          eventLimits.content.maxLength = 100
+          event.content = 'x'.repeat(101)
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.equal('rejected: content is longer than 100 bytes')
         })
       })
 
