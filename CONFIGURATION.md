@@ -37,6 +37,7 @@ Running `nostr-ts-relay` for the first time creates the settings file in `~/.nos
 | limits.event.pubkey.blacklist               | List of public keys to reject. Public keys in this list will not be able to post to this relay. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
 | limits.event.createdAt.minNegativeDelta     | Maximum number of secodns an event's `created_at` can be in the past.  Defaults to zero. Disabled when set to zero. |
+| limits.event.content.maxLength              | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.rateLimits[].kinds             | List of event kinds rate limited. Use `[min, max]` for ranges. Optional. |
 | limits.event.rateLimits[].period            | Rate limiting period in milliseconds. |
 | limits.event.rateLimits[].rate              | Maximum number of events during period. |
