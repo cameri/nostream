@@ -63,7 +63,7 @@ export class EventMessageHandler implements IMessageHandler {
   protected canAcceptEvent(event: Event): string | undefined {
     const now = Math.floor(Date.now()/1000)
     const limits = this.settings().limits.event
-    if (limits.content?.maxLength > 0 && event.content.length > limits.content.maxLength) {
+    if (limits.content.maxLength > 0 && event.content.length > limits.content.maxLength) {
       return `rejected: content is longer than ${limits.content.maxLength} bytes`
     }
 
