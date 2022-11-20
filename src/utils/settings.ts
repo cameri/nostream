@@ -50,6 +50,9 @@ export class SettingsStatic {
             maxPositiveDelta: 900,
             maxNegativeDelta: 0, // disabled
           },
+          content: {
+            maxLength: 1048576,
+          },
           rateLimits: [
             {
               kinds: [
