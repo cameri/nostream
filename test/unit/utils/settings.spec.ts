@@ -72,6 +72,9 @@ describe('SettingsStatic', () => {
               maxPositiveDelta: 900, // +15 min
               maxNegativeDelta: 0, // disabled
             },
+            content: {
+              maxLength: 1048576,
+            },
             'rateLimits': [
               {
                 'kinds': [[0, 5], 7, [40, 49], [10000, 19999], [30000, 39999]],

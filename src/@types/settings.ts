@@ -43,11 +43,16 @@ export interface CreatedAtLimits {
   maxPositiveDelta?: number
 }
 
+export interface ContentLimits {
+  maxLength?: number
+}
+
 export interface EventLimits {
   eventId?: EventIdLimits
   pubkey?: PubkeyLimits
   kind?: KindLimits
   createdAt?: CreatedAtLimits
+  content?: ContentLimits
   rateLimits?: EventRateLimit[]
 }
 
