@@ -26,7 +26,7 @@ jobs:
       - name: Install package dependencies
         run: npm ci
       - name: Run commitlint
-        run: npx commitlint --from=origin/$GITHUB_BASE_REF
+        uses: wagoid/commitlint-github-action@v5
   lint:
     name: Lint code
     runs-on: ubuntu-latest
