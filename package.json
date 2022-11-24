@@ -49,7 +49,7 @@
     "docker:test:integration": "npm run docker:integration:run -- npm run test:integration",
     "docker:cover:integration": "npm run docker:integration:run -- npm run cover:integration",
     "postdocker:integration:run": "docker compose -f ./test/integration/docker-compose.yml down",
-    "prepare": "husky install"
+    "prepare": "husky install || exit 0"
   },
   "repository": {
     "type": "git",
