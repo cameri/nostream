@@ -32,7 +32,7 @@ describe('NIP-01', () => {
     const cases = {
       ids: [
         { message: 'must be an array', transform: assocPath(['ids'], null) },
-        { message: 'must contain less than or equal to 256 items', transform: assocPath(['ids'], range(0, 257).map(() => 'f')) },
+        { message: 'must contain less than or equal to 1000 items', transform: assocPath(['ids'], range(0, 1001).map(() => 'f')) },
       ],
       prefixOrId: [
         { message: 'length must be less than or equal to 64 characters long', transform: assocPath(['ids', 0], 'f'.repeat(65)) },
@@ -41,7 +41,7 @@ describe('NIP-01', () => {
       ],
       authors: [
         { message: 'must be an array', transform: assocPath(['authors'], null) },
-        { message: 'must contain less than or equal to 256 items', transform: assocPath(['authors'], range(0, 257).map(() => 'f')) },
+        { message: 'must contain less than or equal to 1000 items', transform: assocPath(['authors'], range(0, 1001).map(() => 'f')) },
       ],
       prefixOrAuthor: [
         { message: 'length must be less than or equal to 64 characters long', transform: assocPath(['authors', 0], 'f'.repeat(65)) },

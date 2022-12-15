@@ -9,4 +9,4 @@ export const filterSchema = Schema.object({
   since: Schema.number().min(0).multiple(1),
   until: Schema.number().min(0).multiple(1),
   limit: Schema.number().min(1).multiple(1).max(10000),
-}).pattern(/^#[a-z]$/, Schema.array().items(Schema.string().max(1024)).max(100))
+}).pattern(/^#[a-z]$/, Schema.array().items(Schema.string().max(1024)).max(256))
