@@ -50,6 +50,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
       }
 
       response.setHeader('content-type', 'application/nostr+json')
+      response.setHeader('access-control-allow-origin', '*')
       const body = JSON.stringify(relayInformationDocument)
       response.end(body)
     } else {
