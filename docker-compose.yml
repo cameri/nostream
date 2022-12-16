@@ -10,8 +10,8 @@ services:
       DB_USER: nostr_ts_relay
       DB_PASSWORD: nostr_ts_relay
       DB_NAME: nostr_ts_relay
-      DB_MIN_POOL_SIZE: 2
-      DB_MAX_POOL_SIZE: 10
+      DB_MIN_POOL_SIZE: 5
+      DB_MAX_POOL_SIZE: 15
       REDIS_HOST: cache
       REDIS_PORT: 6379
       REDIS_USER: default
