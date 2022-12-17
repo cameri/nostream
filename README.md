@@ -190,7 +190,7 @@ Or, start in production mode:
   npm run start
   ```
 
-To clean up the build, coverage and test reports run:
+To clean up the build, coverage, and test reports run:
 
   ```
   npm run clean
