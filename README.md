@@ -72,6 +72,10 @@ NIPs with a relay-specific implementation are listed here.
 - Docker v20.10
 - Docker compose v2.10
 
+## Full Guide
+
+- [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder At [ZEBEDEE](https://zebedee.io/))
+
 ## Quick Start (Docker Compose)
 
 Install Docker following the [official guide](https://docs.docker.com/engine/install/).
