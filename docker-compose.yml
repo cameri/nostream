@@ -41,6 +41,7 @@ services:
       POSTGRES_PASSWORD: nostr_ts_relay
     volumes:
       - pgdata:/var/lib/postgresql/data/
+      - ./postgresql.conf:/etc/postgresql.conf
     ports:
       - 15432:5432
     networks:
