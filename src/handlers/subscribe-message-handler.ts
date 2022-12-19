@@ -39,7 +39,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const reason = this.canSubscribe(subscriptionId, filters)
     if (reason) {
       debug('subscription %s with %o rejected: %s', subscriptionId, filters, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Subscription request rejected: ${reason}`))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Subscription rejected: ${reason}`))
       return
     }
 
@@ -85,12 +85,18 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   }
 
   private canSubscribe(subscriptionId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
+    const subscriptions = this.webSocket.getSubscriptions()
+    const existingSubscription = subscriptions.get(subscriptionId)
+
+    if (existingSubscription?.length && equals(filters, existingSubscription)) {
+        return `Duplicate subscription ${subscriptionId}: Ignorning`
+    }
+
     const maxSubscriptions = this.settings().limits.client.subscription.maxSubscriptions
-    if (maxSubscriptions > 0) {
-      const subscriptions = this.webSocket.getSubscriptions()
-      if (!subscriptions.has(subscriptionId) && subscriptions.size + 1 > maxSubscriptions) {
-        return `Too many subscriptions: Number of subscriptions must be less than or equal to ${maxSubscriptions}`
-      }
+    if (maxSubscriptions > 0
+      && !existingSubscription?.length && subscriptions.size + 1 > maxSubscriptions
+    ) {
+      return `Too many subscriptions: Number of subscriptions must be less than or equal to ${maxSubscriptions}`
     }
 
     const maxFilters = this.settings().limits.client.subscription.maxFilters
