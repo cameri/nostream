@@ -30,7 +30,7 @@ const toDbEvent = (event: Event) => ({
 describe('SubscribeMessageHandler', () => {
   const subscriptionId: SubscriptionId = 'subscriptionId'
   let filters: SubscriptionFilter[]
-  let subscriptions: Map<SubscriptionId, Set<SubscriptionFilter>>
+  let subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
   let handler: IMessageHandler & IAbortable
   let webSocket: IWebSocketAdapter
   let eventRepository: IEventRepository
@@ -94,7 +94,7 @@ describe('SubscribeMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(
-        ['NOTICE', 'Subscription request rejected: reason']
+        ['NOTICE', 'Subscription rejected: reason']
       )
     })
 
@@ -273,7 +273,7 @@ describe('SubscribeMessageHandler', () => {
       expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
     })
 
-    it('returns undefined if client is resubscribing', () => {
+    it('returns reason if client is sending a duplicate subscription', () => {
       settingsFactory.returns({
         limits: {
           client: {
@@ -283,9 +283,11 @@ describe('SubscribeMessageHandler', () => {
           },
         },
       })
-      subscriptions.set(subscriptionId, new Set([{}]))
+      filters = [{ authors: ['aa'] }]
+      subscriptions.set(subscriptionId, filters)
 
-      expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+      expect((handler as any).canSubscribe(subscriptionId, filters))
+        .to.equal('Duplicate subscription subscriptionId: Ignorning')
     })
 
     it('returns reason if client subscriptions exceed limits', () => {
@@ -298,7 +300,7 @@ describe('SubscribeMessageHandler', () => {
           },
         },
       })
-      subscriptions.set('other-sub', new Set())
+      subscriptions.set('other-sub', [])
 
       expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal('Too many subscriptions: Number of subscriptions must be less than or equal to 1')
     })
