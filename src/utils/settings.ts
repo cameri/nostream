@@ -7,6 +7,7 @@ import { createLogger } from '../factories/logger-factory'
 import { EventKinds } from '../constants/base'
 import { ISettings } from '../@types/settings'
 import packageJson from '../../package.json'
+import settingsSampleJson from '../../settings.sample.json'
 
 const debug = createLogger('settings')
 
@@ -161,7 +162,7 @@ export class SettingsStatic {
     }
     debug('creating settings')
     const path = SettingsStatic.getSettingsFilePath()
-    const defaults = SettingsStatic.getDefaultSettings()
+    const defaults = settingsSampleJson as ISettings
     try {
 
       if (fs.existsSync(path)) {
