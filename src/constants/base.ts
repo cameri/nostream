@@ -23,6 +23,8 @@ export enum EventKinds {
   // Parameterized replaceable events
   PARAMETERIZED_REPLACEABLE_FIRST = 30000,
   PARAMETERIZED_REPLACEABLE_LAST = 39999,
+  USER_APPLICATION_FIRST = 40000,
+  USER_APPLICATION_LAST = Number.MAX_SAFE_INTEGER,
 }
 
 export enum EventTags {
