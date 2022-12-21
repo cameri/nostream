@@ -12,8 +12,6 @@ export const getCacheClient = (): CacheClient => {
   if (!instance) {
     const config = getCacheConfig()
 
-    console.log(config)
-
     instance = createClient(config)
   }
 
