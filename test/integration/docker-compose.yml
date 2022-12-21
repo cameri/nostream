@@ -23,6 +23,7 @@ services:
       - ../../src:/code/src
       - ../../test/integration:/code/test/integration
       - ../../cucumber.js:/code/cucumber.js
+      - ../../.nycrc.json:/code/.nycrc.json
       - ../../.coverage:/code/.coverage
       - ../../.test-reports:/code/.test-reports
       - ../../tsconfig.json:/code/tsconfig.json
