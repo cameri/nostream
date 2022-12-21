@@ -3,7 +3,7 @@ services:
     build: .
     container_name: nostr-ts-relay
     environment:
-      PORT: 8008
+      RELAY_PORT: 8008
       NOSTR_CONFIG_DIR: /home/node/
       DB_HOST: db
       DB_PORT: 5432

@@ -1,8 +1,8 @@
 import * as secp256k1 from '@noble/secp256k1'
 import { applySpec, converge, curry, mergeLeft, nth, omit, pipe, prop, reduceBy } from 'ramda'
 
-import { CanonicalEvent, Event } from '../@types/event'
-import { EventId, Pubkey } from '../@types/base'
+import { CanonicalEvent, DBEvent, Event } from '../@types/event'
+import { EventId, Pubkey, Tag } from '../@types/base'
 import { EventKinds, EventTags } from '../constants/base'
 import { fromBuffer } from './transform'
 import { getLeadingZeroBits } from './proof-of-work'
@@ -10,7 +10,7 @@ import { isGenericTagQuery } from './filter'
 import { RuneLike } from './runes/rune-like'
 import { SubscriptionFilter } from '../@types/subscription'
 
-export const serializeEvent = (event: Partial<Event>): CanonicalEvent => [
+export const serializeEvent = (event: Event): CanonicalEvent => [
   0,
   event.pubkey,
   event.created_at,
@@ -19,18 +19,18 @@ export const serializeEvent = (event: Partial<Event>): CanonicalEvent => [
   event.content,
 ]
 
-export const toNostrEvent = applySpec({
-  id: pipe(prop('event_id'), fromBuffer),
-  kind: prop('event_kind'),
-  pubkey: pipe(prop('event_pubkey'), fromBuffer),
-  created_at: prop('event_created_at'),
-  content: prop('event_content'),
-  tags: prop('event_tags'),
-  sig: pipe(prop('event_signature'), fromBuffer),
+export const toNostrEvent: (event: DBEvent) => Event = applySpec({
+  id: pipe(prop('event_id') as () => Buffer, fromBuffer),
+  kind: prop('event_kind') as () => number,
+  pubkey: pipe(prop('event_pubkey') as () => Buffer, fromBuffer),
+  created_at: prop('event_created_at') as () => number,
+  content: prop('event_content') as () => string,
+  tags: prop('event_tags') as () => Tag[],
+  sig: pipe(prop('event_signature') as () => Buffer, fromBuffer),
 })
 
 export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Event): boolean => {
-  const startsWith = (input: string) => (prefix) => input.startsWith(prefix)
+  const startsWith = (input: string) => (prefix: string) => input.startsWith(prefix)
 
   // NIP-01: Basic protocol flow description
 
@@ -58,6 +58,9 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
     ) {
       if (isDelegatedEvent(event)) {
         const delegation = event.tags.find((tag) => tag[0] === EventTags.Delegation)
+        if (typeof delegation === 'undefined') {
+          return false
+        }
 
         if (!filter.authors.some(startsWith(delegation[1]))) {
           return false
@@ -119,10 +122,10 @@ export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
       omit(['tags']),
       pipe(
         prop('tags') as any,
-        reduceBy(
+        reduceBy<EventTags, string[]>(
           (acc, tag) => ([...acc, tag[1]]),
           [],
-          nth(0),
+          nth(0) as any,
         ),
       ),
     ],

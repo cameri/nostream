@@ -4,6 +4,7 @@ services:
       context: ../../
       dockerfile: Dockerfile.test
     environment:
+      RELAY_PORT: 18808
       DB_HOST: db-test
       DB_PORT: 5432
       DB_NAME: nostr_ts_relay_test
@@ -17,10 +18,14 @@ services:
       REDIS_PASSWORD: nostr_ts_relay_test
       NOSTR_CONFIG_DIR: /code
     volumes:
+      - ../../package.json:/code/package.json
+      - ../../settings.sample.json:/code/settings.sample.json
       - ../../src:/code/src
-      - ../../test:/code/test
+      - ../../test/integration:/code/test/integration
+      - ../../cucumber.js:/code/cucumber.js
       - ../../.coverage:/code/.coverage
       - ../../.test-reports:/code/.test-reports
+      - ../../tsconfig.json:/code/tsconfig.json
     working_dir: /code
     depends_on:
       cache-test:

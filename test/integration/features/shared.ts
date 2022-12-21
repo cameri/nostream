@@ -8,6 +8,7 @@ import {
   When,
   World,
 } from '@cucumber/cucumber'
+import { assocPath } from 'ramda'
 import WebSocket from 'ws'
 
 import { connect, createIdentity, createSubscription } from './helpers'
@@ -25,13 +26,14 @@ let dbClient: DatabaseClient
 let cacheClient: CacheClient
 
 BeforeAll({ timeout: 6000 }, async function () {
-  process.env.PORT = '18808'
+  process.env.RELAY_PORT = '18808'
   cacheClient = getCacheClient()
   dbClient = getDbClient()
   await dbClient.raw('SELECT 1=1')
 
-  const limits = SettingsStatic.createSettings().limits
-  limits.event.createdAt.maxPositiveDelta = 0
+  const { limits } = SettingsStatic.createSettings()
+
+  assocPath(['event', 'createdAt', 'maxPositiveDelta'], 0)(limits)
 
   worker = workerFactory()
   worker.run()
@@ -56,18 +58,18 @@ Before(async function () {
 After(async function () {
   this.parameters.events = {}
   this.parameters.subscriptions = {}
-  Object.values(this.parameters.clients).forEach((ws: WebSocket) => {
+  for (const ws of Object.values(this.parameters.clients as Record<string, WebSocket>)) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.close()
     }
-  })
+  }
   this.parameters.clients = {}
 
   const dbClient = getDbClient()
-  await Promise.all(
-    Object.values(this.parameters.identities)
-      .map(async (identity: { pubkey: string }) => dbClient('events').where({ event_pubkey: Buffer.from(identity.pubkey, 'hex') }).del())
-  )
+
+  for (const identity of Object.values(this.parameters.identities as Record<string, { pubkey: string }>)) {
+    await dbClient('events').where({ event_pubkey: Buffer.from(identity.pubkey, 'hex') }).del()
+  }
   this.parameters.identities = {}
 })
 

@@ -19,9 +19,6 @@
     "esModuleInterop": true,
     "lib": ["ESNext"]
   },
-  "ts-node": {
-    "transpileOnly": true
-  },
   "include": [
     "src/**/*.ts",
     "test/**/*.ts"
