@@ -13,3 +13,4 @@ docker-compose.yml
 Dockerfile
 *.env
 *.md
+.nostr
