@@ -18,13 +18,13 @@ import { EventKinds } from '../../../src/constants/base'
 describe('NIP-01', () => {
   describe('serializeEvent', () => {
     it('returns serialized event given a Nostr event', () => {
-      const event: Partial<Event> = {
+      const event: Event = {
         pubkey: 'pubkey',
         created_at: 1000,
         kind: EventKinds.TEXT_NOTE,
         tags: [['tag name', 'tag content']],
         content: 'content',
-      }
+      } as any
 
       const expected: CanonicalEvent = [
         0,

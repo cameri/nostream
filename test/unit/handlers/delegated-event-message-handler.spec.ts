@@ -2,7 +2,9 @@ import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
 import EventEmitter from 'events'
 import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
 
+chai.use(sinonChai)
 chai.use(chaiAsPromised)
 
 import { IncomingEventMessage, MessageType } from '../../../src/@types/messages'
