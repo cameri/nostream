@@ -53,7 +53,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
       response.setHeader('access-control-allow-origin', '*')
       const body = JSON.stringify(relayInformationDocument)
       response.end(body)
-    } else {
+    } else if (request.headers['upgrade'] !== 'connection') {
       response.setHeader('content-type', 'application/text')
       response.end('Please use a Nostr client to connect.')
     }
