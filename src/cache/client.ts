@@ -6,11 +6,13 @@ export const getCacheConfig = (): RedisClientOptions => ({
   password: process.env.REDIS_PASSWORD,
 })
 
-let instance: CacheClient = undefined
+let instance: CacheClient | undefined = undefined
 
 export const getCacheClient = (): CacheClient => {
   if (!instance) {
     const config = getCacheConfig()
+
+    console.log(config)
 
     instance = createClient(config)
   }

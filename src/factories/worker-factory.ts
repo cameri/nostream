@@ -13,11 +13,11 @@ export const workerFactory = (): AppWorker => {
   const dbClient = getDbClient()
   const eventRepository = new EventRepository(dbClient)
 
-  // deepcode ignore HttpToHttps: <please specify a reason of ignoring this>
+  // deepcode ignore HttpToHttps: we use proxies
   const server = http.createServer()
   const webSocketServer = new WebSocketServer({
     server,
-    maxPayload: 1024 * 1024,
+    maxPayload: 102400, // 0.1 MB
   })
   const adapter = new WebSocketServerAdapter(
     server,

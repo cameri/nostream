@@ -1,12 +1,15 @@
 import * as secp256k1 from '@noble/secp256k1'
+import { createHash, createHmac, Hash } from 'crypto'
 import WebSocket, { RawData } from 'ws'
-import { createHmac } from 'crypto'
 
 import { Event } from '../../../src/@types/event'
 import { MessageType } from '../../../src/@types/messages'
 import { serializeEvent } from '../../../src/utils/event'
 import { SubscriptionFilter } from '../../../src/@types/subscription'
 
+
+secp256k1.utils.sha256Sync = (...messages: Uint8Array[]) =>
+  messages.reduce((hash: Hash, message: Uint8Array) => hash.update(message),  createHash('sha256')).digest()
 
 export async function connect(_name: string) {
   const host = 'ws://localhost:18808'
@@ -35,17 +38,18 @@ export async function createEvent(input: Partial<Event>, privkey: any): Promise<
     tags: input.tags ?? [],
   } as any
 
-  const id = Buffer.from(
-    await secp256k1.utils.sha256(
-      Buffer.from(JSON.stringify(serializeEvent(event)))
-    )
-  ).toString('hex')
+  const id = createHash('sha256').update(
+    Buffer.from(JSON.stringify(serializeEvent(event)))
+  ).digest().toString('hex')
 
   const sig = Buffer.from(
-    await secp256k1.schnorr.sign(id, privkey)
+    secp256k1.schnorr.signSync(id, privkey)
   ).toString('hex')
 
-  return { id, ...event, sig }
+  event.id = id
+  event.sig = sig
+
+  return event
 }
 
 export function createIdentity(name: string) {
@@ -73,7 +77,7 @@ export async function createSubscription(
       ...subscriptionFilters,
     ])
 
-    ws.send(message, (error: Error) => {
+    ws.send(message, (error?: Error) => {
       if (error) {
         reject(error)
         return
@@ -157,7 +161,7 @@ export async function waitForEventCount(
   count = 1,
   eose = false,
 ): Promise<Event[]> {
-  const events = []
+  const events: Event[] = []
 
   return new Promise((resolve, reject) => {
     ws.on('message', onMessage)

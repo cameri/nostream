@@ -68,7 +68,7 @@ describe('messageHandlerFactory', () => {
   })
 
   it('throws when given an invalid message', () => {
-    message = []
+    message = [] as any
 
     expect(() => factory([message, adapter])).to.throw(Error, 'Unknown message type: undefined')
   })

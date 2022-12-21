@@ -2,7 +2,7 @@ import { IAlternative } from '../../@types/runes'
 
 const punctuations = /[!"#$%&'()*+-./:;<=>?@[\\\]^`{|}~]/
 
-const hasPunctuation = (input) => punctuations.test(input)
+const hasPunctuation = (input: string) => punctuations.test(input)
 
 // Reference: https://github.com/rustyrussell/runes/blob/master/runes/runes.py
 
