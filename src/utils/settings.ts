@@ -56,27 +56,62 @@ export class SettingsStatic {
           rateLimits: [
             {
               kinds: [
-                [EventKinds.SET_METADATA, EventKinds.DELETE],
-                EventKinds.REACTION,
-                [EventKinds.CHANNEL_CREATION, EventKinds.CHANNEL_RESERVED_LAST],
+                EventKinds.SET_METADATA,
+                EventKinds.CONTACT_LIST,
+                EventKinds.CHANNEL_CREATION,
+                EventKinds.CHANNEL_METADATA,
+              ],
+              period: 60000,
+              rate: 6,
+            },
+            {
+              kinds: [
+                EventKinds.TEXT_NOTE,
+                EventKinds.RECOMMEND_SERVER,
+                EventKinds.ENCRYPTED_DIRECT_MESSAGE,
+                EventKinds.CHANNEL_MESSAGE,
+              ],
+              period: 60000,
+               rate: 12,
+            },
+            {
+              kinds: [
+                EventKinds.TEXT_NOTE,
+                EventKinds.RECOMMEND_SERVER,
+                EventKinds.ENCRYPTED_DIRECT_MESSAGE,
+                EventKinds.CHANNEL_MESSAGE,
+              ],
+              period: 3600000,
+              rate: 360,
+            },
+            {
+              kinds: [
+                [EventKinds.DELETE, EventKinds.REACTION],
+                [EventKinds.CHANNEL_HIDE_MESSAGE, EventKinds.CHANNEL_RESERVED_LAST],
+              ],
+              period: 60000,
+              rate: 30,
+            },
+            {
+              kinds: [
                 [EventKinds.REPLACEABLE_FIRST, EventKinds.REPLACEABLE_LAST],
                 [EventKinds.PARAMETERIZED_REPLACEABLE_FIRST, EventKinds.PARAMETERIZED_REPLACEABLE_LAST],
               ],
               period: 60000,
-              rate: 60,
+              rate: 24,
             },
             {
               kinds: [[EventKinds.EPHEMERAL_FIRST, EventKinds.EPHEMERAL_LAST]],
               period: 60000,
-              rate: 600,
+              rate: 60,
             },
             {
               period: 3600000,
-              rate: 3600,
+              rate: 720,
             },
             {
               period: 86400000,
-              rate: 86400,
+              rate: 2880,
             },
           ],
         },
@@ -90,7 +125,7 @@ export class SettingsStatic {
           rateLimits: [
             {
               period: 60000,
-              rate: 600,
+              rate: 120,
             },
             {
               period: 3600000,
