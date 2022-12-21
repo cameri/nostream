@@ -15,7 +15,7 @@ const createDbConfig = (): Knex.Config => ({
     database: process.env.DB_NAME,
   },
   pool: {
-    min: process.env.DB_MIN_POOL_SIZE ? Number(process.env.DB_MIN_POOL_SIZE) : 2,
+    min: process.env.DB_MIN_POOL_SIZE ? Number(process.env.DB_MIN_POOL_SIZE) : 0,
     max: process.env.DB_MAX_POOL_SIZE ? Number(process.env.DB_MAX_POOL_SIZE) : 3,
     idleTimeoutMillis: 10000,
   },
