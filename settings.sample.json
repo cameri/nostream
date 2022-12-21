@@ -6,6 +6,9 @@
     "pubkey": "replace-with-your-pubkey",
     "contact": "operator@your-domain.com"
   },
+  "workers": {
+    "count": 0
+  },
   "limits": {
     "event": {
       "eventId": {
@@ -29,22 +32,42 @@
       },
       "rateLimits": [
         {
-          "kinds": [[0, 5], 7, [40, 49], [10000, 19999], [30000, 39999]],
+          "kinds": [0, 3, 40, 41],
+          "periods": 60000,
+          "rate": 6
+        },
+        {
+          "kinds": [1, 2, 4, 42],
           "period": 60000,
-          "rate": 60
+          "rate": 12
+        },
+        {
+          "kinds": [1, 2, 4, 42],
+          "period": 3600000,
+          "rate": 360
+        },
+        {
+          "kinds": [[5, 7], [43, 49]],
+          "period": 60000,
+          "rate": 30
+        },
+        {
+          "kinds": [[10000, 19999], [30000, 39999]],
+          "period": 60000,
+          "rate": 24
         },
         {
           "kinds": [[20000, 29999]],
           "period": 60000,
-          "rate": 600
+          "rate": 60
         },
         {
           "period": 3600000,
-          "rate": 3600
+          "rate": 720
         },
         {
           "period": 86400000,
-          "rate": 86400
+          "rate": 2880
         }
       ]
     },
@@ -58,7 +81,7 @@
       "rateLimits": [
         {
           "period": 60000,
-          "rate": 600
+          "rate": 120
         },
         {
           "period": 3600000,

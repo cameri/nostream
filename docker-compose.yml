@@ -10,8 +10,8 @@ services:
       DB_USER: nostr_ts_relay
       DB_PASSWORD: nostr_ts_relay
       DB_NAME: nostr_ts_relay
-      DB_MIN_POOL_SIZE: 5
-      DB_MAX_POOL_SIZE: 25
+      DB_MIN_POOL_SIZE: 16
+      DB_MAX_POOL_SIZE: 32
       REDIS_HOST: cache
       REDIS_PORT: 6379
       REDIS_USER: default
@@ -19,7 +19,7 @@ services:
       DEBUG: "worker:*"
     user: node:node
     volumes:
-      - $HOME/.nostr:/home/node/
+      - ${PWD}/.nostr:/home/node/
     ports:
       - 8008:8008
     depends_on:
@@ -37,22 +37,27 @@ services:
     image: postgres
     container_name: db
     environment:
+      POSTGRES_DB: nostr_ts_relay
       POSTGRES_USER: nostr_ts_relay
       POSTGRES_PASSWORD: nostr_ts_relay
     volumes:
-      - pgdata:/var/lib/postgresql/data/
-      - ./postgresql.conf:/etc/postgresql/postgresql.conf
+      - pgdata:/var/lib/postgresql/data-old
+      - ${PWD}/.nostr/data:/var/lib/postgresql/data
+      - ${PWD}/.nostr/db-logs:/var/log/postgresql
+      - ${PWD}/postgresql.conf:/postgresql.conf
     ports:
       - 15432:5432
     networks:
       default:
         ipv4_address: 10.10.10.3
+    command: postgres -c 'config_file=/postgresql.conf'
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nostr_ts_relay"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 360s
   cache:
     image: redis:7.0.5-alpine3.16
     container_name: cache
@@ -85,7 +90,8 @@ services:
       - ./migrations:/code/migrations
       - ./knexfile.js:/code/knexfile.js
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       default:
         ipv4_address: 10.10.10.254
@@ -99,5 +105,5 @@ networks:
         - subnet: 10.10.10.0/24
 
 volumes:
-  pgdata:
   cache:
+  pgdata:
