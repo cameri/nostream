@@ -1,7 +1,7 @@
 {
   "name": "nostr-ts-relay",
   "version": "1.10.0",
-  "description": "A nostr relay written in Typescript.",
+  "description": "A Nostr relay written in Typescript.",
   "supportedNips": [
     1,
     2,
@@ -37,13 +37,13 @@
     "pretest:integration": "mkdir -p .test-reports/integration",
     "test:integration": "cucumber-js",
     "cover:integration": "nyc --report-dir .coverage/integration npm run test:integration -- -p cover",
-    "predocker:compose:start": "[ -d \"$HOME/.nostr\" ] || mkdir -p $HOME/.nostr",
+    "predocker:compose:start": "[ -d \"$PWD/.nostr\" ] || mkdir -p $PWD/.nostr",
     "docker:compose:start": "docker compose up --build --remove-orphans",
     "docker:compose:stop": "docker compose down",
     "docker:compose:clean": "docker compose rm",
-    "pretor:docker:compose:start": "mkdir -p $HOME/.nostr/tor/data",
+    "pretor:docker:compose:start": "mkdir -p $PWD/.nostr/tor/data",
     "tor:docker:compose:start": "docker compose -f docker-compose.yml -f docker-compose.tor.yml up --build --remove-orphans",
-    "tor:hostname": "cat $HOME/.nostr/tor/data/nostr-ts-relay/hostname",
+    "tor:hostname": "cat $PWD/.nostr/tor/data/nostr-ts-relay/hostname",
     "tor:docker:compose:stop": "docker compose -f docker-compose.yml -f docker-compose.tor.yml down",
     "docker:integration:run": "docker compose -f ./test/integration/docker-compose.yml run --rm tests",
     "docker:test:integration": "npm run docker:integration:run -- npm run test:integration",
@@ -57,7 +57,8 @@
   },
   "keywords": [
     "nostr",
-    "relay"
+    "relay",
+    "typescript"
   ],
   "author": "Ricardo Arturo Cabral Mejía",
   "license": "MIT",
