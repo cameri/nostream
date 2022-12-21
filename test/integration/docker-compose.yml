@@ -44,7 +44,7 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       timeout: 5s
-      start_period: 5s
+      start_period: 10s
       retries: 0
   cache-test:
     image: redis:7.0.5-alpine3.16
@@ -73,7 +73,8 @@ services:
       - ../../migrations:/code/migrations
       - ../../knexfile.js:/code/knexfile.js
     depends_on:
-      - db-test
+      db-test:
+        condition: service_healthy
     networks:
       - nostr-ts-relay-test
     links:
