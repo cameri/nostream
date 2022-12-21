@@ -33,7 +33,7 @@
       "rateLimits": [
         {
           "kinds": [0, 3, 40, 41],
-          "periods": 60000,
+          "period": 60000,
           "rate": 6
         },
         {
