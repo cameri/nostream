@@ -1,0 +1,7 @@
+#!/bin/bash
+PROJECT_ROOT="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))/.."
+DOCKER_COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.yml"
+
+docker compose \
+  -f $DOCKER_COMPOSE_FILE \
+  up --build --remove-orphans $@

@@ -87,42 +87,25 @@ Clone repository and enter directory:
   cd nostr-ts-relay
   ```
 
-Start with:
+Start:
   ```
-  npm run docker:compose:start -- --detach
+  ./scripts/start
+  ```
+  or
+  ```
+  ./scripts/start_with_tor
   ```
 
 Stop the server with:
   ```
-  npm run docker:compose:stop
-  ```
-
-## Quick Start (over Tor)
-`Docker` `Tor`
-
-Install Docker following the [official guide](https://docs.docker.com/engine/install/).
-You may have to uninstall Docker if you installed it using a different guide.
-
-Clone repository and enter directory:
-  ```
-  git clone git@github.com:Cameri/nostr-ts-relay.git
-  cd nostr-ts-relay
-  ```
-
-Start with:
-  ```
-  npm run tor:docker:compose:start
+  ./scripts/stop
   ```
 
 Print the Tor hostname:
   ```
-  npm run tor:hostname
+  ./scripts/print_tor_hostname
   ```
 
-Stop the server with:
-  ```
-  npm run tor:docker:compose:stop
-  ```
 
 ## Quick Start (Standalone)
 
