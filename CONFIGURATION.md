@@ -6,7 +6,7 @@ The following environment variables can be set:
 
 | Name             | Description                    | Default           |
 |------------------|--------------------------------|-------------------|
-| PORT             | Relay's server port            | 8008              |
+| RELAY_PORT       | Relay's server port            | 8008              |
 | DB_HOST          | PostgresSQL Hostname           |                   |
 | DB_PORT          | PostgreSQL Port                |                   |
 | DB_USER          | PostgreSQL Username            |                   |
@@ -29,20 +29,22 @@ Running `nostr-ts-relay` for the first time creates the settings file in `~/.nos
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. |
 |                                             | Defaults to zero. Disabled when set to zero. |
-| limits.event.kind.whitelist                 | List of event kinds to allow. Leave empty to allow any. |
-| limits.event.kind.blacklist                 | List of event kinds to reject. Leave empty to allow any. |
+| limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
+| limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. |
 |                                             | Defaults to zero. Disabled when set to zero. |
-| limits.event.pubkey.whitelist               | List of public keys to allow. Only public keys in this list will be able to post to this relay. |
-| limits.event.pubkey.blacklist               | List of public keys to reject. Public keys in this list will not be able to post to this relay. |
+| limits.event.pubkey.whitelist               | List of public keys to always allow. Only public keys in this list will be able to post to this relay. Use for private relays. |
+| limits.event.pubkey.blacklist               | List of public keys to always reject. Public keys in this list will not be able to post to this relay. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
 | limits.event.createdAt.minNegativeDelta     | Maximum number of secodns an event's `created_at` can be in the past.  Defaults to zero. Disabled when set to zero. |
 | limits.event.content.maxLength              | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.rateLimits[].kinds             | List of event kinds rate limited. Use `[min, max]` for ranges. Optional. |
 | limits.event.rateLimits[].period            | Rate limiting period in milliseconds. |
 | limits.event.rateLimits[].rate              | Maximum number of events during period. |
+| limits.event.whitelists.pubkeys             | List of public keys to ignore rate limits. |
+| limits.event.whitelists.ipAddresses         | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
 | limits.message.rateLimits[].period          | Rate limit period in milliseconds. |
 | limits.message.rateLimits[].rate            | Maximum number of messages during period. |
-| limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) without rate limit. |
+| limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
