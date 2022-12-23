@@ -58,7 +58,7 @@
     "relay",
     "typescript"
   ],
-  "author": "Ricardo Arturo Cabral Mejía",
+  "author": "Ricardo Arturo Cabral Mejía (npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m)",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/Cameri/nostr-ts-relay/issues"

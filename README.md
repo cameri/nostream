@@ -297,6 +297,10 @@ For development discussions, please use the [Nostr Typescript Relay Dev Channel]
 
 For discussions about the protocol, please feel free to use the [Nostr Telegram Channel](https://t.me/nostr_protocol).
 
+# Author
+
+I'm Cameri on most social networks. You can find me on Nostr by npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m.
+
 ## License
 
 This project is MIT licensed.
