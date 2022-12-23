@@ -48,6 +48,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on('message', this.onClientMessage.bind(this))
       .on('close', this.onClientClose.bind(this))
       .on('pong', this.onClientPong.bind(this))
+      .on('error', (error) => {
+        debug('error', error)
+      })
 
     this
       .on(WebSocketAdapterEvent.Heartbeat, this.onHeartbeat.bind(this))
