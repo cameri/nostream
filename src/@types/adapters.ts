@@ -13,6 +13,7 @@ export interface IWebServerAdapter extends EventEmitter {
 
 export type IWebSocketAdapter = EventEmitter & {
   getClientId(): string
+  getClientAddress(): string
   getSubscriptions(): Map<string, SubscriptionFilter[]>
 }
 

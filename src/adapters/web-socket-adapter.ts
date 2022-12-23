@@ -64,6 +64,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     return this.clientId
   }
 
+  public getClientAddress(): string {
+    return this.clientAddress
+  }
+
   public onUnsubscribed(subscriptionId: string): void {
     debug('client %s unsubscribed %s', this.clientId, subscriptionId)
     this.subscriptions.delete(subscriptionId)
