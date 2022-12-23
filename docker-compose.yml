@@ -16,6 +16,9 @@ services:
       REDIS_PORT: 6379
       REDIS_USER: default
       REDIS_PASSWORD: nostr_ts_relay
+      # Enable DEBUG for troubleshooting. Examples:
+      # DEBUG: "worker:*"
+      # DEBUG: "knex:query"
       DEBUG: "worker:*"
     user: node:node
     volumes:
