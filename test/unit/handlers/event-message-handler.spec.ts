@@ -10,12 +10,13 @@ import { EventLimits, ISettings } from '../../../src/@types/settings'
 import { IncomingEventMessage, MessageType } from '../../../src/@types/messages'
 import { Event } from '../../../src/@types/event'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
+import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 
 const { expect } = chai
 
 describe('EventMessageHandler', () => {
-  let webSocket: EventEmitter
+  let webSocket: IWebSocketAdapter
   let handler: EventMessageHandler
   let event: Event
   let message: IncomingEventMessage
@@ -59,7 +60,7 @@ describe('EventMessageHandler', () => {
         execute: strategyExecuteStub,
       })
       onMessageSpy = sandbox.fake.returns(undefined)
-      webSocket = new EventEmitter()
+      webSocket = new EventEmitter() as any
       webSocket.on(WebSocketAdapterEvent.Message, onMessageSpy)
       message = [MessageType.EVENT, event]
       isRateLimitedStub = sandbox.stub(EventMessageHandler.prototype, 'isRateLimited' as any)
@@ -548,6 +549,8 @@ describe('EventMessageHandler', () => {
     let eventLimits: EventLimits
     let settings: ISettings
     let rateLimiterHitStub: SinonStub
+    let getClientAddressStub: Sinon.SinonStub
+    let webSocket: IWebSocketAdapter
 
     beforeEach(() => {
       eventLimits = {
@@ -559,22 +562,101 @@ describe('EventMessageHandler', () => {
         },
       } as any
       rateLimiterHitStub = sandbox.stub()
+      getClientAddressStub = sandbox.stub()
+      webSocket = {
+        getClientAddress: getClientAddressStub,
+      } as any
       handler = new EventMessageHandler(
-        {} as any,
+        webSocket,
         () => null,
         () => settings,
         () => ({ hit: rateLimiterHitStub })
       )
     })
 
-    it('returns undefined if rate limits setting is not set', async () => {
-      eventLimits.rateLimits = undefined
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.undefined
+    it('fulfills with false if limits setting is not set', async () => {
+      settings.limits = undefined
+      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
     })
 
-    it('returns undefined if rate limits setting is empty', async () => {
+
+    it('fulfills with false if event limits setting is not set', async () => {
+      settings.limits.event = undefined
+      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+    })
+
+    it('fulfills with false if rate limits setting is not set', async () => {
+      eventLimits.rateLimits = undefined
+      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+    })
+
+    it('fulfills with false if rate limits setting is empty', async () => {
       eventLimits.rateLimits = []
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.undefined
+      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+    })
+
+    it('skips rate limiter if IP is whitelisted', async () => {
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+      ]
+      eventLimits.whitelists = {}
+      eventLimits.whitelists.ipAddresses = ['2604:a880:cad:d0::e7e:7001']
+      getClientAddressStub.returns('2604:a880:cad:d0::e7e:7001')
+
+      const actualResult = await (handler as any).isRateLimited(event)
+
+      expect(actualResult).to.be.false
+      expect(rateLimiterHitStub).not.to.have.been.called
+    })
+
+    it('calls rate limiter if IP is not whitelisted', async () => {
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+      ]
+      eventLimits.whitelists = {}
+      eventLimits.whitelists.ipAddresses = ['::1']
+      getClientAddressStub.returns('2604:a880:cad:d0::e7e:7001')
+
+      await (handler as any).isRateLimited(event)
+
+      expect(rateLimiterHitStub).to.have.been.called
+    })
+
+    it('skips rate limiter if pubkey is whitelisted', async () => {
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+      ]
+      eventLimits.whitelists = {}
+      eventLimits.whitelists.pubkeys = [event.pubkey]
+
+      const actualResult = await (handler as any).isRateLimited(event)
+
+      expect(actualResult).to.be.false
+      expect(rateLimiterHitStub).not.to.have.been.called
+    })
+
+    it('calls rate limiter if pubkey is not whitelisted', async () => {
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+      ]
+      eventLimits.whitelists = {}
+      eventLimits.whitelists.pubkeys = ['other']
+
+      await (handler as any).isRateLimited(event)
+
+      expect(rateLimiterHitStub).to.have.been.called
     })
 
     it('calls hit with given rate limit settings', async () => {
