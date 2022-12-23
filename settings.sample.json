@@ -69,7 +69,14 @@
           "period": 86400000,
           "rate": 2880
         }
-      ]
+      ],
+      "whitelists": {
+        "pubkeys": [],
+        "ipAddresses": [
+          "::1",
+          "::ffff:10.10.10.1"
+        ]
+      }
     },
     "client": {
       "subscription": {

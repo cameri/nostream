@@ -47,6 +47,11 @@ export interface ContentLimits {
   maxLength?: number
 }
 
+export interface EventWhitelists {
+  pubkeys?: Pubkey[]
+  ipAddresses?: string[]
+}
+
 export interface EventLimits {
   eventId?: EventIdLimits
   pubkey?: PubkeyLimits
@@ -54,6 +59,7 @@ export interface EventLimits {
   createdAt?: CreatedAtLimits
   content?: ContentLimits
   rateLimits?: EventRateLimit[]
+  whitelists?: EventWhitelists
 }
 
 export interface ClientSubscriptionLimits {
