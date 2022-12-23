@@ -106,6 +106,48 @@ Print the Tor hostname:
   ./scripts/print_tor_hostname
   ```
 
+### Running as a Service
+
+By default this server will run continuously until you stop it with Ctrl+C or until the system restarts.
+
+You can [install as a systemd service](https://www.swissrouting.com/nostr.html#installing-as-a-service) if you want the server to run again automatically whenever the system is restarted. For example:
+
+  ```
+  $ nano /etc/systemd/system/nostr-ts-relay.service
+
+  # Note: replace "User=..." with your username, and
+  # "/home/nostr/nostr-ts-relay" with the directory where you cloned the repo.
+
+  [Unit]
+  Description=Nostr TS Relay
+  After=network.target
+  StartLimitIntervalSec=0
+
+  [Service]
+  Type=simple
+  Restart=always
+  RestartSec=5
+  User=nostr
+  WorkingDirectory=/home/nostr/nostr-ts-relay
+  ExecStart=/home/nostr/nostr-ts-relay/scripts/start
+  ExecStop=/home/nostr/nostr-ts-relay/scripts/stop
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+And then:
+
+  ```
+  systemctl enable nostr-ts-relay
+  systemctl start nostr-ts-relay
+  ```
+
+The logs can be viewed with:
+
+  ```
+  journalctl -u nostr-ts-relay
+  ```
 
 ## Quick Start (Standalone)
 
