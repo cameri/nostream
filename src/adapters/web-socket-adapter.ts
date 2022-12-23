@@ -183,14 +183,19 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         { period: period, rate: rate },
       )
 
-    const hits = await Promise.all(
-      rateLimits
-        .map(({ period, rate }) =>  hit(period, rate))
-    )
 
-    debug('rate limit check %s: %o = %o', client, rateLimits.map(({ period }) => period), hits)
+    for (const { rate, period } of rateLimits) {
+      const isRateLimited = await hit(period, rate)
 
-    return hits.some((thresholdCrossed) => thresholdCrossed)
+
+      if (isRateLimited) {
+        debug('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
+
+        return true
+      }
+    }
+
+    return false
   }
 
   private onClientPong() {
