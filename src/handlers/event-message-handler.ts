@@ -127,9 +127,22 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   protected async isRateLimited(event: Event): Promise<boolean> {
-    const rateLimits = this.settings().limits?.event?.rateLimits
+    const { whitelists, rateLimits } = this.settings().limits?.event ?? {}
     if (!rateLimits || !rateLimits.length) {
-      return
+      return false
+    }
+
+    if (
+      Array.isArray(whitelists?.pubkeys)
+      && whitelists.pubkeys.includes(event.pubkey)
+    ) {
+      return false
+    }
+
+    if (Array.isArray(whitelists?.ipAddresses)
+      && whitelists.ipAddresses.includes(this.webSocket.getClientAddress())
+    ) {
+      return false
     }
 
     const rateLimiter = this.slidingWindowRateLimiter()
