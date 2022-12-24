@@ -1,6 +1,7 @@
 import { Cluster, Worker } from 'cluster'
-import { cpus } from 'os'
+import { cpus, hostname } from 'os'
 
+import { addOnion } from '../tor/client'
 import { createLogger } from '../factories/logger-factory'
 import { IRunnable } from '../@types/base'
 import { ISettings } from '../@types/settings'
@@ -39,6 +40,9 @@ export class App implements IRunnable {
    ░   ░ ░ ░ ░ ░ ▒  ░  ░  ░    ░        ░░   ░    ░    ░   ▒   ░      ░
          ░     ░ ░        ░              ░        ░  ░     ░  ░       ░`)
     const width = 74
+    const torHiddenServicePort = process.env.HIDDEN_SERVICE_PORT ? Number(process.env.HIDDEN_SERVICE_PORT) : 80
+    const port = process.env.RELAY_PORT ? Number(process.env.RELAY_PORT) : 8008
+
     const logCentered = (input: string, width: number) => {
       const start = (width >> 1) - (input.length >> 1)
       console.log(' '.repeat(start), input)
@@ -56,6 +60,13 @@ export class App implements IRunnable {
     logCentered(`${workerCount} workers started`, width)
 
     debug('settings: %O', this.settingsFactory())
+
+    const host = `${hostname()}:${port}}`
+    addOnion(torHiddenServicePort, host).then(value=>{
+      debug('tor hidden service address: %s:%d', value, torHiddenServicePort)
+    }, (error) => {
+      console.error('Unable to add Tor hidden service. Skipping.', error)
+    })
   }
 
   private onClusterMessage(source: Worker, message: Serializable) {

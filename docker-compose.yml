@@ -16,6 +16,10 @@ services:
       REDIS_PORT: 6379
       REDIS_USER: default
       REDIS_PASSWORD: nostr_ts_relay
+      TOR_HOST: tor_proxy
+      TOR_CONTROL_PORT: 9051
+      TOR_PASSWORD: nostr_ts_relay
+      HIDDEN_SERVICE_PORT: 80
       # Enable DEBUG for troubleshooting. Examples:
       # DEBUG: "worker:*"
       # DEBUG: "knex:query"
@@ -31,13 +35,14 @@ services:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
+      tor_proxy:
+        condition: service_healthy
     restart: on-failure
     networks:
       default:
         ipv4_address: 10.10.10.2
   db:
     image: postgres
-    container_name: db
     environment:
       POSTGRES_DB: nostr_ts_relay
       POSTGRES_USER: nostr_ts_relay
@@ -62,7 +67,6 @@ services:
       start_period: 360s
   cache:
     image: redis:7.0.5-alpine3.16
-    container_name: cache
     volumes:
       - cache:/data
     command: redis-server --save 20 1 --loglevel warning --requirepass nostr_ts_relay
@@ -77,7 +81,6 @@ services:
       retries: 5
   migrations:
     image: node:18-alpine3.16
-    container_name: migrations
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -97,7 +100,19 @@ services:
     networks:
       default:
         ipv4_address: 10.10.10.254
-
+  tor_proxy:
+    image: dperson/torproxy
+    restart: on-failure
+    environment:
+      PASSWORD: nostr_ts_relay
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "10m"
+          max-file: "3"
+    networks:
+      default:
+        ipv4_address: 10.10.10.5
 networks:
   default:
     name: nostr-ts-relay
