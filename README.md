@@ -68,9 +68,11 @@ NIPs with a relay-specific implementation are listed here.
 - Typescript
 
 ### Docker setups
-- Node v18
 - Docker v20.10
 - Docker compose v2.10
+
+WARNING: Docker distributions from Snap, Brew or Debian repositories are NOT SUPPORTED and will result in errors.
+Install Docker from their [official guide](https://docs.docker.com/engine/install/) ONLY.
 
 ## Full Guide
 
