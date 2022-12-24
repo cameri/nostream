@@ -38,7 +38,7 @@ export class App implements IRunnable {
 ░ ░░   ░ ▒░  ░ ▒ ▒░ ░ ░▒  ░ ░    ░      ░▒ ░ ▒░ ░ ░  ░ ▒   ▒▒ ░░  ░      ░
    ░   ░ ░ ░ ░ ░ ▒  ░  ░  ░    ░        ░░   ░    ░    ░   ▒   ░      ░
          ░     ░ ░        ░              ░        ░  ░     ░  ░       ░`)
-    const width = 114
+    const width = 74
     const logCentered = (input: string, width: number) => {
       const start = (width >> 1) - (input.length >> 1)
       console.log(' '.repeat(start), input)
