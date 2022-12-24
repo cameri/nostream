@@ -17,7 +17,7 @@ export class ParameterizedReplaceableEventStrategy
   ) { }
 
   public async execute(event: Event): Promise<void> {
-    debug('received event: %o', event)
+    debug('received parameterized replaceable event: %o', event)
 
     const [, ...deduplication] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Deduplication) ?? [null, '']
 

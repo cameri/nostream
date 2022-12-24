@@ -12,7 +12,7 @@ export class EphemeralEventStrategy implements IEventStrategy<Event, Promise<voi
   ) { }
 
   public async execute(event: Event): Promise<void> {
-    debug('received event: %o', event)
+    debug('received ephemeral event: %o', event)
     this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
   }
 }

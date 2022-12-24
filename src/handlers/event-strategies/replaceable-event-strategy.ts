@@ -15,7 +15,7 @@ export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<v
   ) { }
 
   public async execute(event: Event): Promise<void> {
-    debug('received event: %o', event)
+    debug('received replaceable event: %o', event)
     const count = await this.eventRepository.upsert(event)
     this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, (count) ? '' : 'duplicate:'))
     if (count) {

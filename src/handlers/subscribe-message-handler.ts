@@ -32,7 +32,6 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   }
 
   public async handleMessage(message: SubscribeMessage): Promise<void> {
-    debug('received message: %o', message)
     const subscriptionId = message[1]
     const filters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
 
@@ -49,7 +48,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   }
 
   private async fetchAndSend(subscriptionId: string, filters: SubscriptionFilter[]): Promise<void> {
-    debug('fetching events for subscription %s with %o', subscriptionId, filters)
+    debug('fetching events for subscription %s with filters %o', subscriptionId, filters)
     const sendEvent = (event: Event) =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createOutgoingEventMessage(subscriptionId, event))
     const sendEOSE = () =>
