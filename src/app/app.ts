@@ -63,7 +63,7 @@ export class App implements IRunnable {
 
     const host = `${hostname()}:${port}}`
     addOnion(torHiddenServicePort, host).then(value=>{
-      debug('tor hidden service address: %s:%d', value, torHiddenServicePort)
+      logCentered(`tor hidden service address: ${value}:${torHiddenServicePort}`, width)
     }, (error) => {
       console.error('Unable to add Tor hidden service. Skipping.', error)
     })
