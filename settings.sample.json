@@ -6,6 +6,10 @@
     "pubkey": "replace-with-your-pubkey",
     "contact": "operator@your-domain.com"
   },
+  "network": {
+    "max_payload_size": 131072,
+    "remote_ip_header": "x-forwarded-for"
+  },
   "workers": {
     "count": 0
   },

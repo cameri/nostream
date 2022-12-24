@@ -9,6 +9,11 @@ export interface Info {
   contact?: string
 }
 
+export interface Network {
+  max_payload_size?: number
+  remote_ip_header?: string
+}
+
 export interface EventIdLimits {
   minLeadingZeroBits?: number
 }
@@ -87,6 +92,7 @@ export interface Worker {
 
 export interface ISettings {
   info: Info
+  network?: Network
   workers?: Worker
   limits?: Limits
 }
