@@ -70,8 +70,8 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       )
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        debug('aborted: %o', error)
-        findEvents.end()
+        debug('subscription aborted: %o', error)
+        findEvents.destroy()
       } else {
         debug('error streaming events: %o', error)
       }
