@@ -53,7 +53,7 @@ export class App implements IRunnable {
       this.cluster.fork()
     }
 
-    logCentered(`${workerCount} workers started`, 114)
+    logCentered(`${workerCount} workers started`, width)
 
     debug('settings: %O', this.settingsFactory())
   }
