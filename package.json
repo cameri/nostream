@@ -117,6 +117,7 @@
     "pg-query-stream": "4.2.4",
     "ramda": "0.28.0",
     "redis": "4.5.1",
+    "tor-control-ts": "^1.0.0",
     "ws": "8.11.0"
   },
   "config": {

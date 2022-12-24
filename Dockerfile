@@ -1,6 +1,7 @@
 FROM node:18-alpine3.16 as build
 
 WORKDIR /build
+RUN apk add --no-cache --update git
 
 COPY ["package.json", "package-lock.json", "./"]
 
@@ -26,6 +27,8 @@ ENV DB_USER=nostr-ts-relay
 ENV DB_PASSWORD=nostr-ts-relay
 
 WORKDIR /app
+RUN apk add --no-cache --update git
+RUN mkdir /app/.nostr && chown 1000:1000 /app/.nostr
 
 COPY --from=build /build/dist .
 
