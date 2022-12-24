@@ -4,19 +4,26 @@
 
 The following environment variables can be set:
 
-| Name             | Description                    | Default           |
-|------------------|--------------------------------|-------------------|
-| PORT             | Relay's server port            | 8008              |
-| DB_HOST          | PostgresSQL Hostname           |                   |
-| DB_PORT          | PostgreSQL Port                |                   |
-| DB_USER          | PostgreSQL Username            |                   |
-| DB_PASSWORD      | PostgreSQL Password            |                   |
-| DB_NAME          | PostgreSQL Database name       |                   |
-| NOSTR_CONFIG_DIR | Configuration directory        | ~/.nostr/         |
+| Name             | Description                    | Default                |
+|------------------|--------------------------------|------------------------|
+| RELAY_PORT       | Relay's server port            | 8008                   |
+| DB_HOST          | PostgresSQL Hostname           |                        |
+| DB_PORT          | PostgreSQL Port                | 5432                   |
+| DB_USER          | PostgreSQL Username            | nostr_ts_relay         |
+| DB_PASSWORD      | PostgreSQL Password            | nostr_ts_relay         |
+| DB_NAME          | PostgreSQL Database name       | nostr_ts_relay         |
+| DB_MIN_POOL_SIZE | Min. connections per worker    | 16                     |
+| DB_MAX_POOL_SIZE | Max. connections per worker    | 32                     |
+| REDIS_HOST       |                                |                        |
+| REDIS_PORT       | Redis Port                     | 6379                   |
+| REDIS_USER       | Redis User                     | default                |
+| REDIS_PASSWORD   | Redis Password                 | nostr_ts_relay         |
+| NOSTR_CONFIG_DIR | Configuration directory        | <project_root>/.nostr/ |
+| DEBUG            | Debugging filter               |                        |
 
 # Settings
 
-Running `nostr-ts-relay` for the first time creates the settings file in `~/.nostr/settings.json`. If the file is not created and an error is thrown ensure that the `~/.nostr` folder exists. The configuration directory can be changed by setting the `NOSTR_CONFIG_DIR` environment variable.
+Running `nostr-ts-relay` for the first time creates the settings file in `<project_root>/.nostr/settings.json`. If the file is not created and an error is thrown ensure that the `<project_root>/.nostr` folder exists. The configuration directory can be changed by setting the `NOSTR_CONFIG_DIR` environment variable.
 
 | Name                                        | Description                                                                   |
 |---------------------------------------------|-------------------------------------------------------------------------------|
@@ -25,6 +32,8 @@ Running `nostr-ts-relay` for the first time creates the settings file in `~/.nos
 | info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
 | info.pubkey                                 | Relay operator's Nostr pubkey in hex format. |
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
+| network.max_payload_size                    | Maximum number of bytes accepted per WebSocket frame |
+| network.remote_ip_header                    | HTTP header from proxy containing IP address from client. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. |
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. |
