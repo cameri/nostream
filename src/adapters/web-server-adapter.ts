@@ -54,7 +54,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
       const body = JSON.stringify(relayInformationDocument)
       response.end(body)
     } else if (request.headers['upgrade'] !== 'connection') {
-      response.setHeader('content-type', 'application/text')
+      response.setHeader('content-type', 'text/plain')
       response.end('Please use a Nostr client to connect.')
     }
   }
@@ -64,7 +64,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
     if (error['code'] === 'ECONNRESET' || !socket.writable) {
       return
     }
-    socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
+    socket.end('HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n')
   }
 
   protected onClose() {
