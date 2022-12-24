@@ -17,7 +17,7 @@ export const workerFactory = (): AppWorker => {
   const server = http.createServer()
   const webSocketServer = new WebSocketServer({
     server,
-    maxPayload: 131072, // 128 kB
+    maxPayload: createSettings().network?.max_payload_size ?? 131072, // 128 kB
   })
   const adapter = new WebSocketServerAdapter(
     server,
