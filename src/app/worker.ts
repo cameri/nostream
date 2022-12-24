@@ -25,7 +25,6 @@ export class AppWorker implements IRunnable {
   }
 
   private onMessage(message: { eventName: string, event: unknown }): void {
-    debug('broadcast message received: %o', message)
     this.adapter.emit(message.eventName, message.event)
   }
 

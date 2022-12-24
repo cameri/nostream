@@ -19,10 +19,9 @@ export class EventMessageHandler implements IMessageHandler {
     protected readonly strategyFactory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>,
     private readonly settings: () => ISettings,
     private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
-  ) { }
+  ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
-    debug('received message: %o', message)
     const [, event] = message
 
     let reason = await this.isEventValid(event)
@@ -55,7 +54,7 @@ export class EventMessageHandler implements IMessageHandler {
     try {
       await strategy.execute(event)
     } catch (error) {
-      debug('error handling message %o: %o', message, error)
+      console.error('error handling message', message, error)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: unable to process event'))
     }
   }
