@@ -36,7 +36,7 @@ services:
       migrations-test:
         condition: service_completed_successfully
     networks:
-      - nostr-ts-relay-test
+      - nostream-test
     links:
       - db-test
   db-test:
@@ -46,7 +46,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: nostr_ts_relay_test
     networks:
-      - nostr-ts-relay-test
+      - nostream-test
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       timeout: 5s
@@ -56,7 +56,7 @@ services:
     image: redis:7.0.5-alpine3.16
     command: redis-server --save 20 1 --loglevel warning --requirepass nostr_ts_relay_test
     networks:
-      - nostr-ts-relay-test
+      - nostream-test
     restart: always
     healthcheck:
       test: [ "CMD", "redis-cli", "ping", "|", "grep", "PONG" ]
@@ -82,9 +82,9 @@ services:
       db-test:
         condition: service_healthy
     networks:
-      - nostr-ts-relay-test
+      - nostream-test
     links:
       - db-test
 
 networks:
-  nostr-ts-relay-test:
+  nostream-test:

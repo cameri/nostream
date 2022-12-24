@@ -1,2 +1,2 @@
-HiddenServiceDir /var/lib/tor/nostr-ts-relay
+HiddenServiceDir /var/lib/tor/nostream
 HiddenServicePort 80 10.10.10.2:8008

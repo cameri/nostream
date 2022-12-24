@@ -1,5 +1,5 @@
 {
-  "name": "nostr-ts-relay",
+  "name": "nostream",
   "version": "1.12.0",
   "description": "A Nostr relay written in Typescript.",
   "supportedNips": [
@@ -33,7 +33,7 @@
     "test:unit": "mocha 'test/**/*.spec.ts'",
     "test:unit:watch": "npm run test:unit -- --min --watch --watch-files src/**/*,test/**/*",
     "cover:unit": "nyc --report-dir .coverage/unit npm run test:unit",
-    "docker:build": "docker build -t nostr-ts-relay .",
+    "docker:build": "docker build -t nostream .",
     "pretest:integration": "mkdir -p .test-reports/integration",
     "test:integration": "cucumber-js",
     "cover:integration": "nyc --report-dir .coverage/integration npm run test:integration -- -p cover",
@@ -51,7 +51,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Cameri/nostr-ts-relay.git"
+    "url": "git+https://github.com/Cameri/nostream.git"
   },
   "keywords": [
     "nostr",
@@ -61,9 +61,9 @@
   "author": "Ricardo Arturo Cabral Mejía (npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/Cameri/nostr-ts-relay/issues"
+    "url": "https://github.com/Cameri/nostream/issues"
   },
-  "homepage": "https://github.com/Cameri/nostr-ts-relay#readme",
+  "homepage": "https://github.com/Cameri/nostream#readme",
   "devDependencies": {
     "@commitlint/cli": "17.2.0",
     "@commitlint/config-conventional": "17.2.0",

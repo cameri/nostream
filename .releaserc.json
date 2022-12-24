@@ -14,10 +14,10 @@
       "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
     }],
     ["semantic-release-telegram", {
-      "name": "nostr-ts-relay",
+      "name": "nostream",
       "chats": [ -1001670974037 ],
       "templates": {
-        "success" : "A new version of <a href='{repository_url}'>{name}</a> has been released. Current version is <b>{version}</b>"
+        "success" : "A {release_type} version of <a href='{repository_url}'>{name}</a> has been released. Current version is <b>{version}</b>\n{release_notes}"
       }
     }]
   ]

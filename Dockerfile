@@ -13,8 +13,8 @@ RUN npm run build
 FROM node:18-alpine3.16
 
 LABEL org.opencontainers.image.title="Nostr Typescript Relay"
-LABEL org.opencontainers.image.source=https://github.com/Cameri/nostr-ts-relay
-LABEL org.opencontainers.image.description="nostr-ts-relay"
+LABEL org.opencontainers.image.source=https://github.com/Cameri/nostream
+LABEL org.opencontainers.image.description="nostream"
 LABEL org.opencontainers.image.authors="Ricardo Arturo Cabral Mejía"
 LABEL org.opencontainers.image.licenses=MIT
 

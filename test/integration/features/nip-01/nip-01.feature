@@ -21,8 +21,8 @@ Feature: NIP-01
   Scenario: Alice posts a recommend_server event
     Given someone called Alice
     And Alice subscribes to author Alice
-    When Alice sends a recommend_server event with content "https://nostr-ts-relay.wlvs.space"
-    Then Alice receives a recommend_server event from Alice with content "https://nostr-ts-relay.wlvs.space"
+    When Alice sends a recommend_server event with content "https://nostr-relay.wlvs.space"
+    Then Alice receives a recommend_server event from Alice with content "https://nostr-relay.wlvs.space"
 
   Scenario: Alice can't post a text_note event with an invalid signature
     Given someone called Alice
