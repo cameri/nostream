@@ -1,4 +1,4 @@
 #!/bin/bash
 
 PROJECT_ROOT="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))/.."
-cat $PROJECT_ROOT/.nostr/tor/data/nostr-ts-relay/hostname
+cat $PROJECT_ROOT/.nostr/tor/data/nostream/hostname
