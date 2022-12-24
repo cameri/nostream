@@ -7,7 +7,7 @@ services:
       - relay
     volumes:
       - ${PWD}/tor/torrc:/etc/tor/torrc
-      - ${HOME}/.nostr/tor/data:/var/lib/tor
+      - ${PWD}/.nostr/tor/data:/var/lib/tor
     restart: on-failure
     stop_grace_period: 10m30s
     networks:
