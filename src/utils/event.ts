@@ -162,6 +162,7 @@ export const isEventSignatureValid = async (event: Event): Promise<boolean> => {
 export const isReplaceableEvent = (event: Event): boolean => {
   return event.kind === EventKinds.SET_METADATA
     || event.kind === EventKinds.CONTACT_LIST
+    || event.kind === EventKinds.CHANNEL_METADATA
     || (event.kind >= EventKinds.REPLACEABLE_FIRST && event.kind <= EventKinds.REPLACEABLE_LAST)
 }
 
