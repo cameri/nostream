@@ -24,8 +24,8 @@
   <a href='https://coveralls.io/github/Cameri/nostream?branch=main'>
     <img  alt='Coverage Status' src='https://coveralls.io/repos/github/Cameri/nostream/badge.svg?branch=main' />
   </a>
-  <a href='https://sonarcloud.io/project/overview?id=Cameri_nostream'>
-    <img alt='Sonarcloud quality gate' src='https://sonarcloud.io/api/project_badges/measure?project=Cameri_nostream&metric=alert_status' />
+  <a href='https://sonarcloud.io/project/overview?id=Cameri_nostr-ts-relay'>
+    <img alt='Sonarcloud quality gate' src='https://sonarcloud.io/api/project_badges/measure?project=Cameri_nostr&metric=alert_status' />
   </a>
   <a href='https://github.com/Cameri/nostream/actions'>
     <img alt='Build status' src='https://github.com/Cameri/nostream/actions/workflows/checks.yml/badge.svg?branch=main&event=push' />
@@ -57,6 +57,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-20: Command Results
 - [x] NIP-22: Event `created_at` Limits
 - [x] NIP-26: Delegated Event Signing
+- [x] NIP-28: Public Chat
 - [x] NIP-33: Parameterized Replaceable Events
 
 ## Requirements
