@@ -18,8 +18,9 @@ const createDbConfig = (): Knex.Config => ({
     min: process.env.DB_MIN_POOL_SIZE ? Number(process.env.DB_MIN_POOL_SIZE) : 0,
     max: process.env.DB_MAX_POOL_SIZE ? Number(process.env.DB_MAX_POOL_SIZE) : 3,
     idleTimeoutMillis: 10000,
+    propagateCreateError: false,
   },
-  acquireConnectionTimeout: 2000,
+  acquireConnectionTimeout: 30000,
 })
 
 let client: Knex
