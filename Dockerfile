@@ -28,12 +28,12 @@ ENV DB_PASSWORD=nostr-ts-relay
 
 WORKDIR /app
 RUN apk add --no-cache --update git
-RUN mkdir /app/.nostr && chown 1000:1000 /app/.nostr
+RUN mkdir /home/node/tor && chown node:node /home/node/tor && chmod 777 /home/node/tor
 
 COPY --from=build /build/dist .
 
 RUN npm install --omit=dev --quiet
 
-USER 1000:1000
+USER node:node
 
 CMD ["node", "src/index.js"]
