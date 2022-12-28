@@ -1,20 +1,34 @@
 ## Author Saransh Sharma @cynsar foundation
 FROM node:18-alpine3.16 as build
 
+ARG PORT
 ARG PGHOST
 ARG PGPORT
 ARG PGDATABASE
 ARG PGUSER
 ARG PGPASSWORD
+ARG REDISHOST
+ARG REDISUSER
+ARG REDISPORT
+ARG REDISPASSWORD
 
 WORKDIR /build
 
 ## Build Setup for Railways
+ENV RELAY_PORT=$PORT
 ENV DB_HOST=$PGHOST
 ENV DB_PORT=$PGPORT
 ENV DB_NAME=$PGDATABASE
 ENV DB_USER=$PGUSER
 ENV DB_PASSWORD=$PGPASSWORD
+ENV DB_MIN_POOL_SIZE=16
+ENV DB_MAX_POOL_SIZE=64
+ENV NOSTR_CONFIG_DIR=/home/node/
+
+ENV REDIS_HOST=$REDISHOST
+ENV REDIS_PORT=$REDISPORT
+ENV REDIS_USER=$REDISUSER
+ENV REDIS_PASSWORD=$REDISPASSWORD
 
 COPY ["package.json", "package-lock.json","knexfile.js","./"]
 
@@ -38,7 +52,7 @@ RUN npm run build
 
 FROM node:18-alpine3.16
 
-LABEL org.opencontainers.image.title="Nostr Typescript Relay"
+LABEL org.opencontainers.image.title="Nostream"
 LABEL org.opencontainers.image.source=https://github.com/Cameri/nostream
 LABEL org.opencontainers.image.description="nostream"
 LABEL org.opencontainers.image.authors="Ricardo Arturo Cabral Mejía"
