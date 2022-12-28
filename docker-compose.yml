@@ -21,11 +21,12 @@ services:
       TOR_PASSWORD: nostr_ts_relay
       HIDDEN_SERVICE_PORT: 80
       # Enable DEBUG for troubleshooting. Examples:
+      # DEBUG: "primary:*"
       # DEBUG: "worker:*"
       # DEBUG: "knex:query"
     user: node:node
     volumes:
-      - ${PWD}/.nostr:/home/node/
+      - relay_data:/home/node/
     ports:
       - 8008:8008
     depends_on:
@@ -125,5 +126,6 @@ networks:
         - subnet: 10.10.10.0/24
 
 volumes:
+  relay_data:
   cache:
   pgdata:
