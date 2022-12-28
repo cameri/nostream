@@ -1,7 +1,6 @@
 FROM node:18-alpine3.16 as build
 
 WORKDIR /build
-RUN apk add --no-cache --update git
 
 COPY ["package.json", "package-lock.json", "./"]
 
@@ -28,7 +27,6 @@ ENV DB_PASSWORD=nostr-ts-relay
 
 WORKDIR /app
 RUN apk add --no-cache --update git
-RUN mkdir /home/node/tor && chown node:node /home/node/tor && chmod 777 /home/node/tor
 
 COPY --from=build /build/dist .
 

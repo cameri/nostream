@@ -60,24 +60,20 @@ export const addOnion = async (
     debug('error reading private key: %o', error)
   }
 
-  try {
-    const client = await getTorClient()
-    if (!client) {
-      return
-    }
-    if (client) {
-      const hiddenService = await client.addOnion(port, host, privateKey)
-      debug('hidden service: %s:%d', hiddenService.ServiceID, port)
+  const client = await getTorClient()
+  if (client) {
+    const hiddenService = await client.addOnion(port, host, privateKey)
+    debug('hidden service: %s:%d', hiddenService.ServiceID, port)
 
-      if (hiddenService?.PrivateKey) {
-        debug('saving private key to %s', path)
+    if (hiddenService?.PrivateKey) {
+      debug('saving private key to %s', path)
 
-        await writeFile(path, hiddenService.PrivateKey, 'utf8')
-      }
-
+      await writeFile(path, hiddenService.PrivateKey, 'utf8')
       return hiddenService.ServiceID
+    }else{
+      throw new Error(JSON.stringify(hiddenService))
     }
-  } catch (error) {
-    console.error('error adding onion: %o', error)
+  }else{
+    throw new Error('not connect')
   }
 }
