@@ -69,7 +69,7 @@ describe('NIP-01', () => {
       ],
       limit: [
         { message: 'must be a number', transform: assocPath(['limit'], null) },
-        { message: 'must be greater than or equal to 1', transform: assocPath(['limit'], -1) },
+        { message: 'must be greater than or equal to 0', transform: assocPath(['limit'], -1) },
         { message: 'must be a multiple of 1', transform: assocPath(['limit'], Math.PI) },
         { message: 'must be less than or equal to 10000', transform: assocPath(['limit'], 10001) },
       ],
