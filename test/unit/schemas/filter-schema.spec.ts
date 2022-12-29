@@ -58,11 +58,13 @@ describe('NIP-01', () => {
         { message: 'must be a multiple of 1', transform: assocPath(['kinds', 0], Math.PI) },
       ],
       since: [
+        { message: 'contains an invalid value', transform: assocPath(['since'], 1672295751103) },
         { message: 'must be a number', transform: assocPath(['since'], null) },
         { message: 'must be greater than or equal to 0', transform: assocPath(['since'], -1) },
         { message: 'must be a multiple of 1', transform: assocPath(['since'], Math.PI) },
       ],
       until: [
+        { message: 'contains an invalid value', transform: assocPath(['until'], 1672295751103) },
         { message: 'must be a number', transform: assocPath(['until'], null) },
         { message: 'must be greater than or equal to 0', transform: assocPath(['until'], -1) },
         { message: 'must be a multiple of 1', transform: assocPath(['until'], Math.PI) },
