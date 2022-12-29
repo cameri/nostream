@@ -154,11 +154,17 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
       await messageHandler?.handleMessage(message)
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        debug('message handler aborted')
-      } else if (error instanceof Error && error.name === 'ValidationError') {
-        debug('invalid message: %o', (error as any).annotate())
-        this.sendMessage(createNoticeMessage(`Invalid message: ${error.message}`))
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          debug('message handler aborted')
+        } else if (error.name === 'SyntaxError' || error.name === 'ValidationError') {
+          if (typeof (error as any).annotate === 'function') {
+            debug('invalid message: %o', (error as any).annotate())
+          } else {
+            debug('malformed message: %s', error.message)
+          }
+          this.sendMessage(createNoticeMessage(`invalid: ${error.message}`))
+        }
       } else {
         console.error('unable to handle message', error)
       }
