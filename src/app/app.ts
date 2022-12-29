@@ -50,8 +50,6 @@ export class App implements IRunnable {
       ? Number(process.env.WORKER_COUNT)
       : this.settingsFactory().workers?.count || cpus().length
 
-    debug('env: %O', process.env)
-
     for (let i = 0; i < workerCount; i++) {
       debug('starting worker')
       this.cluster.fork()
