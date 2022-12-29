@@ -84,6 +84,7 @@ describe('NIP-01', () => {
         { message: 'is required', transform: omit(['pubkey']) },
       ],
       created_at: [
+        { message: 'contains an invalid value', transform: assocPath(['created_at'], 1672295751103) },
         { message: 'must be a number', transform: assocPath(['created_at'], null) },
         { message: 'must be greater than or equal to 0', transform: assocPath(['created_at'], -1) },
         { message: 'must be a multiple of 1', transform: assocPath(['created_at'], Math.PI) },
