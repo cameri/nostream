@@ -39,7 +39,7 @@ This implementation is production-ready. See below for supported features.
 
 The project master repository is available on [GitHub](https://github.com/Cameri/nostream).
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template/BWx8DY?referralCode=qVdmfO)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template/Xfk5F7?referralCode=Kfv2ly)
 
 ## Features
 
