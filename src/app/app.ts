@@ -46,7 +46,11 @@ export class App implements IRunnable {
     logCentered(`v${packageJson.version} by Cameri`, width)
     logCentered(`NIPs implemented: ${packageJson.supportedNips}`, width)
 
-    const workerCount = this.settingsFactory().workers?.count || cpus().length
+    const workerCount = process.env.WORKER_COUNT
+      ? Number(process.env.WORKER_COUNT)
+      : this.settingsFactory().workers?.count || cpus().length
+
+    debug('env: %O', process.env)
 
     for (let i = 0; i < workerCount; i++) {
       debug('starting worker')
@@ -81,7 +85,7 @@ export class App implements IRunnable {
   }
 
   private onExit() {
-    debug('exiting')
+    console.log('exiting')
     this.process.exit(0)
   }
 }

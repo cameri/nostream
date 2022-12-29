@@ -7,6 +7,7 @@ The following environment variables can be set:
 | Name             | Description                    | Default                |
 |------------------|--------------------------------|------------------------|
 | RELAY_PORT       | Relay's server port            | 8008                   |
+| WORKER_COUNT     | Number of workers override     | No. of available CPUs  |
 | DB_HOST          | PostgresSQL Hostname           |                        |
 | DB_PORT          | PostgreSQL Port                | 5432                   |
 | DB_USER          | PostgreSQL Username            | nostr_ts_relay         |
