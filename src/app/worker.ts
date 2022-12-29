@@ -19,7 +19,7 @@ export class AppWorker implements IRunnable {
   }
 
   public run(): void {
-    const port = process.env.RELAY_PORT || process.env.PORT || 8008
+    const port = process.env.PORT || process.env.RELAY_PORT || 8008
     this.adapter.listen(typeof port === 'number' ? port : Number(port))
   }
 
