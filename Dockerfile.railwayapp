@@ -7,15 +7,41 @@ ARG PGPORT
 ARG PGDATABASE
 ARG PGUSER
 ARG PGPASSWORD
-ARG REDISHOST
-ARG REDISUSER
-ARG REDISPORT
-ARG REDISPASSWORD
-ARG DEBUG
 
 WORKDIR /build
 
 ## Build Setup for Railways
+ENV DB_HOST=$PGHOST
+ENV DB_PORT=$PGPORT
+ENV DB_NAME=$PGDATABASE
+ENV DB_USER=$PGUSER
+ENV DB_PASSWORD=$PGPASSWORD
+
+COPY ["package.json", "package-lock.json","knexfile.js","./"]
+
+ADD migrations /build/migrations
+
+RUN npm install -g knex@2.3.0 && npm install --quiet
+
+RUN npm run db:migrate
+
+COPY . .
+
+RUN npm run build
+
+FROM node:18-alpine3.16
+
+ARG PORT
+ARG PGHOST
+ARG PGPORT
+ARG PGDATABASE
+ARG PGUSER
+ARG PGPASSWORD
+ARG REDISHOST
+ARG REDISUSER
+ARG REDISPORT
+ARG REDISPASSWORD
+
 ENV RELAY_PORT=$PORT
 ENV DB_HOST=$PGHOST
 ENV DB_PORT=$PGPORT
@@ -24,29 +50,12 @@ ENV DB_USER=$PGUSER
 ENV DB_PASSWORD=$PGPASSWORD
 ENV DB_MIN_POOL_SIZE=16
 ENV DB_MAX_POOL_SIZE=64
-ENV NOSTR_CONFIG_DIR=/home/node/
+ENV NOSTR_CONFIG_DIR=/home/node/.nostr
 
 ENV REDIS_HOST=$REDISHOST
 ENV REDIS_PORT=$REDISPORT
 ENV REDIS_USER=$REDISUSER
 ENV REDIS_PASSWORD=$REDISPASSWORD
-
-COPY ["package.json", "package-lock.json","knexfile.js","./"]
-
-ADD migrations /build/migrations
-
-RUN mkdir /home/node/.nostr
-
-RUN npm install -g knex@2.3.0 && npm install --quiet
-
-RUN npm run db:migrate
-
-
-COPY . .
-
-RUN npm run build
-
-FROM node:18-alpine3.16
 
 LABEL org.opencontainers.image.title="Nostream"
 LABEL org.opencontainers.image.source=https://github.com/Cameri/nostream
@@ -62,5 +71,7 @@ COPY --from=build /build/dist .
 RUN npm install --omit=dev --quiet
 
 USER 1000:1000
+
+RUN mkdir -p /home/node/.nostr
 
 CMD ["node", "src/index.js"]
