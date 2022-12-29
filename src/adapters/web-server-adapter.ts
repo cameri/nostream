@@ -18,7 +18,8 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
     super()
     this.webServer
       .on('request', this.onRequest.bind(this))
-      .on('clientError', this.onError.bind(this))
+      .on('error', this.onError.bind(this))
+      .on('clientError', this.onClientError.bind(this))
       .once('close', this.onClose.bind(this))
       .once('listening', this.onListening.bind(this))
   }
@@ -59,7 +60,13 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
     }
   }
 
-  private onError(error: Error, socket: Duplex) {
+  private onError(error: Error) {
+    debug('error: %o', error)
+
+    throw error
+  }
+
+  private onClientError(error: Error, socket: Duplex) {
     debug('socket error: %o', error)
     if (error['code'] === 'ECONNRESET' || !socket.writable) {
       return
