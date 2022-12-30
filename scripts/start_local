@@ -1,0 +1,22 @@
+#!/bin/bash
+set -e
+
+PROJECT_ROOT="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))/.."
+DOCKER_COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.yml"
+DOCKER_COMPOSE_LOCAL_FILE="${PROJECT_ROOT}/docker-compose.local.yml"
+
+if ! type "mkcert" &> /dev/null; then
+  echo "Could not find mkcert, which is required for generating locally-trusted TLS certificates. Follow the installation instructions at https://github.com/FiloSottile/mkcert, then run this script again."
+  exit 1
+fi
+
+mkcert -install
+mkcert \
+  -cert-file ${PROJECT_ROOT}/.nostr.local/certs/nostream.localtest.me.pem \
+  -key-file ${PROJECT_ROOT}/.nostr.local/certs/nostream.localtest.me-key.pem \
+  nostream.localtest.me
+
+docker compose \
+  -f $DOCKER_COMPOSE_FILE \
+  -f $DOCKER_COMPOSE_LOCAL_FILE \
+  up --build --remove-orphans $@
