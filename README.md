@@ -70,7 +70,11 @@ NIPs with a relay-specific implementation are listed here.
 
 ### Docker setups
 - Docker v20.10
-- Docker compose v2.10
+- Docker Compose v2.10
+
+### Local Docker setup
+- Docker Desktop v4.2.0 or newer
+- [mkcert](https://github.com/FiloSottile/mkcert)
 
 WARNING: Docker distributions from Snap, Brew or Debian repositories are NOT SUPPORTED and will result in errors.
 Install Docker from their [official guide](https://docs.docker.com/engine/install/) ONLY.
@@ -78,6 +82,24 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
 ## Full Guide
 
 - [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder At [ZEBEDEE](https://zebedee.io/))
+
+## Local Quick Start (Docker Compose)
+
+Install Docker Desktop following the [official guide](https://docs.docker.com/desktop/).
+You may have to uninstall Docker on your machine if you installed it using a different guide.
+
+Clone repository and enter directory:
+  ```
+  git clone git@github.com:Cameri/nostream.git
+  cd nostream
+  ```
+
+Start:
+  ```
+  ./scripts/start_local
+  ```
+
+  This will run in the foreground of the terminal until you stop it with Ctrl+C.
 
 ## Quick Start (Docker Compose)
 
