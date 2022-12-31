@@ -16,7 +16,7 @@ const getPrivateKeyFile = () => {
   )
 }
 
-const createTorConfig = (): TorConfig => {
+export const createTorConfig = (): TorConfig => {
   return {
     host: process.env.TOR_HOST,
     port: process.env.TOR_CONTROL_PORT ? Number(process.env.TOR_CONTROL_PORT) : 9051,
@@ -31,15 +31,26 @@ export const getTorClient = async () => {
     const config = createTorConfig()
     debug('config: %o', config)
 
-    if (config.port) {
+    if (config.host !== undefined) {
       debug('connecting')
       client = new Tor(config)
-      await client.connect()
+      try{
+        await client.connect()
+      }catch(error){
+        client = undefined
+      }
       debug('connected')
     }
   }
 
   return client
+}
+export const closeTorClient = async () => {
+  if (client) {
+
+    await client.quit()
+    client = undefined
+  }
 }
 
 export const addOnion = async (
@@ -66,6 +77,7 @@ export const addOnion = async (
     debug('hidden service: %s:%d', hiddenService.ServiceID, port)
 
     if (hiddenService?.PrivateKey) {
+      console.log('saving private key to %s', path)
       debug('saving private key to %s', path)
 
       await writeFile(path, hiddenService.PrivateKey, 'utf8')
