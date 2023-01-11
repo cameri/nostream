@@ -1,5 +1,4 @@
 import fs from 'fs'
-import { homedir } from 'os'
 import { join } from 'path'
 import { mergeDeepRight } from 'ramda'
 import yaml from 'js-yaml'
@@ -18,7 +17,7 @@ export class SettingsStatic {
   static _settings: ISettings
 
   public static getSettingsFileBasePath(): string {
-    return process.env.NOSTR_CONFIG_DIR ?? join(homedir(), '.nostr')
+    return process.env.NOSTR_CONFIG_DIR ?? join(process.cwd(), '.nostr')
   }
 
   public static getDefaultSettingsFilePath(): string {
