@@ -13,6 +13,7 @@ import { attemptValidation } from '../utils/validation'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
+import { getRemoteAddress } from '../utils/http'
 import { IRateLimiter } from '../@types/utils'
 import { ISettings } from '../@types/settings'
 import { isEventMatchingFilter } from '../utils/event'
@@ -42,8 +43,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.subscriptions = new Map()
 
     this.clientId = Buffer.from(this.request.headers['sec-websocket-key'], 'base64').toString('hex')
-    const remoteIpHeader = this.settings().network?.remote_ip_header ?? 'x-forwarded-for'
-    this.clientAddress = (this.request.headers[remoteIpHeader] ?? this.request.socket.remoteAddress) as string
+
+    this.clientAddress = getRemoteAddress(this.request, this.settings())
 
     this.client
       .on('message', this.onClientMessage.bind(this))
@@ -195,10 +196,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       rateLimiter.hit(
         `${client}:message:${period}`,
         1,
-        { period: period, rate: rate },
+        { period, rate },
       )
 
-
+    let limited = false
     for (const { rate, period } of rateLimits) {
       const isRateLimited = await hit(period, rate)
 
@@ -206,11 +207,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       if (isRateLimited) {
         debug('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
 
-        return true
+        limited = true
       }
     }
 
-    return false
+    return limited
   }
 
   private onClientPong() {

@@ -1,4 +1,5 @@
 import { EventKinds } from '../constants/base'
+import { MessageType } from './messages'
 import { Pubkey } from './base'
 
 export interface Info {
@@ -10,8 +11,14 @@ export interface Info {
 }
 
 export interface Network {
-  max_payload_size?: number
-  remote_ip_header?: string
+  maxPayloadSize?: number
+  remoteIpHeader?: string
+}
+
+export interface RateLimit {
+  description?: string
+  period: number
+  rate: number
 }
 
 export interface EventIdLimits {
@@ -19,6 +26,7 @@ export interface EventIdLimits {
 }
 
 export interface PubkeyLimits {
+  minBalanceMsats: number
   minLeadingZeroBits: number
   whitelist?: Pubkey[]
   blacklist?: Pubkey[]
@@ -26,10 +34,8 @@ export interface PubkeyLimits {
 
 export type EventKindsRange = [EventKinds, EventKinds]
 
-export interface EventRateLimit {
+export interface EventRateLimit extends RateLimit {
   kinds?: (EventKinds | [EventKinds, EventKinds])[]
-  rate: number
-  period: number
 }
 
 export interface KindLimits {
@@ -49,6 +55,11 @@ export interface CreatedAtLimits {
 }
 
 export interface ContentLimits {
+  description?: string
+  kinds?: (EventKinds | EventKindsRange)[]
+  /**
+   * Maximum number of characters allowed on events
+   */
   maxLength?: number
 }
 
@@ -62,7 +73,7 @@ export interface EventLimits {
   pubkey?: PubkeyLimits
   kind?: KindLimits
   createdAt?: CreatedAtLimits
-  content?: ContentLimits
+  content?: ContentLimits | ContentLimits[]
   rateLimits?: EventRateLimit[]
   whitelists?: EventWhitelists
 }
@@ -76,9 +87,8 @@ export interface ClientLimits {
   subscription?: ClientSubscriptionLimits
 }
 
-export interface MessageRateLimit {
-  rate: number
-  period: number
+export interface MessageRateLimit extends RateLimit {
+  type?: MessageType
 }
 
 export interface MessageLimits {
@@ -86,7 +96,19 @@ export interface MessageLimits {
   ipWhitelist?: string[]
 }
 
+export interface ConnectionLimits {
+  rateLimits: RateLimit[]
+  ipWhitelist?: string[]
+}
+
+export interface InvoiceLimits {
+  rateLimits: RateLimit[]
+  ipWhitelist?: string[]
+}
+
 export interface Limits {
+  invoice?: InvoiceLimits
+  connection?: ConnectionLimits
   client?: ClientLimits
   event?: EventLimits
   message?: MessageLimits
@@ -96,8 +118,41 @@ export interface Worker {
   count: number
 }
 
+export interface FeeScheduleWhitelists {
+  pubkeys?: Pubkey[]
+}
+
+export interface FeeSchedule {
+  enabled: boolean
+  description?: string
+  amount: number
+  whitelists?: FeeScheduleWhitelists
+}
+
+export interface FeeSchedules {
+  admission: FeeSchedule[]
+  publication: FeeSchedule[]
+}
+
+export interface Payments {
+  enabled: boolean
+  processor: keyof PaymentProcessors
+  feeSchedules: FeeSchedules
+}
+
+export interface ZebedeePaymentProcessor {
+  baseURL: string
+  callbackBaseURL: string
+}
+
+export interface PaymentProcessors {
+  zebedee?: ZebedeePaymentProcessor
+}
+
 export interface ISettings {
   info: Info
+  payments?: Payments
+  paymentProcessors?: PaymentProcessors
   network?: Network
   workers?: Worker
   limits?: Limits

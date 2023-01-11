@@ -2,6 +2,7 @@ import { PassThrough } from 'stream'
 
 import { DBEvent, Event } from './event'
 import { EventId, Pubkey } from './base'
+import { Invoice } from './invoice'
 import { SubscriptionFilter } from './subscription'
 
 export type ExposedPromiseKeys = 'then' | 'catch' | 'finally'
@@ -15,4 +16,9 @@ export interface IEventRepository {
   upsert(event: Event): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
+}
+
+export interface IInvoiceRepository {
+  findById(id: string): Promise<Invoice | undefined>
+  upsert(invoice: Invoice): Promise<number>
 }

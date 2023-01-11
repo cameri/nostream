@@ -7,13 +7,34 @@
     "contact": "operator@your-domain.com"
   },
   "network": {
-    "max_payload_size": 131072,
-    "remote_ip_header": "x-forwarded-for"
+    "maxPayloadSize": 131072,
+    "remoteIpHeader": "x-forwarded-for",
+    "idleTimeout": 60
   },
   "workers": {
     "count": 0
   },
   "limits": {
+    "connection": {
+      "rateLimits": [
+        {
+          "period": 60000,
+          "rate": 12
+        },
+        {
+          "period": 3600000,
+          "rate": 360
+        },
+        {
+          "period": 86400000,
+          "rate": 2880
+        }
+      ],
+      "ipWhitelist": [
+        "::1",
+        "::ffff:10.10.10.1"
+      ]
+    },
     "event": {
       "eventId": {
         "minLeadingZeroBits": 0
@@ -23,6 +44,7 @@
         "blacklist": []
       },
       "pubkey": {
+        "minBalanceMsats": 10000,
         "minLeadingZeroBits": 0,
         "whitelist": [],
         "blacklist": []

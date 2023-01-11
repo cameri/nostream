@@ -2,8 +2,10 @@
 PROJECT_ROOT="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))/.."
 DOCKER_COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.yml"
 DOCKER_COMPOSE_TOR_FILE="${PROJECT_ROOT}/docker-compose.tor.yml"
+DOCKER_COMPOSE_LOCAL_FILE="${PROJECT_ROOT}/docker-compose.local.yml"
 
 docker compose \
   -f $DOCKER_COMPOSE_FILE \
   -f $DOCKER_COMPOSE_TOR_FILE \
+  -f $DOCKER_COMPOSE_LOCAL_FILE \
   down $@
