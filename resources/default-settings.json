@@ -1,23 +1,18 @@
 {
   "info": {
-    "relay_url": "wss://nostr-relay-dev.wlvs.space",
-    "name": "nostr-relay-dev.wlvs.space",
+    "relay_url": "wss://nostream.your-domain.com",
+    "name": "nostream.your-domain.com",
     "description": "A nostr relay written in Typescript.",
-    "pubkey": "00000000827ffaa94bfea288c3dfce4422c794fbb96625b6b31e9049f729d700",
+    "pubkey": "replace-with-your-pubkey",
     "contact": "operator@your-domain.com"
   },
-  "network": {
-    "maxPayloadSize": 131072,
-    "remoteIpHeader": "x-forwarded-for",
-    "idleTimeout": 60
-  },
   "payments": {
-    "enabled": true,
+    "enabled": false,
     "processor": "zebedee",
     "feeSchedules": {
       "admission": [{
-        "enabled": true,
-        "descripton": "Admission fee in msats (1000 msats = 1 satoshi)",
+        "enabled": false,
+        "descripton": "Admission fee charged per public key in msats (1000 msats = 1 satoshi)",
         "amount": 1000000,
         "whitelists": {
           "pubkeys": ["replace-with-your-pubkey"]
@@ -25,9 +20,9 @@
       }],
       "publication": [
         {
-          "enabled": true,
-          "description": "Publication fee in msats (1000 msats = 1 satoshi)",
-          "amount": 100,
+          "enabled": false,
+          "description": "Publication fee charged per event in msats (1000 msats = 1 satoshi)",
+          "amount": 10,
           "whitelists": {
             "pubkeys": ["replace-with-your-pubkey"]
           }
@@ -38,13 +33,38 @@
   "paymentProcessors": {
     "zebedee": {
       "baseURL": "https://api.zebedee.io/",
-      "callbackBaseURL": "https://nostr-relay-dev.wlvs.space/callbacks/zebedee"
+      "callbackBaseURL": "https://nostream.your-domain.com/callbacks/zebedee"
     }
+  },
+  "network": {
+    "maxPayloadSize": 131072,
+    "remoteIpHeader": "x-forwarded-for",
+    "idleTimeout": 60
   },
   "workers": {
     "count": 0
   },
   "limits": {
+    "invoice": {
+      "rateLimits": [
+        {
+          "period": 60000,
+          "rate": 1
+        },
+        {
+          "period": 3600000,
+          "rate": 30
+        },
+        {
+          "period": 86400000,
+          "rate": 360
+        }
+      ],
+      "ipWhitelist": [
+        "::1",
+        "::ffff:10.10.10.1"
+      ]
+    },
     "connection": {
       "rateLimits": [
         {
@@ -74,6 +94,7 @@
         "blacklist": []
       },
       "pubkey": {
+        "minBalanceMsats": 0,
         "minLeadingZeroBits": 0,
         "whitelist": [],
         "blacklist": []

@@ -4,8 +4,8 @@ import { join } from 'path'
 import { mergeDeepRight } from 'ramda'
 
 import { createLogger } from '../factories/logger-factory'
+import defaultSettingsJson from '../../resources/default-settings.json'
 import { ISettings } from '../@types/settings'
-import settingsSampleJson from '../../settings.sample.json'
 
 const debug = createLogger('settings')
 
@@ -35,7 +35,7 @@ export class SettingsStatic {
     }
     debug('creating settings')
     const path = SettingsStatic.getSettingsFilePath()
-    const defaults = settingsSampleJson as ISettings
+    const defaults = defaultSettingsJson as ISettings
     try {
 
       if (fs.existsSync(path)) {

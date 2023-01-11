@@ -1,16 +1,18 @@
 import * as secp256k1 from '@noble/secp256k1'
 import { applySpec, converge, curry, mergeLeft, nth, omit, pipe, prop, reduceBy } from 'ramda'
+import { createHmac } from 'crypto'
 
-import { CanonicalEvent, DBEvent, Event } from '../@types/event'
+import { CanonicalEvent, DBEvent, Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
 import { EventId, Pubkey, Tag } from '../@types/base'
 import { EventKinds, EventTags } from '../constants/base'
+import { EventKindsRange } from '../@types/settings'
 import { fromBuffer } from './transform'
 import { getLeadingZeroBits } from './proof-of-work'
 import { isGenericTagQuery } from './filter'
 import { RuneLike } from './runes/rune-like'
 import { SubscriptionFilter } from '../@types/subscription'
 
-export const serializeEvent = (event: Event): CanonicalEvent => [
+export const serializeEvent = (event: UnidentifiedEvent): CanonicalEvent => [
   0,
   event.pubkey,
   event.created_at,
@@ -28,6 +30,12 @@ export const toNostrEvent: (event: DBEvent) => Event = applySpec({
   tags: prop('event_tags') as () => Tag[],
   sig: pipe(prop('event_signature') as () => Buffer, fromBuffer),
 })
+
+export const isEventKindOrRangeMatch = ({ kind }: Event) =>
+  (item: EventKinds | EventKindsRange) =>
+  typeof item === 'number'
+  ? item === kind
+  : kind >= item[0] && kind <= item[1]
 
 export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Event): boolean => {
   const startsWith = (input: string) => (prefix: string) => input.startsWith(prefix)
@@ -149,14 +157,40 @@ export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
   return secp256k1.schnorr.verify(delegation[3], token, delegation[1])
 }
 
-export const isEventIdValid = async (event: Event): Promise<boolean> => {
+export const getEventHash = async (event: Event | UnidentifiedEvent | UnsignedEvent): Promise<string> => {
   const id = await secp256k1.utils.sha256(Buffer.from(JSON.stringify(serializeEvent(event))))
 
-  return Buffer.from(id).toString('hex') === event.id
+  return Buffer.from(
+    id
+  ).toString('hex')
+}
+
+export const isEventIdValid = async (event: Event): Promise<boolean> => {
+  return event.id === await getEventHash(event)
 }
 
 export const isEventSignatureValid = async (event: Event): Promise<boolean> => {
   return secp256k1.schnorr.verify(event.sig, event.id, event.pubkey)
+}
+
+export const identifyEvent = async (event: UnidentifiedEvent): Promise<UnsignedEvent> => {
+  const id = await getEventHash(event)
+
+  return { ...event, id }
+}
+
+export const getPrivateKeyFromSecret =
+  (secret: string) => (publicKey: Pubkey | Buffer): string => {
+  const hmac = createHmac('sha256', secret)
+  hmac.update(typeof publicKey === 'string' ? Buffer.from(publicKey, 'hex') : publicKey)
+  return hmac.digest().toString('hex')
+}
+
+export const getPublicKey = (privkey: string | Buffer) => Buffer.from(secp256k1.getPublicKey(privkey, true)).toString('hex').substring(2)
+
+export const signEvent = (privkey: string | Buffer | undefined) => async (event: UnsignedEvent): Promise<Event> => {
+  const sig = await secp256k1.schnorr.sign(event.id, privkey)
+  return { ...event, sig: Buffer.from(sig).toString('hex') }
 }
 
 export const isReplaceableEvent = (event: Event): boolean => {
