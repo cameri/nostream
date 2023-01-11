@@ -354,8 +354,7 @@ You can change the default folder by setting the `NOSTR_CONFIG_DIR` environment 
 Run nostream using one of the quick-start guides at least once and `nostream/.nostr/settings.json` will be created.
 Any changes made to the settings file will be read on the next start.
 
-A sample settings file is included at the project root under the name `settings.sample.json`. Feel free to copy it to `nostream/.nostr/settings.json`
-if you would like to have a settings file before running the relay first.
+Default settings can be found under `resources/default-settings.yaml`. Feel free to copy it to `nostream/.nostr/settings.yaml` if you would like to have a settings file before running the relay first.
 
 See [CONFIGURATION.md](CONFIGURATION.md) for a detailed explanation of each environment variable and setting.
 ## Dev Channel
