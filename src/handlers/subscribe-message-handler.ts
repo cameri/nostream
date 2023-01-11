@@ -2,12 +2,12 @@ import { anyPass, equals, map, uniqWith } from 'ramda'
 import { pipeline } from 'stream/promises'
 
 import { createEndOfStoredEventsNoticeMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import { DBEvent, Event } from '../@types/event'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { isEventMatchingFilter, toNostrEvent } from '../utils/event'
 import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { createLogger } from '../factories/logger-factory'
-import { Event } from '../@types/event'
 import { IEventRepository } from '../@types/repositories'
 import { ISettings } from '../@types/settings'
 import { IWebSocketAdapter } from '../@types/adapters'
@@ -57,9 +57,12 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
     const findEvents = this.eventRepository.findByFilters(filters).stream()
 
+    const isNotDeleted = (row: DBEvent) => { console.log(row); return true }
+
     try {
       await pipeline(
         findEvents,
+        streamFilter(isNotDeleted),
         streamMap(toNostrEvent),
         streamFilter(isSubscribedToEvent),
         streamEach(sendEvent),

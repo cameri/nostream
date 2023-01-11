@@ -17,6 +17,7 @@ services:
       REDIS_USER: default
       REDIS_PASSWORD: nostr_ts_relay_test
       NOSTR_CONFIG_DIR: /code
+      DEBUG: knex:query,primary:event-repository
     volumes:
       - ../../package.json:/code/package.json
       - ../../settings.sample.json:/code/settings.sample.json
@@ -47,6 +48,8 @@ services:
       POSTGRES_DB: nostr_ts_relay_test
     networks:
       - nostream-test
+    ports:
+      - 25432:5432
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       timeout: 5s

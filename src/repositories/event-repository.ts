@@ -232,9 +232,7 @@ export class EventRepository implements IEventRepository {
   public deleteByPubkeyAndIds(pubkey: string, ids: EventId[]): Promise<number> {
     debug('deleting events from %s: %o', pubkey, ids)
     return this.dbClient('events')
-      .where({
-        event_pubkey: toBuffer(pubkey),
-      })
+      .where('event_pubkey', toBuffer(pubkey))
       .whereIn('event_id', map(toBuffer)(ids))
       .whereNull('deleted_at')
       .update({
