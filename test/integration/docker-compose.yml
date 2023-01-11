@@ -20,7 +20,7 @@ services:
       DEBUG: ""
     volumes:
       - ../../package.json:/code/package.json
-      - ../../settings.sample.json:/code/settings.sample.json
+      - ../../resources/default-settings.json:/code/resources/default-settings.json
       - ../../src:/code/src
       - ../../test/integration:/code/test/integration
       - ../../cucumber.js:/code/cucumber.js

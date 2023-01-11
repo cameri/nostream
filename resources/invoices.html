@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pay Invoice - {{name}}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
+    <link rel="stylesheet" href="./css/style.css">
+    <script
+      src="https://unpkg.com/webln@0.2.0/dist/webln.min.js"
+      integrity="sha384-mTReBqbhPO7ljQeIoFaD1NYS2KiYMwFJhUNpdwLj+VIuhhjvHQlZ1XpwzAvd93nQ"
+      crossorigin="anonymous"
+    ></script>
+  </head>
+  <body lang="en">
+    <main class="container">
+      <div class="row">
+        <div class="col">
+          <h1 class="mt-4 mb-4 text-center text-nowrap">{{name}}</h1>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col text-center">
+          <p class="pending">
+            Scan with your bitcoin lightning wallet
+          </p>
+          <p class="paid text-success d-none">
+            Your payment has been received
+          </p>
+        </div>
+      </div>
+      <div class="row justify-content-center">
+        <div class="card pending col-8 col-lg-4 d-flex flex-column justify-content-center mb-4">
+          <div class="card-body m-auto">
+            <div id="invoice" onclick="sendPayment()"></div>
+          </div>
+          <div class="card-body d-flex flex-row justify-content-center">
+            <div class="input-group input-group-sm w-100 mw-256" onclick="copy()">
+              <input type="text" name="invoice" class="form-control form-control-sm" id="invoiceInput" value="{{invoice}}" readonly>
+              <span class="input-group-text" id="invoiceAlert">copy</span>
+            </div>
+          </div>
+          <div class="card-body d-flex flex-row justify-content-center">
+            <div id="waiting">
+              <div class="spinner-grow spinner-grow-sm" role="status"></div>
+              Waiting for payment
+            </div>
+            <div id="paid" class="hidden">
+              ✅ Payment received
+            </div>
+            <div id="timeout" class="hidden">
+              ❌ Invoice expired
+            </div>
+          </div>
+        </div>
+        <div class="card paid d-none col-8 col-lg-4 justify-content-center">
+          <div class="card-body text-center">
+            <div class="success-checkmark">
+              <div class="check-icon">
+                <span class="icon-line line-tip"></span>
+                <span class="icon-line line-long"></span>
+                <div class="icon-circle"></div>
+                <div class="icon-fix"></div>
+              </div>
+            </div>
+            <h2 class="text-success">Payment successful</h2>
+            <p class="text-secondary">{{amount}} sats received</p>
+          </div>
+        </div>
+        <div class="card expired col-8 col-lg-4 justify-content-center">
+          <div class="card-body text-center">
+            <h2 class="text-warning">Invoice expired</h2>
+          </div>
+        </div>
+      </div>
+      <div class="row pending">
+        <div class="col">
+          <div class="d-flex justify-content-center mb-3">
+            <button id="sendPaymentBtn" class="btn btn-lg btn-warning d-none" type="submit" onclick="sendPayment()">Pay with wallet</button>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.min.js" integrity="sha384-cuYeSxntonz0PPNlHhBs68uyIAVpIIOZZ5JqeqvYYIcEL727kskC66kF92t6Xl2V" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script>
+      var relayUrl = "{{relay_url}}"
+      var relayPubkey = "{{relay_pubkey}}"
+      var invoice = "{{invoice}}";
+      var pubkey = "{{pubkey}}"
+
+      function connect() {
+        var socket = new WebSocket(relayUrl)
+        socket.onopen = () => {
+          console.log('connected')
+          socket.send(JSON.stringify(['REQ', 'payment', { kinds: [402], authors: [relayPubkey] }]))
+        }
+
+        socket.onmessage = (raw) => {
+          const message = JSON.parse(raw.data)
+          console.log('received', message)
+
+          if (!Array.isArray(message) || message.length !== 3 || message[0] !== 'EVENT' || message[1] !== 'payment') {
+            return
+          }
+
+          // hide waiting
+          const pendingElements = document.getElementsByClassName('pending')
+          const paidElements = document.getElementsByClassName('paid')
+          for (const elem of pendingElements) {
+            elem.classList.add('d-none')
+          }
+          for (const elem of paidElements) {
+            elem.classList.remove('d-none')
+          }
+        }
+
+        socket.onerror = console.error.bind(console)
+
+        socket.onclose = () => {
+          console.log('disconnected')
+          setTimeout(connect, 0)
+        }
+      }
+
+      new QRCode(document.getElementById("invoice"), {
+        text: `lightning:${invoice}`,
+        width: 256,
+        height: 256,
+        correctLevel: QRCode.CorrectLevel.M
+      });
+
+      function copy() {
+        var elem = document.getElementById('invoiceInput')
+        elem.select()
+        elem.setSelectionRange(0, 999999)
+        navigator.clipboard.writeText(elem.value)
+        document.getElementById('invoiceAlert').innerText = 'copied!'
+      }
+      async function sendPayment() {
+        const webln = await WebLN.requestProvider();
+        //webln.sendPayment(invoice)
+        webln.sendPayment('lnbc10u1p3menvwpp5gtjz9n8vvwpeeav7884rzx2g0mlgcxy8rjkcxwmxscxcqmfg690qdpuxycrqvpqwdshgueqvehhygzqvdsk6etjdysx7m3qwd6xzcmtv4ezumn9waescqzpgxqr230sp5y3rj64jfchnhvequdreh5yrh8yr7lle9s3mr85wvhlqgmvdnd2xq9qyyssqc8spqduevg3s04j3975mt8jp3frsma87uqa85tra50dhf9xc5rwkwu6lh677t5zz9laeg20pgyedg24xck7lfjygyftslaax2ht9jqcp62y039')
+      }
+      connect()
+      sendPayment().catch(() => {
+        document.getElementById('sendPaymentBtn').classList.remove('d-none')
+      })
+    </script>
+  </body>
+</html>

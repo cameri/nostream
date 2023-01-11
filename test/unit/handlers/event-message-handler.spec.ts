@@ -9,6 +9,7 @@ chai.use(chaiAsPromised)
 import { EventLimits, ISettings } from '../../../src/@types/settings'
 import { IncomingEventMessage, MessageType } from '../../../src/@types/messages'
 import { Event } from '../../../src/@types/event'
+import { EventKinds } from '../../../src/constants/base'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
@@ -174,6 +175,7 @@ describe('EventMessageHandler', () => {
           whitelist: [],
         },
         pubkey: {
+          minBalanceMsats: 0,
           minLeadingZeroBits: 0,
           blacklist: [],
           whitelist: [],
@@ -241,8 +243,8 @@ describe('EventMessageHandler', () => {
 
     describe('content', () => {
       describe('maxLength', () => {
-        it('returns undefined if maxLength is zero', () => {
-          eventLimits.content.maxLength = 0
+        it('returns undefined if maxLength is disabled', () => {
+          eventLimits.content = [{ maxLength: 0 }]
 
           expect(
             (handler as any).canAcceptEvent(event)
@@ -250,7 +252,62 @@ describe('EventMessageHandler', () => {
         })
 
         it('returns undefned if content is not too long', () => {
-          eventLimits.content.maxLength = 100
+          eventLimits.content = [{ maxLength: 1 }]
+          event.content = 'x'.repeat(1)
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
+        })
+
+        it('returns undefined if kind does not match', () => {
+          eventLimits.content = [{ kinds: [EventKinds.SET_METADATA], maxLength: 1 }]
+          event.content = 'x'
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
+        })
+
+        it('returns undefined if kind matches but content is short', () => {
+          eventLimits.content = [{ kinds: [EventKinds.TEXT_NOTE], maxLength: 1 }]
+          event.content = 'x'
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
+        })
+
+        it('returns reason if kind matches but content is too long', () => {
+          eventLimits.content = [{ kinds: [EventKinds.TEXT_NOTE], maxLength: 1 }]
+          event.content = 'xx'
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.equal('rejected: content is longer than 1 bytes')
+        })
+
+        it('returns reason if content is too long', () => {
+          eventLimits.content = [{ maxLength: 1 }]
+          event.content = 'x'.repeat(2)
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.equal('rejected: content is longer than 1 bytes')
+        })
+      })
+
+      describe('maxLength (deprecated)', () => {
+        it('returns undefined if maxLength is zero', () => {
+          eventLimits.content = { maxLength: 0 }
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
+        })
+
+        it('returns undefined if content is short', () => {
+          eventLimits.content = { maxLength: 100 }
           event.content = 'x'.repeat(100)
 
           expect(
@@ -259,12 +316,48 @@ describe('EventMessageHandler', () => {
         })
 
         it('returns reason if content is too long', () => {
-          eventLimits.content.maxLength = 100
-          event.content = 'x'.repeat(101)
+          eventLimits.content = { maxLength: 1 }
+          event.content = 'xx'
 
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('rejected: content is longer than 100 bytes')
+          ).to.equal('rejected: content is longer than 1 bytes')
+        })
+
+        it('returns undefined if kind matches and content is short', () => {
+          eventLimits.content = { kinds: [EventKinds.TEXT_NOTE], maxLength: 1 }
+          event.content = 'x'
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
+        })
+
+        it('returns undefined if kind does not match and content is too long', () => {
+          eventLimits.content = { kinds: [EventKinds.SET_METADATA], maxLength: 1 }
+          event.content = 'xx'
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
+        })
+
+        it('returns reason if content is too long', () => {
+          eventLimits.content = { maxLength: 1 }
+          event.content = 'xx'
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.equal('rejected: content is longer than 1 bytes')
+        })
+
+        it('returns undefined if content is not set', () => {
+          eventLimits.content = undefined
+          event.content = 'xx'
+
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.be.undefined
         })
       })
 
@@ -666,12 +759,12 @@ describe('EventMessageHandler', () => {
           rate: 1,
         },
         {
-          kinds: [0],
+          kinds: [1],
           period: 60000,
           rate: 2,
         },
         {
-          kinds: [[10, 20]],
+          kinds: [[0, 3]],
           period: 86400000,
           rate: 3,
         },
@@ -689,7 +782,7 @@ describe('EventMessageHandler', () => {
         }
       )
       expect(rateLimiterHitStub.secondCall).to.have.been.calledWithExactly(
-        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:60000:[0]',
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:60000:[1]',
         1,
         {
           period: 60000,
@@ -697,7 +790,7 @@ describe('EventMessageHandler', () => {
         }
       )
       expect(rateLimiterHitStub.thirdCall).to.have.been.calledWithExactly(
-        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:86400000:[[10,20]]',
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:86400000:[[0,3]]',
         1,
         {
           period: 86400000,
@@ -729,7 +822,14 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(rateLimiterHitStub).to.have.been.calledThrice
+      expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:60000',
+        1,
+        {
+          period: 60000,
+          rate: 1,
+        },
+      )
       expect(actualResult).to.be.false
     })
 
@@ -745,19 +845,33 @@ describe('EventMessageHandler', () => {
           rate: 2,
         },
         {
-          kinds: [[10, 20]],
-          period: 86400000,
+          kinds: [[0, 5]],
+          period: 180,
           rate: 3,
         },
       ]
 
       rateLimiterHitStub.onFirstCall().resolves(false)
       rateLimiterHitStub.onSecondCall().resolves(true)
-      rateLimiterHitStub.onThirdCall().resolves(false)
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(rateLimiterHitStub).to.have.been.calledThrice
+      expect(rateLimiterHitStub.firstCall).to.have.been.calledWithExactly(
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:60000',
+        1,
+        {
+          period: 60000,
+          rate: 1,
+        },
+      )
+      expect(rateLimiterHitStub.secondCall).to.have.been.calledWithExactly(
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:180:[[0,5]]',
+        1,
+        {
+          period: 180,
+          rate: 3,
+        },
+      )
       expect(actualResult).to.be.true
     })
   })

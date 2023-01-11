@@ -28,6 +28,8 @@ ENV DB_PASSWORD=nostr-ts-relay
 WORKDIR /app
 RUN apk add --no-cache --update git
 
+ADD resources /app/resources
+
 COPY --from=build /build/dist .
 
 RUN npm install --omit=dev --quiet
