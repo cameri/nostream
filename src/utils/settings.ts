@@ -2,25 +2,36 @@ import fs from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { mergeDeepRight } from 'ramda'
+import yaml from 'js-yaml'
 
 import { createLogger } from '../factories/logger-factory'
-import defaultSettingsJson from '../../resources/default-settings.json'
 import { ISettings } from '../@types/settings'
 
 const debug = createLogger('settings')
 
+const FileType = {
+  yaml: 'yaml',
+  json: 'json',
+}
+
 export class SettingsStatic {
   static _settings: ISettings
 
-  public static getSettingsFilePath(filename = 'settings.json') {
-    return join(
-      process.env.NOSTR_CONFIG_DIR ?? join(homedir(), '.nostr'),
-      filename
-    )
+  public static getSettingsFileBasePath(): string {
+    return process.env.NOSTR_CONFIG_DIR ?? join(homedir(), '.nostr')
   }
 
-  public static loadSettings(path: string) {
-    debug('loading settings from %s', path)
+  public static getDefaultSettingsFilePath(): string {
+    return `${join(process.cwd(), 'resources')}/default-settings.yaml`
+  }
+
+  public static loadAndParseYamlFile(path: string): ISettings {
+    const defaultSettingsFileContent = fs.readFileSync(path, 'utf8')
+    const defaults = yaml.load(defaultSettingsFileContent) as ISettings
+    return defaults
+  }
+
+  public static loadAndParseJsonFile(path: string) {
     return JSON.parse(
       fs.readFileSync(
         path,
@@ -29,28 +40,65 @@ export class SettingsStatic {
     )
   }
 
+  public static settingsFileType(path) {
+    const files = fs.readdirSync(path).filter(fn => fn.startsWith('settings'))
+    if (files.length) {
+      const extension = files.pop().split('.')[1]
+      return FileType[extension]
+    } else {
+      return null
+    }
+  }
+
+
+  public static loadSettings(path: string, fileType) {
+    debug('loading settings from %s', path)
+
+    switch (fileType) {
+      case FileType.json: {
+        debug('settings.json is deprecated, please use a yaml file based on resources/default-settings.yaml')
+        return this.loadAndParseJsonFile(path)
+      }
+      case FileType.yaml: {
+        return this.loadAndParseYamlFile(path)
+      }
+      default: {
+        throw new Error('settings file was missing or did not contain .yaml or .json extensions.')
+      }
+    }
+  }
+
   public static createSettings(): ISettings {
     if (SettingsStatic._settings) {
       return SettingsStatic._settings
     }
     debug('creating settings')
-    const path = SettingsStatic.getSettingsFilePath()
-    const defaults = defaultSettingsJson as ISettings
+
+    const basePath = SettingsStatic.getSettingsFileBasePath()
+    if (!fs.existsSync(basePath)) {
+      fs.mkdirSync(basePath)
+    }
+    const defaultsFilePath = SettingsStatic.getDefaultSettingsFilePath()
+    const fileType = SettingsStatic.settingsFileType(basePath)
+    const settingsFilePath = `${basePath}/settings.${fileType}`
+
+    const defaults = SettingsStatic.loadSettings(defaultsFilePath, FileType.yaml)
+
     try {
 
-      if (fs.existsSync(path)) {
+      if (fileType) {
         SettingsStatic._settings = mergeDeepRight(
           defaults,
-          SettingsStatic.loadSettings(path)
+          SettingsStatic.loadSettings(settingsFilePath, fileType)
         )
       } else {
-        SettingsStatic.saveSettings(path, defaults)
+        SettingsStatic.saveSettings(basePath, defaults)
         SettingsStatic._settings = mergeDeepRight({}, defaults)
       }
 
       return SettingsStatic._settings
     } catch (error) {
-      debug('error reading config file at %s: %o', path, error)
+      debug('error reading config file at %s: %o', settingsFilePath, error)
 
       return defaults
     }
@@ -59,9 +107,9 @@ export class SettingsStatic {
   public static saveSettings(path: string, settings: ISettings) {
     debug('saving settings to %s: %o', path, settings)
     return fs.writeFileSync(
-      path,
-      JSON.stringify(settings, null, 2),
-      { encoding: 'utf-8' }
+      `${path}/settings.yaml`,
+      yaml.dump(settings),
+      { encoding: 'utf-8' },
     )
   }
 }

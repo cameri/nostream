@@ -19,22 +19,45 @@ describe('SettingsStatic', () => {
       process.env = originalEnv
     })
 
-    it('returns string ending with settings.json by default', () => {
-      expect(SettingsStatic.getSettingsFilePath()).to.be.a('string').and.to.match(/settings\.json$/)
-    })
-
-    it('returns string ending with given string', () => {
-      expect(SettingsStatic.getSettingsFilePath('ending')).to.be.a('string').and.to.match(/ending$/)
+    it('returns string ending with .nostr/ by default', () => {
+      expect(SettingsStatic.getSettingsFileBasePath()).to.be.a('string').and.to.match(/s\.nostr$/)
     })
 
     it('returns path begins with user\'s home dir by default', () => {
-      expect(SettingsStatic.getSettingsFilePath()).to.be.a('string').and.equal(`${join(homedir(), '.nostr')}/settings.json`)
+      expect(SettingsStatic.getSettingsFileBasePath()).to.be.a('string').and.equal(`${join(homedir(), '.nostr')}/`)
     })
 
     it('returns path with NOSTR_CONFIG_DIR if set', () => {
       process.env.NOSTR_CONFIG_DIR = '/some/path'
 
-      expect(SettingsStatic.getSettingsFilePath()).to.be.a('string').and.equal('/some/path/settings.json')
+      expect(SettingsStatic.getSettingsFileBasePath()).to.be.a('string').and.equal('/some/path/')
+    })
+  })
+
+  describe('.getDefaultSettingsFilePath', () => {
+    let originalEnv: NodeJS.ProcessEnv
+
+    beforeEach(() => {
+      originalEnv = process.env
+      process.env = {}
+    })
+
+    afterEach(() => {
+      process.env = originalEnv
+    })
+
+    it('returns string ending with settings.json by default', () => {
+      expect(SettingsStatic.getDefaultSettingsFilePath()).to.be.a('string').and.to.match(/settings\.yaml$/)
+    })
+
+    it('returns path begins with user\'s home dir by default', () => {
+      expect(SettingsStatic.getDefaultSettingsFilePath()).to.be.a('string').and.equal(`${join(homedir(), '.nostr')}/settings.yaml`)
+    })
+
+    it('returns path with NOSTR_CONFIG_DIR if set', () => {
+      process.env.NOSTR_CONFIG_DIR = '/some/path'
+
+      expect(SettingsStatic.getDefaultSettingsFilePath()).to.be.a('string').and.equal('/some/path/settings.yaml')
     })
   })
 
@@ -52,7 +75,7 @@ describe('SettingsStatic', () => {
     it('loads settings from given path', () => {
       readFileSyncStub.returns('"content"')
 
-      expect(SettingsStatic.loadSettings('/some/path')).to.equal('content')
+      expect(SettingsStatic.loadSettings('/some/path', 'yaml')).to.equal('content')
 
       expect(readFileSyncStub).to.have.been.calledOnceWithExactly(
         '/some/path',
@@ -75,7 +98,7 @@ describe('SettingsStatic', () => {
       sandbox = Sinon.createSandbox()
 
       existsSyncStub = sandbox.stub(fs, 'existsSync')
-      getSettingsFilePathStub = sandbox.stub(SettingsStatic, 'getSettingsFilePath')
+      getSettingsFilePathStub = sandbox.stub(SettingsStatic, 'getSettingsFileBasePath')
       saveSettingsStub = sandbox.stub(SettingsStatic, 'saveSettings')
       loadSettingsStub = sandbox.stub(SettingsStatic, 'loadSettings')
     })
