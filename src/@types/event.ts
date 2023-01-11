@@ -32,7 +32,7 @@ export interface DBEvent {
   event_delegator?: Buffer | null
   event_deduplication?: string | null
   first_seen: Date
-  deleted_at: Date
+  deleted_at?: Date
 }
 
 export interface CanonicalEvent {
