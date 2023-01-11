@@ -226,12 +226,6 @@ Run migrations (at least once and after pulling new changes):
   npm run db:migrate
   ```
 
-Create ~/.nostr folder:
-
-  ```
-  mkdir ~/.nostr
-  ```
-
 To start in development mode:
 
   ```
