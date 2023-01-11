@@ -6,6 +6,7 @@ import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
+import { IRateLimiter } from '../@types/utils'
 import { ISettings } from '../@types/settings'
 import { propEq } from 'ramda'
 import { WebServerAdapter } from './web-server-adapter'
@@ -26,9 +27,10 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       IWebSocketAdapter,
       [WebSocket, IncomingMessage, IWebSocketServerAdapter]
     >,
+    slidingWindowRateLimiter: Factory<IRateLimiter>,
     settings: () => ISettings,
   ) {
-    super(webServer, settings)
+    super(webServer, slidingWindowRateLimiter, settings)
 
     this.webSocketsAdapters = new WeakMap()
 

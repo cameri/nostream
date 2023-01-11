@@ -12,6 +12,10 @@ export interface Event {
   content: string
 }
 
+export type UnsignedEvent = Omit<Event, 'sig'>
+
+export type UnidentifiedEvent = Omit<UnsignedEvent, 'id'>
+
 export interface DelegatedEvent extends Event {
   [EventDelegatorMetadataKey]?: Pubkey
 }
