@@ -22,7 +22,7 @@ export class SettingsStatic {
   }
 
   public static getDefaultSettingsFilePath(): string {
-    return `${join(process.cwd(), 'resources')}/default-settings.yaml`
+    return join(process.cwd(), 'resources', 'default-settings.yaml')
   }
 
   public static loadAndParseYamlFile(path: string): ISettings {
