@@ -57,7 +57,7 @@ export class SettingsStatic {
 
     switch (fileType) {
       case FileType.json: {
-        debug('settings.json is deprecated, please use a yaml file based on resources/default-settings.yaml')
+        console.warn('settings.json is deprecated, please use a yaml file based on resources/default-settings.yaml')
         return this.loadAndParseJsonFile(path)
       }
       case FileType.yaml: {
