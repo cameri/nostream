@@ -108,7 +108,7 @@ export class SettingsStatic {
   public static saveSettings(path: string, settings: ISettings) {
     debug('saving settings to %s: %o', path, settings)
     return fs.writeFileSync(
-      `${path}/settings.yaml`,
+      `join(path, 'settings.yaml'),
       yaml.dump(settings),
       { encoding: 'utf-8' },
     )
