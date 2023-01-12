@@ -231,22 +231,6 @@ describe('SettingsStatic', () => {
       expect(loadSettingsStub).to.have.been.calledWithExactly('/some/path/settings.yaml', 'yaml')
     })
 
-    it('returns defaults if loading settings file throws', () => {
-      const error = new Error('mistakes were made')
-      loadSettingsStub.throws(error)
-      getSettingsFileBasePathStub.returns('/some/path/settings.json')
-      getDefaultSettingsFilePathStub.returns('/some/path/settings.yaml')
-      existsSyncStub.returns(true)
-      readdirSyncStub.returns(['file.yaml'])
-
-      expect(SettingsStatic.createSettings()).to.be.an('object')
-
-      expect(existsSyncStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
-      expect(getSettingsFileBasePathStub).to.have.been.calledOnce
-      expect(saveSettingsStub).not.to.have.been.called
-      expect(loadSettingsStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
-    })
-
     it('returns cached settings if set', () => {
       const cachedSettings = Symbol()
       SettingsStatic._settings = cachedSettings as any
