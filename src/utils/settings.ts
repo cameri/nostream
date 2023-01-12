@@ -1,7 +1,8 @@
 import fs from 'fs'
-import { join } from 'path'
-import { mergeDeepRight } from 'ramda'
 import yaml from 'js-yaml'
+
+import { extname, join } from 'path'
+import { mergeDeepRight } from 'ramda'
 
 import { createLogger } from '../factories/logger-factory'
 import { ISettings } from '../@types/settings'
@@ -25,7 +26,7 @@ export class SettingsStatic {
   }
 
   public static loadAndParseYamlFile(path: string): ISettings {
-    const defaultSettingsFileContent = fs.readFileSync(path, 'utf8')
+    const defaultSettingsFileContent = fs.readFileSync(path, { encoding: 'utf-8' })
     const defaults = yaml.load(defaultSettingsFileContent) as ISettings
     return defaults
   }
@@ -40,9 +41,10 @@ export class SettingsStatic {
   }
 
   public static settingsFileType(path) {
-    const files = fs.readdirSync(path).filter(fn => fn.startsWith('settings'))
-    if (files.length) {
-      const extension = files.pop().split('.')[1]
+    const files: string[] = fs.readdirSync(path)
+    const filteredFiles = files ? files.filter(fn => fn.startsWith('settings')) : []
+    if (filteredFiles.length) {
+      const extension = extname(filteredFiles.pop())
       return FileType[extension]
     } else {
       return null
