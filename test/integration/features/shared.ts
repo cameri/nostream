@@ -36,6 +36,7 @@ BeforeAll({ timeout: 6000 }, async function () {
   SettingsStatic._settings = pipe(
     assocPath(['limits', 'event', 'createdAt', 'maxPositiveDelta'], 0),
     assocPath(['limits', 'event', 'rateLimits'], []),
+    assocPath(['limits', 'message', 'rateLimits'], []),
   )(settings) as any
 
   worker = workerFactory()
