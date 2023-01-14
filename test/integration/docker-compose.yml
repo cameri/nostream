@@ -77,7 +77,7 @@ services:
     entrypoint:
       - sh
       - -c
-      - 'cd code && npm install --no-save --quiet knex@2.3.0 pg@8.8.0 && npx knex migrate:latest'
+      - 'cd code && npm install --no-save --quiet knex@2.4.0 pg@8.8.0 && npx knex migrate:latest'
     volumes:
       - ../../migrations:/code/migrations
       - ../../knexfile.js:/code/knexfile.js
