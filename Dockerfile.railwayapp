@@ -21,7 +21,7 @@ COPY ["package.json", "package-lock.json","knexfile.js","./"]
 
 ADD migrations /build/migrations
 
-RUN npm install -g knex@2.3.0 && npm install --quiet
+RUN npm install -g knex@2.4.0 && npm install --quiet
 
 RUN npm run db:migrate
 
