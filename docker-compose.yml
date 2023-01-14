@@ -116,7 +116,7 @@ services:
           max-file: "3"
     networks:
       default:
-        ipv4_address: 10.10.10.5
+        ipv4_address: 10.10.10.6
 networks:
   default:
     name: nostr-ts-relay
