@@ -8,7 +8,7 @@ import {
   When,
   World,
 } from '@cucumber/cucumber'
-import { assocPath } from 'ramda'
+import { assocPath, pipe } from 'ramda'
 import WebSocket from 'ws'
 
 import { connect, createIdentity, createSubscription } from './helpers'
@@ -31,9 +31,12 @@ BeforeAll({ timeout: 6000 }, async function () {
   dbClient = getDbClient()
   await dbClient.raw('SELECT 1=1')
 
-  const { limits } = SettingsStatic.createSettings()
+  const settings = SettingsStatic.createSettings()
 
-  assocPath(['event', 'createdAt', 'maxPositiveDelta'], 0)(limits)
+  SettingsStatic._settings = pipe(
+    assocPath(['limits', 'event', 'createdAt', 'maxPositiveDelta'], 0),
+    assocPath(['limits', 'event', 'rateLimits'], []),
+  )(settings) as any
 
   worker = workerFactory()
   worker.run()
