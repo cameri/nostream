@@ -20,8 +20,6 @@ services:
       # Enable DEBUG for troubleshooting. Examples:
       # DEBUG: "worker:*"
       # DEBUG: "knex:query"
-    env_file:
-      - test.env
     user: node:node
     volumes:
       - ${PWD}/.nostr:/home/node/
