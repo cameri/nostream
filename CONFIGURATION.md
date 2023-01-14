@@ -4,23 +4,27 @@
 
 The following environment variables can be set:
 
-| Name             | Description                    | Default                |
-|------------------|--------------------------------|------------------------|
-| RELAY_PORT       | Relay's server port            | 8008                   |
-| WORKER_COUNT     | Number of workers override     | No. of available CPUs  |
-| DB_HOST          | PostgresSQL Hostname           |                        |
-| DB_PORT          | PostgreSQL Port                | 5432                   |
-| DB_USER          | PostgreSQL Username            | nostr_ts_relay         |
-| DB_PASSWORD      | PostgreSQL Password            | nostr_ts_relay         |
-| DB_NAME          | PostgreSQL Database name       | nostr_ts_relay         |
-| DB_MIN_POOL_SIZE | Min. connections per worker    | 16                     |
-| DB_MAX_POOL_SIZE | Max. connections per worker    | 32                     |
-| REDIS_HOST       |                                |                        |
-| REDIS_PORT       | Redis Port                     | 6379                   |
-| REDIS_USER       | Redis User                     | default                |
-| REDIS_PASSWORD   | Redis Password                 | nostr_ts_relay         |
-| NOSTR_CONFIG_DIR | Configuration directory        | <project_root>/.nostr/ |
-| DEBUG            | Debugging filter               |                        |
+| Name                  | Description                    | Default                |
+|-----------------------|--------------------------------|------------------------|
+| RELAY_PORT            | Relay's server port            | 8008                   |
+| WORKER_COUNT          | Number of workers override     | No. of available CPUs  |
+| DB_HOST               | PostgresSQL Hostname           |                        |
+| DB_PORT               | PostgreSQL Port                | 5432                   |
+| DB_USER               | PostgreSQL Username            | nostr_ts_relay         |
+| DB_PASSWORD           | PostgreSQL Password            | nostr_ts_relay         |
+| DB_NAME               | PostgreSQL Database name       | nostr_ts_relay         |
+| DB_MIN_POOL_SIZE      | Min. connections per worker    | 16                     |
+| DB_MAX_POOL_SIZE      | Max. connections per worker    | 32                     |
+| TOR_HOST              | Tor Hostname                   |                        |
+| TOR_CONTROL_PORT      | Tor control Port               | 9051                   |
+| TOR_PASSWORD          | Tor control password           | nostr_ts_relay         |
+| HIDDEN_SERVICE_PORT   | Tor hidden service port        | 80                     |
+| REDIS_HOST            |                                |                        |
+| REDIS_PORT            | Redis Port                     | 6379                   |
+| REDIS_USER            | Redis User                     | default                |
+| REDIS_PASSWORD        | Redis Password                 | nostr_ts_relay         |
+| NOSTR_CONFIG_DIR      | Configuration directory        | <project_root>/.nostr/ |
+| DEBUG                 | Debugging filter               |                        |
 
 # Settings
 
