@@ -10,7 +10,6 @@ exports.up = function (knex) {
     table.text('description')
     table.datetime('confirmed_at', { useTz: false, precision: 3 })
     table.datetime('expires_at', { useTz: false, precision: 3 })
-    table.timestamp('updated_at', { useTz: false })
     table.timestamps(true, true, false)
   })
 }
