@@ -9,9 +9,9 @@ import { ISettings } from '../@types/settings'
 
 const debug = createLogger('settings')
 
-const FileType = {
-  yaml: 'yaml',
-  json: 'json',
+export enum SettingsFileTypes {
+  yaml = 'yaml',
+  json = 'json',
 }
 
 export class SettingsStatic {
@@ -40,28 +40,25 @@ export class SettingsStatic {
     )
   }
 
-  public static settingsFileType(path) {
+  public static settingsFileType(path: string): SettingsFileTypes | undefined {
     const files: string[] = fs.readdirSync(path)
-    const filteredFiles = files ? files.filter(fn => fn.startsWith('settings')) : []
-    if (filteredFiles.length) {
-      const extension = extname(filteredFiles.pop())
-      return FileType[extension]
-    } else {
-      return null
+    const filteredFile = files.find(fn => fn.startsWith('settings'))
+    if (filteredFile) {
+      const extension = extname(filteredFile)
+      return SettingsFileTypes[extension]
     }
   }
 
-
-  public static loadSettings(path: string, fileType) {
+  public static loadSettings(path: string, fileType: SettingsFileTypes) {
     debug('loading settings from %s', path)
 
     switch (fileType) {
-      case FileType.json: {
+      case SettingsFileTypes.json: {
         console.warn('settings.json is deprecated, please use a yaml file based on resources/default-settings.yaml')
-        return this.loadAndParseJsonFile(path)
+        return SettingsStatic.loadAndParseJsonFile(path)
       }
-      case FileType.yaml: {
-        return this.loadAndParseYamlFile(path)
+      case SettingsFileTypes.yaml: {
+        return SettingsStatic.loadAndParseYamlFile(path)
       }
       default: {
         throw new Error('settings file was missing or did not contain .yaml or .json extensions.')
@@ -83,7 +80,7 @@ export class SettingsStatic {
     const fileType = SettingsStatic.settingsFileType(basePath)
     const settingsFilePath = `${basePath}/settings.${fileType}`
 
-    const defaults = SettingsStatic.loadSettings(defaultsFilePath, FileType.yaml)
+    const defaults = SettingsStatic.loadSettings(defaultsFilePath, SettingsFileTypes.yaml)
 
     try {
 

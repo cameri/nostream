@@ -3,7 +3,7 @@ import fs from 'fs'
 import { join } from 'path'
 import Sinon from 'sinon'
 
-import { SettingsStatic } from '../../../src/utils/settings'
+import { SettingsFileTypes, SettingsStatic } from '../../../src/utils/settings'
 
 describe('SettingsStatic', () => {
   describe('.getSettingsFilePath', () => {
@@ -137,7 +137,7 @@ describe('SettingsStatic', () => {
     it('loads settings from given path', () => {
       readFileSyncStub.returns('"content"')
 
-      expect(SettingsStatic.loadSettings('/some/path', 'yaml')).to.equal('content')
+      expect(SettingsStatic.loadSettings('/some/path', SettingsFileTypes.yaml)).to.equal('content')
 
       expect(readFileSyncStub).to.have.been.calledOnceWithExactly(
         '/some/path',
@@ -159,7 +159,7 @@ describe('SettingsStatic', () => {
     let sandbox: Sinon.SinonSandbox
 
     beforeEach(() => {
-      SettingsStatic._settings = undefined
+      SettingsStatic._settings = undefined as any
 
       sandbox = Sinon.createSandbox()
 
@@ -221,7 +221,7 @@ describe('SettingsStatic', () => {
       existsSyncStub.returns(true)
       readdirSyncStub.returns(['settings.yaml'])
       settingsFileTypeStub.returns('yaml')
-      
+
 
       expect(SettingsStatic.createSettings()).to.be.an('object')
 
