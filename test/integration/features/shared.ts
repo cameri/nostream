@@ -45,6 +45,8 @@ BeforeAll({ timeout: 1000 }, async function () {
     assocPath( ['limits', 'event', 'createdAt', 'maxPositiveDelta'], 0),
     assocPath( ['limits', 'message', 'rateLimits'], []),
     assocPath( ['limits', 'event', 'rateLimits'], []),
+    assocPath( ['limits', 'invoice', 'rateLimits'], []),
+    assocPath( ['limits', 'connection', 'rateLimits'], []),
   )(settings) as any
 
   worker = workerFactory()
