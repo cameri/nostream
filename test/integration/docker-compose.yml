@@ -19,7 +19,7 @@ services:
       NOSTR_CONFIG_DIR: /code
     volumes:
       - ../../package.json:/code/package.json
-      - ../../resources/default-settings.json:/code/resources/default-settings.json
+      - ../../resources:/code/resources
       - ../../src:/code/src
       - ../../test/integration:/code/test/integration
       - ../../cucumber.js:/code/cucumber.js
