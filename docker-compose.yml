@@ -72,7 +72,7 @@ services:
     container_name: cache
     volumes:
       - cache:/data
-    command: redis-server --save 20 1 --loglevel warning --requirepass nostr_ts_relay
+    command: redis-server --loglevel warning --requirepass nostr_ts_relay
     networks:
       default:
         ipv4_address: 10.10.10.4
