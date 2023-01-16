@@ -19,13 +19,6 @@ export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>>
   public async execute(event: Event): Promise<void> {
     debug('received delete event: %o', event)
 
-    const count = await this.eventRepository.create(event)
-    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, (count) ? '' : 'duplicate:'))
-
-    if (count) {
-      this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
-    }
-
     const isValidETag = (tag: Tag) =>
       tag.length >= 2
       && tag[0] === EventTags.Event
@@ -49,6 +42,13 @@ export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>>
           eventIdsToDelete,
         )
       }
+    }
+
+    const count = await this.eventRepository.create(event)
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, (count) ? '' : 'duplicate:'))
+
+    if (count) {
+      this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
     }
   }
 }

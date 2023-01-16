@@ -63,7 +63,6 @@ Feature: NIP-01
     Given someone called Alice
     And someone called Bob
     And someone called Charlie
-
     When Bob sends a text_note event with content "I'm Bob"
     And Bob subscribes to author Bob
     And Bob receives a text_note event from Bob with content "I'm Bob"
@@ -73,6 +72,7 @@ Feature: NIP-01
     And Alice subscribes to text_note events from Bob and set_metadata events from Charlie
     Then Alice receives 2 events from Bob and Charlie
 
+  @test
   Scenario: Alice is interested in Bob's events from back in November
     Given someone called Alice
     And someone called Bob
@@ -92,5 +92,3 @@ Feature: NIP-01
     And Bob receives a text_note event from Bob with content "Three"
     When Alice subscribes to author Bob with a limit of 2
     Then Alice receives 2 text_note events from Bob and EOSE
-
-

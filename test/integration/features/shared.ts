@@ -8,16 +8,16 @@ import {
   When,
   World,
 } from '@cucumber/cucumber'
+import { assocPath, pipe } from 'ramda'
 import { fromEvent, map, Observable, ReplaySubject, Subject, takeUntil } from 'rxjs'
 import WebSocket, { MessageEvent } from 'ws'
-import { assocPath } from 'ramda'
 
 import { connect, createIdentity, createSubscription, sendEvent } from './helpers'
 import { AppWorker } from '../../../src/app/worker'
-//import { CacheClient } from '../../../src/@types/cache'
+import { CacheClient } from '../../../src/@types/cache'
 import { DatabaseClient } from '../../../src/@types/base'
 import { Event } from '../../../src/@types/event'
-//import { getCacheClient } from '../../../src/cache/client'
+import { getCacheClient } from '../../../src/cache/client'
 import { getDbClient } from '../../../src/database/client'
 import { SettingsStatic } from '../../../src/utils/settings'
 import { workerFactory } from '../../../src/factories/worker-factory'
@@ -27,25 +27,32 @@ export const isDraft = Symbol('draft')
 let worker: AppWorker
 
 let dbClient: DatabaseClient
-//let cacheClient: CacheClient
+let cacheClient: CacheClient
 
 export const streams = new WeakMap<WebSocket, Observable<unknown>>()
 
 BeforeAll({ timeout: 1000 }, async function () {
   process.env.RELAY_PORT = '18808'
+  cacheClient = getCacheClient()
   dbClient = getDbClient()
   await dbClient.raw('SELECT 1=1')
+  await cacheClient.connect()
+  await cacheClient.ping()
 
-  const { limits } = SettingsStatic.createSettings()
+  const settings = SettingsStatic.createSettings()
 
-  assocPath(['event', 'createdAt', 'maxPositiveDelta'], 0)(limits)
+  SettingsStatic._settings = pipe(
+    assocPath( ['limits', 'event', 'createdAt', 'maxPositiveDelta'], 0),
+    assocPath( ['limits', 'message', 'rateLimits'], []),
+    assocPath( ['limits', 'event', 'rateLimits'], []),
+  )(settings) as any
 
   worker = workerFactory()
   worker.run()
 })
 
 AfterAll(async function() {
-  worker.close(async () => dbClient.destroy())
+  worker.close(async () => Promise.all([cacheClient.disconnect(), dbClient.destroy()]))
 })
 
 Before(function () {
@@ -67,9 +74,12 @@ After(async function () {
 
   const dbClient = getDbClient()
 
-  for (const identity of Object.values(this.parameters.identities as Record<string, { pubkey: string }>)) {
-    await dbClient('events').where({ event_pubkey: Buffer.from(identity.pubkey, 'hex') }).del()
-  }
+  await dbClient('events')
+    .where({
+      event_pubkey: Object
+        .values(this.parameters.identities as Record<string, { pubkey: string }>)
+        .map(({ pubkey }) => Buffer.from(pubkey, 'hex')),
+    }).del()
   this.parameters.identities = {}
 })
 

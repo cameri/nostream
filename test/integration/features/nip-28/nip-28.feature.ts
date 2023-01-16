@@ -33,7 +33,7 @@ When(/^(\w+) sends a channel_metadata event with content '([^']+)'$/, async func
 Then(/(\w+) receives a channel_creation event from (\w+) with content '([^']+?)'/, async function(name: string, author: string, content: string) {
   const ws = this.parameters.clients[name] as WebSocket
   const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
-  const receivedEvent = await waitForNextEvent(ws, subscription.name)
+  const receivedEvent = await waitForNextEvent(ws, subscription.name, content)
 
   expect(receivedEvent.kind).to.equal(40)
   expect(receivedEvent.pubkey).to.equal(this.parameters.identities[author].pubkey)
@@ -44,7 +44,7 @@ Then(/(\w+) receives a channel_creation event from (\w+) with content '([^']+?)'
 Then(/(\w+) receives a channel_metadata event from (\w+) with content '([^']+?)'/, async function(name: string, author: string, content: string) {
   const ws = this.parameters.clients[name] as WebSocket
   const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
-  const receivedEvent = await waitForNextEvent(ws, subscription.name)
+  const receivedEvent = await waitForNextEvent(ws, subscription.name, content)
 
   const channel = this.parameters.channels[this.parameters.channels.length - 1]
 

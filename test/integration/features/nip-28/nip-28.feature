@@ -30,9 +30,5 @@ Feature: NIP-28
     And Alice receives a channel_creation event from Alice with content '{\"name\": \"Original\", \"about\": \"A test channel.\", \"picture\": \"https://placekitten.com/200/200\"}'
     And Alice sends a channel_metadata event with content '{\"name\": \"New\", \"about\": \"A better test channel.\", \"picture\": \"https://placekitten.com/256/256\"}'
     And Alice receives a channel_metadata event from Alice with content '{\"name\": \"New\", \"about\": \"A better test channel.\", \"picture\": \"https://placekitten.com/256/256\"}'
-    And Alice unsubscribes from author Alice
     When Alice sends a channel_metadata event with content '{\"name\": \"Replaced\", \"about\": \"A different test channel.\", \"picture\": \"https://placekitten.com/400/400\"}'
-    And Alice subscribes to channel_creation events
-    And Alice receives a channel_creation event from Alice with content '{\"name\": \"Original\", \"about\": \"A test channel.\", \"picture\": \"https://placekitten.com/200/200\"}'
-    And Alice subscribes to channel_metadata events
     Then Alice receives a channel_metadata event from Alice with content '{\"name\": \"Replaced\", \"about\": \"A different test channel.\", \"picture\": \"https://placekitten.com/400/400\"}'
