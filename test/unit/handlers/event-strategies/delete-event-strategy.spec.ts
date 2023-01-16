@@ -22,8 +22,8 @@ describe('DeleteEventStrategy', () => {
     id: 'id',
     pubkey: 'pubkey',
     tags: [
-      [EventTags.Event, 'event id 1'],
-      [EventTags.Event, 'event id 2'],
+      [EventTags.Event, '00000000'.repeat(8)],
+      [EventTags.Event, 'ffffffff'.repeat(8)],
     ],
   } as any
   let webSocket: IWebSocketAdapter
@@ -32,6 +32,7 @@ describe('DeleteEventStrategy', () => {
   let webSocketEmitStub: Sinon.SinonStub
   let eventRepositoryCreateStub: Sinon.SinonStub
   let eventRepositoryDeleteByPubkeyAndIdsStub: Sinon.SinonStub
+  let eventRepositoryInsertStubsStub: Sinon.SinonStub
 
   let strategy: IEventStrategy<Event, Promise<void>>
 
@@ -42,6 +43,7 @@ describe('DeleteEventStrategy', () => {
 
     eventRepositoryCreateStub = sandbox.stub(EventRepository.prototype, 'create')
     eventRepositoryDeleteByPubkeyAndIdsStub = sandbox.stub(EventRepository.prototype, 'deleteByPubkeyAndIds')
+    eventRepositoryInsertStubsStub = sandbox.stub(EventRepository.prototype, 'insertStubs')
 
     webSocketEmitStub = sandbox.stub()
     webSocket = {
@@ -64,12 +66,27 @@ describe('DeleteEventStrategy', () => {
       expect(eventRepositoryCreateStub).to.have.been.calledOnceWithExactly(event)
     })
 
+    it('inserts stubs', async () => {
+      await strategy.execute(event)
+
+      expect(eventRepositoryInsertStubsStub).to.have.been.calledOnceWithExactly(
+        event.pubkey,
+        [
+          '0000000000000000000000000000000000000000000000000000000000000000',
+          'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        ]
+      )
+    })
+
     it('deletes events if it has e tags', async () => {
       await strategy.execute(event)
 
       expect(eventRepositoryDeleteByPubkeyAndIdsStub).to.have.been.calledOnceWithExactly(
         event.pubkey,
-        ['event id 1', 'event id 2'],
+        [
+          '0000000000000000000000000000000000000000000000000000000000000000',
+          'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        ]
       )
     })
 
@@ -117,6 +134,7 @@ describe('DeleteEventStrategy', () => {
 
       expect(eventRepositoryCreateStub).to.have.been.calledOnceWithExactly(event)
       expect(eventRepositoryDeleteByPubkeyAndIdsStub).not.to.have.been.called
+      expect(eventRepositoryInsertStubsStub).to.not.have.been.called
       expect(webSocketEmitStub).not.to.have.been.called
     })
   })

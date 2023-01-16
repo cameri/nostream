@@ -437,6 +437,24 @@ describe('EventRepository', () => {
     })
   })
 
+  describe('insertStubs', () => {
+    let clock: sinon.SinonFakeTimers
+
+    beforeEach(() => {
+      clock = sinon.useFakeTimers(1673835425)
+    })
+
+    afterEach(() => {
+      clock.restore()
+    })
+
+    it('insert stubs by pubkey & event ids', () => {
+      const query = repository.insertStubs('001122', ['aabbcc', 'ddeeff']).toString()
+
+      expect(query).to.equal('insert into "events" ("event_content", "event_created_at", "event_deduplication", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags") values (\'\', 1673835, \'["001122",5]\', NULL, X\'aabbcc\', 5, X\'001122\', X\'\', \'[]\'), (\'\', 1673835, \'["001122",5]\', NULL, X\'ddeeff\', 5, X\'001122\', X\'\', \'[]\') on conflict do nothing')
+    })
+  })
+
   describe('deleteByPubkeyAndIds', () => {
     it('marks event as deleted by pubkey & event_id if not deleted', () => {
       const query = repository.deleteByPubkeyAndIds('001122', ['aabbcc', 'ddeeff']).toString()

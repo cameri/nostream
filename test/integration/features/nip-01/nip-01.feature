@@ -8,42 +8,48 @@ Feature: NIP-01
 
   Scenario: Alice posts a set_metadata event
     Given someone called Alice
-    And Alice subscribes to author Alice
     When Alice sends a set_metadata event
+    And Alice subscribes to author Alice
+    Then Alice receives a set_metadata event from Alice
+
+  Scenario: Alice reposts a set_metadata event
+    Given someone called Alice
+    When Alice sends a set_metadata event
+    And Alice subscribes to author Alice
     Then Alice receives a set_metadata event from Alice
 
   Scenario: Alice posts a text_note event
     Given someone called Alice
-    And Alice subscribes to author Alice
     When Alice sends a text_note event with content "hello world"
+    And Alice subscribes to author Alice
     Then Alice receives a text_note event from Alice with content "hello world"
 
   Scenario: Alice posts a recommend_server event
     Given someone called Alice
-    And Alice subscribes to author Alice
     When Alice sends a recommend_server event with content "https://nostr-relay.wlvs.space"
+    And Alice subscribes to author Alice
     Then Alice receives a recommend_server event from Alice with content "https://nostr-relay.wlvs.space"
 
   Scenario: Alice can't post a text_note event with an invalid signature
     Given someone called Alice
-    When Alice sends a text_note event with invalid signature
-    Then Alice receives an unsuccessful result
+    When Alice drafts a text_note event with invalid signature
+    Then Alice sends their last draft event unsuccessfully
 
   Scenario: Alice and Bob exchange text_note events
     Given someone called Alice
     And someone called Bob
-    And Alice subscribes to author Bob
-    And Bob subscribes to author Alice
     When Bob sends a text_note event with content "hello alice"
+    And Alice subscribes to author Bob
     Then Alice receives a text_note event from Bob with content "hello alice"
     When Alice sends a text_note event with content "hello bob"
+    And Bob subscribes to author Alice
     Then Bob receives a text_note event from Alice with content "hello bob"
 
   Scenario: Alice is interested in text_note events
     Given someone called Alice
     And someone called Bob
-    And Alice subscribes to text_note events
     When Bob sends a text_note event with content "hello nostr"
+    And Alice subscribes to text_note events
     Then Alice receives a text_note event from Bob with content "hello nostr"
 
   Scenario: Alice is interested in the #NostrNovember hashtag
@@ -57,15 +63,14 @@ Feature: NIP-01
     Given someone called Alice
     And someone called Bob
     And someone called Charlie
-    And Bob subscribes to author Bob
-    And Charlie subscribes to author Charlie
 
     When Bob sends a text_note event with content "I'm Bob"
+    And Bob subscribes to author Bob
     And Bob receives a text_note event from Bob with content "I'm Bob"
     And Charlie sends a set_metadata event
+    And Charlie subscribes to author Charlie
     And Charlie receives a set_metadata event from Charlie
     And Alice subscribes to text_note events from Bob and set_metadata events from Charlie
-
     Then Alice receives 2 events from Bob and Charlie
 
   Scenario: Alice is interested in Bob's events from back in November

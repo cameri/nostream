@@ -151,9 +151,10 @@ describe('DelegatedEventMessageHandler', () => {
     })
 
     it('does not reject if strategy rejects', async () => {
+      const error = new Error('mistakes were made')
       isEventValidStub.returns(undefined)
       canAcceptEventStub.returns(undefined)
-      strategyExecuteStub.rejects()
+      strategyExecuteStub.rejects(error)
 
       return expect(handler.handleMessage(message)).to.eventually.be.fulfilled
     })

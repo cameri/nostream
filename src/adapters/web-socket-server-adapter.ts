@@ -57,8 +57,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       if (!propEq('readyState', OPEN)(webSocket)) {
         return
       }
-      const webSocketAdapter = this.webSocketsAdapters.get(webSocket)
-      debug('broadcasting event to client %s: %o', webSocketAdapter.getClientId(), event)
+      const webSocketAdapter = this.webSocketsAdapters.get(webSocket) as IWebSocketAdapter
       webSocketAdapter.emit(WebSocketAdapterEvent.Event, event)
     })
   }
@@ -73,9 +72,10 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   private onHeartbeat() {
-    this.webSocketServer.clients.forEach((webSocket) =>
-      this.webSocketsAdapters.get(webSocket).emit(WebSocketAdapterEvent.Heartbeat)
-    )
+    this.webSocketServer.clients.forEach((webSocket) => {
+      const webSocketAdapter = this.webSocketsAdapters.get(webSocket) as IWebSocketAdapter
+      webSocketAdapter.emit(WebSocketAdapterEvent.Heartbeat)
+    })
   }
 
   protected onClose() {
