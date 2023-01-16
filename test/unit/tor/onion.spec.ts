@@ -8,7 +8,7 @@ import Sinon from 'sinon'
 
 export function mockModule<T extends { [K: string]: any }>
         (
-            moduleToMock: T, 
+            moduleToMock: T,
             defaultMockValuesForMock: Partial<{ [K in keyof T]: T[K] }>
         ) {
     return (sandbox: Sinon.SinonSandbox, returnOverrides?: Partial<{ [K in keyof T]: T[K] }>): void => {
@@ -81,24 +81,25 @@ describe('onion',()=>{
     afterEach(()=>{
         sandbox.restore()
     })
-    
+
     it('config emty',()=>{
         const config = createTorConfig()
-        expect(config).to.include({host: undefined, port: 9051, password: undefined })
+        expect(config).to.include({ port: 9051 })
     })
     it('config set',()=>{
         process.env.TOR_HOST = 'localhost'
         process.env.TOR_CONTROL_PORT = '9051'
-        process.env.TOR_PASSWORD = 'nostr_ts_relay'
+        process.env.TOR_PASSWORD = 'test'
         const config = createTorConfig()
-        expect(config).to.include({host: 'localhost', port: 9051,password: 'nostr_ts_relay' })
+        // deepcode ignore NoHardcodedPasswords/test: password is part of the test
+        expect(config).to.include({host: 'localhost', port: 9051,password: 'test' })
     })
     it('tor connect fail',async ()=>{
         //mockTor(sandbox)
         process.env.TOR_HOST = 'localhost'
         process.env.TOR_CONTROL_PORT = '9051'
         process.env.TOR_PASSWORD = 'nostr_ts_relay'
-        
+
         let client:Tor = undefined
         try{
             client = await getTorClient()

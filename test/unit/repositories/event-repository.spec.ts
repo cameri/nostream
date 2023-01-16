@@ -43,7 +43,7 @@ describe('EventRepository', () => {
     })
 
     it('throws error if filters is not an array', () => {
-      expect(() => repository.findByFilters(null)).to.throw(Error, 'Filters cannot be empty')
+      expect(() => repository.findByFilters('' as any)).to.throw(Error, 'Filters cannot be empty')
     })
 
     it('throws error if filters is empty', () => {
@@ -451,7 +451,7 @@ describe('EventRepository', () => {
     it('insert stubs by pubkey & event ids', () => {
       const query = repository.insertStubs('001122', ['aabbcc', 'ddeeff']).toString()
 
-      expect(query).to.equal('insert into "events" ("event_content", "event_created_at", "event_deduplication", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags") values (\'\', 1673835, \'["001122",5]\', NULL, X\'aabbcc\', 5, X\'001122\', X\'\', \'[]\'), (\'\', 1673835, \'["001122",5]\', NULL, X\'ddeeff\', 5, X\'001122\', X\'\', \'[]\') on conflict do nothing')
+      expect(query).to.equal('insert into "events" ("deleted_at", "event_content", "event_created_at", "event_deduplication", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags") values (\'1970-01-20 03:57:15.425\', \'\', 1673835, \'["001122",5]\', NULL, X\'aabbcc\', 5, X\'001122\', X\'\', \'[]\'), (\'1970-01-20 03:57:15.425\', \'\', 1673835, \'["001122",5]\', NULL, X\'ddeeff\', 5, X\'001122\', X\'\', \'[]\') on conflict do nothing')
     })
   })
 

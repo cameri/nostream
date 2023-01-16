@@ -231,18 +231,21 @@ export class EventRepository implements IEventRepository {
   }
 
   public insertStubs(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
+    debug('inserting stubs for %s: %o', pubkey, eventIdsToDelete)
+    const date = new Date()
     return this.dbClient('events').insert(
       eventIdsToDelete.map(
         applySpec({
           event_id: pipe(identity, toBuffer),
           event_pubkey: pipe(always(pubkey), toBuffer),
-          event_created_at: always(Math.floor(Date.now() / 1000)),
+          event_created_at: always(Math.floor(date.getTime() / 1000)),
           event_kind: always(5),
           event_tags: always('[]'),
           event_content: always(''),
           event_signature: pipe(always(''), toBuffer),
           event_delegator: always(null),
           event_deduplication: pipe(always([pubkey, 5]), toJSON),
+          deleted_at: always(date),
         })
       )
     )
