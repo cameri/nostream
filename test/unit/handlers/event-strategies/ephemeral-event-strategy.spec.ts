@@ -8,6 +8,7 @@ import { EphemeralEventStrategy } from '../../../../src/handlers/event-strategie
 import { Event } from '../../../../src/@types/event'
 import { IEventStrategy } from '../../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../../src/@types/adapters'
+import { MessageType } from '../../../../src/@types/messages'
 import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
 
 const { expect } = chai
@@ -39,7 +40,16 @@ describe('EphemeralEventStrategy', () => {
     it('broadcasts event', async () => {
       await strategy.execute(event)
 
-      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
+      expect(webSocketEmitStub.firstCall).to.have.been.calledWithExactly(
+        WebSocketAdapterEvent.Message,
+        [
+          MessageType.OK,
+          event.id,
+          true,
+          '',
+        ]
+      )
+      expect(webSocketEmitStub.secondCall).to.have.been.calledWithExactly(
         WebSocketAdapterEvent.Broadcast,
         event
       )

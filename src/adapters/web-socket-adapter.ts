@@ -41,7 +41,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.alive = true
     this.subscriptions = new Map()
 
-    this.clientId = Buffer.from(this.request.headers['sec-websocket-key'], 'base64').toString('hex')
+    this.clientId = Buffer.from(this.request.headers['sec-websocket-key'] as string, 'base64').toString('hex')
     const remoteIpHeader = this.settings().network?.remote_ip_header ?? 'x-forwarded-for'
     this.clientAddress = (this.request.headers[remoteIpHeader] ?? this.request.socket.remoteAddress) as string
 
@@ -88,7 +88,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public onBroadcast(event: Event): void {
     this.webSocketServer.emit(WebSocketServerAdapterEvent.Broadcast, event)
-    if (cluster.isWorker) {
+    if (cluster.isWorker && typeof process.send === 'function') {
       process.send({
         eventName: WebSocketServerAdapterEvent.Broadcast,
         event,
@@ -99,8 +99,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   public onSendEvent(event: Event): void {
     this.subscriptions.forEach((filters, subscriptionId) => {
       if (
-        filters.map(isEventMatchingFilter).some((Matches) => Matches(event))
+        filters.map(isEventMatchingFilter).some((isMatch) => isMatch(event))
       ) {
+        debug('sending event to client %s: %o', this.clientId, event)
         this.sendMessage(createOutgoingEventMessage(subscriptionId, event))
       }
     })
@@ -134,7 +135,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   private async onClientMessage(raw: Buffer) {
     let abortable = false
-    let messageHandler: IMessageHandler & IAbortable
+    let messageHandler: IMessageHandler & IAbortable | undefined = undefined
     try {
       if (await this.isRateLimited(this.clientAddress)) {
         this.sendMessage(createNoticeMessage('rate limited'))
@@ -144,7 +145,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf8')))
 
       messageHandler = this.createMessageHandler([message, this]) as IMessageHandler & IAbortable
-      abortable = typeof messageHandler?.abort === 'function'
+      if (!messageHandler) {
+        debug('unhandled message: no handler found: %o', message)
+        return
+      }
+
+      abortable = typeof messageHandler.abort === 'function'
 
       if (abortable) {
         const handlers = abortableMessageHandlers.get(this.client) ?? []
@@ -152,7 +158,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         abortableMessageHandlers.set(this.client, handlers)
       }
 
-      await messageHandler?.handleMessage(message)
+      await messageHandler.handleMessage(message)
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
@@ -169,11 +175,13 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         console.error('unable to handle message', error)
       }
     } finally {
-      if (abortable) {
+      if (abortable && messageHandler) {
         const handlers = abortableMessageHandlers.get(this.client)
-        const index = handlers.indexOf(messageHandler)
-        if (index >= 0) {
-          handlers.splice(index, 1)
+        if (handlers) {
+          const index = handlers.indexOf(messageHandler)
+          if (index >= 0) {
+            handlers.splice(index, 1)
+          }
         }
       }
     }
@@ -185,7 +193,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       ipWhitelist = [],
     } = this.settings().limits?.message ?? {}
 
-    if (ipWhitelist.includes(client)) {
+    if (!Array.isArray(rateLimits) || !rateLimits.length || ipWhitelist.includes(client)) {
       return false
     }
 

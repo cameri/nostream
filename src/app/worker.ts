@@ -41,6 +41,6 @@ export class AppWorker implements IRunnable {
 
   public close(callback?: () => void) {
     debug('closing')
-    this.adapter.close(callback)
+    this.adapter.close(callback as () => void)
   }
 }

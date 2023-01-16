@@ -1,30 +1,31 @@
 import * as secp256k1 from '@noble/secp256k1'
 import { createHash, createHmac, Hash } from 'crypto'
-import WebSocket, { RawData } from 'ws'
+import { Observable } from 'rxjs'
+import WebSocket from 'ws'
 
+import { CommandResult, MessageType, OutgoingMessage } from '../../../src/@types/messages'
 import { Event } from '../../../src/@types/event'
-import { MessageType } from '../../../src/@types/messages'
 import { serializeEvent } from '../../../src/utils/event'
+import { streams } from './shared'
 import { SubscriptionFilter } from '../../../src/@types/subscription'
 
 
 secp256k1.utils.sha256Sync = (...messages: Uint8Array[]) =>
   messages.reduce((hash: Hash, message: Uint8Array) => hash.update(message),  createHash('sha256')).digest()
 
-export async function connect(_name: string) {
+export async function connect(_name: string): Promise<WebSocket> {
   const host = 'ws://localhost:18808'
   const ws = new WebSocket(host)
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<WebSocket>((resolve, reject) => {
     ws
       .once('open', () => {
-        resolve()
+        resolve(ws)
       })
       .once('error', reject)
       .once('close', () => {
         ws.removeAllListeners()
       })
   })
-  return ws
 }
 
 let eventCount = 0
@@ -71,87 +72,80 @@ export async function createSubscription(
   subscriptionFilters: SubscriptionFilter[],
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const message = JSON.stringify([
+    const data = JSON.stringify([
       'REQ',
       subscriptionName,
       ...subscriptionFilters,
     ])
 
-    ws.send(message, (error?: Error) => {
+    ws.send(data, (error?: Error) => {
       if (error) {
         reject(error)
-        return
+      } else {
+        resolve()
       }
-      resolve()
     })
   })
 }
 
 export async function waitForEOSE(ws: WebSocket, subscription: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    function cleanup() {
-      ws.removeListener('message', onMessage)
-      ws.removeListener('error', onError)
-    }
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
 
-    function onError(error: Error) {
-      reject(error)
-      cleanup()
-    }
-    ws.once('error', onError)
-
-    function onMessage(raw: RawData) {
-      const message = JSON.parse(raw.toString('utf8'))
+    const sub = observable.subscribe((message: OutgoingMessage) => {
       if (message[0] === MessageType.EOSE && message[1] === subscription) {
         resolve()
-        cleanup()
+        sub.unsubscribe()
       } else if (message[0] === MessageType.NOTICE) {
         reject(new Error(message[1]))
-        cleanup()
+        sub.unsubscribe()
       }
-    }
-
-    ws.on('message', onMessage)
-  })
-}
-
-export async function sendEvent(ws: WebSocket, event: Event) {
-  return new Promise<void>((resolve, reject) => {
-    ws.send(JSON.stringify(['EVENT', event]), (err) => {
-      if (err) {
-        reject(err)
-        return
-      }
-      resolve()
     })
   })
 }
 
-export async function waitForNextEvent(ws: WebSocket, subscription: string): Promise<Event> {
+export async function sendEvent(ws: WebSocket, event: Event, successful = true) {
+  return new Promise<OutgoingMessage>((resolve, reject) => {
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
+
+    const sub = observable.subscribe((message: OutgoingMessage) => {
+      if (message[0] === MessageType.OK && message[1] === event.id) {
+        if (message[2] === successful) {
+          sub.unsubscribe()
+          resolve(message)
+        } else {
+          sub.unsubscribe()
+          reject(new Error(message[3]))
+        }
+      } else if (message[0] === MessageType.NOTICE) {
+        sub.unsubscribe()
+        reject(new Error(message[1]))
+      }
+    })
+
+    ws.send(JSON.stringify(['EVENT', event]), (err) => {
+      if (err) {
+        sub.unsubscribe()
+        reject(err)
+      }
+    })
+  })
+}
+
+export async function waitForNextEvent(ws: WebSocket, subscription: string, content?: string): Promise<Event> {
   return new Promise((resolve, reject) => {
-    ws.on('message', onMessage)
-    ws.once('error', onError)
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
 
-    function cleanup() {
-      ws.removeListener('message', onMessage)
-      ws.removeListener('error', onError)
-    }
-
-    function onError(error: Error) {
-      reject(error)
-      cleanup()
-    }
-
-    function onMessage(raw: RawData) {
-      const message = JSON.parse(raw.toString('utf8'))
+    observable.subscribe((message: OutgoingMessage) => {
       if (message[0] === MessageType.EVENT && message[1] === subscription) {
-        resolve(message[2])
-        cleanup()
+        const event = message[2] as Event
+        if (typeof content !== 'string' || event.content === content) {
+          resolve(message[2])
+        }
       } else if (message[0] === MessageType.NOTICE) {
         reject(new Error(message[1]))
-        cleanup()
       }
-    }
+    })
   })
 }
 
@@ -164,27 +158,15 @@ export async function waitForEventCount(
   const events: Event[] = []
 
   return new Promise((resolve, reject) => {
-    ws.on('message', onMessage)
-    ws.once('error', onError)
-    function cleanup() {
-      ws.removeListener('message', onMessage)
-      ws.removeListener('error', onError)
-    }
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
 
-    function onError(error: Error) {
-      reject(error)
-      cleanup()
-    }
-    function onMessage(raw: RawData) {
-      const message = JSON.parse(raw.toString('utf8'))
+    observable.subscribe((message: OutgoingMessage) => {
       if (message[0] === MessageType.EVENT && message[1] === subscription) {
         events.push(message[2])
         if (!eose && events.length === count) {
           resolve(events)
-          cleanup()
         } else if (events.length > count) {
           reject(new Error(`Expected ${count} but got ${events.length} events`))
-          cleanup()
         }
       } else if (message[0] === MessageType.EOSE && message[1] === subscription) {
         if (!eose) {
@@ -194,61 +176,33 @@ export async function waitForEventCount(
         } else {
           resolve(events)
         }
-        cleanup()
       } else if (message[0] === MessageType.NOTICE) {
         reject(new Error(message[1]))
-        cleanup()
       }
-    }
+    })
   })
 }
 
-export async function waitForNotice(ws: WebSocket): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    function cleanup() {
-      ws.removeListener('message', onMessage)
-      ws.removeListener('error', onError)
-    }
+export async function waitForNotice(ws: WebSocket): Promise<string> {
+  return new Promise<string>((resolve) => {
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
 
-    function onError(error: Error) {
-      reject(error)
-      cleanup()
-    }
-    ws.once('error', onError)
-
-    function onMessage(raw: RawData) {
-      const message = JSON.parse(raw.toString('utf8'))
+    observable.subscribe((message: OutgoingMessage) => {
       if (message[0] === MessageType.NOTICE) {
         resolve(message[1])
-        cleanup()
       }
-    }
-
-    ws.on('message', onMessage)
+    })
   })
 }
 
-export async function waitForCommand(ws: WebSocket): Promise<any> {
-  return new Promise<void>((resolve, reject) => {
-    function cleanup() {
-      ws.removeListener('message', onMessage)
-      ws.removeListener('error', onError)
-    }
+export async function waitForCommand(ws: WebSocket): Promise<CommandResult> {
+  return new Promise<CommandResult>((resolve) => {
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
 
-    function onError(error: Error) {
-      reject(error)
-      cleanup()
-    }
-    ws.once('error', onError)
-
-    function onMessage(raw: RawData) {
-      const message = JSON.parse(raw.toString('utf8'))
+    observable.subscribe((message: OutgoingMessage) => {
       if (message[0] === MessageType.OK) {
         resolve(message)
-        cleanup()
       }
-    }
-
-    ws.on('message', onMessage)
+    })
   })
 }

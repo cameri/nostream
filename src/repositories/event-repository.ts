@@ -10,6 +10,7 @@ import {
   forEach,
   forEachObjIndexed,
   groupBy,
+  identity,
   ifElse,
   invoker,
   is,
@@ -229,11 +230,32 @@ export class EventRepository implements IEventRepository {
     } as Promise<number>
   }
 
-  public deleteByPubkeyAndIds(pubkey: string, ids: EventId[]): Promise<number> {
-    debug('deleting events from %s: %o', pubkey, ids)
+  public insertStubs(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
+    return this.dbClient('events').insert(
+      eventIdsToDelete.map(
+        applySpec({
+          event_id: pipe(identity, toBuffer),
+          event_pubkey: pipe(always(pubkey), toBuffer),
+          event_created_at: always(Math.floor(Date.now() / 1000)),
+          event_kind: always(5),
+          event_tags: always('[]'),
+          event_content: always(''),
+          event_signature: pipe(always(''), toBuffer),
+          event_delegator: always(null),
+          event_deduplication: pipe(always([pubkey, 5]), toJSON),
+        })
+      )
+    )
+      .onConflict()
+      .ignore() as Promise<any>
+  }
+
+  public deleteByPubkeyAndIds(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
+    debug('deleting events from %s: %o', pubkey, eventIdsToDelete)
+
     return this.dbClient('events')
       .where('event_pubkey', toBuffer(pubkey))
-      .whereIn('event_id', map(toBuffer)(ids))
+      .whereIn('event_id', map(toBuffer)(eventIdsToDelete))
       .whereNull('deleted_at')
       .update({
         deleted_at: this.dbClient.raw('now()'),

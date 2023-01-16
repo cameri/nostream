@@ -1,4 +1,4 @@
-Feature: NIP-36 Event treatment
+Feature: NIP-16 Event treatment
   Scenario: Alice sends a replaceable event
     Given someone called Alice
     And Alice subscribes to author Alice

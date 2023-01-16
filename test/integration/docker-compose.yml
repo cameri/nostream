@@ -17,7 +17,7 @@ services:
       REDIS_USER: default
       REDIS_PASSWORD: nostr_ts_relay_test
       NOSTR_CONFIG_DIR: /code
-      DEBUG: knex:query,primary:event-repository
+      DEBUG: ""
     volumes:
       - ../../package.json:/code/package.json
       - ../../settings.sample.json:/code/settings.sample.json

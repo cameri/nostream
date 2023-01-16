@@ -89,10 +89,13 @@ describe('ReplaceableEventStrategy', () => {
       const error = new Error()
       eventRepositoryUpsertStub.rejects(error)
 
-      await expect(strategy.execute(event)).to.eventually.be.rejectedWith(error)
+      await strategy.execute(event)
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
-      expect(webSocketEmitStub).not.to.have.been.called
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
+        WebSocketAdapterEvent.Message,
+        ['OK', 'id', false, 'error: ']
+      )
     })
   })
 })

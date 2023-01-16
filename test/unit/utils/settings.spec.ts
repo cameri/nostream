@@ -70,7 +70,7 @@ describe('SettingsStatic', () => {
     let sandbox: Sinon.SinonSandbox
 
     beforeEach(() => {
-      SettingsStatic._settings = undefined
+      SettingsStatic._settings = undefined as any
 
       sandbox = Sinon.createSandbox()
 
