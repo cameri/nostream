@@ -245,7 +245,7 @@ export class EventRepository implements IEventRepository {
           event_signature: pipe(always(''), toBuffer),
           event_delegator: always(null),
           event_deduplication: pipe(always([pubkey, 5]), toJSON),
-          deleted_at: always(date),
+          deleted_at: always(date.toISOString()),
         })
       )
     )
