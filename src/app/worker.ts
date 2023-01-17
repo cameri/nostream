@@ -28,8 +28,11 @@ export class AppWorker implements IRunnable {
   }
 
   private onError(error: Error) {
-    debug('error: %o', error)
-    throw error
+    if (error.name === 'TypeError' && error.message === "Cannot read properties of undefined (reading '__knexUid')") {
+      console.error('Unable to acquire connection. Please increase DB_MAX_POOL_SIZE, ')
+      return
+    }
+    console.error('uncaught error:', error)
   }
 
   private onExit() {
