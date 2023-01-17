@@ -26,7 +26,7 @@ services:
       # DEBUG: "knex:query"
     user: node:node
     volumes:
-      - relay_data:/home/node/
+      - ${PWD}/.nostr:/home/node/
     ports:
       - 8008:8008
     depends_on:
@@ -126,6 +126,5 @@ networks:
         - subnet: 10.10.10.0/24
 
 volumes:
-  relay_data:
   cache:
   pgdata:
