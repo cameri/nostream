@@ -226,10 +226,10 @@ Run migrations (at least once and after pulling new changes):
   npm run db:migrate
   ```
 
-Create ~/.nostr folder:
+Create .nostr folder inside nostream project folder:
 
   ```
-  mkdir ~/.nostr
+  mkdir .nostr
   ```
 
 To start in development mode:
@@ -351,22 +351,30 @@ To see the integration test coverage report open `.coverage/integration/lcov-rep
 
 You can change the default folder by setting the `NOSTR_CONFIG_DIR` environment variable to a different path.
 
-Run nostream using one of the quick-start guides at least once and `~/.nostr/settings.json` will be created.
+Run nostream using one of the quick-start guides at least once and `nostream/.nostr/settings.json` will be created.
 Any changes made to the settings file will be read on the next start.
 
-A sample settings file is included at the project root under the name `settings.sample.json`. Feel free to copy it to `~/.nostr/settings.json`
+A sample settings file is included at the project root under the name `settings.sample.json`. Feel free to copy it to `nostream/.nostr/settings.json`
 if you would like to have a settings file before running the relay first.
 
 See [CONFIGURATION.md](CONFIGURATION.md) for a detailed explanation of each environment variable and setting.
 ## Dev Channel
 
-For development discussions, please use the [Nostr Typescript Relay Dev Channel](https://t.me/nostr_ts_relay).
+For development discussions, please use the [Nostr Typescript Relay Dev Group](https://t.me/nostream_dev).
 
-For discussions about the protocol, please feel free to use the [Nostr Telegram Channel](https://t.me/nostr_protocol).
+For discussions about the protocol, please feel free to use the [Nostr Telegram Group](https://t.me/nostr_protocol).
 
 # Author
 
 I'm Cameri on most social networks. You can find me on Nostr by npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m.
+
+# Contributors (A-Z)
+
+- Anton Livaja
+- Juan Angel
+- Kevin Smith
+- Saransh Sharma
+- swissrouting
 
 ## License
 
