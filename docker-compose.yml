@@ -42,7 +42,7 @@ services:
       default:
         ipv4_address: 10.10.10.2
   db:
-    image: postgres
+    image: postgres:14
     container_name: db
     environment:
       POSTGRES_DB: nostr_ts_relay
