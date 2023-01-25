@@ -37,8 +37,6 @@ services:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
-      tor_proxy:
-        condition: service_healthy
     restart: on-failure
     networks:
       default:
@@ -105,19 +103,6 @@ services:
     networks:
       default:
         ipv4_address: 10.10.10.254
-  tor_proxy:
-    image: dperson/torproxy
-    restart: on-failure
-    environment:
-      PASSWORD: nostr_ts_relay
-    logging:
-      driver: "json-file"
-      options:
-          max-size: "10m"
-          max-file: "3"
-    networks:
-      default:
-        ipv4_address: 10.10.10.6
 networks:
   default:
     name: nostr-ts-relay
