@@ -43,8 +43,9 @@ describe('ParameterizedReplaceableEventStrategy', () => {
     webSocket = {
       emit: webSocketEmitStub,
     } as any
-    const client: DatabaseClient = {} as any
-    eventRepository = new EventRepository(client)
+    const masterClient: DatabaseClient = {} as any
+    const readReplicaClient: DatabaseClient = {} as any
+    eventRepository = new EventRepository(masterClient, readReplicaClient)
 
     strategy = new ParameterizedReplaceableEventStrategy(webSocket, eventRepository)
   })

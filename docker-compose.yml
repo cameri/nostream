@@ -5,6 +5,7 @@ services:
     environment:
       RELAY_PORT: 8008
       NOSTR_CONFIG_DIR: /home/node/
+      # Master
       DB_HOST: db
       DB_PORT: 5432
       DB_USER: nostr_ts_relay
@@ -13,6 +14,17 @@ services:
       DB_MIN_POOL_SIZE: 16
       DB_MAX_POOL_SIZE: 64
       DB_ACQUIRE_CONNECTION_TIMEOUT: 60000
+      # Read Replica
+      READ_REPLICA_ENABLED: 'false'
+      RR_DB_HOST: db
+      RR_DB_PORT: 5432
+      RR_DB_USER: nostr_ts_relay
+      RR_DB_PASSWORD: nostr_ts_relay
+      RR_DB_NAME: nostr_ts_relay
+      RR_DB_MIN_POOL_SIZE: 16
+      RR_DB_MAX_POOL_SIZE: 64
+      RR_DB_ACQUIRE_CONNECTION_TIMEOUT: 60000
+      # Redis
       REDIS_HOST: cache
       REDIS_PORT: 6379
       REDIS_USER: default
@@ -42,7 +54,7 @@ services:
       default:
         ipv4_address: 10.10.10.2
   db:
-    image: postgres:14
+    image: postgres
     container_name: db
     environment:
       POSTGRES_DB: nostr_ts_relay

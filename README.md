@@ -63,7 +63,7 @@ NIPs with a relay-specific implementation are listed here.
 ## Requirements
 
 ### Standalone setup
-- PostgreSQL 15.0
+- PostgreSQL 14.0
 - Redis
 - Node v18
 - Typescript

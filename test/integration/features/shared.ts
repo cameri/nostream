@@ -18,7 +18,7 @@ import { CacheClient } from '../../../src/@types/cache'
 import { DatabaseClient } from '../../../src/@types/base'
 import { Event } from '../../../src/@types/event'
 import { getCacheClient } from '../../../src/cache/client'
-import { getDbClient } from '../../../src/database/client'
+import { getMasterDbClient } from '../../../src/database/client'
 import { SettingsStatic } from '../../../src/utils/settings'
 import { workerFactory } from '../../../src/factories/worker-factory'
 
@@ -34,7 +34,7 @@ export const streams = new WeakMap<WebSocket, Observable<unknown>>()
 BeforeAll({ timeout: 1000 }, async function () {
   process.env.RELAY_PORT = '18808'
   cacheClient = getCacheClient()
-  dbClient = getDbClient()
+  dbClient = getMasterDbClient()
   await dbClient.raw('SELECT 1=1')
   await cacheClient.connect()
   await cacheClient.ping()
@@ -72,7 +72,7 @@ After(async function () {
   }
   this.parameters.clients = {}
 
-  const dbClient = getDbClient()
+  const dbClient = getMasterDbClient()
 
   await dbClient('events')
     .where({

@@ -19,6 +19,7 @@ describe('EventRepository', () => {
   let repository: IEventRepository
   let sandbox: sinon.SinonSandbox
   let dbClient: DatabaseClient
+  let rrDbClient: DatabaseClient
 
   beforeEach(() => {
     sandbox = sinon.createSandbox()
@@ -26,8 +27,11 @@ describe('EventRepository', () => {
     dbClient = knex({
       client: 'pg',
     })
+    rrDbClient = knex({
+      client: 'pg',
+    })
 
-    repository = new EventRepository(dbClient)
+    repository = new EventRepository(dbClient, rrDbClient)
   })
 
   afterEach(() => {

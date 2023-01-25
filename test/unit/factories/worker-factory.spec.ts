@@ -7,14 +7,17 @@ import { AppWorker } from '../../../src/app/worker'
 import { workerFactory } from '../../../src/factories/worker-factory'
 
 describe('workerFactory', () => {
-  let getDbClientStub: Sinon.SinonStub
+  let getMasterDbClientStub: Sinon.SinonStub
+  let getReadReplicaDbClientStub: Sinon.SinonStub
 
   beforeEach(() => {
-    getDbClientStub = Sinon.stub(databaseClientModule, 'getDbClient')
+    getMasterDbClientStub = Sinon.stub(databaseClientModule, 'getMasterDbClient')
+    getReadReplicaDbClientStub = Sinon.stub(databaseClientModule, 'getReadReplicaDbClient')
   })
 
   afterEach(() => {
-    getDbClientStub.restore()
+    getMasterDbClientStub.restore()
+    getReadReplicaDbClientStub.restore()
   })
 
   it('returns an AppWorker', () => {

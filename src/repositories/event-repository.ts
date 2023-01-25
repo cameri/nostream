@@ -53,7 +53,10 @@ const groupByLengthSpec = groupBy(
 const debug = createLogger('event-repository')
 
 export class EventRepository implements IEventRepository {
-  public constructor(private readonly dbClient: DatabaseClient) { }
+  public constructor(
+    private readonly masterDbClient: DatabaseClient,
+    private readonly readReplicaDbClient: DatabaseClient,
+  ) { }
 
   public findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]> {
     debug('querying for %o', filters)
@@ -61,9 +64,9 @@ export class EventRepository implements IEventRepository {
       throw new Error('Filters cannot be empty')
     }
     const queries = filters.map((currentFilter) => {
-      const builder = this.dbClient<DBEvent>('events')
+      const builder = this.readReplicaDbClient<DBEvent>('events')
 
-      forEachObjIndexed((tableFields: string[], filterName: string) => {
+      forEachObjIndexed((tableFields: string[], filterName: string | number) => {
         builder.andWhere((bd) => {
           cond([
             [isEmpty, () => void bd.whereRaw('1 = 0')],
@@ -179,7 +182,7 @@ export class EventRepository implements IEventRepository {
       ),
     })(event)
 
-    return this.dbClient('events')
+    return this.masterDbClient('events')
       .insert(row)
       .onConflict()
       .ignore()
@@ -211,12 +214,12 @@ export class EventRepository implements IEventRepository {
       ),
     })(event)
 
-    const query = this.dbClient('events')
+    const query = this.masterDbClient('events')
       .insert(row)
       // NIP-16: Replaceable Events
       // NIP-33: Parameterized Replaceable Events
       .onConflict(
-        this.dbClient.raw(
+        this.masterDbClient.raw(
           '(event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000)'
         )
       )
@@ -233,7 +236,7 @@ export class EventRepository implements IEventRepository {
   public insertStubs(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
     debug('inserting stubs for %s: %o', pubkey, eventIdsToDelete)
     const date = new Date()
-    return this.dbClient('events').insert(
+    return this.masterDbClient('events').insert(
       eventIdsToDelete.map(
         applySpec({
           event_id: pipe(identity, toBuffer),
@@ -256,12 +259,12 @@ export class EventRepository implements IEventRepository {
   public deleteByPubkeyAndIds(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
     debug('deleting events from %s: %o', pubkey, eventIdsToDelete)
 
-    return this.dbClient('events')
+    return this.masterDbClient('events')
       .where('event_pubkey', toBuffer(pubkey))
       .whereIn('event_id', map(toBuffer)(eventIdsToDelete))
       .whereNull('deleted_at')
       .update({
-        deleted_at: this.dbClient.raw('now()'),
+        deleted_at: this.masterDbClient.raw('now()'),
       })
   }
 }
