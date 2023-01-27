@@ -9,6 +9,5 @@ export enum WebSocketAdapterEvent {
 
 export enum WebSocketServerAdapterEvent {
   Broadcast = 'broadcast',
-  Close = 'close',
   Connection = 'connection'
 }

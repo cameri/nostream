@@ -39,7 +39,6 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       .on(WebSocketServerAdapterEvent.Broadcast, this.onBroadcast.bind(this))
 
     this.webSocketServer
-      .on(WebSocketServerAdapterEvent.Close, this.onClose.bind(this))
       .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))
       .on('error', (error) => {
         debug('error: %o', error)
@@ -48,19 +47,23 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   public close(callback?: () => void): void {
-    debug('closing')
-    clearInterval(this.heartbeatInterval)
-    this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
-      debug('terminating client')
-      webSocket.terminate()
+    super.close(() => {
+      debug('closing')
+      clearInterval(this.heartbeatInterval)
+      this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
+        debug('terminating client %s', this.webSocketsAdapters.get(webSocket).getClientId())
+        webSocket.terminate()
+      })
+      debug('closing web socket server')
+      this.webSocketServer.close(() => {
+        this.webSocketServer.removeAllListeners()
+        if (typeof callback !== 'undefined') {
+          callback()
+        }
+        debug('closed')
+      })
     })
     this.removeAllListeners()
-    this.webSocketServer.removeAllListeners()
-    this.webSocketServer.close(() => {
-      this.webServer.close(callback)
-      super.close()
-    })
-    debug('closed')
   }
 
   private onBroadcast(event: Event) {
@@ -97,9 +100,5 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       const webSocketAdapter = this.webSocketsAdapters.get(webSocket) as IWebSocketAdapter
       webSocketAdapter.emit(WebSocketAdapterEvent.Heartbeat)
     })
-  }
-
-  protected onClose() {
-    this.close()
   }
 }

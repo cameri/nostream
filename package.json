@@ -105,9 +105,9 @@
     "sinon": "15.0.1",
     "sinon-chai": "^3.7.0",
     "source-map-support": "^0.5.21",
-    "ts-node": "^10.9.1",
+    "ts-node": "10.9.1",
     "ts-node-dev": "^1.1.8",
-    "typescript": "4.6",
+    "typescript": "4.6.4",
     "uuid": "^8.3.2"
   },
   "dependencies": {
@@ -121,15 +121,15 @@
     "express": "4.18.2",
     "helmet": "6.0.1",
     "joi": "17.7.0",
-    "knex": "2.4.0",
     "js-yaml": "4.1.0",
+    "knex": "2.4.0",
     "pg": "8.8.0",
     "pg-query-stream": "4.2.4",
     "ramda": "0.28.0",
     "redis": "4.5.1",
-    "tor-control-ts": "^1.0.0",
     "rxjs": "7.8.0",
-    "ws": "8.12.0"
+    "ws": "8.12.0",
+    "tor-control-ts": "^1.0.0"
   },
   "config": {
     "commitizen": {

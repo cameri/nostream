@@ -57,7 +57,7 @@ services:
       retries: 0
   cache-test:
     image: redis:7.0.5-alpine3.16
-    command: redis-server --save 20 1 --loglevel warning --requirepass nostr_ts_relay_test
+    command: redis-server --loglevel warning --requirepass nostr_ts_relay_test
     networks:
       - nostream-test
     restart: always

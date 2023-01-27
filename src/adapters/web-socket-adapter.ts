@@ -245,7 +245,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     const handlers = abortableMessageHandlers.get(this.client)
     if (Array.isArray(handlers) && handlers.length) {
       for (const handler of handlers) {
-        handler.abort()
+        try {
+          handler.abort()
+        } catch (error) {
+          console.error('Unable to abort message handler', error)
+        }
       }
     }
 

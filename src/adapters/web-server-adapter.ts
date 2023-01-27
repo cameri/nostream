@@ -41,16 +41,18 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   }
 
   public close(callback?: () => void): void {
-    this.webServer.removeAllListeners()
-    this.webServer.close()
-    if (typeof callback !== 'undefined') {
-      callback()
-    }
+    debug('closing')
+    this.webServer.close(() => {
+      this.webServer.removeAllListeners()
+      this.removeAllListeners()
+      if (typeof callback !== 'undefined') {
+        callback()
+      }
+    })
     debug('closed')
   }
 
   protected onClose() {
     debug('stopped listening to incoming connections')
-    this.close()
   }
 }

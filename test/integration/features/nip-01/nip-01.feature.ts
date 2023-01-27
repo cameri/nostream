@@ -170,10 +170,7 @@ Then(/(\w+) receives a text_note event from (\w+) with content "([^"]+?)"/, asyn
   const ws = this.parameters.clients[name] as WebSocket
   const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
   const receivedEvent = await waitForNextEvent(ws, subscription.name, content)
-  console.log('receivedEvent', receivedEvent)
   expect(receivedEvent.kind).to.equal(1)
-  console.log('name', name, this.parameters.identities[name].pubkey)
-  console.log('author', author, this.parameters.identities[author].pubkey)
   expect(receivedEvent.pubkey).to.equal(this.parameters.identities[author].pubkey)
   expect(receivedEvent.content).to.equal(content)
 })
