@@ -3,14 +3,17 @@ import EventEmitter from 'events'
 import Sinon, { SinonFakeTimers, SinonStub } from 'sinon'
 import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
+import sinonChai from 'sinon-chai'
 
+chai.use(sinonChai)
 chai.use(chaiAsPromised)
 
-import { EventLimits, ISettings } from '../../../src/@types/settings'
+import { EventLimits, Settings } from '../../../src/@types/settings'
 import { IncomingEventMessage, MessageType } from '../../../src/@types/messages'
 import { Event } from '../../../src/@types/event'
 import { EventKinds } from '../../../src/constants/base'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
+import { IUserRepository } from '../../../src/@types/repositories'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 
@@ -19,6 +22,7 @@ const { expect } = chai
 describe('EventMessageHandler', () => {
   let webSocket: IWebSocketAdapter
   let handler: EventMessageHandler
+  let userRepository: IUserRepository
   let event: Event
   let message: IncomingEventMessage
   let sandbox: Sinon.SinonSandbox
@@ -52,10 +56,12 @@ describe('EventMessageHandler', () => {
     let onMessageSpy: Sinon.SinonSpy
     let strategyExecuteStub: Sinon.SinonStub
     let isRateLimitedStub: Sinon.SinonStub
+    let isUserAdmitted: Sinon.SinonStub
 
     beforeEach(() => {
       canAcceptEventStub = sandbox.stub(EventMessageHandler.prototype, 'canAcceptEvent' as any)
       isEventValidStub = sandbox.stub(EventMessageHandler.prototype, 'isEventValid' as any)
+      isUserAdmitted = sandbox.stub(EventMessageHandler.prototype, 'isUserAdmitted' as any)
       strategyExecuteStub = sandbox.stub()
       strategyFactoryStub = sandbox.stub().returns({
         execute: strategyExecuteStub,
@@ -68,6 +74,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         webSocket as any,
         strategyFactoryStub,
+        userRepository,
         () => ({}) as any,
         () => ({ hit: async () => false })
       )
@@ -110,6 +117,15 @@ describe('EventMessageHandler', () => {
 
       expect(isEventValidStub).to.have.been.calledOnceWithExactly(event)
       expect(onMessageSpy).not.to.have.been.calledOnceWithExactly()
+      expect(strategyFactoryStub).not.to.have.been.called
+    })
+
+    it('rejects event if user is not admitted', async () => {
+      isUserAdmitted.resolves('reason')
+
+      await handler.handleMessage(message)
+
+      expect(isUserAdmitted).to.have.been.calledWithExactly(event)
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
@@ -156,7 +172,7 @@ describe('EventMessageHandler', () => {
 
   describe('canAcceptEvent', () => {
     let eventLimits: EventLimits
-    let settings: ISettings
+    let settings: Settings
     let clock: SinonFakeTimers
 
     beforeEach(() => {
@@ -175,7 +191,7 @@ describe('EventMessageHandler', () => {
           whitelist: [],
         },
         pubkey: {
-          minBalanceMsats: 0,
+          minBalance: 0n,
           minLeadingZeroBits: 0,
           blacklist: [],
           whitelist: [],
@@ -192,6 +208,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         {} as any,
         () => null,
+        userRepository,
         () => settings,
         () => ({ hit: async () => false })
       )
@@ -640,8 +657,9 @@ describe('EventMessageHandler', () => {
 
   describe('isRateLimited', () => {
     let eventLimits: EventLimits
-    let settings: ISettings
+    let settings: Settings
     let rateLimiterHitStub: SinonStub
+    let userRepository: IUserRepository
     let getClientAddressStub: Sinon.SinonStub
     let webSocket: IWebSocketAdapter
 
@@ -662,6 +680,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         webSocket,
         () => null,
+        userRepository,
         () => settings,
         () => ({ hit: rateLimiterHitStub })
       )

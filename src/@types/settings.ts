@@ -3,11 +3,11 @@ import { MessageType } from './messages'
 import { Pubkey } from './base'
 
 export interface Info {
-  relay_url?: string
-  name?: string
-  description?: string
-  pubkey?: string
-  contact?: string
+  relay_url: string
+  name: string
+  description: string
+  pubkey: string
+  contact: string
 }
 
 export interface Network {
@@ -26,7 +26,7 @@ export interface EventIdLimits {
 }
 
 export interface PubkeyLimits {
-  minBalanceMsats: number
+  minBalance: bigint
   minLeadingZeroBits: number
   whitelist?: Pubkey[]
   blacklist?: Pubkey[]
@@ -99,6 +99,7 @@ export interface MessageLimits {
 export interface ConnectionLimits {
   rateLimits: RateLimit[]
   ipWhitelist?: string[]
+  ipBlacklist?: string[]
 }
 
 export interface InvoiceLimits {
@@ -125,7 +126,7 @@ export interface FeeScheduleWhitelists {
 export interface FeeSchedule {
   enabled: boolean
   description?: string
-  amount: number
+  amount: bigint
   whitelists?: FeeScheduleWhitelists
 }
 
@@ -136,23 +137,24 @@ export interface FeeSchedules {
 
 export interface Payments {
   enabled: boolean
-  processor: keyof PaymentProcessors
+  processor: keyof PaymentsProcessors
   feeSchedules: FeeSchedules
 }
 
-export interface ZebedeePaymentProcessor {
+export interface ZebedeePaymentsProcessor {
   baseURL: string
   callbackBaseURL: string
+  ipWhitelist: string[]
 }
 
-export interface PaymentProcessors {
-  zebedee?: ZebedeePaymentProcessor
+export interface PaymentsProcessors {
+  zebedee?: ZebedeePaymentsProcessor
 }
 
-export interface ISettings {
+export interface Settings {
   info: Info
   payments?: Payments
-  paymentProcessors?: PaymentProcessors
+  paymentProcessors?: PaymentsProcessors
   network: Network
   workers?: Worker
   limits?: Limits

@@ -3,15 +3,24 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 import { appFactory } from './factories/app-factory'
+import { maintenanceWorkerFactory } from './factories/maintenance-worker-factory'
 import { workerFactory } from './factories/worker-factory'
 
-
-export const getRunner = (isPrimary: boolean) => {
-  return (isPrimary)
-    ? appFactory()
-    : workerFactory()
+export const getRunner = () => {
+  if (cluster.isPrimary) {
+    return appFactory()
+  } else {
+    switch (process.env.WORKER_TYPE) {
+      case 'worker':
+        return workerFactory()
+      case 'maintenance':
+        return maintenanceWorkerFactory()
+      default:
+        throw new Error(`Unknown worker: ${process.env.WORKER_TYPE}`)
+    }
+  }
 }
 
 if (require.main === module) {
-  getRunner(cluster.isPrimary).run()
+  getRunner().run()
 }

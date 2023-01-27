@@ -1,4 +1,5 @@
 import { Knex } from 'knex'
+import { SocketAddress } from 'net'
 
 export type EventId = string
 export type Pubkey = string
@@ -27,6 +28,13 @@ export type Factory<TOutput = any, TInput = void> = (input: TInput) => TOutput
 
 export type DatabaseClient = Knex
 
+export type DatabaseTransaction<T = any> = Knex.Transaction<T, T[]>
+
+export interface ContextMetadata {
+  remoteAddress: SocketAddress
+}
+
 export interface IRunnable {
   run(): void
+  close(callback?: (...args: any[]) => void): void
 }

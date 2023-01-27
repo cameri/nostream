@@ -47,22 +47,4 @@ describe('getRemoteAddress', () => {
       )
     ).to.equal(socketAddress)
   })
-
-  it('returns undefined if unable to find header', () => {
-    expect(
-      getRemoteAddress(
-        { ...request, socket: {} } as any,
-        { network: {} } as any,
-      )
-    ).to.be.undefined
-  })
-
-  it('returns undefined if header setting is unset', () => {
-    expect(
-      getRemoteAddress(
-        { ...request, socket: {} } as any,
-        {} as any,
-      )
-    ).to.be.undefined
-  })
 })

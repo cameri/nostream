@@ -46,6 +46,24 @@ export class RedisAdapter implements ICacheAdapter {
     // throw error
   }
 
+  public async hasKey(key: string): Promise<boolean> {
+    await this.connection
+    debug('has %s key', key)
+    return Boolean(this.client.exists(key))
+  }
+
+  public async getKey(key: string): Promise<string> {
+    await this.connection
+    debug('get %s key', key)
+    return this.client.get(key)
+  }
+
+  public async setKey(key: string, value: string): Promise<boolean> {
+    await this.connection
+    debug('get %s key', key)
+    return 'OK' === await this.client.set(key, value)
+  }
+
   public async removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number> {
     await this.connection
     debug('remove %d..%d range from sorted set %s', min, max, key)

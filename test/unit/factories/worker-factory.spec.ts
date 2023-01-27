@@ -6,6 +6,7 @@ import * as databaseClientModule from '../../../src/database/client'
 import { AppWorker } from '../../../src/app/worker'
 import { workerFactory } from '../../../src/factories/worker-factory'
 
+
 describe('workerFactory', () => {
   let getMasterDbClientStub: Sinon.SinonStub
   let getReadReplicaDbClientStub: Sinon.SinonStub

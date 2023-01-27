@@ -2,9 +2,13 @@ import { IRunnable } from '../@types/base'
 import { IWebSocketServerAdapter } from '../@types/adapters'
 
 import { createLogger } from '../factories/logger-factory'
+import { FSWatcher } from 'fs'
+import { SettingsStatic } from '../utils/settings'
 
 const debug = createLogger('app-worker')
 export class AppWorker implements IRunnable {
+  private watchers: FSWatcher[] | undefined
+
   public constructor(
     private readonly process: NodeJS.Process,
     private readonly adapter: IWebSocketServerAdapter
@@ -19,6 +23,8 @@ export class AppWorker implements IRunnable {
   }
 
   public run(): void {
+    this.watchers = SettingsStatic.watchSettings()
+
     const port = process.env.PORT || process.env.RELAY_PORT || 8008
     this.adapter.listen(typeof port === 'number' ? port : Number(port))
   }
@@ -46,6 +52,13 @@ export class AppWorker implements IRunnable {
 
   public close(callback?: () => void) {
     debug('closing')
-    this.adapter.close(callback as () => void)
+    if (Array.isArray(this.watchers)) {
+      for (const watcher of this.watchers) {
+        watcher.close()
+      }
+    }
+    if (typeof callback !== 'undefined') {
+      this.adapter.close(callback)
+    }
   }
 }

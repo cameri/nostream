@@ -20,6 +20,7 @@ import {
   modulo,
   nth,
   omit,
+  path,
   paths,
   pipe,
   prop,
@@ -28,9 +29,9 @@ import {
   toPairs,
 } from 'ramda'
 
+import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey } from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
-import { EventDeduplicationMetadataKey, EventDelegatorMetadataKey } from '../constants/base'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
@@ -39,7 +40,7 @@ import { SubscriptionFilter } from '../@types/subscription'
 
 const even = pipe(modulo(__, 2), equals(0))
 
-const groupByLengthSpec = groupBy(
+const groupByLengthSpec = groupBy<string, 'exact' | 'even' | 'odd'>(
   pipe(
     prop('length'),
     cond([
@@ -124,7 +125,7 @@ export class EventRepository implements IEventRepository {
       if (typeof currentFilter.limit === 'number') {
         builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC')
       } else {
-        builder.orderBy('event_created_at', 'asc')
+        builder.limit(500).orderBy('event_created_at', 'asc')
       }
 
       const andWhereRaw = invoker(1, 'andWhereRaw')
@@ -132,7 +133,7 @@ export class EventRepository implements IEventRepository {
 
       pipe(
         toPairs,
-        filter(pipe(nth(0), isGenericTagQuery)) as any,
+        filter(pipe(nth(0) as () => string, isGenericTagQuery)) as any,
         forEach(([filterName, criteria]: [string, string[]]) => {
           builder.andWhere((bd) => {
             ifElse(
@@ -180,6 +181,7 @@ export class EventRepository implements IEventRepository {
         pipe(prop(EventDelegatorMetadataKey as any), toBuffer),
         always(null),
       ),
+      remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
     })(event)
 
     return this.masterDbClient('events')
@@ -187,7 +189,6 @@ export class EventRepository implements IEventRepository {
       .onConflict()
       .ignore()
   }
-
 
   public upsert(event: Event): Promise<number> {
     debug('upserting event: %o', event)
@@ -212,6 +213,7 @@ export class EventRepository implements IEventRepository {
         pipe(paths([['pubkey'], ['kind']]), toJSON),
         pipe(prop(EventDeduplicationMetadataKey as any), toJSON),
       ),
+      remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
     })(event)
 
     const query = this.masterDbClient('events')
