@@ -14,6 +14,7 @@ import { SettingsStatic } from '../utils/settings'
 const debug = createLogger('app-primary')
 
 export class App implements IRunnable {
+  private workers: WeakMap<Worker, string>
   private watchers: FSWatcher[] | undefined
 
   public constructor(
@@ -22,6 +23,8 @@ export class App implements IRunnable {
     private readonly settings: () => Settings,
   ) {
     debug('starting')
+
+    this.workers = new WeakMap()
 
     this.cluster
       .on('message', this.onClusterMessage.bind(this))
@@ -65,14 +68,16 @@ export class App implements IRunnable {
 
     for (let i = 0; i < workerCount; i++) {
       debug('starting worker')
-      this.cluster.fork({
+      const worker = this.cluster.fork({
         WORKER_TYPE: 'worker',
       })
+      this.workers.set(worker, 'worker')
     }
 
-    this.cluster.fork({
+    const worker = this.cluster.fork({
       WORKER_TYPE: 'maintenance',
     })
+    this.workers.set(worker, 'maintenance')
 
     logCentered(`${workerCount} workers started`, width)
 
@@ -100,12 +105,22 @@ export class App implements IRunnable {
 
   private onClusterExit(deadWorker: Worker, code: number, signal: string)  {
     debug('worker %s died', deadWorker.process.pid)
+
     if (code === 0 || signal === 'SIGINT') {
       return
     }
-    debug('starting worker')
-    const newWorker = this.cluster.fork()
-    debug('started worker %s', newWorker.process.pid)
+    setTimeout(() => {
+      debug('starting worker')
+      const workerType = this.workers.get(deadWorker)
+      if (!workerType) {
+        throw new Error('Mistakes were made')
+      }
+      const newWorker = this.cluster.fork({
+        WORKER_TYPE: workerType,
+      })
+      this.workers.set(newWorker, workerType)
+      debug('started worker %s', newWorker.process.pid)
+    }, 10000)
   }
 
   private onExit() {
