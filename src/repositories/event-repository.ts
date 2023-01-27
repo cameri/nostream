@@ -139,7 +139,7 @@ export class EventRepository implements IEventRepository {
             ifElse(
               isEmpty,
               () => andWhereRaw('1 = 0', bd),
-              forEach((criterion: string[]) => void orWhereRaw(
+              forEach((criterion: string) => void orWhereRaw(
                 '"event_tags" @> ?',
                 [
                   JSON.stringify([[filterName[1], criterion]]) as any,
@@ -195,7 +195,7 @@ export class EventRepository implements IEventRepository {
 
     const toJSON = (input: any) => JSON.stringify(input)
 
-    const row = applySpec({
+    const row = applySpec<DBEvent>({
       event_id: pipe(prop('id'), toBuffer),
       event_pubkey: pipe(prop('pubkey'), toBuffer),
       event_created_at: prop('created_at'),

@@ -154,7 +154,7 @@ export interface PaymentsProcessors {
 export interface Settings {
   info: Info
   payments?: Payments
-  paymentProcessors?: PaymentsProcessors
+  paymentsProcessors?: PaymentsProcessors
   network: Network
   workers?: Worker
   limits?: Limits

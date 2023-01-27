@@ -15,7 +15,7 @@ export enum SettingsFileTypes {
 }
 
 export class SettingsStatic {
-  static _settings: Settings
+  static _settings: Settings | undefined
 
   public static getSettingsFileBasePath(): string {
     return process.env.NOSTR_CONFIG_DIR ?? join(process.cwd(), '.nostr')
@@ -91,6 +91,10 @@ export class SettingsStatic {
       } else {
         SettingsStatic.saveSettings(basePath, defaults)
         SettingsStatic._settings = mergeDeepRight({}, defaults)
+      }
+
+      if (typeof SettingsStatic._settings === 'undefined') {
+        throw new Error('Unable to set settings')
       }
 
       return SettingsStatic._settings
