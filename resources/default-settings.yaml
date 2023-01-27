@@ -22,10 +22,12 @@ payments:
       whitelists:
         pubkeys:
         - replace-with-your-pubkey
-paymentProcessors:
+paymentsProcessors:
   zebedee:
     baseURL: https://api.zebedee.io/
     callbackBaseURL: https://nostream.your-domain.com/callbacks/zebedee
+    ipWhitelist:
+      - "::ffff:3.225.112.64"
 network:
   maxPayloadSize: 131072
   remoteIpHeader: x-forwarded-for
@@ -36,22 +38,24 @@ limits:
   invoice:
     rateLimits:
     - period: 60000
-      rate: 1
+      rate: 3
     - period: 3600000
-      rate: 30
+      rate: 10
     - period: 86400000
-      rate: 360
+      rate: 20
     ipWhitelist:
     - "::1"
     - "::ffff:10.10.10.1"
   connection:
     rateLimits:
+    - period: 1000
+      rate: 6
     - period: 60000
-      rate: 12
+      rate: 30
     - period: 3600000
-      rate: 360
+      rate: 300
     - period: 86400000
-      rate: 2880
+      rate: 1440
     ipWhitelist:
     - "::1"
     - "::ffff:10.10.10.1"
@@ -62,7 +66,7 @@ limits:
       whitelist: []
       blacklist: []
     pubkey:
-      minBalanceMsats: 0
+      minBalance: 0
       minLeadingZeroBits: 0
       whitelist: []
       blacklist: []

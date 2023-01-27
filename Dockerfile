@@ -18,13 +18,6 @@ LABEL org.opencontainers.image.description="nostream"
 LABEL org.opencontainers.image.authors="Ricardo Arturo Cabral Mejía"
 LABEL org.opencontainers.image.licenses=MIT
 
-
-ENV DB_HOST=localhost
-ENV DB_PORT=5432
-ENV DB_NAME=nostr-ts-relay
-ENV DB_USER=nostr-ts-relay
-ENV DB_PASSWORD=nostr-ts-relay
-
 WORKDIR /app
 RUN apk add --no-cache --update git
 

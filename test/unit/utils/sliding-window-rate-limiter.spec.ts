@@ -14,6 +14,9 @@ describe('SlidingWindowRateLimiter', () => {
   let addToSortedSetStub: Sinon.SinonStub
   let getRangeFromSortedSetStub: Sinon.SinonStub
   let setKeyExpiryStub: Sinon.SinonStub
+  let getKeyStub: Sinon.SinonStub
+  let hasKeyStub: Sinon.SinonStub
+  let setKeyStub: Sinon.SinonStub
 
   let sandbox: Sinon.SinonSandbox
 
@@ -24,11 +27,17 @@ describe('SlidingWindowRateLimiter', () => {
     addToSortedSetStub = sandbox.stub()
     getRangeFromSortedSetStub = sandbox.stub()
     setKeyExpiryStub = sandbox.stub()
+    getKeyStub = sandbox.stub()
+    hasKeyStub = sandbox.stub()
+    setKeyStub = sandbox.stub()
     cache = {
       removeRangeByScoreFromSortedSet: removeRangeByScoreFromSortedSetStub,
       addToSortedSet: addToSortedSetStub,
       getRangeFromSortedSet: getRangeFromSortedSetStub,
       setKeyExpiry: setKeyExpiryStub,
+      getKey: getKeyStub,
+      hasKey: hasKeyStub,
+      setKey: setKeyStub,
     }
     rateLimiter = new SlidingWindowRateLimiter(cache)
   })

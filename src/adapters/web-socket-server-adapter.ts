@@ -1,14 +1,15 @@
 import { IncomingMessage, Server } from 'http'
 import WebSocket, { OPEN, WebSocketServer } from 'ws'
+import { propEq } from 'ramda'
 
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
-import { IRateLimiter } from '../@types/utils'
-import { ISettings } from '../@types/settings'
-import { propEq } from 'ramda'
+import { getRemoteAddress } from '../utils/http'
+import { isRateLimited } from '../handlers/request-handlers/rate-limiter-middleware'
+import { Settings } from '../@types/settings'
 import { WebServerAdapter } from './web-server-adapter'
 
 const debug = createLogger('web-socket-server-adapter')
@@ -27,10 +28,9 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       IWebSocketAdapter,
       [WebSocket, IncomingMessage, IWebSocketServerAdapter]
     >,
-    slidingWindowRateLimiter: Factory<IRateLimiter>,
-    settings: () => ISettings,
+    private readonly settings: () => Settings,
   ) {
-    super(webServer, slidingWindowRateLimiter, settings)
+    super(webServer)
 
     this.webSocketsAdapters = new WeakMap()
 
@@ -42,7 +42,6 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))
       .on('error', (error) => {
         debug('error: %o', error)
-        throw error
       })
     this.heartbeatInterval = setInterval(this.onHeartbeat.bind(this), WSS_CLIENT_HEALTH_PROBE_INTERVAL)
   }
@@ -68,8 +67,18 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     return Array.from(this.webSocketServer.clients).filter(propEq('readyState', OPEN)).length
   }
 
-  private onConnection(client: WebSocket, req: IncomingMessage) {
-    debug('client connected: %o', req.headers)
+  private async onConnection(client: WebSocket, req: IncomingMessage) {
+    const currentSettings = this.settings()
+    const remoteAddress = getRemoteAddress(req, currentSettings)
+
+    debug('client %s connected: %o', remoteAddress, req.headers)
+
+    if (await isRateLimited(remoteAddress, currentSettings)) {
+      debug('client %s terminated: rate-limited', remoteAddress)
+      client.terminate()
+      return
+    }
+
     this.webSocketsAdapters.set(client, this.createWebSocketAdapter([client, req, this]))
   }
 

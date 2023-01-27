@@ -1,10 +1,10 @@
+import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { IncomingMessage, MessageType } from '../@types/messages'
 import { createSettings } from './settings-factory'
 import { DelegatedEventMessageHandler } from '../handlers/delegated-event-message-handler'
 import { delegatedEventStrategyFactory } from './delegated-event-strategy-factory'
 import { EventMessageHandler } from '../handlers/event-message-handler'
 import { eventStrategyFactory } from './event-strategy-factory'
-import { IEventRepository } from '../@types/repositories'
 import { isDelegatedEvent } from '../utils/event'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { slidingWindowRateLimiterFactory } from './rate-limiter-factory'
@@ -13,6 +13,7 @@ import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handl
 
 export const messageHandlerFactory = (
   eventRepository: IEventRepository,
+  userRepository: IUserRepository,
 ) => ([message, adapter]: [IncomingMessage, IWebSocketAdapter]) => {
   switch (message[0]) {
     case MessageType.EVENT:
@@ -21,6 +22,7 @@ export const messageHandlerFactory = (
           return new DelegatedEventMessageHandler(
             adapter,
             delegatedEventStrategyFactory(eventRepository),
+            userRepository,
             createSettings,
             slidingWindowRateLimiterFactory,
           )
@@ -29,6 +31,7 @@ export const messageHandlerFactory = (
         return new EventMessageHandler(
           adapter,
           eventStrategyFactory(eventRepository),
+          userRepository,
           createSettings,
           slidingWindowRateLimiterFactory,
         )

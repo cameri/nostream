@@ -1,11 +1,11 @@
 import { expect } from 'chai'
 
+import { IEventRepository, IUserRepository } from '../../../src/@types/repositories'
 import { IncomingMessage, MessageType } from '../../../src/@types/messages'
 import { DelegatedEventMessageHandler } from '../../../src/handlers/delegated-event-message-handler'
 import { Event } from '../../../src/@types/event'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { EventTags } from '../../../src/constants/base'
-import { IEventRepository } from '../../../src/@types/repositories'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { messageHandlerFactory } from '../../../src/factories/message-handler-factory'
 import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
@@ -14,17 +14,19 @@ import { UnsubscribeMessageHandler } from '../../../src/handlers/unsubscribe-mes
 describe('messageHandlerFactory', () => {
   let event: Event
   let eventRepository: IEventRepository
+  let userRepository: IUserRepository
   let message: IncomingMessage
   let adapter: IWebSocketAdapter
   let factory
 
   beforeEach(() => {
     eventRepository = {} as any
+    userRepository = {} as any
     adapter = {} as any
     event = {
       tags: [],
     } as any
-    factory = messageHandlerFactory(eventRepository)
+    factory = messageHandlerFactory(eventRepository, userRepository)
   })
 
   it('returns EventMessageHandler when given an EVENT message', () => {

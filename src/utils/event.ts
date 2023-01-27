@@ -1,6 +1,7 @@
 import * as secp256k1 from '@noble/secp256k1'
 import { applySpec, converge, curry, mergeLeft, nth, omit, pipe, prop, reduceBy } from 'ramda'
-import { createHmac } from 'crypto'
+import { createCipheriv, createHmac, getRandomValues } from 'crypto'
+import cluster from 'cluster'
 
 import { CanonicalEvent, DBEvent, Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
 import { EventId, Pubkey, Tag } from '../@types/base'
@@ -11,6 +12,7 @@ import { getLeadingZeroBits } from './proof-of-work'
 import { isGenericTagQuery } from './filter'
 import { RuneLike } from './runes/rune-like'
 import { SubscriptionFilter } from '../@types/subscription'
+import { WebSocketServerAdapterEvent } from '../constants/adapter'
 
 export const serializeEvent = (event: UnidentifiedEvent): CanonicalEvent => [
   0,
@@ -186,11 +188,61 @@ export const getPrivateKeyFromSecret =
   return hmac.digest().toString('hex')
 }
 
-export const getPublicKey = (privkey: string | Buffer) => Buffer.from(secp256k1.getPublicKey(privkey, true)).toString('hex').substring(2)
+export const getPublicKey = (privkey: string | Buffer) => Buffer.from(secp256k1.getPublicKey(privkey, true)).subarray(1).toString('hex')
 
 export const signEvent = (privkey: string | Buffer | undefined) => async (event: UnsignedEvent): Promise<Event> => {
-  const sig = await secp256k1.schnorr.sign(event.id, privkey)
+  const sig = await secp256k1.schnorr.sign(event.id, privkey as any)
   return { ...event, sig: Buffer.from(sig).toString('hex') }
+}
+
+export const encryptKind4Event = (
+  senderPrivkey: string | Buffer,
+  receiverPubkey: Pubkey,
+) => (event: UnsignedEvent): UnsignedEvent => {
+  const key = secp256k1
+    .getSharedSecret(senderPrivkey,`02${receiverPubkey}`, true)
+    .subarray(1)
+
+  const iv = getRandomValues(new Uint8Array(16))
+
+  // deepcode ignore InsecureCipherNoIntegrity: NIP-04 Encrypted Direct Message uses aes-256-cbc
+  const cipher = createCipheriv(
+    'aes-256-cbc',
+    Buffer.from(key),
+    iv,
+  )
+
+  let content = cipher.update(event.content, 'utf8', 'base64')
+  content += cipher.final('base64')
+  content += '?iv=' + Buffer.from(iv.buffer).toString('base64')
+
+  return {
+    ...event,
+    content,
+  }
+}
+
+export const broadcastEvent = async (event: Event): Promise<Event> => {
+  return new Promise((resolve, reject) => {
+    if (!cluster.isWorker || typeof process.send === 'undefined') {
+      return Promise.resolve(event)
+    }
+
+    process.send(
+      {
+        eventName: WebSocketServerAdapterEvent.Broadcast,
+        event,
+      },
+      undefined,
+      undefined,
+      (error: Error | null) => {
+        if (error) {
+          return reject(error)
+        }
+        resolve(event)
+      },
+    )
+  })
 }
 
 export const isReplaceableEvent = (event: Event): boolean => {

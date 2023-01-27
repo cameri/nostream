@@ -7,5 +7,12 @@ export const postZebedeeCallbackRequestHandler = async (
 ) => {
   const controller = createZebedeeCallbackController()
 
-  return controller.handleRequest(req, res)
+  try {
+    await controller.handleRequest(req, res)
+  } catch (error) {
+    res
+      .status(500)
+      .setHeader('content-type', 'text-plain')
+      .send('Error handling request')
+  }
 }

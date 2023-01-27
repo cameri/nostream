@@ -34,6 +34,13 @@ export class DelegatedEventMessageHandler extends EventMessageHandler implements
       return
     }
 
+    reason = await this.isUserAdmitted(event)
+    if (reason) {
+      debug('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      return
+    }
+
     const [, delegator] = event.tags.find((tag) => tag.length === 4 && tag[0] === EventTags.Delegation)
     const delegatedEvent: DelegatedEvent = {
       ...event,

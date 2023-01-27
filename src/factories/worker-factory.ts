@@ -1,3 +1,4 @@
+import { is, path, pathSatisfies } from 'ramda'
 import express from 'express'
 import helmet from 'helmet'
 import http from 'http'
@@ -8,8 +9,9 @@ import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
 import { AppWorker } from '../app/worker'
 import { createSettings } from '../factories/settings-factory'
 import { EventRepository } from '../repositories/event-repository'
+import { rateLimiterMiddleware } from '../handlers/request-handlers/rate-limiter-middleware'
 import router from '../routes'
-import { slidingWindowRateLimiterFactory } from './rate-limiter-factory'
+import { UserRepository } from '../repositories/user-repository'
 import { webSocketAdapterFactory } from './websocket-adapter-factory'
 import { WebSocketServerAdapter } from '../adapters/web-socket-server-adapter'
 
@@ -17,15 +19,21 @@ export const workerFactory = (): AppWorker => {
   const dbClient = getMasterDbClient()
   const readReplicaDbClient = getReadReplicaDbClient()
   const eventRepository = new EventRepository(dbClient, readReplicaDbClient)
+  const userRepository = new UserRepository(dbClient)
+
+  const settings = createSettings()
 
   const app = express()
   app
     .disable('x-powered-by')
-    .use(  helmet.contentSecurityPolicy({
+    .use(rateLimiterMiddleware)
+    .use(helmet.contentSecurityPolicy({
       directives: {
         /**
          * TODO: Remove 'unsafe-inline'
          */
+        'connect-src': [settings.info.relay_url as string],
+        'default-src': ['"self"'],
         'script-src-attr': ["'unsafe-inline'"],
         'script-src': ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net/npm/', 'https://unpkg.com/', 'https://cdnjs.cloudflare.com/ajax/libs/'],
         'style-src': ["'self'", 'https://cdn.jsdelivr.net/npm/'],
@@ -39,15 +47,13 @@ export const workerFactory = (): AppWorker => {
   // deepcode ignore HttpToHttps: we use proxies
   const server = http.createServer(app)
 
-  const settings = createSettings()
-
   let maxPayloadSize: number | undefined
-  if (settings.network['max_payload_size']) {
+  if (pathSatisfies(is(String), ['network', 'max_payload_size'], settings)) {
     console.warn(`WARNING: Setting network.max_payload_size is deprecated and will be removed in a future version.
         Use network.maxPayloadSize instead.`)
-    maxPayloadSize = settings.network['max_payload_size']
+    maxPayloadSize = path(['network', 'max_payload_size'], settings)
   } else {
-    maxPayloadSize = settings.network.maxPayloadSize
+    maxPayloadSize = path(['network', 'maxPayloadSize'], settings)
   }
 
   const webSocketServer = new WebSocketServer({
@@ -57,8 +63,7 @@ export const workerFactory = (): AppWorker => {
   const adapter = new WebSocketServerAdapter(
     server,
     webSocketServer,
-    webSocketAdapterFactory(eventRepository),
-    slidingWindowRateLimiterFactory,
+    webSocketAdapterFactory(eventRepository, userRepository),
     createSettings,
   )
 

@@ -1,13 +1,13 @@
 services:
-  relay:
+  nostream:
     build: .
-    container_name: nostr-ts-relay
+    container_name: nostream
     environment:
       SECRET: changeme
       RELAY_PORT: 8008
-      NOSTR_CONFIG_DIR: /home/node/
       # Master
-      DB_HOST: db
+      NOSTR_CONFIG_DIR: /home/node/.nostr
+      DB_HOST: nostream-db
       DB_PORT: 5432
       DB_USER: nostr_ts_relay
       DB_PASSWORD: nostr_ts_relay
@@ -26,7 +26,7 @@ services:
       RR_DB_MAX_POOL_SIZE: 64
       RR_DB_ACQUIRE_CONNECTION_TIMEOUT: 60000
       # Redis
-      REDIS_HOST: cache
+      REDIS_HOST: nostream-cache
       REDIS_PORT: 6379
       REDIS_USER: default
       REDIS_PASSWORD: nostr_ts_relay
@@ -38,31 +38,31 @@ services:
       # DEBUG: "primary:*"
       # DEBUG: "worker:*"
       # DEBUG: "knex:query"
+    env_file:
+      - test.env
     user: node:node
     volumes:
-      - ${PWD}/.nostr:/home/node/
+      - ${PWD}/.nostr:/home/node/.nostr
     ports:
       - 8008:8008
     depends_on:
-      cache:
+      nostream-cache:
         condition: service_healthy
-      db:
+      nostream-db:
         condition: service_healthy
-      migrations:
+      nostream-migrate:
         condition: service_completed_successfully
     restart: on-failure
     networks:
       default:
-        ipv4_address: 10.10.10.2
-  db:
+  nostream-db:
     image: postgres
-    container_name: db
+    container_name: nostream-db
     environment:
       POSTGRES_DB: nostr_ts_relay
       POSTGRES_USER: nostr_ts_relay
       POSTGRES_PASSWORD: nostr_ts_relay
     volumes:
-      - pgdata:/var/lib/postgresql/data-old
       - ${PWD}/.nostr/data:/var/lib/postgresql/data
       - ${PWD}/.nostr/db-logs:/var/log/postgresql
       - ${PWD}/postgresql.conf:/postgresql.conf
@@ -70,7 +70,6 @@ services:
       - 15432:5432
     networks:
       default:
-        ipv4_address: 10.10.10.3
     command: postgres -c 'config_file=/postgresql.conf'
     restart: always
     healthcheck:
@@ -79,26 +78,25 @@ services:
       timeout: 5s
       retries: 5
       start_period: 360s
-  cache:
+  nostream-cache:
     image: redis:7.0.5-alpine3.16
-    container_name: cache
+    container_name: nostream-cache
     volumes:
       - cache:/data
     command: redis-server --loglevel warning --requirepass nostr_ts_relay
     networks:
       default:
-        ipv4_address: 10.10.10.4
     restart: always
     healthcheck:
       test: [ "CMD", "redis-cli", "ping", "|", "grep", "PONG" ]
       interval: 1s
       timeout: 5s
       retries: 5
-  migrations:
+  nostream-migrate:
     image: node:18-alpine3.16
-    container_name: migrations
+    container_name: nostream-migrate
     environment:
-      DB_HOST: db
+      DB_HOST: nostream-db
       DB_PORT: 5432
       DB_USER: nostr_ts_relay
       DB_PASSWORD: nostr_ts_relay
@@ -111,14 +109,15 @@ services:
       - ./migrations:/code/migrations
       - ./knexfile.js:/code/knexfile.js
     depends_on:
-      db:
+      nostream-db:
         condition: service_healthy
     networks:
       default:
         ipv4_address: 10.10.10.254
+
 networks:
   default:
-    name: nostr-ts-relay
+    name: nostream
     ipam:
       driver: default
       config:
@@ -126,4 +125,3 @@ networks:
 
 volumes:
   cache:
-  pgdata:

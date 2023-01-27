@@ -1,12 +1,14 @@
-import { EventRateLimit, ISettings } from '../@types/settings'
+import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
 import { getEventProofOfWork, getPubkeyProofOfWork, isEventIdValid, isEventKindOrRangeMatch, isEventSignatureValid } from '../utils/event'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
+import { ContextMetadataKey } from '../constants/base'
 import { createCommandResult } from '../utils/messages'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { IncomingEventMessage } from '../@types/messages'
 import { IRateLimiter } from '../@types/utils'
+import { IUserRepository } from '../@types/repositories'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
@@ -16,12 +18,15 @@ export class EventMessageHandler implements IMessageHandler {
   public constructor(
     protected readonly webSocket: IWebSocketAdapter,
     protected readonly strategyFactory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>,
-    private readonly settings: () => ISettings,
+    protected readonly userRepository: IUserRepository,
+    private readonly settings: () => Settings,
     private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
     const [, event] = message
+
+    event[ContextMetadataKey] = message[ContextMetadataKey]
 
     let reason = await this.isEventValid(event)
     if (reason) {
@@ -37,6 +42,13 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     reason = this.canAcceptEvent(event)
+    if (reason) {
+      debug('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      return
+    }
+
+    reason = await this.isUserAdmitted(event)
     if (reason) {
       debug('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
@@ -220,5 +232,33 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     return limited
+  }
+
+  protected async isUserAdmitted(event: Event): Promise<string | undefined> {
+    const currentSettings = this.settings()
+    if (!currentSettings.payments?.enabled) {
+      return
+    }
+
+    const isApplicableFee = (feeSchedule: FeeSchedule) =>
+      feeSchedule.enabled
+      && !feeSchedule.whitelists?.pubkeys?.some((prefix) => event.pubkey.startsWith(prefix))
+
+    const feeSchedules = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
+    if (!Array.isArray(feeSchedules) || !feeSchedules.length) {
+      return
+    }
+
+    // const hasKey = await this.cache.hasKey(`${event.pubkey}:is-admitted`)
+    // TODO: use cache
+    const user = await this.userRepository.findByPubkey(event.pubkey)
+    if (!user || !user.isAdmitted) {
+      return 'blocked: pubkey not admitted'
+    }
+
+    const minBalance = currentSettings.limits?.event?.pubkey?.minBalance ?? 0n
+    if (minBalance > 0n && user.balance < minBalance) {
+      return 'blocked: insufficient balance'
+    }
   }
 }

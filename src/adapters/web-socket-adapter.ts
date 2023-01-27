@@ -3,6 +3,7 @@ import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
 import { WebSocket } from 'ws'
 
+import { ContextMetadata, Factory } from '../@types/base'
 import { createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, OutgoingMessage } from '../@types/messages'
@@ -10,14 +11,15 @@ import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
 import { attemptValidation } from '../utils/validation'
+import { ContextMetadataKey } from '../constants/base'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
-import { Factory } from '../@types/base'
 import { getRemoteAddress } from '../utils/http'
 import { IRateLimiter } from '../@types/utils'
-import { ISettings } from '../@types/settings'
 import { isEventMatchingFilter } from '../utils/event'
 import { messageSchema } from '../schemas/message-schema'
+import { Settings } from '../@types/settings'
+import { SocketAddress } from 'net'
 
 const debug = createLogger('web-socket-adapter')
 const debugHeartbeat = debug.extend('heartbeat')
@@ -26,7 +28,7 @@ const abortableMessageHandlers: WeakMap<WebSocket, IAbortable[]> = new WeakMap()
 
 export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter {
   public clientId: string
-  private clientAddress: string
+  private clientAddress: SocketAddress
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
 
@@ -36,7 +38,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     private readonly webSocketServer: IWebSocketServerAdapter,
     private readonly createMessageHandler: Factory<IMessageHandler, [IncomingMessage, IWebSocketAdapter]>,
     private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
-    private readonly settings: Factory<ISettings>,
+    private readonly settings: Factory<Settings>,
   ) {
     super()
     this.alive = true
@@ -44,7 +46,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     this.clientId = Buffer.from(this.request.headers['sec-websocket-key'] as string, 'base64').toString('hex')
 
-    this.clientAddress = getRemoteAddress(this.request, this.settings())
+    const address = getRemoteAddress(this.request, this.settings())
+
+    this.clientAddress = new SocketAddress({
+      address: address,
+      family: address.indexOf(':') >= 0 ? 'ipv6' : 'ipv4',
+    })
 
     this.client
       .on('message', this.onClientMessage.bind(this))
@@ -66,7 +73,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on(WebSocketAdapterEvent.Broadcast, this.onBroadcast.bind(this))
       .on(WebSocketAdapterEvent.Message, this.sendMessage.bind(this))
 
-    debug('client %s connected from %s', this.clientId, this.clientAddress)
+    debug('client %s connected from %s', this.clientId, this.clientAddress.address)
   }
 
   public getClientId(): string {
@@ -74,7 +81,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public getClientAddress(): string {
-    return this.clientAddress
+    return this.clientAddress.address
   }
 
   public onUnsubscribed(subscriptionId: string): void {
@@ -138,12 +145,16 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     let abortable = false
     let messageHandler: IMessageHandler & IAbortable | undefined = undefined
     try {
-      if (await this.isRateLimited(this.clientAddress)) {
+      if (await this.isRateLimited(this.clientAddress.address)) {
         this.sendMessage(createNoticeMessage('rate limited'))
         return
       }
 
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf8')))
+
+      message[ContextMetadataKey] = {
+        remoteAddress: this.clientAddress,
+      } as ContextMetadata
 
       messageHandler = this.createMessageHandler([message, this]) as IMessageHandler & IAbortable
       if (!messageHandler) {
