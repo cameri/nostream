@@ -58,5 +58,6 @@ export class AppWorker implements IRunnable {
       }
     }
     this.adapter.close(callback)
+    debug('closed')
   }
 }
