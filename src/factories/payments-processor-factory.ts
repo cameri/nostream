@@ -51,7 +51,7 @@ const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsProcessor 
 export const createPaymentsProcessor = (): IPaymentsProcessor => {
   const settings = createSettings()
   if (!settings.payments?.enabled) {
-    throw new Error('Unable to create payments processor: Setting payments.enabled is false')
+    return new NullPaymentsProcessor()
   }
 
 
