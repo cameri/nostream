@@ -1,7 +1,7 @@
 services:
-  relay:
+  nostream:
     volumes:
-      - ${PWD}/.nostr.local:/home/node/
+      - ${PWD}/.nostr.local:/home/node
   caddy:
     image: caddy:2.6.2-alpine
     container_name: caddy

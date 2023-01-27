@@ -10,7 +10,7 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   public constructor(
     protected readonly webServer: Server,
   ) {
-    debug('web server starting')
+    debug('created')
     super()
     this.webServer
       .on('error', this.onError.bind(this))
@@ -40,8 +40,17 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
     socket.end('HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n')
   }
 
+  public close(callback?: () => void): void {
+    this.webServer.removeAllListeners()
+    this.webServer.close()
+    if (typeof callback !== 'undefined') {
+      callback()
+    }
+    debug('closed')
+  }
+
   protected onClose() {
     debug('stopped listening to incoming connections')
-    this.webServer.removeAllListeners()
+    this.close()
   }
 }

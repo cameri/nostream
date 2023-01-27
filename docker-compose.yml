@@ -38,8 +38,6 @@ services:
       # DEBUG: "primary:*"
       # DEBUG: "worker:*"
       # DEBUG: "knex:query"
-    env_file:
-      - test.env
     user: node:node
     volumes:
       - ${PWD}/.nostr:/home/node/.nostr

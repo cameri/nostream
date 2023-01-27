@@ -28,7 +28,7 @@ export type Factory<TOutput = any, TInput = void> = (input: TInput) => TOutput
 
 export type DatabaseClient = Knex
 
-export type DatabaseTransaction<T = any> = Knex.Transaction<T, T[]>
+export type DatabaseTransaction<T extends Record<string, unknown> = any> = Knex.Transaction<T, T[]>
 
 export interface ContextMetadata {
   remoteAddress: SocketAddress

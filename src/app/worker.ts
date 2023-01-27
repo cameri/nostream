@@ -57,8 +57,6 @@ export class AppWorker implements IRunnable {
         watcher.close()
       }
     }
-    if (typeof callback !== 'undefined') {
-      this.adapter.close(callback)
-    }
+    this.adapter.close(callback)
   }
 }
