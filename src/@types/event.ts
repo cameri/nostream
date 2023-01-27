@@ -1,6 +1,5 @@
-import { EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventKinds } from '../constants/base'
-import { EventId, Pubkey, Tag } from './base'
-
+import { ContextMetadata, EventId, Pubkey, Tag } from './base'
+import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventKinds } from '../constants/base'
 
 export interface Event {
   id: EventId
@@ -10,6 +9,7 @@ export interface Event {
   tags: Tag[]
   sig: string
   content: string
+  [ContextMetadataKey]?: ContextMetadata
 }
 
 export type UnsignedEvent = Omit<Event, 'sig'>

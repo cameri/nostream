@@ -1,27 +1,59 @@
 import {
+  always,
   applySpec,
+  ifElse,
   is,
+  isNil,
   omit,
   pipe,
   prop,
   propSatisfies,
   toString,
-  when,
 } from 'ramda'
 
-import { DBInvoice, Invoice } from '../@types/invoice'
+import { DBInvoice, Invoice, InvoiceStatus } from '../@types/invoice'
 import { fromDBInvoice, toBuffer } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
 import { DatabaseClient } from '../@types/base'
 import { IInvoiceRepository } from '../@types/repositories'
+import { randomUUID } from 'crypto'
 
 const debug = createLogger('invoice-repository')
 
 export class InvoiceRepository implements IInvoiceRepository {
   public constructor(private readonly dbClient: DatabaseClient) { }
 
-  public async findById(id: string): Promise<Invoice> {
-    const [dbInvoice] = await this.dbClient<DBInvoice>('invoices').where('id', id).select()
+  public async confirmInvoice(
+    invoiceId: string,
+    amountPaid: bigint,
+    confirmedAt: Date,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<void> {
+    debug('confirming invoice %s at %s: %s', invoiceId, confirmedAt, amountPaid)
+
+    try {
+      await client.raw(
+        'select confirm_invoice(?, ?, ?)',
+        [
+          invoiceId,
+          amountPaid.toString(),
+          confirmedAt.toISOString(),
+        ]
+      )
+    } catch (error) {
+      console.error('Unable to confirm invoice. Reason:', error.message)
+
+      throw error
+    }
+  }
+
+  public async findById(
+    id: string,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<Invoice | undefined> {
+    const [dbInvoice] = await client<DBInvoice>('invoices')
+      .where('id', id)
+      .select()
 
     if (!dbInvoice) {
       return
@@ -30,22 +62,52 @@ export class InvoiceRepository implements IInvoiceRepository {
     return fromDBInvoice(dbInvoice)
   }
 
-  public upsert(invoice: Invoice): Promise<number> {
+  public async findPendingInvoices(
+    offset = 0,
+    limit = 10,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<Invoice[]> {
+    const dbInvoices = await client<DBInvoice>('invoices')
+      .where('status', InvoiceStatus.PENDING)
+      .offset(offset)
+      .limit(limit)
+      .select()
+
+    return dbInvoices.map(fromDBInvoice)
+  }
+
+  public upsert(
+    invoice: Invoice,
+    client: DatabaseClient = this.dbClient
+  ): Promise<number> {
     debug('upserting invoice: %o', invoice)
 
-    const row = applySpec({
-      id: when(propSatisfies(is(String), 'id'), prop('id')),
+    const row = applySpec<DBInvoice>({
+      id: ifElse(propSatisfies(is(String), 'id'), prop('id'), always(randomUUID())),
       pubkey: pipe(prop('pubkey'), toBuffer),
+      bolt11: prop('bolt11'),
       amount_requested: pipe(prop('amountRequested'), toString),
-      amount_paid: when(propSatisfies(is(BigInt), 'amountPaid'), pipe(prop('amountPaid'), toString)),
+      // amount_paid: ifElse(propSatisfies(is(BigInt), 'amountPaid'), pipe(prop('amountPaid'), toString), always(null)),
       unit: prop('unit'),
       status: prop('status'),
       description: prop('description'),
-      confirmed_at: prop('confirmedAt'),
-      expires_at: prop('expiresAt'),
+      // confirmed_at: prop('confirmedAt'),
+      expires_at: ifElse(
+        propSatisfies(isNil, 'expiresAt'),
+        always(undefined),
+        prop('expiresAt'),
+      ),
+      updated_at: always(new Date()),
+      created_at: ifElse(
+        propSatisfies(isNil, 'createdAt'),
+        always(undefined),
+        prop('createdAt'),
+      ),
     })(invoice)
 
-    const query = this.dbClient('invoices')
+    debug('row: %o', row)
+
+    const query = client<DBInvoice>('invoices')
       .insert(row)
       .onConflict('id')
       .merge(

@@ -10,8 +10,8 @@ import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { IEventRepository } from '../@types/repositories'
-import { ISettings } from '../@types/settings'
 import { IWebSocketAdapter } from '../@types/adapters'
+import { Settings } from '../@types/settings'
 import { SubscribeMessage } from '../@types/messages'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
@@ -23,7 +23,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
-    private readonly settings: () => ISettings,
+    private readonly settings: () => Settings,
   ) {
     this.abortController = new AbortController()
   }
@@ -58,11 +58,11 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
     const findEvents = this.eventRepository.findByFilters(filters).stream()
 
-    const abortableFintEvents = addAbortSignal(this.abortController.signal, findEvents)
+    const abortableFindEvents = addAbortSignal(this.abortController.signal, findEvents)
 
     try {
       await pipeline(
-        abortableFintEvents,
+        abortableFindEvents,
         streamFilter(propSatisfies(isNil, 'deleted_at')),
         streamMap(toNostrEvent),
         streamFilter(isSubscribedToEvent),

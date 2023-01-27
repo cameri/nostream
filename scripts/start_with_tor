@@ -3,6 +3,24 @@ PROJECT_ROOT="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))/.."
 DOCKER_COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.yml"
 DOCKER_COMPOSE_TOR_FILE="${PROJECT_ROOT}/docker-compose.tor.yml"
 TOR_DATA_DIR="$PROJECT_ROOT/.nostr/tor/data"
+NOSTR_CONFIG_DIR="${PROJECT_ROOT}/.nostr"
+SETTINGS_FILE="${NOSTR_CONFIG_DIR}/settings.yaml"
+DEFAULT_SETTINGS_FILE="${PROJECT_ROOT}/resources/default-settings.yaml"
+
+if [ "$EUID" -eq 0 ]
+  then echo "Error: Nostream should not be run as root."
+  exit 1
+fi
+
+if [[ ! -d "${NOSTR_CONFIG_DIR}" ]]; then
+  echo "Creating folder ${NOSTR_CONFIG_DIR}"
+  mkdir -p "${NOSTR_CONFIG_DIR}"
+fi
+
+if [[ ! -f "${SETTINGS_FILE}" ]]; then
+  echo "Copying ${DEFAULT_SETTINGS_FILE} to ${SETTINGS_FILE}"
+  cp "${DEFAULT_SETTINGS_FILE}" "${SETTINGS_FILE}"
+fi
 
 mkdir -p $TOR_DATA_DIR
 

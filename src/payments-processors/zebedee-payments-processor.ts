@@ -1,24 +1,39 @@
-import { applySpec, path, pipe } from 'ramda'
 import { AxiosInstance } from 'axios'
 import { Factory } from '../@types/base'
 
-import { CreateInvoiceRequest, CreateInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
+import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
 import { createLogger } from '../factories/logger-factory'
-import { ISettings } from '../@types/settings'
-import { toJSON } from '../utils/transform'
+import { fromZebedeeInvoice } from '../utils/transform'
+import { Settings } from '../@types/settings'
 
 const debug = createLogger('zebedee-payments-processor')
 
 export class ZebedeePaymentsProcesor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
-    private settings: Factory<ISettings>
+    private settings: Factory<Settings>
   ) {}
+
+  public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
+    debug('get invoice: %s', invoiceId)
+
+    try {
+      const response = await this.httpClient.get(`/v0/charges/${invoiceId}`, {
+        maxRedirects: 1,
+      })
+
+      return fromZebedeeInvoice(response.data.data)
+    } catch (error) {
+      console.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
+
+      throw error
+    }
+  }
 
   public async createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse> {
     debug('create invoice: %o', request)
     const {
-      amountMsats,
+      amount: amountMsats,
       description,
       requestId,
     } = request
@@ -27,7 +42,7 @@ export class ZebedeePaymentsProcesor implements IPaymentsProcessor {
       amount: amountMsats.toString(),
       description,
       internalId: requestId,
-      callbackUrl: this.settings().paymentProcessors?.zebedee?.callbackBaseURL,
+      callbackUrl: this.settings().paymentsProcessors?.zebedee?.callbackBaseURL,
     }
 
     try {
@@ -36,16 +51,7 @@ export class ZebedeePaymentsProcesor implements IPaymentsProcessor {
         maxRedirects: 1,
       })
 
-      const result = pipe(
-        applySpec<CreateInvoiceResponse>({
-          externalReference: path(['data', 'id']),
-          amount: pipe(path(['data', 'amount']), Number),
-          invoice: applySpec({
-            bolt11: path(['data', 'invoice', 'request']),
-          }),
-          rawResponse: toJSON,
-        })
-      )(response.data)
+      const result = fromZebedeeInvoice(response.data.data)
 
       debug('result: %o', result)
 

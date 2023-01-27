@@ -6,7 +6,7 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "es2020",
+    "target": "ESNext",
     "outDir": "./dist",
     "moduleResolution": "Node",
     "types": ["node", "mocha", "@cucumber/cucumber"],

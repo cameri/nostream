@@ -1,8 +1,8 @@
 import { IncomingMessage } from 'http'
 
-import { ISettings } from '../@types/settings'
+import { Settings } from '../@types/settings'
 
-export const getRemoteAddress = (request: IncomingMessage, settings: ISettings): string => {
+export const getRemoteAddress = (request: IncomingMessage, settings: Settings): string => {
   let header: string | undefined
   // TODO: Remove deprecation warning
   if ('network' in settings && 'remote_ip_header' in settings.network) {
@@ -13,5 +13,7 @@ export const getRemoteAddress = (request: IncomingMessage, settings: ISettings):
     header = settings.network.remoteIpHeader as string
   }
 
-  return (request.headers[header] ?? request.socket.remoteAddress) as string
+  const result = (request.headers[header] ?? request.socket.remoteAddress) as string
+
+  return result.split(',')[0]
 }

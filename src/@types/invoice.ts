@@ -16,12 +16,12 @@ export interface Invoice {
   pubkey: Pubkey
   bolt11: string
   amountRequested: bigint
-  amountPaid: bigint
+  amountPaid?: bigint
   unit: InvoiceUnit
   status: InvoiceStatus
   description: string
-  confirmedAt: Date
-  expiresAt: Date
+  confirmedAt?: Date | null
+  expiresAt: Date | null
   updatedAt: Date
   createdAt: Date
 }

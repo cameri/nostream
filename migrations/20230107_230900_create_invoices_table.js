@@ -6,7 +6,7 @@ exports.up = function (knex) {
     table.bigint('amount_requested').unsigned().notNullable()
     table.bigint('amount_paid').unsigned()
     table.enum('unit', ['msats', 'sats', 'btc'])
-    table.enum('status', ['pending', 'completed'])
+    table.enum('status', ['pending', 'completed', 'expired'])
     table.text('description')
     table.datetime('confirmed_at', { useTz: false, precision: 3 })
     table.datetime('expires_at', { useTz: false, precision: 3 })

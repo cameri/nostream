@@ -1,4 +1,4 @@
-import { ISettings } from '../@types/settings'
+import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
 
-export const createSettings = (): ISettings => SettingsStatic.createSettings()
+export const createSettings = (): Settings => SettingsStatic.createSettings()
