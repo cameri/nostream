@@ -30,6 +30,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     >,
     private readonly settings: () => Settings,
   ) {
+    debug('created')
     super(webServer)
 
     this.webSocketsAdapters = new WeakMap()
@@ -46,11 +47,20 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     this.heartbeatInterval = setInterval(this.onHeartbeat.bind(this), WSS_CLIENT_HEALTH_PROBE_INTERVAL)
   }
 
-  public close(callback: () => void): void {
-    this.onClose()
+  public close(callback?: () => void): void {
+    debug('closing')
+    clearInterval(this.heartbeatInterval)
+    this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
+      debug('terminating client')
+      webSocket.terminate()
+    })
+    this.removeAllListeners()
+    this.webSocketServer.removeAllListeners()
     this.webSocketServer.close(() => {
       this.webServer.close(callback)
+      super.close()
     })
+    debug('closed')
   }
 
   private onBroadcast(event: Event) {
@@ -90,15 +100,6 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   protected onClose() {
-    debug('closing')
-    clearInterval(this.heartbeatInterval)
-    this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
-      debug('terminating client')
-      webSocket.terminate()
-    })
-    this.removeAllListeners()
-    this.webSocketServer.removeAllListeners()
-    super.onClose()
-    debug('closed')
+    this.close()
   }
 }

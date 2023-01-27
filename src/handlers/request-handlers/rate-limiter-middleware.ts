@@ -29,6 +29,10 @@ export async function isRateLimited(remoteAddress: string, settings: Settings): 
     ipWhitelist = [],
   } = settings.limits?.connection ?? {}
 
+  if (typeof rateLimits === 'undefined') {
+    return false
+  }
+
   if (ipWhitelist.includes(remoteAddress)) {
     return false
   }

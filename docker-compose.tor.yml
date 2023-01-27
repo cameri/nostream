@@ -4,7 +4,7 @@ services:
     container_name: tor
     user: toruser
     depends_on:
-      - relay
+      - nostream
     volumes:
       - ${PWD}/tor/torrc:/etc/tor/torrc
       - ${PWD}/.nostr/tor/data:/var/lib/tor

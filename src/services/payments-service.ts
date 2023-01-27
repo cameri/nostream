@@ -234,8 +234,8 @@ Amount: ${amount.toString()} ${unit}
 
 ⚠️ By paying this invoice, you confirm that you have read and agree to the Terms of Service:
 ${terms.toString()}
-
-⏳ Expires at ${invoice.expiresAt.toISOString()}
+${invoice.expiresAt ? `
+⏳ Expires at ${invoice.expiresAt.toISOString()}` : ''}
 
 ${invoice.bolt11}`,
       tags: [
