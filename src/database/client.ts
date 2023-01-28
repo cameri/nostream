@@ -3,20 +3,20 @@ import 'pg-query-stream'
 import knex, { Knex } from 'knex'
 import { createLogger } from '../factories/logger-factory'
 
-knex.Client.prototype.releaseConnection = function (connection) {
-  //debug('releasing connection to pool: %s', connection.__knexUid);
-  console.log('releasing connection to pool')
-  const didRelease = this.pool.release(connection)
+((knex) => {
+  knex.Client.prototype.releaseConnection = function (connection) {
+    const released = this.pool.release(connection)
 
-  if (!didRelease) {
-    console.log('pool refused connection')
-    //debug('pool refused connection: %s', connection.__knexUid);
+    if (released) {
+      console.log(`${this.config.tag} conneciton pool: ${this.pool.numUsed()} used / ${this.pool.numFree()} free / ${this.pool.numPendingAcquires()} pending`)
+    }
+
+    return Promise.resolve()
   }
-
-  return Promise.resolve()
-}
+})(knex)
 
 const getMasterConfig = (): Knex.Config => ({
+  tag: 'master',
   client: 'pg',
   connection: {
     host: process.env.DB_HOST,
@@ -37,9 +37,10 @@ const getMasterConfig = (): Knex.Config => ({
   acquireConnectionTimeout: process.env.DB_ACQUIRE_CONNECTION_TIMEOUT
     ? Number(process.env.DB_ACQUIRE_CONNECTION_TIMEOUT)
     : 60000,
-})
+} as any)
 
 const getReadReplicaConfig = (): Knex.Config => ({
+  tag: 'read-replica',
   client: 'pg',
   connection: {
     host: process.env.RR_DB_HOST,
@@ -57,10 +58,7 @@ const getReadReplicaConfig = (): Knex.Config => ({
     ? Number(process.env.RR_DB_ACQUIRE_CONNECTION_TIMEOUT)
     : 60000,
   },
-  acquireConnectionTimeout: process.env.RR_DB_ACQUIRE_CONNECTION_TIMEOUT
-    ? Number(process.env.RR_DB_ACQUIRE_CONNECTION_TIMEOUT)
-    : 60000,
-})
+} as any)
 
 let writeClient: Knex
 
