@@ -4,11 +4,15 @@ import knex, { Knex } from 'knex'
 import { createLogger } from '../factories/logger-factory'
 
 ((knex) => {
+  const counters = {}
   knex.Client.prototype.releaseConnection = function (connection) {
     const released = this.pool.release(connection)
 
     if (released) {
-      console.log(`${this.config.tag} conneciton pool: ${this.pool.numUsed()} used / ${this.pool.numFree()} free / ${this.pool.numPendingAcquires()} pending`)
+      counters[this.config.tag] = (counters[this.config.tag] ?? 0) + 1
+      if (counters[this.config.tag] % 10 === 0) {
+        console.log(`${this.config.tag} connection pool: ${this.pool.numUsed()} used / ${this.pool.numFree()} free / ${this.pool.numPendingAcquires()} pending`)
+      }
     }
 
     return Promise.resolve()
