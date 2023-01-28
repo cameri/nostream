@@ -119,7 +119,7 @@
     "redis": "4.5.1",
     "tor-control-ts": "^1.0.0",
     "rxjs": "7.8.0",
-    "ws": "8.11.0"
+    "ws": "8.12.0"
   },
   "config": {
     "commitizen": {
