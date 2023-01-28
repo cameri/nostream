@@ -4,13 +4,15 @@ import knex, { Knex } from 'knex'
 import { createLogger } from '../factories/logger-factory'
 
 ((knex) => {
-  const counters = {}
+  const lastUpdate = {}
   knex.Client.prototype.releaseConnection = function (connection) {
     const released = this.pool.release(connection)
 
     if (released) {
-      counters[this.config.tag] = (counters[this.config.tag] ?? 0) + 1
-      if (counters[this.config.tag] % 10 === 0) {
+      const now = new Date().getTime()
+      lastUpdate[this.config.tag] = lastUpdate[this.config.tag] ?? now
+      if (now - lastUpdate[this.config.tag] >= 60000) {
+        lastUpdate[this.config.tag] = now
         console.log(`${this.config.tag} connection pool: ${this.pool.numUsed()} used / ${this.pool.numFree()} free / ${this.pool.numPendingAcquires()} pending`)
       }
     }
