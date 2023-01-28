@@ -17,7 +17,7 @@ export const rateLimiterMiddleware = async (request: Request, response: Response
   if (await isRateLimited(clientAddress, currentSettings)) {
     response.destroy()
 
-    return next(new Error('Rate-limited'))
+    return
   }
 
   next()
