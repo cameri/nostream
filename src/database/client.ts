@@ -3,6 +3,19 @@ import 'pg-query-stream'
 import knex, { Knex } from 'knex'
 import { createLogger } from '../factories/logger-factory'
 
+knex.Client.prototype.releaseConnection = function (connection) {
+  //debug('releasing connection to pool: %s', connection.__knexUid);
+  console.log('releasing connection to pool')
+  const didRelease = this.pool.release(connection)
+
+  if (!didRelease) {
+    console.log('pool refused connection')
+    //debug('pool refused connection: %s', connection.__knexUid);
+  }
+
+  return Promise.resolve()
+}
+
 const getMasterConfig = (): Knex.Config => ({
   client: 'pg',
   connection: {

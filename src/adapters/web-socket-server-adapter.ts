@@ -72,6 +72,9 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
         return
       }
       const webSocketAdapter = this.webSocketsAdapters.get(webSocket) as IWebSocketAdapter
+      if (!webSocketAdapter) {
+        return
+      }
       webSocketAdapter.emit(WebSocketAdapterEvent.Event, event)
     })
   }
