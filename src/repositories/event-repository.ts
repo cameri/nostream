@@ -182,6 +182,7 @@ export class EventRepository implements IEventRepository {
         always(null),
       ),
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
+      
     })(event)
 
     return this.masterDbClient('events')
