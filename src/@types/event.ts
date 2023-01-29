@@ -1,7 +1,7 @@
 import { ContextMetadata, EventId, Pubkey, Tag } from './base'
 import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventKinds } from '../constants/base'
 
-export interface Event {
+export interface BaseEvent {
   id: EventId
   pubkey: Pubkey
   created_at: number
@@ -9,8 +9,13 @@ export interface Event {
   tags: Tag[]
   sig: string
   content: string
+}
+
+export interface Event extends BaseEvent {
   [ContextMetadataKey]?: ContextMetadata
 }
+
+export type RelayedEvent = Event
 
 export type UnsignedEvent = Omit<Event, 'sig'>
 
