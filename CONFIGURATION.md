@@ -47,8 +47,11 @@ Running `nostream` for the first time creates the settings file in `<project_roo
 | info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
 | info.pubkey                                 | Relay operator's Nostr pubkey in hex format. |
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
-| network.maxPayloadSize                    | Maximum number of bytes accepted per WebSocket frame |
-| network.remoteIpHeader                    | HTTP header from proxy containing IP address from client. |
+| network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
+| network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
+| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
+| mirroring.static[].filters                  | Subscription filters used to mirror. |
+| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. |
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. |

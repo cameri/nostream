@@ -14,7 +14,7 @@ import { SettingsStatic } from '../utils/settings'
 const debug = createLogger('app-primary')
 
 export class App implements IRunnable {
-  private workers: WeakMap<Worker, string>
+  private workers: WeakMap<Worker, Record<string, string>>
   private watchers: FSWatcher[] | undefined
 
   public constructor(
@@ -66,18 +66,32 @@ export class App implements IRunnable {
       ? Number(process.env.WORKER_COUNT)
       : this.settings().workers?.count || cpus().length
 
-    for (let i = 0; i < workerCount; i++) {
-      debug('starting worker')
-      const worker = this.cluster.fork({
-        WORKER_TYPE: 'worker',
-      })
-      this.workers.set(worker, 'worker')
+    const createWorker = (env: Record<string, string>) => {
+      const worker = this.cluster.fork(env)
+      this.workers.set(worker, env)
     }
 
-    const worker = this.cluster.fork({
+    for (let i = 0; i < workerCount; i++) {
+      debug('starting worker')
+      createWorker({
+        WORKER_TYPE: 'worker',
+      })
+    }
+
+    createWorker({
       WORKER_TYPE: 'maintenance',
     })
-    this.workers.set(worker, 'maintenance')
+
+    const mirrors = settings?.mirroring?.static
+
+    if (Array.isArray(mirrors) && mirrors.length) {
+      for (let i = 0; i < mirrors.length; i++) {
+        createWorker({
+          WORKER_TYPE: 'static-mirroring',
+          MIRROR_INDEX: i.toString(),
+        })
+      }
+    }
 
     logCentered(`${workerCount} workers started`, width)
 
@@ -111,14 +125,13 @@ export class App implements IRunnable {
     }
     setTimeout(() => {
       debug('starting worker')
-      const workerType = this.workers.get(deadWorker)
-      if (!workerType) {
+      const workerEnv = this.workers.get(deadWorker)
+      if (!workerEnv) {
         throw new Error('Mistakes were made')
       }
-      const newWorker = this.cluster.fork({
-        WORKER_TYPE: workerType,
-      })
-      this.workers.set(newWorker, workerType)
+      const newWorker = this.cluster.fork(workerEnv)
+      this.workers.set(newWorker, workerEnv)
+
       debug('started worker %s', newWorker.process.pid)
     }, 10000)
   }

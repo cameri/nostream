@@ -7,6 +7,8 @@ export type TagName = string
 export type Signature = string
 export type Tag = TagBase & string[]
 
+export type Secret = string
+
 export interface TagBase {
   0: TagName
   [index: number]: string

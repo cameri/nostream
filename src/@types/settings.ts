@@ -1,6 +1,7 @@
+import { Pubkey, Secret } from './base'
 import { EventKinds } from '../constants/base'
 import { MessageType } from './messages'
-import { Pubkey } from './base'
+import { SubscriptionFilter } from './subscription'
 
 export interface Info {
   relay_url: string
@@ -151,6 +152,24 @@ export interface PaymentsProcessors {
   zebedee?: ZebedeePaymentsProcessor
 }
 
+export interface Local {
+  secret: Secret
+}
+
+export interface Remote {
+  secret: Secret
+}
+
+export interface Mirror {
+  address: string
+  filters?: SubscriptionFilter[]
+  secret?: Secret
+}
+
+export interface Mirroring {
+  static?: Mirror[]
+}
+
 export interface Settings {
   info: Info
   payments?: Payments
@@ -158,4 +177,5 @@ export interface Settings {
   network: Network
   workers?: Worker
   limits?: Limits
+  mirroring?: Mirroring
 }
