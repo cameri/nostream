@@ -35,6 +35,8 @@ network:
   idleTimeout: 60
 workers:
   count: 0
+mirroring:
+  static: []
 limits:
   invoice:
     rateLimits:
