@@ -59,7 +59,7 @@ export class StaticMirroringWorker implements IRunnable {
         .on('message', async function (raw: RawData) {
           try {
             const message = JSON.parse(raw.toString('utf8')) as OutgoingEventMessage
-            debug('received: %o', message)
+            debug('received from %s: %o', config.address, message)
 
             if (!Array.isArray(message)) {
               return
@@ -118,10 +118,8 @@ export class StaticMirroringWorker implements IRunnable {
       return
     }
 
-    debug('received broadcast: %o', message.event)
-
     const eventToRelay = createRelayedEventMessage(message.event as any, this.config.secret)
-    debug('relaying: %o', eventToRelay)
+    debug('relaying from %s to %s: %o', message.source, this.config.address, eventToRelay)
     this.client.send(JSON.stringify(eventToRelay))
   }
 
