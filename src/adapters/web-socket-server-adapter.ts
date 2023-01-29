@@ -101,7 +101,9 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   private onHeartbeat() {
     this.webSocketServer.clients.forEach((webSocket) => {
       const webSocketAdapter = this.webSocketsAdapters.get(webSocket) as IWebSocketAdapter
-      webSocketAdapter.emit(WebSocketAdapterEvent.Heartbeat)
+      if (webSocketAdapter) {
+        webSocketAdapter.emit(WebSocketAdapterEvent.Heartbeat)
+      }
     })
   }
 }
