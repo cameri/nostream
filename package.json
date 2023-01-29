@@ -108,7 +108,7 @@
     "uuid": "^8.3.2"
   },
   "dependencies": {
-    "@noble/secp256k1": "1.7.0",
+    "@noble/secp256k1": "1.7.1",
     "debug": "4.3.4",
     "dotenv": "^16.0.3",
     "joi": "17.7.0",
