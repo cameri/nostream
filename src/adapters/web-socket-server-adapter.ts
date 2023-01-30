@@ -14,7 +14,7 @@ import { WebServerAdapter } from './web-server-adapter'
 
 const debug = createLogger('web-socket-server-adapter')
 
-const WSS_CLIENT_HEALTH_PROBE_INTERVAL = 30000
+const WSS_CLIENT_HEALTH_PROBE_INTERVAL = 60000
 
 export class WebSocketServerAdapter extends WebServerAdapter implements IWebSocketServerAdapter {
   private webSocketsAdapters: WeakMap<WebSocket, IWebSocketAdapter>
@@ -94,6 +94,8 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       client.terminate()
       return
     }
+
+    console.log('web-socket-server-adapter: connected clients:', this.webSocketServer.clients.size)
 
     this.webSocketsAdapters.set(client, this.createWebSocketAdapter([client, req, this]))
   }
