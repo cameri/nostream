@@ -10,10 +10,11 @@ import { createLogger } from '../factories/logger-factory'
 
     if (released) {
       const now = new Date().getTime()
-      lastUpdate[this.config.tag] = lastUpdate[this.config.tag] ?? now
-      if (now - lastUpdate[this.config.tag] >= 60000) {
-        lastUpdate[this.config.tag] = now
-        console.log(`${this.config.tag} connection pool: ${this.pool.numUsed()} used / ${this.pool.numFree()} free / ${this.pool.numPendingAcquires()} pending`)
+      const { tag } = this.config
+      lastUpdate[tag] = lastUpdate[tag] ?? now
+      if (now - lastUpdate[tag] >= 60000) {
+        lastUpdate[tag] = now
+        console.log(`${tag} connection pool: ${this.pool.numUsed()} used / ${this.pool.numFree()} free / ${this.pool.numPendingAcquires()} pending`)
       }
     }
 
