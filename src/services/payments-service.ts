@@ -226,7 +226,7 @@ export class PaymentsService implements IPaymentsService {
       pubkey: relayPubkey,
       kind: EventKinds.ENCRYPTED_DIRECT_MESSAGE,
       created_at: Math.floor(invoice.createdAt.getTime() / 1000),
-      content: `From: ${relayPubkey}@${url.hostname} (${relayName})
+      content: `From: ${toBech32('npub')(relayPubkey)}@${url.hostname} (${relayName})
 To: ${toBech32('npub')(invoice.pubkey)}@${url.hostname}
 🧾 Admission Fee Invoice
 
