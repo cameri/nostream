@@ -21,6 +21,21 @@ import { messageSchema } from '../schemas/message-schema'
 import { Settings } from '../@types/settings'
 import { SocketAddress } from 'net'
 
+(() => {
+  (WebSocket as any).Receiver.prototype._write = function _write (chunk: any, _encoding: any, cb: any) {
+    if (this._opcode === 0x08 && this._state == 0) return cb()
+
+    this._bufferedBytes += chunk.length
+    this._buffers.push(chunk)
+    try {
+      this.startLoop(cb)
+    } catch (error) {
+      console.error('what in the world', error)
+      cb(error)
+    }
+  }
+})()
+
 const debug = createLogger('web-socket-adapter')
 const debugHeartbeat = debug.extend('heartbeat')
 
@@ -54,16 +69,16 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     })
 
     this.client
+      .on('error', (error) => {
+        if (error.name === 'RangeError' && error.message === 'Max payload size exceeded') {
+          console.error(`web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`)
+        } else {
+          console.error(`web-socket-adapter: client error ${this.clientId} (${this.getClientAddress()}):`, error)
+        }
+      })
       .on('message', this.onClientMessage.bind(this))
       .on('close', this.onClientClose.bind(this))
       .on('pong', this.onClientPong.bind(this))
-      .on('error', (error) => {
-        if (error.name === 'RangeError' && error.message === 'Max payload size exceeded') {
-          debug('client %s from %s sent payload too large', this.clientId, this.clientAddress)
-        } else {
-          debug('error', error)
-        }
-      })
 
     this
       .on(WebSocketAdapterEvent.Heartbeat, this.onHeartbeat.bind(this))
@@ -116,12 +131,15 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private sendMessage(message: OutgoingMessage): void {
+    if (this.client.readyState !== WebSocket.OPEN) {
+      return
+    }
     this.client.send(JSON.stringify(message))
   }
 
   public onHeartbeat(): void {
     if (!this.alive) {
-      debug('client %s pong timed out', this.clientId)
+      console.error(`web-socket-adapter: pong timeout for client ${this.clientId} (${this.getClientAddress()})`)
       this.terminate()
       return
     }
@@ -158,7 +176,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
       messageHandler = this.createMessageHandler([message, this]) as IMessageHandler & IAbortable
       if (!messageHandler) {
-        debug('unhandled message: no handler found: %o', message)
+        console.error('web-socket-adapter: unhandled message: no handler found:', message)
         return
       }
 
@@ -174,17 +192,17 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          debug('message handler aborted')
+          console.error(`web-socket-adapter: abort from client ${this.clientId} (${this.getClientAddress()})`)
         } else if (error.name === 'SyntaxError' || error.name === 'ValidationError') {
           if (typeof (error as any).annotate === 'function') {
-            debug('invalid message: %o', (error as any).annotate())
+            console.error(`web-socket-adapter: invalid message client ${this.clientId} (${this.getClientAddress()}):`, (error as any).annotate())
           } else {
-            debug('malformed message: %s', error.message)
+            console.error(`web-socket-adapter: malformed message from client ${this.clientId} (${this.getClientAddress()}):`, error.message)
           }
           this.sendMessage(createNoticeMessage(`invalid: ${error.message}`))
         }
       } else {
-        console.error('unable to handle message', error)
+        console.error('web-socket-adapter: unable to handle message:', error)
       }
     } finally {
       if (abortable && messageHandler) {

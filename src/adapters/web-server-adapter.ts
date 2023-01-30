@@ -29,11 +29,11 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   }
 
   private onError(error: Error) {
-    debug('error: %o', error)
+    console.error('web-server-adapter: error:', error)
   }
 
   private onClientError(error: Error, socket: Duplex) {
-    debug('socket error: %o', error)
+    console.error('web-server-adapter: client socket error:', error)
     if (error['code'] === 'ECONNRESET' || !socket.writable) {
       return
     }
