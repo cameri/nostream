@@ -68,7 +68,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       family: address.indexOf(':') >= 0 ? 'ipv6' : 'ipv4',
     })
 
-    console.log(`web-socket-adapter: new client ${this.clientId} (${this.getClientAddress()})`)
+    console.log(`web-socket-adapter: new client ${this.clientId} (${this.getClientAddress()}) - ${(this.webSocketServer as any).webSocketServer.clients.size} total on worker ${process.pid}`)
 
     this.client
       .on('error', (error) => {
@@ -276,6 +276,6 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.removeAllListeners()
     this.client.removeAllListeners()
 
-    console.error(`web-socket-adapter: disconnected client ${this.clientId} (${this.getClientAddress()})`)
+    console.error(`web-socket-adapter: disconnected client ${this.clientId} (${this.getClientAddress()}) - ${(this.webSocketServer as any).webSocketServer.clients.size} total on worker ${process.pid}`)
   }
 }

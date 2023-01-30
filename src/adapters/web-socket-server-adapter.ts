@@ -95,8 +95,6 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       return
     }
 
-    console.log('web-socket-server-adapter: connected clients:', this.webSocketServer.clients.size)
-
     this.webSocketsAdapters.set(client, this.createWebSocketAdapter([client, req, this]))
   }
 
