@@ -1,7 +1,7 @@
+import ws, { WebSocket } from 'ws'
 import cluster from 'cluster'
 import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
-import { WebSocket } from 'ws'
 
 import { ContextMetadata, Factory } from '../@types/base'
 import { createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
@@ -22,7 +22,7 @@ import { Settings } from '../@types/settings'
 import { SocketAddress } from 'net'
 
 (() => {
-  (WebSocket as any).Receiver.prototype._write = function _write (chunk: any, _encoding: any, cb: any) {
+  (ws as any).Receiver.prototype._write = function _write (chunk: any, _encoding: any, cb: any) {
     if (this._opcode === 0x08 && this._state == 0) return cb()
 
     this._bufferedBytes += chunk.length
@@ -67,6 +67,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       address: address,
       family: address.indexOf(':') >= 0 ? 'ipv6' : 'ipv4',
     })
+
+    console.log(`web-socket-adapter: new client ${this.clientId} (${this.getClientAddress()})`)
 
     this.client
       .on('error', (error) => {
@@ -274,6 +276,6 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.removeAllListeners()
     this.client.removeAllListeners()
 
-    debug('client %s closed', this.clientId)
+    console.error(`web-socket-adapter: disconnected client ${this.clientId} (${this.getClientAddress()})`)
   }
 }
