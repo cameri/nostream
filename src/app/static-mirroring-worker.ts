@@ -80,7 +80,7 @@ export class StaticMirroringWorker implements IRunnable {
               return
             }
 
-            since = Math.floor(Date.now()) - 30
+            since = Math.floor(Date.now() / 1000) - 30
 
             if (cluster.isWorker && typeof process.send === 'function') {
               debug('%s >> local: %s', config.address, event.id)
