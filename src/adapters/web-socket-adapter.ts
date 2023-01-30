@@ -195,7 +195,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
           console.error(`web-socket-adapter: abort from client ${this.clientId} (${this.getClientAddress()})`)
         } else if (error.name === 'SyntaxError' || error.name === 'ValidationError') {
           if (typeof (error as any).annotate === 'function') {
-            console.error(`web-socket-adapter: invalid message client ${this.clientId} (${this.getClientAddress()}):`, (error as any).annotate())
+            debug('invalid message client %s (%s): %o', this.clientId, this.getClientAddress(), (error as any).annotate())
           } else {
             console.error(`web-socket-adapter: malformed message from client ${this.clientId} (${this.getClientAddress()}):`, error.message)
           }
