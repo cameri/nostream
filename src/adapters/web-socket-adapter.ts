@@ -81,6 +81,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on('message', this.onClientMessage.bind(this))
       .on('close', this.onClientClose.bind(this))
       .on('pong', this.onClientPong.bind(this))
+      .on('ping', this.onClientPing.bind(this))
 
     this
       .on(WebSocketAdapterEvent.Heartbeat, this.onHeartbeat.bind(this))
@@ -255,6 +256,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   private onClientPong() {
     debugHeartbeat('client %s pong', this.clientId)
+    this.alive = true
+  }
+
+  private onClientPing(data: any) {
+    debugHeartbeat('client %s ping', this.clientId)
+    this.client.pong(data)
     this.alive = true
   }
 
