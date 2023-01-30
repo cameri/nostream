@@ -9,6 +9,7 @@ import { Mirror, Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 import { IRunnable } from '../@types/base'
 import { OutgoingEventMessage } from '../@types/messages'
+import { RelayedEvent } from '../@types/event'
 import { WebSocketServerAdapterEvent } from '../constants/adapter'
 
 const debug = createLogger('static-mirror-worker')
@@ -59,13 +60,13 @@ export class StaticMirroringWorker implements IRunnable {
         .on('message', async function (raw: RawData) {
           try {
             const message = JSON.parse(raw.toString('utf8')) as OutgoingEventMessage
-            debug('received from %s: %o', config.address, message)
 
             if (!Array.isArray(message)) {
               return
             }
 
             if (message[0] !== 'EVENT' || message[1] !== subscriptionId) {
+              debug('%s >> local: %o', config.address, message)
               return
             }
 
@@ -82,6 +83,7 @@ export class StaticMirroringWorker implements IRunnable {
             since = Math.floor(Date.now()) - 30
 
             if (cluster.isWorker && typeof process.send === 'function') {
+              debug('%s >> local: %s', config.address, event.id)
               process.send({
                 eventName: WebSocketServerAdapterEvent.Broadcast,
                 event,
@@ -118,9 +120,12 @@ export class StaticMirroringWorker implements IRunnable {
       return
     }
 
-    const eventToRelay = createRelayedEventMessage(message.event as any, this.config.secret)
-    debug('relaying from %s to %s: %o', message.source, this.config.address, eventToRelay)
-    this.client.send(JSON.stringify(eventToRelay))
+    const event = message.event as RelayedEvent
+
+    const eventToRelay = createRelayedEventMessage(event, this.config.secret)
+    const outboundMessage = JSON.stringify(eventToRelay)
+    debug('%s >> %s: %s', message.source ?? 'local', this.config.address, outboundMessage)
+    this.client.send(outboundMessage)
   }
 
   private onError(error: Error) {
