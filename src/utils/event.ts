@@ -162,9 +162,7 @@ export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
 export const getEventHash = async (event: Event | UnidentifiedEvent | UnsignedEvent): Promise<string> => {
   const id = await secp256k1.utils.sha256(Buffer.from(JSON.stringify(serializeEvent(event))))
 
-  return Buffer.from(
-    id
-  ).toString('hex')
+  return Buffer.from(id).toString('hex')
 }
 
 export const isEventIdValid = async (event: Event): Promise<boolean> => {
@@ -225,7 +223,7 @@ export const encryptKind4Event = (
 export const broadcastEvent = async (event: Event): Promise<Event> => {
   return new Promise((resolve, reject) => {
     if (!cluster.isWorker || typeof process.send === 'undefined') {
-      return Promise.resolve(event)
+      return resolve(event)
     }
 
     process.send(
