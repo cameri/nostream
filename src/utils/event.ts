@@ -269,6 +269,13 @@ export const isDeleteEvent = (event: Event): boolean => {
   return event.kind === EventKinds.DELETE
 }
 
+export const isExpiredEvent = (expirationTime: number): boolean => {
+  const currentTime = new Date()
+  const isExpired = (Number.isSafeInteger(expirationTime) && Math.log10(expirationTime))
+    && (expirationTime >= currentTime.getSeconds()) 
+  return isExpired
+}
+
 export const getEventProofOfWork = (eventId: EventId): number => {
   return getLeadingZeroBits(Buffer.from(eventId, 'hex'))
 }

@@ -4,6 +4,7 @@ import { createCommandResult } from '../../utils/messages'
 import { createLogger } from '../../factories/logger-factory'
 import { IEventRepository } from '../../@types/repositories'
 import { IEventStrategy } from '../../@types/message-handlers'
+import { isExpiredEvent } from '../../utils/event'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
@@ -15,17 +16,15 @@ export class DefaultEventStrategy implements IEventStrategy<Event, Promise<void>
     private readonly eventRepository: IEventRepository,
   ) { }
 
-  protected async isEventExpired(event: Event): Promise<Event | ExpiredEvent> {
+  protected async addExpiredEventMetadata(event: Event): Promise<Event | ExpiredEvent> {
     const [, rawExpirationTime] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Expiration)
-    
-    const currentTime = Date.now()
-    const expirationTime = Number(rawExpirationTime)
-    const isExpired = currentTime >= expirationTime
 
+    const expirationTime = Number(rawExpirationTime)
+    const isExpired = isExpiredEvent(expirationTime)
     if (isExpired) {
       const expiredEvent: ExpiredEvent = {
         ...event,
-          [EventExpirationMetadataKey]: expirationTime,
+        [EventExpirationMetadataKey]: expirationTime,
       }
       return expiredEvent
     } 
