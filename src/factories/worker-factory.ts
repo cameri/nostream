@@ -32,6 +32,7 @@ export const workerFactory = (): AppWorker => {
         /**
          * TODO: Remove 'unsafe-inline'
          */
+        'img-src': ["'self'", 'https://cdn.zebedee.io/an/nostr/'],
         'connect-src': [settings.info.relay_url as string],
         'default-src': ['"self"'],
         'script-src-attr': ["'unsafe-inline'"],
