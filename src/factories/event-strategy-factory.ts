@@ -1,4 +1,4 @@
-import { isDeleteEvent, isEphemeralEvent, isExpiredEvent, isParameterizedReplaceableEvent, isReplaceableEvent } from '../utils/event'
+import { isDeleteEvent, isEphemeralEvent, isParameterizedReplaceableEvent, isReplaceableEvent } from '../utils/event'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
 import { EphemeralEventStrategy } from '../handlers/event-strategies/ephemeral-event-strategy'
