@@ -23,13 +23,13 @@
         <div class="row">
           <div class="col text-center">
             <p class="pending">
-              Scan with your bitcoin lightning wallet
+              Scan with your preferred Bitcoin Lightning wallet:
             </p>
             <p class="paid d-none text-success">
-              You may connect to {{relay_url}}
+              You may now connect to {{relay_url}}
             </p>
             <p class="expired d-none text-secondary">
-              Your invoice expired
+              Your invoice expired. Try again!
             </p>
           </div>
         </div>
@@ -47,7 +47,7 @@
             <div class="card-body d-flex flex-row justify-content-center">
               <div>
                 <div class="spinner-grow spinner-grow-sm" role="status"></div>
-                Waiting for payment
+                Waiting for payment...
               </div>
             </div>
           </div>
@@ -61,13 +61,13 @@
                   <div class="icon-fix"></div>
                 </div>
               </div>
-              <h2 class="text-success">Payment successful</h2>
+              <h2 class="text-success">Payment successful!</h2>
               <p class="text-secondary">{{amount}} sats received</p>
             </div>
           </div>
           <div class="card expired d-none col-8 col-lg-4 justify-content-center mb-4">
             <div class="card-body text-center">
-              <h2 class="text-danger">Invoice expired</h2>
+              <h2 class="text-danger">Invoice expired!</h2>
             </div>
           </div>
         </div>
@@ -84,6 +84,13 @@
             <input type="checkbox" class="d-none" name="tosAccepted" value="yes" checked required>
             <input type="hidden" name="feeSchedule" value="admission" />
             <button class="btn btn-lg btn-primary" type="submit">Get another invoice</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="d-flex justify-content-center mb-3 mt-4">
+            <a href="https://zeb.gg/nostr-zbd-quickstart" target="_blank">
+              <img class="poweredbyzbd-img" src="https://cdn.zebedee.io/an/nostr/poweredbyzbd.png" />
+            </a>
           </div>
         </div>
       </form>
