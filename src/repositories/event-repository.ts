@@ -32,6 +32,7 @@ import {
 import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey } from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
+import { EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventExpirationTimeMetadataKey } from '../constants/base'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
@@ -182,6 +183,11 @@ export class EventRepository implements IEventRepository {
         always(null),
       ),
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
+      expires_at: ifElse(
+        propSatisfies(is(Number), EventExpirationTimeMetadataKey),
+        pipe(prop(EventExpirationTimeMetadataKey as any), toBuffer),
+        always(null),
+      ),
       
     })(event)
 
@@ -215,6 +221,11 @@ export class EventRepository implements IEventRepository {
         pipe(prop(EventDeduplicationMetadataKey as any), toJSON),
       ),
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
+      expires_at: ifElse(
+        propSatisfies(is(Number), EventExpirationTimeMetadataKey),
+        pipe(prop(EventExpirationTimeMetadataKey as any), toBuffer),
+        always(null),
+      ),
     })(event)
 
     const query = this.masterDbClient('events')

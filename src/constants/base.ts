@@ -46,4 +46,4 @@ export enum PaymentsProcessors {
 export const EventDelegatorMetadataKey = Symbol('Delegator')
 export const EventDeduplicationMetadataKey = Symbol('Deduplication')
 export const ContextMetadataKey = Symbol('Context')
-export const EventExpirationMetadataKey = Symbol('Expiration')
+export const EventExpirationTimeMetadataKey = Symbol('Expiration')

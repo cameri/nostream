@@ -269,11 +269,29 @@ export const isDeleteEvent = (event: Event): boolean => {
   return event.kind === EventKinds.DELETE
 }
 
-export const isExpiredEvent = (expirationTime: number): boolean => {
-  const currentTime = new Date()
-  const isExpired = (Number.isSafeInteger(expirationTime) && Math.log10(expirationTime))
-    && (expirationTime >= currentTime.getSeconds()) 
+export const isExpiredEvent = (event: Event): boolean => {
+  if (!event.tags || !event.tags.length) return false
+
+  const expirationTime = getEventExpiration(event)
+
+  if (!expirationTime) return false
+
+  const date = new Date()
+  const isExpired = expirationTime >= Math.floor(date.getTime() / 1000)
+
   return isExpired
+}
+
+export const getEventExpiration = (event: Event): number => {
+  const [, rawExpirationTime] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Expiration)
+  if (!rawExpirationTime) return null
+
+  const expirationTime = Number(rawExpirationTime)
+  if ((Number.isSafeInteger(rawExpirationTime) && Math.log10(expirationTime))) {
+    return expirationTime
+  } else {
+    return null
+  }
 }
 
 export const getEventProofOfWork = (eventId: EventId): number => {
