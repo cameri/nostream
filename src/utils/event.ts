@@ -282,8 +282,8 @@ export const isExpiredEvent = (event: Event): boolean => {
   return isExpired
 }
 
-export const getEventExpiration = (event: Event): number => {
-  const [, rawExpirationTime] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Expiration)
+export const getEventExpiration = (event: Event): number | null => {
+  const [, rawExpirationTime] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Expiration) ?? []
   if (!rawExpirationTime) return null
 
   const expirationTime = Number(rawExpirationTime)

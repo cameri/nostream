@@ -42,7 +42,7 @@ export class EventMessageHandler implements IMessageHandler {
       debug('event %s rejected: expired')
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'event is expired'))
       return
-   }
+    }
 
     if (await this.isRateLimited(event)) {
       debug('event %s rejected: rate-limited')
@@ -272,13 +272,13 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   protected addExpirationMetadata(event: Event): Event | ExpiringEvent {
-    const eventExpiration = getEventExpiration(event)
+    const eventExpiration: number = getEventExpiration(event)
     if (eventExpiration) {
-        const expiredEvent: any = {
+        const expiringEvent: ExpiringEvent = {
           ...event,
           [EventExpirationTimeMetadataKey]: eventExpiration,
         }
-        return expiredEvent
+        return expiringEvent
     } else {
       return event
     }
