@@ -29,10 +29,9 @@ import {
   toPairs,
 } from 'ramda'
 
-import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey } from '../constants/base'
+import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventExpirationTimeMetadataKey } from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
-import { EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventExpirationTimeMetadataKey } from '../constants/base'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
@@ -262,6 +261,7 @@ export class EventRepository implements IEventRepository {
           event_signature: pipe(always(''), toBuffer),
           event_delegator: always(null),
           event_deduplication: pipe(always([pubkey, 5]), toJSON),
+          expires_at: always(null),
           deleted_at: always(date.toISOString()),
         })
       )
