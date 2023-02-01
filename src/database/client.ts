@@ -25,7 +25,7 @@ import { createLogger } from '../factories/logger-factory'
 const getMasterConfig = (): Knex.Config => ({
   tag: 'master',
   client: 'pg',
-  connection: {
+  connection: process.env.DB_URI ? process.env.DB_URI : {
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT),
     user: process.env.DB_USER,

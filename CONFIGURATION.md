@@ -9,6 +9,7 @@ The following environment variables can be set:
 | RELAY_PORT                       | Relay's server port            | 8008                   |
 | RELAY_PRIVATE_KEY                | Relay's private key in hex     | (auto-generated)       |
 | WORKER_COUNT                     | Number of workers override     | No. of available CPUs  |
+| DB_URI                           | PostgreSQL URI (overrides DB_HOST, DB_PORT, etc.) | |
 | DB_HOST                          | PostgresSQL Hostname           |                        |
 | DB_PORT                          | PostgreSQL Port                | 5432                   |
 | DB_USER                          | PostgreSQL Username            | nostr_ts_relay         |
@@ -30,6 +31,7 @@ The following environment variables can be set:
 | TOR_CONTROL_PORT                 | Tor control Port                 | 9051                   |
 | TOR_PASSWORD                     | Tor control password             | nostr_ts_relay         |
 | HIDDEN_SERVICE_PORT              | Tor hidden service port          | 80                     |
+| REDIS_URI                        | Redis URI (overrides REDIS_HOST, REDIS_PORT, etc.) | |
 | REDIS_HOST                       |                                  |                        |
 | REDIS_PORT                       | Redis Port                       | 6379                   |
 | REDIS_USER                       | Redis User                       | default                |
