@@ -179,11 +179,18 @@ The logs can be viewed with:
 Set the following environment variables:
 
   ```
+  DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
+
+  or
+
   DB_HOST=localhost
   DB_PORT=5432
   DB_NAME=nostr_ts_relay
   DB_USER=postgres
   DB_PASSWORD=postgres
+
+  REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
+
   REDIS_HOST=localhost
   REDIS_PORT=6379
   REDIS_USER=default
@@ -315,6 +322,10 @@ Open a terminal and change to the project's directory:
 Set the following environment variables:
 
   ```
+  DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
+
+  or
+
   DB_HOST=localhost
   DB_PORT=5432
   DB_NAME=nostr_ts_relay_test
