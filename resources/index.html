@@ -17,12 +17,19 @@
         </div>
         <div class="row">
           <div class="col text-center">
-            <p>
-              This <a href="https://github.com/nostr-protocol/nostr">Nostr</a> relay <strong>requires</strong> a one-time admission fee.
-            </p>
-            <p>
-              Provide your public key to generate an invoice.
-            </p>
+            <div class="row">
+              <div class="d-flex justify-content-center mt-2">
+                <p class="description-text">
+                  This <a href="https://github.com/nostr-protocol/nostr">Nostr</a> relay <strong>requires</strong> a one-time admission
+                  fee. <br /> Once payment is complete, you will be able to post and fetch events from this relay.
+                </p>
+              </div>
+              <div class="d-flex justify-content-center mb-1 mt-2">
+                <p class="description-text">
+                  Provide your Nostr public key to generate a Bitcoin Lightning invoice.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
         <div class="row justify-content-center">
@@ -48,6 +55,13 @@
           <div class="d-flex justify-content-center mb-3">
             <input type="hidden" name="feeSchedule" value="admission" />
             <button id="submitBtn" class="btn btn-lg btn-warning" type="submit">Pay {{amount}} sats</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="d-flex justify-content-center mb-3 mt-4">
+            <a href="https://zeb.gg/nostr-zbd-quickstart" target="_blank">
+              <img class="poweredbyzbd-img" src="https://cdn.zebedee.io/an/nostr/poweredbyzbd.png" />
+            </a>
           </div>
         </div>
       </form>

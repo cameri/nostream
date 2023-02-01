@@ -100,6 +100,18 @@
   transform: rotate(-45deg);
   background-color: #FFFFFF;
 }
+.description-text {
+  max-width: 400px;
+}
+.poweredbyzbd-img {
+  width: 150px;
+  transition: 0.15s all ease-in-out;
+}
+.poweredbyzbd-img:hover {
+  cursor: pointer;
+  transform: scale(1.05);
+  transition: 0.15s all ease-in-out;
+}
 
 @keyframes rotate-circle {
   0% {
