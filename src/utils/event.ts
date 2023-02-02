@@ -180,9 +180,15 @@ export const identifyEvent = async (event: UnidentifiedEvent): Promise<UnsignedE
 }
 
 export const getPrivateKeyFromSecret =
-  (secret: string) => (publicKey: Pubkey | Buffer): string => {
+  (secret: string) => (data: string | Buffer): string => {
+  if (process.env.RELAY_PRIVATE_KEY) {
+    return process.env.RELAY_PRIVATE_KEY
+  }
+
   const hmac = createHmac('sha256', secret)
-  hmac.update(typeof publicKey === 'string' ? Buffer.from(publicKey, 'hex') : publicKey)
+
+  hmac.update(typeof data === 'string' ? Buffer.from(data) : data)
+
   return hmac.digest().toString('hex')
 }
 

@@ -5,21 +5,30 @@ import WebSocket from 'ws'
 
 import { IEventRepository, IUserRepository } from '../../../src/@types/repositories'
 import { IWebSocketServerAdapter } from '../../../src/@types/adapters'
+import { SettingsStatic } from '../../../src/utils/settings'
 import { WebSocketAdapter } from '../../../src/adapters/web-socket-adapter'
 import { webSocketAdapterFactory } from '../../../src/factories/websocket-adapter-factory'
 
 describe('webSocketAdapterFactory', () => {
   let onStub: Sinon.SinonStub
+  let createSettingsStub: Sinon.SinonStub
 
   beforeEach(() => {
     onStub = Sinon.stub()
+    createSettingsStub = Sinon.stub(SettingsStatic, 'createSettings')
   })
 
   afterEach(() => {
+    createSettingsStub.restore()
     onStub.reset()
   })
 
   it('returns a WebSocketAdapter', () => {
+    createSettingsStub.returns({
+      network: {
+        remoteIpHeader: 'remoteIpHeader',
+      },
+    })
     const eventRepository: IEventRepository = {} as any
     const userRepository: IUserRepository = {} as any
 
