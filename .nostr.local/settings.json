@@ -1,7 +1,7 @@
 {
   "info": {
-    "relay_url": "wss://nostr-relay-dev.wlvs.space",
-    "name": "nostr-relay-dev.wlvs.space",
+    "relay_url": "wss://nostream.localtest.me",
+    "name": "nostream.localtest.me",
     "description": "A nostr relay written in Typescript.",
     "pubkey": "00000000827ffaa94bfea288c3dfce4422c794fbb96625b6b31e9049f729d700",
     "contact": "operator@your-domain.com"
@@ -38,7 +38,7 @@
   "paymentProcessors": {
     "zebedee": {
       "baseURL": "https://api.zebedee.io/",
-      "callbackBaseURL": "https://nostr-relay-dev.wlvs.space/callbacks/zebedee"
+      "callbackBaseURL": "https://nostream.localtest.me/callbacks/zebedee"
     }
   },
   "workers": {
