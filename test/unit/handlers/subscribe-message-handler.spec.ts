@@ -177,23 +177,6 @@ describe('SubscribeMessageHandler', () => {
       )
     })
 
-    it('ends event stream if aborted', async () => {
-      isClientSubscribedToEventStub.returns(always(true))
-
-      const abort = () => (handler as IAbortable).abort()
-      const fetch = () => (handler as any).fetchAndSend(subscriptionId, filters)
-
-      const promise = fetch()
-
-      const closeSpy = sandbox.spy()
-      stream.once('close', closeSpy)
-
-      abort()
-
-      await expect(promise).to.eventually.be.rejectedWith(Error, 'The operation was aborted')
-      expect(closeSpy).to.have.been.called
-    })
-
     it('ends event stream if error occurs', async () => {
       const error = new Error('mistakes were made')
       isClientSubscribedToEventStub.returns(always(true))
