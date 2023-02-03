@@ -124,9 +124,9 @@ export class PostInvoiceController implements IController {
       return
     }
 
-    const minBalance = currentSettings.limits?.event?.pubkey?.minBalance ?? 0n
+    const minBalance = currentSettings.limits?.event?.pubkey?.minBalance
     const user = await this.userRepository.findByPubkey(pubkey)
-    if (user && user.isAdmitted && minBalance > 0n && user.balance >= minBalance) {
+    if (user && user.isAdmitted && (!minBalance || user.balance >= minBalance)) {
       response
         .status(400)
         .setHeader('content-type', 'text/plain; charset=utf8')
