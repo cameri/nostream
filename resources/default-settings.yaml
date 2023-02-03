@@ -30,7 +30,7 @@ paymentsProcessors:
       - "3.225.112.64"
       - "::ffff:3.225.112.64"
 network:
-  maxPayloadSize: 131072
+  maxPayloadSize: 262144
   remoteIpHeader: x-forwarded-for
   idleTimeout: 60
 workers:
