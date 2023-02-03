@@ -1,3 +1,30 @@
+body {
+  background-color: black;
+  color: white;
+}
+.card {
+  --bs-card-bg: black;
+  border-color: white;
+  color: white;
+}
+.modal-content {
+  border: white solid;
+}
+.modal-header {
+  background-color: #2a2a2a;
+  border-color: white;
+  color: white;
+
+}
+.modal-body {
+  background-color: #2a2a2a;
+  color: white;
+}
+.modal-footer {
+  background-color: #2a2a2a;
+  border-color: white;
+  color: white;
+}
 :root {
   --bs-warning: #f7931a;
 }
@@ -104,6 +131,8 @@
   max-width: 400px;
 }
 .poweredbyzbd-img {
+  background-color: white;
+  opacity: 0.25;
   width: 150px;
   transition: 0.15s all ease-in-out;
 }
