@@ -133,12 +133,7 @@ describe('EventMessageHandler', () => {
       isEventValidStub.resolves(undefined)
 
       const expiredEvent = {
-        content: 'hello',
-        created_at: 1665546189,
-        id: 'f'.repeat(64),
-        kind: 1,
-        pubkey: 'f'.repeat(64),
-        sig: 'f'.repeat(128),
+        ...event,
         tags: [
           ['expiration', '1600000'],
         ],
@@ -148,6 +143,11 @@ describe('EventMessageHandler', () => {
 
       await handler.handleMessage(expiredEventMessage)
 
+      expect(isEventValidStub).to.have.been.calledOnceWithExactly(expiredEvent)
+
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
+        [MessageType.OK, event.id, false, 'event is expired'],
+      )
       expect(strategyExecuteStub).not.to.have.been.called
     })
 
