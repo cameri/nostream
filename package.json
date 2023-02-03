@@ -15,7 +15,8 @@
     22,
     26,
     28,
-    33
+    33,
+    40
   ],
   "main": "src/index.ts",
   "scripts": {
