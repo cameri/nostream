@@ -45,8 +45,12 @@ export class SettingsStatic {
     const filteredFile = files.find(fn => fn.startsWith('settings'))
     if (filteredFile) {
       const extension = extname(filteredFile).substring(1)
-      return SettingsFileTypes[extension]
+      if (SettingsFileTypes[extension]) {
+        return SettingsFileTypes[extension]
+      }
     }
+
+    return SettingsFileTypes.yaml
   }
 
   public static loadSettings(path: string, fileType: SettingsFileTypes) {
