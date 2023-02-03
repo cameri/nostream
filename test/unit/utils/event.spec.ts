@@ -2,6 +2,7 @@ import { expect } from 'chai'
 
 import { CanonicalEvent, Event } from '../../../src/@types/event'
 import {
+  getEventExpiration,
   isDelegatedEvent,
   isDelegatedEventValid,
   isDeleteEvent,
@@ -9,6 +10,7 @@ import {
   isEventIdValid,
   isEventMatchingFilter,
   isEventSignatureValid,
+  isExpiredEvent,
   isParameterizedReplaceableEvent,
   isReplaceableEvent,
   serializeEvent,
@@ -493,6 +495,73 @@ describe('NIP-33', () => {
 
     it('returns false if event is a parameterized replaceable event', () => {
       expect(isParameterizedReplaceableEvent({ kind: 40000 } as any)).to.be.false
+    })
+  })
+})
+describe('NIP-40', () => {
+  let event: Event
+  beforeEach(() => {
+    event = {
+      'id': 'a080fd288b60ac2225ff2e2d815291bd730911e583e177302cc949a15dc2b2dc',
+      'pubkey': '62903b1ff41559daf9ee98ef1ae67cc52f301bb5ce26d14baba3052f649c3f49',
+      'created_at': 1660896109,
+      'kind': 1,
+      'tags': [
+        [
+          'delegation',
+          '86f0689bd48dcd19c67a19d994f938ee34f251d8c39976290955ff585f2db42e',
+          'kind=1&created_at>1640995200',
+          'c33c88ba78ec3c760e49db591ac5f7b129e3887c8af7729795e85a0588007e5ac89b46549232d8f918eefd73e726cb450135314bfda419c030d0b6affe401ec1',
+        ],
+      ],
+      'content': 'Hello world',
+      'sig': 'cd4a3cd20dc61dcbc98324de561a07fd23b3d9702115920c0814b5fb822cc5b7c5bcdaf3fa326d24ed50c5b9c8214d66c75bae34e3a84c25e4d122afccb66eb6',
+    }
+  })
+
+  describe('getEventExpiration', () => {
+    it('returns true if expiration is a safe integer', () => {
+      event.tags = [
+        ['expiration', '160000000'],
+      ]
+      expect(getEventExpiration(event)).to.equal(160000000)
+    })
+
+    it('returns false if event does not have expiration tag', () => {
+      event.tags = []
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns false if expiration is unsafe integer', () => {
+      event.tags = [
+        ['expiration', '160000000000000000000'],
+      ]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns false if expiration is malformed data', () => {
+      event.tags = [
+        ['expiration', 'a'],
+      ]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+  })
+
+  describe('isExpiredEvent', () => {
+    it('returns false if event does not have tags', () => {
+      event.tags = []
+      expect(isExpiredEvent(event)).to.equal(false)
+    })
+
+    it('returns false if event does not have expiration tags', () => {
+      expect(isExpiredEvent(event)).to.equal(false)
+    })
+
+    it('returns true if event is expired', () => {
+      event.tags = [
+        ['expiration', '100000'],
+      ]
+      expect(isExpiredEvent(event)).to.equal(true)
     })
   })
 })

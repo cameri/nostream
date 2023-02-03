@@ -36,13 +36,13 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
-    event = this.addExpirationMetadata(event)
-
     if (isExpiredEvent(event)) {
       debug('event %s rejected: expired')
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'event is expired'))
       return
     }
+
+    event = this.addExpirationMetadata(event)
 
     if (await this.isRateLimited(event)) {
       debug('event %s rejected: rate-limited')
