@@ -1,10 +1,11 @@
+import { Event, ExpiringEvent  } from '../@types/event'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
-import { getEventProofOfWork, getPubkeyProofOfWork, isEventIdValid, isEventKindOrRangeMatch, isEventSignatureValid } from '../utils/event'
+import { getEventExpiration, getEventProofOfWork, getPubkeyProofOfWork, isEventIdValid, isEventKindOrRangeMatch, isEventSignatureValid, isExpiredEvent } from '../utils/event'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
 import { ContextMetadataKey } from '../constants/base'
 import { createCommandResult } from '../utils/messages'
 import { createLogger } from '../factories/logger-factory'
-import { Event } from '../@types/event'
+import { EventExpirationTimeMetadataKey } from '../constants/base'
 import { Factory } from '../@types/base'
 import { IncomingEventMessage } from '../@types/messages'
 import { IRateLimiter } from '../@types/utils'
@@ -24,7 +25,7 @@ export class EventMessageHandler implements IMessageHandler {
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
-    const [, event] = message
+    let [, event] = message
 
     event[ContextMetadataKey] = message[ContextMetadataKey]
 
@@ -34,6 +35,14 @@ export class EventMessageHandler implements IMessageHandler {
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
       return
     }
+
+    if (isExpiredEvent(event)) {
+      debug('event %s rejected: expired')
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'event is expired'))
+      return
+    }
+
+    event = this.addExpirationMetadata(event)
 
     if (await this.isRateLimited(event)) {
       debug('event %s rejected: rate-limited')
@@ -259,6 +268,19 @@ export class EventMessageHandler implements IMessageHandler {
     const minBalance = currentSettings.limits?.event?.pubkey?.minBalance ?? 0n
     if (minBalance > 0n && user.balance < minBalance) {
       return 'blocked: insufficient balance'
+    }
+  }
+
+  protected addExpirationMetadata(event: Event): Event | ExpiringEvent {
+    const eventExpiration: number = getEventExpiration(event)
+    if (eventExpiration) {
+        const expiringEvent: ExpiringEvent = {
+          ...event,
+          [EventExpirationTimeMetadataKey]: eventExpiration,
+        }
+        return expiringEvent
+    } else {
+      return event
     }
   }
 }

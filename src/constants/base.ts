@@ -36,6 +36,7 @@ export enum EventTags {
   //  Multicast = 'm',
   Delegation = 'delegation',
   Deduplication = 'd',
+  Expiration = 'expiration',
 }
 
 export enum PaymentsProcessors {
@@ -45,3 +46,4 @@ export enum PaymentsProcessors {
 export const EventDelegatorMetadataKey = Symbol('Delegator')
 export const EventDeduplicationMetadataKey = Symbol('Deduplication')
 export const ContextMetadataKey = Symbol('Context')
+export const EventExpirationTimeMetadataKey = Symbol('Expiration')
