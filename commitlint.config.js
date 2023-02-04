@@ -6,5 +6,6 @@ module.exports = {
 		'subject-case': [0, 'always'],
 		'header-case': [0, 'always'],
 		'body-case': [0, 'always'],
+		'footer-max-line-length': [0, 'always'],
   },
 }
