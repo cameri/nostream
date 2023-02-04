@@ -15,5 +15,4 @@ router.get('/terms', getTermsRequestHandler)
 router.use('/invoices', invoiceRouter)
 router.use('/callbacks', callbacksRouter)
 
-
 export default router
