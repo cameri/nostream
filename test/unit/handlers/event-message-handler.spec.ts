@@ -111,7 +111,7 @@ describe('EventMessageHandler', () => {
     })
 
     it('rejects event if invalid', async () => {
-      isEventValidStub.returns('reason')
+      isEventValidStub.resolves('reason')
 
       await handler.handleMessage(message)
 
@@ -127,6 +127,28 @@ describe('EventMessageHandler', () => {
 
       expect(isUserAdmitted).to.have.been.calledWithExactly(event)
       expect(strategyFactoryStub).not.to.have.been.called
+    })
+    
+    it('rejects event if it is expired', async () => {
+      isEventValidStub.resolves(undefined)
+
+      const expiredEvent = {
+        ...event,
+        tags: [
+          ['expiration', '1600000'],
+        ],
+      }
+
+      const expiredEventMessage: any = [MessageType.EVENT, expiredEvent]
+
+      await handler.handleMessage(expiredEventMessage)
+
+      expect(isEventValidStub).to.have.been.calledOnceWithExactly(expiredEvent)
+
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
+        [MessageType.OK, event.id, false, 'event is expired'],
+      )
+      expect(strategyExecuteStub).not.to.have.been.called
     })
 
     it('does not call strategy if none given', async () => {

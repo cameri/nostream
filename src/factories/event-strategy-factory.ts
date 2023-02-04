@@ -10,7 +10,6 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strategies/parameterized-replaceable-event-strategy'
 import { ReplaceableEventStrategy } from '../handlers/event-strategies/replaceable-event-strategy'
 
-
 export const eventStrategyFactory = (
   eventRepository: IEventRepository,
 ): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
@@ -23,7 +22,7 @@ export const eventStrategyFactory = (
       return new DeleteEventStrategy(adapter, eventRepository)
     } else if (isParameterizedReplaceableEvent(event)) {
       return new ParameterizedReplaceableEventStrategy(adapter, eventRepository)
-    }
+    } 
 
     return new DefaultEventStrategy(adapter, eventRepository)
   }

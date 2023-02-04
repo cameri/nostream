@@ -29,7 +29,7 @@ import {
   toPairs,
 } from 'ramda'
 
-import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey } from '../constants/base'
+import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventExpirationTimeMetadataKey } from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
@@ -182,6 +182,12 @@ export class EventRepository implements IEventRepository {
         always(null),
       ),
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
+      expires_at: ifElse(
+        propSatisfies(is(Number), EventExpirationTimeMetadataKey),
+        pipe(prop(EventExpirationTimeMetadataKey as any), toBuffer),
+        always(null),
+      ),
+      
     })(event)
 
     return this.masterDbClient('events')
@@ -214,6 +220,11 @@ export class EventRepository implements IEventRepository {
         pipe(prop(EventDeduplicationMetadataKey as any), toJSON),
       ),
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
+      expires_at: ifElse(
+        propSatisfies(is(Number), EventExpirationTimeMetadataKey),
+        pipe(prop(EventExpirationTimeMetadataKey as any), toBuffer),
+        always(null),
+      ),
     })(event)
 
     const query = this.masterDbClient('events')
@@ -250,6 +261,7 @@ export class EventRepository implements IEventRepository {
           event_signature: pipe(always(''), toBuffer),
           event_delegator: always(null),
           event_deduplication: pipe(always([pubkey, 5]), toJSON),
+          expires_at: always(null),
           deleted_at: always(date.toISOString()),
         })
       )
