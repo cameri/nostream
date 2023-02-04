@@ -1,6 +1,6 @@
 exports.up = function (knex) {
   return knex.schema.alterTable('events', function (table) {
-    table.timestamp('expires_at', { useTz: false }).index().nullable()
+    table.integer('expires_at').unsigned().nullable().index()
   })
 }
 
