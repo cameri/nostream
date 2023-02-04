@@ -93,15 +93,16 @@ export class App implements IRunnable {
       }
     }
 
-    logCentered(`${workerCount} workers started`, width)
+    logCentered(`${workerCount} client workers started`, width)
+    logCentered('1 maintenance worker started', width)
 
     debug('settings: %O', settings)
 
     const host = `${hostname()}:${port}`
     addOnion(torHiddenServicePort, host).then(value=>{
-      console.info(`tor hidden service address: ${value}:${torHiddenServicePort}`)
+      logCentered(`Tor hidden service: ${value}:${torHiddenServicePort}`, width)
     }, () => {
-      console.error('Unable to add Tor hidden service. Skipping.')
+      logCentered('Tor hidden service: disabled', width)
     })
   }
 
