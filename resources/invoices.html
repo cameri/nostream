@@ -106,6 +106,40 @@
       var expiresAt = "{{expires_at}}"
       var timeout
       var paid = false
+      var fallbackTimeout
+
+      function getBackoffTime() {
+        return 5000 + Math.floor(Math.random() * 5000)
+      }
+
+      async function getInvoiceStatus() {
+        fetch(`/invoices/${reference}/status`).then(async (response) => {
+          const data = await response.json()
+          console.log('data', data)
+          const { status } = data;
+
+          if (status === 'pending') {
+            fallbackTimeout = setTimeout(getInvoiceStatus, getBackoffTime())
+            return
+          } else if (status === 'expired') {
+            hide('pending')
+            show('expired')
+            return
+          }
+
+          paid = true
+
+          clearTimeout(timeout)
+
+          hide('pending')
+          show('paid')
+        }, (error) => {
+          console.error('error fetching status', error)
+          fallbackTimeout = setTimeout(getInvoiceStatus, getBackoffTime())
+        })
+      }
+
+      fallbackTimeout = setTimeout(getInvoiceStatus, getBackoffTime)
 
       function connect() {
         var socket = new WebSocket(relayUrl)
@@ -137,22 +171,15 @@
               }
             }
             break;
-            case 'EOSE': {
-
-            }
-            break;
           }
 
           if (!paid && message[0] === 'EOSE' && message[1] === 'payment') {
-
             return
           }
 
           if (message.length !== 3 || message[0] !== 'EVENT' || message[1] !== 'payment') {
             return
           }
-
-
         }
 
         socket.onerror = console.error.bind(console)

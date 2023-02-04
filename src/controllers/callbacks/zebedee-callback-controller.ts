@@ -19,14 +19,16 @@ export class ZebedeeCallbackController implements IController {
     response: Response,
   ) {
     debug('request headers: %o', request.headers)
-    debug('request body: %o', request.body)
+    debug('request body: %O', request.body)
 
     const invoice = fromZebedeeInvoice(request.body)
 
     debug('invoice', invoice)
 
     try {
-      await this.paymentsService.updateInvoice(invoice)
+      if (!invoice.bolt11) {
+        await this.paymentsService.updateInvoice(invoice)
+      }
     } catch (error) {
       console.error(`Unable to persist invoice ${invoice.id}`, error)
 
