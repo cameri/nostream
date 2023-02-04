@@ -1,6 +1,6 @@
 import Schema from 'joi'
 
-export const prefixSchema = Schema.string().case('lower').hex().min(1).max(64).label('prefix')
+export const prefixSchema = Schema.string().case('lower').hex().min(4).max(64).label('prefix')
 
 export const idSchema = Schema.string().case('lower').hex().length(64).label('id')
 

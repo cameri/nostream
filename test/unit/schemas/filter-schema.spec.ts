@@ -10,8 +10,8 @@ describe('NIP-01', () => {
   describe('validate filter schema', () => {
     beforeEach(() => {
       filter = {
-        ids: ['aa', 'bb', 'cc'],
-        authors: ['aa', 'bb', 'cc'],
+        ids: ['aaaa', 'bbbb', 'cccc'],
+        authors: ['aaaa', 'bbbb', 'cccc'],
         kinds: [0, 1, 2, 3],
         since: 1000,
         until: 1000,
@@ -32,7 +32,7 @@ describe('NIP-01', () => {
     const cases = {
       ids: [
         { message: 'must be an array', transform: assocPath(['ids'], null) },
-        { message: 'must contain less than or equal to 1000 items', transform: assocPath(['ids'], range(0, 1001).map(() => 'f')) },
+        { message: 'must contain less than or equal to 1000 items', transform: assocPath(['ids'], range(0, 1001).map(() => 'ffff')) },
       ],
       prefixOrId: [
         { message: 'length must be less than or equal to 64 characters long', transform: assocPath(['ids', 0], 'f'.repeat(65)) },
@@ -41,7 +41,7 @@ describe('NIP-01', () => {
       ],
       authors: [
         { message: 'must be an array', transform: assocPath(['authors'], null) },
-        { message: 'must contain less than or equal to 1000 items', transform: assocPath(['authors'], range(0, 1001).map(() => 'f')) },
+        { message: 'must contain less than or equal to 1000 items', transform: assocPath(['authors'], range(0, 1001).map(() => 'ffff')) },
       ],
       prefixOrAuthor: [
         { message: 'length must be less than or equal to 64 characters long', transform: assocPath(['authors', 0], 'f'.repeat(65)) },
@@ -73,7 +73,7 @@ describe('NIP-01', () => {
         { message: 'must be a number', transform: assocPath(['limit'], null) },
         { message: 'must be greater than or equal to 0', transform: assocPath(['limit'], -1) },
         { message: 'must be a multiple of 1', transform: assocPath(['limit'], Math.PI) },
-        { message: 'must be less than or equal to 10000', transform: assocPath(['limit'], 10001) },
+        { message: 'must be less than or equal to 5000', transform: assocPath(['limit'], 5001) },
       ],
       '#e': [
         { message: 'must be an array', transform: assocPath(['#e'], null) },

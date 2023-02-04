@@ -25,6 +25,8 @@ describe('NIP-01', () => {
 
           const result = validateSchema(messageSchema)(message)
 
+          console.log(result)
+
           expect(result).not.to.have.property('error')
           expect(result).to.have.deep.property('value', message)
         })
@@ -56,8 +58,8 @@ describe('NIP-01', () => {
           'REQ',
           'id',
           {
-            ids: ['aa', 'bb', 'cc'],
-            authors: ['aa', 'bb', 'cc'],
+            ids: ['aaaa', 'bbbb', 'cccc'],
+            authors: ['aaaa', 'bbbb', 'cccc'],
             kinds: [0, 1, 2, 3],
             since: 1000,
             until: 1000,
@@ -67,8 +69,8 @@ describe('NIP-01', () => {
             '#r': ['00', '11', '22'],
           },
           {
-            ids: ['aa', 'bb', 'cc'],
-            authors: ['aa', 'bb', 'cc'],
+            ids: ['aaaa', 'bbbb', 'cccc'],
+            authors: ['aaaa', 'bbbb', 'cccc'],
             kinds: [0, 1, 2, 3],
             since: 1000,
             until: 1000,
@@ -82,7 +84,7 @@ describe('NIP-01', () => {
 
       it('returns same message if valid', () => {
         const result = validateSchema(messageSchema)(message)
-
+        console.log('result', result)
         expect(result).not.to.have.property('error')
         expect(result).to.have.deep.property('value', message)
       })
