@@ -147,6 +147,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private async onClientMessage(raw: Buffer) {
+    this.alive = true
     let abortable = false
     let messageHandler: IMessageHandler & IAbortable | undefined = undefined
     try {

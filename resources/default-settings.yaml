@@ -15,13 +15,6 @@ payments:
       whitelists:
         pubkeys:
         - replace-with-your-pubkey-in-hex
-    publication:
-    - enabled: false
-      description: Publication fee charged per event in msats (1000 msats = 1 satoshi)
-      amount: 10
-      whitelists:
-        pubkeys:
-        - replace-with-your-pubkey-in-hex
 paymentsProcessors:
   zebedee:
     baseURL: https://api.zebedee.io/
@@ -30,9 +23,8 @@ paymentsProcessors:
       - "3.225.112.64"
       - "::ffff:3.225.112.64"
 network:
-  maxPayloadSize: 262144
+  maxPayloadSize: 524288
   remoteIpHeader: x-forwarded-for
-  idleTimeout: 60
 workers:
   count: 0
 mirroring:
@@ -41,11 +33,9 @@ limits:
   invoice:
     rateLimits:
     - period: 60000
-      rate: 3
+      rate: 6
     - period: 3600000
-      rate: 10
-    - period: 86400000
-      rate: 20
+      rate: 16
     ipWhitelist:
     - "::1"
     - "10.10.10.1"
@@ -53,13 +43,11 @@ limits:
   connection:
     rateLimits:
     - period: 1000
-      rate: 6
+      rate: 12
     - period: 60000
-      rate: 30
+      rate: 48
     - period: 3600000
       rate: 300
-    - period: 86400000
-      rate: 1440
     ipWhitelist:
     - "::1"
     - "10.10.10.1"
@@ -159,25 +147,12 @@ limits:
       maxFilters: 10
   message:
     rateLimits:
-    # - description: 60 subscriptions/min
-    #   types:
-    #   - REQ
-    #   period: 60000
-    #   rate: 60
-    # - description: 2880 subscriptions/hour
-    #   types:
-    #   - REQ
-    #   period: 3600000
-    #   rate: 2880
-    - description: 120 raw messages/min
+    - description: 240 raw messages/min
       period: 60000
-      rate: 120
+      rate: 240
     - description: 3600 raw messages/hour
       period: 3600000
-      rate: 3600
-    - description: 86400 raw messages/day
-      period: 86400000
-      rate: 86400
+      rate: 4800
     ipWhitelist:
     - "::1"
     - "10.10.10.1"

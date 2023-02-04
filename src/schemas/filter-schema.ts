@@ -8,5 +8,5 @@ export const filterSchema = Schema.object({
   kinds: Schema.array().items(kindSchema).max(20),
   since: createdAtSchema,
   until: createdAtSchema,
-  limit: Schema.number().min(0).multiple(1).max(10000),
+  limit: Schema.number().min(0).multiple(1).max(5000),
 }).pattern(/^#[a-z]$/, Schema.array().items(Schema.string().max(1024)).max(256))
