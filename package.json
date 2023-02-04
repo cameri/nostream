@@ -1,6 +1,6 @@
 {
   "name": "nostream",
-  "version": "1.21.0",
+  "version": "1.22.0",
   "description": "A Nostr relay written in Typescript.",
   "supportedNips": [
     1,
