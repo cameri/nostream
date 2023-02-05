@@ -12,7 +12,7 @@ export const eventMessageSchema = Schema.array().ordered(
   .label('EVENT message')
 
 export const reqMessageSchema = Schema.array()
-  .ordered(Schema.string().valid('REQ').required(), Schema.string().required().label('subscriptionId'))
+  .ordered(Schema.string().valid('REQ').required(), Schema.string().max(256).required().label('subscriptionId'))
   .items(filterSchema.required().label('filter')).max(12)
   .label('REQ message')
 
