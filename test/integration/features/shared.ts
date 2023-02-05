@@ -21,6 +21,7 @@ import { Event } from '../../../src/@types/event'
 import { getCacheClient } from '../../../src/cache/client'
 import { SettingsStatic } from '../../../src/utils/settings'
 import { workerFactory } from '../../../src/factories/worker-factory'
+import Sinon from 'sinon'
 
 export const isDraft = Symbol('draft')
 
@@ -38,7 +39,7 @@ BeforeAll({ timeout: 1000 }, async function () {
   dbClient = getMasterDbClient()
   rrDbClient = getReadReplicaDbClient()
   await dbClient.raw('SELECT 1=1')
-
+  Sinon.stub(SettingsStatic, 'watchSettings')
   const settings = SettingsStatic.createSettings()
 
   SettingsStatic._settings = pipe(
