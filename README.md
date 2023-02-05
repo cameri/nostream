@@ -83,7 +83,8 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
 
 ## Full Guide
 
-- [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder At [ZEBEDEE](https://zebedee.io/))
+- [Set up a Paid Nostr relay with Nostream and ZBD](https://andreneves.xyz/p/how-to-setup-a-paid-nostr-relay) by [André Neves](https://snort.social/p/npub1rvg76s0gz535txd9ypg2dfqv0x7a80ar6e096j3v343xdxyrt4ksmkxrck) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
+- [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 
 ## Local Quick Start (Docker Compose)
 
@@ -387,6 +388,7 @@ I'm Cameri on most social networks. You can find me on Nostr by npub1qqqqqqyz0la
 - Kevin Smith
 - Saransh Sharma
 - swissrouting
+- André Neves
 
 ## License
 
