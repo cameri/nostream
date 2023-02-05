@@ -37,8 +37,8 @@ export class App implements IRunnable {
   }
 
   public run(): void {
-    this.watchers = SettingsStatic.watchSettings()
     const settings = this.settings()
+    this.watchers = SettingsStatic.watchSettings()
     console.log(`
  ███▄    █  ▒█████    ██████ ▄▄▄█████▓ ██▀███  ▓█████ ▄▄▄       ███▄ ▄███▓
  ██ ▀█   █ ▒██▒  ██▒▒██    ▒ ▓  ██▒ ▓▒▓██ ▒ ██▒▓█   ▀▒████▄    ▓██▒▀█▀ ██▒
