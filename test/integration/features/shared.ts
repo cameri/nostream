@@ -11,6 +11,7 @@ import {
 import { assocPath, pipe } from 'ramda'
 import { fromEvent, map, Observable, ReplaySubject, Subject, takeUntil } from 'rxjs'
 import WebSocket, { MessageEvent } from 'ws'
+import Sinon from 'sinon'
 
 import { connect, createIdentity, createSubscription, sendEvent } from './helpers'
 import { getMasterDbClient, getReadReplicaDbClient } from '../../../src/database/client'
@@ -21,7 +22,6 @@ import { Event } from '../../../src/@types/event'
 import { getCacheClient } from '../../../src/cache/client'
 import { SettingsStatic } from '../../../src/utils/settings'
 import { workerFactory } from '../../../src/factories/worker-factory'
-import Sinon from 'sinon'
 
 export const isDraft = Symbol('draft')
 
