@@ -1,6 +1,7 @@
 import cluster from 'cluster'
 import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
+import { randomBytes } from 'crypto'
 import { WebSocket } from 'ws'
 
 import { ContextMetadata, Factory } from '../@types/base'
@@ -32,6 +33,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private clientAddress: SocketAddress
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
+  private authChallenge: { createdAt: Date, challenge: Buffer }
+  private authenticated: boolean
 
   public constructor(
     private readonly client: WebSocket,
@@ -96,8 +99,24 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.subscriptions.set(subscriptionId, filters)
   }
 
+  public setNewAuthChallenge() {
+    this.authChallenge = {
+      createdAt: new Date(),
+      challenge: randomBytes(32),
+    }
+  }
+
+  public setClientToAuthenticated() {
+    this.authenticated = true
+  }
+
+  public getClientAuthChallenge() {
+    return this.authChallenge
+  }
+
   public onBroadcast(event: Event): void {
     this.webSocketServer.emit(WebSocketServerAdapterEvent.Broadcast, event)
+
     if (cluster.isWorker && typeof process.send === 'function') {
       process.send({
         eventName: WebSocketServerAdapterEvent.Broadcast,

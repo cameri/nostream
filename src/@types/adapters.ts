@@ -16,6 +16,8 @@ export type IWebSocketAdapter = EventEmitter & {
   getClientId(): string
   getClientAddress(): string
   getSubscriptions(): Map<string, SubscriptionFilter[]>
+  getClientChallenge?(): string,
+  setClientToAuthenticated?()
 }
 
 export interface ICacheAdapter {

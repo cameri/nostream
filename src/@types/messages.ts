@@ -4,6 +4,7 @@ import { SubscriptionFilter, SubscriptionId } from './subscription'
 import { ContextMetadataKey } from '../constants/base'
 
 export enum MessageType {
+  AUTH = 'AUTH',
   REQ = 'REQ',
   EVENT = 'EVENT',
   CLOSE = 'CLOSE',

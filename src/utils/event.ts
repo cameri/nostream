@@ -10,6 +10,7 @@ import { EventKindsRange } from '../@types/settings'
 import { fromBuffer } from './transform'
 import { getLeadingZeroBits } from './proof-of-work'
 import { isGenericTagQuery } from './filter'
+import { MessageType } from '../@types/messages'
 import { RuneLike } from './runes/rune-like'
 import { SubscriptionFilter } from '../@types/subscription'
 import { WebSocketServerAdapterEvent } from '../constants/adapter'
@@ -112,6 +113,32 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
   }
 
   return true
+}
+
+export const isSignedAuthEvent = (event: Event): boolean => {
+  if (!event.content || !event.tags) return false
+
+  const evenKindIsValid = event.kind !== EventKinds.AUTH
+  const hasAuthDeclaration = event.content[0] === MessageType.AUTH && event.content[1]
+  const relay = event.tags.some((tag) => tag.length === 2 && tag[0] === EventTags.Relay)
+  const challenge = event.tags.some((tag) => tag.length === 2 && tag[0] === EventTags.Challenge)
+
+  return Boolean(evenKindIsValid && hasAuthDeclaration && relay && challenge)
+}
+
+export const isValidSignedAuthEvent = async (event: Event, challenge: string): Promise<boolean> => {
+  const signedAuthEvent = isSignedAuthEvent(event)
+
+  if (signedAuthEvent) {
+    const sig = event.tags.find(tag => tag.length >= 2 && tag[0] === EventTags.Challenge)
+
+    const isValidSignedChallenge = secp256k1.schnorr.verify(sig[1], challenge, event.pubkey)
+    if (isValidSignedChallenge) {
+      return true
+    }
+  }
+
+  return false
 }
 
 export const isDelegatedEvent = (event: Event): boolean => {

@@ -1,12 +1,14 @@
 import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { IncomingMessage, MessageType } from '../@types/messages'
+import { isDelegatedEvent, isSignedAuthEvent } from '../utils/event'
+import { AuthEventMessageHandler } from '../handlers/auth-event-message-handler'
 import { createSettings } from './settings-factory'
 import { DelegatedEventMessageHandler } from '../handlers/delegated-event-message-handler'
 import { delegatedEventStrategyFactory } from './delegated-event-strategy-factory'
 import { EventMessageHandler } from '../handlers/event-message-handler'
 import { eventStrategyFactory } from './event-strategy-factory'
-import { isDelegatedEvent } from '../utils/event'
 import { IWebSocketAdapter } from '../@types/adapters'
+import { signedAuthEventStrategyFactory } from './auth-event-strategy-factory'
 import { slidingWindowRateLimiterFactory } from './rate-limiter-factory'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
@@ -22,6 +24,16 @@ export const messageHandlerFactory = (
           return new DelegatedEventMessageHandler(
             adapter,
             delegatedEventStrategyFactory(eventRepository),
+            userRepository,
+            createSettings,
+            slidingWindowRateLimiterFactory,
+          )
+        }
+
+        if (isSignedAuthEvent(message[1])) {
+          return new AuthEventMessageHandler(
+            adapter,
+            signedAuthEventStrategyFactory(),
             userRepository,
             createSettings,
             slidingWindowRateLimiterFactory,
