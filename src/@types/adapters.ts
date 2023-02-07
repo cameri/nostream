@@ -16,7 +16,7 @@ export type IWebSocketAdapter = EventEmitter & {
   getClientId(): string
   getClientAddress(): string
   getSubscriptions(): Map<string, SubscriptionFilter[]>
-  getClientChallenge?(): string,
+  getClientAuthChallengeData?(): { challenge: string, createdAt: Date },
   setClientToAuthenticated?()
 }
 

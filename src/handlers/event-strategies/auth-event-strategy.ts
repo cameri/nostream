@@ -1,8 +1,10 @@
+import { createCommandResult } from '../../utils/messages'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { IEventStrategy } from '../../@types/message-handlers'
 import { isValidSignedAuthEvent } from '../../utils/event'
 import { IWebSocketAdapter } from '../../@types/adapters'
+import { WebSocketAdapterEvent } from '../../constants/adapter'
 
 const debug = createLogger('default-event-strategy')
 
@@ -11,23 +13,20 @@ export class SignedAuthEventStrategy implements IEventStrategy<Event, Promise<vo
     private readonly webSocket: IWebSocketAdapter,
   ) { }
 
-  // TODO this is how we send out events, we need to do this
-  // in the message handler (verify if this is true)
   public async execute(event: Event): Promise<void> {
     debug('received signedAuth event: %o', event)
-    const clientChallenge = this.webSocket.getClientChallenge()
-    const verified = await isValidSignedAuthEvent(event, clientChallenge)
+    const { challenge, createdAt } = this.webSocket.getClientAuthChallengeData()
+    const verified = await isValidSignedAuthEvent(event, challenge)
 
-    if (verified) {
+    const permittedChallengeResponseTimeDelayMs = (1000 * 60 * 10) // 10 min
+    const timeIsWithinBounds = (createdAt.getTime() + permittedChallengeResponseTimeDelayMs) < Date.now()
+
+    if (verified && timeIsWithinBounds) {
       this.webSocket.setClientToAuthenticated()
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, 'authentication: succeeded'))
+      return
     }
 
-    // NOTE: we can add a message here if auth fails
-    // this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, 'auth error'))
-
-    // NOTE: we can add a message here if auth succeeds
-    // if (verified) {
-    //   this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, 'successful auth'))
-    // }
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, 'authentication: failed'))
   }
 }

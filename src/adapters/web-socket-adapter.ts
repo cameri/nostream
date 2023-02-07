@@ -33,7 +33,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private clientAddress: SocketAddress
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
-  private authChallenge: { createdAt: Date, challenge: Buffer }
+  private authChallenge: { createdAt: Date, challenge: string }
   private authenticated: boolean
 
   public constructor(
@@ -102,7 +102,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   public setNewAuthChallenge() {
     this.authChallenge = {
       createdAt: new Date(),
-      challenge: randomBytes(32),
+      challenge: randomBytes(32).toString('hex'),
     }
   }
 
@@ -110,7 +110,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.authenticated = true
   }
 
-  public getClientAuthChallenge() {
+  public getClientAuthChallengeData() {
     return this.authChallenge
   }
 
