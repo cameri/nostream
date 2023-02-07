@@ -12,6 +12,7 @@ import { IPaymentsService } from '../@types/services'
 import { toBech32 } from '../utils/transform'
 import { Transaction } from '../database/transaction'
 import { UnidentifiedEvent } from '../@types/event'
+// import fetch from 'node-fetch'
 
 const debug = createLogger('payments-service')
 
@@ -182,6 +183,17 @@ export class PaymentsService implements IPaymentsService {
             },
             transaction.transaction,
           )
+
+          const webhookUrl = `${process.env.BASE_FILTER_URL}/webhook/${invoice.pubkey}`
+          console.log(webhookUrl)
+          // const response = await fetch(webhookUrl, {
+          //     method: 'get',
+          //     headers: {'Authorization': `Bearer ${process.env.BASE_FILTER_AUTH_HEADER}`},
+          // })
+          // if (response.status !== 200) {
+          //   console.log(`Unable to post ${invoice.pubkey} to filter.nostr.wine due to ${response.status} error code`)
+          // }
+
         }
 
       await transaction.commit()

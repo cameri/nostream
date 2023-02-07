@@ -34,6 +34,7 @@ services:
       TOR_CONTROL_PORT: 9051
       TOR_PASSWORD: nostr_ts_relay
       HIDDEN_SERVICE_PORT: 80
+      BASE_FILTER_URL: https://filter.nostr.wine
       # Enable DEBUG for troubleshooting. Examples:
       # DEBUG: "primary:*"
       # DEBUG: "worker:*"
