@@ -61,7 +61,7 @@ export class AuthEventMessageHandler extends EventMessageHandler implements IMes
       return reason
     }
 
-    if (!await isSignedAuthEvent(event)) {
+    if (!isSignedAuthEvent(event)) {
       return 'invalid: auth verification failed'
     }
   }
