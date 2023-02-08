@@ -1,6 +1,7 @@
 import { expect } from 'chai'
 
 import { CanonicalEvent, Event } from '../../../src/@types/event'
+import { EventKinds, EventTags } from '../../../src/constants/base'
 import {
   getEventExpiration,
   isDelegatedEvent,
@@ -13,9 +14,10 @@ import {
   isExpiredEvent,
   isParameterizedReplaceableEvent,
   isReplaceableEvent,
+  isSignedAuthEvent,
+  isValidSignedAuthEvent,
   serializeEvent,
 } from '../../../src/utils/event'
-import { EventKinds } from '../../../src/constants/base'
 
 describe('NIP-01', () => {
   describe('serializeEvent', () => {
@@ -562,6 +564,110 @@ describe('NIP-40', () => {
         ['expiration', '100000'],
       ]
       expect(isExpiredEvent(event)).to.equal(true)
+    })
+  })
+
+  describe('isSignedAuthEvent', () => {
+    it('returns true if event is valid client auth event', () => {
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, 'signedChallenge'],
+      ]
+
+      expect(isSignedAuthEvent(event)).to.equal(true)
+    })
+
+    it('returns false if relay tag is missing', () => {
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Challenge, 'signedChallenge'],
+      ]
+
+      expect(isSignedAuthEvent(event)).to.equal(false)
+    })
+
+    it('returns false if chaellenge tag is missing', () => {
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+      ]
+
+      expect(isSignedAuthEvent(event)).to.equal(false)
+    })
+
+    it('returns false if event kind is not AUTH', () => {
+      event.kind = EventKinds.DELETE
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, 'signedChallenge'],
+      ]
+
+      expect(isSignedAuthEvent(event)).to.equal(false)
+    })
+  })
+
+  describe('isValidSignedAuthEvent', async () => {
+    it('returns true if event is valid client auth event', async () => {
+      const challengeHex = '7468656368616c6c656e67657249554a415057494f4f414949444f4149414f5039393039'
+      const signedHexChallenge = '9161696c52b5471c8d3b4a1649f134731136a5237d67e3ad40451e4ecd2bce1f2787d8043a411f7427e1de30bbbb288d00ef5652df0577fa1191e612344ac8b8'
+
+      event.pubkey = 'c9892fe983a9d85a570c706a582db6288a6a53102efee28871a5a6048a579154'
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, signedHexChallenge],
+      ]
+
+      expect(await isValidSignedAuthEvent(event, challengeHex)).to.equal(true)
+    })
+  })
+
+  describe('isValidSignedAuthEvent', async () => {
+    it('returns false if challenge is different', async () => {
+      const challengeHex = '6468656368616c6c656e67657249554a415057494f4f414949444f4149414f5039393039'
+      const signedHexChallenge = '9161696c52b5471c8d3b4a1649f134731136a5237d67e3ad40451e4ecd2bce1f2787d8043a411f7427e1de30bbbb288d00ef5652df0577fa1191e612344ac8b8'
+
+      event.pubkey = 'c9892fe983a9d85a570c706a582db6288a6a53102efee28871a5a6048a579154'
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, signedHexChallenge],
+      ]
+
+      expect(await isValidSignedAuthEvent(event, challengeHex)).to.equal(false)
+    })
+  })
+
+  describe('isValidSignedAuthEvent', async () => {
+    it('returns false if signed challenge is incorrect', async () => {
+      const challengeHex = '7468656368616c6c656e67657249554a415057494f4f414949444f4149414f5039393039'
+      const signedHexChallenge = '0161696c52b5471c8d3b4a1649f134731136a5237d67e3ad40451e4ecd2bce1f2787d8043a411f7427e1de30bbbb288d00ef5652df0577fa1191e612344ac8b8'
+
+      event.pubkey = 'c9892fe983a9d85a570c706a582db6288a6a53102efee28871a5a6048a579154'
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, signedHexChallenge],
+      ]
+
+      expect(await isValidSignedAuthEvent(event, challengeHex)).to.equal(false)
+    })
+  })
+
+  describe('isValidSignedAuthEvent', async () => {
+    it('returns true if event is valid client auth event', async () => {
+      const challengeHex = '7468656368616c6c656e67657249554a415057494f4f414949444f4149414f5039393039'
+      const signedHexChallenge = '9161696c52b5471c8d3b4a1649f134731136a5237d67e3ad40451e4ecd2bce1f2787d8043a411f7427e1de30bbbb288d00ef5652df0577fa1191e612344ac8b8'
+
+      event.pubkey = 'a9892fe983a9d85a570c706a582db6288a6a53102efee28871a5a6048a579154'
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, signedHexChallenge],
+      ]
+
+      expect(await isValidSignedAuthEvent(event, challengeHex)).to.equal(false)
     })
   })
 })

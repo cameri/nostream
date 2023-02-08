@@ -6,6 +6,7 @@ import { isValidSignedAuthEvent } from '../../utils/event'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
+const permittedChallengeResponseTimeDelayMs = (1000 * 60 * 10) // 10 min
 const debug = createLogger('default-event-strategy')
 
 export class SignedAuthEventStrategy implements IEventStrategy<Event, Promise<void>> {
@@ -18,7 +19,6 @@ export class SignedAuthEventStrategy implements IEventStrategy<Event, Promise<vo
     const { challenge, createdAt } = this.webSocket.getClientAuthChallengeData()
     const verified = await isValidSignedAuthEvent(event, challenge)
 
-    const permittedChallengeResponseTimeDelayMs = (1000 * 60 * 10) // 10 min
     const timeIsWithinBounds = (createdAt.getTime() + permittedChallengeResponseTimeDelayMs) < Date.now()
 
     if (verified && timeIsWithinBounds) {

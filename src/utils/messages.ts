@@ -34,6 +34,11 @@ export const createCommandResult = (eventId: EventId, successful: boolean, messa
   return [MessageType.OK, eventId, successful, message]
 }
 
+// NIP-42
+export const createAuthEventMessage = (challenge) => {
+  return [MessageType.AUTH, challenge]
+}
+
 export const createSubscriptionMessage = (
   subscriptionId: SubscriptionId,
   filters: SubscriptionFilter[]

@@ -24,6 +24,7 @@ export type IncomingMessage = (
 
 export type OutgoingMessage =
   | OutgoingEventMessage
+  | OutgoingAuthMessage
   | EndOfStoredEventsNotice
   | NoticeMessage
   | CommandResult
@@ -49,6 +50,11 @@ export interface OutgoingEventMessage {
   0: MessageType.EVENT
   1: SubscriptionId
   2: Event
+}
+
+export interface OutgoingAuthMessage {
+  0: MessageType.AUTH
+  1: Event
 }
 
 export interface UnsubscribeMessage {

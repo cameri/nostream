@@ -1,18 +1,18 @@
 import cluster from 'cluster'
+import { ContextMetadataKey } from '../constants/base'
 import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
 import { randomBytes } from 'crypto'
 import { WebSocket } from 'ws'
 
 import { ContextMetadata, Factory } from '../@types/base'
-import { createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import { createAuthEventMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
-import { IncomingMessage, OutgoingMessage } from '../@types/messages'
+import { IncomingMessage, MessageType, OutgoingMessage } from '../@types/messages'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
 import { attemptValidation } from '../utils/validation'
-import { ContextMetadataKey } from '../constants/base'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { getRemoteAddress } from '../utils/http'
@@ -33,7 +33,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private clientAddress: SocketAddress
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
-  private authChallenge: { createdAt: Date, challenge: string }
+  private authChallenge: { createdAt: Date, challenge: string } | undefined
   private authenticated: boolean
 
   public constructor(
@@ -100,14 +100,18 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public setNewAuthChallenge() {
+    const challenge = randomBytes(16).toString('hex')
     this.authChallenge = {
       createdAt: new Date(),
-      challenge: randomBytes(32).toString('hex'),
+      challenge,
     }
+
+    return challenge
   }
 
   public setClientToAuthenticated() {
     this.authenticated = true
+    this.authChallenge = undefined
   }
 
   public getClientAuthChallengeData() {
@@ -176,6 +180,20 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       }
 
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf8')))
+
+      if (
+        !this.authenticated 
+        && this.settings().authentication.enabled 
+        && message[0] !== MessageType.AUTH
+      ) {
+        const challenge = this.setNewAuthChallenge()
+        this.webSocketServer.emit(
+          WebSocketServerAdapterEvent.Broadcast, 
+          createAuthEventMessage(challenge)
+        )
+
+        return
+      }
 
       message[ContextMetadataKey] = {
         remoteAddress: this.clientAddress,
@@ -270,6 +288,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private onClientClose() {
+    this.authenticated = false
     this.alive = false
     this.subscriptions.clear()
 

@@ -3,7 +3,7 @@ import { createHash, createHmac, Hash } from 'crypto'
 import { Observable } from 'rxjs'
 import WebSocket from 'ws'
 
-import { CommandResult, MessageType, OutgoingMessage } from '../../../src/@types/messages'
+import { CommandResult, MessageType, OutgoingAuthMessage, OutgoingMessage } from '../../../src/@types/messages'
 import { Event } from '../../../src/@types/event'
 import { serializeEvent } from '../../../src/utils/event'
 import { streams } from './shared'
@@ -190,6 +190,18 @@ export async function waitForNotice(ws: WebSocket): Promise<string> {
     observable.subscribe((message: OutgoingMessage) => {
       if (message[0] === MessageType.NOTICE) {
         resolve(message[1])
+      }
+    })
+  })
+}
+
+export async function waitForAuth(ws: WebSocket): Promise<OutgoingAuthMessage> {
+  return new Promise<OutgoingAuthMessage>((resolve) => {
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
+
+    observable.subscribe((message: OutgoingMessage) => {
+      if (message[0] === MessageType.AUTH) {
+        resolve(message)
       }
     })
   })

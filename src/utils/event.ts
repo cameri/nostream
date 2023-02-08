@@ -10,7 +10,6 @@ import { EventKindsRange } from '../@types/settings'
 import { fromBuffer } from './transform'
 import { getLeadingZeroBits } from './proof-of-work'
 import { isGenericTagQuery } from './filter'
-import { MessageType } from '../@types/messages'
 import { RuneLike } from './runes/rune-like'
 import { SubscriptionFilter } from '../@types/subscription'
 import { WebSocketServerAdapterEvent } from '../constants/adapter'
@@ -116,14 +115,29 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
 }
 
 export const isSignedAuthEvent = (event: Event): boolean => {
-  if (!event.content || !event.tags) return false
+  const evenKindIsValid = event.kind === EventKinds.AUTH
+  if (!evenKindIsValid) return false
 
-  const evenKindIsValid = event.kind !== EventKinds.AUTH
-  const hasAuthDeclaration = event.content[0] === MessageType.AUTH && event.content[1]
-  const relay = event.tags.some((tag) => tag.length === 2 && tag[0] === EventTags.Relay)
-  const challenge = event.tags.some((tag) => tag.length === 2 && tag[0] === EventTags.Challenge)
+  let relay
+  let challenge
+  for (let i = 0; i < event.tags.length; i++) {
+    const tag = event.tags[i]
+    if (tag.length < 2) {
+      continue
+    }
 
-  return Boolean(evenKindIsValid && hasAuthDeclaration && relay && challenge)
+    if (tag[0] === EventTags.Challenge) {
+      if (relay) return true
+      challenge = true
+    }
+
+    if (tag[0] === EventTags.Relay) {
+      if (challenge) return true
+      relay = true
+    }
+  }
+
+  return false
 }
 
 export const isValidSignedAuthEvent = async (event: Event, challenge: string): Promise<boolean> => {
@@ -132,10 +146,7 @@ export const isValidSignedAuthEvent = async (event: Event, challenge: string): P
   if (signedAuthEvent) {
     const sig = event.tags.find(tag => tag.length >= 2 && tag[0] === EventTags.Challenge)
 
-    const isValidSignedChallenge = secp256k1.schnorr.verify(sig[1], challenge, event.pubkey)
-    if (isValidSignedChallenge) {
-      return true
-    }
+    return secp256k1.schnorr.verify(sig[1], challenge, event.pubkey)
   }
 
   return false
