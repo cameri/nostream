@@ -22,6 +22,8 @@ paymentsProcessors:
     ipWhitelist:
       - "3.225.112.64"
       - "::ffff:3.225.112.64"
+authentication:
+  enabled: false
 network:
   maxPayloadSize: 524288
   remoteIpHeader: x-forwarded-for

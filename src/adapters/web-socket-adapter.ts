@@ -180,6 +180,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       }
 
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf8')))
+      debug('recv client msg: %o', message)
 
       if (!this.authenticated && this.settings().authentication.enabled) {
         switch(message[0]) {
@@ -240,6 +241,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
       await messageHandler.handleMessage(message)
     } catch (error) {
+      console.error('mistakes were made', error)
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           console.error(`web-socket-adapter: abort from client ${this.clientId} (${this.getClientAddress()})`)
