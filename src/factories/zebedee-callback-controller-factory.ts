@@ -12,14 +12,14 @@ export const createZebedeeCallbackController = (): IController => {
   const dbClient = getMasterDbClient()
   const rrDbClient = getReadReplicaDbClient()
   const eventRepository = new EventRepository(dbClient, rrDbClient)
-  const invoiceRepotistory = new InvoiceRepository(dbClient)
+  const invoiceRepository = new InvoiceRepository(dbClient)
   const userRepository = new UserRepository(dbClient)
-  const paymentsProcessor = createPaymentsProcessor()
+  const paymentsProcessor = createPaymentsProcessor(invoiceRepository)
   const paymentsService = new PaymentsService(
     dbClient,
     paymentsProcessor,
     userRepository,
-    invoiceRepotistory,
+    invoiceRepository,
     eventRepository,
     createSettings,
   )

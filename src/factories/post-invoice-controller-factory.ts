@@ -15,7 +15,7 @@ export const createPostInvoiceController = (): IController => {
   const eventRepository = new EventRepository(dbClient, rrDbClient)
   const invoiceRepository = new InvoiceRepository(dbClient)
   const userRepository = new UserRepository(dbClient)
-  const paymentsProcessor = createPaymentsProcessor()
+  const paymentsProcessor = createPaymentsProcessor(invoiceRepository)
   const paymentsService = new PaymentsService(
     dbClient,
     paymentsProcessor,

@@ -1,7 +1,7 @@
 import { always, applySpec, ifElse, is, isNil, path, pipe, prop, propSatisfies } from 'ramda'
 import { bech32 } from 'bech32'
 
-import { Invoice } from '../@types/invoice'
+import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 import { User } from '../@types/user'
 
 export const toJSON = (input: any) => JSON.stringify(input)
@@ -81,5 +81,23 @@ export const fromZebedeeInvoice = applySpec<Invoice>({
     pipe(prop('createdAt'), toDate),
     always(null),
   ),
+  rawRespose: toJSON,
+})
+
+export const fromLnbitsInvoice = applySpec<Invoice>({
+  id: prop('id'),
+  pubkey: prop('requestId'),
+  bolt11: prop('payment_request'),
+  amountRequested: pipe(prop('amountSats') as () => string, toBigInt),
+  unit: always(InvoiceUnit.SATS),
+  status: always(InvoiceStatus.PENDING),
+  description: prop('description'),
+  createdAt: () => new Date(),
+  expiresAt: pipe(prop('expirySeconds'), (expirySeconds: number) => {
+    const expiry = new Date()
+    expiry.setUTCSeconds(expiry.getUTCSeconds() + expirySeconds)
+    return expiry
+  }),
+  confirmedAt: always(null),
   rawRespose: toJSON,
 })

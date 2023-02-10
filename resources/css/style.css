@@ -113,6 +113,11 @@
   transition: 0.15s all ease-in-out;
 }
 
+#invoice {
+  height: 300px;
+  width: 300px;
+}
+
 @keyframes rotate-circle {
   0% {
     transform: rotate(-45deg);

@@ -10,9 +10,9 @@ import { UserRepository } from '../repositories/user-repository'
 export const maintenanceWorkerFactory = () => {
   const dbClient = getMasterDbClient()
   const rrDbClient = getReadReplicaDbClient()
-  const paymentsProcessor = createPaymentsProcessor()
   const userRepository = new UserRepository(dbClient)
   const invoiceRepository = new InvoiceRepository(dbClient)
+  const paymentsProcessor = createPaymentsProcessor(invoiceRepository)
   const eventRepository = new EventRepository(dbClient, rrDbClient)
 
   const paymentsService = new PaymentsService(

@@ -142,14 +142,15 @@ export interface Payments {
   feeSchedules: FeeSchedules
 }
 
-export interface ZebedeePaymentsProcessor {
+export interface PaymentsProcessor {
   baseURL: string
   callbackBaseURL: string
   ipWhitelist: string[]
 }
 
 export interface PaymentsProcessors {
-  zebedee?: ZebedeePaymentsProcessor
+  zebedee?: PaymentsProcessor
+  lnbits?: PaymentsProcessor
 }
 
 export interface Local {

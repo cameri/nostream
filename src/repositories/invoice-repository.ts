@@ -10,13 +10,13 @@ import {
   propSatisfies,
   toString,
 } from 'ramda'
+import { randomUUID } from 'crypto'
 
 import { DBInvoice, Invoice, InvoiceStatus } from '../@types/invoice'
 import { fromDBInvoice, toBuffer } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
 import { DatabaseClient } from '../@types/base'
 import { IInvoiceRepository } from '../@types/repositories'
-import { randomUUID } from 'crypto'
 
 const debug = createLogger('invoice-repository')
 
