@@ -64,8 +64,6 @@ services:
       - ${PWD}/.nostr/data:/var/lib/postgresql/data
       - ${PWD}/.nostr/db-logs:/var/log/postgresql
       - ${PWD}/postgresql.conf:/postgresql.conf
-    ports:
-      - 127.0.0.1:15432:5432
     networks:
       default:
     command: postgres -c 'config_file=/postgresql.conf'
