@@ -183,6 +183,7 @@ Set the following environment variables:
 
   ```
   DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
+  DB_USER=postgres
 
   or
 
@@ -236,10 +237,11 @@ Run migrations (at least once and after pulling new changes):
   npm run db:migrate
   ```
 
-Create .nostr folder inside nostream project folder:
+Create .nostr folder inside nostream project folder and copy over the settings file:
 
   ```
   mkdir .nostr
+  cp resources/default-settings.yaml .nostr/settings.yaml
   ```
 
 To start in development mode:
