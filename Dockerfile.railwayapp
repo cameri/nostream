@@ -73,10 +73,14 @@ WORKDIR /app
 
 COPY --from=build /build/dist .
 
+ADD resources /app/resources
+
 RUN npm install --omit=dev --quiet
 
 USER 1000:1000
 
 RUN mkdir -p $NOSTR_CONFIG_DIR
+
+RUN touch $NOSTR_CONFIG_DIR/settings.yaml
 
 CMD ["node", "src/index.js"]
