@@ -40,6 +40,7 @@ BeforeAll({ timeout: 1000 }, async function () {
   rrDbClient = getReadReplicaDbClient()
   await dbClient.raw('SELECT 1=1')
   Sinon.stub(SettingsStatic, 'watchSettings')
+
   const settings = SettingsStatic.createSettings()
 
   SettingsStatic._settings = pipe(

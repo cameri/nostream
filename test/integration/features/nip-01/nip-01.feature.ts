@@ -1,4 +1,5 @@
 import {
+  Before,
   Then,
   When,
   World,
@@ -19,9 +20,15 @@ import {
 } from '../helpers'
 import { Event } from '../../../../src/@types/event'
 import { isDraft } from '../shared'
+import { SettingsStatic } from '../../../../src/utils/settings'
 
 chai.use(sinonChai)
 const { expect } = chai
+
+Before(function () {
+  const settings = SettingsStatic.createSettings()
+  settings.authentication.enabled = false
+})
 
 When(/(\w+) subscribes to last event from (\w+)$/, async function(this: World<Record<string, any>>, from: string, to: string) {
   const ws = this.parameters.clients[from] as WebSocket

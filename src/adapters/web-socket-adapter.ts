@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto'
 import { WebSocket } from 'ws'
 
 import { ContextMetadata, Factory } from '../@types/base'
-import { createAuthEventMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import { createAuthEventMessage, createCommandResult, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, MessageType, OutgoingMessage } from '../@types/messages'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
@@ -181,18 +181,43 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf8')))
 
-      if (
-        !this.authenticated 
-        && this.settings().authentication.enabled 
-        && message[0] !== MessageType.AUTH
-      ) {
-        const challenge = this.setNewAuthChallenge()
-        this.webSocketServer.emit(
-          WebSocketServerAdapterEvent.Broadcast, 
-          createAuthEventMessage(challenge)
-        )
+      if (!this.authenticated && this.settings().authentication.enabled) {
+        switch(message[0]) {
+          case MessageType.REQ: {
+            // Need to emit event?
+            const challenge = this.setNewAuthChallenge()
 
-        return
+            this.webSocketServer.emit(
+              WebSocketServerAdapterEvent.Broadcast,
+              createAuthEventMessage(challenge)
+            )
+
+            return
+          }
+
+          case MessageType.EVENT: {
+            // Need to emit event?
+
+            const challenge = this.setNewAuthChallenge()
+
+            this.webSocketServer.emit(
+              WebSocketServerAdapterEvent.Broadcast,
+              createCommandResult(message[1].id, false, 'rejected: unauthorized')
+            )
+
+            this.webSocketServer.emit(
+              WebSocketServerAdapterEvent.Broadcast,
+              createAuthEventMessage(challenge)
+            )
+
+            return
+          }
+
+          default: {
+            this.sendMessage(createNoticeMessage('invalid: asdcf'))
+            return
+          }
+        }
       }
 
       message[ContextMetadataKey] = {
