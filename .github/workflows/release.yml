@@ -1,9 +1,9 @@
 name: Release
 
 on:
-  workflow_dispatch:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build-and-push-image:
@@ -36,26 +36,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    environment: deployment
-    env:
-      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Setup SSH key
-        run: |
-          ssh-agent -t 60 -a $SSH_AUTH_SOCK > /dev/null
-          ssh-add - <<< "${{ secrets.SSH_PRIVATE_KEY }}"
-      - name: Setup known hosts
-        run: mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
-      - name: Setup SSH config
-        run: |
-          mkdir -p ~/.ssh/sockets && chmod 700 ~/.ssh/sockets
-          echo "Host *\n  User ${{ secrets.SSH_USER }}\n  ForwardAgent yes\n  ControlMaster auto\n  ControlPath ~/.ssh/sockets/%r@%h-%p\n  ControlPersist 600" >> ~/.ssh/config
-          chmod 600 ~/.ssh/config
-      - name: Deploy
-        run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} -o SendEnv=GITHUB_REF_NAME "cd /srv/nostr-ts-relay && git fetch -va origin && git checkout --progress --force -B $GITHUB_REF_NAME refs/remotes/origin/$GITHUB_REF_NAME && source ~/.nvm/nvm.sh && nvm use && npm run tor:docker:compose:start -- --detach"
