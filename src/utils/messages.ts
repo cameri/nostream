@@ -1,9 +1,11 @@
 import {
+  CommandResult,
   EndOfStoredEventsNotice,
   IncomingEventMessage,
   IncomingRelayedEventMessage,
   MessageType,
   NoticeMessage,
+  OutgoingAuthMessage,
   OutgoingMessage,
   SubscribeMessage,
 } from '../@types/messages'
@@ -30,12 +32,12 @@ export const createEndOfStoredEventsNoticeMessage = (
 }
 
 // NIP-20
-export const createCommandResult = (eventId: EventId, successful: boolean, message: string) => {
+export const createCommandResult = (eventId: EventId, successful: boolean, message: string): CommandResult => {
   return [MessageType.OK, eventId, successful, message]
 }
 
 // NIP-42
-export const createAuthEventMessage = (challenge) => {
+export const createAuthMessage = (challenge: string): OutgoingAuthMessage => {
   return [MessageType.AUTH, challenge]
 }
 

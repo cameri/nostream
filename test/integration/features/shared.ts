@@ -38,7 +38,9 @@ BeforeAll({ timeout: 1000 }, async function () {
   cacheClient = getCacheClient()
   dbClient = getMasterDbClient()
   rrDbClient = getReadReplicaDbClient()
-  await dbClient.raw('SELECT 1=1')
+  await dbClient.raw('DELETE FROM events')
+  await dbClient.raw('DELETE FROM invoices')
+  await dbClient.raw('DELETE FROM users')
   Sinon.stub(SettingsStatic, 'watchSettings')
 
   const settings = SettingsStatic.createSettings()
@@ -66,6 +68,9 @@ Before(function () {
   this.parameters.subscriptions = {}
   this.parameters.clients = {}
   this.parameters.events = {}
+  this.parameters.challenges = {}
+  const settings = SettingsStatic.createSettings()
+  settings.authentication.enabled = false
 })
 
 After(async function () {
@@ -87,6 +92,7 @@ After(async function () {
         .map(({ pubkey }) => Buffer.from(pubkey, 'hex')),
     }).del()
   this.parameters.identities = {}
+  this.parameters.challenges = {}
 })
 
 Given(/someone called (\w+)/, async function(name: string) {
@@ -95,6 +101,8 @@ Given(/someone called (\w+)/, async function(name: string) {
   this.parameters.clients[name] = connection
   this.parameters.subscriptions[name] = []
   this.parameters.events[name] = []
+  this.parameters.challenges[name] = []
+
   const subject = new Subject()
   connection.once('close', subject.next.bind(subject))
 

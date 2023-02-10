@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto'
 import { WebSocket } from 'ws'
 
 import { ContextMetadata, Factory } from '../@types/base'
-import { createAuthEventMessage, createCommandResult, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import { createAuthMessage, createCommandResult, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, MessageType, OutgoingMessage } from '../@types/messages'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
@@ -188,10 +188,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
             // Need to emit event?
             const challenge = this.setNewAuthChallenge()
 
-            this.webSocketServer.emit(
-              WebSocketServerAdapterEvent.Broadcast,
-              createAuthEventMessage(challenge)
-            )
+            this.sendMessage(createAuthMessage(challenge))
 
             return
           }
@@ -201,15 +198,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
             const challenge = this.setNewAuthChallenge()
 
-            this.webSocketServer.emit(
-              WebSocketServerAdapterEvent.Broadcast,
-              createCommandResult(message[1].id, false, 'rejected: unauthorized')
-            )
+            this.sendMessage(createCommandResult(message[1].id, false, 'rejected: unauthorized'))
 
-            this.webSocketServer.emit(
-              WebSocketServerAdapterEvent.Broadcast,
-              createAuthEventMessage(challenge)
-            )
+            this.sendMessage(createAuthMessage(challenge))
 
             return
           }

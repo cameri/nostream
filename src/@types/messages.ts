@@ -16,6 +16,7 @@ export enum MessageType {
 export type IncomingMessage = (
   | SubscribeMessage
   | IncomingEventMessage
+  | IncomingAuthMessage
   | UnsubscribeMessage
   ) & {
     [ContextMetadataKey]?: ContextMetadata
@@ -53,6 +54,11 @@ export interface OutgoingEventMessage {
 }
 
 export interface OutgoingAuthMessage {
+  0: MessageType.AUTH
+  1: string
+}
+
+export interface IncomingAuthMessage {
   0: MessageType.AUTH
   1: Event
 }

@@ -101,13 +101,13 @@ When(/(\w+) sends a set_metadata event/, async function(name: string) {
   this.parameters.events[name].push(event)
 })
 
-When(/^(\w+) sends a text_note event with content "([^"]+)"$/, async function(name: string, content: string) {
+When(/^(\w+) sends a text_note event with content "([^"]+)"(?:\s+(successfully|unsuccessfully))?$/, async function(name: string, content: string, outcome: string) {
   const ws = this.parameters.clients[name] as WebSocket
   const { pubkey, privkey } = this.parameters.identities[name]
 
   const event: Event = await createEvent({ pubkey, kind: 1, content }, privkey)
 
-  await sendEvent(ws, event)
+  await sendEvent(ws, event, outcome !== 'unsuccessfully')
   this.parameters.events[name].push(event)
 })
 
