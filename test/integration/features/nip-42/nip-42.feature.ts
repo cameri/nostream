@@ -4,10 +4,11 @@ import {
   World,
 } from '@cucumber/cucumber'
 import chai from 'chai'
-
-import { SettingsStatic } from '../../../../src/utils/settings'
 import sinonChai from 'sinon-chai'
-import { waitForAuth } from '../helpers'
+
+import { createEvent, sendEvent, waitForAuth } from '../helpers'
+import { EventKinds } from '../../../../src/constants/base'
+import { SettingsStatic } from '../../../../src/utils/settings'
 import { WebSocket } from 'ws'
 
 chai.use(sinonChai)
@@ -26,3 +27,12 @@ Then(/(\w+) receives an authentication challenge/, async function (name: string)
   this.parameters.challenges[name].push(challenge)
 })
 
+Then(/(\w+) sends a signed_challenge_event/, async function (name: string) {
+  const challenge = this.parameters.challenges[name].pop()
+  const ws = this.parameters.clients[name] as WebSocket
+  const { pubkey, privkey } = this.parameters.identities[name]
+
+  const event: any = await createEvent({ pubkey, kind: EventKinds.AUTH, content: challenge }, privkey)
+  await sendEvent(ws, event, true)
+  this.parameters.events[name].push(event)
+})

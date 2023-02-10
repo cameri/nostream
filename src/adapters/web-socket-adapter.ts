@@ -1,5 +1,5 @@
+import { ContextMetadataKey, EventKinds } from '../constants/base'
 import cluster from 'cluster'
-import { ContextMetadataKey } from '../constants/base'
 import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
 import { randomBytes } from 'crypto'
@@ -182,31 +182,29 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf8')))
       debug('recv client msg: %o', message)
 
-      if (!this.authenticated && this.settings().authentication.enabled) {
+      if (
+        !this.authenticated
+        && message[1].kind !== EventKinds.AUTH
+        && this.settings().authentication.enabled
+      ) {
         switch(message[0]) {
           case MessageType.REQ: {
-            // Need to emit event?
             const challenge = this.setNewAuthChallenge()
-
             this.sendMessage(createAuthMessage(challenge))
-
             return
           }
 
           case MessageType.EVENT: {
-            // Need to emit event?
-
             const challenge = this.setNewAuthChallenge()
-
             this.sendMessage(createCommandResult(message[1].id, false, 'rejected: unauthorized'))
-
             this.sendMessage(createAuthMessage(challenge))
-
             return
           }
 
           default: {
-            this.sendMessage(createNoticeMessage('invalid: asdcf'))
+            const challenge = this.setNewAuthChallenge()
+            this.sendMessage(createCommandResult(message[1].id, false, 'rejected: unauthorized'))
+            this.sendMessage(createAuthMessage(challenge))
             return
           }
         }
