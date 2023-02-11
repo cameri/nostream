@@ -140,13 +140,13 @@ export const isSignedAuthEvent = (event: Event): boolean => {
   return false
 }
 
-export const isValidSignedAuthEvent = async (event: Event, challenge: string): Promise<boolean> => {
+export const isValidSignedAuthEvent = (event: Event, challenge: string): boolean => {
   const signedAuthEvent = isSignedAuthEvent(event)
 
   if (signedAuthEvent) {
-    const sig = event.tags.find(tag => tag.length >= 2 && tag[0] === EventTags.Challenge)
+    const tag = event.tags.find(tag => tag.length >= 2 && tag[0] === EventTags.Challenge)
 
-    return secp256k1.schnorr.verify(sig[1], challenge, event.pubkey)
+    return tag[1] === challenge
   }
 
   return false
@@ -327,7 +327,7 @@ export const getEventExpiration = (event: Event): number | undefined => {
   const expirationTime = Number(rawExpirationTime)
   if ((Number.isSafeInteger(expirationTime) && Math.log10(expirationTime))) {
     return expirationTime
-  } 
+  }
 }
 
 export const getEventProofOfWork = (eventId: EventId): number => {

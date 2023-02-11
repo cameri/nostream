@@ -51,6 +51,7 @@ BeforeAll({ timeout: 1000 }, async function () {
     assocPath( ['limits', 'event', 'rateLimits'], []),
     assocPath( ['limits', 'invoice', 'rateLimits'], []),
     assocPath( ['limits', 'connection', 'rateLimits'], []),
+    assocPath( ['info', 'relay_url'], 'ws://yoda.test.relay'),
   )(settings) as any
 
   worker = workerFactory()

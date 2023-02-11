@@ -132,6 +132,35 @@ export async function sendEvent(ws: WebSocket, event: Event, successful = true) 
   })
 }
 
+
+export async function sendAuthMessage(ws: WebSocket, event: Event, successful = true) {
+  return new Promise<OutgoingMessage>((resolve, reject) => {
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
+
+    const sub = observable.subscribe((message: OutgoingMessage) => {
+      if (message[0] === MessageType.OK && message[1] === event.id) {
+        if (message[2] === successful) {
+          sub.unsubscribe()
+          resolve(message)
+        } else {
+          sub.unsubscribe()
+          reject(new Error(message[3]))
+        }
+      } else if (message[0] === MessageType.NOTICE) {
+        sub.unsubscribe()
+        reject(new Error(message[1]))
+      }
+    })
+
+    ws.send(JSON.stringify(['AUTH', event]), (err) => {
+      if (err) {
+        sub.unsubscribe()
+        reject(err)
+      }
+    })
+  })
+}
+
 export async function waitForNextEvent(ws: WebSocket, subscription: string, content?: string): Promise<Event> {
   return new Promise((resolve, reject) => {
     const observable = streams.get(ws) as Observable<OutgoingMessage>

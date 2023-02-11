@@ -1,5 +1,5 @@
-import { ContextMetadataKey, EventKinds } from '../constants/base'
 import cluster from 'cluster'
+import { ContextMetadataKey } from '../constants/base'
 import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
 import { randomBytes } from 'crypto'
@@ -21,7 +21,6 @@ import { isEventMatchingFilter } from '../utils/event'
 import { messageSchema } from '../schemas/message-schema'
 import { Settings } from '../@types/settings'
 import { SocketAddress } from 'net'
-
 
 const debug = createLogger('web-socket-adapter')
 const debugHeartbeat = debug.extend('heartbeat')
@@ -99,7 +98,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.subscriptions.set(subscriptionId, filters)
   }
 
-  public setNewAuthChallenge() {
+  public setNewAuthChallenge(): string {
     const challenge = randomBytes(16).toString('hex')
     this.authChallenge = {
       createdAt: new Date(),
@@ -182,33 +181,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       const message = attemptValidation(messageSchema)(JSON.parse(raw.toString('utf8')))
       debug('recv client msg: %o', message)
 
-      if (
-        !this.authenticated
-        && message[1].kind !== EventKinds.AUTH
-        && this.settings().authentication.enabled
-      ) {
-        switch(message[0]) {
-          case MessageType.REQ: {
-            const challenge = this.setNewAuthChallenge()
-            this.sendMessage(createAuthMessage(challenge))
-            return
-          }
-
-          case MessageType.EVENT: {
-            const challenge = this.setNewAuthChallenge()
-            this.sendMessage(createCommandResult(message[1].id, false, 'rejected: unauthorized'))
-            this.sendMessage(createAuthMessage(challenge))
-            return
-          }
-
-          default: {
-            const challenge = this.setNewAuthChallenge()
-            this.sendMessage(createCommandResult(message[1].id, false, 'rejected: unauthorized'))
-            this.sendMessage(createAuthMessage(challenge))
-            return
-          }
-        }
-      }
+      const requiresAuthentication = this.isAuthenticationRequired(message)
+      if (requiresAuthentication) return
 
       message[ContextMetadataKey] = {
         remoteAddress: this.clientAddress,
@@ -321,5 +295,38 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     this.removeAllListeners()
     this.client.removeAllListeners()
+  }
+
+  private isAuthenticationRequired(message): boolean {
+    if (
+      !this.authenticated
+      && message[0] !== MessageType.AUTH
+      && message[0] !== MessageType.CLOSE
+      && this.settings().authentication.enabled
+    ) {
+      switch(message[0]) {
+        case MessageType.REQ: {
+          const challenge = this.setNewAuthChallenge()
+          this.sendMessage(createAuthMessage(challenge))
+          return true
+        }
+
+        case MessageType.EVENT: {
+          const challenge = this.setNewAuthChallenge()
+          this.sendMessage(createCommandResult(message[1].id, false, 'rejected: unauthorized'))
+          this.sendMessage(createAuthMessage(challenge))
+          return true
+        }
+
+        default: {
+          const challenge = this.setNewAuthChallenge()
+          this.sendMessage(createCommandResult(message[1].id, false, 'rejected: unauthorized'))
+          this.sendMessage(createAuthMessage(challenge))
+          return true
+        }
+      }
+    }
+
+    return false
   }
 }
