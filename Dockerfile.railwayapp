@@ -73,7 +73,7 @@ WORKDIR /app
 
 COPY --from=build /build/dist .
 ADD resources /app/resources
-COPY .railwayapp/settings.yaml /app/.nostr/settings.yaml
+COPY .railwayapp/settings.yaml /app/resources/default-settings.yaml
 
 RUN npm install --omit=dev --quiet
 
