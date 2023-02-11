@@ -30,8 +30,8 @@ export interface DBInvoice {
   id: string
   pubkey: Buffer
   bolt11: string
-  amount_requested: BigInt
-  amount_paid: BigInt
+  amount_requested: bigint
+  amount_paid: bigint
   unit: InvoiceUnit
   status: InvoiceStatus,
   description: string
