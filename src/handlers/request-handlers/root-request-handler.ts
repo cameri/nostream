@@ -29,7 +29,6 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
             max_payload_size: settings.network.maxPayloadSize,
             max_subscriptions: settings.limits.client.subscription.maxSubscriptions,
             max_filters: settings.limits.client.subscription.maxFilters,
-            max_limit: 5000,
             max_subid_length: 256,
             min_prefix: 4,
             max_event_tags: 2500,
