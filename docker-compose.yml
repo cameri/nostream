@@ -1,7 +1,7 @@
 services:
   nostream:
     env_file:
-    - locacl.env
+    - local.env
     build: .
     container_name: nostream
     environment:
