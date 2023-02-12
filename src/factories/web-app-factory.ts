@@ -3,7 +3,6 @@ import helmet from 'helmet'
 
 import { createLogger } from './logger-factory'
 import { createSettings } from './settings-factory'
-import { rateLimiterMiddleware } from '../handlers/request-handlers/rate-limiter-middleware'
 import router from '../routes'
 
 const debug = createLogger('web-app-factory')
@@ -12,7 +11,6 @@ export const createWebApp = () => {
   const app = express()
   app
     .disable('x-powered-by')
-    .use(rateLimiterMiddleware)
     .use((req, res, next) => {
       const settings = createSettings()
 
