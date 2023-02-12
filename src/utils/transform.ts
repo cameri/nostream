@@ -1,6 +1,7 @@
 import { always, applySpec, ifElse, is, isNil, path, pipe, prop, propSatisfies } from 'ramda'
 import { bech32 } from 'bech32'
 
+import { Config } from '../@types/config'
 import { Invoice } from '../@types/invoice'
 import { User } from '../@types/user'
 
@@ -37,6 +38,14 @@ export const fromDBUser = applySpec<User>({
   pubkey: pipe(prop('pubkey') as () => Buffer, fromBuffer),
   isAdmitted: prop('is_admitted'),
   balance: prop('balance'),
+  createdAt: prop('created_at'),
+  updatedAt: prop('updated_at'),
+})
+
+export const fromDBConfig = applySpec<Config>({
+  key: prop('key'),
+  value: prop('value'),
+  category: prop('category'),
   createdAt: prop('created_at'),
   updatedAt: prop('updated_at'),
 })
