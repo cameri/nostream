@@ -26,7 +26,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       software: packageJson.repository.url,
       version: packageJson.version,
       limitation: {
-            max_message_length: settings.network.maxPayloadSize,
+            max_payload_size: settings.network.maxPayloadSize,
             max_subscriptions: settings.limits.client.subscription.maxSubscriptions,
             max_filters: settings.limits.client.subscription.maxFilters,
             max_limit: 5000,
