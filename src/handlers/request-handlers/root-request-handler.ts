@@ -32,7 +32,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
             max_subid_length: 256,
             min_prefix: 4,
             max_event_tags: 2500,
-            max_content_length: 102400,
+            max_content_length: settings.limits.event.content,
             min_pow_difficulty: settings.limits.event.eventId.minLeadingZeroBits,
             auth_required: false,
             payment_required: settings.payments.enabled,
