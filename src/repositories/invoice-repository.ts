@@ -103,6 +103,11 @@ export class InvoiceRepository implements IInvoiceRepository {
         always(undefined),
         prop('createdAt'),
       ),
+      verify_url: ifElse(
+        propSatisfies(isNil, 'verifyURL'),
+        always(undefined),
+        prop('verifyURL'),
+      ),
     })(invoice)
 
     debug('row: %o', row)

@@ -36,10 +36,10 @@ export class PaymentsService implements IPaymentsService {
     }
   }
 
-  public async getInvoiceFromPaymentsProcessor(invoiceId: string): Promise<Invoice> {
-    debug('get invoice %s from payment processor', invoiceId)
+  public async getInvoiceFromPaymentsProcessor(invoice: Invoice): Promise<Partial<Invoice>> {
+    debug('get invoice %s from payment processor', invoice.id)
     try {
-      return await this.paymentsProcessor.getInvoice(invoiceId)
+      return await this.paymentsProcessor.getInvoice(invoice)
     } catch (error) {
       console.log('Unable to get invoice from payments processor. Reason:', error)
 
@@ -82,6 +82,7 @@ export class PaymentsService implements IPaymentsService {
           expiresAt: invoiceResponse.expiresAt,
           updatedAt: date,
           createdAt: date,
+          verifyURL: invoiceResponse.verifyURL,
         },
         transaction.transaction,
       )
@@ -99,6 +100,7 @@ export class PaymentsService implements IPaymentsService {
         expiresAt: invoiceResponse.expiresAt,
         updatedAt: date,
         createdAt: invoiceResponse.createdAt,
+        verifyURL: invoiceResponse.verifyURL,
       }
     } catch (error) {
       await transaction.rollback()
@@ -111,17 +113,11 @@ export class PaymentsService implements IPaymentsService {
   public async updateInvoice(invoice: Invoice): Promise<void> {
     debug('update invoice %s: %o', invoice.id, invoice)
     try {
+      const fullInvoice = await this.invoiceRepository.findById(invoice.id)
       await this.invoiceRepository.upsert({
-        id: invoice.id,
-        pubkey: invoice.pubkey,
-        bolt11: invoice.bolt11,
-        amountRequested: invoice.amountRequested,
-        description: invoice.description,
-        unit: invoice.unit,
+        ...fullInvoice,
         status: invoice.status,
-        expiresAt: invoice.expiresAt,
         updatedAt: new Date(),
-        createdAt: invoice.createdAt,
       })
     } catch (error) {
       console.error('Unable to update invoice. Reason:', error)

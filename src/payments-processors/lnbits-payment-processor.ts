@@ -45,29 +45,29 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
     private settings: Factory<Settings>
   ) {}
 
-  public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
-    debug('get invoice: %s', invoiceId)
+  public async getInvoice(invoice: Invoice): Promise<GetInvoiceResponse> {
+    debug('get invoice: %s', invoice.id)
     try {
-      const response = await this.httpClient.get(`/api/v1/payments/${invoiceId}`, {
+      const response = await this.httpClient.get(`/api/v1/payments/${invoice.id}`, {
         maxRedirects: 1,
       })
-      const invoice = new LNbitsInvoice()
+      const invoiceResult = new LNbitsInvoice()
       const data = response.data
-      invoice.id = data.details.payment_hash
-      invoice.pubkey = data.details.extra.internalId
-      invoice.bolt11 = data.details.bolt11
-      invoice.amountRequested = BigInt(Math.floor(data.details.amount / 1000))
-      if (data.paid) invoice.amountPaid = BigInt(Math.floor(data.details.amount / 1000))
-      invoice.unit = InvoiceUnit.SATS
-      invoice.status = data.paid?InvoiceStatus.COMPLETED:InvoiceStatus.PENDING
-      invoice.description = data.details.memo
-      invoice.confirmedAt = data.paid ? new Date(data.details.time * 1000) : null
-      invoice.expiresAt = new Date(data.details.expiry * 1000)
-      invoice.createdAt = new Date(data.details.time * 1000)
-      invoice.updatedAt = new Date()
-      return invoice
+      invoiceResult.id = data.details.payment_hash
+      invoiceResult.pubkey = data.details.extra.internalId
+      invoiceResult.bolt11 = data.details.bolt11
+      invoiceResult.amountRequested = BigInt(Math.floor(data.details.amount / 1000))
+      if (data.paid) invoiceResult.amountPaid = BigInt(Math.floor(data.details.amount / 1000))
+      invoiceResult.unit = InvoiceUnit.SATS
+      invoiceResult.status = data.paid?InvoiceStatus.COMPLETED:InvoiceStatus.PENDING
+      invoiceResult.description = data.details.memo
+      invoiceResult.confirmedAt = data.paid ? new Date(data.details.time * 1000) : null
+      invoiceResult.expiresAt = new Date(data.details.expiry * 1000)
+      invoiceResult.createdAt = new Date(data.details.time * 1000)
+      invoiceResult.updatedAt = new Date()
+      return invoiceResult
     } catch (error) {
-      console.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
+      console.error(`Unable to get invoice ${invoice.id}. Reason:`, error)
 
       throw error
     }
@@ -104,13 +104,13 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
 
       debug('response: %o', response.data)
 
-      const invoiceResponse = await this.httpClient.get(`/api/v1/payments/${encodeURIComponent(response.data.payment_hash)}`, {
+      const invoiceResult = await this.httpClient.get(`/api/v1/payments/${encodeURIComponent(response.data.payment_hash)}`, {
         maxRedirects: 1,
       })
-      debug('invoice data response: %o', invoiceResponse.data)
+      debug('invoice data response: %o', invoiceResult.data)
 
       const invoice = new LNbitsCreateInvoiceResponse()
-      const data = invoiceResponse.data
+      const data = invoiceResult.data
       invoice.id = data.details.payment_hash
       invoice.pubkey = data.details.extra.internalId
       invoice.bolt11 = data.details.bolt11
@@ -122,7 +122,7 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
       invoice.expiresAt = new Date(data.details.expiry * 1000)
       invoice.createdAt = new Date(data.details.time * 1000)
       invoice.rawResponse = JSON.stringify({
-        invoiceResponse: invoiceResponse.data,
+        invoiceResult: invoiceResult.data,
         createData: response.data,
       })
 

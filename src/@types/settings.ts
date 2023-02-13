@@ -142,6 +142,10 @@ export interface Payments {
   feeSchedules: FeeSchedules
 }
 
+export interface LnurlPaymentsProcessor {
+  invoiceURL: string
+}
+
 export interface ZebedeePaymentsProcessor {
   baseURL: string
   callbackBaseURL: string
@@ -154,6 +158,7 @@ export interface LNbitsPaymentProcessor {
 }
 
 export interface PaymentsProcessors {
+  lnurl?: LnurlPaymentsProcessor,
   zebedee?: ZebedeePaymentsProcessor
   lnbits?: LNbitsPaymentProcessor
 }

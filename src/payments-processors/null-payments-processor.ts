@@ -1,11 +1,11 @@
 import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
-import { InvoiceStatus, InvoiceUnit } from '../@types/invoice'
+import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 
 export class NullPaymentsProcessor implements IPaymentsProcessor {
-  public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
+  public async getInvoice(invoice: Invoice): Promise<GetInvoiceResponse> {
     const date = new Date()
     return {
-      id: invoiceId,
+      id: invoice.id,
       pubkey: '',
       bolt11: '',
       description: '',
@@ -16,6 +16,7 @@ export class NullPaymentsProcessor implements IPaymentsProcessor {
       confirmedAt: null,
       createdAt: date,
       updatedAt: date,
+      verifyURL: '',
     }
   }
 
@@ -32,6 +33,7 @@ export class NullPaymentsProcessor implements IPaymentsProcessor {
       rawResponse: '',
       confirmedAt: null,
       createdAt: new Date(),
+      verifyURL: '',
     }
   }
 }

@@ -31,6 +31,7 @@ export const fromDBInvoice = applySpec<Invoice>({
   expiresAt: prop('expires_at'),
   updatedAt: prop('updated_at'),
   createdAt: prop('created_at'),
+  verifyURL: prop('verify_url'),
 })
 
 export const fromDBUser = applySpec<User>({
