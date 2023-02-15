@@ -22,6 +22,7 @@ export enum EventKinds {
   REPLACEABLE_LAST = 19999,
   // Ephemeral events
   EPHEMERAL_FIRST = 20000,
+  AUTH =  22242,
   EPHEMERAL_LAST = 29999,
   // Parameterized replaceable events
   PARAMETERIZED_REPLACEABLE_FIRST = 30000,
@@ -37,6 +38,8 @@ export enum EventTags {
   Delegation = 'delegation',
   Deduplication = 'd',
   Expiration = 'expiration',
+  Relay = 'relay',
+  Challenge = 'challenge'
 }
 
 export enum PaymentsProcessors {

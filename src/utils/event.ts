@@ -114,6 +114,44 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
   return true
 }
 
+export const isSignedAuthEvent = (event: Event): boolean => {
+  const evenKindIsValid = event.kind === EventKinds.AUTH
+  if (!evenKindIsValid) return false
+
+  let relay
+  let challenge
+  for (let i = 0; i < event.tags.length; i++) {
+    const tag = event.tags[i]
+    if (tag.length < 2) {
+      continue
+    }
+
+    if (tag[0] === EventTags.Challenge) {
+      if (relay) return true
+      challenge = true
+    }
+
+    if (tag[0] === EventTags.Relay) {
+      if (challenge) return true
+      relay = true
+    }
+  }
+
+  return false
+}
+
+export const isValidSignedAuthEvent = (event: Event, challenge: string): boolean => {
+  const signedAuthEvent = isSignedAuthEvent(event)
+
+  if (signedAuthEvent) {
+    const tag = event.tags.find(tag => tag.length >= 2 && tag[0] === EventTags.Challenge)
+
+    return tag[1] === challenge
+  }
+
+  return false
+}
+
 export const isDelegatedEvent = (event: Event): boolean => {
   return event.tags.some((tag) => tag.length === 4 && tag[0] === EventTags.Delegation)
 }
@@ -289,7 +327,7 @@ export const getEventExpiration = (event: Event): number | undefined => {
   const expirationTime = Number(rawExpirationTime)
   if ((Number.isSafeInteger(expirationTime) && Math.log10(expirationTime))) {
     return expirationTime
-  } 
+  }
 }
 
 export const getEventProofOfWork = (eventId: EventId): number => {

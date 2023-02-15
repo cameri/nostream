@@ -3,7 +3,7 @@ import { createHash, createHmac, Hash } from 'crypto'
 import { Observable } from 'rxjs'
 import WebSocket from 'ws'
 
-import { CommandResult, MessageType, OutgoingMessage } from '../../../src/@types/messages'
+import { CommandResult, MessageType, OutgoingAuthMessage, OutgoingMessage } from '../../../src/@types/messages'
 import { Event } from '../../../src/@types/event'
 import { serializeEvent } from '../../../src/utils/event'
 import { streams } from './shared'
@@ -132,6 +132,35 @@ export async function sendEvent(ws: WebSocket, event: Event, successful = true) 
   })
 }
 
+
+export async function sendAuthMessage(ws: WebSocket, event: Event, successful = true) {
+  return new Promise<OutgoingMessage>((resolve, reject) => {
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
+
+    const sub = observable.subscribe((message: OutgoingMessage) => {
+      if (message[0] === MessageType.OK && message[1] === event.id) {
+        if (message[2] === successful) {
+          sub.unsubscribe()
+          resolve(message)
+        } else {
+          sub.unsubscribe()
+          reject(new Error(message[3]))
+        }
+      } else if (message[0] === MessageType.NOTICE) {
+        sub.unsubscribe()
+        reject(new Error(message[1]))
+      }
+    })
+
+    ws.send(JSON.stringify(['AUTH', event]), (err) => {
+      if (err) {
+        sub.unsubscribe()
+        reject(err)
+      }
+    })
+  })
+}
+
 export async function waitForNextEvent(ws: WebSocket, subscription: string, content?: string): Promise<Event> {
   return new Promise((resolve, reject) => {
     const observable = streams.get(ws) as Observable<OutgoingMessage>
@@ -190,6 +219,18 @@ export async function waitForNotice(ws: WebSocket): Promise<string> {
     observable.subscribe((message: OutgoingMessage) => {
       if (message[0] === MessageType.NOTICE) {
         resolve(message[1])
+      }
+    })
+  })
+}
+
+export async function waitForAuth(ws: WebSocket): Promise<OutgoingAuthMessage> {
+  return new Promise<OutgoingAuthMessage>((resolve) => {
+    const observable = streams.get(ws) as Observable<OutgoingMessage>
+
+    observable.subscribe((message: OutgoingMessage) => {
+      if (message[0] === MessageType.AUTH) {
+        resolve(message)
       }
     })
   })

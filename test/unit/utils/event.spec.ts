@@ -1,6 +1,7 @@
 import { expect } from 'chai'
 
 import { CanonicalEvent, Event } from '../../../src/@types/event'
+import { EventKinds, EventTags } from '../../../src/constants/base'
 import {
   getEventExpiration,
   isDelegatedEvent,
@@ -13,9 +14,10 @@ import {
   isExpiredEvent,
   isParameterizedReplaceableEvent,
   isReplaceableEvent,
+  isSignedAuthEvent,
+  isValidSignedAuthEvent,
   serializeEvent,
 } from '../../../src/utils/event'
-import { EventKinds } from '../../../src/constants/base'
 
 describe('NIP-01', () => {
   describe('serializeEvent', () => {
@@ -562,6 +564,72 @@ describe('NIP-40', () => {
         ['expiration', '100000'],
       ]
       expect(isExpiredEvent(event)).to.equal(true)
+    })
+  })
+
+  describe('isSignedAuthEvent', () => {
+    it('returns true if event is valid client auth event', () => {
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, 'signedChallenge'],
+      ]
+
+      expect(isSignedAuthEvent(event)).to.equal(true)
+    })
+
+    it('returns false if relay tag is missing', () => {
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Challenge, 'signedChallenge'],
+      ]
+
+      expect(isSignedAuthEvent(event)).to.equal(false)
+    })
+
+    it('returns false if chaellenge tag is missing', () => {
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+      ]
+
+      expect(isSignedAuthEvent(event)).to.equal(false)
+    })
+
+    it('returns false if event kind is not AUTH', () => {
+      event.kind = EventKinds.DELETE
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, 'signedChallenge'],
+      ]
+
+      expect(isSignedAuthEvent(event)).to.equal(false)
+    })
+  })
+
+  describe('isValidSignedAuthEvent', async () => {
+    it('returns true if event is valid client auth event', async () => {
+      event.pubkey = 'c9892fe983a9d85a570c706a582db6288a6a53102efee28871a5a6048a579154'
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, 'test'],
+      ]
+
+      expect(await isValidSignedAuthEvent(event, 'test')).to.equal(true)
+    })
+  })
+
+  describe('isValidSignedAuthEvent', async () => {
+    it('returns false if challenge is different', async () => {
+      event.pubkey = 'c9892fe983a9d85a570c706a582db6288a6a53102efee28871a5a6048a579154'
+      event.kind = EventKinds.AUTH
+      event.tags = [
+        [EventTags.Relay, 'wss://eden.nostr.land'],
+        [EventTags.Challenge, 'incorrectChallenge'],
+      ]
+
+      expect(isValidSignedAuthEvent(event, 'challenge')).to.equal(false)
     })
   })
 })

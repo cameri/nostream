@@ -11,6 +11,12 @@ export const eventMessageSchema = Schema.array().ordered(
 )
   .label('EVENT message')
 
+export const authEventMessageSchema = Schema.array().ordered(
+  Schema.string().valid('AUTH').required(),
+  eventSchema.required(),
+)
+  .label('AUTH message')
+
 export const reqMessageSchema = Schema.array()
   .ordered(Schema.string().valid('REQ').required(), Schema.string().max(256).required().label('subscriptionId'))
   .items(filterSchema.required().label('filter')).max(12)
@@ -35,6 +41,10 @@ export const messageSchema = Schema.alternatives()
       {
         is: Schema.array().ordered(Schema.string().equal(MessageType.CLOSE)).items(Schema.any()),
         then: closeMessageSchema,
+      },
+      {
+        is: Schema.array().ordered(Schema.string().equal(MessageType.AUTH)).items(Schema.any()),
+        then: authEventMessageSchema,
       },
     ],
   })

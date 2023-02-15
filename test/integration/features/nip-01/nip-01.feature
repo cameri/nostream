@@ -72,7 +72,6 @@ Feature: NIP-01
     And Alice subscribes to text_note events from Bob and set_metadata events from Charlie
     Then Alice receives 2 events from Bob and Charlie
 
-  @test
   Scenario: Alice is interested in Bob's events from back in November
     Given someone called Alice
     And someone called Bob

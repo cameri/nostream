@@ -1,4 +1,5 @@
 import {
+  Before,
   Then,
   When,
   World,
@@ -19,9 +20,15 @@ import {
 } from '../helpers'
 import { Event } from '../../../../src/@types/event'
 import { isDraft } from '../shared'
+import { SettingsStatic } from '../../../../src/utils/settings'
 
 chai.use(sinonChai)
 const { expect } = chai
+
+Before(function () {
+  const settings = SettingsStatic.createSettings()
+  settings.authentication.enabled = false
+})
 
 When(/(\w+) subscribes to last event from (\w+)$/, async function(this: World<Record<string, any>>, from: string, to: string) {
   const ws = this.parameters.clients[from] as WebSocket
@@ -94,13 +101,13 @@ When(/(\w+) sends a set_metadata event/, async function(name: string) {
   this.parameters.events[name].push(event)
 })
 
-When(/^(\w+) sends a text_note event with content "([^"]+)"$/, async function(name: string, content: string) {
+When(/^(\w+) sends a text_note event with content "([^"]+)"(?:\s+(successfully|unsuccessfully))?$/, async function(name: string, content: string, outcome: string) {
   const ws = this.parameters.clients[name] as WebSocket
   const { pubkey, privkey } = this.parameters.identities[name]
 
   const event: Event = await createEvent({ pubkey, kind: 1, content }, privkey)
 
-  await sendEvent(ws, event)
+  await sendEvent(ws, event, outcome !== 'unsuccessfully')
   this.parameters.events[name].push(event)
 })
 
