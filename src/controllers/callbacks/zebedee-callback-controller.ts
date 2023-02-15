@@ -26,7 +26,7 @@ export class ZebedeeCallbackController implements IController {
     debug('invoice', invoice)
 
     try {
-      if (!invoice.bolt11) {
+      if (invoice.bolt11) {
         await this.paymentsService.updateInvoice(invoice)
       }
     } catch (error) {
