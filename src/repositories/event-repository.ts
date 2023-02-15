@@ -183,7 +183,7 @@ export class EventRepository implements IEventRepository {
       ),
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
       expires_at: ifElse(
-        propSatisfies(is(String), EventExpirationTimeMetadataKey),
+        propSatisfies(is(Number), EventExpirationTimeMetadataKey),
         pipe(prop(EventExpirationTimeMetadataKey as any)),
         always(null),
       ),
@@ -221,7 +221,7 @@ export class EventRepository implements IEventRepository {
       ),
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
       expires_at: ifElse(
-        propSatisfies(is(String), EventExpirationTimeMetadataKey),
+        propSatisfies(is(Number), EventExpirationTimeMetadataKey),
         pipe(prop(EventExpirationTimeMetadataKey as any)),
         always(null),
       ),
