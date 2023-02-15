@@ -184,10 +184,10 @@ export class EventRepository implements IEventRepository {
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
       expires_at: ifElse(
         propSatisfies(is(Number), EventExpirationTimeMetadataKey),
-        pipe(prop(EventExpirationTimeMetadataKey as any), toBuffer),
+       prop(EventExpirationTimeMetadataKey as any),
         always(null),
       ),
-      
+
     })(event)
 
     return this.masterDbClient('events')
@@ -222,7 +222,7 @@ export class EventRepository implements IEventRepository {
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
       expires_at: ifElse(
         propSatisfies(is(Number), EventExpirationTimeMetadataKey),
-        pipe(prop(EventExpirationTimeMetadataKey as any), toBuffer),
+        prop(EventExpirationTimeMetadataKey as any),
         always(null),
       ),
     })(event)
