@@ -7,8 +7,6 @@ const SettingsFileTypes = {
 }
 const NAMESPACE = 'c646b451-db73-47fb-9a70-ea24ce8a225a'
 exports.seed = async function (knex) {
-  await knex('events').del()
-
   const { v5: uuidv5 } = require('uuid')
 
   const rawConfigs = getConfigs()
