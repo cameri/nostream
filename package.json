@@ -16,8 +16,10 @@
     26,
     28,
     33,
-    40,
-    111
+    40
+  ],
+  "supportedNipExtensions": [
+    "11a"
   ],
   "main": "src/index.ts",
   "scripts": {
