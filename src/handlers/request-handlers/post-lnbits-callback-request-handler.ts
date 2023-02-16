@@ -11,6 +11,7 @@ export const postLNbitsCallbackRequestHandler = async (
   try {
     await controller.handleRequest(req, res)
   } catch (error) {
+    console.error('error while handling LNbits request: %o', error)
     res
       .status(500)
       .setHeader('content-type', 'text/plain')
