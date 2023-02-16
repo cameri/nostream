@@ -1,11 +1,13 @@
 import * as secp256k1 from '@noble/secp256k1'
-import { applySpec, converge, curry, mergeLeft, nth, omit, pipe, prop, reduceBy } from 'ramda'
-import { createCipheriv, createHmac, getRandomValues } from 'crypto'
-import cluster from 'cluster'
 
+import { applySpec, converge, curry, mergeLeft, nth, omit, pipe, prop, reduceBy } from 'ramda'
 import { CanonicalEvent, DBEvent, Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
+import { createCipheriv, getRandomValues } from 'crypto'
 import { EventId, Pubkey, Tag } from '../@types/base'
 import { EventKinds, EventTags } from '../constants/base'
+
+import cluster from 'cluster'
+import { deriveFromSecret } from './secret'
 import { EventKindsRange } from '../@types/settings'
 import { fromBuffer } from './transform'
 import { getLeadingZeroBits } from './proof-of-work'
@@ -35,9 +37,9 @@ export const toNostrEvent: (event: DBEvent) => Event = applySpec({
 
 export const isEventKindOrRangeMatch = ({ kind }: Event) =>
   (item: EventKinds | EventKindsRange) =>
-  typeof item === 'number'
-  ? item === kind
-  : kind >= item[0] && kind <= item[1]
+    typeof item === 'number'
+      ? item === kind
+      : kind >= item[0] && kind <= item[1]
 
 export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Event): boolean => {
   const startsWith = (input: string) => (prefix: string) => input.startsWith(prefix)
@@ -179,17 +181,12 @@ export const identifyEvent = async (event: UnidentifiedEvent): Promise<UnsignedE
   return { ...event, id }
 }
 
-export const getPrivateKeyFromSecret =
-  (secret: string) => (data: string | Buffer): string => {
+export function getRelayPrivateKey(relayUrl: string): string {
   if (process.env.RELAY_PRIVATE_KEY) {
     return process.env.RELAY_PRIVATE_KEY
   }
 
-  const hmac = createHmac('sha256', secret)
-
-  hmac.update(typeof data === 'string' ? Buffer.from(data) : data)
-
-  return hmac.digest().toString('hex')
+  return deriveFromSecret(relayUrl).toString('hex')
 }
 
 export const getPublicKey = (privkey: string | Buffer) => Buffer.from(secp256k1.getPublicKey(privkey, true)).subarray(1).toString('hex')
@@ -204,7 +201,7 @@ export const encryptKind4Event = (
   receiverPubkey: Pubkey,
 ) => (event: UnsignedEvent): UnsignedEvent => {
   const key = secp256k1
-    .getSharedSecret(senderPrivkey,`02${receiverPubkey}`, true)
+    .getSharedSecret(senderPrivkey, `02${receiverPubkey}`, true)
     .subarray(1)
 
   const iv = getRandomValues(new Uint8Array(16))
@@ -289,7 +286,7 @@ export const getEventExpiration = (event: Event): number | undefined => {
   const expirationTime = Number(rawExpirationTime)
   if ((Number.isSafeInteger(expirationTime) && Math.log10(expirationTime))) {
     return expirationTime
-  } 
+  }
 }
 
 export const getEventProofOfWork = (eventId: EventId): number => {

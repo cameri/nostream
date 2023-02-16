@@ -1,4 +1,5 @@
 import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
+import { deriveFromSecret, hmacSha256 } from '../utils/secret'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 
 import { AxiosInstance } from 'axios'
@@ -80,6 +81,11 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
       requestId: internalId,
     } = request
 
+    const callbackURL = new URL(this.settings().paymentsProcessors?.lnbits?.callbackBaseURL)
+    const hmacExpiry = (Date.now() + (1 * 24 * 60 * 60 * 1000)).toString()
+    callbackURL.searchParams.set('hmac', hmacExpiry + ':' + 
+      hmacSha256(deriveFromSecret('lnbits-callback-hmac-key'), hmacExpiry).toString('hex'))
+
     const body = {
       amount: Number(amountMsats / 1000n),
       memo: description,
@@ -87,7 +93,7 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
         internalId,
       },
       out: false,
-      webhook: this.settings().paymentsProcessors?.lnbits?.callbackBaseURL,
+      webhook: callbackURL.toString(),
     }
 
     try {

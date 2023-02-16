@@ -70,13 +70,6 @@ const createLNbitsPaymentProcessor = (settings: Settings): IPaymentsProcessor =>
     throw new Error('Unable to create payments processor: Setting paymentsProcessor.lnbits.callbackBaseURL is not configured.')
   }
 
-  if (
-    !Array.isArray(settings.paymentsProcessors?.lnbits?.ipWhitelist)
-    || !settings.paymentsProcessors?.lnbits?.ipWhitelist?.length
-  ) {
-    throw new Error('Unable to create payments processor: Setting paymentsProcessor.lnbits.ipWhitelist is empty.')
-  }
-
   const config = getLNbitsAxiosConfig(settings)
   debug('config: %o', config)
   const client = axios.create(config)

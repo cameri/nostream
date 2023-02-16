@@ -1,3 +1,4 @@
+import { deriveFromSecret, hmacSha256 } from '../../utils/secret'
 import { json, Router } from 'express'
 
 import { createLogger } from '../../factories/logger-factory'
@@ -36,17 +37,8 @@ router
   })
   .post('/lnbits', json(), (req, res) => {
     const settings = createSettings()
-    const { ipWhitelist = [] } = settings.paymentsProcessors?.lnbits ?? {}
     const remoteAddress = getRemoteAddress(req, settings)
     const paymentProcessor = settings.payments?.processor ?? 'null'
-
-    if (ipWhitelist.length && !ipWhitelist.includes(remoteAddress)) {
-      debug('unauthorized request from %s to /callbacks/lnbits', remoteAddress)
-      res
-        .status(403)
-        .send('Forbidden')
-      return
-    }
 
     if (paymentProcessor !== 'lnbits') {
       debug('denied request from %s to /callbacks/lnbits which is not the current payment processor', remoteAddress)
@@ -56,6 +48,24 @@ router
       return
     }
 
+    let validationPassed = false
+    
+    if (typeof req.query.hmac === 'string' && req.query.hmac.match(/^[0-9]{1,20}:[0-9a-f]{64}$/)) {
+      const split = req.query.hmac.split(':')
+      if (hmacSha256(deriveFromSecret('lnbits-callback-hmac-key'), split[0]).toString('hex') === split[1]) {
+        if (parseInt(split[0]) > Date.now()) {
+          validationPassed = true
+        }
+      }
+    }
+
+    if (!validationPassed) {
+      debug('unauthorized request from %s to /callbacks/lnbits', remoteAddress)
+      res
+        .status(403)
+        .send('Forbidden')
+      return
+    }
     postLNbitsCallbackRequestHandler(req, res)
   })
 
