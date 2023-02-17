@@ -159,6 +159,14 @@ export class PaymentsService implements IPaymentsService {
 
       const currentSettings = this.settings()
 
+      let amountPaidMsat = invoice.amountPaid
+
+      if (invoice.unit === InvoiceUnit.SATS) {
+        amountPaidMsat *= 1000n
+      } else if (invoice.unit === InvoiceUnit.BTC) {
+        amountPaidMsat *= 1000n * 100000000n
+      }
+
       const isApplicableFee = (feeSchedule: FeeSchedule) => feeSchedule.enabled
         && !feeSchedule.whitelists?.pubkeys?.some((prefix) => invoice.pubkey.startsWith(prefix))
       const admissionFeeSchedules = currentSettings.payments?.feeSchedules?.admission ?? []
@@ -169,7 +177,7 @@ export class PaymentsService implements IPaymentsService {
 
         if (
           admissionFeeAmount > 0n
-          && invoice.amountPaid >= admissionFeeAmount
+          && amountPaidMsat >= admissionFeeAmount
         ) {
           const date = new Date()
           // TODO: Convert to stored func
