@@ -61,7 +61,6 @@ export class LNbitsCallbackController implements IController {
       return
     }
 
-    // sanity check
     if (storedInvoice.status === InvoiceStatus.COMPLETED) {
       response
         .status(409)
