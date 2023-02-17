@@ -234,7 +234,7 @@ Install dependencies:
 Run migrations (at least once and after pulling new changes):
 
   ```
-  npm run db:migrate
+  NODE_OPTIONS="-r dotenv/config" npm run db:migrate
   ```
 
 Create .nostr folder inside nostream project folder and copy over the settings file:
