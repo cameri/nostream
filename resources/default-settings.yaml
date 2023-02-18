@@ -22,6 +22,9 @@ paymentsProcessors:
     ipWhitelist:
       - "3.225.112.64"
       - "::ffff:3.225.112.64"
+  lnbits:
+    baseURL: https://lnbits.your-domain.com/
+    callbackBaseURL: https://nostream.your-domain.com/callbacks/lnbits
 network:
   maxPayloadSize: 524288
   remoteIpHeader: x-forwarded-for

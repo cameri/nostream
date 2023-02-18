@@ -41,6 +41,7 @@ export enum EventTags {
 
 export enum PaymentsProcessors {
   ZEBEDEE = 'zebedee',
+  LNBITS = 'lnbits',
 }
 
 export const EventDelegatorMetadataKey = Symbol('Delegator')

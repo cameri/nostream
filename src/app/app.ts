@@ -62,6 +62,11 @@ export class App implements IRunnable {
     logCentered(`Pay-to-relay ${pathEq(['payments', 'enabled'], true, settings) ? 'enabled' : 'disabled'}`, width)
     logCentered(`Payments provider: ${path(['payments', 'processor'], settings)}`, width)
 
+    if (typeof this.process.env.SECRET !== 'string' || this.process.env.SECRET === 'changeme') {
+      console.error('Please configure the secret using the SECRET environment variable.')
+      this.process.exit(1)
+    }
+
     const workerCount = process.env.WORKER_COUNT
       ? Number(process.env.WORKER_COUNT)
       : this.settings().workers?.count || cpus().length

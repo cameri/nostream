@@ -1,10 +1,10 @@
 import { andThen, pipe } from 'ramda'
-
-import { broadcastEvent, encryptKind4Event, getPrivateKeyFromSecret, getPublicKey, identifyEvent, signEvent } from '../utils/event'
+import { broadcastEvent, encryptKind4Event, getPublicKey, getRelayPrivateKey, identifyEvent, signEvent } from '../utils/event'
 import { DatabaseClient, Pubkey } from '../@types/base'
 import { FeeSchedule, Settings } from '../@types/settings'
 import { IEventRepository, IInvoiceRepository, IUserRepository } from '../@types/repositories'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
+
 import { createLogger } from '../factories/logger-factory'
 import { EventKinds } from '../constants/base'
 import { IPaymentsProcessor } from '../@types/clients'
@@ -159,6 +159,14 @@ export class PaymentsService implements IPaymentsService {
 
       const currentSettings = this.settings()
 
+      let amountPaidMsat = invoice.amountPaid
+
+      if (invoice.unit === InvoiceUnit.SATS) {
+        amountPaidMsat *= 1000n
+      } else if (invoice.unit === InvoiceUnit.BTC) {
+        amountPaidMsat *= 1000n * 100000000n
+      }
+
       const isApplicableFee = (feeSchedule: FeeSchedule) => feeSchedule.enabled
         && !feeSchedule.whitelists?.pubkeys?.some((prefix) => invoice.pubkey.startsWith(prefix))
       const admissionFeeSchedules = currentSettings.payments?.feeSchedules?.admission ?? []
@@ -169,7 +177,7 @@ export class PaymentsService implements IPaymentsService {
 
         if (
           admissionFeeAmount > 0n
-          && invoice.amountPaid >= admissionFeeAmount
+          && amountPaidMsat >= admissionFeeAmount
         ) {
           const date = new Date()
           // TODO: Convert to stored func
@@ -204,7 +212,7 @@ export class PaymentsService implements IPaymentsService {
       },
     } = currentSettings
 
-    const relayPrivkey = getPrivateKeyFromSecret(process.env.SECRET as string)(relayUrl)
+    const relayPrivkey = getRelayPrivateKey(relayUrl)
     const relayPubkey = getPublicKey(relayPrivkey)
 
     let unit: string = invoice.unit
@@ -266,7 +274,7 @@ ${invoice.bolt11}`,
       },
     } = currentSettings
 
-    const relayPrivkey = getPrivateKeyFromSecret(process.env.SECRET as string)(relayUrl)
+    const relayPrivkey = getRelayPrivateKey(relayUrl)
     const relayPubkey = getPublicKey(relayPrivkey)
 
     let unit: string = invoice.unit
