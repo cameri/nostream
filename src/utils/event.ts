@@ -289,7 +289,7 @@ export const getEventExpiration = (event: Event): number | undefined => {
   const expirationTime = Number(rawExpirationTime)
   if ((Number.isSafeInteger(expirationTime) && Math.log10(expirationTime))) {
     return expirationTime
-  } 
+  }
 }
 
 export const getEventProofOfWork = (eventId: EventId): number => {

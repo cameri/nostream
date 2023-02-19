@@ -1,9 +1,9 @@
 import { always, applySpec, ifElse, is, isNil, path, pipe, prop, propSatisfies } from 'ramda'
 import { bech32 } from 'bech32'
 
-import { Config } from '../@types/config'
 import { Invoice } from '../@types/invoice'
 import { User } from '../@types/user'
+import { Setting } from '../@types/setting'
 
 export const toJSON = (input: any) => JSON.stringify(input)
 
@@ -42,7 +42,7 @@ export const fromDBUser = applySpec<User>({
   updatedAt: prop('updated_at'),
 })
 
-export const fromDBConfig = applySpec<Config>({
+export const fromDBSetting = applySpec<Setting>({
   key: prop('key'),
   value: prop('value'),
   category: prop('category'),

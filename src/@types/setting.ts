@@ -1,4 +1,4 @@
-export interface Config {
+export interface Setting {
   key: string,
   value: object,
   category: Category,
@@ -21,7 +21,7 @@ enum Category {
     // message
 }
 
-export interface DBConfig {
+export interface DBSetting {
   key: string,
   value: object,
   category: Category,

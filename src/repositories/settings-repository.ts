@@ -1,41 +1,57 @@
 import { always, applySpec, omit, prop } from 'ramda'
 
-import { Config, DBConfig } from '../@types/config'
+import { Setting, DBSetting } from '../@types/setting'
 import { createLogger } from '../factories/logger-factory'
 import { DatabaseClient } from '../@types/base'
-import { fromDBConfig } from '../utils/transform'
-import { IConfigRepository } from '../@types/repositories'
+import { fromDBSetting } from '../utils/transform'
+import { ISettingRepository } from '../@types/repositories'
 
 const debug = createLogger('config-repository')
 
-export class ConfigRepository implements IConfigRepository {
+export class SettingRepository implements ISettingRepository {
   public constructor(private readonly dbClient: DatabaseClient) { }
 
-  public async getConfig(
+  public async getSetting(
+    category: string,
     key: string,
     client: DatabaseClient = this.dbClient
-  ): Promise<Config | undefined> {
-    debug('find config by key: %s', key)
-    const [dbconfig] = await client<DBConfig>('configs')
+  ): Promise<Setting | undefined> {
+    debug('find config by key: %s and category %s', category, key);
+    const [dbsetting] = await client<DBSetting>('configs')
       .where('key', key)
+      .where('category', category)
       .select()
 
-    if (!dbconfig) {
+    if (!dbsetting) {
       return
     }
 
-    return fromDBConfig(dbconfig)
+    return fromDBSetting(dbsetting)
   }
 
-  public async upsert(
-    config: Config,
+  public async getSettings(
+    client: DatabaseClient = this.dbClient
+  ): Promise<Setting[] | undefined> {
+    debug('get all configs');
+    const settings = await client<Setting>('configs')
+      .select()
+
+    if (!settings) {
+      return
+    }
+
+    return settings
+  }
+
+  public async upsertSetting(
+    config: Setting,
     client: DatabaseClient = this.dbClient,
   ): Promise<number> {
     debug('upsert: %o', config)
 
     const date = new Date()
 
-    const row = applySpec<DBConfig>({
+    const row = applySpec<DBSetting>({
       key: prop('key'),
       value: prop('value'),
       category: prop('category'),
@@ -43,7 +59,7 @@ export class ConfigRepository implements IConfigRepository {
       created_at: always(date),
     })(config)
 
-    const query = client<DBConfig>('configs')
+    const query = client<DBSetting>('configs')
       .insert(row)
       .onConflict('key')
       .merge(

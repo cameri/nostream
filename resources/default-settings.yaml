@@ -10,7 +10,7 @@ payments:
   feeSchedules:
     admission:
     - enabled: false
-      descripton: Admission fee charged per public key in msats (1000 msats = 1 satoshi)
+      description: Admission fee charged per public key in msats (1000 msats = 1 satoshi)
       amount: 1000000
       whitelists:
         pubkeys:
