@@ -391,6 +391,7 @@ I'm Cameri on most social networks. You can find me on Nostr by npub1qqqqqqyz0la
 - Saransh Sharma
 - swissrouting
 - André Neves
+- Semisol
 
 ## License
 
