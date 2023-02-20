@@ -193,6 +193,11 @@ If enabling payments, generate a long random secret and set SECRET:
   # Secret shortened for brevity
   ```
 
+In addition, if using Zebedee for payments, you must also set ZEBEDEE_API_KEY with
+an API Key from one of your projects in your Zebedee Developer Dashboard. Contact
+@foxp2zeb on Telegram or npub1rvg76s0gz535txd9ypg2dfqv0x7a80ar6e096j3v343xdxyrt4ksmkxrck on Nostr requesting
+access to the Zebedee Developer Dashboard.
+
 Create `nostr_ts_relay` database:
 
   ```
