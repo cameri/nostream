@@ -56,7 +56,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     }
 
     response
-      .setHeader('conten-type', 'application/nostr+json')
+      .setHeader('content-type', 'application/nostr+json')
       .setHeader('access-control-allow-origin', '*')
       .status(200)
       .send(relayInformationDocument)
