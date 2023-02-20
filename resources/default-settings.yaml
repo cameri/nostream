@@ -36,9 +36,9 @@ limits:
   invoice:
     rateLimits:
     - period: 60000
-      rate: 6
+      rate: 12
     - period: 3600000
-      rate: 16
+      rate: 30
     ipWhitelist:
     - "::1"
     - "10.10.10.1"
@@ -49,8 +49,6 @@ limits:
       rate: 12
     - period: 60000
       rate: 48
-    - period: 3600000
-      rate: 300
     ipWhitelist:
     - "::1"
     - "10.10.10.1"
@@ -101,14 +99,6 @@ limits:
       - 42
       period: 60000
       rate: 12
-    - description: 360 events/hour for event kinds 1, 2, 4 and 42
-      kinds:
-      - 1
-      - 2
-      - 4
-      - 42
-      period: 3600000
-      rate: 360
     - description: 30 events/min for event kind ranges 5-7 and 43-49
       kinds:
       - - 5
@@ -135,9 +125,6 @@ limits:
     - description: 720 events/hour for all events
       period: 3600000
       rate: 720
-    - description: 2880 events/day for all events
-      period: 86400000
-      rate: 2880
     whitelists:
       pubkeys: []
       ipAddresses:
@@ -153,9 +140,6 @@ limits:
     - description: 240 raw messages/min
       period: 60000
       rate: 240
-    - description: 3600 raw messages/hour
-      period: 3600000
-      rate: 4800
     ipWhitelist:
     - "::1"
     - "10.10.10.1"
