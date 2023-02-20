@@ -108,6 +108,8 @@
       var paid = false
       var fallbackTimeout
 
+      console.log('invoice id', reference)
+
       function getBackoffTime() {
         return 5000 + Math.floor(Math.random() * 5000)
       }
@@ -125,6 +127,8 @@
             hide('pending')
             show('expired')
             return
+          } else {
+            console.log('invoice status', status)
           }
 
           paid = true
