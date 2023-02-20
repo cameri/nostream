@@ -39,6 +39,7 @@ The following environment variables can be set:
 | REDIS_PASSWORD                   | Redis Password                   | nostr_ts_relay         |
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
+| ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
 
 # Settings
 
