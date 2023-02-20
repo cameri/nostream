@@ -50,6 +50,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-04: Encrypted Direct Message
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
+- [x] NIP-11a: Relay Information Document Extensions
 - [x] NIP-12: Generic tag queries
 - [x] NIP-13: Proof of Work
 - [x] NIP-15: End of Stored Events Notice
@@ -60,7 +61,6 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-28: Public Chat
 - [x] NIP-33: Parameterized Replaceable Events
 - [x] NIP-40: Expiration Timestamp
-- [x] NIP-111: Relay Information Document Extensions
 
 ## Requirements
 
@@ -85,24 +85,6 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
 
 - [Set up a Paid Nostr relay with Nostream and ZBD](https://andreneves.xyz/p/how-to-setup-a-paid-nostr-relay) by [André Neves](https://snort.social/p/npub1rvg76s0gz535txd9ypg2dfqv0x7a80ar6e096j3v343xdxyrt4ksmkxrck) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 - [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
-
-## Local Quick Start (Docker Compose)
-
-Install Docker Desktop following the [official guide](https://docs.docker.com/desktop/).
-You may have to uninstall Docker on your machine if you installed it using a different guide.
-
-Clone repository and enter directory:
-  ```
-  git clone git@github.com:Cameri/nostream.git
-  cd nostream
-  ```
-
-Start:
-  ```
-  ./scripts/start_local
-  ```
-
-  This will run in the foreground of the terminal until you stop it with Ctrl+C.
 
 ## Quick Start (Docker Compose)
 
@@ -184,21 +166,31 @@ Set the following environment variables:
   ```
   DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
   DB_USER=postgres
-
+  ```
   or
-
+  ```
   DB_HOST=localhost
   DB_PORT=5432
   DB_NAME=nostr_ts_relay
   DB_USER=postgres
   DB_PASSWORD=postgres
+  ```
 
+  ```
   REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
 
   REDIS_HOST=localhost
   REDIS_PORT=6379
   REDIS_USER=default
   REDIS_PASSWORD=nostr_ts_relay
+  ```
+
+If enabling payments, generate a long random secret and set SECRET:
+  You may want to use `openssl rand -hex 128` to generate a secret.
+
+  ```
+  SECRET=aaabbbccc...dddeeefff
+  # Secret shortened for brevity
   ```
 
 Create `nostr_ts_relay` database:
@@ -261,6 +253,24 @@ To clean up the build, coverage and test reports run:
   ```
   npm run clean
   ```
+## Development Quick Start (Docker Compose)
+
+Install Docker Desktop following the [official guide](https://docs.docker.com/desktop/).
+You may have to uninstall Docker on your machine if you installed it using a different guide.
+
+Clone repository and enter directory:
+  ```
+  git clone git@github.com:Cameri/nostream.git
+  cd nostream
+  ```
+
+Start:
+  ```
+  ./scripts/start_local
+  ```
+
+  This will run in the foreground of the terminal until you stop it with Ctrl+C.
+
 ## Tests
 
 ### Unit tests
