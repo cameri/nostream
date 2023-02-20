@@ -3,7 +3,7 @@ services:
     build: .
     container_name: nostream
     environment:
-      SECRET: changeme
+      SECRET: ${SECRET}
       RELAY_PORT: 8008
       # Master
       NOSTR_CONFIG_DIR: /home/node/.nostr
