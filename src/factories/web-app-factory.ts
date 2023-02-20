@@ -24,7 +24,7 @@ export const createWebApp = () => {
          */
         'img-src': ["'self'", 'data:', 'https://cdn.zebedee.io/an/nostr/'],
         'connect-src': ["'self'", settings.info.relay_url as string, webRelayUrl.toString()],
-        'default-src': ['"self"'],
+        'default-src': ["'self'"],
         'script-src-attr': ["'unsafe-inline'"],
         'script-src': ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net/npm/', 'https://unpkg.com/', 'https://cdnjs.cloudflare.com/ajax/libs/'],
         'style-src': ["'self'", 'https://cdn.jsdelivr.net/npm/'],

@@ -1,6 +1,9 @@
 import { Request, Response } from 'express'
+import { createLogger } from '../../factories/logger-factory'
 import { IController } from '../../@types/controllers'
 import { IInvoiceRepository } from '../../@types/repositories'
+
+const debug = createLogger('get-invoice-status-controller')
 
 export class GetInvoiceStatusController implements IController {
   public constructor(
@@ -12,22 +15,25 @@ export class GetInvoiceStatusController implements IController {
     response: Response,
   ): Promise<void> {
     const invoiceId = request.params.invoiceId
-    if (!invoiceId) {
+    if (typeof invoiceId !== 'string' || !invoiceId) {
+      debug('invalid invoice id: %s', invoiceId)
       response
         .status(400)
         .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invalid invoice')
+          .send({ id: invoiceId, status: 'invalid invoice' })
       return
     }
 
     try {
-      const invoice = await this.invoiceRepository.findById(request.params.invoiceId)
+      debug('fetching invoice: %s', invoiceId)
+      const invoice = await this.invoiceRepository.findById(invoiceId)
 
       if (!invoice) {
+        debug('invoice not found: %s', invoiceId)
         response
           .status(404)
           .setHeader('content-type', 'text/plain; charset=utf8')
-          .send('Invoice not found')
+          .send({ id: invoiceId, status: 'not found' })
         return
       }
 
@@ -44,7 +50,7 @@ export class GetInvoiceStatusController implements IController {
       response
         .status(500)
         .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Unable to get invoice status')
+        .send({ id: invoiceId, status: 'error' })
     }
   }
 }

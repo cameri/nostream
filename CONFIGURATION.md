@@ -6,6 +6,7 @@ The following environment variables can be set:
 
 | Name                             | Description                    | Default                |
 |----------------------------------|--------------------------------|------------------------|
+| SECRET                           | Long random secret.            | changeme               |
 | RELAY_PORT                       | Relay's server port            | 8008                   |
 | RELAY_PRIVATE_KEY                | Relay's private key in hex     | (auto-generated)       |
 | WORKER_COUNT                     | Number of workers override     | No. of available CPUs  |
@@ -38,6 +39,7 @@ The following environment variables can be set:
 | REDIS_PASSWORD                   | Redis Password                   | nostr_ts_relay         |
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
+| ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
 
 # Settings
 
