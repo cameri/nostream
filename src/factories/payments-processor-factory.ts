@@ -10,11 +10,13 @@ import { PaymentsProcessor } from '../payments-processors/payments-procesor'
 import { Settings } from '../@types/settings'
 import { ZebedeePaymentsProcesor } from '../payments-processors/zebedee-payments-processor'
 
-const debug = createLogger('create-zebedee-payments-processor')
+const debug = createLogger('create-payments-processor')
 
 const getZebedeeAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
   if (!process.env.ZEBEDEE_API_KEY) {
-    throw new Error('ZEBEDEE_API_KEY must be set.')
+    const error = new Error('ZEBEDEE_API_KEY must be set.')
+    console.error('Unable to get Zebedee config.', error)
+    throw error
   }
 
   return {
@@ -45,14 +47,20 @@ const getLNbitsAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
 const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsProcessor => {
   const callbackBaseURL = path(['paymentsProcessors', 'zebedee', 'callbackBaseURL'], settings) as string | undefined
   if (typeof callbackBaseURL === 'undefined' || callbackBaseURL.indexOf('nostream.your-domain.com') >= 0) {
-    throw new Error('Unable to create payments processor: Setting paymentsProcessor.zebedee.callbackBaseURL is not configured.')
+    const error = new Error('Setting paymentsProcessor.zebedee.callbackBaseURL is not configured.')
+    console.error('Unable to create payments processor.', error)
+
+    throw error
   }
 
   if (
     !Array.isArray(settings.paymentsProcessors?.zebedee?.ipWhitelist)
     || !settings.paymentsProcessors?.zebedee?.ipWhitelist?.length
   ) {
-    throw new Error('Unable to create payments processor: Setting paymentsProcessor.zebedee.ipWhitelist is empty.')
+    const error = new Error('Setting paymentsProcessor.zebedee.ipWhitelist is empty.')
+    console.error('Unable to create payments processor.', error)
+
+    throw error
   }
 
   const config = getZebedeeAxiosConfig(settings)
@@ -67,7 +75,10 @@ const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsProcessor 
 const createLNbitsPaymentProcessor = (settings: Settings): IPaymentsProcessor => {
   const callbackBaseURL = path(['paymentsProcessors', 'lnbits', 'callbackBaseURL'], settings) as string | undefined
   if (typeof callbackBaseURL === 'undefined' || callbackBaseURL.indexOf('nostream.your-domain.com') >= 0) {
-    throw new Error('Unable to create payments processor: Setting paymentsProcessor.lnbits.callbackBaseURL is not configured.')
+    const error = new Error('Setting paymentsProcessor.lnbits.callbackBaseURL is not configured.')
+    console.error('Unable to create payments processor.', error)
+
+    throw error
   }
 
   const config = getLNbitsAxiosConfig(settings)
@@ -80,11 +91,11 @@ const createLNbitsPaymentProcessor = (settings: Settings): IPaymentsProcessor =>
 }
 
 export const createPaymentsProcessor = (): IPaymentsProcessor => {
+  debug('create payments processor')
   const settings = createSettings()
   if (!settings.payments?.enabled) {
     return new NullPaymentsProcessor()
   }
-
 
   switch (settings.payments?.processor) {
     case 'zebedee':
