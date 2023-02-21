@@ -58,9 +58,13 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on('error', (error) => {
         if (error.name === 'RangeError' && error.message === 'Max payload size exceeded') {
           console.error(`web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`)
+        } else if (error.name === 'RangeError' && error.message === 'Invalid WebSocket frame: RSV1 must be clear') {
+          debug(`client ${this.clientId} (${this.getClientAddress()}) enabled compression`)
         } else {
           console.error(`web-socket-adapter: client error ${this.clientId} (${this.getClientAddress()}):`, error)
         }
+
+        this.client.close()
       })
       .on('message', this.onClientMessage.bind(this))
       .on('close', this.onClientClose.bind(this))
