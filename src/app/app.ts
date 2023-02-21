@@ -101,7 +101,7 @@ export class App implements IRunnable {
           MIRROR_INDEX: i.toString(),
         })
       }
-      logCentered(`${mirrors.length} maintenance worker started`, width)
+      logCentered(`${mirrors.length} static-mirroring worker started`, width)
     }
 
     debug('settings: %O', settings)
