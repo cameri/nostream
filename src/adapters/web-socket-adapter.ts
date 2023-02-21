@@ -129,9 +129,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public onHeartbeat(): void {
-    if (!this.alive) {
+    if (!this.alive && !this.subscriptions.size) {
       console.error(`web-socket-adapter: pong timeout for client ${this.clientId} (${this.getClientAddress()})`)
-      this.terminate()
+      this.client.close()
       return
     }
 
@@ -142,12 +142,6 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public getSubscriptions(): Map<string, SubscriptionFilter[]> {
     return new Map(this.subscriptions)
-  }
-
-  private terminate(): void {
-    debug('terminating client %s', this.clientId)
-    this.client.terminate()
-    debug('client %s terminated', this.clientId)
   }
 
   private async onClientMessage(raw: Buffer) {
