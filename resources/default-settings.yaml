@@ -14,7 +14,10 @@ payments:
       amount: 1000000
       whitelists:
         pubkeys:
-        - replace-with-your-pubkey-in-hex
+          - replace-with-your-pubkey-in-hex
+          # Allow the following Zap providers:
+          # LightningTipBot by Calle
+          - "fcd720c38d9ee337188f47aac845dcd8f590ccdb4a928b76dde18187b4c9d37d"
 paymentsProcessors:
   zebedee:
     baseURL: https://api.zebedee.io/
