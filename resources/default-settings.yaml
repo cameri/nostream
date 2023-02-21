@@ -30,7 +30,10 @@ paymentsProcessors:
     callbackBaseURL: https://nostream.your-domain.com/callbacks/lnbits
 network:
   maxPayloadSize: 524288
+  # Comment the next line if using CloudFlare proxy
   remoteIpHeader: x-forwarded-for
+  # Uncomment the next line if using CloudFlare proxy
+  # remoteIpHeader: cf-connecting-ip
 workers:
   count: 0
 mirroring:
