@@ -112,6 +112,7 @@ export class InvoiceRepository implements IInvoiceRepository {
           'description',
           'expires_at',
           'created_at',
+          'verify_url',
         ])(row)
       )
 
