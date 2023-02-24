@@ -104,13 +104,13 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
 
       debug('response: %o', response.data)
 
-      const invoiceResult = await this.httpClient.get(`/api/v1/payments/${encodeURIComponent(response.data.payment_hash)}`, {
+      const invoiceResponse = await this.httpClient.get(`/api/v1/payments/${encodeURIComponent(response.data.payment_hash)}`, {
         maxRedirects: 1,
       })
-      debug('invoice data response: %o', invoiceResult.data)
+      debug('invoice data response: %o', invoiceResponse.data)
 
       const invoice = new LNbitsCreateInvoiceResponse()
-      const data = invoiceResult.data
+      const data = invoiceResponse.data
       invoice.id = data.details.payment_hash
       invoice.pubkey = data.details.extra.internalId
       invoice.bolt11 = data.details.bolt11
@@ -122,7 +122,7 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
       invoice.expiresAt = new Date(data.details.expiry * 1000)
       invoice.createdAt = new Date(data.details.time * 1000)
       invoice.rawResponse = JSON.stringify({
-        invoiceResult: invoiceResult.data,
+        invoiceResult: invoiceResponse.data,
         createData: response.data,
       })
 

@@ -1,9 +1,9 @@
 import { Request, Response } from 'express'
 
+import { Invoice, InvoiceStatus } from '../../@types/invoice'
 import { createLogger } from '../../factories/logger-factory'
 import { IController } from '../../@types/controllers'
 import { IInvoiceRepository } from '../../@types/repositories'
-import { InvoiceStatus } from '../../@types/invoice'
 import { IPaymentsService } from '../../@types/services'
 
 const debug = createLogger('lnbits-callback-controller')
@@ -72,8 +72,8 @@ export class LNbitsCallbackController implements IController {
     invoice.amountPaid = invoice.amountRequested
 
     try {
-      await this.paymentsService.confirmInvoice(invoice)
-      await this.paymentsService.sendInvoiceUpdateNotification(invoice)
+      await this.paymentsService.confirmInvoice(invoice as Invoice)
+      await this.paymentsService.sendInvoiceUpdateNotification(invoice as Invoice)
     } catch (error) {
       console.error(`Unable to confirm invoice ${invoice.id}`, error)
 
