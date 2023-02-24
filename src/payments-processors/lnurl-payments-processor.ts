@@ -7,7 +7,7 @@ import { createLogger } from '../factories/logger-factory'
 import { randomUUID } from 'crypto'
 import { Settings } from '../@types/settings'
 
-const debug = createLogger('alby-payments-processor')
+const debug = createLogger('lnurl-payments-processor')
 
 export class LnurlPaymentsProcesor implements IPaymentsProcessor {
   public constructor(
