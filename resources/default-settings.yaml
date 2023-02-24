@@ -28,6 +28,8 @@ paymentsProcessors:
   lnbits:
     baseURL: https://lnbits.your-domain.com/
     callbackBaseURL: https://nostream.your-domain.com/callbacks/lnbits
+  lnurl:
+    invoiceURL: https://getalby.com/lnurlp/your-username
 network:
   maxPayloadSize: 524288
   # Comment the next line if using CloudFlare proxy
