@@ -41,7 +41,7 @@ export class LnurlPaymentsProcesor implements IPaymentsProcessor {
     } = request
 
     try {
-      const response = await this.httpClient.get(`${this.settings().paymentsProcessors?.lnurl?.invoiceURL}/callback?amount=${amountMsats}&comment=${requestId}`)
+      const response = await this.httpClient.get(`${this.settings().paymentsProcessors?.lnurl?.invoiceURL}/callback?amount=${amountMsats}&comment=${description}`)
 
       const result = {
         id: randomUUID(),
