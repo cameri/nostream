@@ -51,21 +51,21 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
       const response = await this.httpClient.get(`/api/v1/payments/${invoiceId}`, {
         maxRedirects: 1,
       })
-      const invoiceResult = new LNbitsInvoice()
+      const invoice = new LNbitsInvoice()
       const data = response.data
-      invoiceResult.id = data.details.payment_hash
-      invoiceResult.pubkey = data.details.extra.internalId
-      invoiceResult.bolt11 = data.details.bolt11
-      invoiceResult.amountRequested = BigInt(Math.floor(data.details.amount / 1000))
-      if (data.paid) invoiceResult.amountPaid = BigInt(Math.floor(data.details.amount / 1000))
-      invoiceResult.unit = InvoiceUnit.SATS
-      invoiceResult.status = data.paid?InvoiceStatus.COMPLETED:InvoiceStatus.PENDING
-      invoiceResult.description = data.details.memo
-      invoiceResult.confirmedAt = data.paid ? new Date(data.details.time * 1000) : null
-      invoiceResult.expiresAt = new Date(data.details.expiry * 1000)
-      invoiceResult.createdAt = new Date(data.details.time * 1000)
-      invoiceResult.updatedAt = new Date()
-      return invoiceResult
+      invoice.id = data.details.payment_hash
+      invoice.pubkey = data.details.extra.internalId
+      invoice.bolt11 = data.details.bolt11
+      invoice.amountRequested = BigInt(Math.floor(data.details.amount / 1000))
+      if (data.paid) invoice.amountPaid = BigInt(Math.floor(data.details.amount / 1000))
+      invoice.unit = InvoiceUnit.SATS
+      invoice.status = data.paid?InvoiceStatus.COMPLETED:InvoiceStatus.PENDING
+      invoice.description = data.details.memo
+      invoice.confirmedAt = data.paid ? new Date(data.details.time * 1000) : null
+      invoice.expiresAt = new Date(data.details.expiry * 1000)
+      invoice.createdAt = new Date(data.details.time * 1000)
+      invoice.updatedAt = new Date()
+      return invoice
     } catch (error) {
       console.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
 
@@ -122,7 +122,7 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
       invoice.expiresAt = new Date(data.details.expiry * 1000)
       invoice.createdAt = new Date(data.details.time * 1000)
       invoice.rawResponse = JSON.stringify({
-        invoiceResult: invoiceResponse.data,
+        invoiceResponse: invoiceResponse.data,
         createData: response.data,
       })
 
