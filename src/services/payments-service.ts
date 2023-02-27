@@ -231,7 +231,7 @@ export class PaymentsService implements IPaymentsService {
       },
     } = currentSettings
 
-    const relayPrivkey = 'b7eab8ab34aac491217a31059ec017e51c63d09c828e39ee3a40a016bc9d0cbf' || getRelayPrivateKey(relayUrl)
+    const relayPrivkey = getRelayPrivateKey(relayUrl)
     const relayPubkey = getPublicKey(relayPrivkey)
 
     let unit: string = invoice.unit
@@ -293,7 +293,7 @@ ${invoice.bolt11}`,
       },
     } = currentSettings
 
-    const relayPrivkey = 'nsec1y9dk6e95kx54e076kfyt3km2ymp39r2l4zww64y9xc0gr3duyprqedf7kh' //getRelayPrivateKey(relayUrl)
+    const relayPrivkey = getRelayPrivateKey(relayUrl)
     const relayPubkey = getPublicKey(relayPrivkey)
 
     let unit: string = invoice.unit
