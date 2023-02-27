@@ -25,5 +25,5 @@ export type GetInvoiceResponse = Partial<Invoice>
 
 export interface IPaymentsProcessor {
   createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse>
-  getInvoice(invoice: Invoice): Promise<GetInvoiceResponse>
+  getInvoice(invoice: string | Invoice): Promise<GetInvoiceResponse>
 }

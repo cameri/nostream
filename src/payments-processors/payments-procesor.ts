@@ -6,7 +6,7 @@ export class PaymentsProcessor implements IPaymentsProcessor {
     private readonly processor: IPaymentsProcessor
   ) {}
 
-  public async getInvoice(invoice: Invoice): Promise<GetInvoiceResponse> {
+  public async getInvoice(invoice: string | Invoice): Promise<GetInvoiceResponse> {
     return this.processor.getInvoice(invoice)
   }
 

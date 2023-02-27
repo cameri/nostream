@@ -1,11 +1,11 @@
 import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
-import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
+import { InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 
 export class NullPaymentsProcessor implements IPaymentsProcessor {
-  public async getInvoice(invoice: Invoice): Promise<GetInvoiceResponse> {
+  public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
     const date = new Date()
     return {
-      id: invoice.id,
+      id: invoiceId,
       pubkey: '',
       bolt11: '',
       description: '',

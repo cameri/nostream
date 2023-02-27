@@ -4,7 +4,6 @@ import { Factory } from '../@types/base'
 import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
 import { createLogger } from '../factories/logger-factory'
 import { fromZebedeeInvoice } from '../utils/transform'
-import { Invoice } from '../@types/invoice'
 import { Settings } from '../@types/settings'
 
 const debug = createLogger('zebedee-payments-processor')
@@ -15,17 +14,17 @@ export class ZebedeePaymentsProcesor implements IPaymentsProcessor {
     private settings: Factory<Settings>
   ) {}
 
-  public async getInvoice(invoice: Invoice): Promise<GetInvoiceResponse> {
-    debug('get invoice: %s', invoice.id)
+  public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
+    debug('get invoice: %s', invoiceId)
 
     try {
-      const response = await this.httpClient.get(`/v0/charges/${invoice.id}`, {
+      const response = await this.httpClient.get(`/v0/charges/${invoiceId}`, {
         maxRedirects: 1,
       })
 
       return fromZebedeeInvoice(response.data.data)
     } catch (error) {
-      console.error(`Unable to get invoice ${invoice.id}. Reason:`, error)
+      console.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
 
       throw error
     }

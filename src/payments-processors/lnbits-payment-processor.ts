@@ -45,10 +45,10 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
     private settings: Factory<Settings>
   ) {}
 
-  public async getInvoice(invoice: Invoice): Promise<GetInvoiceResponse> {
-    debug('get invoice: %s', invoice.id)
+  public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
+    debug('get invoice: %s', invoiceId)
     try {
-      const response = await this.httpClient.get(`/api/v1/payments/${invoice.id}`, {
+      const response = await this.httpClient.get(`/api/v1/payments/${invoiceId}`, {
         maxRedirects: 1,
       })
       const invoiceResult = new LNbitsInvoice()
@@ -67,7 +67,7 @@ export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
       invoiceResult.updatedAt = new Date()
       return invoiceResult
     } catch (error) {
-      console.error(`Unable to get invoice ${invoice.id}. Reason:`, error)
+      console.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
 
       throw error
     }
