@@ -4,6 +4,15 @@ DOCKER_COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.yml"
 NOSTR_CONFIG_DIR="${PROJECT_ROOT}/.nostr"
 SETTINGS_FILE="${NOSTR_CONFIG_DIR}/settings.yaml"
 DEFAULT_SETTINGS_FILE="${PROJECT_ROOT}/resources/default-settings.yaml"
+CURRENT_DIR=$(pwd)
+
+if [[ ${CURRENT_DIR} =~ /scripts$ ]]; then
+        echo "Please run this script from the Nostream root folder, not the scripts directory."
+        echo "To do this, change up one directory, and then run the following command:"
+        echo "./scripts/start"
+        exit 1
+fi
+
 
 if [ "$EUID" -eq 0 ]
   then echo "Error: Nostream should not be run as root."
