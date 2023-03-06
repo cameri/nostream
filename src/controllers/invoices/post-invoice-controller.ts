@@ -165,7 +165,7 @@ export class PostInvoiceController implements IController {
       relay_url: relayUrl,
       pubkey,
       relay_pubkey: relayPubkey,
-      expires_at: invoice.expiresAt?.toISOString(),
+      expires_at: invoice.expiresAt?.toISOString() ?? '',
       invoice: invoice.bolt11,
       amount: amount / 1000n,
     }

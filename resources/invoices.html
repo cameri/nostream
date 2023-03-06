@@ -168,7 +168,7 @@
               if (event.pubkey === relayPubkey) {
                 paid = true
 
-                clearTimeout(timeout)
+                if (expiresAt) clearTimeout(timeout)
 
                 hide('pending')
                 show('paid')
@@ -213,12 +213,14 @@
         }
       }
 
-      const expiry = (new Date(expiresAt).getTime() - new Date().getTime())
-      console.log('expiry at', expiresAt, Math.floor(expiry / 1000))
-      timeout = setTimeout(() => {
-        hide('pending')
-        show('expired')
-      }, expiry)
+      if (expiresAt) {
+        const expiry = (new Date(expiresAt).getTime() - new Date().getTime())
+        console.log('expiry at', expiresAt, Math.floor(expiry / 1000))
+        timeout = setTimeout(() => {
+          hide('pending')
+          show('expired')
+        }, expiry)
+      }
 
       new QRCode(document.getElementById("invoice"), {
         text: `lightning:${invoice}`,

@@ -3,7 +3,6 @@ import {
   applySpec,
   ifElse,
   is,
-  isNil,
   omit,
   pipe,
   prop,
@@ -92,17 +91,10 @@ export class InvoiceRepository implements IInvoiceRepository {
       status: prop('status'),
       description: prop('description'),
       // confirmed_at: prop('confirmedAt'),
-      expires_at: ifElse(
-        propSatisfies(isNil, 'expiresAt'),
-        always(undefined),
-        prop('expiresAt'),
-      ),
+      expires_at: prop('expiresAt'),
       updated_at: always(new Date()),
-      created_at: ifElse(
-        propSatisfies(isNil, 'createdAt'),
-        always(undefined),
-        prop('createdAt'),
-      ),
+      created_at: prop('createdAt'),
+      verify_url: prop('verifyURL'),
     })(invoice)
 
     debug('row: %o', row)
@@ -120,6 +112,7 @@ export class InvoiceRepository implements IInvoiceRepository {
           'description',
           'expires_at',
           'created_at',
+          'verify_url',
         ])(row)
       )
 

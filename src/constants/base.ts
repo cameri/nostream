@@ -40,6 +40,7 @@ export enum EventTags {
 }
 
 export enum PaymentsProcessors {
+  LNURL = 'lnurl',
   ZEBEDEE = 'zebedee',
   LNBITS = 'lnbits',
 }

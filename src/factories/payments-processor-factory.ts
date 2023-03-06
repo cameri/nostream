@@ -5,6 +5,7 @@ import { createLogger } from './logger-factory'
 import { createSettings } from './settings-factory'
 import { IPaymentsProcessor } from '../@types/clients'
 import { LNbitsPaymentsProcesor } from '../payments-processors/lnbits-payment-processor'
+import { LnurlPaymentsProcesor } from '../payments-processors/lnurl-payments-processor'
 import { NullPaymentsProcessor } from '../payments-processors/null-payments-processor'
 import { PaymentsProcessor } from '../payments-processors/payments-procesor'
 import { Settings } from '../@types/settings'
@@ -42,6 +43,19 @@ const getLNbitsAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
     baseURL: path(['paymentsProcessors', 'lnbits', 'baseURL'], settings),
     maxRedirects: 1,
   }
+}
+
+const createLnurlPaymentsProcessor = (settings: Settings): IPaymentsProcessor => {
+  const invoiceURL = path(['paymentsProcessors', 'lnurl', 'invoiceURL'], settings) as string | undefined
+  if (typeof invoiceURL === 'undefined') {
+    throw new Error('Unable to create payments processor: Setting paymentsProcessor.lnurl.invoiceURL is not configured.')
+  }
+
+  const client = axios.create()
+
+  const app = new LnurlPaymentsProcesor(client, createSettings)
+
+  return new PaymentsProcessor(app)
 }
 
 const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsProcessor => {
@@ -98,6 +112,8 @@ export const createPaymentsProcessor = (): IPaymentsProcessor => {
   }
 
   switch (settings.payments?.processor) {
+    case 'lnurl':
+      return createLnurlPaymentsProcessor(settings)
     case 'zebedee':
       return createZebedeePaymentsProcessor(settings)
     case 'lnbits':

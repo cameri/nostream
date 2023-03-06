@@ -12,6 +12,7 @@ export interface CreateInvoiceResponse {
   confirmedAt?: Date | null
   createdAt: Date
   rawResponse?: string
+  verifyURL?: string
 }
 
 export interface CreateInvoiceRequest {
@@ -20,9 +21,9 @@ export interface CreateInvoiceRequest {
   requestId?: string
 }
 
-export type GetInvoiceResponse = Invoice
+export type GetInvoiceResponse = Partial<Invoice>
 
 export interface IPaymentsProcessor {
   createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse>
-  getInvoice(invoiceId: string): Promise<GetInvoiceResponse>
+  getInvoice(invoice: string | Invoice): Promise<GetInvoiceResponse>
 }
