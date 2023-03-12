@@ -3,6 +3,7 @@ const { extname, join } = require('path')
 const fs = require('fs')
 const yaml = require('js-yaml')
 const { v5: uuidv5 } = require('uuid')
+const { mergeDeepRight } = require('ramda')
 
 const SettingsFileTypes = {
   yaml: 'yaml',
@@ -13,16 +14,26 @@ const NAMESPACE = 'c646b451-db73-47fb-9a70-ea24ce8a225a'
 
 exports.seed = async function (knex) {
   const settingsFilePath = `${process.cwd()}/seeds/configs.json`
-  const defaultConfigs = fs.readFileSync(settingsFilePath)
-  // await knew.batchInsert('configs', defaultConfigs, 10)
+  let defaultConfigs = fs.readFileSync(settingsFilePath)
+  defaultConfigs = addIdsToConfigs(defaultConfigs)
 
   const rawConfigs = getConfigs()
-
   const parsedConfigs = parseAll(rawConfigs)
 
-  if (parsedConfigs) {
+  const mergedSettings = mergeDeepRight(defaultConfigs, parsedConfigs)
+
+  if (mergedSettings) {
     // await knex.batchInsert('configs', configsByCategory, 10)
   }
+}
+
+const addIdsToConfigs = (configs) => {
+  return configs.map(config => {
+    return {
+      ...config,
+      id: uuidv5('key', NAMESPACE),
+    }
+  })
 }
 
 const getConfigs = () => {
@@ -41,7 +52,7 @@ const getConfigs = () => {
   if (filteredFile) {
     const extension = extname(filteredFile).substring(1)
     if (SettingsFileTypes[extension]) {
-      settingsFileNamePath = `${settingsFilePath}/settings.${extension}`
+      const settingsFileNamePath = `${settingsFilePath}/settings.${extension}`
       if (extension === SettingsFileTypes.json) {
         settingsFile = loadAndParseJsonFile(settingsFileNamePath)
       } else {
@@ -88,7 +99,7 @@ const parseOneLevelDeepConfigs = (configs, category) => {
       id: uuidv5('key', NAMESPACE),
       key,
       value: configs[key],
-      category
+      category,
     }
   })
 

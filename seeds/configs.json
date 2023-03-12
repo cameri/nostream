@@ -1,54 +1,45 @@
 [
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "relay_url",
     "value": "wss://nostream.your-domain.com",
     "category": "info"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "name",
     "value": "nostream.your-domain.com",
     "category": "info"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "description",
     "value": "A nostr relay written in Typescript.",
     "category": "info"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "pubkey",
     "value": "replace-with-your-pubkey-in-hex",
     "category": "info"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "contact",
     "value": "operator@your-domain.com",
     "category": "info"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "enabled",
     "value": false,
     "category": "authentication"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "enabled",
     "value": false,
     "category": "payments"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "processor",
     "value": "zebedee",
     "category": "payments"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "feeSchedules",
     "value": {
       "admission": [
@@ -79,7 +70,6 @@
     "category": "payments"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "zebedee",
     "value": {
       "baseURL": "https://api.zebedee.io/",
@@ -92,37 +82,31 @@
     "category": "paymentsProcessors"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "maxPayloadSize",
     "value": 131072,
     "category": "network"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "remoteIpHeader",
     "value": "x-forwarded-for",
     "category": "network"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "idleTimeout",
     "value": 60,
     "category": "network"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "count",
     "value": 0,
     "category": "workers"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "static",
     "value": [],
     "category": "mirroring"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "invoice",
     "value": {
       "rateLimits": [
@@ -148,7 +132,6 @@
     "category": "limits"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "connection",
     "value": {
       "rateLimits": [
@@ -178,7 +161,6 @@
     "category": "limits"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "event",
     "value": {
       "eventId": {
@@ -326,7 +308,6 @@
     "category": "limits"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "client",
     "value": {
       "subscription": {
@@ -337,7 +318,6 @@
     "category": "limits"
   },
   {
-    "id": "b3b5fb49-4e95-567b-ab64-2d92b7957b13",
     "key": "message",
     "value": {
       "rateLimits": [
