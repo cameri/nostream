@@ -11,7 +11,6 @@ import {
 import { assocPath, pipe } from 'ramda'
 import { fromEvent, map, Observable, ReplaySubject, Subject, takeUntil } from 'rxjs'
 import WebSocket, { MessageEvent } from 'ws'
-import Sinon from 'sinon'
 
 import { connect, createIdentity, createSubscription, sendEvent } from './helpers'
 import { getMasterDbClient, getReadReplicaDbClient } from '../../../src/database/client'
@@ -39,7 +38,6 @@ BeforeAll({ timeout: 1000 }, async function () {
   dbClient = getMasterDbClient()
   rrDbClient = getReadReplicaDbClient()
   await dbClient.raw('SELECT 1=1')
-  Sinon.stub(SettingsStatic, 'watchSettings')
   const settings = SettingsStatic.createSettings()
 
   SettingsStatic._settings = pipe(

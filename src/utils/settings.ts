@@ -1,138 +1,74 @@
-import fs from 'fs'
-import yaml from 'js-yaml'
-
-import { extname, join } from 'path'
-import { mergeDeepRight } from 'ramda'
-
 import { createLogger } from '../factories/logger-factory'
+import { DatabaseClient } from '../@types/base'
+import { Setting } from '../@types/setting'
+import { SettingRepository } from '../repositories/settings-repository'
 import { Settings } from '../@types/settings'
 
 const debug = createLogger('settings')
 
-export enum SettingsFileTypes {
-  yaml = 'yaml',
-  json = 'json',
-}
-
 export class SettingsStatic {
+  private static _instance: SettingsStatic
+  private static dbClient: DatabaseClient
   static _settings: Settings | undefined
+  static settingsRepository: SettingRepository | undefined
 
-  public static getSettingsFileBasePath(): string {
-    return process.env.NOSTR_CONFIG_DIR ?? join(process.cwd(), '.nostr')
-  }
-
-  public static getDefaultSettingsFilePath(): string {
-    return join(process.cwd(), 'resources', 'default-settings.yaml')
-  }
-
-  public static loadAndParseYamlFile(path: string): Settings {
-    const defaultSettingsFileContent = fs.readFileSync(path, { encoding: 'utf-8' })
-    const defaults = yaml.load(defaultSettingsFileContent) as Settings
-    return defaults
-  }
-
-  public static loadAndParseJsonFile(path: string) {
-    return JSON.parse(
-      fs.readFileSync(
-        path,
-        { encoding: 'utf-8' }
-      )
-    )
-  }
-
-  public static settingsFileType(path: string): SettingsFileTypes | undefined {
-    const files: string[] = fs.readdirSync(path)
-    const filteredFile = files.find(fn => fn.startsWith('settings'))
-    if (filteredFile) {
-      const extension = extname(filteredFile).substring(1)
-      if (SettingsFileTypes[extension]) {
-        return SettingsFileTypes[extension]
-      }
+  constructor(dbClient: DatabaseClient) {
+    SettingsStatic.dbClient = dbClient
+    SettingsStatic.settingsRepository = new SettingRepository(dbClient)
+    if (SettingsStatic._instance) {
+      throw new Error('Use Singleton.instance instead of new.')
     }
 
-    return SettingsFileTypes.yaml
+    SettingsStatic._instance = this
   }
 
-  public static loadSettings(path: string, fileType: SettingsFileTypes) {
-    debug('loading settings from %s', path)
-
-    switch (fileType) {
-      case SettingsFileTypes.json: {
-        console.warn('settings.json is deprecated, please use a yaml file based on resources/default-settings.yaml')
-        return SettingsStatic.loadAndParseJsonFile(path)
+  public init() {
+    debug('SettingsStatic.init()')
+    return new Promise((resolve, reject) => {
+      const settingsPromise = SettingsStatic.loadSettingsFromDb(SettingsStatic.constructSettingsJsonBlob)
+      if (settingsPromise) {
+        resolve('success')
       }
-      case SettingsFileTypes.yaml: {
-        return SettingsStatic.loadAndParseYamlFile(path)
-      }
-      default: {
-        throw new Error('settings file was missing or did not contain .yaml or .json extensions.')
-      }
-    }
+      reject('Failed to initialize settings')
+    })
   }
+
+  static get instance() {
+    return SettingsStatic._instance ?? (SettingsStatic._instance = new SettingsStatic(this.dbClient))
+  }
+
+  private static loadSettingsFromDb(callback) {
+    debug('SettingsStatic.loadSettingsFromDb()')
+    const promise = SettingsStatic.settingsRepository.getSettings()
+
+    return promise.then(rawSettingsFromDb => {
+      const settingsJsonBlob = callback(rawSettingsFromDb)
+      this._settings = settingsJsonBlob
+    })
+  }
+
 
   public static createSettings(): Settings {
-    if (SettingsStatic._settings) {
-      return SettingsStatic._settings
-    }
-    debug('creating settings')
-
-    const basePath = SettingsStatic.getSettingsFileBasePath()
-    if (!fs.existsSync(basePath)) {
-      fs.mkdirSync(basePath)
-    }
-    const defaultsFilePath = SettingsStatic.getDefaultSettingsFilePath()
-    const fileType = SettingsStatic.settingsFileType(basePath)
-    const settingsFilePath = join(basePath, `settings.${fileType}`)
-
-    const defaults = SettingsStatic.loadSettings(defaultsFilePath, SettingsFileTypes.yaml)
-
-    try {
-      if (fileType) {
-        SettingsStatic._settings = mergeDeepRight(
-          defaults,
-          SettingsStatic.loadSettings(settingsFilePath, fileType)
-        )
-      } else {
-        SettingsStatic.saveSettings(basePath, defaults)
-        SettingsStatic._settings = mergeDeepRight({}, defaults)
-      }
-
-      if (typeof SettingsStatic._settings === 'undefined') {
-        throw new Error('Unable to set settings')
-      }
-
-      return SettingsStatic._settings
-    } catch (error) {
-      debug('error reading config file at %s: %o', settingsFilePath, error)
-
-      return defaults
-    }
+    return this._settings
   }
 
-  public static saveSettings(path: string, settings: Settings) {
-    debug('saving settings to %s: %o', path, settings)
-    return fs.writeFileSync(
-      join(path, 'settings.yaml'),
-      yaml.dump(settings),
-      { encoding: 'utf-8' },
-    )
+  public static async updateSetting(config: Setting) {
+    await SettingsStatic.settingsRepository.upsertSetting(config)
+
+    this.updateSingletonSettings(config)
   }
 
-  public static watchSettings() {
-    const basePath = SettingsStatic.getSettingsFileBasePath()
-    const defaultsFilePath = SettingsStatic.getDefaultSettingsFilePath()
-    const fileType = SettingsStatic.settingsFileType(basePath)
-    const settingsFilePath = join(basePath, `settings.${fileType}`)
+  private static updateSingletonSettings(setting) {
+    const updateSettings = this._settings
+    updateSettings[setting.category][setting.key] = setting.value
+  }
 
-    const reload = () => {
-      console.log('reloading settings')
-      SettingsStatic._settings = undefined
-      SettingsStatic.createSettings()
-    }
+  private static constructSettingsJsonBlob(rawSettingsFromDb): any {
+    const settings = {}
+    rawSettingsFromDb.map(setting => {
+      settings[setting.category][setting.key] = setting.value
+    })
 
-    return [
-      fs.watch(defaultsFilePath, 'utf8', reload),
-      fs.watch(settingsFilePath, 'utf8', reload),
-    ]
+    return settings
   }
 }

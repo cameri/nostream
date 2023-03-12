@@ -2,6 +2,7 @@ import { always, applySpec, ifElse, is, isNil, path, pipe, prop, propSatisfies }
 import { bech32 } from 'bech32'
 
 import { Invoice } from '../@types/invoice'
+import { Setting } from '../@types/setting'
 import { User } from '../@types/user'
 
 export const toJSON = (input: any) => JSON.stringify(input)
@@ -38,6 +39,14 @@ export const fromDBUser = applySpec<User>({
   pubkey: pipe(prop('pubkey') as () => Buffer, fromBuffer),
   isAdmitted: prop('is_admitted'),
   balance: prop('balance'),
+  createdAt: prop('created_at'),
+  updatedAt: prop('updated_at'),
+})
+
+export const fromDBSetting = applySpec<Setting>({
+  key: prop('key'),
+  value: prop('value'),
+  category: prop('category'),
   createdAt: prop('created_at'),
   updatedAt: prop('updated_at'),
 })

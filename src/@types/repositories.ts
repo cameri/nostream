@@ -3,6 +3,7 @@ import { PassThrough } from 'stream'
 import { DatabaseClient, EventId, Pubkey } from './base'
 import { DBEvent, Event } from './event'
 import { Invoice } from './invoice'
+import { Setting } from './setting'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
 
@@ -40,4 +41,10 @@ export interface IUserRepository {
   findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<User | undefined>
   upsert(user: Partial<User>, client?: DatabaseClient): Promise<number>
   getBalanceByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<bigint>
+}
+
+export interface ISettingRepository {
+  getSetting(category: string, key: string, client?: DatabaseClient): Promise<Setting | undefined>
+  getSettings(): Promise<Setting[] | undefined>
+  upsertSetting(config: Partial<Setting>, client?: DatabaseClient): Promise<number>
 }

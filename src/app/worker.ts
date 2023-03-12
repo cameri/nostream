@@ -3,7 +3,6 @@ import { IWebSocketServerAdapter } from '../@types/adapters'
 
 import { createLogger } from '../factories/logger-factory'
 import { FSWatcher } from 'fs'
-import { SettingsStatic } from '../utils/settings'
 
 const debug = createLogger('app-worker')
 export class AppWorker implements IRunnable {
@@ -23,8 +22,6 @@ export class AppWorker implements IRunnable {
   }
 
   public run(): void {
-    this.watchers = SettingsStatic.watchSettings()
-
     const port = process.env.PORT || process.env.RELAY_PORT || 8008
     this.adapter.listen(typeof port === 'number' ? port : Number(port))
   }
