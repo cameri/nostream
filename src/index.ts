@@ -3,11 +3,11 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 import { appFactory } from './factories/app-factory'
+import { getMasterDbClient } from './database/client'
 import { maintenanceWorkerFactory } from './factories/maintenance-worker-factory'
+import { SettingsStatic } from './utils/settings'
 import { staticMirroringWorkerFactory } from './factories/static-mirroring.worker-factory'
 import { workerFactory } from './factories/worker-factory'
-import { getMasterDbClient } from './database/client'
-import { SettingsStatic } from './utils/settings'
 
 export const getRunner = (): any => {
   const dbClient = getMasterDbClient()

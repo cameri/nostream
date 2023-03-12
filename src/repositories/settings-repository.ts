@@ -1,6 +1,6 @@
 import { always, applySpec, omit, prop } from 'ramda'
 
-import { Setting, DBSetting } from '../@types/setting'
+import { DBSetting, Setting } from '../@types/setting'
 import { createLogger } from '../factories/logger-factory'
 import { DatabaseClient } from '../@types/base'
 import { fromDBSetting } from '../utils/transform'
@@ -16,7 +16,7 @@ export class SettingRepository implements ISettingRepository {
     key: string,
     client: DatabaseClient = this.dbClient
   ): Promise<Setting | undefined> {
-    debug('find config by key: %s and category %s', category, key);
+    debug('find config by key: %s and category %s', category, key)
     const [dbsetting] = await client<DBSetting>('configs')
       .where('key', key)
       .where('category', category)
@@ -32,7 +32,7 @@ export class SettingRepository implements ISettingRepository {
   public async getSettings(
     client: DatabaseClient = this.dbClient
   ): Promise<Setting[] | undefined> {
-    debug('get all configs');
+    debug('get all configs')
     const settings = await client<Setting>('configs')
       .select()
 

@@ -85,7 +85,7 @@ const parseOneLevelDeepConfigs = (configs, category) => {
   console.log(keys)
   const flattenedConfigs = Object.keys(configs).map(key => {
     return {
-      id: uuidv5('id', NAMESPACE),
+      id: uuidv5('key', NAMESPACE),
       key,
       value: configs[key],
       category

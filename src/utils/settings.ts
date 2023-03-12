@@ -1,8 +1,8 @@
 import { createLogger } from '../factories/logger-factory'
-import { Settings } from '../@types/settings'
-import { SettingRepository } from '../repositories/settings-repository'
-import { Setting } from '../@types/setting'
 import { DatabaseClient } from '../@types/base'
+import { Setting } from '../@types/setting'
+import { SettingRepository } from '../repositories/settings-repository'
+import { Settings } from '../@types/settings'
 
 const debug = createLogger('settings')
 
@@ -15,10 +15,11 @@ export class SettingsStatic {
   constructor(dbClient: DatabaseClient) {
     SettingsStatic.dbClient = dbClient
     SettingsStatic.settingsRepository = new SettingRepository(dbClient)
-    if (SettingsStatic._instance)
-      throw new Error("Use Singleton.instance instead of new.")
+    if (SettingsStatic._instance) {
+      throw new Error('Use Singleton.instance instead of new.')
+    }
 
-    SettingsStatic._instance = this;
+    SettingsStatic._instance = this
   }
 
   public init() {
@@ -33,7 +34,7 @@ export class SettingsStatic {
   }
 
   static get instance() {
-    return SettingsStatic._instance ?? (SettingsStatic._instance = new SettingsStatic(this.dbClient));
+    return SettingsStatic._instance ?? (SettingsStatic._instance = new SettingsStatic(this.dbClient))
   }
 
   private static loadSettingsFromDb(callback) {
@@ -41,9 +42,9 @@ export class SettingsStatic {
     const promise = SettingsStatic.settingsRepository.getSettings()
 
     return promise.then(rawSettingsFromDb => {
-      const settingsJsonBlob = callback(rawSettingsFromDb);
+      const settingsJsonBlob = callback(rawSettingsFromDb)
       this._settings = settingsJsonBlob
-    });
+    })
   }
 
 

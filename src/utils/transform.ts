@@ -2,8 +2,8 @@ import { always, applySpec, ifElse, is, isNil, path, pipe, prop, propSatisfies }
 import { bech32 } from 'bech32'
 
 import { Invoice } from '../@types/invoice'
-import { User } from '../@types/user'
 import { Setting } from '../@types/setting'
+import { User } from '../@types/user'
 
 export const toJSON = (input: any) => JSON.stringify(input)
 

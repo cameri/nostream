@@ -9,7 +9,6 @@ import { IRunnable } from '../@types/base'
 import packageJson from '../../package.json'
 import { Serializable } from 'child_process'
 import { Settings } from '../@types/settings'
-import { SettingsStatic } from '../utils/settings'
 
 const debug = createLogger('app-primary')
 
@@ -38,7 +37,6 @@ export class App implements IRunnable {
 
   public run(): void {
     const settings = this.settings()
-    // this.watchers = SettingsStatic.watchSettings()
     console.log(`
  ███▄    █  ▒█████    ██████ ▄▄▄█████▓ ██▀███  ▓█████ ▄▄▄       ███▄ ▄███▓
  ██ ▀█   █ ▒██▒  ██▒▒██    ▒ ▓  ██▒ ▓▒▓██ ▒ ██▒▓█   ▀▒████▄    ▓██▒▀█▀ ██▒
