@@ -1,9 +1,11 @@
 import { Knex } from 'knex'
 import { SocketAddress } from 'net'
 
+import { EventTags } from '../constants/base'
+
 export type EventId = string
 export type Pubkey = string
-export type TagName = string
+export type TagName = EventTags
 export type Signature = string
 export type Tag = TagBase & string[]
 
