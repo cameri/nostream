@@ -181,15 +181,33 @@ export const identifyEvent = async (event: UnidentifiedEvent): Promise<UnsignedE
   return { ...event, id }
 }
 
+let privateKeyCache: string | undefined
 export function getRelayPrivateKey(relayUrl: string): string {
-  if (process.env.RELAY_PRIVATE_KEY) {
-    return process.env.RELAY_PRIVATE_KEY
+  if (privateKeyCache) {
+    return privateKeyCache
   }
 
-  return deriveFromSecret(relayUrl).toString('hex')
+  if (process.env.RELAY_PRIVATE_KEY) {
+    privateKeyCache = process.env.RELAY_PRIVATE_KEY
+
+    return privateKeyCache
+  }
+
+  privateKeyCache = deriveFromSecret(relayUrl).toString('hex')
+
+  return privateKeyCache
 }
 
-export const getPublicKey = (privkey: string | Buffer) => Buffer.from(secp256k1.getPublicKey(privkey, true)).subarray(1).toString('hex')
+const publicKeyCache: Record<string, string> = {}
+export const getPublicKey = (privkey: string) => {
+  if (privkey in publicKeyCache) {
+    return publicKeyCache[privkey]
+  }
+
+  publicKeyCache[privkey] = Buffer.from(secp256k1.getPublicKey(privkey, true)).subarray(1).toString('hex')
+
+  return publicKeyCache[privkey]
+}
 
 export const signEvent = (privkey: string | Buffer | undefined) => async (event: UnsignedEvent): Promise<Event> => {
   const sig = await secp256k1.schnorr.sign(event.id, privkey as any)

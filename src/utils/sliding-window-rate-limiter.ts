@@ -17,8 +17,6 @@ export class SlidingWindowRateLimiter implements IRateLimiter {
     const timestamp = Date.now()
     const { period } = options
 
-    debug('add %d hits on %s bucket', step, key)
-
     const [,, entries] = await Promise.all([
       this.cache.removeRangeByScoreFromSortedSet(key, 0, timestamp - period),
       this.cache.addToSortedSet(key, { [`${timestamp}:${step}`]: timestamp.toString() }),
