@@ -75,7 +75,9 @@ describe('EventMessageHandler', () => {
         webSocket as any,
         strategyFactoryStub,
         userRepository,
-        () => ({}) as any,
+        () => ({
+          info: { relay_url: 'relay_url' },
+        }) as any,
         () => ({ hit: async () => false })
       )
     })
@@ -128,7 +130,7 @@ describe('EventMessageHandler', () => {
       expect(isUserAdmitted).to.have.been.calledWithExactly(event)
       expect(strategyFactoryStub).not.to.have.been.called
     })
-    
+
     it('rejects event if it is expired', async () => {
       isEventValidStub.resolves(undefined)
 
@@ -223,6 +225,9 @@ describe('EventMessageHandler', () => {
         },
       }
       settings = {
+        info: {
+          relay_url: 'relay_url',
+        },
         limits: {
           event: eventLimits,
         },
@@ -690,6 +695,9 @@ describe('EventMessageHandler', () => {
         rateLimits: [],
       }
       settings = {
+        info: {
+          relay_url: 'relay_url',
+        },
         limits: {
           event: eventLimits,
         },

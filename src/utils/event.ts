@@ -182,7 +182,7 @@ export const identifyEvent = async (event: UnidentifiedEvent): Promise<UnsignedE
 }
 
 let privateKeyCache: string | undefined
-export function getRelayPrivateKey(relayUrl: string): string {
+export function getRelayPrivateKey(secret: string): string {
   if (privateKeyCache) {
     return privateKeyCache
   }
@@ -193,7 +193,7 @@ export function getRelayPrivateKey(relayUrl: string): string {
     return privateKeyCache
   }
 
-  privateKeyCache = deriveFromSecret(relayUrl).toString('hex')
+  privateKeyCache = deriveFromSecret(secret).toString('hex')
 
   return privateKeyCache
 }

@@ -17,6 +17,8 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     paymentsUrl.protocol = paymentsUrl.protocol === 'wss:' ? 'https:' : 'http:'
     paymentsUrl.pathname = '/invoices'
 
+    const content = settings.limits?.event?.content
+
     const relayInformationDocument = {
       name,
       description,
@@ -29,12 +31,14 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       limitation: {
             max_message_length: settings.network.maxPayloadSize,
             max_subscriptions: settings.limits?.client?.subscription?.maxSubscriptions,
-            max_filters: settings.limits?.client?.subscription?.maxFilters,
-            max_limit: 5000,
-            max_subid_length: 256,
-            min_prefix: 4,
+            max_filters: settings.limits?.client?.subscription?.maxFilterValues,
+            max_limit: settings.limits?.client?.subscription?.maxLimit,
+            max_subid_length: settings.limits?.client?.subscription?.maxSubscriptionIdLength,
+            min_prefix: settings.limits?.client?.subscription?.minPrefixLength,
             max_event_tags: 2500,
-            max_content_length: 102400,
+            max_content_length: Array.isArray(content)
+              ? content[0].maxLength // best guess since we have per-kind limits
+              : content?.maxLength,
             min_pow_difficulty: settings.limits?.event?.eventId?.minLeadingZeroBits,
             auth_required: false,
             payment_required: settings.payments?.enabled,
