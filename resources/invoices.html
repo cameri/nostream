@@ -166,10 +166,7 @@
 
           switch (message[0]) {
             case 'EVENT': {
-              // TODO: validate event
               const event = message[2]
-              console.log('event', event)
-              // TODO: validate signature
               if (
                 event.pubkey === relayPubkey
                 && event.kind === 402
