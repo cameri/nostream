@@ -137,7 +137,7 @@ export class PostInvoiceController implements IController {
 
     let invoice: Invoice
     const amount = admissionFee.reduce((sum, fee) => {
-      return fee.enabled
+      return fee.enabled && !fee.whitelists?.pubkeys?.includes(pubkey)
         ? BigInt(fee.amount) + sum
         : sum
     }, 0n)
