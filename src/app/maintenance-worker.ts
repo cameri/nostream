@@ -1,5 +1,5 @@
+import { mergeDeepLeft, path, pipe } from 'ramda'
 import { IRunnable } from '../@types/base'
-import { path } from 'ramda'
 
 import { createLogger } from '../factories/logger-factory'
 import { delayMs } from '../utils/misc'
@@ -59,11 +59,12 @@ export class MaintenanceWorker implements IRunnable {
           && updatedInvoice.confirmedAt
         ) {
           debug('confirming invoice %s & notifying %s', invoice.id, invoice.pubkey)
-          const update = {
-              ...invoice,
-              ...{ amountPaid: invoice.amountRequested },
-              ...updatedInvoice,
-          }
+
+          const update = pipe(
+            mergeDeepLeft(updatedInvoice),
+            mergeDeepLeft({ amountPaid: invoice.amountRequested }),
+          )(invoice)
+
           await Promise.all([
             this.paymentsService.confirmInvoice(update),
             this.paymentsService.sendInvoiceUpdateNotification(update),
