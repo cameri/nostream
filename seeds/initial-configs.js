@@ -2,38 +2,33 @@
 const { extname, join } = require('path')
 const fs = require('fs')
 const yaml = require('js-yaml')
-const { v5: uuidv5 } = require('uuid')
-const { mergeDeepRight } = require('ramda')
+const { mergeDeepLeft } = require('ramda')
 
 const SettingsFileTypes = {
   yaml: 'yaml',
   json: 'json',
 }
 
-const NAMESPACE = 'c646b451-db73-47fb-9a70-ea24ce8a225a'
-
 exports.seed = async function (knex) {
   const settingsFilePath = `${process.cwd()}/seeds/configs.json`
-  let defaultConfigs = fs.readFileSync(settingsFilePath)
-  defaultConfigs = addIdsToConfigs(defaultConfigs)
+  const defaultConfigs = JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'))
 
   const rawConfigs = getConfigs()
   const parsedConfigs = parseAll(rawConfigs)
 
-  const mergedSettings = mergeDeepRight(defaultConfigs, parsedConfigs)
+  const mergedSettings = mergeDeepLeft(defaultConfigs, parsedConfigs)
 
-  if (mergedSettings) {
-    // await knex.batchInsert('configs', configsByCategory, 10)
-  }
-}
-
-const addIdsToConfigs = (configs) => {
-  return configs.map(config => {
-    return {
-      ...config,
-      id: uuidv5('key', NAMESPACE),
+  for (const settingKey of Object.keys(mergedSettings)) {
+    try {
+      //const res = await knex('configs').insert(setting)
+      const res = await knex('configs').insert([mergedSettings[settingKey]])
+      console.log('knex res', res)
+    } catch (err) {
+      // TODO remove this log when finished developing
+      console.log('Failed to insert config due to error: ', err)
+      // Nothing to log as if this fails the config already exists, which is fine
     }
-  })
+  }
 }
 
 const getConfigs = () => {
@@ -92,11 +87,8 @@ const parseAll = (jsonConfigs) => {
 }
 
 const parseOneLevelDeepConfigs = (configs, category) => {
-  const keys = Object.keys(configs)
-  console.log(keys)
   const flattenedConfigs = Object.keys(configs).map(key => {
     return {
-      id: uuidv5('key', NAMESPACE),
       key,
       value: configs[key],
       category,
@@ -105,3 +97,6 @@ const parseOneLevelDeepConfigs = (configs, category) => {
 
   return flattenedConfigs
 }
+
+
+// TODO: fix the key "enabled", as it repeats

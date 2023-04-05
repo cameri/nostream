@@ -1,7 +1,7 @@
 [
   {
     "key": "relay_url",
-    "value": "wss://nostream.your-domain.com",
+    "value": { "url": "wss://nostream.your-domain.com"},
     "category": "info"
   },
   {
