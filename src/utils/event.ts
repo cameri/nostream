@@ -204,7 +204,7 @@ export const getPublicKey = (privkey: string) => {
     return publicKeyCache[privkey]
   }
 
-  publicKeyCache[privkey] = Buffer.from(secp256k1.getPublicKey(privkey, true)).subarray(1).toString('hex')
+  publicKeyCache[privkey] = secp256k1.utils.bytesToHex(secp256k1.getPublicKey(privkey, true).subarray(1))
 
   return publicKeyCache[privkey]
 }
