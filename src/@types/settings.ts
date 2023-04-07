@@ -82,6 +82,10 @@ export interface EventLimits {
 export interface ClientSubscriptionLimits {
   maxSubscriptions?: number
   maxFilters?: number
+  maxFilterValues?: number
+  maxLimit?: number
+  minPrefixLength?: number
+  maxSubscriptionIdLength?: number
 }
 
 export interface ClientLimits {

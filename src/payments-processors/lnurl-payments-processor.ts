@@ -23,7 +23,8 @@ export class LnurlPaymentsProcesor implements IPaymentsProcessor {
 
       return {
         id: invoice.id,
-        status: response.data.settled ? InvoiceStatus['COMPLETED'] : InvoiceStatus['PENDING'],
+        confirmedAt: response.data.settled ? new Date() : undefined,
+        status: response.data.settled ? InvoiceStatus.COMPLETED : InvoiceStatus.PENDING,
       }
     } catch (error) {
       console.error(`Unable to get invoice ${invoice.id}. Reason:`, error)

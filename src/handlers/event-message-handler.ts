@@ -1,6 +1,6 @@
 import { Event, ExpiringEvent  } from '../@types/event'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
-import { getEventExpiration, getEventProofOfWork, getPubkeyProofOfWork, isEventIdValid, isEventKindOrRangeMatch, isEventSignatureValid, isExpiredEvent } from '../utils/event'
+import { getEventExpiration, getEventProofOfWork, getPubkeyProofOfWork, getPublicKey, getRelayPrivateKey, isEventIdValid, isEventKindOrRangeMatch, isEventSignatureValid, isExpiredEvent } from '../utils/event'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
 import { ContextMetadataKey } from '../constants/base'
 import { createCommandResult } from '../utils/messages'
@@ -79,7 +79,15 @@ export class EventMessageHandler implements IMessageHandler {
     }
   }
 
+  protected getRelayPublicKey(): string {
+    const relayPrivkey = getRelayPrivateKey(this.settings().info.relay_url)
+    return getPublicKey(relayPrivkey)
+  }
+
   protected canAcceptEvent(event: Event): string | undefined {
+    if (this.getRelayPublicKey() === event.pubkey) {
+      return
+    }
     const now = Math.floor(Date.now()/1000)
 
     const limits = this.settings().limits?.event ?? {}
@@ -185,6 +193,10 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   protected async isRateLimited(event: Event): Promise<boolean> {
+    if (this.getRelayPublicKey() === event.pubkey) {
+      return false
+    }
+
     const { whitelists, rateLimits } = this.settings().limits?.event ?? {}
     if (!rateLimits || !rateLimits.length) {
       return false
@@ -246,6 +258,10 @@ export class EventMessageHandler implements IMessageHandler {
   protected async isUserAdmitted(event: Event): Promise<string | undefined> {
     const currentSettings = this.settings()
     if (!currentSettings.payments?.enabled) {
+      return
+    }
+
+    if (this.getRelayPublicKey() === event.pubkey) {
       return
     }
 
