@@ -35,6 +35,7 @@ export const streams = new WeakMap<WebSocket, Observable<unknown>>()
 
 BeforeAll({ timeout: 1000 }, async function () {
   process.env.RELAY_PORT = '18808'
+  process.env.SECRET = Math.random().toString().repeat(6)
   cacheClient = getCacheClient()
   dbClient = getMasterDbClient()
   rrDbClient = getReadReplicaDbClient()
