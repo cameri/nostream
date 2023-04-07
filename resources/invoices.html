@@ -107,8 +107,11 @@
       var timeout
       var paid = false
       var fallbackTimeout
+      var now = Math.floor(Date.now()/1000)
 
       console.log('invoice id', reference)
+      console.log('pubkey', pubkey)
+      console.log('bolt11', invoice)
 
       function getBackoffTime() {
         return 5000 + Math.floor(Math.random() * 5000)
@@ -149,7 +152,8 @@
         var socket = new WebSocket(relayUrl)
         socket.onopen = () => {
           console.log('connected')
-          socket.send(JSON.stringify(['REQ', 'payment', { kinds: [4], authors: [relayPubkey], '#c': [reference], limit: 1 }]))
+          var subscription = ['REQ', 'payment', { kinds: [402], '#p': [pubkey], since: now - 60 }]
+          socket.send(JSON.stringify(subscription))
         }
 
         socket.onmessage = (raw) => {
@@ -162,16 +166,22 @@
 
           switch (message[0]) {
             case 'EVENT': {
-              // TODO: validate event
               const event = message[2]
-              // TODO: validate signature
-              if (event.pubkey === relayPubkey) {
-                paid = true
+              if (
+                event.pubkey === relayPubkey
+                && event.kind === 402
+              ) {
+                const pubkeyTag = event.tags.find((t) => t[0] === 'p' && t[1] === pubkey)
+                const invoiceTag = event.tags.find((t) => t[0] === 'bolt11' && t[1] === invoice)
 
-                if (expiresAt) clearTimeout(timeout)
+                if (pubkeyTag && invoiceTag) {
+                  paid = true
 
-                hide('pending')
-                show('paid')
+                  if (expiresAt) clearTimeout(timeout)
+
+                  hide('pending')
+                  show('paid')
+                }
               }
             }
             break;

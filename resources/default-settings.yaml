@@ -82,14 +82,14 @@ limits:
         - 10
       - - 40
         - 49
-      maxLength: 65536
+      maxLength: 102400
     - description: 96 KB for event kind ranges 11-39 and 50-max
       kinds:
       - - 11
         - 39
       - - 50
         - 9007199254740991
-      maxLength: 98304
+      maxLength: 102400
     rateLimits:
     - description: 6 events/min for event kinds 0, 3, 40 and 41
       kinds:
@@ -143,6 +143,10 @@ limits:
     subscription:
       maxSubscriptions: 10
       maxFilters: 10
+      maxFilterValues: 2500
+      maxSubscriptionIdLength: 256
+      maxLimit: 5000
+      minPrefixLength: 4
   message:
     rateLimits:
     - description: 240 raw messages/min

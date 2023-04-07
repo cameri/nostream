@@ -13,7 +13,6 @@ export interface IPaymentsService {
   confirmInvoice(
     invoice: Pick<Invoice, 'id' | 'amountPaid' | 'confirmedAt'>,
   ): Promise<void>
-  sendNewInvoiceNotification(invoice: Invoice): Promise<void>
   sendInvoiceUpdateNotification(invoice: Invoice): Promise<void>
   getPendingInvoices(): Promise<Invoice[]>
 }

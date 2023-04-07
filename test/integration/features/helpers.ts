@@ -54,7 +54,7 @@ export async function createEvent(input: Partial<Event>, privkey: any): Promise<
 }
 
 export function createIdentity(name: string) {
-  const hmac = createHmac('sha256', process.env.SECRET ?? Math.random().toString())
+  const hmac = createHmac('sha256', Math.random().toString())
   hmac.update(name)
   const privkey = hmac.digest().toString('hex')
   const pubkey = Buffer.from(secp256k1.getPublicKey(privkey, true)).toString('hex').substring(2)
