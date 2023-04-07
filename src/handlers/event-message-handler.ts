@@ -86,7 +86,7 @@ export class EventMessageHandler implements IMessageHandler {
 
   protected canAcceptEvent(event: Event): string | undefined {
     if (this.getRelayPublicKey() === event.pubkey) {
-      return undefined
+      return
     }
     const now = Math.floor(Date.now()/1000)
 
@@ -262,7 +262,7 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (this.getRelayPublicKey() === event.pubkey) {
-      return undefined
+      return
     }
 
     const isApplicableFee = (feeSchedule: FeeSchedule) =>
