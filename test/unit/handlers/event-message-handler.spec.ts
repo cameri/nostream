@@ -26,11 +26,17 @@ describe('EventMessageHandler', () => {
   let event: Event
   let message: IncomingEventMessage
   let sandbox: Sinon.SinonSandbox
+  let origEnv: NodeJS.ProcessEnv
 
   let originalConsoleWarn: (message?: any, ...optionalParams: any[]) => void | undefined = undefined
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
+    origEnv = { ...process.env }
+    process.env = {
+      // deepcode ignore HardcodedNonCryptoSecret/test: <please specify a reason of ignoring this>
+      SECRET: 'changeme',
+    }
     originalConsoleWarn = console.warn
     console.warn = () => undefined
     event = {
@@ -45,6 +51,7 @@ describe('EventMessageHandler', () => {
   })
 
   afterEach(() => {
+    process.env = origEnv
     console.warn = originalConsoleWarn
     sandbox.restore()
   })

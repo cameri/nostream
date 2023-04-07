@@ -1,4 +1,4 @@
-import { andThen, pipe } from 'ramda'
+import { andThen, otherwise, pipe } from 'ramda'
 import { broadcastEvent, getPublicKey, getRelayPrivateKey, identifyEvent, signEvent } from '../utils/event'
 import { DatabaseClient, Pubkey } from '../@types/base'
 import { FeeSchedule, Settings } from '../@types/settings'
@@ -267,11 +267,14 @@ export class PaymentsService implements IPaymentsService {
       return event
     }
 
+    const logError = (error: Error) => console.error('Unable to send notification', error)
+
     await pipe(
       identifyEvent,
       andThen(signEvent(relayPrivkey)),
       andThen(persistEvent),
       andThen(broadcastEvent),
+      otherwise(logError),
     )(unsignedInvoiceEvent)
   }
 }
