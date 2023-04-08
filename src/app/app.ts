@@ -83,6 +83,7 @@ export class App implements IRunnable {
       debug('starting worker')
       createWorker({
         WORKER_TYPE: 'worker',
+        WORKER_INDEX: i.toString(),
       })
     }
     logCentered(`${workerCount} client workers started`, width)

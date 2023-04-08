@@ -46,26 +46,31 @@ const getMasterConfig = (): Knex.Config => ({
     : 60000,
 } as any)
 
-const getReadReplicaConfig = (): Knex.Config => ({
+const getReadReplicaConfigByIndex = (index: number): Knex.Config => ({
   tag: 'read-replica',
   client: 'pg',
   connection: {
-    host: process.env.RR_DB_HOST,
-    port: Number(process.env.RR_DB_PORT),
-    user: process.env.RR_DB_USER,
-    password: process.env.RR_DB_PASSWORD,
-    database: process.env.RR_DB_NAME,
+    host: process.env[`RR${index}_DB_HOST`],
+    port: Number(process.env[`RR${index}_DB_PORT`]),
+    user: process.env[`RR${index}_DB_USER`],
+    password: process.env[`RR${index}_DB_PASSWORD`],
+    database: process.env[`RR${index}_DB_NAME`],
   },
   pool: {
-    min: process.env.RR_DB_MIN_POOL_SIZE ? Number(process.env.RR_DB_MIN_POOL_SIZE) : 0,
-    max: process.env.RR_DB_MAX_POOL_SIZE ? Number(process.env.RR_DB_MAX_POOL_SIZE) : 3,
+    min: process.env[`RR${index}_DB_MIN_POOL_SIZE`] ? Number(process.env[`RR${index}_DB_MIN_POOL_SIZE`]) : 0,
+    max: process.env[`RR${index}_DB_MAX_POOL_SIZE`] ? Number(process.env[`RR${index}_DB_MAX_POOL_SIZE`]) : 3,
     idleTimeoutMillis: 60000,
     propagateCreateError: false,
-    acquireTimeoutMillis: process.env.RR_DB_ACQUIRE_CONNECTION_TIMEOUT
-    ? Number(process.env.RR_DB_ACQUIRE_CONNECTION_TIMEOUT)
+    acquireTimeoutMillis: process.env[`RR${index}_DB_ACQUIRE_CONNECTION_TIMEOUT`]
+    ? Number(process.env[`RR${index}_DB_ACQUIRE_CONNECTION_TIMEOUT`])
     : 60000,
   },
 } as any)
+
+const getReadReplicaConfig = (): Knex.Config => {
+  const readReplicaIndex = Number(process.env.WORKER_INDEX) % Number(process.env.READ_REPLICAS)
+  return getReadReplicaConfigByIndex(readReplicaIndex)
+}
 
 let writeClient: Knex
 
