@@ -16,17 +16,18 @@ exports.seed = async function (knex) {
   const rawConfigs = getConfigs()
   const parsedConfigs = parseAll(rawConfigs)
 
-  const mergedSettings = mergeDeepLeft(defaultConfigs, parsedConfigs)
+  const rawMergedSettings = mergeDeepLeft(defaultConfigs, parsedConfigs)
+  const mergedSettings = Object.keys(rawMergedSettings).map(s => {
+    const setting = rawMergedSettings[s]
+    setting.value = JSON.stringify(setting.value)
+    return setting
+  })
 
-  for (const settingKey of Object.keys(mergedSettings)) {
+  for (const setting of mergedSettings) {
     try {
-      //const res = await knex('configs').insert(setting)
-      const res = await knex('configs').insert([mergedSettings[settingKey]])
-      console.log('knex res', res)
+      await knex('configs').insert([setting])
     } catch (err) {
-      // TODO remove this log when finished developing
-      console.log('Failed to insert config due to error: ', err)
-      // Nothing to log as if this fails the config already exists, which is fine
+      console.log('Warning: failed to insert config due to error: ', err)
     }
   }
 }
@@ -90,13 +91,10 @@ const parseOneLevelDeepConfigs = (configs, category) => {
   const flattenedConfigs = Object.keys(configs).map(key => {
     return {
       key,
-      value: configs[key],
+      value: JSON.stringify(configs[key]),
       category,
     }
   })
 
   return flattenedConfigs
 }
-
-
-// TODO: fix the key "enabled", as it repeats

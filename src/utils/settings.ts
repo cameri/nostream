@@ -69,7 +69,10 @@ export class SettingsStatic {
 
   private static constructSettingsJsonBlob(rawSettingsFromDb): any {
     const settings = {}
-    rawSettingsFromDb.map(setting => {
+    rawSettingsFromDb.forEach(setting => {
+      if (!settings[setting.category]) {
+        settings[setting.category] = {}
+      }
       settings[setting.category][setting.key] = setting.value
     })
 
