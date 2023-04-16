@@ -123,15 +123,15 @@
           console.log('data', data)
           const { status } = data;
 
-          if (status === 'pending') {
-            fallbackTimeout = setTimeout(getInvoiceStatus, getBackoffTime())
-            return
-          } else if (status === 'expired') {
+          console.log('invoice status', status)
+
+          if (status === 'expired') {
             hide('pending')
             show('expired')
             return
-          } else {
-            console.log('invoice status', status)
+          } else if (status !== 'completed') {
+            fallbackTimeout = setTimeout(getInvoiceStatus, getBackoffTime())
+            return
           }
 
           paid = true
