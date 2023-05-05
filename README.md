@@ -97,6 +97,14 @@ Clone repository and enter directory:
   cd nostream
   ```
 
+Generate a secret with: `openssl rand -hex 128`
+Copy the output and paste it into an `.env` file:
+
+  ```
+  SECRET=aaabbbccc...dddeeefff
+  # Secret shortened for brevity
+  ```
+
 Start:
   ```
   ./scripts/start
@@ -185,8 +193,8 @@ Set the following environment variables:
   REDIS_PASSWORD=nostr_ts_relay
   ```
 
-If enabling payments, generate a long random secret and set SECRET:
-  You may want to use `openssl rand -hex 128` to generate a secret.
+Generate a long random secret and set SECRET:
+You may want to use `openssl rand -hex 128` to generate a secret.
 
   ```
   SECRET=aaabbbccc...dddeeefff
