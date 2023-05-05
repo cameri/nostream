@@ -18,6 +18,6 @@ export const createdAtSchema = Schema.number().min(0).multiple(1).custom(seconds
 
 // [<string>, <string> 0..*]
 export const tagSchema = Schema.array()
-  .ordered(Schema.string().max(255).required().label('identifier'))
-  .items(Schema.string().allow('').max(1024).label('value'))
+  .ordered(Schema.string().required().label('identifier'))
+  .items(Schema.string().allow('').label('value'))
   .label('tag')
