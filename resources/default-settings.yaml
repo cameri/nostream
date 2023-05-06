@@ -3,7 +3,7 @@ info:
   name: nostream.your-domain.com
   description: A nostr relay written in Typescript.
   pubkey: replace-with-your-pubkey-in-hex
-  contact: operator@your-domain.com
+  contact: mailto:operator@your-domain.com
 payments:
   enabled: false
   processor: zebedee
