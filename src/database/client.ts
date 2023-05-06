@@ -22,6 +22,24 @@ import { createLogger } from '../factories/logger-factory'
   }
 })(knex)
 
+const hiddenConnectionPassword = (connection: string | Knex.StaticConnectionConfig | Knex.ConnectionConfigProvider): string | Knex.StaticConnectionConfig | Knex.ConnectionConfigProvider => {
+  const hiddenText = '******'
+  if (typeof connection === 'string') {
+    const matchs = /:\/\/\w+:([^"]+)@/.exec(connection)
+    if (!matchs || matchs.length < 2) {
+      return connection
+    }
+
+    return connection.replace(matchs[1], hiddenText)
+  }
+
+  if (typeof connection === 'object') {
+    return { ...connection, password: hiddenText }
+  }
+
+  return connection
+}
+
 const getMasterConfig = (): Knex.Config => ({
   tag: 'master',
   client: 'pg',
@@ -78,7 +96,7 @@ export const getMasterDbClient = () => {
   const debug = createLogger('database-client:get-db-client')
   if (!writeClient) {
     const config = getMasterConfig()
-    debug('config: %o', config)
+    debug('config: %o', { ...config, connection: hiddenConnectionPassword(config.connection) })
     writeClient = knex(config)
   }
 
@@ -95,7 +113,7 @@ export const getReadReplicaDbClient = () => {
   const debug = createLogger('database-client:get-read-replica-db-client')
   if (!readClient) {
     const config = getReadReplicaConfig()
-    debug('config: %o', config)
+    debug('config: %o', { ...config, connection: hiddenConnectionPassword(config.connection) })
     readClient = knex(config)
   }
 
