@@ -25,12 +25,19 @@ import { createLogger } from '../factories/logger-factory'
 const hiddenConnectionPassword = (connection: string | Knex.StaticConnectionConfig | Knex.ConnectionConfigProvider): string | Knex.StaticConnectionConfig | Knex.ConnectionConfigProvider => {
   const hiddenText = '******'
   if (typeof connection === 'string') {
-    const matchs = /:\/\/\w+:([^"]+)@/.exec(connection)
-    if (!matchs || matchs.length < 2) {
+    let matchs = /(?<=\b:\/\/\w+:)[^@]+/.exec(connection)
+    if (!matchs || matchs.length < 1) {
+      return connection
+    } else {
+      connection = connection.replace(matchs[0], hiddenText)
+    }
+
+    matchs = /(?<=\bpassword=)[^&]*/.exec(connection)
+    if (!matchs || matchs.length < 1) {
       return connection
     }
 
-    return connection.replace(matchs[1], hiddenText)
+    return connection.replace(matchs[0], hiddenText)
   }
 
   if (typeof connection === 'object') {
