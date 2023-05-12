@@ -585,7 +585,7 @@ describe('EventMessageHandler', () => {
 
         it('returns undefined if kind is not blacklisted in range', () => {
           eventLimits.kind.blacklist = [[1, 5]]
-          event.kind = 6
+          event.kind = EventKinds.REACTION
           expect(
             (handler as any).canAcceptEvent(event)
           ).to.be.undefined
@@ -652,10 +652,10 @@ describe('EventMessageHandler', () => {
 
         it('returns reason if kind is not whitelisted in range', () => {
           eventLimits.kind.whitelist = [[1, 5]]
-          event.kind = 6
+          event.kind = EventKinds.REACTION
           expect(
             (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: event kind 6 not allowed')
+          ).to.equal('blocked: event kind 7 not allowed')
         })
       })
     })
@@ -867,11 +867,6 @@ describe('EventMessageHandler', () => {
           period: 60000,
           rate: 2,
         },
-        {
-          kinds: [[10, 20]],
-          period: 86400000,
-          rate: 3,
-        },
       ]
 
       rateLimiterHitStub.resolves(false)
@@ -929,6 +924,169 @@ describe('EventMessageHandler', () => {
         },
       )
       expect(actualResult).to.be.true
+    })
+  })
+
+  describe('isUserAdmitted', () => {
+    let settings: Settings
+    let userRepository: IUserRepository
+    let getClientAddressStub: SinonStub
+    let webSocket: IWebSocketAdapter
+    let getRelayPublicKeyStub: SinonStub
+    let userRepositoryFindByPubkeyStub: SinonStub
+
+    beforeEach(() => {
+      settings = {
+        info: {
+          relay_url: 'relay_url',
+        },
+        payments: {
+          enabled: true,
+          feeSchedules: {
+            admission: [
+              {
+                enabled: true,
+                amount: 1000n,
+                whitelists: {
+                  pubkeys: [],
+                  event_kinds: [],
+                },
+              },
+            ],
+          },
+        },
+        limits: {
+          event: {
+            pubkey: {
+              minBalance: 0n,
+            },
+          },
+        },
+      } as any
+      event = {
+        content: 'hello',
+        created_at: 1665546189,
+        id: 'f'.repeat(64),
+        kind: 1,
+        pubkey: 'f'.repeat(64),
+        sig: 'f'.repeat(128),
+        tags: [],
+      }
+      getRelayPublicKeyStub = sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any)
+      getClientAddressStub = sandbox.stub()
+      userRepositoryFindByPubkeyStub = sandbox.stub()
+      webSocket = {
+        getClientAddress: getClientAddressStub,
+      } as any
+      userRepository = {
+        findByPubkey: userRepositoryFindByPubkeyStub,
+      } as any
+      handler = new EventMessageHandler(
+        webSocket,
+        () => null,
+        userRepository,
+        () => settings,
+        () => ({ hit: async () => false })
+      )
+    })
+
+    it ('fulfills with undefined if payments are disabled', async () => {
+      settings.payments.enabled = false
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+    })
+
+    it('fulfills with undefined if event pubkey equals relay\'s own public key', async () => {
+      getRelayPublicKeyStub.returns(event.pubkey)
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+    })
+
+    it('fulfills with undefined if fee schedules are not set', async () => {
+      settings.payments.feeSchedules = undefined
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+    })
+
+    it('fulfills with undefined if admission fee schedules are not set', async () => {
+      settings.payments.feeSchedules.admission = undefined
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+    })
+
+    it('fulfills with undefined if there are no admission fee schedules', async () => {
+      settings.payments.feeSchedules.admission = []
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+    })
+
+    it('fulfills with undefined if there are no enabled admission fee schedules', async () => {
+      settings.payments.feeSchedules.admission[0].enabled = false
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+    })
+
+    it('fulfills with undefined if admission fee schedule is waived for pubkey', async () => {
+      settings.payments.feeSchedules.admission[0].whitelists.pubkeys.push(event.pubkey)
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+    })
+
+    it('fulfills with undefined if admission fee schedule is waived for event kind', async () => {
+      event.kind = EventKinds.ZAP_RECEIPT
+      settings.payments.feeSchedules.admission[0].whitelists.event_kinds.push(EventKinds.ZAP_RECEIPT)
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+    })
+
+    it('fulfills with undefined if admission fee schedule is waived for event kind range', async () => {
+      event.kind = EventKinds.TEXT_NOTE
+      settings.payments.feeSchedules.admission[0].whitelists.event_kinds.push([
+        EventKinds.SET_METADATA,
+        EventKinds.RECOMMEND_SERVER,
+      ])
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+    })
+
+    it('fulfills with reason if admission fee schedule is not waived for event kind range', async () => {
+      event.kind = EventKinds.CONTACT_LIST
+      settings.payments.feeSchedules.admission[0].whitelists.event_kinds.push([
+        EventKinds.SET_METADATA,
+        EventKinds.RECOMMEND_SERVER,
+      ])
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: pubkey not admitted')
+    })
+
+    it('fulfills with reason if user is not found', async () => {
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: pubkey not admitted')
+    })
+
+    it('fulfills with reason if user is not admitted', async () => {
+      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: false })
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: pubkey not admitted')
+    })
+
+    it('fulfills with reason if user is not admitted', async () => {
+      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: false })
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: pubkey not admitted')
+    })
+
+    it('fulfills with reason if user does not meet minimum balance', async () => {
+      settings.limits.event.pubkey.minBalance = 1000n
+      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, balance: 999n })
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: insufficient balance')
+    })
+
+    it('fulfills with undefined if user is admitted', async () => {
+      settings.limits.event.pubkey.minBalance = 0n
+      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true })
+
+      return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
     })
   })
 })

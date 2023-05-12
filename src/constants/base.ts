@@ -5,6 +5,7 @@ export enum EventKinds {
   CONTACT_LIST = 3,
   ENCRYPTED_DIRECT_MESSAGE = 4,
   DELETE = 5,
+  REPOST = 6,
   REACTION = 7,
   // Channels
   CHANNEL_CREATION = 40,
@@ -17,6 +18,9 @@ export enum EventKinds {
   // Relay-only
   RELAY_INVITE = 50,
   INVOICE_UPDATE = 402,
+  // Lightning zaps
+  ZAP_REQUEST = 9734,
+  ZAP_RECEIPT = 9735,
   // Replaceable events
   REPLACEABLE_FIRST = 10000,
   REPLACEABLE_LAST = 19999,

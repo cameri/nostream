@@ -268,6 +268,7 @@ export class EventMessageHandler implements IMessageHandler {
     const isApplicableFee = (feeSchedule: FeeSchedule) =>
       feeSchedule.enabled
       && !feeSchedule.whitelists?.pubkeys?.some((prefix) => event.pubkey.startsWith(prefix))
+      && !feeSchedule.whitelists?.event_kinds?.some(isEventKindOrRangeMatch(event))
 
     const feeSchedules = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
     if (!Array.isArray(feeSchedules) || !feeSchedules.length) {
