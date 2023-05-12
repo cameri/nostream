@@ -20,14 +20,31 @@ The following environment variables can be set:
 | DB_MAX_POOL_SIZE                 | Max. connections per worker      | 32                     |
 | DB_ACQUIRE_CONNECTION_TIMEOUT    | New connection timeout (ms)      | 60000                  |
 | READ_REPLICA_ENABLED             | Read Replica (RR) Toggle         | 'false'                |
-| RR_DB_HOST                       | PostgresSQL Hostname (RR)        |                        |
-| RR_DB_PORT                       | PostgreSQL Port (RR)             | 5432                   |
-| RR_DB_USER                       | PostgreSQL Username (RR)         | nostr_ts_relay         |
-| RR_DB_PASSWORD                   | PostgreSQL Password (RR)         | nostr_ts_relay         |
-| RR_DB_NAME                       | PostgreSQL Database name (RR)    | nostr_ts_relay         |
-| RR_DB_MIN_POOL_SIZE              | Min. connections per worker (RR) | 16                     |
-| RR_DB_MAX_POOL_SIZE              | Max. connections per worker (RR) | 32                     |
-| RR_DB_ACQUIRE_CONNECTION_TIMEOUT | New connection timeout (ms) (RR) | 60000                  |
+| READ_REPLICAS                    | Number of read replicas (RR0, RR1, ..., RRn) | 2          |
+| RR0_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
+| RR0_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
+| RR0_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
+| RR0_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
+| RR0_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
+| RR0_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
+| RR0_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RR0_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
+| RR1_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
+| RR1_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
+| RR1_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
+| RR1_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
+| RR1_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
+| RR1_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
+| RR1_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RR1_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
+| RRn_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
+| RRn_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
+| RRn_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
+| RRn_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
+| RRn_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
+| RRn_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
+| RRn_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RRn_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
 | TOR_HOST                         | Tor Hostname                     |                        |
 | TOR_CONTROL_PORT                 | Tor control Port                 | 9051                   |
 | TOR_PASSWORD                     | Tor control password             | nostr_ts_relay         |
@@ -40,6 +57,8 @@ The following environment variables can be set:
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
+
+If you've set READ_REPLICAS to 4, you should configure RR0_ through RR3_.
 
 # Settings
 
