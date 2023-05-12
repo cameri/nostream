@@ -54,6 +54,18 @@ Running `nostream` for the first time creates the settings file in `<project_roo
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
+| payments.enabled                            | Enabled payments. Defaults to false. |
+| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
+| payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |
+| payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
+| payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
+| paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
+| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
+| paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
+| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
+| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
+| paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
 | mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
 | mirroring.static[].filters                  | Subscription filters used to mirror. |
 | mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
