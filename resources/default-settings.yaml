@@ -9,15 +9,14 @@ payments:
   processor: zebedee
   feeSchedules:
     admission:
-    - enabled: false
-      description: Admission fee charged per public key in msats (1000 msats = 1 satoshi)
-      amount: 1000000
-      whitelists:
-        pubkeys:
-          - replace-with-your-pubkey-in-hex
-          # Allow the following Zap providers:
-          # LightningTipBot by Calle
-          - "fcd720c38d9ee337188f47aac845dcd8f590ccdb4a928b76dde18187b4c9d37d"
+      - enabled: false
+        description: Admission fee charged per public key in msats (1000 msats = 1 satoshi)
+        amount: 1000000
+        whitelists:
+          pubkeys:
+            - replace-with-your-pubkey-in-hex
+          event_kinds:
+            - 9735 # Nip-57 Lightning Zap Receipts
 paymentsProcessors:
   zebedee:
     baseURL: https://api.zebedee.io/

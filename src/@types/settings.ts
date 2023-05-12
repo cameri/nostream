@@ -126,6 +126,7 @@ export interface Worker {
 
 export interface FeeScheduleWhitelists {
   pubkeys?: Pubkey[]
+  event_kinds?: (EventKinds | [EventKinds, EventKinds])[]
 }
 
 export interface FeeSchedule {
