@@ -15,7 +15,9 @@ let instance: CacheClient | undefined = undefined
 export const getCacheClient = (): CacheClient => {
   if (!instance) {
     const config = getCacheConfig()
-    debug('config: %o', config)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password: _, ...loggableConfig } = config
+    debug('config: %o', loggableConfig)
     instance = createClient(config)
   }
 

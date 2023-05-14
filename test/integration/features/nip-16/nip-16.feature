@@ -12,9 +12,10 @@ Feature: NIP-16 Event treatment
 
   Scenario: Charlie sends an ephemeral event
     Given someone called Charlie
-    And Charlie subscribes to author Charlie
+    Given someone called Alice
+    And Alice subscribes to author Charlie
     When Charlie sends a ephemeral_event_0 event with content "now you see me"
-    Then Charlie receives a ephemeral_event_0 event from Charlie with content "now you see me"
-    Then Charlie unsubscribes from author Charlie
-    When Charlie subscribes to author Charlie
-    Then Charlie receives 0 ephemeral_event_0 events and EOSE
+    Then Alice receives a ephemeral_event_0 event from Charlie with content "now you see me"
+    Then Alice unsubscribes from author Charlie
+    When Alice subscribes to author Charlie
+    Then Alice receives 0 ephemeral_event_0 events and EOSE

@@ -20,14 +20,31 @@ The following environment variables can be set:
 | DB_MAX_POOL_SIZE                 | Max. connections per worker      | 32                     |
 | DB_ACQUIRE_CONNECTION_TIMEOUT    | New connection timeout (ms)      | 60000                  |
 | READ_REPLICA_ENABLED             | Read Replica (RR) Toggle         | 'false'                |
-| RR_DB_HOST                       | PostgresSQL Hostname (RR)        |                        |
-| RR_DB_PORT                       | PostgreSQL Port (RR)             | 5432                   |
-| RR_DB_USER                       | PostgreSQL Username (RR)         | nostr_ts_relay         |
-| RR_DB_PASSWORD                   | PostgreSQL Password (RR)         | nostr_ts_relay         |
-| RR_DB_NAME                       | PostgreSQL Database name (RR)    | nostr_ts_relay         |
-| RR_DB_MIN_POOL_SIZE              | Min. connections per worker (RR) | 16                     |
-| RR_DB_MAX_POOL_SIZE              | Max. connections per worker (RR) | 32                     |
-| RR_DB_ACQUIRE_CONNECTION_TIMEOUT | New connection timeout (ms) (RR) | 60000                  |
+| READ_REPLICAS                    | Number of read replicas (RR0, RR1, ..., RRn) | 2          |
+| RR0_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
+| RR0_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
+| RR0_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
+| RR0_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
+| RR0_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
+| RR0_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
+| RR0_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RR0_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
+| RR1_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
+| RR1_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
+| RR1_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
+| RR1_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
+| RR1_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
+| RR1_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
+| RR1_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RR1_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
+| RRn_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
+| RRn_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
+| RRn_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
+| RRn_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
+| RRn_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
+| RRn_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
+| RRn_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RRn_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
 | TOR_HOST                         | Tor Hostname                     |                        |
 | TOR_CONTROL_PORT                 | Tor control Port                 | 9051                   |
 | TOR_PASSWORD                     | Tor control password             | nostr_ts_relay         |
@@ -40,6 +57,8 @@ The following environment variables can be set:
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
+
+If you've set READ_REPLICAS to 4, you should configure RR0_ through RR3_.
 
 # Settings
 
@@ -54,6 +73,18 @@ Running `nostream` for the first time creates the settings file in `<project_roo
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
+| payments.enabled                            | Enabled payments. Defaults to false. |
+| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
+| payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |
+| payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
+| payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
+| paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
+| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
+| paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
+| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
+| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
+| paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
 | mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
 | mirroring.static[].filters                  | Subscription filters used to mirror. |
 | mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |

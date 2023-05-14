@@ -1,17 +1,23 @@
 import { Knex } from 'knex'
 import { SocketAddress } from 'net'
 
+import { EventTags } from '../constants/base'
+
 export type EventId = string
 export type Pubkey = string
-export type TagName = string
+export type TagName = EventTags | string
 export type Signature = string
 export type Tag = TagBase & string[]
 
 export type Secret = string
 
-export interface TagBase {
-  0: TagName
-  [index: number]: string
+type ExtraTagValues = {
+  [index in Range<2, 100>]?: string
+}
+
+export interface TagBase extends ExtraTagValues {
+  0: TagName;
+  1: string
 }
 
 type Enumerate<

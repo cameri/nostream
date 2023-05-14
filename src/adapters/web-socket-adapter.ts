@@ -186,6 +186,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
             console.error(`web-socket-adapter: malformed message from client ${this.clientId} (${this.getClientAddress()}):`, error.message)
           }
           this.sendMessage(createNoticeMessage(`invalid: ${error.message}`))
+        } else {
+          console.error('web-socket-adapter: unable to handle message:', error)
         }
       } else {
         console.error('web-socket-adapter: unable to handle message:', error)

@@ -82,6 +82,10 @@ export interface EventLimits {
 export interface ClientSubscriptionLimits {
   maxSubscriptions?: number
   maxFilters?: number
+  maxFilterValues?: number
+  maxLimit?: number
+  minPrefixLength?: number
+  maxSubscriptionIdLength?: number
 }
 
 export interface ClientLimits {
@@ -122,6 +126,7 @@ export interface Worker {
 
 export interface FeeScheduleWhitelists {
   pubkeys?: Pubkey[]
+  event_kinds?: (EventKinds | [EventKinds, EventKinds])[]
 }
 
 export interface FeeSchedule {

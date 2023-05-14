@@ -87,23 +87,33 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private canSubscribe(subscriptionId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
     const subscriptions = this.webSocket.getSubscriptions()
     const existingSubscription = subscriptions.get(subscriptionId)
+    const subscriptionLimits = this.settings().limits?.client?.subscription
 
     if (existingSubscription?.length && equals(filters, existingSubscription)) {
         return `Duplicate subscription ${subscriptionId}: Ignorning`
     }
 
-    const maxSubscriptions = this.settings().limits?.client?.subscription?.maxSubscriptions ?? 0
+    const maxSubscriptions = subscriptionLimits?.maxSubscriptions ?? 0
     if (maxSubscriptions > 0
       && !existingSubscription?.length && subscriptions.size + 1 > maxSubscriptions
     ) {
       return `Too many subscriptions: Number of subscriptions must be less than or equal to ${maxSubscriptions}`
     }
 
-    const maxFilters = this.settings().limits?.client?.subscription?.maxFilters ?? 0
+    const maxFilters = subscriptionLimits?.maxFilters ?? 0
     if (maxFilters > 0) {
       if (filters.length > maxFilters) {
         return `Too many filters: Number of filters per susbscription must be less then or equal to ${maxFilters}`
       }
     }
+
+    if (
+      typeof subscriptionLimits.maxSubscriptionIdLength === 'number'
+      && subscriptionId.length > subscriptionLimits.maxSubscriptionIdLength
+    ) {
+      return `Subscription ID too long: Subscription ID must be less or equal to ${subscriptionLimits.maxSubscriptionIdLength}`
+    }
+
+
   }
 }
