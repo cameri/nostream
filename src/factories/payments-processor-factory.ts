@@ -6,8 +6,8 @@ import { createSettings } from './settings-factory'
 import { IPaymentsProcessor } from '../@types/clients'
 import { LNbitsPaymentsProcesor } from '../payments-processors/lnbits-payment-processor'
 import { LnurlPaymentsProcesor } from '../payments-processors/lnurl-payments-processor'
+import { NodelessPaymentsProcesor } from '../payments-processors/nodeless-payments-processor'
 import { NullPaymentsProcessor } from '../payments-processors/null-payments-processor'
-import { PaymentsProcessor } from '../payments-processors/payments-procesor'
 import { Settings } from '../@types/settings'
 import { ZebedeePaymentsProcesor } from '../payments-processors/zebedee-payments-processor'
 
@@ -26,6 +26,24 @@ const getZebedeeAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => 
       'apikey': process.env.ZEBEDEE_API_KEY,
     },
     baseURL: path(['paymentsProcessors', 'zebedee', 'baseURL'], settings),
+    maxRedirects: 1,
+  }
+}
+
+const getNodelessAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
+  if (!process.env.NODELESS_API_KEY) {
+    const error = new Error('NODELESS_API_KEY must be set.')
+    console.error('Unable to get Nodeless config.', error)
+    throw error
+  }
+
+  return {
+    headers: {
+      'content-type': 'application/json',
+      'authorization': `Bearer ${process.env.NODELESS_API_KEY}`,
+      'accept': 'application/json',
+    },
+    baseURL: path(['paymentsProcessors', 'nodeless', 'baseURL'], settings),
     maxRedirects: 1,
   }
 }
@@ -53,9 +71,7 @@ const createLnurlPaymentsProcessor = (settings: Settings): IPaymentsProcessor =>
 
   const client = axios.create()
 
-  const app = new LnurlPaymentsProcesor(client, createSettings)
-
-  return new PaymentsProcessor(app)
+  return new LnurlPaymentsProcesor(client, createSettings)
 }
 
 const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsProcessor => {
@@ -81,9 +97,7 @@ const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsProcessor 
   debug('config: %o', config)
   const client = axios.create(config)
 
-  const zpp = new ZebedeePaymentsProcesor(client, createSettings)
-
-  return new PaymentsProcessor(zpp)
+  return new ZebedeePaymentsProcesor(client, createSettings)
 }
 
 const createLNbitsPaymentProcessor = (settings: Settings): IPaymentsProcessor => {
@@ -99,9 +113,13 @@ const createLNbitsPaymentProcessor = (settings: Settings): IPaymentsProcessor =>
   debug('config: %o', config)
   const client = axios.create(config)
 
-  const pp = new LNbitsPaymentsProcesor(client, createSettings)
+  return new LNbitsPaymentsProcesor(client, createSettings)
+}
 
-  return new PaymentsProcessor(pp)
+const createNodelessPaymentsProcessor = (settings: Settings): IPaymentsProcessor => {
+  const client = axios.create(getNodelessAxiosConfig(settings))
+
+  return new NodelessPaymentsProcesor(client, createSettings)
 }
 
 export const createPaymentsProcessor = (): IPaymentsProcessor => {
@@ -118,6 +136,8 @@ export const createPaymentsProcessor = (): IPaymentsProcessor => {
       return createZebedeePaymentsProcessor(settings)
     case 'lnbits':
       return createLNbitsPaymentProcessor(settings)
+    case 'nodeless':
+      return createNodelessPaymentsProcessor(settings)
     default:
       return new NullPaymentsProcessor()
   }

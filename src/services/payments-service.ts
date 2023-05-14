@@ -114,17 +114,9 @@ export class PaymentsService implements IPaymentsService {
   public async updateInvoice(invoice: Partial<Invoice>): Promise<void> {
     debug('update invoice %s: %o', invoice.id, invoice)
     try {
-      await this.invoiceRepository.upsert({
+      await this.invoiceRepository.updateStatus({
         id: invoice.id,
-        pubkey: invoice.pubkey,
-        bolt11: invoice.bolt11,
-        amountRequested: invoice.amountRequested,
-        description: invoice.description,
-        unit: invoice.unit,
         status: invoice.status,
-        expiresAt: invoice.expiresAt,
-        updatedAt: new Date(),
-        createdAt: invoice.createdAt,
       })
     } catch (error) {
       console.error('Unable to update invoice. Reason:', error)
@@ -132,15 +124,10 @@ export class PaymentsService implements IPaymentsService {
     }
   }
 
-  public async updateInvoiceStatus(invoice: Partial<Invoice>): Promise<void> {
+  public async updateInvoiceStatus(invoice: Pick<Invoice, 'id' | 'status'>): Promise<Invoice> {
     debug('update invoice %s: %o', invoice.id, invoice)
     try {
-      const fullInvoice = await this.invoiceRepository.findById(invoice.id)
-      await this.invoiceRepository.upsert({
-        ...fullInvoice,
-        status: invoice.status,
-        updatedAt: new Date(),
-      })
+      return await this.invoiceRepository.updateStatus(invoice)
     } catch (error) {
       console.error('Unable to update invoice. Reason:', error)
       throw error
@@ -150,13 +137,13 @@ export class PaymentsService implements IPaymentsService {
   public async confirmInvoice(
     invoice: Invoice,
   ): Promise<void> {
-    debug('confirm invoice %s: %o', invoice.id, invoice)
+    debug('confirm invoice %s: %O', invoice.id, invoice)
 
     const transaction = new Transaction(this.dbClient)
 
     try {
       if (!invoice.confirmedAt) {
-        throw new Error('Invoince confirmation date is not set')
+        throw new Error('Invoice confirmation date is not set')
       }
       if (invoice.status !== InvoiceStatus.COMPLETED) {
         throw new Error(`Invoice is not complete: ${invoice.status}`)

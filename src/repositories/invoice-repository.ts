@@ -1,8 +1,10 @@
 import {
   always,
   applySpec,
+  head,
   ifElse,
   is,
+  map,
   omit,
   pipe,
   prop,
@@ -73,6 +75,31 @@ export class InvoiceRepository implements IInvoiceRepository {
       .select()
 
     return dbInvoices.map(fromDBInvoice)
+  }
+
+  public updateStatus(
+    invoice: Invoice,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<Invoice | undefined> {
+    debug('updating invoice status: %o', invoice)
+
+    const query = client<DBInvoice>('invoices')
+      .update({
+        status: invoice.status,
+        updated_at: new Date(),
+      })
+      .where('id', invoice.id)
+      .limit(1)
+      .returning(['*'])
+
+    return {
+      then: <T1, T2>(
+        onfulfilled: (value: Invoice | undefined) => T1 | PromiseLike<T1>,
+        onrejected: (reason: any) => T2 | PromiseLike<T2>
+      ) => query.then(pipe(map(fromDBInvoice), head)).then(onfulfilled, onrejected),
+      catch: <T>(onrejected: (reason: any) => T | PromiseLike<T>) => query.catch(onrejected),
+      toString: (): string => query.toString(),
+    } as Promise<Invoice | undefined>
   }
 
   public upsert(

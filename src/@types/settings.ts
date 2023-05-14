@@ -162,15 +162,20 @@ export interface NodelessPaymentsProcessor {
   storeId: string
 }
 
-export interface LNbitsPaymentProcessor {
+export interface LNbitsPaymentsProcessor {
   baseURL: string
   callbackBaseURL: string
+}
+
+export interface NodelessPaymentsProcessor {
+  baseURL: string
+  storeId: string
 }
 
 export interface PaymentsProcessors {
   lnurl?: LnurlPaymentsProcessor,
   zebedee?: ZebedeePaymentsProcessor
-  lnbits?: LNbitsPaymentProcessor
+  lnbits?: LNbitsPaymentsProcessor
   nodeless?: NodelessPaymentsProcessor
 }
 

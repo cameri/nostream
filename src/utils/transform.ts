@@ -1,7 +1,7 @@
-import { always, applySpec, ifElse, is, isNil, path, pipe, prop, propSatisfies } from 'ramda'
+import { always, applySpec, cond, equals, ifElse, is, isNil, path, pipe, prop, propSatisfies, T } from 'ramda'
 import { bech32 } from 'bech32'
 
-import { Invoice } from '../@types/invoice'
+import { Invoice, InvoiceStatus } from '../@types/invoice'
 import { User } from '../@types/user'
 
 export const toJSON = (input: any) => JSON.stringify(input)
@@ -10,9 +10,11 @@ export const toBuffer = (input: any) => Buffer.from(input, 'hex')
 
 export const fromBuffer = (input: Buffer) => input.toString('hex')
 
-export const toBigInt = (input: string): bigint => BigInt(input)
+export const toBigInt = (input: string | number): bigint => BigInt(input)
 
 export const fromBigInt = (input: bigint) => input.toString()
+
+const addTime = (ms: number) => (input: Date) => new Date(input.getTime() + ms)
 
 export const fromDBInvoice = applySpec<Invoice>({
   id: prop('id') as () => string,
@@ -83,4 +85,44 @@ export const fromZebedeeInvoice = applySpec<Invoice>({
     always(null),
   ),
   rawRespose: toJSON,
+})
+
+export const fromNodelessInvoice = applySpec<Invoice>({
+  id: prop('id'),
+  pubkey: path(['metadata', 'requestId']),
+  bolt11: prop('lightningInvoice'),
+  amountRequested: pipe(prop('satsAmount') as () => number, toBigInt),
+  description: path(['metadata', 'description']),
+  unit: path(['metadata', 'unit']),
+  status: pipe(
+    prop('status'),
+    cond([
+      [equals('new'), always(InvoiceStatus.PENDING)],
+      [equals('pending_confirmation'), always(InvoiceStatus.PENDING)],
+      [equals('underpaid'), always(InvoiceStatus.PENDING)],
+      [equals('in_flight'), always(InvoiceStatus.PENDING)],
+      [equals('paid'), always(InvoiceStatus.COMPLETED)],
+      [equals('overpaid'), always(InvoiceStatus.COMPLETED)],
+      [equals('expired'), always(InvoiceStatus.EXPIRED)],
+    ]),
+  ),
+  expiresAt: ifElse(
+    propSatisfies(is(String), 'expiresAt'),
+    pipe(prop('expiresAt'), toDate),
+    ifElse(
+      propSatisfies(is(String), 'createdAt'),
+      pipe(prop('createdAt'), toDate, addTime(15 * 60000)),
+      always(null),
+    ),
+  ),
+  confirmedAt: cond([
+    [propSatisfies(is(String), 'paidAt'), pipe(prop('paidAt'), toDate)],
+    [T, always(null)],
+  ]),
+  createdAt: ifElse(
+    propSatisfies(is(String), 'createdAt'),
+    pipe(prop('createdAt'), toDate),
+    always(null),
+  ),
+  // rawResponse: toJSON,
 })

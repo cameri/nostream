@@ -1,5 +1,5 @@
 import * as secp256k1 from '@noble/secp256k1'
-import { createHash, createHmac, Hash } from 'crypto'
+import { createHash, createHmac, getRandomValues, Hash } from 'crypto'
 import { Observable } from 'rxjs'
 import WebSocket from 'ws'
 
@@ -54,7 +54,9 @@ export async function createEvent(input: Partial<Event>, privkey: any): Promise<
 }
 
 export function createIdentity(name: string) {
-  const hmac = createHmac('sha256', Math.random().toString())
+  const buffer = new Uint32Array(10)
+  getRandomValues(buffer)
+  const hmac = createHmac('sha256', buffer)
   hmac.update(name)
   const privkey = hmac.digest().toString('hex')
   const pubkey = Buffer.from(secp256k1.getPublicKey(privkey, true)).toString('hex').substring(2)
