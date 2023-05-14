@@ -1,7 +1,6 @@
 services:
   nostream:
     build: .
-    container_name: nostream
     environment:
       RELAY_PORT: 8008
       # Master
@@ -41,7 +40,7 @@ services:
     volumes:
       - ${PWD}/.nostr:/home/node/.nostr
     ports:
-      - 127.0.0.1:8008:8008
+      - "8008:8008"
     depends_on:
       nostream-cache:
         condition: service_healthy
@@ -49,12 +48,15 @@ services:
         condition: service_healthy
       nostream-migrate:
         condition: service_completed_successfully
-    restart: on-failure
+    restart: always
     networks:
       default:
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
   nostream-db:
     image: postgres
-    container_name: nostream-db
     environment:
       POSTGRES_DB: nostr_ts_relay
       POSTGRES_USER: nostr_ts_relay
@@ -73,9 +75,12 @@ services:
       timeout: 5s
       retries: 5
       start_period: 360s
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
   nostream-cache:
     image: redis:7.0.5-alpine3.16
-    container_name: nostream-cache
     volumes:
       - cache:/data
     command: redis-server --loglevel warning --requirepass nostr_ts_relay
@@ -87,9 +92,12 @@ services:
       interval: 1s
       timeout: 5s
       retries: 5
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
   nostream-migrate:
     image: node:18-alpine3.16
-    container_name: nostream-migrate
     environment:
       DB_HOST: nostream-db
       DB_PORT: 5432
@@ -108,15 +116,19 @@ services:
         condition: service_healthy
     networks:
       default:
-        ipv4_address: 10.10.10.254
+        ipv4_address: 10.10.11.254
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
 
 networks:
   default:
-    name: nostream
+    name: ipv6-relay
     ipam:
       driver: default
       config:
-        - subnet: 10.10.10.0/24
+        - subnet: 10.10.11.0/24
 
 volumes:
   cache:
