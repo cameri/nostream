@@ -12,7 +12,7 @@ export const postZebedeeCallbackRequestHandler = async (
   } catch (error) {
     res
       .status(500)
-      .setHeader('content-type', 'text-plain')
+      .setHeader('content-type', 'text/plain')
       .send('Error handling request')
   }
 }
