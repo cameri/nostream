@@ -157,6 +157,11 @@ export interface ZebedeePaymentsProcessor {
   ipWhitelist: string[]
 }
 
+export interface NodelessPaymentsProcessor {
+  baseURL: string
+  storeId: string
+}
+
 export interface LNbitsPaymentProcessor {
   baseURL: string
   callbackBaseURL: string
@@ -166,6 +171,7 @@ export interface PaymentsProcessors {
   lnurl?: LnurlPaymentsProcessor,
   zebedee?: ZebedeePaymentsProcessor
   lnbits?: LNbitsPaymentProcessor
+  nodeless?: NodelessPaymentsProcessor
 }
 
 export interface Local {
