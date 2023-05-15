@@ -69,11 +69,24 @@ router
     }
     return postLNbitsCallbackRequestHandler(req, res)
   })
-  .post('/nodeless', json(), async (req, res) => {
+  .post('/nodeless', json({
+    verify(req, _res, buf) {
+      (req as any).rawBody = buf
+    },
+  }), async (req, res) => {
     const settings = createSettings()
     const paymentProcessor = settings.payments?.processor
 
-    // TODO!: Validate secret
+    const expected = hmacSha256(process.env.NODELESS_WEBHOOK_SECRET, (req as any).rawBody).toString('hex')
+    const actual = req.headers['nodeless-signature']
+
+    if (expected !== actual) {
+      console.error('nodeless callback request rejected: signature mismatch:', { expected, actual })
+      res
+        .status(403)
+        .send('Forbidden')
+      return
+    }
 
     if (paymentProcessor !== 'nodeless') {
       debug('denied request from %s to /callbacks/nodeless which is not the current payment processor')
