@@ -86,6 +86,18 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
 - [Set up a Paid Nostr relay with Nostream and ZBD](https://andreneves.xyz/p/how-to-setup-a-paid-nostr-relay) by [André Neves](https://snort.social/p/npub1rvg76s0gz535txd9ypg2dfqv0x7a80ar6e096j3v343xdxyrt4ksmkxrck) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 - [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 
+### Accepting payments
+
+1. Zebedee
+  - You must set ZEBEDEE_API_KEY with an API Key from one of your projects in your Zebedee Developer Dashboard. Contact @foxp2zeb on Telegram or npub1rvg76s0gz535txd9ypg2dfqv0x7a80ar6e096j3v343xdxyrt4ksmkxrck on Nostr requesting access to the Zebedee Developer Dashboard. See the Zebedee full guide on how to set up a paid relay.
+
+2. Nodeless.io
+  - Sign up for a new account at https://nodeless.io and create a new store. Take note of the store ID.
+  - Create a store webhook and make sure to check all of the events. Grab the store webhook secret.
+  - Go to Profile > API Tokens and generate a new key and keep note of it.
+  - Set NODELESS_API_KEY and NODELESS_WEBHOOK_SECRET environment variables with generated key and webhook secret, respectively.
+  - On your .nostr/settings.yaml file, update the field `paymentsProcessors.nodeless.storeId1 with your store ID.
+
 ## Quick Start (Docker Compose)
 
 Install Docker following the [official guide](https://docs.docker.com/engine/install/).
@@ -201,10 +213,7 @@ You may want to use `openssl rand -hex 128` to generate a secret.
   # Secret shortened for brevity
   ```
 
-In addition, if using Zebedee for payments, you must also set ZEBEDEE_API_KEY with
-an API Key from one of your projects in your Zebedee Developer Dashboard. Contact
-@foxp2zeb on Telegram or npub1rvg76s0gz535txd9ypg2dfqv0x7a80ar6e096j3v343xdxyrt4ksmkxrck on Nostr requesting
-access to the Zebedee Developer Dashboard.
+### Initializing the database
 
 Create `nostr_ts_relay` database:
 
