@@ -28,6 +28,10 @@ export interface Invoice {
   verifyURL?: string
 }
 
+export interface LnurlInvoice extends Invoice {
+  verifyURL: string
+}
+
 export interface DBInvoice {
   id: string
   pubkey: Buffer
