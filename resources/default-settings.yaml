@@ -29,6 +29,9 @@ paymentsProcessors:
     callbackBaseURL: https://nostream.your-domain.com/callbacks/lnbits
   lnurl:
     invoiceURL: https://getalby.com/lnurlp/your-username
+  nodeless:
+    baseURL: https://nodeless.io
+    storeId: your-nodeless-io-store-id
 network:
   maxPayloadSize: 524288
   # Comment the next line if using CloudFlare proxy

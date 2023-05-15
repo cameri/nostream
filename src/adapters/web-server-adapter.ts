@@ -33,10 +33,10 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   }
 
   private onClientError(error: Error, socket: Duplex) {
-    console.error('web-server-adapter: client socket error:', error)
     if (error['code'] === 'ECONNRESET' || !socket.writable) {
       return
     }
+    console.error('web-server-adapter: client socket error:', error)
     socket.end('HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n')
   }
 

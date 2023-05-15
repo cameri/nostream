@@ -8,7 +8,8 @@ export enum InvoiceUnit {
 
 export enum InvoiceStatus {
   PENDING = 'pending',
-  COMPLETED = 'completed'
+  COMPLETED = 'completed',
+  EXPIRED = 'expired',
 }
 
 export interface Invoice {

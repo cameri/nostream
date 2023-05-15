@@ -17,6 +17,7 @@ export const getInvoiceRequestHandler = (_req: Request, res: Response, next: Nex
       const feeSchedule = path<FeeSchedule>(['payments', 'feeSchedules', 'admission', '0'], settings)
       pageCache = readFileSync('./resources/index.html', 'utf8')
         .replaceAll('{{name}}', name)
+        .replaceAll('{{processor}}', settings.payments.processor)
         .replaceAll('{{amount}}', (BigInt(feeSchedule.amount) / 1000n).toString())
     }
 

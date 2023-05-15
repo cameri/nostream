@@ -1,11 +1,11 @@
 import { Request, Response } from 'express'
-import { createZebedeeCallbackController } from '../../factories/zebedee-callback-controller-factory'
+import { createNodelessCallbackController } from '../../factories/nodeless-callback-controller-factory'
 
-export const postZebedeeCallbackRequestHandler = async (
+export const postNodelessCallbackRequestHandler = async (
   req: Request,
   res: Response,
 ) => {
-  const controller = createZebedeeCallbackController()
+  const controller = createNodelessCallbackController()
 
   try {
     await controller.handleRequest(req, res)

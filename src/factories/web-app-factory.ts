@@ -1,11 +1,8 @@
 import express from 'express'
 import helmet from 'helmet'
 
-import { createLogger } from './logger-factory'
 import { createSettings } from './settings-factory'
 import router from '../routes'
-
-const debug = createLogger('web-app-factory')
 
 export const createWebApp = () => {
   const app = express()
@@ -30,8 +27,6 @@ export const createWebApp = () => {
         'style-src': ["'self'", 'https://cdn.jsdelivr.net/npm/'],
         'font-src': ["'self'", 'https://cdn.jsdelivr.net/npm/'],
       }
-
-      debug('CSP directives: %o', directives)
 
       return helmet.contentSecurityPolicy({ directives })(req, res, next)
     })

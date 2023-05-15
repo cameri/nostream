@@ -46,6 +46,9 @@ services:
       TOR_CONTROL_PORT: 9051
       TOR_PASSWORD: nostr_ts_relay
       HIDDEN_SERVICE_PORT: 80
+      # Nodeless.io
+      NODELESS_API_KEY: ${NODELESS_API_KEY}
+      NODELESS_WEBHOOK_SECRET: ${NODELESS_WEBHOOK_SECRET}
       # Enable DEBUG for troubleshooting. Examples:
       # DEBUG: "primary:*"
       # DEBUG: "worker:*"

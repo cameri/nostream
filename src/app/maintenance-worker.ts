@@ -51,7 +51,13 @@ export class MaintenanceWorker implements IRunnable {
         const updatedInvoice = await this.paymentsService.getInvoiceFromPaymentsProcessor(invoice)
         await delay()
         debug('updating invoice status %s: %o', updatedInvoice.id, updatedInvoice)
-        await this.paymentsService.updateInvoiceStatus(updatedInvoice)
+
+        if (typeof updatedInvoice.id !== 'string' || typeof updatedInvoice.status !== 'string') {
+          continue
+        }
+        const { id, status } = updatedInvoice
+
+        await this.paymentsService.updateInvoiceStatus({ id, status })
 
         if (
           invoice.status !== updatedInvoice.status

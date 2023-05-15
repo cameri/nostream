@@ -12,7 +12,7 @@ export const rateLimiterMiddleware = async (request: Request, response: Response
 
   const clientAddress = getRemoteAddress(request, currentSettings).split(',')[0]
 
-  debug('request received from %s: %O', clientAddress, request.headers)
+  debug('request received from %s: %o', clientAddress, request.headers)
 
   if (await isRateLimited(clientAddress, currentSettings)) {
     response.destroy()

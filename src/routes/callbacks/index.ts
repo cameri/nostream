@@ -5,13 +5,14 @@ import { createLogger } from '../../factories/logger-factory'
 import { createSettings } from '../../factories/settings-factory'
 import { getRemoteAddress } from '../../utils/http'
 import { postLNbitsCallbackRequestHandler } from '../../handlers/request-handlers/post-lnbits-callback-request-handler'
+import { postNodelessCallbackRequestHandler } from '../../handlers/request-handlers/post-nodeless-callback-request-handler'
 import { postZebedeeCallbackRequestHandler } from '../../handlers/request-handlers/post-zebedee-callback-request-handler'
 
 const debug = createLogger('routes-callbacks')
 
 const router = Router()
 router
-  .post('/zebedee', json(), (req, res) => {
+  .post('/zebedee', json(), async (req, res) => {
     const settings = createSettings()
     const { ipWhitelist = [] } = settings.paymentsProcessors?.zebedee ?? {}
     const remoteAddress = getRemoteAddress(req, settings)
@@ -33,9 +34,9 @@ router
       return
     }
 
-    postZebedeeCallbackRequestHandler(req, res)
+    return postZebedeeCallbackRequestHandler(req, res)
   })
-  .post('/lnbits', json(), (req, res) => {
+  .post('/lnbits', json(), async (req, res) => {
     const settings = createSettings()
     const remoteAddress = getRemoteAddress(req, settings)
     const paymentProcessor = settings.payments?.processor ?? 'null'
@@ -49,7 +50,7 @@ router
     }
 
     let validationPassed = false
-    
+
     if (typeof req.query.hmac === 'string' && req.query.hmac.match(/^[0-9]{1,20}:[0-9a-f]{64}$/)) {
       const split = req.query.hmac.split(':')
       if (hmacSha256(deriveFromSecret('lnbits-callback-hmac-key'), split[0]).toString('hex') === split[1]) {
@@ -66,7 +67,36 @@ router
         .send('Forbidden')
       return
     }
-    postLNbitsCallbackRequestHandler(req, res)
+    return postLNbitsCallbackRequestHandler(req, res)
+  })
+  .post('/nodeless', json({
+    verify(req, _res, buf) {
+      (req as any).rawBody = buf
+    },
+  }), async (req, res) => {
+    const settings = createSettings()
+    const paymentProcessor = settings.payments?.processor
+
+    const expected = hmacSha256(process.env.NODELESS_WEBHOOK_SECRET, (req as any).rawBody).toString('hex')
+    const actual = req.headers['nodeless-signature']
+
+    if (expected !== actual) {
+      console.error('nodeless callback request rejected: signature mismatch:', { expected, actual })
+      res
+        .status(403)
+        .send('Forbidden')
+      return
+    }
+
+    if (paymentProcessor !== 'nodeless') {
+      debug('denied request from %s to /callbacks/nodeless which is not the current payment processor')
+      res
+        .status(403)
+        .send('Forbidden')
+      return
+    }
+
+    return postNodelessCallbackRequestHandler(req, res)
   })
 
 export default router

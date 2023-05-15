@@ -9,7 +9,7 @@ export interface IPaymentsService {
     description: string,
   ): Promise<Invoice>
   updateInvoice(invoice: Partial<Invoice>): Promise<void>
-  updateInvoiceStatus(invoice: Partial<Invoice>): Promise<void>
+  updateInvoiceStatus(invoice: Pick<Invoice, 'id' | 'status'>): Promise<Invoice>
   confirmInvoice(
     invoice: Pick<Invoice, 'id' | 'amountPaid' | 'confirmedAt'>,
   ): Promise<void>
