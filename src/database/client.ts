@@ -78,6 +78,7 @@ export const getMasterDbClient = () => {
   const debug = createLogger('database-client:get-db-client')
   if (!writeClient) {
     const config = getMasterConfig()
+    // @typescript-eslint/no-unused-vars
     const { connection: _, ...quietConfig } = config
     debug('config: %o', quietConfig)
     writeClient = knex(config)
@@ -96,6 +97,7 @@ export const getReadReplicaDbClient = () => {
   const debug = createLogger('database-client:get-read-replica-db-client')
   if (!readClient) {
     const config = getReadReplicaConfig()
+    // @typescript-eslint/no-unused-vars
     const { connection: _, ...quietConfig } = config
     debug('config: %o', quietConfig)
     readClient = knex(config)
