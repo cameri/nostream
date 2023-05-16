@@ -22,31 +22,6 @@ import { createLogger } from '../factories/logger-factory'
   }
 })(knex)
 
-const hiddenConnectionPassword = (connection: string | Knex.StaticConnectionConfig | Knex.ConnectionConfigProvider): string | Knex.StaticConnectionConfig | Knex.ConnectionConfigProvider => {
-  const hiddenText = '******'
-  if (typeof connection === 'string') {
-    let matchs = /(?<=\b:\/\/\w+:)[^@]+/.exec(connection)
-    if (!matchs || matchs.length < 1) {
-      return connection
-    } else {
-      connection = connection.replace(matchs[0], hiddenText)
-    }
-
-    matchs = /(?<=\bpassword=)[^&]*/.exec(connection)
-    if (!matchs || matchs.length < 1) {
-      return connection
-    }
-
-    return connection.replace(matchs[0], hiddenText)
-  }
-
-  if (typeof connection === 'object') {
-    return { ...connection, password: hiddenText }
-  }
-
-  return connection
-}
-
 const getMasterConfig = (): Knex.Config => ({
   tag: 'master',
   client: 'pg',
@@ -103,7 +78,8 @@ export const getMasterDbClient = () => {
   const debug = createLogger('database-client:get-db-client')
   if (!writeClient) {
     const config = getMasterConfig()
-    debug('config: %o', { ...config, connection: hiddenConnectionPassword(config.connection) })
+    const { connection: _, ...quietConfig } = config
+    debug('config: %o', quietConfig)
     writeClient = knex(config)
   }
 
@@ -120,7 +96,8 @@ export const getReadReplicaDbClient = () => {
   const debug = createLogger('database-client:get-read-replica-db-client')
   if (!readClient) {
     const config = getReadReplicaConfig()
-    debug('config: %o', { ...config, connection: hiddenConnectionPassword(config.connection) })
+    const { connection: _, ...quietConfig } = config
+    debug('config: %o', quietConfig)
     readClient = knex(config)
   }
 
