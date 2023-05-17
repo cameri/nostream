@@ -83,13 +83,19 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
 
 ## Full Guide
 
-- [Set up a Paid Nostr relay with Nostream and ZBD](https://andreneves.xyz/p/how-to-setup-a-paid-nostr-relay) by [André Neves](https://snort.social/p/npub1rvg76s0gz535txd9ypg2dfqv0x7a80ar6e096j3v343xdxyrt4ksmkxrck) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
+- [Set up a Paid Nostr relay with Nostream and ZEBEDEE](https://docs.zebedee.io/docs/guides/nostr-relay) by [André Neves](https://primal.net/andre) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 - [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 
-### Accepting payments
+### Accepting Payments
 
-1. Zebedee
-  - You must set ZEBEDEE_API_KEY with an API Key from one of your projects in your Zebedee Developer Dashboard. Contact @foxp2zeb on Telegram or npub1rvg76s0gz535txd9ypg2dfqv0x7a80ar6e096j3v343xdxyrt4ksmkxrck on Nostr requesting access to the Zebedee Developer Dashboard. See the Zebedee full guide on how to set up a paid relay.
+1. [ZEBEDEE](https://zebedee.io)
+  - [Sign up for a ZEBEDEE Developer Dashboard account](https://dashboard.zebedee.io/signup), create a new LIVE Project, and get that Project's API Key
+  - Set `ZEBEDEE_API_KEY` environment variable with the API Key above
+  - On `.nostr/settings.yaml` file make the following changes:
+    - `payments.enabled` to `true`
+    - `payments.processor` to `zebedee`
+    - `paymentsProcessors.zebedee.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/zebedee`)
+  - Read the in-depth guide for more information: [Set Up a Paid Nostr Relay with ZEBEDEE API](https://docs.zebedee.io/docs/guides/nostr-relay)
 
 2. Nodeless.io
   - Sign up for a new account at https://nodeless.io and create a new store. Take note of the store ID.
