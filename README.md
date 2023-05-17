@@ -94,7 +94,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
   - On `.nostr/settings.yaml` file make the following changes:
     - `payments.enabled` to `true`
     - `payments.processor` to `zebedee`
-    - `paymentsProcessors.zebedee.callbackBaseUrl` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/zebedee`)
+    - `paymentsProcessors.zebedee.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/zebedee`)
   - Read the in-depth guide for more information: [Set Up a Paid Nostr Relay with ZEBEDEE API](https://docs.zebedee.io/docs/guides/nostr-relay)
 
 2. Nodeless.io
