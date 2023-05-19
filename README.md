@@ -130,7 +130,24 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
      - Set `paymentsProcessors.nodeless.storeId` to your store ID
    - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
 
-4. Ensure payments are required for your public key
+4. [LNBITS](https://lnbits.com/)
+    - Complete the step "Before you begin"
+    - Create a new wallet on you public LNbits instance 
+      - [Demo](https://legend.lnbits.com/) server must not be used for production
+      - Your instance must be accessible from the internet and have a valid SSL/TLS certificate
+    - Get wallet Invoice/read key (in Api docs section of your wallet)
+    - set `LNBITS_API_KEY` environment variable with the Invoice/read key Key above on your `.env` file
+
+      ```
+      LNBITS_API_KEY={YOUR_LNBITS_API_KEY_HERE}
+      ```
+    - On your `.nostr/settings.yaml` file make the following changes:
+      - Set `payments.processor` to `lnbits`
+      - set `lnbits.baseURL` to your LNbits instance URL (e.g. `https://{YOUR_LNBITS_DOMAIN_HERE}/`)
+      - Set `paymentsProcessors.lnbits.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/lnbits`)
+    - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
+
+5. Ensure payments are required for your public key
    - Visit https://{YOUR-DOMAIN}/
    - You should be presented with a form requesting an admission fee to be paid
    - Fill out the form and take the necessary steps to pay the invoice
