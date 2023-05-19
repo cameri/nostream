@@ -2,7 +2,7 @@ import { AxiosInstance } from 'axios'
 import { Factory } from '../@types/base'
 
 import { CreateInvoiceRequest, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
-import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
+import { InvoiceStatus, InvoiceUnit, LnurlInvoice } from '../@types/invoice'
 import { createLogger } from '../factories/logger-factory'
 import { randomUUID } from 'crypto'
 import { Settings } from '../@types/settings'
@@ -15,7 +15,7 @@ export class LnurlPaymentsProcesor implements IPaymentsProcessor {
     private settings: Factory<Settings>
   ) {}
 
-  public async getInvoice(invoice: Invoice): Promise<GetInvoiceResponse> {
+  public async getInvoice(invoice: LnurlInvoice): Promise<GetInvoiceResponse> {
     debug('get invoice: %s', invoice.id)
 
     try {
