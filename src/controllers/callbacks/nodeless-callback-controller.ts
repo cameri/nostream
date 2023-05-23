@@ -3,7 +3,9 @@ import { Request, Response } from 'express'
 
 import { Invoice, InvoiceStatus } from '../../@types/invoice'
 import { createLogger } from '../../factories/logger-factory'
+import { createSettings } from '../../factories/settings-factory'
 import { fromNodelessInvoice } from '../../utils/transform'
+import { hmacSha256 } from '../../utils/secret'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
 
@@ -21,6 +23,28 @@ export class NodelessCallbackController implements IController {
   ) {
     debug('callback request headers: %o', request.headers)
     debug('callback request body: %O', request.body)
+
+    const settings = createSettings()
+    const paymentProcessor = settings.payments?.processor
+
+    const expected = hmacSha256(process.env.NODELESS_WEBHOOK_SECRET, (request as any).rawBody).toString('hex')
+    const actual = request.headers['nodeless-signature']
+
+    if (expected !== actual) {
+      console.error('nodeless callback request rejected: signature mismatch:', { expected, actual })
+      response
+        .status(403)
+        .send('Forbidden')
+      return
+    }
+
+    if (paymentProcessor !== 'nodeless') {
+      debug('denied request from %s to /callbacks/nodeless which is not the current payment processor')
+      response
+        .status(403)
+        .send('Forbidden')
+      return
+    }
 
     const nodelessInvoice = applySpec({
       id: prop('uuid'),

@@ -1,7 +1,10 @@
 import { Request, Response } from 'express'
 
+import { deriveFromSecret, hmacSha256 } from '../../utils/secret'
 import { Invoice, InvoiceStatus } from '../../@types/invoice'
 import { createLogger } from '../../factories/logger-factory'
+import { createSettings } from '../../factories/settings-factory'
+import { getRemoteAddress } from '../../utils/http'
 import { IController } from '../../@types/controllers'
 import { IInvoiceRepository } from '../../@types/repositories'
 import { IPaymentsService } from '../../@types/services'
@@ -21,6 +24,37 @@ export class LNbitsCallbackController implements IController {
   ) {
     debug('request headers: %o', request.headers)
     debug('request body: %o', request.body)
+
+    const settings = createSettings()
+    const remoteAddress = getRemoteAddress(request, settings)
+    const paymentProcessor = settings.payments?.processor ?? 'null'
+
+    if (paymentProcessor !== 'lnbits') {
+      debug('denied request from %s to /callbacks/lnbits which is not the current payment processor', remoteAddress)
+      response
+        .status(403)
+        .send('Forbidden')
+      return
+    }
+
+    let validationPassed = false
+
+    if (typeof request.query.hmac === 'string' && request.query.hmac.match(/^[0-9]{1,20}:[0-9a-f]{64}$/)) {
+      const split = request.query.hmac.split(':')
+      if (hmacSha256(deriveFromSecret('lnbits-callback-hmac-key'), split[0]).toString('hex') === split[1]) {
+        if (parseInt(split[0]) > Date.now()) {
+          validationPassed = true
+        }
+      }
+    }
+
+    if (!validationPassed) {
+      debug('unauthorized request from %s to /callbacks/lnbits', remoteAddress)
+      response
+        .status(403)
+        .send('Forbidden')
+      return
+    }
 
     const body = request.body
     if (!body || typeof body !== 'object' || typeof body.payment_hash !== 'string' || body.payment_hash.length !== 64) {

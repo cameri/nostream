@@ -46,9 +46,16 @@ services:
       TOR_CONTROL_PORT: 9051
       TOR_PASSWORD: nostr_ts_relay
       HIDDEN_SERVICE_PORT: 80
+      # Payments Processors
+      # Zebedee
+      ZEBEDEE_API_KEY: ${ZEBEDEE_API_KEY}
       # Nodeless.io
       NODELESS_API_KEY: ${NODELESS_API_KEY}
       NODELESS_WEBHOOK_SECRET: ${NODELESS_WEBHOOK_SECRET}
+      # OpenNode
+      OPENNODE_API_KEY: ${OPENNODE_API_KEY}
+      # Lnbits
+      LNBITS_API_KEY: ${LNBITS_API_KEY}
       # Enable DEBUG for troubleshooting. Examples:
       # DEBUG: "primary:*"
       # DEBUG: "worker:*"
