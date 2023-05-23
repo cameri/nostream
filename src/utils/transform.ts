@@ -1,7 +1,7 @@
-import { always, applySpec, cond, equals, ifElse, is, isNil, path, pipe, prop, propSatisfies, T } from 'ramda'
+import { always, applySpec, cond, equals, ifElse, is, isNil, multiply, path, pathSatisfies, pipe, prop, propSatisfies, T } from 'ramda'
 import { bech32 } from 'bech32'
 
-import { Invoice, InvoiceStatus } from '../@types/invoice'
+import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 import { User } from '../@types/user'
 
 export const toJSON = (input: any) => JSON.stringify(input)
@@ -59,7 +59,7 @@ export const toBech32 = (prefix: string) => (input: string): string => {
   return bech32.encode(prefix, bech32.toWords(Buffer.from(input, 'hex')))
 }
 
-export const toDate = (input: string) => new Date(input)
+export const toDate = (input: string | number) => new Date(input)
 
 export const fromZebedeeInvoice = applySpec<Invoice>({
   id: prop('id'),
@@ -125,4 +125,55 @@ export const fromNodelessInvoice = applySpec<Invoice>({
     always(null),
   ),
   // rawResponse: toJSON,
+})
+
+export const fromOpenNodeInvoice = applySpec<Invoice>({
+  id: prop('id'),
+  pubkey: prop('order_id'),
+  bolt11: ifElse(
+    pathSatisfies(is(String), ['lightning_invoice', 'payreq']),
+    path(['lightning_invoice', 'payreq']),
+    path(['lightning', 'payreq'])
+  ),
+  amountRequested: pipe(
+    ifElse(
+      propSatisfies(is(Number), 'amount'),
+      prop('amount'),
+      prop('price'),
+    ) as () => number,
+    toBigInt,
+  ),
+  description: prop('description'),
+  unit: always(InvoiceUnit.SATS),
+  status: pipe(
+    prop('status'),
+    cond([
+      [equals('expired'), always(InvoiceStatus.EXPIRED)],
+      [equals('refunded'), always(InvoiceStatus.EXPIRED)],
+      [equals('unpaid'), always(InvoiceStatus.PENDING)],
+      [equals('processing'), always(InvoiceStatus.PENDING)],
+      [equals('underpaid'), always(InvoiceStatus.PENDING)],
+      [equals('paid'), always(InvoiceStatus.COMPLETED)],
+    ]),
+  ),
+  expiresAt: pipe(
+    cond([
+      [pathSatisfies(is(String), ['lightning', 'expires_at']), path(['lightning', 'expires_at'])],
+      [pathSatisfies(is(Number), ['lightning_invoice', 'expires_at']), pipe(path(['lightning_invoice', 'expires_at']), multiply(1000))],
+    ]),
+    toDate,
+  ),
+  confirmedAt: cond([
+    [propSatisfies(equals('paid'), 'status'), () => new Date()],
+    [T, always(null)],
+  ]),
+  createdAt: pipe(
+    ifElse(
+      propSatisfies(is(Number), 'created_at'),
+      pipe(prop('created_at'), multiply(1000)),
+      prop('created_at'),
+    ),
+    toDate,
+  ),
+  rawResponse: toJSON,
 })

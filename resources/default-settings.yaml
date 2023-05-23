@@ -32,6 +32,9 @@ paymentsProcessors:
   nodeless:
     baseURL: https://nodeless.io
     storeId: your-nodeless-io-store-id
+  opennode:
+    baseURL: api.opennode.com
+    callbackBaseURL: https://nostream.your-domain.com/callbacks/opennode
 network:
   maxPayloadSize: 524288
   # Comment the next line if using CloudFlare proxy

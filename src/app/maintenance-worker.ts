@@ -45,7 +45,6 @@ export class MaintenanceWorker implements IRunnable {
     let successful = 0
 
     for (const invoice of invoices) {
-      debug('invoice %s: %o', invoice.id, invoice)
       try {
         debug('getting invoice %s from payment processor: %o', invoice.id, invoice)
         const updatedInvoice = await this.paymentsService.getInvoiceFromPaymentsProcessor(invoice)
