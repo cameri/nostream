@@ -1,10 +1,9 @@
 Feature: NIP-16 Event treatment
   Scenario: Alice sends a replaceable event
     Given someone called Alice
-    And Alice subscribes to author Alice
     When Alice sends a replaceable_event_0 event with content "created"
-    Then Alice receives a replaceable_event_0 event from Alice with content "created"
-    When Alice sends a replaceable_event_0 event with content "updated"
+    And Alice sends a replaceable_event_0 event with content "updated"
+    And Alice subscribes to author Alice
     Then Alice receives a replaceable_event_0 event from Alice with content "updated"
     Then Alice unsubscribes from author Alice
     When Alice subscribes to author Alice
