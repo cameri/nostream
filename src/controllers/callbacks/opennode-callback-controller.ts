@@ -51,6 +51,8 @@ export class OpenNodeCallbackController implements IController {
     try {
       await this.paymentsService.confirmInvoice({
         id: invoice.id,
+        pubkey: invoice.pubkey,
+        status: updatedInvoice.status,
         amountPaid: updatedInvoice.amountRequested,
         confirmedAt: updatedInvoice.confirmedAt,
       })

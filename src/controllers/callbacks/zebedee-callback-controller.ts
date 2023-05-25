@@ -70,11 +70,14 @@ export class ZebedeeCallbackController implements IController {
     }
 
     invoice.amountPaid = invoice.amountRequested
+    invoice.status = updatedInvoice.status
     updatedInvoice.amountPaid = invoice.amountRequested
 
     try {
       await this.paymentsService.confirmInvoice({
         id: invoice.id,
+        pubkey: invoice.pubkey,
+        status: invoice.status,
         confirmedAt: invoice.confirmedAt,
         amountPaid: invoice.amountRequested,
       })
