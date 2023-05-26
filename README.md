@@ -162,7 +162,15 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
       - Set `paymentsProcessors.lnbits.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/lnbits`)
     - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
 
-5. Ensure payments are required for your public key
+6. [Alby](https://getalby.com/) or any LNURL Provider with [LNURL-verify](https://github.com/lnurl/luds/issues/182) support
+    - Complete the step "Before you begin"
+    - [Create a new account](https://getalby.com/user/new) if you don't have an LNURL
+    - On your `.nostr/settings.yaml` file make the following changes:
+      - Set `payments.processor` to `lnurl`
+      - Set `lnurl.invoiceURL` to your LNURL (e.g. `https://getalby.com/lnurlp/your-username`)
+    - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
+
+7. Ensure payments are required for your public key
    - Visit https://{YOUR-DOMAIN}/
    - You should be presented with a form requesting an admission fee to be paid
    - Fill out the form and take the necessary steps to pay the invoice
