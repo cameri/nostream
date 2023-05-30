@@ -38,7 +38,7 @@ export class PaymentsService implements IPaymentsService {
   public async getInvoiceFromPaymentsProcessor(invoice: Invoice | string): Promise<Partial<Invoice>> {
     try {
       return await this.paymentsProcessor.getInvoice(
-        typeof invoice === 'string' ? invoice : invoice.id
+        typeof invoice === 'string' || invoice?.verifyURL ? invoice : invoice.id
       )
     } catch (error) {
       console.log('Unable to get invoice from payments processor. Reason:', error)
