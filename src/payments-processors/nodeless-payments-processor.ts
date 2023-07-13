@@ -8,7 +8,7 @@ import { Settings } from '../@types/settings'
 
 const debug = createLogger('nodeless-payments-processor')
 
-export class NodelessPaymentsProcesor implements IPaymentsProcessor {
+export class NodelessPaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
     private settings: Factory<Settings>

@@ -270,7 +270,7 @@ describe('SubscribeMessageHandler', () => {
       subscriptions.set(subscriptionId, filters)
 
       expect((handler as any).canSubscribe(subscriptionId, filters))
-        .to.equal('Duplicate subscription subscriptionId: Ignorning')
+        .to.equal('Duplicate subscription subscriptionId: Ignoring')
     })
 
     it('returns reason if client subscriptions exceed limits', () => {

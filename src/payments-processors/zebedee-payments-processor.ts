@@ -8,7 +8,7 @@ import { Settings } from '../@types/settings'
 
 const debug = createLogger('zebedee-payments-processor')
 
-export class ZebedeePaymentsProcesor implements IPaymentsProcessor {
+export class ZebedeePaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
     private settings: Factory<Settings>

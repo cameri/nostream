@@ -82,7 +82,7 @@ describe('onion',()=>{
         sandbox.restore()
     })
 
-    it('config emty',()=>{
+    it('config empty',()=>{
         const config = createTorConfig()
         expect(config).to.include({ port: 9051 })
     })
@@ -109,7 +109,7 @@ describe('onion',()=>{
         }
         expect(client).be.undefined
     })
-    it('tor connect sucess',async ()=>{
+    it('tor connect success',async ()=>{
         //mockTor(sandbox)
         process.env.TOR_HOST = hostname()
         process.env.TOR_CONTROL_PORT = '9051'
@@ -175,7 +175,7 @@ describe('onion',()=>{
         console.log('domain: '+domain)
         expect(domain).be.undefined
     })
-    it('add onion sucess read fail',async ()=>{
+    it('add onion success read fail',async ()=>{
         mock(sandbox,true)
         process.env.TOR_HOST = hostname()
         process.env.TOR_CONTROL_PORT = '9051'
@@ -191,7 +191,7 @@ describe('onion',()=>{
         console.log('domain: '+domain)
         expect(domain).be.not.undefined
     })
-    it('add onion sucess',async ()=>{
+    it('add onion success',async ()=>{
         mock(sandbox)
         process.env.TOR_HOST = hostname()
         process.env.TOR_CONTROL_PORT = '9051'

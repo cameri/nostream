@@ -3,7 +3,7 @@ import { path } from 'ramda'
 
 import { createSettings } from '../settings-factory'
 import { IPaymentsProcessor } from '../../@types/clients'
-import { NodelessPaymentsProcesor } from '../../payments-processors/nodeless-payments-processor'
+import { NodelessPaymentsProcessor } from '../../payments-processors/nodeless-payments-processor'
 import { Settings } from '../../@types/settings'
 
 const getNodelessAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
@@ -27,5 +27,5 @@ const getNodelessAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> =>
 export const createNodelessPaymentsProcessor = (settings: Settings): IPaymentsProcessor => {
   const client = axios.create(getNodelessAxiosConfig(settings))
 
-  return new NodelessPaymentsProcesor(client, createSettings)
+  return new NodelessPaymentsProcessor(client, createSettings)
 }

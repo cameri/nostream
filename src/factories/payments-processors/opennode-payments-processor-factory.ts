@@ -3,7 +3,7 @@ import { path } from 'ramda'
 
 import { createSettings } from '../settings-factory'
 import { IPaymentsProcessor } from '../../@types/clients'
-import { OpenNodePaymentsProcesor } from '../../payments-processors/opennode-payments-processor'
+import { OpenNodePaymentsProcessor } from '../../payments-processors/opennode-payments-processor'
 import { Settings } from '../../@types/settings'
 
 const getOpenNodeAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
@@ -35,5 +35,5 @@ export const createOpenNodePaymentsProcessor = (settings: Settings): IPaymentsPr
   const config = getOpenNodeAxiosConfig(settings)
   const client = axios.create(config)
 
-  return new OpenNodePaymentsProcesor(client, createSettings)
+  return new OpenNodePaymentsProcessor(client, createSettings)
 }

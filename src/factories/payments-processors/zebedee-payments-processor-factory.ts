@@ -4,7 +4,7 @@ import { path } from 'ramda'
 import { createSettings } from '../settings-factory'
 import { IPaymentsProcessor } from '../../@types/clients'
 import { Settings } from '../../@types/settings'
-import { ZebedeePaymentsProcesor } from '../../payments-processors/zebedee-payments-processor'
+import { ZebedeePaymentsProcessor } from '../../payments-processors/zebedee-payments-processor'
 
 const getZebedeeAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
   if (!process.env.ZEBEDEE_API_KEY) {
@@ -46,5 +46,5 @@ export const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsPro
 
   const client = axios.create(config)
 
-  return new ZebedeePaymentsProcesor(client, createSettings)
+  return new ZebedeePaymentsProcessor(client, createSettings)
 }

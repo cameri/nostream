@@ -90,7 +90,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const subscriptionLimits = this.settings().limits?.client?.subscription
 
     if (existingSubscription?.length && equals(filters, existingSubscription)) {
-        return `Duplicate subscription ${subscriptionId}: Ignorning`
+        return `Duplicate subscription ${subscriptionId}: Ignoring`
     }
 
     const maxSubscriptions = subscriptionLimits?.maxSubscriptions ?? 0
