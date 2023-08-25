@@ -41,7 +41,7 @@ export class GetInvoicePubkeyCheckController implements IController {
     }
 
     response
-      .status(400)
+      .status(200)
       .setHeader('content-type', 'application/json; charset=utf8')
       .send({ userAdmitted })
 
