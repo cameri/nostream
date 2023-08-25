@@ -19,14 +19,14 @@ export class GetInvoicePubkeyCheckController implements IController {
   public async handleRequest(request: Request, response: Response): Promise<void> {
     const currentSettings = this.settings()
 
-    const limited = await this.isRateLimited(request, currentSettings)
-    if (limited) {
-      response
-        .status(429)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Too many requests')
-      return
-    }
+    // const limited = await this.isRateLimited(request, currentSettings)
+    // if (limited) {
+    //   response
+    //     .status(429)
+    //     .setHeader('content-type', 'text/plain; charset=utf8')
+    //     .send('Too many requests')
+    //   return
+    // }
     
     const pubkey = request.params.pubkey
     const user = await this.userRepository.findByPubkey(pubkey)
