@@ -7,9 +7,9 @@ import { IUserRepository } from '../../@types/repositories'
 import { path } from 'ramda'
 import { Settings } from '../../@types/settings'
 
-const debug = createLogger('get-invoice-pubkey-check-controller')
+const debug = createLogger('get-admission-check-controller')
 
-export class GetInvoicePubkeyCheckController implements IController {
+export class GetSubmissionCheckController implements IController {
   public constructor(
     private readonly userRepository: IUserRepository,
     private readonly settings: () => Settings,
@@ -30,8 +30,6 @@ export class GetInvoicePubkeyCheckController implements IController {
     
     const pubkey = request.params.pubkey
     const user = await this.userRepository.findByPubkey(pubkey)
-
-    console.log('user', user)
 
     let userAdmitted = false
 
