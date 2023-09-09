@@ -84,7 +84,7 @@ export const fromZebedeeInvoice = applySpec<Invoice>({
     pipe(prop('createdAt'), toDate),
     always(null),
   ),
-  rawRespose: toJSON,
+  rawResponse: toJSON,
 })
 
 export const fromNodelessInvoice = applySpec<Invoice>({

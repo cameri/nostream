@@ -8,7 +8,7 @@ import { Settings } from '../@types/settings'
 
 const debug = createLogger('opennode-payments-processor')
 
-export class OpenNodePaymentsProcesor implements IPaymentsProcessor {
+export class OpenNodePaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
     private settings: Factory<Settings>

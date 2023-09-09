@@ -3,7 +3,7 @@ import { path } from 'ramda'
 
 import { createSettings } from '../settings-factory'
 import { IPaymentsProcessor } from '../../@types/clients'
-import { LNbitsPaymentsProcesor } from '../../payments-processors/lnbits-payment-processor'
+import { LNbitsPaymentsProcessor } from '../../payments-processors/lnbits-payment-processor'
 import { Settings } from '../../@types/settings'
 
 
@@ -35,5 +35,5 @@ export const createLNbitsPaymentProcessor = (settings: Settings): IPaymentsProce
 
   const client = axios.create(config)
 
-  return new LNbitsPaymentsProcesor(client, createSettings)
+  return new LNbitsPaymentsProcessor(client, createSettings)
 }

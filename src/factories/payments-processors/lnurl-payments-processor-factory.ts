@@ -3,7 +3,7 @@ import { path } from 'ramda'
 
 import { createSettings } from '../settings-factory'
 import { IPaymentsProcessor } from '../../@types/clients'
-import { LnurlPaymentsProcesor } from '../../payments-processors/lnurl-payments-processor'
+import { LnurlPaymentsProcessor } from '../../payments-processors/lnurl-payments-processor'
 import { Settings } from '../../@types/settings'
 
 export const createLnurlPaymentsProcessor = (settings: Settings): IPaymentsProcessor => {
@@ -14,5 +14,5 @@ export const createLnurlPaymentsProcessor = (settings: Settings): IPaymentsProce
 
   const client = axios.create()
 
-  return new LnurlPaymentsProcesor(client, createSettings)
+  return new LnurlPaymentsProcessor(client, createSettings)
 }
