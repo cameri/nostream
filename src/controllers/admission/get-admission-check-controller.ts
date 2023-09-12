@@ -47,19 +47,19 @@ export class GetSubmissionCheckController implements IController {
   }
 
   public async isRateLimited(request: Request, settings: Settings) {
-    const rateLimits = path(['limits', 'invoice', 'rateLimits'], settings)
+    const rateLimits = path(['limits', 'admissionCheck', 'rateLimits'], settings)
     if (!Array.isArray(rateLimits) || !rateLimits.length) {
       return false
     }
 
-    const ipWhitelist = path(['limits', 'invoice', 'ipWhitelist'], settings)
+    const ipWhitelist = path(['limits', 'admissionCheck', 'ipWhitelist'], settings)
     const remoteAddress = getRemoteAddress(request, settings)
 
     let limited = false
     if (Array.isArray(ipWhitelist) && !ipWhitelist.includes(remoteAddress)) {
       const rateLimiter = this.rateLimiter()
       for (const { rate, period } of rateLimits) {
-        if (await rateLimiter.hit(`${remoteAddress}:invoice:${period}`, 1, { period, rate })) {
+        if (await rateLimiter.hit(`${remoteAddress}:admission-check:${period}`, 1, { period, rate })) {
           debug('rate limited %s: %d in %d milliseconds', remoteAddress, rate, period)
           limited = true
         }

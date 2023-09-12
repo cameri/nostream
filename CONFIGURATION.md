@@ -112,3 +112,6 @@ Running `nostream` for the first time creates the settings file in `<project_roo
 | limits.message.rateLimits[].period          | Rate limit period in milliseconds. |
 | limits.message.rateLimits[].rate            | Maximum number of messages during period. |
 | limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
+| limits.admissionCheck.rateLimits[].period          | Rate limit period in milliseconds. |
+| limits.admissionCheck.rateLimits[].rate            | Maximum number of admission checks during period. |
+| limits.admissionCheck.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
