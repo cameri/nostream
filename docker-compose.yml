@@ -79,7 +79,7 @@ services:
       options:
         tag: "{{.Name}}"
   nostream-db:
-    image: postgres
+    image: postgres:15
     environment:
       POSTGRES_DB: nostr_ts_relay
       POSTGRES_USER: nostr_ts_relay
@@ -144,6 +144,21 @@ services:
       driver: journald
       options:
         tag: "{{.Name}}"
+  pgadmin:
+    image: dpage/pgadmin4:8
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: kirino.minato@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: nostr_ts_relay
+      TZ: Asia/Tokyo
+    depends_on:
+      - nostream-db
+    ports:
+      - "5082:80"
+    networks:
+      default:
+    restart: always
 
 networks:
   default:
@@ -155,3 +170,4 @@ networks:
 
 volumes:
   cache:
+  pgadmin:
