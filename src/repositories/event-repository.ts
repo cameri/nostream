@@ -30,7 +30,7 @@ import {
 } from 'ramda'
 
 import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventExpirationTimeMetadataKey } from '../constants/base'
-import { DatabaseClient, EventId } from '../@types/base'
+import { DatabaseClient, EventId, Tag } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
@@ -66,6 +66,8 @@ export class EventRepository implements IEventRepository {
     }
     const queries = filters.map((currentFilter) => {
       const builder = this.readReplicaDbClient<DBEvent>('events')
+        .leftJoin('event_tags', 'events.event_id', 'event_tags.event_id')
+        .select('events.*', 'event_tags.event_id as event_tags_event_id')
 
       forEachObjIndexed((tableFields: string[], filterName: string | number) => {
         builder.andWhere((bd) => {
@@ -107,7 +109,7 @@ export class EventRepository implements IEventRepository {
         })
       })({
         authors: ['event_pubkey', 'event_delegator'],
-        ids: ['event_id'],
+        ids: ['events.event_id'],
       })
 
       if (Array.isArray(currentFilter.kinds)) {
@@ -140,10 +142,8 @@ export class EventRepository implements IEventRepository {
               isEmpty,
               () => andWhereRaw('1 = 0', bd),
               forEach((criterion: string) => void orWhereRaw(
-                '"event_tags" @> ?',
-                [
-                  JSON.stringify([[filterName[1], criterion]]) as any,
-                ],
+                'event_tags.tag_name = ? AND event_tags.tag_value = ?',
+                [filterName[1], criterion],
                 bd,
               )),
             )(criteria)
@@ -166,7 +166,7 @@ export class EventRepository implements IEventRepository {
     return this.insert(event).then(prop('rowCount') as () => number, () => 0)
   }
 
-  private insert(event: Event) {
+  private async insert(event: Event) {
     debug('inserting event: %o', event)
     const row = applySpec({
       event_id: pipe(prop('id'), toBuffer),
@@ -189,13 +189,38 @@ export class EventRepository implements IEventRepository {
       ),
     })(event)
 
+    await this.insertTags(row.event_id, event.tags)
+
     return this.masterDbClient('events')
       .insert(row)
       .onConflict()
       .ignore()
   }
 
-  public upsert(event: Event): Promise<number> {
+  private async insertTags(event_id: any, tags: Tag[]): Promise<void> {
+    for (const [tag_name, tag_value] of tags) {
+      if (tag_value === null) continue;
+      await this.masterDbClient('event_tags').insert({
+        event_id: event_id,
+        tag_name,
+        tag_value
+      });
+    }
+  }
+
+  private async removeEventTagsByEventId(event_id: string): Promise<void> {
+    await this.masterDbClient('event_tags')
+      .where('event_id', event_id)
+      .delete()
+  }
+
+  private async removeEventTagsByEventIds(eventIdsToDelete: string[]): Promise<void> {
+    await this.masterDbClient('event_tags')
+      .whereIn('event_id', map(toBuffer)(eventIdsToDelete))
+      .delete()
+  }
+
+  public async upsert(event: Event): Promise<number> {
     debug('upserting event: %o', event)
 
     const toJSON = (input: any) => JSON.stringify(input)
@@ -238,6 +263,9 @@ export class EventRepository implements IEventRepository {
       .merge(omit(['event_pubkey', 'event_kind', 'event_deduplication'])(row))
       .where('events.event_created_at', '<', row.event_created_at)
 
+    await this.removeEventTagsByEventId(event.id);
+    await this.insertTags(event.id, event.tags);
+
     return {
       then: <T1, T2>(onfulfilled: (value: number) => T1 | PromiseLike<T1>, onrejected: (reason: any) => T2 | PromiseLike<T2>) => query.then(prop('rowCount') as () => number).then(onfulfilled, onrejected),
       catch: <T>(onrejected: (reason: any) => T | PromiseLike<T>) => query.catch(onrejected),
@@ -245,9 +273,11 @@ export class EventRepository implements IEventRepository {
     } as Promise<number>
   }
 
-  public insertStubs(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
+  public async insertStubs(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
     debug('inserting stubs for %s: %o', pubkey, eventIdsToDelete)
     const date = new Date()
+    await this.removeEventTagsByEventIds(eventIdsToDelete);
+
     return this.masterDbClient('events').insert(
       eventIdsToDelete.map(
         applySpec({
@@ -269,8 +299,10 @@ export class EventRepository implements IEventRepository {
       .ignore() as Promise<any>
   }
 
-  public deleteByPubkeyAndIds(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
+  public async deleteByPubkeyAndIds(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
     debug('deleting events from %s: %o', pubkey, eventIdsToDelete)
+
+    await this.removeEventTagsByEventIds(eventIdsToDelete);
 
     return this.masterDbClient('events')
       .where('event_pubkey', toBuffer(pubkey))
