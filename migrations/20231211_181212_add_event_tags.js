@@ -4,7 +4,6 @@ exports.up = async function (knex) {
     table.binary('event_id').notNullable();
     table.text('tag_name').notNullable();
     table.text('tag_value').notNullable();
-    table.foreign('event_id').references('event_id').inTable('events');
   });
 
   await knex.schema.table('event_tags', function (table) {
