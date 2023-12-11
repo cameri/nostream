@@ -3,12 +3,12 @@ import { Factory } from '../@types/base'
 
 import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
 import { createLogger } from '../factories/logger-factory'
-import { fromZebedeeInvoice } from '../utils/transform'
+import { fromNodelessInvoice } from '../utils/transform'
 import { Settings } from '../@types/settings'
 
-const debug = createLogger('zebedee-payments-processor')
+const debug = createLogger('nodeless-payments-processor')
 
-export class ZebedeePaymentsProcessor implements IPaymentsProcessor {
+export class NodelessPaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
     private settings: Factory<Settings>
@@ -17,12 +17,14 @@ export class ZebedeePaymentsProcessor implements IPaymentsProcessor {
   public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
     debug('get invoice: %s', invoiceId)
 
+    const { storeId } = this.settings().paymentsProcessors.nodeless
+
     try {
-      const response = await this.httpClient.get(`/v0/charges/${invoiceId}`, {
+      const response = await this.httpClient.get(`/api/v1/store/${storeId}/invoice/${invoiceId}`, {
         maxRedirects: 1,
       })
 
-      return fromZebedeeInvoice(response.data.data)
+      return fromNodelessInvoice(response.data.data)
     } catch (error) {
       console.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
 
@@ -31,29 +33,40 @@ export class ZebedeePaymentsProcessor implements IPaymentsProcessor {
   }
 
   public async createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse> {
-    debug('create invoice: %o', request)
+    debug('create invoice: %O', request)
     const {
       amount: amountMsats,
       description,
       requestId,
     } = request
 
+    const amountSats = Number(amountMsats / 1000n)
+
     const body = {
-      amount: amountMsats.toString(),
-      description,
-      internalId: requestId,
-      callbackUrl: this.settings().paymentsProcessors?.zebedee?.callbackBaseURL,
+      amount: amountSats,
+      currency: 'SATS',
+      metadata: {
+        description,
+        requestId,
+        unit: 'sats',
+        createdAt: new Date().toISOString(),
+      },
     }
 
+    const { storeId } = this.settings().paymentsProcessors.nodeless
+
     try {
-      debug('request body: %o', body)
-      const response = await this.httpClient.post('/v0/charges', body, {
+      debug('request body: %O', body)
+      const response = await this.httpClient.post(`/api/v1/store/${storeId}/invoice`, body, {
         maxRedirects: 1,
       })
 
-      const result = fromZebedeeInvoice(response.data.data)
+      debug('response headers: %O', response.headers)
+      debug('response data: %O', response.data)
 
-      debug('result: %o', result)
+      const result = fromNodelessInvoice(response.data.data)
+
+      debug('invoice: %O', result)
 
       return result
     } catch (error) {

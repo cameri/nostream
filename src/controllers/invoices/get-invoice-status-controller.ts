@@ -19,7 +19,7 @@ export class GetInvoiceStatusController implements IController {
       debug('invalid invoice id: %s', invoiceId)
       response
         .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
+        .setHeader('content-type', 'application/json; charset=utf8')
           .send({ id: invoiceId, status: 'invalid invoice' })
       return
     }
@@ -32,7 +32,7 @@ export class GetInvoiceStatusController implements IController {
         debug('invoice not found: %s', invoiceId)
         response
           .status(404)
-          .setHeader('content-type', 'text/plain; charset=utf8')
+          .setHeader('content-type', 'application/json; charset=utf8')
           .send({ id: invoiceId, status: 'not found' })
         return
       }
@@ -40,16 +40,16 @@ export class GetInvoiceStatusController implements IController {
       response
         .status(200)
         .setHeader('content-type', 'application/json; charset=utf8')
-        .send(JSON.stringify({
+        .send({
           id: invoice.id,
           status: invoice.status,
-        }))
+        })
     } catch (error) {
       console.error(`get-invoice-status-controller: unable to get invoice ${invoiceId}:`, error)
 
       response
         .status(500)
-        .setHeader('content-type', 'text/plain; charset=utf8')
+        .setHeader('content-type', 'application/json; charset=utf8')
         .send({ id: invoiceId, status: 'error' })
     }
   }

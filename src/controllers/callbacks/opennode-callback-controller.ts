@@ -2,15 +2,13 @@ import { Request, Response } from 'express'
 
 import { Invoice, InvoiceStatus } from '../../@types/invoice'
 import { createLogger } from '../../factories/logger-factory'
-import { createSettings } from '../../factories/settings-factory'
-import { fromZebedeeInvoice } from '../../utils/transform'
-import { getRemoteAddress } from '../../utils/http'
+import { fromOpenNodeInvoice } from '../../utils/transform'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
 
-const debug = createLogger('zebedee-callback-controller')
+const debug = createLogger('opennode-callback-controller')
 
-export class ZebedeeCallbackController implements IController {
+export class OpenNodeCallbackController implements IController {
   public constructor(
     private readonly paymentsService: IPaymentsService,
   ) {}
@@ -23,29 +21,7 @@ export class ZebedeeCallbackController implements IController {
     debug('request headers: %o', request.headers)
     debug('request body: %O', request.body)
 
-    const settings = createSettings()
-
-    const { ipWhitelist = [] } = settings.paymentsProcessors?.zebedee ?? {}
-    const remoteAddress = getRemoteAddress(request, settings)
-    const paymentProcessor = settings.payments?.processor
-
-    if (ipWhitelist.length && !ipWhitelist.includes(remoteAddress)) {
-      debug('unauthorized request from %s to /callbacks/zebedee', remoteAddress)
-      response
-        .status(403)
-        .send('Forbidden')
-      return
-    }
-
-    if (paymentProcessor !== 'zebedee') {
-      debug('denied request from %s to /callbacks/zebedee which is not the current payment processor', remoteAddress)
-      response
-        .status(403)
-        .send('Forbidden')
-      return
-    }
-
-    const invoice = fromZebedeeInvoice(request.body)
+    const invoice = fromOpenNodeInvoice(request.body)
 
     debug('invoice', invoice)
 
@@ -70,16 +46,15 @@ export class ZebedeeCallbackController implements IController {
     }
 
     invoice.amountPaid = invoice.amountRequested
-    invoice.status = updatedInvoice.status
     updatedInvoice.amountPaid = invoice.amountRequested
 
     try {
       await this.paymentsService.confirmInvoice({
         id: invoice.id,
         pubkey: invoice.pubkey,
-        status: invoice.status,
-        confirmedAt: invoice.confirmedAt,
-        amountPaid: invoice.amountRequested,
+        status: updatedInvoice.status,
+        amountPaid: updatedInvoice.amountRequested,
+        confirmedAt: updatedInvoice.confirmedAt,
       })
       await this.paymentsService.sendInvoiceUpdateNotification(updatedInvoice)
     } catch (error) {

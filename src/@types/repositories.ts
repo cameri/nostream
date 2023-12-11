@@ -23,6 +23,10 @@ export interface IEventRepository {
 export interface IInvoiceRepository {
   findById(id: string, client?: DatabaseClient): Promise<Invoice | undefined>
   upsert(invoice: Partial<Invoice>, client?: DatabaseClient): Promise<number>
+  updateStatus(
+    invoice: Pick<Invoice, 'id' | 'status'>,
+    client?: DatabaseClient,
+  ): Promise<Invoice | undefined>
   confirmInvoice(
     invoiceId: string,
     amountReceived: bigint,

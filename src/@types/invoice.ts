@@ -8,7 +8,8 @@ export enum InvoiceUnit {
 
 export enum InvoiceStatus {
   PENDING = 'pending',
-  COMPLETED = 'completed'
+  COMPLETED = 'completed',
+  EXPIRED = 'expired',
 }
 
 export interface Invoice {
@@ -25,6 +26,10 @@ export interface Invoice {
   updatedAt: Date
   createdAt: Date
   verifyURL?: string
+}
+
+export interface LnurlInvoice extends Invoice {
+  verifyURL: string
 }
 
 export interface DBInvoice {

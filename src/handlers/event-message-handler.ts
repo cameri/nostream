@@ -290,14 +290,15 @@ export class EventMessageHandler implements IMessageHandler {
 
   protected addExpirationMetadata(event: Event): Event | ExpiringEvent {
     const eventExpiration: number = getEventExpiration(event)
-    if (eventExpiration) {
-        const expiringEvent: ExpiringEvent = {
-          ...event,
-          [EventExpirationTimeMetadataKey]: eventExpiration,
-        }
-        return expiringEvent
-    } else {
+    if (!eventExpiration) {
       return event
     }
+
+    const expiringEvent: ExpiringEvent = {
+      ...event,
+      [EventExpirationTimeMetadataKey]: eventExpiration,
+    }
+
+    return expiringEvent
   }
 }

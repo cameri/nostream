@@ -1,1 +1,1 @@
-export const isGenericTagQuery = (key: string) => /^#[a-z]$/.test(key)
+export const isGenericTagQuery = (key: string) => /^#[a-zA-Z]$/.test(key)

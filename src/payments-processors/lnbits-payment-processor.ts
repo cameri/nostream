@@ -39,7 +39,7 @@ export class LNbitsCreateInvoiceResponse implements CreateInvoiceResponse {
   rawResponse?: string
 }
 
-export class LNbitsPaymentsProcesor implements IPaymentsProcessor {
+export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
     private settings: Factory<Settings>

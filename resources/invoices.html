@@ -86,7 +86,7 @@
             <button class="btn btn-lg btn-primary" type="submit">Get another invoice</button>
           </div>
         </div>
-        <div class="row">
+        <div class="row d-none" id="powered-by-zebedee">
           <div class="d-flex justify-content-center mb-3 mt-4">
             <a href="https://zeb.gg/nostr-zbd-quickstart" target="_blank">
               <img class="poweredbyzbd-img" src="https://cdn.zebedee.io/an/nostr/poweredbyzbd.png" />
@@ -104,6 +104,7 @@
       var invoice = "{{invoice}}";
       var pubkey = "{{pubkey}}"
       var expiresAt = "{{expires_at}}"
+      var processor = "{{processor}}"
       var timeout
       var paid = false
       var fallbackTimeout
@@ -254,6 +255,9 @@
       sendPayment().catch(() => {
         document.getElementById('sendPaymentBtn').classList.remove('d-none')
       })
+      if (processor === 'zebedee') {
+        document.getElementById('powered-by-zebedee').classList.remove('d-none')
+      }
     </script>
   </body>
 </html>

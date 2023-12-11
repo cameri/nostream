@@ -58,7 +58,7 @@
             <button id="submitBtn" class="btn btn-lg btn-warning" type="submit">Pay {{amount}} sats</button>
           </div>
         </div>
-        <div class="row">
+        <div class="row d-none" id="powered-by-zebedee">
           <div class="d-flex justify-content-center mb-3 mt-4">
             <a href="https://zeb.gg/nostr-zbd-quickstart" target="_blank">
               <img class="poweredbyzbd-img" src="https://cdn.zebedee.io/an/nostr/poweredbyzbd.png" />
@@ -129,6 +129,7 @@
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.min.js" integrity="sha384-cuYeSxntonz0PPNlHhBs68uyIAVpIIOZZ5JqeqvYYIcEL727kskC66kF92t6Xl2V" crossorigin="anonymous"></script>
     <script>
+      var processor = "{{processor}}"
       function attemptGetPubkey() {
         const maxRetries = 10
         function getPubKey(retries) {
@@ -147,6 +148,9 @@
 
       function onLoad() {
         setTimeout(attemptGetPubkey, 300)
+        if (processor === 'zebedee') {
+          document.getElementById('powered-by-zebedee').classList.remove('d-none')
+        }
       }
     </script>
   </body>

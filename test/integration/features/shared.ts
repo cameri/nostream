@@ -16,10 +16,8 @@ import Sinon from 'sinon'
 import { connect, createIdentity, createSubscription, sendEvent } from './helpers'
 import { getMasterDbClient, getReadReplicaDbClient } from '../../../src/database/client'
 import { AppWorker } from '../../../src/app/worker'
-import { CacheClient } from '../../../src/@types/cache'
 import { DatabaseClient } from '../../../src/@types/base'
 import { Event } from '../../../src/@types/event'
-import { getCacheClient } from '../../../src/cache/client'
 import { SettingsStatic } from '../../../src/utils/settings'
 import { workerFactory } from '../../../src/factories/worker-factory'
 
@@ -29,14 +27,12 @@ let worker: AppWorker
 
 let dbClient: DatabaseClient
 let rrDbClient: DatabaseClient
-let cacheClient: CacheClient
 
 export const streams = new WeakMap<WebSocket, Observable<unknown>>()
 
 BeforeAll({ timeout: 1000 }, async function () {
   process.env.RELAY_PORT = '18808'
   process.env.SECRET = Math.random().toString().repeat(6)
-  cacheClient = getCacheClient()
   dbClient = getMasterDbClient()
   rrDbClient = getReadReplicaDbClient()
   await dbClient.raw('SELECT 1=1')
@@ -58,7 +54,7 @@ BeforeAll({ timeout: 1000 }, async function () {
 
 AfterAll(async function() {
   worker.close(async () => {
-    await Promise.all([cacheClient.disconnect(), dbClient.destroy(), rrDbClient.destroy()])
+    await Promise.all([dbClient.destroy(), rrDbClient.destroy()])
   })
 })
 
