@@ -200,6 +200,7 @@ export class EventRepository implements IEventRepository {
   private async insertTags(event_id: any, tags: Tag[]): Promise<void> {
     for (const [tag_name, tag_value] of tags) {
       if (tag_value === null) continue;
+      if (tag_name.length !== 1) continue;
       await this.masterDbClient('event_tags').insert({
         event_id: event_id,
         tag_name,
