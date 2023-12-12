@@ -45,3 +45,42 @@ CREATE TRIGGER insert_event_tags
 AFTER INSERT OR UPDATE OR DELETE ON events
 FOR EACH ROW
 EXECUTE FUNCTION process_event_tags();
+
+
+
+DO $$
+DECLARE
+  cur CURSOR FOR SELECT * FROM events ORDER BY event_id;
+  row events%ROWTYPE;
+  total_rows int;
+  processed_rows int := 0;
+BEGIN
+  -- 全行数を取得
+  SELECT count(*) INTO total_rows FROM events;
+
+  -- カーソルを開く
+  OPEN cur;
+
+  LOOP
+    -- カーソルから1000行取得
+    FOR i IN 1..100 LOOP
+      FETCH cur INTO row;
+      EXIT WHEN NOT FOUND;
+
+      -- ここで行の更新処理を行う
+      UPDATE events SET event_id = row.event_id WHERE event_id = row.event_id;
+
+      processed_rows := processed_rows + 1;
+    END LOOP;
+
+    RAISE NOTICE 'Processed: %, Total: %, Remaining: %, Percentage: %', processed_rows, total_rows, total_rows - processed_rows, format('%4s', processed_rows::DOUBLE PRECISION / total_rows::DOUBLE PRECISION * 100);
+
+    -- すべての行が処理されたら終了
+    EXIT WHEN NOT FOUND;
+
+    -- 一定時間待機
+    PERFORM pg_sleep(0.1);
+  END LOOP;
+
+  CLOSE cur;
+END $$;
