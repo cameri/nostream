@@ -22,9 +22,7 @@ DECLARE
   tag_name text;
   tag_value text;
 BEGIN
-  IF TG_OP = 'UPDATE' OR TG_OP = 'DELETE' THEN
-    DELETE FROM event_tags WHERE event_id = OLD.event_id;
-  END IF;
+  DELETE FROM event_tags WHERE event_id = OLD.event_id;
 
   IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
     FOR tag_element IN SELECT jsonb_array_elements(NEW.event_tags)
@@ -47,10 +45,29 @@ FOR EACH ROW
 EXECUTE FUNCTION process_event_tags();
 
 
+CREATE OR REPLACE FUNCTION process_event_tags_direct(event_row events) RETURNS VOID AS $$
+DECLARE
+  tag_element jsonb;
+  tag_name text;
+  tag_value text;
+BEGIN
+  DELETE FROM event_tags WHERE event_id = event_row.event_id;
+
+  FOR tag_element IN SELECT jsonb_array_elements(event_row.event_tags)
+  LOOP
+    tag_name := trim((tag_element->0)::text, '"');
+    tag_value := trim((tag_element->1)::text, '"');
+    IF length(tag_name) = 1 AND tag_value IS NOT NULL AND tag_value <> '' THEN
+      INSERT INTO event_tags (event_id, tag_name, tag_value) VALUES (event_row.event_id, tag_name, tag_value);
+    END IF;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
 
 DO $$
 DECLARE
-  cur CURSOR FOR SELECT * FROM events ORDER BY event_id;
+  cur CURSOR FOR SELECT * FROM events ORDER BY first_seen DESC;
   row events%ROWTYPE;
   total_rows int;
   processed_rows int := 0;
@@ -58,28 +75,23 @@ BEGIN
   -- 全行数を取得
   SELECT count(*) INTO total_rows FROM events;
 
-  -- カーソルを開く
   OPEN cur;
 
-  LOOP
-    -- カーソルから1000行取得
-    FOR i IN 1..100 LOOP
-      FETCH cur INTO row;
+  WHILE processed_rows < total_rows LOOP
+    FOR i IN 1..1000 LOOP
+      FETCH NEXT FROM cur INTO row;
       EXIT WHEN NOT FOUND;
 
-      -- ここで行の更新処理を行う
-      UPDATE events SET event_id = row.event_id WHERE event_id = row.event_id;
+      -- process_event_tagsを直接呼び出す
+      PERFORM process_event_tags_direct(row);
 
       processed_rows := processed_rows + 1;
     END LOOP;
 
-    RAISE NOTICE 'Processed: %, Total: %, Remaining: %, Percentage: %', processed_rows, total_rows, total_rows - processed_rows, format('%4s', processed_rows::DOUBLE PRECISION / total_rows::DOUBLE PRECISION * 100);
-
-    -- すべての行が処理されたら終了
-    EXIT WHEN NOT FOUND;
-
-    -- 一定時間待機
-    PERFORM pg_sleep(0.1);
+    -- 進捗%を出力
+    RAISE NOTICE 'Processed: %, Total: %, Remaining: %, Percentage: %', processed_rows, total_rows, total_rows - processed_rows, (processed_rows::float / total_rows::float * 100);
+    -- 1秒待機
+    PERFORM pg_sleep(1);
   END LOOP;
 
   CLOSE cur;
