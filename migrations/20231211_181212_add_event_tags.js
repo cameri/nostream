@@ -18,7 +18,7 @@ exports.up = async function (knex) {
   for (const event of events) {
     for (const tag of event.event_tags) {
       const [tag_name, tag_value] = tag;
-      if (tag_value) {
+      if (tag_name.length === 1 && tag_value) {
         await knex('event_tags').insert({
           events_event_id: event.event_id,
           tag_name: tag_name,

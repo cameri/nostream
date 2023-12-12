@@ -189,36 +189,12 @@ export class EventRepository implements IEventRepository {
       ),
     })(event)
 
-    await this.insertTags(row.event_id, event.tags)
+    await this.insertEventTags(row.event_id, event.tags)
 
     return this.masterDbClient('events')
       .insert(row)
       .onConflict()
       .ignore()
-  }
-
-  private async insertTags(event_id: any, tags: Tag[]): Promise<void> {
-    for (const [tag_name, tag_value] of tags) {
-      if (tag_value === null) continue;
-      if (tag_name.length !== 1) continue;
-      await this.masterDbClient('event_tags').insert({
-        event_id: event_id,
-        tag_name,
-        tag_value
-      });
-    }
-  }
-
-  private async removeEventTagsByEventId(event_id: string): Promise<void> {
-    await this.masterDbClient('event_tags')
-      .where('event_id', event_id)
-      .delete()
-  }
-
-  private async removeEventTagsByEventIds(eventIdsToDelete: string[]): Promise<void> {
-    await this.masterDbClient('event_tags')
-      .whereIn('event_id', map(toBuffer)(eventIdsToDelete))
-      .delete()
   }
 
   public async upsert(event: Event): Promise<number> {
@@ -265,7 +241,7 @@ export class EventRepository implements IEventRepository {
       .where('events.event_created_at', '<', row.event_created_at)
 
     await this.removeEventTagsByEventId(event.id);
-    await this.insertTags(event.id, event.tags);
+    await this.insertEventTags(event.id, event.tags);
 
     return {
       then: <T1, T2>(onfulfilled: (value: number) => T1 | PromiseLike<T1>, onrejected: (reason: any) => T2 | PromiseLike<T2>) => query.then(prop('rowCount') as () => number).then(onfulfilled, onrejected),
@@ -312,5 +288,29 @@ export class EventRepository implements IEventRepository {
       .update({
         deleted_at: this.masterDbClient.raw('now()'),
       })
+  }
+
+  private async insertEventTags(event_id: any, tags: Tag[]): Promise<void> {
+    for (const [tag_name, tag_value] of tags) {
+      if (tag_name.length === 1 && tag_value) {
+        await this.masterDbClient('event_tags').insert({
+          event_id: event_id,
+          tag_name,
+          tag_value
+        });
+      }
+    }
+  }
+
+  private async removeEventTagsByEventId(event_id: string): Promise<void> {
+    await this.masterDbClient('event_tags')
+      .where('event_id', event_id)
+      .delete()
+  }
+
+  private async removeEventTagsByEventIds(eventIdsToDelete: string[]): Promise<void> {
+    await this.masterDbClient('event_tags')
+      .whereIn('event_id', map(toBuffer)(eventIdsToDelete))
+      .delete()
   }
 }
