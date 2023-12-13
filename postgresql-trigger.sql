@@ -16,6 +16,11 @@ CREATE INDEX IF NOT EXISTS event_tags_tag_name_tag_value_index
     (tag_name COLLATE pg_catalog."default" ASC NULLS LAST, tag_value COLLATE pg_catalog."default" ASC NULLS LAST)
     TABLESPACE pg_default;
 
+CREATE INDEX IF NOT EXISTS event_tags_event_id_index
+    ON public.event_tags USING btree
+    (event_id COLLATE pg_catalog."default" ASC NULLS LAST)
+    TABLESPACE pg_default;
+
 CREATE OR REPLACE FUNCTION process_event_tags() RETURNS TRIGGER AS $$
 DECLARE
   tag_element jsonb;
