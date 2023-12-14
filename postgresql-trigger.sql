@@ -16,6 +16,11 @@ CREATE INDEX IF NOT EXISTS event_tags_tag_name_tag_value_index
     (tag_name COLLATE pg_catalog."default" ASC NULLS LAST, tag_value COLLATE pg_catalog."default" ASC NULLS LAST)
     TABLESPACE pg_default;
 
+CREATE INDEX IF NOT EXISTS event_tags_tag_name_tag_value_hash_index
+    ON public.event_tags USING btree
+    (tag_name COLLATE pg_catalog."default" ASC NULLS LAST, md5(tag_value) COLLATE pg_catalog."default" ASC NULLS LAST)
+    TABLESPACE pg_default;
+
 CREATE INDEX IF NOT EXISTS event_tags_event_id_index
     ON public.event_tags USING btree
     (event_id ASC NULLS LAST)
@@ -84,7 +89,7 @@ BEGIN
   OPEN cur;
 
   WHILE processed_rows < total_rows LOOP
-    FOR i IN 1..1000 LOOP
+    FOR i IN 1..100 LOOP
       FETCH NEXT FROM cur INTO row;
       EXIT WHEN NOT FOUND;
 
@@ -97,7 +102,7 @@ BEGIN
     -- 進捗%を出力
     RAISE NOTICE 'Processed: %, Total: %, Remaining: %, Percentage: %', processed_rows, total_rows, total_rows - processed_rows, (processed_rows::float / total_rows::float * 100);
     -- 1秒待機
-    PERFORM pg_sleep(1);
+    PERFORM pg_sleep(0.1);
   END LOOP;
 
   CLOSE cur;
@@ -130,8 +135,6 @@ BEGIN
   IF exists_flag THEN
     RETURN;
   END IF;
-
-  DELETE FROM event_tags WHERE event_id = event_row.event_id;
 
   FOR tag_element IN SELECT jsonb_array_elements(event_row.event_tags)
   LOOP
