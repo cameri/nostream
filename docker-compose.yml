@@ -80,6 +80,7 @@ services:
         tag: "{{.Name}}"
   nostream-db:
     image: postgres:15
+    shm_size: 1gb
     environment:
       POSTGRES_DB: nostr_ts_relay
       POSTGRES_USER: nostr_ts_relay
