@@ -18,7 +18,8 @@ CREATE INDEX IF NOT EXISTS event_tags_tag_name_tag_value_index
 
 CREATE INDEX IF NOT EXISTS event_tags_event_id_index
     ON public.event_tags USING btree
-    (event_id COLLATE pg_catalog."default" ASC NULLS LAST)
+    (event_id ASC NULLS LAST)
+    WITH (deduplicate_items=True)
     TABLESPACE pg_default;
 
 CREATE OR REPLACE FUNCTION process_event_tags() RETURNS TRIGGER AS $$
@@ -72,7 +73,7 @@ $$ LANGUAGE plpgsql;
 
 DO $$
 DECLARE
-  cur CURSOR FOR SELECT * FROM events ORDER BY first_seen DESC;
+  cur CURSOR FOR SELECT * FROM events ORDER BY event_id;
   row events%ROWTYPE;
   total_rows int;
   processed_rows int := 0;
