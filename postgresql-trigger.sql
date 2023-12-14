@@ -102,3 +102,44 @@ BEGIN
 
   CLOSE cur;
 END $$;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CREATE OR REPLACE FUNCTION process_event_tags_direct(event_row events) RETURNS VOID AS $$
+DECLARE
+  tag_element jsonb;
+  tag_name text;
+  tag_value text;
+  exists_flag boolean;
+BEGIN
+  -- 既に処理されたevent_idがあればスキップ
+  SELECT EXISTS(SELECT 1 FROM event_tags WHERE event_id = event_row.event_id) INTO exists_flag;
+  IF exists_flag THEN
+    RETURN;
+  END IF;
+
+  DELETE FROM event_tags WHERE event_id = event_row.event_id;
+
+  FOR tag_element IN SELECT jsonb_array_elements(event_row.event_tags)
+  LOOP
+    tag_name := trim((tag_element->0)::text, '"');
+    tag_value := trim((tag_element->1)::text, '"');
+    IF length(tag_name) = 1 AND tag_value IS NOT NULL AND tag_value <> '' THEN
+      INSERT INTO event_tags (event_id, tag_name, tag_value) VALUES (event_row.event_id, tag_name, tag_value);
+    END IF;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;
