@@ -274,7 +274,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
         })
 
         it('selects events by one #e tag', () => {
@@ -282,7 +282,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["e","aaaaaa"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
         })
 
         it('selects events by two #e tag', () => {
@@ -290,7 +290,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["e","aaaaaa"]]\' or "event_tags" @> \'[["e","bbbbbb"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'e\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
         })
       })
 
@@ -300,7 +300,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
         })
 
         it('selects events by one #p tag', () => {
@@ -308,7 +308,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["p","aaaaaa"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
         })
 
         it('selects events by two #p tag', () => {
@@ -316,7 +316,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["p","aaaaaa"]]\' or "event_tags" @> \'[["p","bbbbbb"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'p\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
         })
       })
 
@@ -326,7 +326,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
         })
 
         it('selects events by one #r tag', () => {
@@ -334,7 +334,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["r","aaaaaa"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
         })
 
         it('selects events by two #r tag', () => {
@@ -342,7 +342,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["r","aaaaaa"]]\' or "event_tags" @> \'[["r","bbbbbb"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'r\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
         })
       })
     })
