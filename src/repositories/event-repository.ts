@@ -131,25 +131,30 @@ export class EventRepository implements IEventRepository {
       const andWhereRaw = invoker(1, 'andWhereRaw')
       const orWhereRaw = invoker(2, 'orWhereRaw')
 
+      let isTagQuery = false
       pipe(
         toPairs,
         filter(pipe(nth(0) as () => string, isGenericTagQuery)) as any,
         forEach(([filterName, criteria]: [string, string[]]) => {
+          isTagQuery = true
           builder.andWhere((bd) => {
             ifElse(
               isEmpty,
               () => andWhereRaw('1 = 0', bd),
               forEach((criterion: string) => void orWhereRaw(
-                '"event_tags" @> ?',
-                [
-                  JSON.stringify([[filterName[1], criterion]]) as any,
-                ],
+                'event_tags.tag_name = ? AND event_tags.tag_value = ?',
+                [filterName[1], criterion],
                 bd,
               )),
             )(criteria)
           })
         }),
       )(currentFilter as any)
+
+      if (isTagQuery) {
+        builder.leftJoin('event_tags', 'events.event_id', 'event_tags.event_id')
+          .select('events.*')
+      }
 
       return builder
     })
