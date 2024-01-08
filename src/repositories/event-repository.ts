@@ -133,10 +133,12 @@ export class EventRepository implements IEventRepository {
       const andWhereRaw = invoker(1, 'andWhereRaw')
       const orWhereRaw = invoker(2, 'orWhereRaw')
 
+      let isTagQuery = false
       pipe(
         toPairs,
         filter(pipe(nth(0) as () => string, isGenericTagQuery)) as any,
         forEach(([filterName, criteria]: [string, string[]]) => {
+          isTagQuery = true
           builder.andWhere((bd) => {
             ifElse(
               isEmpty,
@@ -150,6 +152,11 @@ export class EventRepository implements IEventRepository {
           })
         }),
       )(currentFilter as any)
+
+      if (isTagQuery) {
+        builder.leftJoin('event_tags', 'events.event_id', 'event_tags.event_id')
+          .select('events.*')
+      }
 
       return builder
     })
