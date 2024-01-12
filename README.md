@@ -57,7 +57,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-16: Event Treatment
 - [x] NIP-20: Command Results
 - [x] NIP-22: Event `created_at` Limits
-- [x] NIP-26: Delegated Event Signing
+- [ ] NIP-26: Delegated Event Signing (REMOVED)
 - [x] NIP-28: Public Chat
 - [x] NIP-33: Parameterized Replaceable Events
 - [x] NIP-40: Expiration Timestamp
