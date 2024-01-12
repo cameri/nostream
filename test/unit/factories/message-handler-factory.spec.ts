@@ -2,10 +2,8 @@ import { expect } from 'chai'
 
 import { IEventRepository, IUserRepository } from '../../../src/@types/repositories'
 import { IncomingMessage, MessageType } from '../../../src/@types/messages'
-import { DelegatedEventMessageHandler } from '../../../src/handlers/delegated-event-message-handler'
 import { Event } from '../../../src/@types/event'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
-import { EventTags } from '../../../src/constants/base'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { messageHandlerFactory } from '../../../src/factories/message-handler-factory'
 import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
@@ -36,18 +34,6 @@ describe('messageHandlerFactory', () => {
     ]
 
     expect(factory([message, adapter])).to.be.an.instanceOf(EventMessageHandler)
-  })
-
-  it('returns DelegatedEventMessageHandler when given an EVENT message with delegated event', () => {
-    event.tags = [
-      [EventTags.Delegation, '', '', ''],
-    ]
-    message = [
-       MessageType.EVENT,
-       event,
-    ]
-
-    expect(factory([message, adapter])).to.be.an.instanceOf(DelegatedEventMessageHandler)
   })
 
   it('returns SubscribeMessageHandler when given a REQ message', () => {

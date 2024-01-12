@@ -28,7 +28,7 @@ import {
   toPairs,
 } from 'ramda'
 
-import { ContextMetadataKey, EventDeduplicationMetadataKey, EventDelegatorMetadataKey, EventExpirationTimeMetadataKey } from '../constants/base'
+import { ContextMetadataKey, EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey } from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
@@ -105,7 +105,7 @@ export class EventRepository implements IEventRepository {
           ])(currentFilter[filterName] as string[])
         })
       })({
-        authors: ['event_pubkey', 'event_delegator'],
+        authors: ['event_pubkey'],
         ids: ['event_id'],
       })
 
@@ -180,11 +180,6 @@ export class EventRepository implements IEventRepository {
       event_tags: pipe(prop('tags'), toJSON),
       event_content: prop('content'),
       event_signature: pipe(prop('sig'), toBuffer),
-      event_delegator: ifElse(
-        propSatisfies(is(String), EventDelegatorMetadataKey),
-        pipe(prop(EventDelegatorMetadataKey as any), toBuffer),
-        always(null),
-      ),
       remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
       expires_at: ifElse(
         propSatisfies(is(Number), EventExpirationTimeMetadataKey),
@@ -212,11 +207,6 @@ export class EventRepository implements IEventRepository {
       event_tags: pipe(prop('tags'), toJSON),
       event_content: prop('content'),
       event_signature: pipe(prop('sig'), toBuffer),
-      event_delegator: ifElse(
-        propSatisfies(is(String), EventDelegatorMetadataKey),
-        pipe(prop(EventDelegatorMetadataKey as any), toBuffer),
-        always(null),
-      ),
       event_deduplication: ifElse(
         propSatisfies(isNil, EventDeduplicationMetadataKey),
         pipe(paths([['pubkey'], ['kind']]), toJSON),
