@@ -56,6 +56,15 @@ limits:
       - "::1"
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
+  admissionCheck:
+    rateLimits:
+      - description: 30 admission checks/min or 1 check every 2 seconds
+        period: 60000
+        rate: 30
+    ipWhitelist:
+      - "::1"
+      - "10.10.10.1"
+      - "::ffff:10.10.10.1"
   connection:
     rateLimits:
       - period: 1000
