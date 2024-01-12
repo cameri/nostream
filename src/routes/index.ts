@@ -1,7 +1,7 @@
 import express from 'express'
 
-import admissionRouter from './admissions'
 import { nodeinfo21Handler, nodeinfoHandler } from '../handlers/request-handlers/nodeinfo-handler'
+import admissionRouter from './admissions'
 import callbacksRouter from './callbacks'
 import { getHealthRequestHandler } from '../handlers/request-handlers/get-health-request-handler'
 import { getTermsRequestHandler } from '../handlers/request-handlers/get-terms-request-handler'
