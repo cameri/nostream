@@ -1,10 +1,11 @@
-import { Then, When } from '@cucumber/cucumber'
+import { Then, When, World } from '@cucumber/cucumber'
 import { expect } from 'chai'
 import WebSocket from 'ws'
 
-import { createEvent, sendEvent, waitForEventCount, waitForNextEvent } from '../helpers'
+import { createEvent, createSubscription, sendEvent, waitForEventCount, waitForNextEvent } from '../helpers'
 import { EventKinds, EventTags } from '../../../../src/constants/base'
 import { Event } from '../../../../src/@types/event'
+import { isDraft } from '../shared'
 
 When(/^(\w+) sends a parameterized_replaceable_event_0 event with content "([^"]+)" and tag (\w) containing "([^"]+)"$/, async function(
   name: string,
@@ -107,4 +108,41 @@ Then(/(\w+) receives (\d+) parameterized_replaceable_event_0 events? from (\w+) 
   expect(events[0].kind).to.equal(30000)
   expect(events[0].pubkey).to.equal(this.parameters.identities[author].pubkey)
   expect(events[0].content).to.equal(content)
+})
+
+When(/^(\w+) subscribes to parameterized_replaceable_event_1 events from (\w+)$/, async function (this: World<Record<string, any>>, name: string, author: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const authorPubkey = this.parameters.identities[author].pubkey
+  const subscription = {
+    name: `test-${Math.random()}`,
+    filters: [
+      { kinds: [EventKinds.PARAMETERIZED_REPLACEABLE_FIRST + 1], authors: [authorPubkey] },
+    ],
+  }
+  this.parameters.subscriptions[name].push(subscription)
+
+  await createSubscription(ws, subscription.name, subscription.filters)
+})
+
+
+Then(/^(\w+) drafts a parameterized_replaceable_event_2 event with content "([^"]+?)" and tag (\w+) containing "([^"]+?)"$/, async function (
+  name: string,
+  content: string,
+  tagName: string,
+  tagValue: string,
+) {
+  const { pubkey, privkey } = this.parameters.identities[name]
+
+  const event: Event = await createEvent({
+    pubkey,
+    kind: EventKinds.PARAMETERIZED_REPLACEABLE_FIRST + 2,
+    content,
+    tags: [
+      [tagName, tagValue],
+    ],
+  }, privkey)
+
+  event[isDraft] = true
+
+  this.parameters.events[name].push(event)
 })

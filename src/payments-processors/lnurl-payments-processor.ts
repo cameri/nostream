@@ -9,7 +9,7 @@ import { Settings } from '../@types/settings'
 
 const debug = createLogger('lnurl-payments-processor')
 
-export class LnurlPaymentsProcesor implements IPaymentsProcessor {
+export class LnurlPaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
     private settings: Factory<Settings>

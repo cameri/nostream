@@ -274,7 +274,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
         })
 
         it('selects events by one #e tag', () => {
@@ -282,7 +282,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["e","aaaaaa"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
         })
 
         it('selects events by two #e tag', () => {
@@ -290,7 +290,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["e","aaaaaa"]]\' or "event_tags" @> \'[["e","bbbbbb"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'e\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
         })
       })
 
@@ -300,7 +300,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
         })
 
         it('selects events by one #p tag', () => {
@@ -308,7 +308,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["p","aaaaaa"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
         })
 
         it('selects events by two #p tag', () => {
@@ -316,7 +316,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["p","aaaaaa"]]\' or "event_tags" @> \'[["p","bbbbbb"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'p\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
         })
       })
 
@@ -326,7 +326,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
         })
 
         it('selects events by one #r tag', () => {
@@ -334,7 +334,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["r","aaaaaa"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
         })
 
         it('selects events by two #r tag', () => {
@@ -342,7 +342,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_tags" @> \'[["r","aaaaaa"]]\' or "event_tags" @> \'[["r","bbbbbb"]]\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'r\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
         })
       })
     })
@@ -439,24 +439,6 @@ describe('EventRepository', () => {
     })
   })
 
-  describe('insertStubs', () => {
-    let clock: sinon.SinonFakeTimers
-
-    beforeEach(() => {
-      clock = sinon.useFakeTimers(1673835425)
-    })
-
-    afterEach(() => {
-      clock.restore()
-    })
-
-    it('insert stubs by pubkey & event ids', () => {
-      const query = repository.insertStubs('001122', ['aabbcc', 'ddeeff']).toString()
-
-      expect(query).to.equal('insert into "events" ("deleted_at", "event_content", "event_created_at", "event_deduplication", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at") values (\'1970-01-20T08:57:15.425Z\', \'\', 1673835, \'["001122",5]\', NULL, X\'aabbcc\', 5, X\'001122\', X\'\', \'[]\', NULL), (\'1970-01-20T08:57:15.425Z\', \'\', 1673835, \'["001122",5]\', NULL, X\'ddeeff\', 5, X\'001122\', X\'\', \'[]\', NULL) on conflict do nothing')
-    })
-  })
-
   describe('deleteByPubkeyAndIds', () => {
     it('marks event as deleted by pubkey & event_id if not deleted', () => {
       const query = repository.deleteByPubkeyAndIds('001122', ['aabbcc', 'ddeeff']).toString()
@@ -480,7 +462,7 @@ describe('EventRepository', () => {
 
       const query = repository.upsert(event).toString()
 
-      expect(query).to.equal('insert into "events" ("event_content", "event_created_at", "event_deduplication", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (\'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, \'["55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503",0]\', NULL, X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\', NULL, \'::1\') on conflict (event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000) do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"event_delegator" = NULL,"remote_address" = \'::1\',"expires_at" = NULL where "events"."event_created_at" < 1564498626')
+      expect(query).to.equal('insert into "events" ("deleted_at", "event_content", "event_created_at", "event_deduplication", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (NULL, \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, \'["55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503",0]\', NULL, X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\', NULL, \'::1\') on conflict (event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000) do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"event_delegator" = NULL,"remote_address" = \'::1\',"expires_at" = NULL,"deleted_at" = NULL where "events"."event_created_at" < 1564498626')
     })
 
     it('replaces event based on event_pubkey, event_kind and event_deduplication', () => {
@@ -498,7 +480,7 @@ describe('EventRepository', () => {
 
       const query = repository.upsert(event).toString()
 
-      expect(query).to.equal('insert into "events" ("event_content", "event_created_at", "event_deduplication", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (\'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, \'["deduplication"]\', NULL, X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\', NULL, \'::1\') on conflict (event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000) do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"event_delegator" = NULL,"remote_address" = \'::1\',"expires_at" = NULL where "events"."event_created_at" < 1564498626')
+      expect(query).to.equal('insert into "events" ("deleted_at", "event_content", "event_created_at", "event_deduplication", "event_delegator", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (NULL, \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, \'["deduplication"]\', NULL, X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\', NULL, \'::1\') on conflict (event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000) do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"event_delegator" = NULL,"remote_address" = \'::1\',"expires_at" = NULL,"deleted_at" = NULL where "events"."event_created_at" < 1564498626')
     })
   })
 })
