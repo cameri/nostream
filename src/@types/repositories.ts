@@ -16,7 +16,6 @@ export interface IEventRepository {
   create(event: Event): Promise<number>
   upsert(event: Event): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
-  insertStubs(pubkey: string, eventIdsToDelete: EventId[]): Promise<number>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
 }
 
