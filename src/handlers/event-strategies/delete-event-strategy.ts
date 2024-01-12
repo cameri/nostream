@@ -32,16 +32,10 @@ export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>>
     )
 
     if (eventIdsToDelete.length) {
-      const count = await this.eventRepository.deleteByPubkeyAndIds(
+      await this.eventRepository.deleteByPubkeyAndIds(
         event.pubkey,
         eventIdsToDelete
       )
-      if (!count) {
-        await this.eventRepository.insertStubs(
-          event.pubkey,
-          eventIdsToDelete,
-        )
-      }
     }
 
     const count = await this.eventRepository.create(event)

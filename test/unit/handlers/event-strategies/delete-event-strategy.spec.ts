@@ -32,7 +32,6 @@ describe('DeleteEventStrategy', () => {
   let webSocketEmitStub: Sinon.SinonStub
   let eventRepositoryCreateStub: Sinon.SinonStub
   let eventRepositoryDeleteByPubkeyAndIdsStub: Sinon.SinonStub
-  let eventRepositoryInsertStubsStub: Sinon.SinonStub
 
   let strategy: IEventStrategy<Event, Promise<void>>
 
@@ -43,7 +42,6 @@ describe('DeleteEventStrategy', () => {
 
     eventRepositoryCreateStub = sandbox.stub(EventRepository.prototype, 'create')
     eventRepositoryDeleteByPubkeyAndIdsStub = sandbox.stub(EventRepository.prototype, 'deleteByPubkeyAndIds')
-    eventRepositoryInsertStubsStub = sandbox.stub(EventRepository.prototype, 'insertStubs')
 
     webSocketEmitStub = sandbox.stub()
     webSocket = {
@@ -65,18 +63,6 @@ describe('DeleteEventStrategy', () => {
       await strategy.execute(event)
 
       expect(eventRepositoryCreateStub).to.have.been.calledOnceWithExactly(event)
-    })
-
-    it('inserts stubs', async () => {
-      await strategy.execute(event)
-
-      expect(eventRepositoryInsertStubsStub).to.have.been.calledOnceWithExactly(
-        event.pubkey,
-        [
-          '0000000000000000000000000000000000000000000000000000000000000000',
-          'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-        ]
-      )
     })
 
     it('deletes events if it has e tags', async () => {
@@ -135,7 +121,6 @@ describe('DeleteEventStrategy', () => {
 
       expect(eventRepositoryCreateStub).to.have.been.calledOnceWithExactly(event)
       expect(eventRepositoryDeleteByPubkeyAndIdsStub).not.to.have.been.called
-      expect(eventRepositoryInsertStubsStub).to.not.have.been.called
       expect(webSocketEmitStub).not.to.have.been.called
     })
   })
