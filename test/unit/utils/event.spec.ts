@@ -3,8 +3,6 @@ import { expect } from 'chai'
 import { CanonicalEvent, Event } from '../../../src/@types/event'
 import {
   getEventExpiration,
-  isDelegatedEvent,
-  isDelegatedEventValid,
   isDeleteEvent,
   isEphemeralEvent,
   isEventIdValid,
@@ -399,75 +397,6 @@ describe('NIP-16', () => {
 //     })
 //   })
 // })
-
-describe('NIP-26', () => {
-  let event: Event
-  beforeEach(() => {
-    event = {
-      'id': 'a080fd288b60ac2225ff2e2d815291bd730911e583e177302cc949a15dc2b2dc',
-      'pubkey': '62903b1ff41559daf9ee98ef1ae67cc52f301bb5ce26d14baba3052f649c3f49',
-      'created_at': 1660896109,
-      'kind': 1,
-      'tags': [
-        [
-          'delegation',
-          '86f0689bd48dcd19c67a19d994f938ee34f251d8c39976290955ff585f2db42e',
-          'kind=1&created_at>1640995200',
-          'c33c88ba78ec3c760e49db591ac5f7b129e3887c8af7729795e85a0588007e5ac89b46549232d8f918eefd73e726cb450135314bfda419c030d0b6affe401ec1',
-        ],
-      ],
-      'content': 'Hello world',
-      'sig': 'cd4a3cd20dc61dcbc98324de561a07fd23b3d9702115920c0814b5fb822cc5b7c5bcdaf3fa326d24ed50c5b9c8214d66c75bae34e3a84c25e4d122afccb66eb6',
-    }
-  })
-
-  describe('isDelegatedEvent', () => {
-    it('returns true if event contains delegation tag', () => {
-      expect(isDelegatedEvent(event)).to.be.true
-    })
-  })
-
-  describe('isDelegatedEventValid', () => {
-    it('resolves with true if delegated event is valid', async () => {
-      expect(await isDelegatedEventValid(event)).to.be.true
-    })
-
-    it('resolves with false if no delegation tag is found', async () => {
-      event.tags = []
-      expect(await isDelegatedEventValid(event)).to.be.false
-    })
-
-    it('resolves with false if delegation signature is invalid', async () => {
-      event.tags[0][3] = 'f'
-      expect(await isDelegatedEventValid(event)).to.be.false
-    })
-
-    it('resolves with false if delegation rule is not a valid rune', async () => {
-      event.tags[0][2] = '@'
-      expect(await isDelegatedEventValid(event)).to.be.false
-    })
-
-
-    it('resolves with false if no delegation rule does not match', async () => {
-      event.tags[0][2] = 'a=1'
-      expect(await isDelegatedEventValid(event)).to.be.false
-    })
-  })
-
-  describe('isEventMatchingFilter', () => {
-    it('returns true if author is delegator', () => {
-      expect(
-        isEventMatchingFilter({ authors: ['86f0689bd48dcd19c67a19d994f938ee34f251d8c39976290955ff585f2db42e'] })(event)
-      ).to.be.true
-    })
-
-    it('returns false if author is not delegator', () => {
-      expect(
-        isEventMatchingFilter({ authors: ['e8b487c079b0f67c695ae6c4c2552a47f38adfa2533cc5926bd2c102942fdcb7'] })(event)
-      ).to.be.false
-    })
-  })
-})
 
 describe('NIP-09', () => {
   describe('isDeleteEvent', () => {

@@ -3,6 +3,7 @@ import { path } from 'ramda'
 
 import { createSettings } from '../../factories/settings-factory'
 import { FeeSchedule } from '../../@types/settings'
+import { fromBech32 } from '../../utils/transform'
 import packageJson from '../../../package.json'
 
 export const rootRequestHandler = (request: Request, response: Response, next: NextFunction) => {
@@ -10,7 +11,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
 
   if (request.header('accept') === 'application/nostr+json') {
     const {
-      info: { name, description, pubkey, contact, relay_url },
+      info: { name, description, pubkey: rawPubkey, contact, relay_url },
     } = settings
 
     const paymentsUrl = new URL(relay_url)
@@ -18,6 +19,10 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     paymentsUrl.pathname = '/invoices'
 
     const content = settings.limits?.event?.content
+
+    const pubkey = rawPubkey.startsWith('npub1')
+      ? fromBech32(rawPubkey)
+      : rawPubkey
 
     const relayInformationDocument = {
       name,

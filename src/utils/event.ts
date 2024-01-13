@@ -1,6 +1,6 @@
 import * as secp256k1 from '@noble/secp256k1'
 
-import { applySpec, converge, curry, mergeLeft, nth, omit, pipe, prop, reduceBy } from 'ramda'
+import { applySpec, pipe, prop } from 'ramda'
 import { CanonicalEvent, DBEvent, Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
 import { createCipheriv, getRandomValues } from 'crypto'
 import { EventId, Pubkey, Tag } from '../@types/base'
@@ -12,7 +12,6 @@ import { EventKindsRange } from '../@types/settings'
 import { fromBuffer } from './transform'
 import { getLeadingZeroBits } from './proof-of-work'
 import { isGenericTagQuery } from './filter'
-import { RuneLike } from './runes/rune-like'
 import { SubscriptionFilter } from '../@types/subscription'
 import { WebSocketServerAdapterEvent } from '../constants/adapter'
 
@@ -68,18 +67,7 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
     if (
       !filter.authors.some(startsWith(event.pubkey))
     ) {
-      if (isDelegatedEvent(event)) {
-        const delegation = event.tags.find((tag) => tag[0] === EventTags.Delegation)
-        if (typeof delegation === 'undefined') {
-          return false
-        }
-
-        if (!filter.authors.some(startsWith(delegation[1]))) {
-          return false
-        }
-      } else {
-        return false
-      }
+      return false
     }
   }
 
@@ -114,51 +102,6 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
   }
 
   return true
-}
-
-export const isDelegatedEvent = (event: Event): boolean => {
-  return event.tags.some((tag) => tag.length === 4 && tag[0] === EventTags.Delegation)
-}
-
-export const isDelegatedEventValid = async (event: Event): Promise<boolean> => {
-  const delegation = event.tags.find((tag) => tag.length === 4 && tag[0] === EventTags.Delegation)
-  if (!delegation) {
-    return false
-  }
-
-
-  // Validate rune
-  const runifiedEvent = (converge(
-    curry(mergeLeft),
-    [
-      omit(['tags']),
-      pipe(
-        prop('tags') as any,
-        reduceBy<EventTags, string[]>(
-          (acc, tag) => ([...acc, tag[1]]),
-          [],
-          nth(0) as any,
-        ),
-      ),
-    ],
-  ) as any)(event)
-
-  let result: boolean
-  try {
-    [result] = RuneLike.from(delegation[2]).test(runifiedEvent)
-  } catch (error) {
-    result = false
-  }
-
-  if (!result) {
-    return false
-  }
-
-  const serializedDelegationTag = `nostr:${delegation[0]}:${event.pubkey}:${delegation[2]}`
-
-  const token = await secp256k1.utils.sha256(Buffer.from(serializedDelegationTag))
-
-  return secp256k1.schnorr.verify(delegation[3], token, delegation[1])
 }
 
 export const getEventHash = async (event: Event | UnidentifiedEvent | UnsignedEvent): Promise<string> => {

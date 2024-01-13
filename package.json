@@ -1,6 +1,6 @@
 {
   "name": "nostream",
-  "version": "1.25.2",
+  "version": "2.0.0",
   "description": "A Nostr relay written in Typescript.",
   "supportedNips": [
     1,
@@ -13,7 +13,6 @@
     16,
     20,
     22,
-    26,
     28,
     33,
     40
@@ -73,7 +72,7 @@
   "devDependencies": {
     "@commitlint/cli": "17.2.0",
     "@commitlint/config-conventional": "17.2.0",
-    "@cucumber/cucumber": "8.7.0",
+    "@cucumber/cucumber": "10.2.1",
     "@cucumber/pretty-formatter": "1.0.0",
     "@semantic-release/commit-analyzer": "9.0.2",
     "@semantic-release/git": "10.0.1",
@@ -116,7 +115,7 @@
   },
   "dependencies": {
     "@noble/secp256k1": "1.7.1",
-    "axios": "1.2.6",
+    "axios": "1.6.5",
     "bech32": "2.0.0",
     "body-parser": "1.20.1",
     "debug": "4.3.4",
