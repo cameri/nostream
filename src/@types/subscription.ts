@@ -5,7 +5,7 @@ export type SubscriptionId = string
 
 export interface SubscriptionFilter {
   ids?: EventId[]
-  kinds?: (EventKinds | number)[]
+  kinds?: EventKinds[]
   since?: number
   until?: number
   authors?: Pubkey[]

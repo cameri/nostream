@@ -112,14 +112,8 @@ export interface InvoiceLimits {
   ipWhitelist?: string[]
 }
 
-export interface AdmissionCheckLimits {
-  rateLimits: RateLimit[]
-  ipWhitelist?: string[]
-}
-
 export interface Limits {
   invoice?: InvoiceLimits
-  admissionCheck?: AdmissionCheckLimits
   connection?: ConnectionLimits
   client?: ClientLimits
   event?: EventLimits
