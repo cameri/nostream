@@ -6,6 +6,7 @@ const debug = createLogger('redis-adapter')
 
 export class RedisAdapter implements ICacheAdapter {
   private connection: Promise<void>
+  prefixKey: boolean | string
 
   public constructor(private readonly client: CacheClient) {
     this.connection = client.connect()
@@ -39,6 +40,8 @@ export class RedisAdapter implements ICacheAdapter {
           this.client.once('error', onError)
         })
       })
+
+    this.prefixKey = process.env.REDIS_PREFIX || false
   }
 
   private onClientError(error: Error) {
@@ -46,40 +49,48 @@ export class RedisAdapter implements ICacheAdapter {
     // throw error
   }
 
+  private addPrefixKey(key: string): string {
+    if(this.prefixKey) {
+      return `${this.prefixKey}:${key}`
+    }
+
+    return key
+  }
+
   public async hasKey(key: string): Promise<boolean> {
     await this.connection
     debug('has %s key', key)
-    return Boolean(this.client.exists(key))
+    return Boolean(this.client.exists(this.addPrefixKey(key)))
   }
 
   public async getKey(key: string): Promise<string> {
     await this.connection
     debug('get %s key', key)
-    return this.client.get(key)
+    return this.client.get(this.addPrefixKey(key))
   }
 
   public async setKey(key: string, value: string): Promise<boolean> {
     await this.connection
     debug('get %s key', key)
-    return 'OK' === await this.client.set(key, value)
+    return 'OK' === await this.client.set(this.addPrefixKey(key), value)
   }
 
   public async removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number> {
     await this.connection
     debug('remove %d..%d range from sorted set %s', min, max, key)
-    return this.client.zRemRangeByScore(key, min, max)
+    return this.client.zRemRangeByScore(this.addPrefixKey(key), min, max)
   }
 
   public async getRangeFromSortedSet(key: string, min: number, max: number): Promise<string[]> {
     await this.connection
     debug('get %d..%d range from sorted set %s', min, max, key)
-    return this.client.zRange(key, min, max)
+    return this.client.zRange(this.addPrefixKey(key), min, max)
   }
 
   public async setKeyExpiry(key: string, expiry: number): Promise<void> {
     await this.connection
     debug('expire at %d from sorted set %s', expiry, key)
-    await this.client.expire(key, expiry)
+    await this.client.expire(this.addPrefixKey(key), expiry)
   }
 
   public async addToSortedSet(
@@ -92,7 +103,7 @@ export class RedisAdapter implements ICacheAdapter {
         .entries(set)
         .map(([value, score]) => ({ score: Number(score), value }))
 
-    return this.client.zAdd(key, members)
+    return this.client.zAdd(this.addPrefixKey(key), members)
   }
 
 }
