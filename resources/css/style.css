@@ -176,3 +176,28 @@
     top: 38px;
   }
 }
+
+/* Dark Theme Styles */
+@media (prefers-color-scheme: dark) {
+  body.dark-theme {
+    background-color: #2a2a2a; /* Softer gray background */
+    color: #e0e0e0;
+  }  
+  body.dark-theme h1 {
+    color: #e0e0e0;
+  }
+  body.dark-theme p {
+    color: #b0b0b0;
+  }  
+  body.dark-theme .btn-primary {
+    background-color: #3a3a3a;
+    border-color: #545454;
+  }  
+  body.dark-theme .btn-primary:hover {
+    background-color: #545454;
+  }  
+  body.dark-theme .card {
+    background-color: #3a3a3a;
+    border-color: #545454;
+  }
+}
