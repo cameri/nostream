@@ -125,7 +125,7 @@ export class SettingsStatic {
     const settingsFilePath = join(basePath, `settings.${fileType}`)
 
     const reload = () => {
-      console.log('reloading settings')
+      debug('reloading settings')
       SettingsStatic._settings = undefined
       SettingsStatic.createSettings()
     }
