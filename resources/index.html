@@ -151,6 +151,11 @@
         if (processor === 'zebedee') {
           document.getElementById('powered-by-zebedee').classList.remove('d-none')
         }
+
+        // Check for system preference on load
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          document.body.classList.add('dark-theme');
+        }
       }
     </script>
   </body>
