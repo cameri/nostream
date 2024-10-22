@@ -90,7 +90,7 @@
     "@types/ramda": "^0.28.13",
     "@types/sinon": "^10.0.11",
     "@types/sinon-chai": "^3.2.8",
-    "@types/ws": "^8.5.3",
+    "@types/ws": "^8.5.12",
     "@typescript-eslint/eslint-plugin": "^5.19.0",
     "@typescript-eslint/parser": "^5.19.0",
     "chai": "^4.3.6",
@@ -115,7 +115,7 @@
   },
   "dependencies": {
     "@noble/secp256k1": "1.7.1",
-    "axios": "1.6.5",
+    "axios": "^1.7.7",
     "bech32": "2.0.0",
     "body-parser": "1.20.1",
     "debug": "4.3.4",
@@ -132,7 +132,7 @@
     "redis": "4.5.1",
     "rxjs": "7.8.0",
     "tor-control-ts": "^1.0.0",
-    "ws": "8.12.0"
+    "ws": "^8.18.0"
   },
   "config": {
     "commitizen": {
