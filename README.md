@@ -1,24 +1,24 @@
-# [nostream](https://github.com/Cameri/nostream)
+# [nostream](https://github.com/cameri/nostream)
 
 <p align="center">
   <img alt="nostream logo" height="256px" width="256px" src="https://user-images.githubusercontent.com/378886/198158439-86e0345a-adc8-4efe-b0ab-04ff3f74c1b2.jpg" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/Cameri/nostream/releases">
+  <a href="https://github.com/cameri/nostream/releases">
     <img alt="GitHub release" src="https://img.shields.io/github/v/release/Cameri/nostream">
   </a>
-  <a href="https://github.com/Cameri/nostream/issues">
+  <a href="https://github.com/cameri/nostream/issues">
     <img alt="GitHub issues" src="https://img.shields.io/github/issues/Cameri/nostream?style=plastic" />
   </a>
-  <a href="https://github.com/Cameri/nostream/stargazers">
+  <a href="https://github.com/cameri/nostream/stargazers">
     <img alt="GitHub stars" src="https://img.shields.io/github/stars/Cameri/nostream" />
   </a>
   <img alt="GitHub top language" src="https://img.shields.io/github/languages/top/Cameri/nostream">
-  <a href="https://github.com/Cameri/nostream/network">
+  <a href="https://github.com/cameri/nostream/network">
     <img alt="GitHub forks" src="https://img.shields.io/github/forks/Cameri/nostream" />
   </a>
-  <a href="https://github.com/Cameri/nostream/blob/main/LICENSE">
+  <a href="https://github.com/cameri/nostream/blob/main/LICENSE">
     <img alt="GitHub license" src="https://img.shields.io/github/license/Cameri/nostream" />
   </a>
   <a href='https://coveralls.io/github/Cameri/nostream?branch=main'>
@@ -27,8 +27,8 @@
   <a href='https://sonarcloud.io/project/overview?id=Cameri_nostr-ts-relay'>
     <img alt='Sonarcloud quality gate' src='https://sonarcloud.io/api/project_badges/measure?project=Cameri_nostr&metric=alert_status' />
   </a>
-  <a href='https://github.com/Cameri/nostream/actions'>
-    <img alt='Build status' src='https://github.com/Cameri/nostream/actions/workflows/checks.yml/badge.svg?branch=main&event=push' />
+  <a href='https://github.com/cameri/nostream/actions'>
+    <img alt='Build status' src='https://github.com/cameri/nostream/actions/workflows/checks.yml/badge.svg?branch=main&event=push' />
   </a>
 </p>
 
@@ -37,7 +37,7 @@ Typescript.
 
 This implementation is production-ready. See below for supported features.
 
-The project master repository is available on [GitHub](https://github.com/Cameri/nostream).
+The project master repository is available on [GitHub](https://github.com/cameri/nostream).
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template/Xfk5F7?referralCode=Kfv2ly)
 

@@ -56,7 +56,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Cameri/nostream.git"
+    "url": "git+https://github.com/cameri/nostream.git"
   },
   "keywords": [
     "nostr",
@@ -66,9 +66,9 @@
   "author": "Ricardo Arturo Cabral Mejía (npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/Cameri/nostream/issues"
+    "url": "https://github.com/cameri/nostream/issues"
   },
-  "homepage": "https://github.com/Cameri/nostream#readme",
+  "homepage": "https://github.com/cameri/nostream#readme",
   "devDependencies": {
     "@commitlint/cli": "17.2.0",
     "@commitlint/config-conventional": "17.2.0",

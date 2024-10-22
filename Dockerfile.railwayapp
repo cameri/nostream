@@ -63,7 +63,7 @@ ENV REDIS_USER=$REDISUSER
 ENV REDIS_PASSWORD=$REDISPASSWORD
 
 LABEL org.opencontainers.image.title="Nostream"
-LABEL org.opencontainers.image.source=https://github.com/Cameri/nostream
+LABEL org.opencontainers.image.source=https://github.com/cameri/nostream
 LABEL org.opencontainers.image.description="nostream"
 LABEL org.opencontainers.image.authors="Ricardo Arturo Cabral Mejía"
 LABEL org.opencontainers.image.licenses=MIT
