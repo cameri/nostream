@@ -206,6 +206,7 @@ export interface Mirror {
   limits?: {
     event?: EventLimits
   }
+  skipAdmissionCheck?: boolean
 }
 
 export interface Mirroring {

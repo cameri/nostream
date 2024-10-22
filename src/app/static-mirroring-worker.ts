@@ -264,6 +264,10 @@ export class StaticMirroringWorker implements IRunnable {
   protected async isUserAdmitted(event: Event): Promise<boolean> {
     const currentSettings = this.settings()
 
+    if (this.config.skipAdmissionCheck === true) {
+      return true
+    }
+
     if (currentSettings.payments?.enabled !== true) {
       return true
     }
