@@ -87,6 +87,8 @@ Running `nostream` for the first time creates the settings file in `<project_roo
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
 | mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
 | mirroring.static[].filters                  | Subscription filters used to mirror. |
+| mirroring.static[].limits.event                   | Event limit overrides for this mirror. See configurations under limits.event. |
+| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
 | mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. |
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |

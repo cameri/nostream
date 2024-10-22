@@ -75,6 +75,7 @@ services:
     restart: on-failure
     networks:
       default:
+
   nostream-db:
     image: postgres
     container_name: nostream-db
@@ -96,6 +97,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 360s
+
   nostream-cache:
     image: redis:7.0.5-alpine3.16
     container_name: nostream-cache
@@ -110,6 +112,7 @@ services:
       interval: 1s
       timeout: 5s
       retries: 5
+
   nostream-migrate:
     image: node:18-alpine3.16
     container_name: nostream-migrate
@@ -131,7 +134,6 @@ services:
         condition: service_healthy
     networks:
       default:
-        ipv4_address: 10.10.10.254
 
 networks:
   default:

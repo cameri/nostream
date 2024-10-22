@@ -36,3 +36,6 @@ dist
 
 # Nostr data folder
 .nostr
+
+# Docker Compose overrides
+docker-compose.overrides.yml

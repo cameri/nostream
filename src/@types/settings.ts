@@ -203,6 +203,10 @@ export interface Mirror {
   address: string
   filters?: SubscriptionFilter[]
   secret?: Secret
+  limits?: {
+    event?: EventLimits
+  }
+  skipAdmissionCheck?: boolean
 }
 
 export interface Mirroring {
