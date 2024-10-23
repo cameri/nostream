@@ -1,0 +1,159 @@
+info:
+  relay_url: wss://nostream.your-domain.com
+  name: nostream.your-domain.com
+  description: A nostr relay written in Typescript.
+  pubkey: replace-with-your-pubkey-in-hex
+  contact: operator@your-domain.com
+payments:
+  enabled: false
+  processor: zebedee
+  feeSchedules:
+    admission:
+    - enabled: false
+      descripton: Admission fee charged per public key in msats (1000 msats = 1 satoshi)
+      amount: 1000000
+      whitelists:
+        pubkeys:
+        - replace-with-your-pubkey-in-hex
+paymentsProcessors:
+  zebedee:
+    baseURL: https://api.zebedee.io/
+    callbackBaseURL: https://nostream.your-domain.com/callbacks/zebedee
+    ipWhitelist:
+      - "3.225.112.64"
+      - "::ffff:3.225.112.64"
+network:
+  maxPayloadSize: 524288
+  remoteIpHeader: x-forwarded-for
+workers:
+  count: 0
+mirroring:
+  static: []
+limits:
+  invoice:
+    rateLimits:
+    - period: 60000
+      rate: 6
+    - period: 3600000
+      rate: 16
+    ipWhitelist:
+    - "::1"
+    - "10.10.10.1"
+    - "::ffff:10.10.10.1"
+  connection:
+    rateLimits:
+    - period: 1000
+      rate: 12
+    - period: 60000
+      rate: 48
+    - period: 3600000
+      rate: 300
+    ipWhitelist:
+    - "::1"
+    - "10.10.10.1"
+    - "::ffff:10.10.10.1"
+  event:
+    eventId:
+      minLeadingZeroBits: 0
+    kind:
+      whitelist: []
+      blacklist: []
+    pubkey:
+      minBalance: 0
+      minLeadingZeroBits: 0
+      whitelist: []
+      blacklist: []
+    createdAt:
+      maxPositiveDelta: 900
+      maxNegativeDelta: 0
+    content:
+    - description: 64 KB for event kind ranges 0-10 and 40-49
+      kinds:
+      - - 0
+        - 10
+      - - 40
+        - 49
+      maxLength: 65536
+    - description: 96 KB for event kind ranges 11-39 and 50-max
+      kinds:
+      - - 11
+        - 39
+      - - 50
+        - 9007199254740991
+      maxLength: 98304
+    rateLimits:
+    - description: 6 events/min for event kinds 0, 3, 40 and 41
+      kinds:
+      - 0
+      - 3
+      - 40
+      - 41
+      period: 60000
+      rate: 6
+    - description: 12 events/min for event kinds 1, 2, 4 and 42
+      kinds:
+      - 1
+      - 2
+      - 4
+      - 42
+      period: 60000
+      rate: 12
+    - description: 360 events/hour for event kinds 1, 2, 4 and 42
+      kinds:
+      - 1
+      - 2
+      - 4
+      - 42
+      period: 3600000
+      rate: 360
+    - description: 30 events/min for event kind ranges 5-7 and 43-49
+      kinds:
+      - - 5
+        - 7
+      - - 43
+        - 49
+      period: 60000
+      rate: 30
+    - description: 24 events/min for replaceable events and parameterized replaceable
+        events
+      kinds:
+      - - 10000
+        - 19999
+      - - 30000
+        - 39999
+      period: 60000
+      rate: 24
+    - description: 60 events/min for ephemeral events
+      kinds:
+      - - 20000
+        - 29999
+      period: 60000
+      rate: 60
+    - description: 720 events/hour for all events
+      period: 3600000
+      rate: 720
+    - description: 2880 events/day for all events
+      period: 86400000
+      rate: 2880
+    whitelists:
+      pubkeys: []
+      ipAddresses:
+      - "::1"
+      - "10.10.10.1"
+      - "::ffff:10.10.10.1"
+  client:
+    subscription:
+      maxSubscriptions: 10
+      maxFilters: 10
+  message:
+    rateLimits:
+    - description: 240 raw messages/min
+      period: 60000
+      rate: 240
+    - description: 3600 raw messages/hour
+      period: 3600000
+      rate: 4800
+    ipWhitelist:
+    - "::1"
+    - "10.10.10.1"
+    - "::ffff:10.10.10.1"
