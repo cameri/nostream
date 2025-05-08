@@ -189,7 +189,7 @@ You may have to uninstall Docker if you installed it using a different guide.
 
 Clone repository and enter directory:
   ```
-  git clone git@github.com:Cameri/nostream.git
+  git clone https://github.com/cameri/nostream.git
   cd nostream
   ```
 
