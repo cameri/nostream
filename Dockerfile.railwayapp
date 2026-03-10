@@ -80,4 +80,4 @@ USER 1000:1000
 RUN mkdir -p $NOSTR_CONFIG_DIR
 
 # Migrate script can be added post-deployment
-CMD ["node", "src/index.js"]
+CMD ["sh", "-c", "npm run db:migrate && node src/index.js"]
