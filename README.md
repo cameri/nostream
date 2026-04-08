@@ -372,7 +372,7 @@ Clone repository and enter directory:
 
 Start:
   ```
-  ./scripts/start_local
+  ./scripts/start
   ```
 
   This will run in the foreground of the terminal until you stop it with Ctrl+C.
