@@ -9,7 +9,7 @@ import packageJson from '../../../package.json'
 export const rootRequestHandler = (request: Request, response: Response, next: NextFunction) => {
   const settings = createSettings()
 
-  if (request.header('accept') === 'application/nostr+json') {
+  if (request.header('accept')?.includes('application/nostr+json')) {
     const {
       info: { name, description, pubkey: rawPubkey, contact, relay_url },
     } = settings

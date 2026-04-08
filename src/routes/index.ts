@@ -11,6 +11,13 @@ import { rootRequestHandler } from '../handlers/request-handlers/root-request-ha
 
 const router = express.Router()
 
+router.use((req, res, next) => {
+  if (req.method === 'GET' && req.headers.accept?.includes('application/nostr+json')) {
+    return rootRequestHandler(req, res, next)
+  }
+  next()
+})
+
 router.get('/', rootRequestHandler)
 router.get('/healthz', getHealthRequestHandler)
 router.get('/terms', getTermsRequestHandler)
