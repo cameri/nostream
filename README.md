@@ -263,6 +263,60 @@ The logs can be viewed with:
   journalctl -u nostream
   ```
 
+## Troubleshooting
+
+### Linux: Docker DNS resolution failures (`EAI_AGAIN`)
+
+On some Linux environments (especially rolling-release distros or setups using
+`systemd-resolved`), `docker compose` builds can fail with DNS errors such as:
+
+- `getaddrinfo EAI_AGAIN registry.npmjs.org`
+- `Temporary failure in name resolution`
+
+To fix this, configure Docker daemon DNS in `/etc/docker/daemon.json`.
+
+1. Create or update `/etc/docker/daemon.json`:
+
+  ```
+  sudo mkdir -p /etc/docker
+  sudo nano /etc/docker/daemon.json
+  ```
+
+  Add or update the file with:
+
+  ```
+  {
+    "dns": ["1.1.1.1", "8.8.8.8"]
+  }
+  ```
+
+  If this file already exists, merge the `dns` key into the existing JSON
+  instead of replacing the entire file.
+
+  If your environment does not allow public resolvers, replace `1.1.1.1` and
+  `8.8.8.8` with DNS servers approved by your network.
+
+2. Restart Docker:
+
+  ```
+  sudo systemctl restart docker
+  ```
+
+3. Verify DNS works inside containers:
+
+  ```
+  docker run --rm busybox nslookup registry.npmjs.org
+  ```
+
+4. Retry starting nostream:
+
+  ```
+  ./scripts/start
+  ```
+
+Note: avoid `127.0.0.53` in Docker DNS settings because it points to the host's
+local resolver stub and is often unreachable from containers.
+
 ## Quick Start (Standalone)
 
 Set the following environment variables:
