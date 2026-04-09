@@ -13,7 +13,7 @@ import { IUserRepository } from '../../@types/repositories'
 import { path } from 'ramda'
 import { readFileSync } from 'fs'
 
-let pageCache: string
+
 
 const debug = createLogger('post-invoice-controller')
 
@@ -26,9 +26,7 @@ export class PostInvoiceController implements IController {
   ){}
 
   public async handleRequest(request: Request, response: Response): Promise<void> {
-    if (!pageCache) {
-      pageCache = readFileSync('./resources/invoices.html', 'utf8')
-    }
+
 
     debug('params: %o', request.params)
     debug('body: %o', request.body)
@@ -174,9 +172,11 @@ export class PostInvoiceController implements IController {
       processor: currentSettings.payments.processor,
     }
 
+    const pageContent = readFileSync('./resources/invoices.html', 'utf8')
     const body = Object
       .entries(replacements)
-      .reduce((body, [key, value]) => body.replaceAll(`{{${key}}}`, value.toString()), pageCache)
+      .reduce((body, [key, value]) => body.replaceAll(`{{${key}}}`, value.toString()), pageContent)
+      .replaceAll('{{nonce}}', response.locals.nonce)
 
     response
       .status(200)

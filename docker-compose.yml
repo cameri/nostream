@@ -77,7 +77,7 @@ services:
       default:
 
   nostream-db:
-    image: postgres
+    image: postgres:15
     container_name: nostream-db
     environment:
       POSTGRES_DB: nostr_ts_relay
