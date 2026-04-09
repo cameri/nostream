@@ -7,6 +7,7 @@ import { Event } from '../../../src/@types/event'
 import { EventKinds } from '../../../src/constants/base'
 import { eventStrategyFactory } from '../../../src/factories/event-strategy-factory'
 import { Factory } from '../../../src/@types/base'
+import { GiftWrapEventStrategy } from '../../../src/handlers/event-strategies/gift-wrap-event-strategy'
 import { IEventRepository } from '../../../src/@types/repositories'
 import { IEventStrategy } from '../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
@@ -56,6 +57,11 @@ describe('eventStrategyFactory', () => {
   it('returns VanishEventStrategy given a request to vanish event', () => {
     event.kind = EventKinds.REQUEST_TO_VANISH
     expect(factory([event, adapter])).to.be.an.instanceOf(VanishEventStrategy)
+  })
+
+  it('returns GiftWrapEventStrategy given a gift wrap event', () => {
+    event.kind = EventKinds.GIFT_WRAP
+    expect(factory([event, adapter])).to.be.an.instanceOf(GiftWrapEventStrategy)
   })
 
   it('returns ParameterizedReplaceableEventStrategy given a delete event', () => {
