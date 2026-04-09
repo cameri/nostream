@@ -209,6 +209,10 @@ Start:
   ```
   ./scripts/start_with_tor
   ```
+  or, with Nginx reverse proxy and Let's Encrypt SSL:
+  ```
+  RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com ./scripts/start_with_nginx
+  ```
 
 Stop the server with:
   ```
