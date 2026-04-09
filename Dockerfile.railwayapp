@@ -23,8 +23,6 @@ ADD migrations /build/migrations
 
 RUN npm install -g knex@2.4.0 && npm install --quiet
 
-RUN npm run db:migrate
-
 COPY . .
 
 RUN npm run build
@@ -79,4 +77,4 @@ USER 1000:1000
 
 RUN mkdir -p $NOSTR_CONFIG_DIR
 
-CMD ["node", "src/index.js"]
+CMD ["sh", "-c", "npm run db:migrate && node src/index.js"]
