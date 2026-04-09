@@ -132,6 +132,7 @@ jobs:
   sonarcloud:
     name: Sonarcloud
     needs: [test-units-and-cover, test-integrations-and-cover]
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
