@@ -17,7 +17,7 @@ services:
       DB_ACQUIRE_CONNECTION_TIMEOUT: 60000
       # Read Replica
       READ_REPLICAS: 2
-      READ_REPLICA_ENABLED: "false"
+      READ_REPLICA_ENABLED: 'false'
       # Read Replica No. 1
       RR0_DB_HOST: db
       RR0_DB_PORT: 5432
@@ -84,7 +84,7 @@ services:
       POSTGRES_USER: nostr_ts_relay
       POSTGRES_PASSWORD: nostr_ts_relay
     volumes:
-      - nostream-db-data:/var/lib/postgresql/data
+      - ${PWD}/.nostr/data:/var/lib/postgresql/data
       - ${PWD}/.nostr/db-logs:/var/log/postgresql
       - ${PWD}/postgresql.conf:/postgresql.conf
     networks:
@@ -108,7 +108,7 @@ services:
       default:
     restart: always
     healthcheck:
-      test: ["CMD", "redis-cli", "ping", "|", "grep", "PONG"]
+      test: [ "CMD", "redis-cli", "ping", "|", "grep", "PONG" ]
       interval: 1s
       timeout: 5s
       retries: 5
@@ -125,7 +125,7 @@ services:
     entrypoint:
       - sh
       - -c
-      - "cd code && npm install --no-save --quiet knex@2.4.0 pg@8.8.0 && npx knex migrate:latest"
+      - 'cd code && npm install --no-save --quiet knex@2.4.0 pg@8.8.0 && npx knex migrate:latest'
     volumes:
       - ./migrations:/code/migrations
       - ./knexfile.js:/code/knexfile.js
@@ -145,4 +145,3 @@ networks:
 
 volumes:
   cache:
-  nostream-db-data:
