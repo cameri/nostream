@@ -15,7 +15,6 @@ import {
   isFileMessageEvent,
   isRequestToVanishEvent,
   isSealEvent,
-  isValidRequestToVanishEvent,
 } from '../utils/event'
 import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
@@ -213,7 +212,7 @@ export class EventMessageHandler implements IMessageHandler {
       return 'invalid: event signature verification failed'
     }
 
-    if (isRequestToVanishEvent(event) && !isValidRequestToVanishEvent(event, this.settings().info.relay_url)) {
+    if (event.kind === EventKinds.REQUEST_TO_VANISH && !isRequestToVanishEvent(event, this.settings().info.relay_url)) {
       return 'invalid: request to vanish relay tag invalid'
     }
 

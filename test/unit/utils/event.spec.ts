@@ -15,7 +15,6 @@ import {
   isReplaceableEvent,
   isRequestToVanishEvent,
   isSealEvent,
-  isValidRequestToVanishEvent,
   serializeEvent,
 } from '../../../src/utils/event'
 import { expect } from 'chai'
@@ -490,15 +489,13 @@ describe('NIP-62', () => {
       } as any
       expect(isRequestToVanishEvent(event)).to.be.false
     })
-  })
 
-  describe('isValidRequestToVanishEvent', () => {
     it('returns true when event contains the relay URL', () => {
       const event: Event = {
         kind: 62,
         tags: [[EventTags.Relay, 'relay_url']],
       } as any
-      expect(isValidRequestToVanishEvent(event, 'relay_url')).to.be.true
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.true
     })
 
     it('returns true when event contains ALL_RELAYS', () => {
@@ -506,7 +503,7 @@ describe('NIP-62', () => {
         kind: 62,
         tags: [[EventTags.Relay, ALL_RELAYS]],
       } as any
-      expect(isValidRequestToVanishEvent(event, 'relay_url')).to.be.true
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.true
     })
 
     it('returns false when relay tag does not match', () => {
@@ -514,7 +511,7 @@ describe('NIP-62', () => {
         kind: 62,
         tags: [[EventTags.Relay, 'other_relay_url']],
       } as any
-      expect(isValidRequestToVanishEvent(event, 'relay_url')).to.be.false
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.false
     })
 
     it('returns false when there are no relay tags', () => {
@@ -522,7 +519,15 @@ describe('NIP-62', () => {
         kind: 62,
         tags: [],
       } as any
-      expect(isValidRequestToVanishEvent(event, 'relay_url')).to.be.false
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.false
+    })
+
+    it('returns false when relay URL is provided for non-kind-62 event', () => {
+      const event: Event = {
+        kind: 1,
+        tags: [[EventTags.Relay, 'relay_url']],
+      } as any
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.false
     })
   })
 })
