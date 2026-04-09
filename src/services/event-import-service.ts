@@ -220,7 +220,6 @@ export class EventImportService {
       }
 
       await flushBatch()
-      onProgress({ ...stats })
 
       return stats
     } finally {

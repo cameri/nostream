@@ -81,6 +81,8 @@ describe('EventImportService', () => {
     expect(firstBatch.map(({ id }) => id)).to.deep.equal([event.id, event.id])
     expect(secondBatch.map(({ id }) => id)).to.deep.equal([event.id])
 
+    expect(progressUpdates.length).to.equal(2)
+
     const finalProgress = progressUpdates[progressUpdates.length - 1]
 
     expect(finalProgress).to.deep.equal(stats)
