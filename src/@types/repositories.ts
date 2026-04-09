@@ -17,6 +17,8 @@ export interface IEventRepository {
   upsert(event: Event): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
+  deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>
+  hasActiveRequestToVanish(pubkey: Pubkey): Promise<boolean>
 }
 
 export interface IInvoiceRepository {

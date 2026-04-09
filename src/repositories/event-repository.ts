@@ -28,7 +28,7 @@ import {
   toPairs,
 } from 'ramda'
 
-import { ContextMetadataKey, EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey } from '../constants/base'
+import { ContextMetadataKey, EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
@@ -246,9 +246,33 @@ export class EventRepository implements IEventRepository {
     return this.masterDbClient('events')
       .where('event_pubkey', toBuffer(pubkey))
       .whereIn('event_id', map(toBuffer)(eventIdsToDelete))
+      .whereNot('event_kind', EventKinds.REQUEST_TO_VANISH)
       .whereNull('deleted_at')
       .update({
         deleted_at: this.masterDbClient.raw('now()'),
       })
+  }
+
+  public deleteByPubkeyExceptKinds(pubkey: string, excludedKinds: number[]): Promise<number> {
+    debug('deleting events from %s except kinds %o', pubkey, excludedKinds)
+
+    return this.masterDbClient('events')
+      .where('event_pubkey', toBuffer(pubkey))
+      .whereNotIn('event_kind', excludedKinds)
+      .whereNull('deleted_at')
+      .update({
+        deleted_at: this.masterDbClient.raw('now()'),
+      })
+  }
+
+  public async hasActiveRequestToVanish(pubkey: string): Promise<boolean> {
+    const result = await this.readReplicaDbClient('events')
+      .select('event_id')
+      .where('event_pubkey', toBuffer(pubkey))
+      .where('event_kind', EventKinds.REQUEST_TO_VANISH)
+      .whereNull('deleted_at')
+      .first()
+
+    return Boolean(result)
   }
 }

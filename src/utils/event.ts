@@ -1,11 +1,9 @@
 import * as secp256k1 from '@noble/secp256k1'
-
+import { ALL_RELAYS, EventKinds, EventTags } from '../constants/base'
 import { applySpec, pipe, prop } from 'ramda'
 import { CanonicalEvent, DBEvent, Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
 import { createCipheriv, getRandomValues } from 'crypto'
 import { EventId, Pubkey, Tag } from '../@types/base'
-import { EventKinds, EventTags } from '../constants/base'
-
 import cluster from 'cluster'
 import { deriveFromSecret } from './secret'
 import { EventKindsRange } from '../@types/settings'
@@ -225,6 +223,22 @@ export const isParameterizedReplaceableEvent = (event: Event): boolean => {
 
 export const isDeleteEvent = (event: Event): boolean => {
   return event.kind === EventKinds.DELETE
+}
+
+export const isRequestToVanishEvent = (event: Event, relayUrl?: string): boolean => {
+  if (event.kind !== EventKinds.REQUEST_TO_VANISH) {
+    return false
+  }
+
+  if (typeof relayUrl === 'undefined') {
+    return true
+  }
+
+  const relayTags = event.tags
+    .filter((tag) => tag.length >= 2 && tag[0] === EventTags.Relay)
+    .map((tag) => tag[1])
+
+  return relayTags.length > 0 && relayTags.every((relay) => relay === relayUrl || relay === ALL_RELAYS)
 }
 
 export const isExpiredEvent = (event: Event): boolean => {
