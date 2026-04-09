@@ -13,6 +13,7 @@ import {
   EventImportStats,
 } from './services/event-import-service'
 import { getMasterDbClient } from './database/client'
+import { EventRepository } from './repositories/event-repository'
 
 interface CliOptions {
   batchSize: number
@@ -127,7 +128,8 @@ const run = async (): Promise<void> => {
   const absoluteFilePath = ensureValidInputFile(options.filePath)
 
   const dbClient = getMasterDbClient()
-  const importer = new EventImportService(createEventBatchPersister(dbClient))
+  const eventRepository = new EventRepository(dbClient, dbClient)
+  const importer = new EventImportService(createEventBatchPersister(eventRepository))
 
   let loggedErrors = 0
   let suppressedErrors = 0
