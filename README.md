@@ -210,6 +210,16 @@ Start:
   ./scripts/start_with_tor
   ```
 
+**Windows / WSL2 users:** Docker bind-mounts can cause PostgreSQL permission errors on Windows. Use the dedicated override file instead:
+  ```
+  docker compose -f docker-compose.yml -f docker-compose.windows.yml up --build
+  ```
+  Or add this to your `.env` file so you don't have to type it every time:
+  ```
+  COMPOSE_FILE=docker-compose.yml:docker-compose.windows.yml
+  ```
+  > **Note:** If you previously ran Nostream on Linux/Mac and are switching to Windows, your existing data lives at `.nostr/data/` on the host. You'll need to copy it into the Docker named volume manually or it won't be visible to the new setup.
+
 Stop the server with:
   ```
   ./scripts/stop
