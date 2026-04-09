@@ -12,8 +12,8 @@ import {
   EventImportService,
   EventImportStats,
 } from './services/event-import-service'
-import { getMasterDbClient } from './database/client'
 import { EventRepository } from './repositories/event-repository'
+import { getMasterDbClient } from './database/client'
 
 interface CliOptions {
   batchSize: number

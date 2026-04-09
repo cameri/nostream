@@ -14,7 +14,9 @@ export interface IQueryResult<T> extends Pick<Promise<T>, keyof Promise<T> & Exp
 
 export interface IEventRepository {
   create(event: Event): Promise<number>
+  createMany(events: Event[]): Promise<number>
   upsert(event: Event): Promise<number>
+  upsertMany(events: Event[]): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
 }

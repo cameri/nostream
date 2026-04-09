@@ -2,6 +2,7 @@ import fs from 'fs'
 import readline from 'readline'
 
 import {
+  getEventExpiration,
   isDeleteEvent,
   isEphemeralEvent,
   isEventIdValid,
@@ -11,10 +12,28 @@ import {
 } from '../utils/event'
 import { attemptValidation } from '../utils/validation'
 
+import { EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey, EventTags } from '../constants/base'
 import { Event } from '../@types/event'
 import { eventSchema } from '../schemas/event-schema'
-import { EventTags } from '../constants/base'
 import { IEventRepository } from '../@types/repositories'
+
+const enrichEventMetadata = (event: Event): Event => {
+  let enriched: any = event
+
+  const expiration = getEventExpiration(event)
+  if (expiration) {
+    enriched = { ...enriched, [EventExpirationTimeMetadataKey]: expiration }
+  }
+
+  if (isParameterizedReplaceableEvent(event)) {
+    const [, ...deduplication] = event.tags.find(
+      (tag) => tag.length >= 2 && tag[0] === EventTags.Deduplication,
+    ) ?? [null, '']
+    enriched = { ...enriched, [EventDeduplicationMetadataKey]: deduplication }
+  }
+
+  return enriched as Event
+}
 
 const DEFAULT_BATCH_SIZE = 1000
 
@@ -53,12 +72,19 @@ export const createEventBatchPersister =
 
       let inserted = 0
 
+      const regularEvents: Event[] = []
+      const replaceableEvents: Event[] = []
+
       for (const event of events) {
         if (isEphemeralEvent(event)) {
           continue
         }
 
         if (isDeleteEvent(event)) {
+          // flush pending batches before applying deletes
+          inserted += await eventRepository.createMany(regularEvents.splice(0))
+          inserted += await eventRepository.upsertMany(replaceableEvents.splice(0))
+
           const eventIdsToDelete = event.tags.reduce(
             (ids, tag) =>
               tag.length >= 2
@@ -73,17 +99,23 @@ export const createEventBatchPersister =
             await eventRepository.deleteByPubkeyAndIds(event.pubkey, eventIdsToDelete)
           }
 
-          inserted += await eventRepository.create(event)
+          inserted += await eventRepository.create(enrichEventMetadata(event))
           continue
         }
+
+        const enrichedEvent = enrichEventMetadata(event)
 
         if (isReplaceableEvent(event) || isParameterizedReplaceableEvent(event)) {
-          inserted += await eventRepository.upsert(event)
+          replaceableEvents.push(enrichedEvent)
           continue
         }
 
-        inserted += await eventRepository.create(event)
+        regularEvents.push(enrichedEvent)
       }
+
+      // flush remaining
+      inserted += await eventRepository.createMany(regularEvents)
+      inserted += await eventRepository.upsertMany(replaceableEvents)
 
       return inserted
     }
