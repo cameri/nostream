@@ -225,11 +225,15 @@ export const isDeleteEvent = (event: Event): boolean => {
   return event.kind === EventKinds.DELETE
 }
 
-export const isRequestToVanishEvent = (event: Event): boolean => {
-  return event.kind === EventKinds.REQUEST_TO_VANISH
-}
+export const isRequestToVanishEvent = (event: Event, relayUrl?: string): boolean => {
+  if (event.kind !== EventKinds.REQUEST_TO_VANISH) {
+    return false
+  }
 
-export const isValidRequestToVanishEvent = (event: Event, relayUrl: string): boolean => {
+  if (typeof relayUrl === 'undefined') {
+    return true
+  }
+
   const relayTags = event.tags
     .filter((tag) => tag.length >= 2 && tag[0] === EventTags.Relay)
     .map((tag) => tag[1])
