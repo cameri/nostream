@@ -19,7 +19,7 @@ export class GetInvoiceController implements IController {
       && pathEq(['payments', 'feeSchedules', 'admission', '0', 'enabled'], true, settings)) {
       const name = path<string>(['info', 'name'])(settings)
       const feeSchedule = path<FeeSchedule>(['payments', 'feeSchedules', 'admission', '0'], settings)
-      const page = readFileSync('./resources/index.html', 'utf8')
+      const page = readFileSync('./resources/get-invoice.html', 'utf8')
         .replaceAll('{{name}}', name)
         .replaceAll('{{processor}}', settings.payments.processor)
         .replaceAll('{{amount}}', (BigInt(feeSchedule.amount) / 1000n).toString())

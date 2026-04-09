@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express'
-import { path } from 'ramda'
+import { path, pathEq } from 'ramda'
+import { readFileSync } from 'fs'
 
 import { createSettings } from '../../factories/settings-factory'
 import { FeeSchedule } from '../../@types/settings'
@@ -73,12 +74,21 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     return
   }
 
-  const admissionFeeEnabled = path(['payments','feeSchedules','admission', '0', 'enabled'])(settings)
+  const admissionFeeEnabled = pathEq(['payments', 'feeSchedules', 'admission', '0', 'enabled'], true, settings)
+  const admissionFee = path<FeeSchedule>(['payments', 'feeSchedules', 'admission', '0'], settings)
+  const amount = admissionFeeEnabled && admissionFee
+    ? (BigInt(admissionFee.amount) / 1000n).toString()
+    : '0'
 
-  if (admissionFeeEnabled) {
-    response.redirect(301, '/invoices')
-  } else {
-    response.status(200).setHeader('content-type', 'text/plain; charset=utf8').send('Please use a Nostr client to connect.')
-  }
+  const page = readFileSync('./resources/index.html', 'utf8')
+    .replaceAll('{{name}}', settings.info.name)
+    .replaceAll('{{description}}', settings.info.description ?? '')
+    .replaceAll('{{relay_url}}', settings.info.relay_url)
+    .replaceAll('{{amount}}', amount)
+    .replaceAll('{{payments_section_class}}', admissionFeeEnabled ? '' : 'd-none')
+    .replaceAll('{{no_payments_section_class}}', admissionFeeEnabled ? 'd-none' : '')
+    .replaceAll('{{nonce}}', response.locals.nonce)
+
+  response.status(200).setHeader('content-type', 'text/html; charset=utf8').send(page)
   next()
 }

@@ -172,7 +172,7 @@ export class PostInvoiceController implements IController {
       processor: currentSettings.payments.processor,
     }
 
-    const pageContent = readFileSync('./resources/invoices.html', 'utf8')
+    const pageContent = readFileSync('./resources/post-invoice.html', 'utf8')
     const body = Object
       .entries(replacements)
       .reduce((body, [key, value]) => body.replaceAll(`{{${key}}}`, value.toString()), pageContent)
