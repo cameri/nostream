@@ -1,15 +1,15 @@
 import { NextFunction, Request, Response } from 'express'
-import { readFileSync } from 'fs'
-
 import { createSettings as settings } from '../../factories/settings-factory'
+import { escapeHtml } from '../../utils/html'
+import { getTemplate } from '../../utils/template-cache'
 
 export const getPrivacyRequestHandler = (_req: Request, res: Response, next: NextFunction) => {
   const { info: { name } } = settings()
 
   let page: string
   try {
-    page = readFileSync('./resources/privacy.html', 'utf8')
-      .replaceAll('{{name}}', name)
+    page = getTemplate('./resources/privacy.html')
+      .replaceAll('{{name}}', escapeHtml(name))
       .replaceAll('{{nonce}}', res.locals.nonce)
   } catch (err) {
     next(err)

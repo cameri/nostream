@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
-import { readFileSync } from 'fs'
-
 import { createSettings as settings } from '../../factories/settings-factory'
+import { escapeHtml } from '../../utils/html'
+import { getTemplate } from '../../utils/template-cache'
 
 
 
@@ -10,8 +10,8 @@ export const getTermsRequestHandler = (_req: Request, res: Response, next: NextF
 
   let page: string
   try {
-    page = readFileSync('./resources/terms.html', 'utf8')
-      .replaceAll('{{name}}', name)
+    page = getTemplate('./resources/terms.html')
+      .replaceAll('{{name}}', escapeHtml(name))
       .replaceAll('{{nonce}}', res.locals.nonce)
   } catch (err) {
     next(err)

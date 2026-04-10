@@ -1,10 +1,10 @@
 import { NextFunction, Request, Response } from 'express'
 import { path, pathEq } from 'ramda'
-import { readFileSync } from 'fs'
-
 import { createSettings } from '../../factories/settings-factory'
 import { FeeSchedule } from '../../@types/settings'
 import { fromBech32 } from '../../utils/transform'
+import { escapeHtml } from '../../utils/html'
+import { getTemplate } from '../../utils/template-cache'
 import packageJson from '../../../package.json'
 
 export const rootRequestHandler = (request: Request, response: Response, next: NextFunction) => {
@@ -83,10 +83,10 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
 
   let page: string
   try {
-    page = readFileSync('./resources/index.html', 'utf8')
-      .replaceAll('{{name}}', settings.info.name)
-      .replaceAll('{{description}}', settings.info.description ?? '')
-      .replaceAll('{{relay_url}}', settings.info.relay_url)
+    page = getTemplate('./resources/index.html')
+      .replaceAll('{{name}}', escapeHtml(settings.info.name))
+      .replaceAll('{{description}}', escapeHtml(settings.info.description ?? ''))
+      .replaceAll('{{relay_url}}', escapeHtml(settings.info.relay_url))
       .replaceAll('{{amount}}', amount)
       .replaceAll('{{payments_section_class}}', admissionFeeEnabled ? '' : 'd-none')
       .replaceAll('{{no_payments_section_class}}', admissionFeeEnabled ? 'd-none' : '')

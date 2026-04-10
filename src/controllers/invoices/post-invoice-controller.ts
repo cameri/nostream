@@ -3,6 +3,7 @@ import { fromBech32, toBech32 } from '../../utils/transform'
 import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
 import { Request, Response } from 'express'
 
+import { escapeHtml } from '../../utils/html'
 import { createLogger } from '../../factories/logger-factory'
 import { getRemoteAddress } from '../../utils/http'
 import { IController } from '../../@types/controllers'
@@ -11,7 +12,7 @@ import { IPaymentsService } from '../../@types/services'
 import { IRateLimiter } from '../../@types/utils'
 import { IUserRepository } from '../../@types/repositories'
 import { path } from 'ramda'
-import { readFileSync } from 'fs'
+import { getTemplate } from '../../utils/template-cache'
 
 
 
@@ -160,22 +161,25 @@ export class PostInvoiceController implements IController {
     const relayPrivkey = getRelayPrivateKey(relayUrl)
     const relayPubkey = getPublicKey(relayPrivkey)
 
-    const replacements = {
-      name: relayName,
-      reference: invoice.id,
-      relay_url: relayUrl,
-      pubkey,
-      relay_pubkey: relayPubkey,
-      expires_at: invoice.expiresAt?.toISOString() ?? '',
-      invoice: invoice.bolt11,
-      amount: amount / 1000n,
-      processor: currentSettings.payments.processor,
-    }
+    const expiresAt = invoice.expiresAt?.toISOString() ?? ''
 
-    const pageContent = readFileSync('./resources/post-invoice.html', 'utf8')
-    const body = Object
-      .entries(replacements)
-      .reduce((body, [key, value]) => body.replaceAll(`{{${key}}}`, value.toString()), pageContent)
+    const pageContent = getTemplate('./resources/post-invoice.html')
+    const body = pageContent
+      // HTML text / attribute contexts — values must be HTML-escaped
+      .replaceAll('{{name}}', escapeHtml(relayName))
+      .replaceAll('{{relay_url_html}}', escapeHtml(relayUrl))
+      .replaceAll('{{invoice_html}}', escapeHtml(invoice.bolt11))
+      .replaceAll('{{pubkey_html}}', escapeHtml(pubkey))
+      .replaceAll('{{amount}}', (amount / 1000n).toString())
+      // JS string contexts — JSON.stringify handles all escaping (quotes, backslashes, </script>)
+      .replaceAll('{{reference_json}}', JSON.stringify(invoice.id))
+      .replaceAll('{{relay_url_json}}', JSON.stringify(relayUrl))
+      .replaceAll('{{relay_pubkey_json}}', JSON.stringify(relayPubkey))
+      .replaceAll('{{invoice_json}}', JSON.stringify(invoice.bolt11))
+      .replaceAll('{{pubkey_json}}', JSON.stringify(pubkey))
+      .replaceAll('{{expires_at_json}}', JSON.stringify(expiresAt))
+      .replaceAll('{{processor_json}}', JSON.stringify(currentSettings.payments.processor))
+      // nonce is crypto-random base64 — safe in both attribute and script contexts
       .replaceAll('{{nonce}}', response.locals.nonce)
 
     response
