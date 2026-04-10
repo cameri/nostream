@@ -19,7 +19,7 @@ const WSS_CLIENT_HEALTH_PROBE_INTERVAL = 120000
 export class WebSocketServerAdapter extends WebServerAdapter implements IWebSocketServerAdapter {
   private webSocketsAdapters: WeakMap<WebSocket, IWebSocketAdapter>
 
-  private heartbeatInterval: NodeJS.Timer
+  private heartbeatInterval: NodeJS.Timeout
 
   public constructor(
     webServer: Server,
