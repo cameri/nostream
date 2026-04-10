@@ -24,3 +24,12 @@ npm run knip
    Pull Request would represent. The versioning scheme we use is [SemVer](http://semver.org/).
 3. You may merge the Pull Request in once you have the sign-off of two other developers, or if you
    do not have permission to do that, you may request the second reviewer to merge it for you.
+
+## Code Quality
+
+Run Biome checks before opening a pull request:
+
+```
+npm run lint
+npm run format:check
+```
