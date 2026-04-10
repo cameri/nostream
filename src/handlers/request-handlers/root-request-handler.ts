@@ -74,21 +74,27 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     return
   }
 
-  const admissionFeeEnabled = pathEq(['payments', 'feeSchedules', 'admission', '0', 'enabled'], true, settings)
+  const admissionFeeEnabled = pathEq(['payments', 'enabled'], true, settings)
+    && pathEq(['payments', 'feeSchedules', 'admission', '0', 'enabled'], true, settings)
   const admissionFee = path<FeeSchedule>(['payments', 'feeSchedules', 'admission', '0'], settings)
   const amount = admissionFeeEnabled && admissionFee
     ? (BigInt(admissionFee.amount) / 1000n).toString()
     : '0'
 
-  const page = readFileSync('./resources/index.html', 'utf8')
-    .replaceAll('{{name}}', settings.info.name)
-    .replaceAll('{{description}}', settings.info.description ?? '')
-    .replaceAll('{{relay_url}}', settings.info.relay_url)
-    .replaceAll('{{amount}}', amount)
-    .replaceAll('{{payments_section_class}}', admissionFeeEnabled ? '' : 'd-none')
-    .replaceAll('{{no_payments_section_class}}', admissionFeeEnabled ? 'd-none' : '')
-    .replaceAll('{{nonce}}', response.locals.nonce)
+  let page: string
+  try {
+    page = readFileSync('./resources/index.html', 'utf8')
+      .replaceAll('{{name}}', settings.info.name)
+      .replaceAll('{{description}}', settings.info.description ?? '')
+      .replaceAll('{{relay_url}}', settings.info.relay_url)
+      .replaceAll('{{amount}}', amount)
+      .replaceAll('{{payments_section_class}}', admissionFeeEnabled ? '' : 'd-none')
+      .replaceAll('{{no_payments_section_class}}', admissionFeeEnabled ? 'd-none' : '')
+      .replaceAll('{{nonce}}', response.locals.nonce)
+  } catch (err) {
+    next(err)
+    return
+  }
 
   response.status(200).setHeader('content-type', 'text/html; charset=utf8').send(page)
-  next()
 }
