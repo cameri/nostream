@@ -227,7 +227,13 @@ export class EventRepository implements IEventRepository {
         )
       )
       .merge(omit(['event_pubkey', 'event_kind', 'event_deduplication'])(row))
-      .where('events.event_created_at', '<', row.event_created_at)
+      .where(function () {
+        this.where('events.event_created_at', '<', row.event_created_at)
+          .orWhere(function () {
+            this.where('events.event_created_at', '=', row.event_created_at)
+              .andWhere('events.event_id', '>', row.event_id)
+          })
+      })
 
     return {
       then: <T1, T2>(onfulfilled: (value: number) => T1 | PromiseLike<T1>, onrejected: (reason: any) => T2 | PromiseLike<T2>) => query.then(prop('rowCount') as () => number).then(onfulfilled, onrejected),
