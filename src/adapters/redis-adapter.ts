@@ -42,7 +42,7 @@ export class RedisAdapter implements ICacheAdapter {
   }
 
   private onClientError(error: Error) {
-    console.error('Unable to connect to Redis.', error)
+    debug('Unable to connect to Redis.', error)
     // throw error
   }
 
@@ -58,9 +58,12 @@ export class RedisAdapter implements ICacheAdapter {
     return this.client.get(key)
   }
 
-  public async setKey(key: string, value: string): Promise<boolean> {
+  public async setKey(key: string, value: string, expirySeconds?: number): Promise<boolean> {
     await this.connection
-    debug('get %s key', key)
+    debug('set %s key', key)
+    if (typeof expirySeconds === 'number') {
+      return 'OK' === await this.client.set(key, value, { EX: expirySeconds })
+    }
     return 'OK' === await this.client.set(key, value)
   }
 
