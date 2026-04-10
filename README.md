@@ -543,6 +543,17 @@ To see the integration test coverage report open `.coverage/integration/lcov-rep
   open .coverage/integration/lcov-report/index.html
   ```
 
+## Export Events
+
+Export all stored events to a [JSON Lines](https://jsonlines.org/) (`.jsonl`) file. Each line is a valid NIP-01 Nostr event JSON object. The export streams rows from the database using cursors, so it works safely on relays with millions of events without loading them into memory.
+
+```
+npm run export                            # writes to events.jsonl
+npm run export -- backup-2024-01-01.jsonl # custom filename
+```
+
+The script reads the same `DB_*` environment variables used by the relay (see [CONFIGURATION.md](CONFIGURATION.md)).
+
 ## Configuration
 
 You can change the default folder by setting the `NOSTR_CONFIG_DIR` environment variable to a different path.

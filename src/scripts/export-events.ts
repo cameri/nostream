@@ -40,43 +40,52 @@ async function exportEvents(): Promise<void> {
     const output = fs.createWriteStream(outputPath)
     let exported = 0
 
-    const dbStream = db('events')
-      .select(
-        'event_id',
-        'event_pubkey',
-        'event_kind',
-        'event_created_at',
-        'event_content',
-        'event_tags',
-        'event_signature',
-      )
-      .whereNull('deleted_at')
-      .orderBy('event_created_at', 'asc')
-      .stream()
+    const trx = await db.transaction(null, { isolationLevel: 'repeatable read' })
+    try {
+      await trx.raw('SET TRANSACTION READ ONLY')
 
-    const toJsonLine = new Transform({
-      objectMode: true,
-      transform(row: any, _encoding, callback) {
-        const event = {
-          id: row.event_id.toString('hex'),
-          pubkey: row.event_pubkey.toString('hex'),
-          created_at: row.event_created_at,
-          kind: row.event_kind,
-          tags: row.event_tags || [],
-          content: row.event_content,
-          sig: row.event_signature.toString('hex'),
-        }
+      const dbStream = trx('events')
+        .select(
+          'event_id',
+          'event_pubkey',
+          'event_kind',
+          'event_created_at',
+          'event_content',
+          'event_tags',
+          'event_signature',
+        )
+        .whereNull('deleted_at')
+        .orderBy('event_created_at', 'asc')
+        .stream()
 
-        exported++
-        if (exported % 10000 === 0) {
-          console.log(`Exported ${exported}/${total} events...`)
-        }
+      const toJsonLine = new Transform({
+        objectMode: true,
+        transform(row: any, _encoding, callback) {
+          const event = {
+            id: row.event_id.toString('hex'),
+            pubkey: row.event_pubkey.toString('hex'),
+            created_at: row.event_created_at,
+            kind: row.event_kind,
+            tags: row.event_tags || [],
+            content: row.event_content,
+            sig: row.event_signature.toString('hex'),
+          }
 
-        callback(null, JSON.stringify(event) + '\n')
-      },
-    })
+          exported++
+          if (exported % 10000 === 0) {
+            console.log(`Exported ${exported}/${total} events...`)
+          }
 
-    await pipeline(dbStream, toJsonLine, output)
+          callback(null, JSON.stringify(event) + '\n')
+        },
+      })
+
+      await pipeline(dbStream, toJsonLine, output)
+      await trx.commit()
+    } catch (err) {
+      await trx.rollback()
+      throw err
+    }
 
     console.log(`Export complete: ${exported} events written to ${outputPath}`)
   } finally {
