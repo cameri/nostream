@@ -110,7 +110,6 @@ describe('PaymentsService', () => {
     sandbox.restore()
   })
 
-  // ─── getPendingInvoices ────────────────────────────────────────────────────
 
   describe('getPendingInvoices', () => {
     it('returns invoices from the repository with offset 0 and limit 10', async () => {
@@ -130,7 +129,6 @@ describe('PaymentsService', () => {
     })
   })
 
-  // ─── getInvoiceFromPaymentsProcessor ──────────────────────────────────────
 
   describe('getInvoiceFromPaymentsProcessor', () => {
     it('passes a string invoice ID directly to the payments processor', async () => {
@@ -170,7 +168,6 @@ describe('PaymentsService', () => {
     })
   })
 
-  // ─── createInvoice ────────────────────────────────────────────────────────
 
   describe('createInvoice', () => {
     const invoiceResponse = {
@@ -217,7 +214,6 @@ describe('PaymentsService', () => {
     })
   })
 
-  // ─── updateInvoice ────────────────────────────────────────────────────────
 
   describe('updateInvoice', () => {
     it('delegates to invoiceRepository.updateStatus with id and status', async () => {
@@ -240,7 +236,6 @@ describe('PaymentsService', () => {
     })
   })
 
-  // ─── updateInvoiceStatus ──────────────────────────────────────────────────
 
   describe('updateInvoiceStatus', () => {
     it('returns the updated invoice from the repository', async () => {
@@ -265,7 +260,6 @@ describe('PaymentsService', () => {
     })
   })
 
-  // ─── confirmInvoice ───────────────────────────────────────────────────────
 
   describe('confirmInvoice', () => {
     const makeCompletedInvoice = (overrides: Partial<Invoice> = {}): Invoice =>
@@ -425,7 +419,6 @@ describe('PaymentsService', () => {
     })
   })
 
-  // ─── sendInvoiceUpdateNotification ────────────────────────────────────────
 
   describe('sendInvoiceUpdateNotification', () => {
     beforeEach(() => {
