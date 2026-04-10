@@ -39,3 +39,5 @@ dist
 
 # Docker Compose overrides
 docker-compose.overrides.yml
+# Export output
+*.jsonl
