@@ -114,7 +114,7 @@ services:
       retries: 5
 
   nostream-migrate:
-    image: node:18-alpine3.16
+    image: node:24-alpine
     container_name: nostream-migrate
     environment:
       DB_HOST: nostream-db

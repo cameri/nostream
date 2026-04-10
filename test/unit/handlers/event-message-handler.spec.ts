@@ -23,6 +23,7 @@ describe('EventMessageHandler', () => {
   let webSocket: IWebSocketAdapter
   let handler: EventMessageHandler
   let userRepository: IUserRepository
+  let eventRepository: any
   let event: Event
   let message: IncomingEventMessage
   let sandbox: Sinon.SinonSandbox
@@ -69,6 +70,7 @@ describe('EventMessageHandler', () => {
       canAcceptEventStub = sandbox.stub(EventMessageHandler.prototype, 'canAcceptEvent' as any)
       isEventValidStub = sandbox.stub(EventMessageHandler.prototype, 'isEventValid' as any)
       isUserAdmitted = sandbox.stub(EventMessageHandler.prototype, 'isUserAdmitted' as any)
+      eventRepository = { hasActiveRequestToVanish: sandbox.stub().resolves(false) }
       strategyExecuteStub = sandbox.stub()
       strategyFactoryStub = sandbox.stub().returns({
         execute: strategyExecuteStub,
@@ -81,6 +83,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         webSocket as any,
         strategyFactoryStub,
+        eventRepository,
         userRepository,
         () => ({
           info: { relay_url: 'relay_url' },
@@ -115,6 +118,20 @@ describe('EventMessageHandler', () => {
       expect(isRateLimitedStub).to.have.been.calledOnceWithExactly(event)
       expect(onMessageSpy).to.have.been.calledOnceWithExactly(
         [MessageType.OK, event.id, false, 'rate-limited: slow down'],
+      )
+      expect(strategyFactoryStub).not.to.have.been.called
+    })
+
+    it('rejects event if request to vanish is active for pubkey', async () => {
+      canAcceptEventStub.returns(undefined)
+      isEventValidStub.resolves(undefined)
+      eventRepository.hasActiveRequestToVanish.resolves(true)
+
+      await handler.handleMessage(message)
+
+      expect(eventRepository.hasActiveRequestToVanish).to.have.been.calledOnceWithExactly(event.pubkey)
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
+        [MessageType.OK, event.id, false, 'blocked: request to vanish active for pubkey'],
       )
       expect(strategyFactoryStub).not.to.have.been.called
     })
@@ -242,6 +259,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         {} as any,
         () => null,
+        { hasActiveRequestToVanish: async () => false } as any,
         userRepository,
         () => settings,
         () => ({ hit: async () => false })
@@ -717,6 +735,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         webSocket,
         () => null,
+        { hasActiveRequestToVanish: async () => false } as any,
         userRepository,
         () => settings,
         () => ({ hit: rateLimiterHitStub })
@@ -984,6 +1003,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         webSocket,
         () => null,
+        { hasActiveRequestToVanish: async () => false } as any,
         userRepository,
         () => settings,
         () => ({ hit: async () => false })

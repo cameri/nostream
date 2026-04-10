@@ -443,7 +443,49 @@ describe('EventRepository', () => {
     it('marks event as deleted by pubkey & event_id if not deleted', () => {
       const query = repository.deleteByPubkeyAndIds('001122', ['aabbcc', 'ddeeff']).toString()
 
-      expect(query).to.equal('update "events" set "deleted_at" = now() where "event_pubkey" = X\'001122\' and "event_id" in (X\'aabbcc\', X\'ddeeff\') and "deleted_at" is null')
+      expect(query).to.equal('update "events" set "deleted_at" = now() where "event_pubkey" = X\'001122\' and "event_id" in (X\'aabbcc\', X\'ddeeff\') and not "event_kind" = 62 and "deleted_at" is null')
+    })
+  })
+
+  describe('deleteByPubkeyExceptKinds', () => {
+    it('marks event as deleted by pubkey except excluded kinds', () => {
+      const query = repository.deleteByPubkeyExceptKinds('001122', [62]).toString()
+
+      expect(query).to.equal('update "events" set "deleted_at" = now() where "event_pubkey" = X\'001122\' and "event_kind" not in (62) and "deleted_at" is null')
+    })
+  })
+
+  describe('hasActiveRequestToVanish', () => {
+    it('checks for an existing active kind 62 event', async () => {
+      const firstStub = sandbox.stub().resolves({ event_id: Buffer.from('001122', 'hex') })
+      const readReplicaStub = sandbox.stub().returns({
+        select: sandbox.stub().returnsThis(),
+        where: sandbox.stub().returnsThis(),
+        whereNull: sandbox.stub().returnsThis(),
+        first: firstStub,
+      })
+      repository = new EventRepository({} as any, readReplicaStub as any)
+
+      const result = await repository.hasActiveRequestToVanish('001122')
+
+      expect(result).to.be.true
+      expect(readReplicaStub).to.have.been.calledOnceWithExactly('events')
+      expect(firstStub).to.have.been.calledOnce
+    })
+
+    it('returns false when no kind 62 event exists', async () => {
+      const firstStub = sandbox.stub().resolves(undefined)
+      const readReplicaStub = sandbox.stub().returns({
+        select: sandbox.stub().returnsThis(),
+        where: sandbox.stub().returnsThis(),
+        whereNull: sandbox.stub().returnsThis(),
+        first: firstStub,
+      })
+      repository = new EventRepository({} as any, readReplicaStub as any)
+
+      const result = await repository.hasActiveRequestToVanish('001122')
+
+      expect(result).to.be.false
     })
   })
 

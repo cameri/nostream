@@ -67,7 +67,7 @@ services:
       timeout: 5s
       retries: 5
   migrations-test:
-    image: node:18-alpine3.16
+    image: node:24-alpine
     environment:
       DB_HOST: db-test
       DB_PORT: 5432

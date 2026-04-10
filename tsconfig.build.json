@@ -17,7 +17,8 @@
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "lib": ["ESNext", "DOM"],
-    "incremental": true
+    "incremental": true,
+    "skipLibCheck": true
   },
   "ts-node": {
     "transpileOnly": true
