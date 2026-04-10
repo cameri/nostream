@@ -1,5 +1,5 @@
-import express from 'express'
 import accepts from 'accepts'
+import express from 'express'
 
 import { nodeinfo21Handler, nodeinfoHandler } from '../handlers/request-handlers/nodeinfo-handler'
 import admissionRouter from './admissions'
