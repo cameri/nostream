@@ -67,7 +67,7 @@ NIPs with a relay-specific implementation are listed here.
 ### Standalone setup
 - PostgreSQL 14.0
 - Redis
-- Node v18
+- Node v24
 - Typescript
 
 ### Docker setups
@@ -210,6 +210,16 @@ Start:
   ./scripts/start_with_tor
   ```
 
+**Windows / WSL2 users:** Docker bind-mounts can cause PostgreSQL permission errors on Windows. Use the dedicated override file instead:
+  ```
+  docker compose -f docker-compose.yml -f docker-compose.windows.yml up --build
+  ```
+  Or add this to your `.env` file so you don't have to type it every time:
+  ```
+  COMPOSE_FILE=docker-compose.yml:docker-compose.windows.yml
+  ```
+  > **Note:** If you previously ran Nostream on Linux/Mac and are switching to Windows, your existing data lives at `.nostr/data/` on the host. You'll need to copy it into the Docker named volume manually or it won't be visible to the new setup.
+
 Stop the server with:
   ```
   ./scripts/stop
@@ -219,6 +229,29 @@ Print the Tor hostname:
   ```
   ./scripts/print_tor_hostname
   ```
+
+### Importing events from JSON Lines
+
+You can import NIP-01 events from a `.jsonl` file directly into the relay database.
+
+Basic import:
+  ```
+  npm run import -- ./events.jsonl
+  ```
+
+Set a custom batch size (default: `1000`):
+  ```
+  npm run import -- ./events.jsonl --batch-size 500
+  ```
+
+The importer:
+
+- Processes the file line-by-line to keep memory usage bounded.
+- Validates NIP-01 schema, event id hash, and Schnorr signature before insertion.
+- Inserts in database transactions per batch.
+- Skips duplicates without failing the whole import.
+- Prints progress in the format:
+  `[Processed: 50,000 | Inserted: 45,000 | Skipped: 5,000 | Errors: 0]`
 
 ### Running as a Service
 
@@ -262,6 +295,60 @@ The logs can be viewed with:
   ```
   journalctl -u nostream
   ```
+
+## Troubleshooting
+
+### Linux: Docker DNS resolution failures (`EAI_AGAIN`)
+
+On some Linux environments (especially rolling-release distros or setups using
+`systemd-resolved`), `docker compose` builds can fail with DNS errors such as:
+
+- `getaddrinfo EAI_AGAIN registry.npmjs.org`
+- `Temporary failure in name resolution`
+
+To fix this, configure Docker daemon DNS in `/etc/docker/daemon.json`.
+
+1. Create or update `/etc/docker/daemon.json`:
+
+  ```
+  sudo mkdir -p /etc/docker
+  sudo nano /etc/docker/daemon.json
+  ```
+
+  Add or update the file with:
+
+  ```
+  {
+    "dns": ["1.1.1.1", "8.8.8.8"]
+  }
+  ```
+
+  If this file already exists, merge the `dns` key into the existing JSON
+  instead of replacing the entire file.
+
+  If your environment does not allow public resolvers, replace `1.1.1.1` and
+  `8.8.8.8` with DNS servers approved by your network.
+
+2. Restart Docker:
+
+  ```
+  sudo systemctl restart docker
+  ```
+
+3. Verify DNS works inside containers:
+
+  ```
+  docker run --rm busybox nslookup registry.npmjs.org
+  ```
+
+4. Retry starting nostream:
+
+  ```
+  ./scripts/start
+  ```
+
+Note: avoid `127.0.0.53` in Docker DNS settings because it points to the host's
+local resolver stub and is often unreachable from containers.
 
 ## Quick Start (Standalone)
 
@@ -372,7 +459,7 @@ Clone repository and enter directory:
 
 Start:
   ```
-  ./scripts/start_local
+  ./scripts/start
   ```
 
   This will run in the foreground of the terminal until you stop it with Ctrl+C.
