@@ -3,7 +3,7 @@ import { fromBech32, toBech32 } from '../../utils/transform'
 import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
 import { Request, Response } from 'express'
 
-import { escapeHtml } from '../../utils/html'
+import { escapeHtml, safeJsonForScript } from '../../utils/html'
 import { createLogger } from '../../factories/logger-factory'
 import { getRemoteAddress } from '../../utils/http'
 import { IController } from '../../@types/controllers'
@@ -171,14 +171,14 @@ export class PostInvoiceController implements IController {
       .replaceAll('{{invoice_html}}', escapeHtml(invoice.bolt11))
       .replaceAll('{{pubkey_html}}', escapeHtml(pubkey))
       .replaceAll('{{amount}}', (amount / 1000n).toString())
-      // JS string contexts — JSON.stringify handles all escaping (quotes, backslashes, </script>)
-      .replaceAll('{{reference_json}}', JSON.stringify(invoice.id))
-      .replaceAll('{{relay_url_json}}', JSON.stringify(relayUrl))
-      .replaceAll('{{relay_pubkey_json}}', JSON.stringify(relayPubkey))
-      .replaceAll('{{invoice_json}}', JSON.stringify(invoice.bolt11))
-      .replaceAll('{{pubkey_json}}', JSON.stringify(pubkey))
-      .replaceAll('{{expires_at_json}}', JSON.stringify(expiresAt))
-      .replaceAll('{{processor_json}}', JSON.stringify(currentSettings.payments.processor))
+      // JS contexts — safeJsonForScript serializes and escapes < to prevent </script> injection
+      .replaceAll('{{reference_json}}', safeJsonForScript(invoice.id))
+      .replaceAll('{{relay_url_json}}', safeJsonForScript(relayUrl))
+      .replaceAll('{{relay_pubkey_json}}', safeJsonForScript(relayPubkey))
+      .replaceAll('{{invoice_json}}', safeJsonForScript(invoice.bolt11))
+      .replaceAll('{{pubkey_json}}', safeJsonForScript(pubkey))
+      .replaceAll('{{expires_at_json}}', safeJsonForScript(expiresAt))
+      .replaceAll('{{processor_json}}', safeJsonForScript(currentSettings.payments.processor))
       // nonce is crypto-random base64 — safe in both attribute and script contexts
       .replaceAll('{{nonce}}', response.locals.nonce)
 
