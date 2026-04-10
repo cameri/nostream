@@ -14,7 +14,7 @@ Run dead code and dependency analysis before opening a pull request:
 npm run knip
 ```
 
-`npm run lint` now runs Knip first, then ESLint.
+`npm run lint` now runs Knip first, then Biome.
 
 ## Pull Request Process
 
