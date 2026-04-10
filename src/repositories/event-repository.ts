@@ -28,7 +28,7 @@ import {
   toPairs,
 } from 'ramda'
 
-import { ContextMetadataKey, EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey } from '../constants/base'
+import { ContextMetadataKey, EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import { IEventRepository, IQueryResult } from '../@types/repositories'
@@ -170,9 +170,22 @@ export class EventRepository implements IEventRepository {
     return this.insert(event).then(prop('rowCount') as () => number, () => 0)
   }
 
-  private insert(event: Event) {
-    debug('inserting event: %o', event)
-    const row = applySpec({
+  public async createMany(events: Event[]): Promise<number> {
+    if (!events.length) {
+      return 0
+    }
+
+    const rows = events.map((event) => this.toInsertRow(event))
+
+    return this.masterDbClient('events')
+      .insert(rows)
+      .onConflict()
+      .ignore()
+      .then(prop('rowCount') as () => number, () => 0)
+  }
+
+  private toInsertRow(event: Event) {
+    return applySpec({
       event_id: pipe(prop('id'), toBuffer),
       event_pubkey: pipe(prop('pubkey'), toBuffer),
       event_created_at: prop('created_at'),
@@ -187,6 +200,11 @@ export class EventRepository implements IEventRepository {
         always(null),
       ),
     })(event)
+  }
+
+  private insert(event: Event) {
+    debug('inserting event: %o', event)
+    const row = this.toInsertRow(event)
 
     return this.masterDbClient('events')
       .insert(row)
@@ -197,29 +215,7 @@ export class EventRepository implements IEventRepository {
   public upsert(event: Event): Promise<number> {
     debug('upserting event: %o', event)
 
-    const toJSON = (input: any) => JSON.stringify(input)
-
-    const row = applySpec<DBEvent>({
-      event_id: pipe(prop('id'), toBuffer),
-      event_pubkey: pipe(prop('pubkey'), toBuffer),
-      event_created_at: prop('created_at'),
-      event_kind: prop('kind'),
-      event_tags: pipe(prop('tags'), toJSON),
-      event_content: prop('content'),
-      event_signature: pipe(prop('sig'), toBuffer),
-      event_deduplication: ifElse(
-        propSatisfies(isNil, EventDeduplicationMetadataKey),
-        pipe(paths([['pubkey'], ['kind']]), toJSON),
-        pipe(prop(EventDeduplicationMetadataKey as any), toJSON),
-      ),
-      remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
-      expires_at: ifElse(
-        propSatisfies(is(Number), EventExpirationTimeMetadataKey),
-        prop(EventExpirationTimeMetadataKey as any),
-        always(null),
-      ),
-      deleted_at: always(null),
-    })(event)
+    const row = this.toUpsertRow(event)
 
     const query = this.masterDbClient('events')
       .insert(row)
@@ -240,15 +236,84 @@ export class EventRepository implements IEventRepository {
     } as Promise<number>
   }
 
+  public async upsertMany(events: Event[]): Promise<number> {
+    if (!events.length) {
+      return 0
+    }
+
+    const rows = events.map((event) => this.toUpsertRow(event))
+
+    return this.masterDbClient('events')
+      .insert(rows)
+      .onConflict(
+        this.masterDbClient.raw(
+          '(event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000)'
+        )
+      )
+      .merge(['deleted_at', 'event_content', 'event_created_at', 'event_id', 'event_signature', 'event_tags', 'expires_at'])
+      .whereRaw('"events"."event_created_at" < "excluded"."event_created_at"')
+      .then(prop('rowCount') as () => number, () => 0)
+  }
+
+  private toUpsertRow(event: Event) {
+    const toJSON = (input: any) => JSON.stringify(input)
+
+    return applySpec<DBEvent>({
+      event_id: pipe(prop('id'), toBuffer),
+      event_pubkey: pipe(prop('pubkey'), toBuffer),
+      event_created_at: prop('created_at'),
+      event_kind: prop('kind'),
+      event_tags: pipe(prop('tags'), toJSON),
+      event_content: prop('content'),
+      event_signature: pipe(prop('sig'), toBuffer),
+      event_deduplication: ifElse(
+        propSatisfies(isNil, EventDeduplicationMetadataKey),
+        pipe(paths([['pubkey'], ['kind']]), toJSON),
+        pipe(prop(EventDeduplicationMetadataKey as any), toJSON),
+      ),
+      remote_address: path([ContextMetadataKey as any, 'remoteAddress', 'address']),
+      expires_at: ifElse(
+        propSatisfies(is(Number), EventExpirationTimeMetadataKey),
+        prop(EventExpirationTimeMetadataKey as any),
+        always(null),
+      ),
+      deleted_at: always(null),
+    })(event)
+  }
+
   public deleteByPubkeyAndIds(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
     debug('deleting events from %s: %o', pubkey, eventIdsToDelete)
 
     return this.masterDbClient('events')
       .where('event_pubkey', toBuffer(pubkey))
       .whereIn('event_id', map(toBuffer)(eventIdsToDelete))
+      .whereNot('event_kind', EventKinds.REQUEST_TO_VANISH)
       .whereNull('deleted_at')
       .update({
         deleted_at: this.masterDbClient.raw('now()'),
       })
+  }
+
+  public deleteByPubkeyExceptKinds(pubkey: string, excludedKinds: number[]): Promise<number> {
+    debug('deleting events from %s except kinds %o', pubkey, excludedKinds)
+
+    return this.masterDbClient('events')
+      .where('event_pubkey', toBuffer(pubkey))
+      .whereNotIn('event_kind', excludedKinds)
+      .whereNull('deleted_at')
+      .update({
+        deleted_at: this.masterDbClient.raw('now()'),
+      })
+  }
+
+  public async hasActiveRequestToVanish(pubkey: string): Promise<boolean> {
+    const result = await this.readReplicaDbClient('events')
+      .select('event_id')
+      .where('event_pubkey', toBuffer(pubkey))
+      .where('event_kind', EventKinds.REQUEST_TO_VANISH)
+      .whereNull('deleted_at')
+      .first()
+
+    return Boolean(result)
   }
 }

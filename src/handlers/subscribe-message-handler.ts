@@ -4,7 +4,7 @@ import { pipeline } from 'stream/promises'
 
 import { createEndOfStoredEventsNoticeMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
-import { isEventMatchingFilter, toNostrEvent } from '../utils/event'
+import { isEventMatchingFilter, isExpiredEvent, toNostrEvent } from '../utils/event'
 import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { createLogger } from '../factories/logger-factory'
@@ -55,6 +55,12 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const sendEOSE = () =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEndOfStoredEventsNoticeMessage(subscriptionId))
     const isSubscribedToEvent = SubscribeMessageHandler.isClientSubscribedToEvent(filters)
+    const isNotExpired = (event: Event)=>{
+      if (isExpiredEvent(event)) {
+        return false
+      }
+      return true
+  }
 
     const findEvents = this.eventRepository.findByFilters(filters).stream()
 
@@ -65,6 +71,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
         findEvents,
         streamFilter(propSatisfies(isNil, 'deleted_at')),
         streamMap(toNostrEvent),
+        streamFilter(isNotExpired),
         streamFilter(isSubscribedToEvent),
         streamEach(sendEvent),
         streamEnd(sendEOSE),
@@ -117,3 +124,4 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   }
 }
+
