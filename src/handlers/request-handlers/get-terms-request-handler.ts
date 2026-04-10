@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
-import { createSettings as settings } from '../../factories/settings-factory'
 import { escapeHtml } from '../../utils/html'
 import { getTemplate } from '../../utils/template-cache'
+import { createSettings as settings } from '../../factories/settings-factory'
 
 
 

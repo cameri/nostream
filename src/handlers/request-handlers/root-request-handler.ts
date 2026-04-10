@@ -1,9 +1,9 @@
 import { NextFunction, Request, Response } from 'express'
 import { path, pathEq } from 'ramda'
 import { createSettings } from '../../factories/settings-factory'
+import { escapeHtml } from '../../utils/html'
 import { FeeSchedule } from '../../@types/settings'
 import { fromBech32 } from '../../utils/transform'
-import { escapeHtml } from '../../utils/html'
 import { getTemplate } from '../../utils/template-cache'
 import packageJson from '../../../package.json'
 

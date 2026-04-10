@@ -1,9 +1,12 @@
+import { escapeHtml, safeJsonForScript } from '../../utils/html'
 import { path, pathEq } from 'ramda'
 import { Request, Response } from 'express'
+
 import { createSettings } from '../../factories/settings-factory'
+
 import { FeeSchedule } from '../../@types/settings'
 import { IController } from '../../@types/controllers'
-import { escapeHtml, safeJsonForScript } from '../../utils/html'
+
 import { getTemplate } from '../../utils/template-cache'
 
 

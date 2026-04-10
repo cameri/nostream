@@ -26,7 +26,7 @@ describe('escapeHtml', () => {
   })
 
   it('escapes all special characters together', () => {
-    expect(escapeHtml(`<script>alert("it's a & test")</script>`)).to.equal(
+    expect(escapeHtml('<script>alert("it\'s a & test")</script>')).to.equal(
       '&lt;script&gt;alert(&quot;it&#39;s a &amp; test&quot;)&lt;/script&gt;'
     )
   })

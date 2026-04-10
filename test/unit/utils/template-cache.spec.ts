@@ -1,47 +1,38 @@
 import chai from 'chai'
-import sinon from 'sinon'
-import sinonChai from 'sinon-chai'
 
-chai.use(sinonChai)
 const { expect } = chai
 
 import * as fs from 'fs'
 import { getTemplate } from '../../../src/utils/template-cache'
+import { join } from 'path'
+import { tmpdir } from 'os'
 
 describe('getTemplate', () => {
-  let readFileSyncStub: sinon.SinonStub
+  const tmpFile = join(tmpdir(), 'test-template.html')
 
   beforeEach(() => {
-    readFileSyncStub = sinon.stub(fs, 'readFileSync').returns('template content' as any)
+    fs.writeFileSync(tmpFile, 'template content')
   })
 
   afterEach(() => {
-    readFileSyncStub.restore()
+    try { fs.unlinkSync(tmpFile) } catch (e) { /* ignore */ }
   })
 
   it('returns the file content', () => {
-    const result = getTemplate('./resources/index.html')
-
+    const result = getTemplate(tmpFile)
     expect(result).to.equal('template content')
-  })
-
-  it('reads the file with utf8 encoding', () => {
-    getTemplate('./resources/index.html')
-
-    expect(readFileSyncStub).to.have.been.calledWith('./resources/index.html', 'utf8')
   })
 
   it('reads the file on every call in non-production mode', () => {
     // NODE_ENV is not 'production' in tests — cache is bypassed
-    getTemplate('./resources/index.html')
-    getTemplate('./resources/index.html')
+    getTemplate(tmpFile)
+    fs.writeFileSync(tmpFile, 'updated content')
+    const result2 = getTemplate(tmpFile)
 
-    expect(readFileSyncStub).to.have.been.calledTwice
+    expect(result2).to.equal('updated content')
   })
 
   it('propagates errors thrown by readFileSync', () => {
-    readFileSyncStub.throws(new Error('file not found'))
-
-    expect(() => getTemplate('./resources/missing.html')).to.throw('file not found')
+    expect(() => getTemplate('./does-not-exist.html')).to.throw(/ENOENT/)
   })
 })

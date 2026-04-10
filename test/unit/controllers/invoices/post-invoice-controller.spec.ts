@@ -7,8 +7,8 @@ chai.use(sinonChai)
 chai.use(chaiAsPromised)
 const { expect } = chai
 
-import * as templateCache from '../../../../src/utils/template-cache'
 import * as eventUtils from '../../../../src/utils/event'
+import * as templateCache from '../../../../src/utils/template-cache'
 import { PostInvoiceController } from '../../../../src/controllers/invoices/post-invoice-controller'
 
 const VALID_PUBKEY = 'a'.repeat(64)
@@ -26,6 +26,9 @@ const baseSettings = {
     },
   },
   limits: {},
+  network: {
+    remoteIpHeader: 'x-forwarded-for',
+  },
 }
 
 const makeController = (overrides: {
@@ -48,7 +51,7 @@ const makeController = (overrides: {
   )
 }
 
-const makeRes = () => ({
+const makeRes = (): any => ({
   status: sinon.stub().returnsThis(),
   setHeader: sinon.stub().returnsThis(),
   send: sinon.stub().returnsThis(),
@@ -148,6 +151,7 @@ describe('PostInvoiceController', () => {
     it('returns 400 when pubkey is missing', async () => {
       const controller = makeController()
       const res = makeRes()
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { pubkey: _, ...bodyWithoutPubkey } = validBody
 
       await controller.handleRequest({ body: bodyWithoutPubkey } as any, res)
