@@ -1,5 +1,5 @@
-# Nginx configuration for Nostream relay
-# Replace ${RELAY_DOMAIN} with your actual domain before use
+# Nginx configuration template for Nostream relay
+# ${RELAY_DOMAIN} is substituted automatically by the start script
 
 map $http_upgrade $connection_upgrade {
     default upgrade;

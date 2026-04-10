@@ -28,6 +28,13 @@ if [[ -z "${RELAY_DOMAIN}" ]]; then
   exit 1
 fi
 
+FQDN_REGEX='^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$'
+if [[ ! "${RELAY_DOMAIN}" =~ ${FQDN_REGEX} ]]; then
+  echo "Error: RELAY_DOMAIN must be a valid fully-qualified domain name."
+  echo "Usage: RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com ./scripts/start_with_nginx"
+  exit 1
+fi
+
 if [[ -z "${CERTBOT_EMAIL}" ]]; then
   echo "Error: CERTBOT_EMAIL environment variable is not set."
   echo "Usage: RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com ./scripts/start_with_nginx"
@@ -65,7 +72,10 @@ if [[ ! -f "${SSL_CERT_DIR}/fullchain.pem" ]]; then
   fi
 fi
 
+# Ensure compose uses the project root for volume mounts
+cd "${PROJECT_ROOT}"
+
 docker compose \
-  -f $DOCKER_COMPOSE_FILE \
-  -f $DOCKER_COMPOSE_NGINX_FILE \
-  up --build --remove-orphans $@
+  -f "${DOCKER_COMPOSE_FILE}" \
+  -f "${DOCKER_COMPOSE_NGINX_FILE}" \
+  up --build --remove-orphans "$@"

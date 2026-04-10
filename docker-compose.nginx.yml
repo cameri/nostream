@@ -18,8 +18,9 @@ services:
     command: >
       /bin/sh -c "while :; do
         if [ -f /etc/nginx/ssl/reload-nginx ]; then
-          nginx -s reload;
-          rm -f /etc/nginx/ssl/reload-nginx;
+          if nginx -t && nginx -s reload; then
+            rm -f /etc/nginx/ssl/reload-nginx;
+          fi;
         fi;
         sleep 5;
       done & nginx -g 'daemon off;'"
@@ -27,32 +28,16 @@ services:
       default:
 
   certbot:
-    image: certbot/certbot:latest
+    image: certbot/certbot:v2.11.0
     container_name: nostream-certbot
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?RELAY_DOMAIN required}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:?CERTBOT_EMAIL required}
     volumes:
       - ${PWD}/nginx/ssl:/etc/letsencrypt
+      - ${PWD}/scripts/certbot_entrypoint.sh:/entrypoint.sh:ro
       - certbot-webroot:/var/www/certbot
-    entrypoint: >
-      sh -c "
-      if [ ! -f /etc/letsencrypt/renewal/${RELAY_DOMAIN}.conf ]; then
-        rm -rf /etc/letsencrypt/live/${RELAY_DOMAIN};
-      fi;
-      certbot certonly
-      --webroot
-      --webroot-path=/var/www/certbot
-      --email ${CERTBOT_EMAIL}
-      --agree-tos
-      --no-eff-email
-      --keep-until-expiring
-      -n
-      -d ${RELAY_DOMAIN}
-      --deploy-hook 'touch /etc/letsencrypt/reload-nginx'
-      && trap exit TERM;
-      while :; do
-        certbot renew --quiet
-          --deploy-hook 'touch /etc/letsencrypt/reload-nginx';
-        sleep 12h & wait $${!};
-      done"
+    entrypoint: /entrypoint.sh
     depends_on:
       - nginx
     restart: on-failure
