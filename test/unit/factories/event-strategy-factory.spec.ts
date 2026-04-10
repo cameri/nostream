@@ -12,6 +12,7 @@ import { IEventStrategy } from '../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
 import { ReplaceableEventStrategy } from '../../../src/handlers/event-strategies/replaceable-event-strategy'
+import { VanishEventStrategy } from '../../../src/handlers/event-strategies/vanish-event-strategy'
 
 describe('eventStrategyFactory', () => {
   let eventRepository: IEventRepository
@@ -50,6 +51,11 @@ describe('eventStrategyFactory', () => {
   it('returns DeleteEventStrategy given a delete event', () => {
     event.kind = EventKinds.DELETE
     expect(factory([event, adapter])).to.be.an.instanceOf(DeleteEventStrategy)
+  })
+
+  it('returns VanishEventStrategy given a request to vanish event', () => {
+    event.kind = EventKinds.REQUEST_TO_VANISH
+    expect(factory([event, adapter])).to.be.an.instanceOf(VanishEventStrategy)
   })
 
   it('returns ParameterizedReplaceableEventStrategy given a delete event', () => {

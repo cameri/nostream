@@ -31,6 +31,7 @@
     "lint": "eslint --ext .ts ./src ./test",
     "lint:report": "eslint -o .lint-reports/eslint.json -f json --ext .ts ./src ./test",
     "lint:fix": "npm run lint -- --fix",
+    "import": "node -r ts-node/register src/import-events.ts",
     "db:migrate": "knex migrate:latest",
     "db:migrate:rollback": "knex migrate:rollback",
     "db:seed": "knex seed:run",
