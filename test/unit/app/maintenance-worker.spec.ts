@@ -62,7 +62,6 @@ describe('MaintenanceWorker', () => {
     sandbox.restore()
   })
 
-  // ─── constructor ──────────────────────────────────────────────────────────
 
   describe('constructor', () => {
     it('registers SIGINT, SIGHUP, and SIGTERM handlers', () => {
@@ -77,7 +76,6 @@ describe('MaintenanceWorker', () => {
     })
   })
 
-  // ─── run ──────────────────────────────────────────────────────────────────
 
   describe('run', () => {
     let clock: SinonFakeTimers
@@ -102,7 +100,6 @@ describe('MaintenanceWorker', () => {
     })
   })
 
-  // ─── onSchedule ───────────────────────────────────────────────────────────
 
   describe('onSchedule', () => {
     it('does nothing when payments are disabled', async () => {
@@ -223,7 +220,6 @@ describe('MaintenanceWorker', () => {
     })
   })
 
-  // ─── onError ──────────────────────────────────────────────────────────────
 
   describe('onError', () => {
     it('re-throws the error received from the process', () => {
@@ -233,7 +229,6 @@ describe('MaintenanceWorker', () => {
     })
   })
 
-  // ─── onExit ───────────────────────────────────────────────────────────────
 
   describe('onExit', () => {
     it('calls close and then exits the process with code 0', () => {
@@ -243,7 +238,6 @@ describe('MaintenanceWorker', () => {
     })
   })
 
-  // ─── close ────────────────────────────────────────────────────────────────
 
   describe('close', () => {
     it('invokes the callback when one is provided', () => {
