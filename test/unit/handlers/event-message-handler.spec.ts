@@ -11,6 +11,7 @@ chai.use(chaiAsPromised)
 import { EventLimits, Settings } from '../../../src/@types/settings'
 import { identifyEvent, signEvent } from '../../../src/utils/event'
 import { IncomingEventMessage, MessageType } from '../../../src/@types/messages'
+import { CacheAdmissionState } from '../../../src/constants/caching'
 import { Event } from '../../../src/@types/event'
 import { EventKinds } from '../../../src/constants/base'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
@@ -99,6 +100,7 @@ describe('EventMessageHandler', () => {
         }) as any,
         () => ({ hit: async () => false }),
         {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
       )
     })
 
@@ -274,6 +276,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         () => ({ hit: async () => false }),
         {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
       )
     })
 
@@ -804,6 +807,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         () => ({ hit: rateLimiterHitStub }),
         {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
       )
     })
 
@@ -1018,6 +1022,7 @@ describe('EventMessageHandler', () => {
     let webSocket: IWebSocketAdapter
     let getRelayPublicKeyStub: SinonStub
     let userRepositoryFindByPubkeyStub: SinonStub
+    let cacheStub: any
 
     beforeEach(() => {
       settings = {
@@ -1066,6 +1071,11 @@ describe('EventMessageHandler', () => {
         findByPubkey: userRepositoryFindByPubkeyStub,
         isVanished: async () => false,
       } as any
+      cacheStub = {
+        hasKey: sandbox.stub().resolves(false),
+        getKey: sandbox.stub().resolves(null),
+        setKey: sandbox.stub().resolves(true),
+      }
       handler = new EventMessageHandler(
         webSocket,
         () => null,
@@ -1074,6 +1084,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         () => ({ hit: async () => false }),
         {} as any,
+        cacheStub,
       )
     })
 
@@ -1175,6 +1186,52 @@ describe('EventMessageHandler', () => {
 
       return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
     })
+
+    describe('caching', () => {
+      it('fulfills with undefined and uses cache hit for admitted user without hitting DB', async () => {
+        cacheStub.getKey.resolves(CacheAdmissionState.ADMITTED)
+        
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+        expect(userRepositoryFindByPubkeyStub).not.to.have.been.called
+      })
+
+      it('fulfills with reason and uses cache hit for blocked user without hitting DB', async () => {
+        cacheStub.getKey.resolves(CacheAdmissionState.BLOCKED_NOT_ADMITTED)
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: pubkey not admitted')
+        expect(userRepositoryFindByPubkeyStub).not.to.have.been.called
+      })
+
+      it('fulfills with reason and uses cache hit for insufficient balance without hitting DB', async () => {
+        cacheStub.getKey.resolves(CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE)
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: insufficient balance')
+        expect(userRepositoryFindByPubkeyStub).not.to.have.been.called
+      })
+
+      it('caches blocked status with 60s ttl when user is not found', async () => {
+        userRepositoryFindByPubkeyStub.resolves(undefined)
+
+        await (handler as any).isUserAdmitted(event)
+        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:is-admitted`, CacheAdmissionState.BLOCKED_NOT_ADMITTED, 60)
+      })
+
+      it('caches insufficient balance status with 60s ttl when user balance is too low', async () => {
+        settings.limits.event.pubkey.minBalance = 100n
+        userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, balance: 50n })
+
+        await (handler as any).isUserAdmitted(event)
+        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:is-admitted`, CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE, 60)
+      })
+
+      it('caches admitted status with 300s ttl when user is admitted and has balance', async () => {
+        settings.limits.event.pubkey.minBalance = 100n
+        userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, balance: 150n })
+
+        await (handler as any).isUserAdmitted(event)
+        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:is-admitted`, CacheAdmissionState.ADMITTED, 300)
+      })
+    })
   })
 
   describe('checkNip05Verification', () => {
@@ -1220,7 +1277,8 @@ describe('EventMessageHandler', () => {
         () => settings,
         () => ({ hit: async () => false }),
         nip05VerificationRepository,
-      )
+        { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
+)
     })
 
     it('returns undefined if nip05 settings are not set', async () => {
@@ -1389,7 +1447,409 @@ describe('EventMessageHandler', () => {
         () => settings,
         () => ({ hit: async () => false }),
         nip05VerificationRepository,
-      )
+        { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
+)
+    })
+
+    it('does nothing when nip05 settings are undefined', async () => {
+      settings.nip05 = undefined
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(verifyStub).not.to.have.been.called
+    })
+
+    it('does nothing when nip05 mode is disabled', async () => {
+      settings.nip05.mode = 'disabled'
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(verifyStub).not.to.have.been.called
+    })
+
+    it('does nothing for non-kind-0 events', async () => {
+      event.kind = EventKinds.TEXT_NOTE
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(verifyStub).not.to.have.been.called
+    })
+
+    it('deletes verification when kind-0 has no nip05 in content', async () => {
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ name: 'alice' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(nip05VerificationRepository.deleteByPubkey).to.have.been.calledOnceWithExactly(event.pubkey)
+      expect(verifyStub).not.to.have.been.called
+    })
+
+    it('does nothing when nip05 identifier is unparseable', async () => {
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'invalid-no-at-sign' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(verifyStub).not.to.have.been.called
+      expect(nip05VerificationRepository.deleteByPubkey).not.to.have.been.called
+    })
+
+    it('does nothing when domain is not allowed', async () => {
+      settings.nip05.domainBlacklist = ['blocked.com']
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@blocked.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(verifyStub).not.to.have.been.called
+    })
+
+    it('verifies and upserts on successful verification', async () => {
+      nip05VerificationRepository.findByPubkey.resolves(undefined)
+      verifyStub.resolves({ status: 'verified' })
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(verifyStub).to.have.been.calledOnceWithExactly('alice@example.com', event.pubkey)
+      expect(nip05VerificationRepository.upsert).to.have.been.calledOnce
+
+      const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
+      expect(upsertArg.pubkey).to.equal(event.pubkey)
+      expect(upsertArg.nip05).to.equal('alice@example.com')
+      expect(upsertArg.domain).to.equal('example.com')
+      expect(upsertArg.isVerified).to.be.true
+      expect(upsertArg.failureCount).to.equal(0)
+      expect(upsertArg.lastVerifiedAt).to.be.an.instanceOf(Date)
+    })
+
+    it('upserts with unverified state and nulls lastVerifiedAt on definitive mismatch', async () => {
+      nip05VerificationRepository.findByPubkey.resolves(undefined)
+      verifyStub.resolves({ status: 'mismatch' })
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(verifyStub).to.have.been.calledOnce
+      expect(nip05VerificationRepository.upsert).to.have.been.calledOnce
+
+      const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
+      expect(upsertArg.isVerified).to.be.false
+      expect(upsertArg.failureCount).to.equal(1)
+      expect(upsertArg.lastVerifiedAt).to.be.null
+    })
+
+    it('increments failureCount from existing row on definitive mismatch', async () => {
+      const priorVerifiedAt = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        pubkey: event.pubkey,
+        nip05: 'alice@example.com',
+        domain: 'example.com',
+        isVerified: true,
+        lastVerifiedAt: priorVerifiedAt,
+        lastCheckedAt: priorVerifiedAt,
+        failureCount: 2,
+        createdAt: priorVerifiedAt,
+        updatedAt: priorVerifiedAt,
+      })
+      verifyStub.resolves({ status: 'mismatch' })
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
+      expect(upsertArg.failureCount).to.equal(3)
+      expect(upsertArg.isVerified).to.be.false
+      expect(upsertArg.lastVerifiedAt).to.be.null
+    })
+
+    it('preserves prior isVerified/lastVerifiedAt on transient error', async () => {
+      const priorVerifiedAt = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        pubkey: event.pubkey,
+        nip05: 'alice@example.com',
+        domain: 'example.com',
+        isVerified: true,
+        lastVerifiedAt: priorVerifiedAt,
+        lastCheckedAt: priorVerifiedAt,
+        failureCount: 1,
+        createdAt: priorVerifiedAt,
+        updatedAt: priorVerifiedAt,
+      })
+      verifyStub.resolves({ status: 'error', reason: 'ETIMEDOUT' })
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
+      expect(upsertArg.isVerified).to.be.true
+      expect(upsertArg.lastVerifiedAt).to.equal(priorVerifiedAt)
+      expect(upsertArg.failureCount).to.equal(2)
+      expect(upsertArg.lastCheckedAt).to.be.an.instanceOf(Date)
+    })
+
+    it('handles verification errors gracefully (thrown by verifier)', async () => {
+      nip05VerificationRepository.findByPubkey.resolves(undefined)
+      verifyStub.rejects(new Error('network error'))
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(nip05VerificationRepository.upsert).not.to.have.been.called
+    })
+
+    it('works correctly in passive mode', async () => {
+      settings.nip05.mode = 'passive'
+      nip05VerificationRepository.findByPubkey.resolves(undefined)
+      verifyStub.resolves({ status: 'verified' })
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(verifyStub).to.have.been.calledOnce
+      expect(nip05VerificationRepository.upsert).to.have.been.calledOnce
+    })
+  })
+
+  describe('checkNip05Verification', () => {
+    let settings: Settings
+    let nip05VerificationRepository: any
+    let getRelayPublicKeyStub: Sinon.SinonStub
+
+    beforeEach(() => {
+      settings = {
+        info: {
+          relay_url: 'relay_url',
+        },
+        nip05: {
+          mode: 'enabled',
+          verifyExpiration: 86400000,
+          verifyUpdateFrequency: 3600000,
+          maxConsecutiveFailures: 10,
+          domainWhitelist: [],
+          domainBlacklist: [],
+        },
+      } as any
+      event = {
+        content: 'hello',
+        created_at: 1665546189,
+        id: 'f'.repeat(64),
+        kind: 1,
+        pubkey: 'f'.repeat(64),
+        sig: 'f'.repeat(128),
+        tags: [],
+      }
+      nip05VerificationRepository = {
+        findByPubkey: sandbox.stub(),
+        upsert: sandbox.stub(),
+        deleteByPubkey: sandbox.stub(),
+        findPendingVerifications: sandbox.stub(),
+      }
+      getRelayPublicKeyStub = sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any)
+      handler = new EventMessageHandler(
+        {} as any,
+        () => null,
+        { hasActiveRequestToVanish: async () => false } as any,
+        userRepository,
+        () => settings,
+        () => ({ hit: async () => false }),
+        nip05VerificationRepository,
+        { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
+)
+    })
+
+    it('returns undefined if nip05 settings are not set', async () => {
+      settings.nip05 = undefined
+
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.be.undefined
+    })
+
+    it('returns undefined if nip05 mode is disabled', async () => {
+      settings.nip05.mode = 'disabled'
+
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.be.undefined
+    })
+
+    it('returns undefined if nip05 mode is passive', async () => {
+      settings.nip05.mode = 'passive'
+
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.be.undefined
+    })
+
+    it('returns undefined for kind 0 events (SET_METADATA)', async () => {
+      event.kind = 0
+
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.be.undefined
+    })
+
+    it('returns undefined if event pubkey equals relay public key', async () => {
+      getRelayPublicKeyStub.returns(event.pubkey)
+
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.be.undefined
+    })
+
+    it('returns reason if no verification found for pubkey', async () => {
+      nip05VerificationRepository.findByPubkey.resolves(undefined)
+
+      return expect((handler as any).checkNip05Verification(event))
+        .to.eventually.equal('blocked: NIP-05 verification required')
+    })
+
+    it('returns reason if verification exists but has no lastVerifiedAt', async () => {
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: false,
+        lastVerifiedAt: null,
+        domain: 'example.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event))
+        .to.eventually.equal('blocked: NIP-05 verification required')
+    })
+
+    it('treats isVerified=true with null lastVerifiedAt as unverified (historical/bad data)', async () => {
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: true,
+        lastVerifiedAt: null,
+        domain: 'example.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event))
+        .to.eventually.equal('blocked: NIP-05 verification required')
+    })
+
+    it('returns reason if verification is expired', async () => {
+      const expired = new Date(Date.now() - 86400001)
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: true,
+        lastVerifiedAt: expired,
+        domain: 'example.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event))
+        .to.eventually.equal('blocked: NIP-05 verification expired')
+    })
+
+    it('returns undefined if verification is valid and not expired', async () => {
+      const recent = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: true,
+        lastVerifiedAt: recent,
+        domain: 'example.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.be.undefined
+    })
+
+    it('allows author when lastVerifiedAt is recent even if isVerified is false (transient re-check failure)', async () => {
+      const recent = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: false,
+        lastVerifiedAt: recent,
+        domain: 'example.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.be.undefined
+    })
+
+    it('returns reason if domain is blacklisted', async () => {
+      settings.nip05.domainBlacklist = ['spam.com']
+      const recent = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: true,
+        lastVerifiedAt: recent,
+        domain: 'spam.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event))
+        .to.eventually.equal('blocked: NIP-05 domain not allowed')
+    })
+
+    it('returns reason if domain is not in whitelist', async () => {
+      settings.nip05.domainWhitelist = ['allowed.com']
+      const recent = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: true,
+        lastVerifiedAt: recent,
+        domain: 'other.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event))
+        .to.eventually.equal('blocked: NIP-05 domain not allowed')
+    })
+
+    it('returns undefined if domain is in whitelist', async () => {
+      settings.nip05.domainWhitelist = ['allowed.com']
+      const recent = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: true,
+        lastVerifiedAt: recent,
+        domain: 'allowed.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.be.undefined
+    })
+  })
+
+  describe('processNip05Metadata', () => {
+    let settings: Settings
+    let nip05VerificationRepository: any
+    let verifyStub: Sinon.SinonStub
+
+    beforeEach(() => {
+      settings = {
+        info: {
+          relay_url: 'relay_url',
+        },
+        nip05: {
+          mode: 'enabled',
+          verifyExpiration: 86400000,
+          verifyUpdateFrequency: 3600000,
+          maxConsecutiveFailures: 10,
+          domainWhitelist: [],
+          domainBlacklist: [],
+        },
+      } as any
+      nip05VerificationRepository = {
+        findByPubkey: sandbox.stub(),
+        upsert: sandbox.stub().resolves(1),
+        deleteByPubkey: sandbox.stub().resolves(1),
+        findPendingVerifications: sandbox.stub(),
+      }
+      verifyStub = sandbox.stub(nip05Utils, 'verifyNip05Identifier')
+      handler = new EventMessageHandler(
+        {} as any,
+        () => null,
+        { hasActiveRequestToVanish: async () => false } as any,
+        userRepository,
+        () => settings,
+        () => ({ hit: async () => false }),
+        nip05VerificationRepository,
+        { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
+)
     })
 
     it('does nothing when nip05 settings are undefined', async () => {

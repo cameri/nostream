@@ -26,9 +26,11 @@ import {
 } from '../utils/event'
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
+import { CacheAdmissionState } from '../constants/caching'
 import { createCommandResult } from '../utils/messages'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
+import { ICacheAdapter } from '../@types/adapters'
 import { IncomingEventMessage } from '../@types/messages'
 import { IRateLimiter } from '../@types/utils'
 import { IWebSocketAdapter } from '../@types/adapters'
@@ -46,6 +48,7 @@ export class EventMessageHandler implements IMessageHandler {
     private readonly settings: () => Settings,
     private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
     private readonly nip05VerificationRepository: INip05VerificationRepository,
+    private readonly cache: ICacheAdapter,
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
@@ -112,8 +115,7 @@ export class EventMessageHandler implements IMessageHandler {
     try {
       await strategy.execute(event)
       this.processNip05Metadata(event)
-    } catch (error) {
-      console.error('error handling message', message, error)
+    } catch (_error) {
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: unable to process event'))
     }
   }
@@ -341,17 +343,44 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
-    // const hasKey = await this.cache.hasKey(`${event.pubkey}:is-admitted`)
-    // TODO: use cache
+    const cacheKey = `${event.pubkey}:is-admitted`
+
+    try {
+      const cachedValue = await this.cache.getKey(cacheKey)
+      if (cachedValue === CacheAdmissionState.ADMITTED) {
+        debug('cache hit for %s admission: admitted', event.pubkey)
+        return
+      }
+      if (cachedValue === CacheAdmissionState.BLOCKED_NOT_ADMITTED) {
+        debug('cache hit for %s admission: blocked', event.pubkey)
+        return 'blocked: pubkey not admitted'
+      }
+      if (cachedValue === CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE) {
+        debug('cache hit for %s admission: insufficient balance', event.pubkey)
+        return 'blocked: insufficient balance'
+      }
+    } catch (error) {
+      debug('cache error for %s: %o', event.pubkey, error)
+    }
+
     const user = await this.userRepository.findByPubkey(event.pubkey)
     if (!user || !user.isAdmitted) {
+      this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_NOT_ADMITTED, 60)
       return 'blocked: pubkey not admitted'
     }
 
     const minBalance = currentSettings.limits?.event?.pubkey?.minBalance ?? 0n
     if (minBalance > 0n && user.balance < minBalance) {
+      this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE, 60)
       return 'blocked: insufficient balance'
     }
+
+    this.cacheSet(cacheKey, CacheAdmissionState.ADMITTED, 300)
+  }
+
+  private cacheSet(key: string, value: string, ttl: number): void {
+    this.cache.setKey(key, value, ttl)
+      .catch((error) => debug('unable to cache %s: %o', key, error))
   }
 
   protected addExpirationMetadata(event: Event): Event | ExpiringEvent {

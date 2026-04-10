@@ -8,6 +8,8 @@ import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { messageHandlerFactory } from '../../../src/factories/message-handler-factory'
 import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../../../src/handlers/unsubscribe-message-handler'
+import * as cacheModule from '../../../src/cache/client'
+import sinon from 'sinon'
 
 describe('messageHandlerFactory', () => {
   let event: Event
@@ -17,8 +19,16 @@ describe('messageHandlerFactory', () => {
   let message: IncomingMessage
   let adapter: IWebSocketAdapter
   let factory
+  let sandbox: sinon.SinonSandbox
 
   beforeEach(() => {
+    sandbox = sinon.createSandbox()
+    sandbox.stub(cacheModule, 'getCacheClient').returns({
+      connect: async () => {},
+      on: function() { return this },
+      once: function() { return this },
+      removeListener: function() { return this }
+    } as any)
     eventRepository = {} as any
     userRepository = {} as any
     nip05VerificationRepository = {} as any
@@ -27,6 +37,10 @@ describe('messageHandlerFactory', () => {
       tags: [],
     } as any
     factory = messageHandlerFactory(eventRepository, userRepository, nip05VerificationRepository)
+  })
+
+  afterEach(() => {
+    sandbox.restore()
   })
 
   it('returns EventMessageHandler when given an EVENT message', () => {

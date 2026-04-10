@@ -1,12 +1,22 @@
+import { ICacheAdapter, IWebSocketAdapter } from '../@types/adapters'
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IncomingMessage, MessageType } from '../@types/messages'
 import { createSettings } from './settings-factory'
 import { EventMessageHandler } from '../handlers/event-message-handler'
 import { eventStrategyFactory } from './event-strategy-factory'
-import { IWebSocketAdapter } from '../@types/adapters'
+import { getCacheClient } from '../cache/client'
+import { RedisAdapter } from '../adapters/redis-adapter'
 import { slidingWindowRateLimiterFactory } from './rate-limiter-factory'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
+
+let cacheAdapter: ICacheAdapter | undefined = undefined
+const getCache = (): ICacheAdapter => {
+  if (!cacheAdapter) {
+    cacheAdapter = new RedisAdapter(getCacheClient())
+  }
+  return cacheAdapter
+}
 
 export const messageHandlerFactory = (
   eventRepository: IEventRepository,
@@ -24,6 +34,7 @@ export const messageHandlerFactory = (
           createSettings,
           slidingWindowRateLimiterFactory,
           nip05VerificationRepository,
+          getCache(),
         )
       }
     case MessageType.REQ:
