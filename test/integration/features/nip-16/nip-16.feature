@@ -9,6 +9,12 @@ Feature: NIP-16 Event treatment
     When Alice subscribes to author Alice
     Then Alice receives 1 replaceable_event_0 event from Alice with content "updated" and EOSE
 
+  Scenario: Tie-breaker on Identical Timestamps
+    Given someone called Alice
+    When Alice sends two identically-timestamped replaceable_event_0 events where the second has a lower ID
+    And Alice subscribes to author Alice
+    Then Alice receives 1 replaceable_event_0 event from Alice matching the lower ID event and EOSE
+
   Scenario: Charlie sends an ephemeral event
     Given someone called Charlie
     Given someone called Alice
