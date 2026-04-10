@@ -40,7 +40,7 @@ jobs:
           cache: npm
       - name: Install package dependencies
         run: npm ci
-      - name: Run ESLint
+      - name: Run Biome
         run: npm run lint
   build-check:
     name: Build check
@@ -54,7 +54,7 @@ jobs:
           cache: npm
       - name: Install package dependencies
         run: npm ci
-      - name: Run ESLint
+      - name: Run build check
         run: npm run build:check
   test-units-and-cover:
     name: Unit Tests And Coverage
