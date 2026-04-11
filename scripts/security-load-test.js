@@ -6,7 +6,7 @@
  * Simulates a combined Slowloris (Zombie) attack and an Event Flood attack.
  * 
  * Features:
- * 1. Zombie Connections: Opens connections, subscibes, and silences pongs.
+ * 1. Zombie Connections: Opens connections, subscribes, and silences pongs.
  * 2. Active Spammer: Generates and publishes valid NOSTR events (signed via secp256k1).
  * 
  * Usage:
