@@ -120,7 +120,7 @@ export class OpenNodeCallbackController implements IController {
         id: updatedInvoice.id,
         pubkey: updatedInvoice.pubkey,
         status: updatedInvoice.status,
-        amountPaid: updatedInvoice.amountRequested,
+        amountPaid: updatedInvoice.amountPaid,
         confirmedAt: updatedInvoice.confirmedAt,
       })
       await this.paymentsService.sendInvoiceUpdateNotification(updatedInvoice)

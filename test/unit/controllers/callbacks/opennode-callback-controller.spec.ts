@@ -114,6 +114,22 @@ describe('OpenNodeCallbackController', () => {
     expect(updateInvoiceStatusStub).not.to.have.been.called
   })
 
+  it('returns internal server error when OPENNODE_API_KEY is missing', async () => {
+    delete process.env.OPENNODE_API_KEY
+    request.body = {
+      hashed_order: 'some-hash',
+      id: 'invoice-id',
+      status: 'paid',
+    }
+
+    await controller.handleRequest(request, response)
+
+    expect(statusStub).to.have.been.calledOnceWithExactly(500)
+    expect(setHeaderStub).to.have.been.calledOnceWithExactly('content-type', 'text/plain; charset=utf8')
+    expect(sendStub).to.have.been.calledOnceWithExactly('Internal Server Error')
+    expect(updateInvoiceStatusStub).not.to.have.been.called
+  })
+
   it('rejects callbacks with mismatched hashed_order', async () => {
     request.body = {
       hashed_order: 'invalid',
