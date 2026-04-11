@@ -21,14 +21,41 @@ const crypto = require('crypto');
 const secp256k1 = require('@noble/secp256k1');
 
 // ── CLI Args ─────────────────────────────────────────────────────────────────
-const args = process.argv.slice(2).reduce((acc, arg, i, arr) => {
-    if (arg.startsWith('--')) acc[arg.slice(2)] = arr[i + 1];
+function parseCliArgs(argv) {
+    const acc = {};
+    for (let i = 0; i < argv.length; i++) {
+        const arg = argv[i];
+        if (!arg.startsWith('--')) continue;
+
+        const key = arg.slice(2);
+        const value = argv[i + 1];
+
+        if (value === undefined || value.startsWith('--')) {
+            console.error(`Missing value for --${key}`);
+            process.exit(1);
+        }
+
+        acc[key] = value;
+        i++;
+    }
     return acc;
-}, {});
+}
+
+function parseIntegerArg(value, defaultValue, flagName) {
+    if (value === undefined) return defaultValue;
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed)) {
+        console.error(`Invalid value for --${flagName}: ${value}. Expected an integer.`);
+        process.exit(1);
+    }
+    return parsed;
+}
+
+const args = parseCliArgs(process.argv.slice(2));
 
 const RELAY_URL = args.url || 'ws://localhost:8008';
-const TOTAL_ZOMBIES = parseInt(args.zombies || '5000', 10);
-const SPAM_RATE = parseInt(args['spam-rate'] || '0', 10);
+const TOTAL_ZOMBIES = parseIntegerArg(args.zombies, 5000, 'zombies');
+const SPAM_RATE = parseIntegerArg(args['spam-rate'], 0, 'spam-rate');
 const BATCH_SIZE = 100;
 const BATCH_DELAY_MS = 50;
 
@@ -70,22 +97,38 @@ function startSpammer() {
     const ws = new WebSocket(RELAY_URL);
     const spammerPrivKey = secp256k1.utils.bytesToHex(secp256k1.utils.randomPrivateKey());
     const intervalMs = 1000 / SPAM_RATE;
+    let spammerInterval = null;
+
+    function clearSpammerInterval() {
+        if (spammerInterval !== null) {
+            clearInterval(spammerInterval);
+            spammerInterval = null;
+        }
+    }
 
     ws.on('open', () => {
         console.log(`\n[SPAMMER] Connected. Flooding ${SPAM_RATE} events/sec...`);
-        setInterval(async () => {
+        clearSpammerInterval();
+        spammerInterval = setInterval(async () => {
+            if (ws.readyState !== WebSocket.OPEN) return;
+
             const event = await createValidEvent(spammerPrivKey);
-            ws.send(JSON.stringify(['EVENT', event]));
-            spamSent++;
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(['EVENT', event]));
+                spamSent++;
+            }
         }, intervalMs);
     });
 
     ws.on('close', () => {
+        clearSpammerInterval();
         console.log('[SPAMMER] Disconnected. Reconnecting...');
         setTimeout(startSpammer, 1000);
     });
 
-    ws.on('error', () => { });
+    ws.on('error', () => {
+        clearSpammerInterval();
+    });
 }
 
 // ── Zombie Logic ─────────────────────────────────────────────────────────────
@@ -107,6 +150,8 @@ function openZombie() {
             if (ws._receiver) {
                 ws._receiver.removeAllListeners('ping');
                 ws._receiver.on('ping', () => { });
+            } else {
+                console.warn('[ZOMBIES] Warning: ws._receiver not found. Pong suppression might fail.');
             }
             ws.pong = function () { };
 
@@ -117,6 +162,7 @@ function openZombie() {
 
         ws.on('error', (err) => {
             errors++;
+            ws.terminate();
             resolve(null);
         });
 
