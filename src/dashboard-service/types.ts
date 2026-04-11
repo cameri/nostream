@@ -3,16 +3,26 @@ export interface TopTalker {
   count: number
 }
 
+export interface EventsByKindCount {
+  kind: string
+  count: number
+}
+
+export interface DashboardMetrics {
+  eventsByKind: EventsByKindCount[]
+  admittedUsers: number
+  satsPaid: number
+  topTalkers: {
+    allTime: TopTalker[]
+    recent: TopTalker[]
+  }
+}
+
 export interface KPISnapshot {
   sequence: number
   generatedAt: string
-  status: 'placeholder'
-  metrics: {
-    eventsByKind: Array<{ kind: string, count: number }>
-    admittedUsers: number | null
-    satsPaid: number | null
-    topTalkers: TopTalker[]
-  }
+  status: 'live' | 'stale'
+  metrics: DashboardMetrics
 }
 
 export interface DashboardSnapshotResponse {

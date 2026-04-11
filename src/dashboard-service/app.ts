@@ -1,3 +1,5 @@
+import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
+import { IKPICollector, SnapshotService } from './services/snapshot-service'
 import { createDashboardRouter } from './api/dashboard-router'
 import { createLogger } from '../factories/logger-factory'
 import { DashboardServiceConfig } from './config'
@@ -5,10 +7,11 @@ import { DashboardWebSocketHub } from './ws/dashboard-ws-hub'
 import express from 'express'
 import { getHealthRequestHandler } from './handlers/request-handlers/get-health-request-handler'
 import http from 'http'
+import { IncrementalKPICollectorService } from './services/incremental-kpi-collector-service'
+import { KPICollectorService } from './services/kpi-collector-service'
 import { PollingScheduler } from './polling/polling-scheduler'
-import { SnapshotService } from './services/snapshot-service'
+import { StatefulIncrementalKPICollectorService } from './services/stateful-incremental-service'
 import { WebSocketServer } from 'ws'
-
 const debug = createLogger('dashboard-service:app')
 
 export interface DashboardService {
@@ -22,14 +25,36 @@ export interface DashboardService {
 
 export const createDashboardService = (config: DashboardServiceConfig): DashboardService => {
   console.info(
-    'dashboard-service: creating service (host=%s, port=%d, wsPath=%s, pollIntervalMs=%d)',
+    'dashboard-service: creating service (host=%s, port=%d, wsPath=%s, pollIntervalMs=%d, useDummyData=%s, collectorMode=%s)',
     config.host,
     config.port,
     config.wsPath,
     config.pollIntervalMs,
+    config.useDummyData,
+    config.collectorMode,
   )
 
-  const snapshotService = new SnapshotService()
+  const collector: IKPICollector = config.useDummyData
+    ? {
+      collectMetrics: async () => ({
+        eventsByKind: [],
+        admittedUsers: 0,
+        satsPaid: 0,
+        topTalkers: { allTime: [], recent: [] },
+      }),
+    }
+    : (() => {
+      if (config.collectorMode === 'stateful-incremental') {
+        return new StatefulIncrementalKPICollectorService(getMasterDbClient())
+      }
+
+      const dbClient = getReadReplicaDbClient()
+      return config.collectorMode === 'incremental'
+        ? new IncrementalKPICollectorService(dbClient)
+        : new KPICollectorService(dbClient)
+    })()
+
+  const snapshotService = new SnapshotService(collector)
 
   const app = express()
     .disable('x-powered-by')
@@ -44,11 +69,17 @@ export const createDashboardService = (config: DashboardServiceConfig): Dashboar
 
   const webSocketHub = new DashboardWebSocketHub(webSocketServer, () => snapshotService.getSnapshot())
 
-  const pollingScheduler = new PollingScheduler(config.pollIntervalMs, () => {
-    const nextSnapshot = snapshotService.refreshPlaceholder()
-    debug('poll tick produced snapshot sequence=%d', nextSnapshot.sequence)
-    webSocketHub.broadcastTick(nextSnapshot.sequence)
-    webSocketHub.broadcastSnapshot(nextSnapshot)
+  const pollingScheduler = new PollingScheduler(config.pollIntervalMs, async () => {
+    const { snapshot, changed } = await snapshotService.refresh()
+
+    if (!changed) {
+      debug('poll tick detected no KPI changes')
+      return
+    }
+
+    debug('poll tick produced snapshot sequence=%d status=%s', snapshot.sequence, snapshot.status)
+    webSocketHub.broadcastTick(snapshot.sequence)
+    webSocketHub.broadcastSnapshot(snapshot)
   })
 
   const start = async () => {
@@ -72,6 +103,15 @@ export const createDashboardService = (config: DashboardServiceConfig): Dashboar
       })
     })
 
+    try {
+      const initialSnapshotRefresh = await snapshotService.refresh()
+      if (initialSnapshotRefresh.changed) {
+        debug('initial snapshot prepared with sequence=%d status=%s', initialSnapshotRefresh.snapshot.sequence, initialSnapshotRefresh.snapshot.status)
+      }
+    } catch (error) {
+      console.error('dashboard-service: initial snapshot refresh failed (will retry on next poll)', error)
+    }
+
     pollingScheduler.start()
     console.info('dashboard-service: polling scheduler started')
   }
@@ -79,6 +119,15 @@ export const createDashboardService = (config: DashboardServiceConfig): Dashboar
   const stop = async () => {
     console.info('dashboard-service: stopping service')
     pollingScheduler.stop()
+
+    if (collector?.close) {
+      try {
+        await collector.close()
+      } catch (error) {
+        console.error('dashboard-service: failed to close collector resources', error)
+      }
+    }
+
     webSocketHub.close()
     await new Promise<void>((resolve, reject) => {
       if (!webServer.listening) {
