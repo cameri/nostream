@@ -10,6 +10,8 @@ describe('dashboard-service app', () => {
       port: 0,
       wsPath: '/api/v1/kpis/stream',
       pollIntervalMs: 1000,
+      useDummyData: true,
+      collectorMode: 'full',
     })
 
     await service.start()
