@@ -213,6 +213,17 @@ export interface Mirroring {
   static?: Mirror[]
 }
 
+export type Nip05Mode = 'enabled' | 'passive' | 'disabled'
+
+export interface Nip05Settings {
+  mode: Nip05Mode
+  verifyExpiration: number
+  verifyUpdateFrequency: number
+  maxConsecutiveFailures: number
+  domainWhitelist?: string[]
+  domainBlacklist?: string[]
+}
+
 export interface Settings {
   info: Info
   payments?: Payments
@@ -221,4 +232,5 @@ export interface Settings {
   workers?: Worker
   limits?: Limits
   mirroring?: Mirroring
+  nip05?: Nip05Settings
 }

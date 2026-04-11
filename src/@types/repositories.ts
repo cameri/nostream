@@ -3,6 +3,7 @@ import { PassThrough } from 'stream'
 import { DatabaseClient, EventId, Pubkey } from './base'
 import { DBEvent, Event } from './event'
 import { Invoice } from './invoice'
+import { Nip05Verification } from './nip05'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
 
@@ -43,4 +44,15 @@ export interface IUserRepository {
   findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<User | undefined>
   upsert(user: Partial<User>, client?: DatabaseClient): Promise<number>
   getBalanceByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<bigint>
+}
+
+export interface INip05VerificationRepository {
+  findByPubkey(pubkey: Pubkey): Promise<Nip05Verification | undefined>
+  upsert(verification: Nip05Verification): Promise<number>
+  findPendingVerifications(
+    updateFrequencyMs: number,
+    maxFailures: number,
+    limit: number,
+  ): Promise<Nip05Verification[]>
+  deleteByPubkey(pubkey: Pubkey): Promise<number>
 }
