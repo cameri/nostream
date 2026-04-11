@@ -3,11 +3,15 @@ import { IRunnable } from '../@types/base'
 
 import { createLogger } from '../factories/logger-factory'
 import { delayMs } from '../utils/misc'
+import { INip05VerificationRepository } from '../@types/repositories'
 import { InvoiceStatus } from '../@types/invoice'
 import { IPaymentsService } from '../@types/services'
+import { Nip05Verification } from '../@types/nip05'
 import { Settings } from '../@types/settings'
+import { verifyNip05Identifier } from '../utils/nip05'
 
 const UPDATE_INVOICE_INTERVAL = 60000
+const NIP05_REVERIFICATION_BATCH_SIZE = 50
 
 const debug = createLogger('maintenance-worker')
 
@@ -18,6 +22,7 @@ export class MaintenanceWorker implements IRunnable {
     private readonly process: NodeJS.Process,
     private readonly paymentsService: IPaymentsService,
     private readonly settings: () => Settings,
+    private readonly nip05VerificationRepository: INip05VerificationRepository,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -33,6 +38,8 @@ export class MaintenanceWorker implements IRunnable {
 
   private async onSchedule(): Promise<void> {
     const currentSettings = this.settings()
+
+    await this.processNip05Reverifications(currentSettings)
 
     if (!path(['payments','enabled'], currentSettings)) {
       return
@@ -83,6 +90,53 @@ export class MaintenanceWorker implements IRunnable {
       }
 
       debug('updated %d of %d invoices successfully', successful, invoices.length)
+    }
+  }
+
+  private async processNip05Reverifications(currentSettings: Settings): Promise<void> {
+    const nip05Settings = currentSettings.nip05
+    if (!nip05Settings || nip05Settings.mode === 'disabled') {
+      return
+    }
+
+    try {
+      const updateFrequency = nip05Settings.verifyUpdateFrequency ?? 86400000
+      const maxFailures = nip05Settings.maxConsecutiveFailures ?? 20
+
+      const pendingVerifications = await this.nip05VerificationRepository.findPendingVerifications(
+        updateFrequency,
+        maxFailures,
+        NIP05_REVERIFICATION_BATCH_SIZE,
+      )
+
+      if (!pendingVerifications.length) {
+        return
+      }
+
+      debug('found %d NIP-05 verifications to re-check', pendingVerifications.length)
+
+      for (const verification of pendingVerifications) {
+        try {
+          const verified = await verifyNip05Identifier(verification.nip05, verification.pubkey)
+          const now = new Date()
+
+          const updated: Nip05Verification = {
+            ...verification,
+            isVerified: verified,
+            lastVerifiedAt: verified ? now : verification.lastVerifiedAt,
+            lastCheckedAt: now,
+            failureCount: verified ? 0 : verification.failureCount + 1,
+            updatedAt: now,
+          }
+
+          await this.nip05VerificationRepository.upsert(updated)
+          await delayMs(200 + Math.floor(Math.random() * 100))
+        } catch (error) {
+          debug('failed to re-verify NIP-05 for %s: %o', verification.pubkey, error)
+        }
+      }
+    } catch (error) {
+      debug('NIP-05 re-verification batch failed: %o', error)
     }
   }
 

@@ -1,4 +1,4 @@
-import { IEventRepository, IUserRepository } from '../@types/repositories'
+import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IncomingMessage, MessageType } from '../@types/messages'
 import { createSettings } from './settings-factory'
 import { EventMessageHandler } from '../handlers/event-message-handler'
@@ -11,6 +11,7 @@ import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handl
 export const messageHandlerFactory = (
   eventRepository: IEventRepository,
   userRepository: IUserRepository,
+  nip05VerificationRepository: INip05VerificationRepository,
 ) => ([message, adapter]: [IncomingMessage, IWebSocketAdapter]) => {
   switch (message[0]) {
     case MessageType.EVENT:
@@ -21,6 +22,7 @@ export const messageHandlerFactory = (
           userRepository,
           createSettings,
           slidingWindowRateLimiterFactory,
+          nip05VerificationRepository,
         )
       }
     case MessageType.REQ:
