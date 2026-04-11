@@ -1,16 +1,17 @@
+import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
 import { Event, ExpiringEvent  } from '../@types/event'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
+import { extractNip05FromEvent, isDomainAllowed, parseNip05Identifier, verifyNip05Identifier } from '../utils/nip05'
 import { getEventExpiration, getEventProofOfWork, getPubkeyProofOfWork, getPublicKey, getRelayPrivateKey, isEventIdValid, isEventKindOrRangeMatch, isEventSignatureValid, isExpiredEvent } from '../utils/event'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
-import { ContextMetadataKey } from '../constants/base'
+import { INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { createCommandResult } from '../utils/messages'
 import { createLogger } from '../factories/logger-factory'
-import { EventExpirationTimeMetadataKey } from '../constants/base'
 import { Factory } from '../@types/base'
 import { IncomingEventMessage } from '../@types/messages'
 import { IRateLimiter } from '../@types/utils'
-import { IUserRepository } from '../@types/repositories'
 import { IWebSocketAdapter } from '../@types/adapters'
+import { Nip05Verification } from '../@types/nip05'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
 const debug = createLogger('event-message-handler')
@@ -22,6 +23,7 @@ export class EventMessageHandler implements IMessageHandler {
     protected readonly userRepository: IUserRepository,
     private readonly settings: () => Settings,
     private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
+    private readonly nip05VerificationRepository: INip05VerificationRepository,
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
@@ -64,6 +66,13 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
+    reason = await this.checkNip05Verification(event)
+    if (reason) {
+      debug('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      return
+    }
+
     const strategy = this.strategyFactory([event, this.webSocket])
 
     if (typeof strategy?.execute !== 'function') {
@@ -73,6 +82,7 @@ export class EventMessageHandler implements IMessageHandler {
 
     try {
       await strategy.execute(event)
+      this.processNip05Metadata(event)
     } catch (error) {
       console.error('error handling message', message, error)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: unable to process event'))
@@ -300,5 +310,91 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     return expiringEvent
+  }
+
+  protected async checkNip05Verification(event: Event): Promise<string | undefined> {
+    const nip05Settings = this.settings().nip05
+    if (!nip05Settings || nip05Settings.mode === 'disabled') {
+      return
+    }
+
+    if (this.getRelayPublicKey() === event.pubkey) {
+      return
+    }
+
+    if (event.kind === EventKinds.SET_METADATA) {
+      return
+    }
+
+    if (nip05Settings.mode !== 'enabled') {
+      return
+    }
+
+    const verification = await this.nip05VerificationRepository.findByPubkey(event.pubkey)
+
+    if (!verification || !verification.isVerified) {
+      return 'blocked: NIP-05 verification required'
+    }
+
+    const expirationMs = nip05Settings.verifyExpiration ?? 604800000
+    if (verification.lastVerifiedAt) {
+      const elapsed = Date.now() - verification.lastVerifiedAt.getTime()
+      if (elapsed > expirationMs) {
+        return 'blocked: NIP-05 verification expired'
+      }
+    }
+
+    if (!isDomainAllowed(verification.domain, nip05Settings.domainWhitelist, nip05Settings.domainBlacklist)) {
+      return 'blocked: NIP-05 domain not allowed'
+    }
+  }
+
+  protected processNip05Metadata(event: Event): void {
+    const nip05Settings = this.settings().nip05
+    if (!nip05Settings || nip05Settings.mode === 'disabled') {
+      return
+    }
+
+    if (event.kind !== EventKinds.SET_METADATA) {
+      return
+    }
+
+    const nip05Identifier = extractNip05FromEvent(event)
+    if (!nip05Identifier) {
+      this.nip05VerificationRepository.deleteByPubkey(event.pubkey).catch((error) => {
+        debug('failed to remove NIP-05 verification for %s: %o', event.pubkey, error)
+      })
+      return
+    }
+
+    const parsed = parseNip05Identifier(nip05Identifier)
+    if (!parsed) {
+      return
+    }
+
+    if (!isDomainAllowed(parsed.domain, nip05Settings.domainWhitelist, nip05Settings.domainBlacklist)) {
+      debug('NIP-05 domain %s not allowed for %s', parsed.domain, event.pubkey)
+      return
+    }
+
+    verifyNip05Identifier(nip05Identifier, event.pubkey)
+      .then((verified) => {
+        const now = new Date()
+        const verification: Nip05Verification = {
+          pubkey: event.pubkey,
+          nip05: nip05Identifier,
+          domain: parsed.domain,
+          isVerified: verified,
+          lastVerifiedAt: verified ? now : null,
+          lastCheckedAt: now,
+          failureCount: verified ? 0 : 1,
+          createdAt: now,
+          updatedAt: now,
+        }
+        return this.nip05VerificationRepository.upsert(verification)
+      })
+      .catch((error) => {
+        debug('NIP-05 verification failed for %s: %o', event.pubkey, error)
+      })
   }
 }
