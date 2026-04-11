@@ -7,6 +7,7 @@ export enum EventKinds {
   DELETE = 5,
   REPOST = 6,
   REACTION = 7,
+  REQUEST_TO_VANISH = 62,
   // Channels
   CHANNEL_CREATION = 40,
   CHANNEL_METADATA = 41,
@@ -36,11 +37,14 @@ export enum EventKinds {
 export enum EventTags {
   Event = 'e',
   Pubkey = 'p',
+  Relay = 'r',
   //  Multicast = 'm',
   Deduplication = 'd',
   Expiration = 'expiration',
   Invoice = 'bolt11',
 }
+
+export const ALL_RELAYS = 'ALL_RELAYS'
 
 export enum PaymentsProcessors {
   LNURL = 'lnurl',
