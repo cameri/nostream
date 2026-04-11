@@ -22,7 +22,12 @@ export class OpenNodeCallbackController implements IController {
     response: Response,
   ) {
     debug('request headers: %o', request.headers)
-    debug('request body: %O', request.body)
+    debug(
+      'request body metadata: hasId=%s hasHashedOrder=%s status=%s',
+      typeof request.body?.id === 'string',
+      typeof request.body?.hashed_order === 'string',
+      typeof request.body?.status === 'string' ? request.body.status : 'missing',
+    )
 
     const settings = createSettings()
     const remoteAddress = getRemoteAddress(request, settings)
