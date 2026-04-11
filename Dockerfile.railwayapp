@@ -29,6 +29,9 @@ RUN npm run build
 
 FROM node:24-alpine
 
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
 ARG PORT
 ARG PGHOST
 ARG PGPORT
@@ -69,12 +72,19 @@ LABEL org.opencontainers.image.licenses=MIT
 
 WORKDIR /app
 
+# Copy runtime artifacts and configuration
 COPY --from=build /build/dist .
+COPY --from=build /build/package.json /build/package-lock.json ./
+COPY --from=build /build/knexfile.js ./
+COPY --from=build /build/migrations ./migrations
+COPY --from=build /build/seeds ./seeds
 
-RUN npm install --omit=dev --quiet
+RUN npm install --omit=dev --quiet && npm install -g knex@2.4.0
 
 USER 1000:1000
 
 RUN mkdir -p $NOSTR_CONFIG_DIR
+
+ENTRYPOINT ["dumb-init", "--"]
 
 CMD ["sh", "-c", "npm run db:migrate && node src/index.js"]
