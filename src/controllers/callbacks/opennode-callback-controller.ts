@@ -64,11 +64,24 @@ export class OpenNodeCallbackController implements IController {
 
     const expectedBuf = hmacSha256(openNodeApiKey, request.body.id)
     const actualHex = request.body.hashed_order
+    const expectedHexLength = expectedBuf.length * 2
+
+    if (
+      actualHex.length !== expectedHexLength
+      || !/^[0-9a-f]+$/i.test(actualHex)
+    ) {
+      debug('invalid hashed_order format from %s to /callbacks/opennode', remoteAddress)
+      response
+        .status(400)
+        .setHeader('content-type', 'text/plain; charset=utf8')
+        .send('Bad Request')
+      return
+    }
+
     const actualBuf = Buffer.from(actualHex, 'hex')
 
     if (
-      expectedBuf.length !== actualBuf.length
-      || !timingSafeEqual(expectedBuf, actualBuf)
+      !timingSafeEqual(expectedBuf, actualBuf)
     ) {
       debug('unauthorized request from %s to /callbacks/opennode: hashed_order mismatch', remoteAddress)
       response

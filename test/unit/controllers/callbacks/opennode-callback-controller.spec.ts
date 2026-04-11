@@ -130,9 +130,24 @@ describe('OpenNodeCallbackController', () => {
     expect(updateInvoiceStatusStub).not.to.have.been.called
   })
 
-  it('rejects callbacks with mismatched hashed_order', async () => {
+  it('returns bad request for malformed hashed_order', async () => {
     request.body = {
       hashed_order: 'invalid',
+      id: 'invoice-id',
+      status: 'paid',
+    }
+
+    await controller.handleRequest(request, response)
+
+    expect(statusStub).to.have.been.calledOnceWithExactly(400)
+    expect(setHeaderStub).to.have.been.calledOnceWithExactly('content-type', 'text/plain; charset=utf8')
+    expect(sendStub).to.have.been.calledOnceWithExactly('Bad Request')
+    expect(updateInvoiceStatusStub).not.to.have.been.called
+  })
+
+  it('rejects callbacks with mismatched hashed_order', async () => {
+    request.body = {
+      hashed_order: '0'.repeat(64),
       id: 'invoice-id',
       status: 'paid',
     }
