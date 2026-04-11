@@ -2,9 +2,9 @@ import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '
 import { Event, ExpiringEvent  } from '../@types/event'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
 import { extractNip05FromEvent, isDomainAllowed, parseNip05Identifier, verifyNip05Identifier } from '../utils/nip05'
-import { getEventExpiration, getEventProofOfWork, getPubkeyProofOfWork, getPublicKey, getRelayPrivateKey, isEventIdValid, isEventKindOrRangeMatch, isEventSignatureValid, isExpiredEvent } from '../utils/event'
+import { getEventExpiration, getEventProofOfWork, getPubkeyProofOfWork, getPublicKey, getRelayPrivateKey, isEventIdValid, isEventKindOrRangeMatch, isEventSignatureValid, isExpiredEvent, isRequestToVanishEvent, } from '../utils/event'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
-import { INip05VerificationRepository, IUserRepository } from '../@types/repositories'
+import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { createCommandResult } from '../utils/messages'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
@@ -20,6 +20,7 @@ export class EventMessageHandler implements IMessageHandler {
   public constructor(
     protected readonly webSocket: IWebSocketAdapter,
     protected readonly strategyFactory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>,
+    protected readonly eventRepository: IEventRepository,
     protected readonly userRepository: IUserRepository,
     private readonly settings: () => Settings,
     private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
@@ -53,6 +54,13 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     reason = this.canAcceptEvent(event)
+    if (reason) {
+      debug('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      return
+    }
+
+    reason = await this.isBlockedByRequestToVanish(event)
     if (reason) {
       debug('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
@@ -199,6 +207,26 @@ export class EventMessageHandler implements IMessageHandler {
     }
     if (!await isEventSignatureValid(event)) {
       return 'invalid: event signature verification failed'
+    }
+
+    if (event.kind === EventKinds.REQUEST_TO_VANISH && !isRequestToVanishEvent(event, this.settings().info.relay_url)) {
+      return 'invalid: request to vanish relay tag invalid'
+    }
+  }
+
+  protected async isBlockedByRequestToVanish(event: Event): Promise<string | undefined> {
+    if (isRequestToVanishEvent(event)) {
+      return
+    }
+
+    const relayPubkey = this.getRelayPublicKey()
+    if (relayPubkey === event.pubkey) {
+      return
+    }
+
+    const existingVanishRequest = await this.eventRepository.hasActiveRequestToVanish(event.pubkey)
+    if (existingVanishRequest) {
+      return 'blocked: request to vanish active for pubkey'
     }
   }
 

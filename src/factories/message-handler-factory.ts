@@ -19,6 +19,7 @@ export const messageHandlerFactory = (
         return new EventMessageHandler(
           adapter,
           eventStrategyFactory(eventRepository),
+          eventRepository,
           userRepository,
           createSettings,
           slidingWindowRateLimiterFactory,

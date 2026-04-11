@@ -16,7 +16,7 @@ const NIP05_REVERIFICATION_BATCH_SIZE = 50
 const debug = createLogger('maintenance-worker')
 
 export class MaintenanceWorker implements IRunnable {
-  private interval: NodeJS.Timer | undefined
+  private interval: NodeJS.Timeout | undefined
 
   public constructor(
     private readonly process: NodeJS.Process,
