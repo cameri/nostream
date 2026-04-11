@@ -145,16 +145,17 @@ export function nip44Decrypt(payload: string, conversationKey: Buffer): string {
  * Validate the structural format of a NIP-44 v2 payload without decrypting it.
  * Returns an error string if invalid, or undefined if the format looks valid.
  */
+const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/
+
 export function validateNip44Payload(payload: string): string | undefined {
   if (!payload || payload[0] === '#') return 'unsupported encryption version'
   if (payload.length < 132 || payload.length > 87472) return 'invalid payload size'
 
-  let data: Buffer
-  try {
-    data = Buffer.from(payload, 'base64')
-  } catch {
+  if (payload.length % 4 !== 0 || !BASE64_RE.test(payload)) {
     return 'payload is not valid base64'
   }
+
+  const data = Buffer.from(payload, 'base64')
 
   if (data.length < 99 || data.length > 65603) return 'invalid decoded payload size'
   if (data[0] !== 2) return `unsupported encryption version ${data[0]}`

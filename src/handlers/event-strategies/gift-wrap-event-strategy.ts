@@ -50,7 +50,12 @@ export class GiftWrapEventStrategy implements IEventStrategy<Event, Promise<void
     }
 
     if (recipientTags.length > 1) {
-      return 'gift wrap event (kind 1059) must have exactly one p tag per recipient'
+      return 'gift wrap event (kind 1059) must have exactly one p tag'
+    }
+
+    const recipientPubkey = recipientTags[0][1]
+    if (!/^[0-9a-f]{64}$/.test(recipientPubkey)) {
+      return 'gift wrap event (kind 1059) p tag must contain a valid 64-character lowercase hex pubkey'
     }
 
     // Validate that the content is a structurally valid NIP-44 v2 payload
