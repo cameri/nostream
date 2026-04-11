@@ -5,7 +5,7 @@ import { EphemeralEventStrategy } from '../handlers/event-strategies/ephemeral-e
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { GiftWrapEventStrategy } from '../handlers/event-strategies/gift-wrap-event-strategy'
-import { IEventRepository } from '../@types/repositories'
+import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strategies/parameterized-replaceable-event-strategy'
@@ -14,10 +14,11 @@ import { VanishEventStrategy } from '../handlers/event-strategies/vanish-event-s
 
 export const eventStrategyFactory = (
   eventRepository: IEventRepository,
+  userRepository: IUserRepository,
 ): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
   ([event, adapter]: [Event, IWebSocketAdapter]) => {
     if (isRequestToVanishEvent(event)) {
-      return new VanishEventStrategy(adapter, eventRepository)
+      return new VanishEventStrategy(adapter, eventRepository, userRepository)
     } else if (isGiftWrapEvent(event)) {
       return new GiftWrapEventStrategy(adapter, eventRepository)
     } else if (isReplaceableEvent(event)) {

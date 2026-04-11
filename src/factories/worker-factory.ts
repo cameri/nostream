@@ -16,7 +16,7 @@ export const workerFactory = (): AppWorker => {
   const dbClient = getMasterDbClient()
   const readReplicaDbClient = getReadReplicaDbClient()
   const eventRepository = new EventRepository(dbClient, readReplicaDbClient)
-  const userRepository = new UserRepository(dbClient)
+  const userRepository = new UserRepository(dbClient, eventRepository)
 
   const settings = createSettings()
 

@@ -50,6 +50,9 @@ describe('EventMessageHandler', () => {
       sig: 'f'.repeat(128),
       tags: [],
     }
+    userRepository = {
+      isVanished: async () => false,
+    } as any
   })
 
   afterEach(() => {
@@ -71,7 +74,10 @@ describe('EventMessageHandler', () => {
       canAcceptEventStub = sandbox.stub(EventMessageHandler.prototype, 'canAcceptEvent' as any)
       isEventValidStub = sandbox.stub(EventMessageHandler.prototype, 'isEventValid' as any)
       isUserAdmitted = sandbox.stub(EventMessageHandler.prototype, 'isUserAdmitted' as any)
-      eventRepository = { hasActiveRequestToVanish: sandbox.stub().resolves(false) }
+      eventRepository = {} as any
+      userRepository = {
+        isVanished: sandbox.stub().resolves(false),
+      } as any
       strategyExecuteStub = sandbox.stub()
       strategyFactoryStub = sandbox.stub().returns({
         execute: strategyExecuteStub,
@@ -126,11 +132,11 @@ describe('EventMessageHandler', () => {
     it('rejects event if request to vanish is active for pubkey', async () => {
       canAcceptEventStub.returns(undefined)
       isEventValidStub.resolves(undefined)
-      eventRepository.hasActiveRequestToVanish.resolves(true)
+      ;(userRepository.isVanished as any).resolves(true)
 
       await handler.handleMessage(message)
 
-      expect(eventRepository.hasActiveRequestToVanish).to.have.been.calledOnceWithExactly(event.pubkey)
+      expect(userRepository.isVanished as any).to.have.been.calledOnceWithExactly(event.pubkey)
       expect(onMessageSpy).to.have.been.calledOnceWithExactly(
         [MessageType.OK, event.id, false, 'blocked: request to vanish active for pubkey'],
       )
@@ -260,7 +266,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         {} as any,
         () => null,
-        { hasActiveRequestToVanish: async () => false } as any,
+        {} as any,
         userRepository,
         () => settings,
         () => ({ hit: async () => false })
@@ -783,10 +789,13 @@ describe('EventMessageHandler', () => {
       webSocket = {
         getClientAddress: getClientAddressStub,
       } as any
+      userRepository = {
+        isVanished: async () => false,
+      } as any
       handler = new EventMessageHandler(
         webSocket,
         () => null,
-        { hasActiveRequestToVanish: async () => false } as any,
+        {} as any,
         userRepository,
         () => settings,
         () => ({ hit: rateLimiterHitStub })
@@ -1050,11 +1059,12 @@ describe('EventMessageHandler', () => {
       } as any
       userRepository = {
         findByPubkey: userRepositoryFindByPubkeyStub,
+        isVanished: async () => false,
       } as any
       handler = new EventMessageHandler(
         webSocket,
         () => null,
-        { hasActiveRequestToVanish: async () => false } as any,
+        {} as any,
         userRepository,
         () => settings,
         () => ({ hit: async () => false })
@@ -1135,27 +1145,27 @@ describe('EventMessageHandler', () => {
     })
 
     it('fulfills with reason if user is not admitted', async () => {
-      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: false })
+      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: false, isVanished: false })
 
       return expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: pubkey not admitted')
     })
 
     it('fulfills with reason if user is not admitted', async () => {
-      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: false })
+      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: false, isVanished: false })
 
       return expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: pubkey not admitted')
     })
 
     it('fulfills with reason if user does not meet minimum balance', async () => {
       settings.limits.event.pubkey.minBalance = 1000n
-      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, balance: 999n })
+      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, isVanished: false, balance: 999n })
 
       return expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: insufficient balance')
     })
 
     it('fulfills with undefined if user is admitted', async () => {
       settings.limits.event.pubkey.minBalance = 0n
-      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true })
+      userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, isVanished: false })
 
       return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
     })

@@ -17,7 +17,7 @@ export const messageHandlerFactory = (
       {
         return new EventMessageHandler(
           adapter,
-          eventStrategyFactory(eventRepository),
+          eventStrategyFactory(eventRepository, userRepository),
           eventRepository,
           userRepository,
           createSettings,

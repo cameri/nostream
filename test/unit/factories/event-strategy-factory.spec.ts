@@ -1,5 +1,6 @@
 import { expect } from 'chai'
 
+import { IEventRepository, IUserRepository } from '../../../src/@types/repositories'
 import { DefaultEventStrategy } from '../../../src/handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../../../src/handlers/event-strategies/delete-event-strategy'
 import { EphemeralEventStrategy } from '../../../src/handlers/event-strategies/ephemeral-event-strategy'
@@ -8,7 +9,6 @@ import { EventKinds } from '../../../src/constants/base'
 import { eventStrategyFactory } from '../../../src/factories/event-strategy-factory'
 import { Factory } from '../../../src/@types/base'
 import { GiftWrapEventStrategy } from '../../../src/handlers/event-strategies/gift-wrap-event-strategy'
-import { IEventRepository } from '../../../src/@types/repositories'
 import { IEventStrategy } from '../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
@@ -17,16 +17,18 @@ import { VanishEventStrategy } from '../../../src/handlers/event-strategies/vani
 
 describe('eventStrategyFactory', () => {
   let eventRepository: IEventRepository
+  let userRepository: IUserRepository
   let event: Event
   let adapter: IWebSocketAdapter
   let factory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>
 
   beforeEach(() => {
     eventRepository = {} as any
+    userRepository = {} as any
     event = {} as any
     adapter = {} as any
 
-    factory = eventStrategyFactory(eventRepository)
+    factory = eventStrategyFactory(eventRepository, userRepository)
   })
 
   it('returns ReplaceableEvent given a set_metadata event', () => {
