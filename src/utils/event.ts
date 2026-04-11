@@ -103,7 +103,7 @@ export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Eve
 }
 
 export const getEventHash = async (event: Event | UnidentifiedEvent | UnsignedEvent): Promise<string> => {
-  const id = await secp256k1.utils.sha256(Buffer.from(JSON.stringify(serializeEvent(event))))
+  const id = await secp256k1.utils.sha256(new Uint8Array(Buffer.from(JSON.stringify(serializeEvent(event)))))
 
   return Buffer.from(id).toString('hex')
 }
@@ -160,7 +160,7 @@ export const encryptKind4Event = (
   receiverPubkey: Pubkey,
 ) => (event: UnsignedEvent): UnsignedEvent => {
   const key = secp256k1
-    .getSharedSecret(senderPrivkey, `02${receiverPubkey}`, true)
+    .getSharedSecret(typeof senderPrivkey === 'string' ? senderPrivkey : new Uint8Array(senderPrivkey), `02${receiverPubkey}`, true)
     .subarray(1)
 
   const iv = getRandomValues(new Uint8Array(16))
@@ -168,7 +168,7 @@ export const encryptKind4Event = (
   // deepcode ignore InsecureCipherNoIntegrity: NIP-04 Encrypted Direct Message uses aes-256-cbc
   const cipher = createCipheriv(
     'aes-256-cbc',
-    Buffer.from(key),
+    new Uint8Array(key),
     iv,
   )
 
