@@ -99,9 +99,9 @@ describe('EventMessageHandler', () => {
           ({
             info: { relay_url: 'relay_url' },
           }) as any,
-        () => ({ hit: async () => false }),
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: async () => false }),
       )
     })
 
@@ -269,9 +269,9 @@ describe('EventMessageHandler', () => {
         {} as any,
         userRepository,
         () => settings,
-        () => ({ hit: async () => false }),
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: async () => false }),
       )
     })
 
@@ -717,9 +717,9 @@ describe('EventMessageHandler', () => {
         {} as any,
         userRepository,
         () => settings,
-        () => ({ hit: rateLimiterHitStub }),
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: rateLimiterHitStub }),
       )
     })
 
@@ -992,9 +992,9 @@ describe('EventMessageHandler', () => {
         {} as any,
         userRepository,
         () => settings,
-        () => ({ hit: async () => false }),
         {} as any,
         cacheStub,
+        () => ({ hit: async () => false }),
       )
     })
 
@@ -1197,9 +1197,9 @@ describe('EventMessageHandler', () => {
         { hasActiveRequestToVanish: async () => false } as any,
         userRepository,
         () => settings,
-        () => ({ hit: async () => false }),
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
+        () => ({ hit: async () => false }),
       )
     })
 
@@ -1373,9 +1373,9 @@ describe('EventMessageHandler', () => {
         { hasActiveRequestToVanish: async () => false } as any,
         userRepository,
         () => settings,
-        () => ({ hit: async () => false }),
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
+        () => ({ hit: async () => false }),
       )
     })
 
@@ -1604,9 +1604,9 @@ describe('EventMessageHandler', () => {
         { hasActiveRequestToVanish: async () => false } as any,
         userRepository,
         () => settings,
-        () => ({ hit: async () => false }),
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
+        () => ({ hit: async () => false }),
       )
     })
 
@@ -1780,9 +1780,9 @@ describe('EventMessageHandler', () => {
         { hasActiveRequestToVanish: async () => false } as any,
         userRepository,
         () => settings,
-        () => ({ hit: async () => false }),
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
+        () => ({ hit: async () => false }),
       )
     })
 

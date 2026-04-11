@@ -6,7 +6,7 @@ import { EventMessageHandler } from '../handlers/event-message-handler'
 import { eventStrategyFactory } from './event-strategy-factory'
 import { getCacheClient } from '../cache/client'
 import { RedisAdapter } from '../adapters/redis-adapter'
-import { slidingWindowRateLimiterFactory } from './rate-limiter-factory'
+import { rateLimiterFactory } from './rate-limiter-factory'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
 
@@ -33,9 +33,9 @@ export const messageHandlerFactory =
           eventRepository,
           userRepository,
           createSettings,
-          slidingWindowRateLimiterFactory,
           nip05VerificationRepository,
           getCache(),
+          rateLimiterFactory,
         )
       }
       case MessageType.REQ:
