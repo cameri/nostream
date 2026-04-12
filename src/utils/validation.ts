@@ -1,12 +1,11 @@
-import Joi from 'joi'
+import { z } from 'zod'
 
-const getValidationConfig = () => ({
-  abortEarly: true,
-  stripUnknown: false,
-  convert: false,
-})
+export const validateSchema = (schema: z.ZodTypeAny) => (input: unknown) => {
+  try {
+    return { value: schema.parse(input), error: undefined }
+  } catch (error) {
+    return { value: undefined, error: error as z.ZodError }
+  }
+}
 
-export const validateSchema = (schema: Joi.Schema) => (input: any) => schema.validate(input, getValidationConfig())
-
-export const attemptValidation = (schema: Joi.Schema) =>
-  (input: any) => Joi.attempt(input, schema, getValidationConfig())
+export const attemptValidation = (schema: z.ZodTypeAny) => (input: unknown) => schema.parse(input)
