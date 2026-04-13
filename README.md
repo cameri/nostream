@@ -468,6 +468,23 @@ Start:
 
   This will run in the foreground of the terminal until you stop it with Ctrl+C.
 
+## Using Dashboard
+
+  To start the dashboard run the following command:
+
+ ```
+ //To start the dashboard service:
+ npm run dev:dashboard
+
+ //use DB_PORT variable to set the port of the dashboard
+ ```
+
+ ```
+ To start the UI
+  //navigate to dashboard-ui folder
+  
+  npm run start
+```
 ## Tests
 
 ### Unit tests
