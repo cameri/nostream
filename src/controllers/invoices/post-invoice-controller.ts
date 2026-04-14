@@ -91,7 +91,7 @@ export class PostInvoiceController implements IController {
     } else if (/^npub1/.test(pubkeyRaw)) {
       try {
         pubkey = fromBech32(pubkeyRaw)
-      } catch (error) {
+      } catch (_error) {
         response
           .status(400)
           .setHeader('content-type', 'text/plain; charset=utf8')

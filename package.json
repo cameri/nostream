@@ -31,7 +31,7 @@
     "knip": "knip --config .knip.json --production --include files,dependencies --no-progress --reporter compact",
     "lint": "npm run knip && biome lint ./src ./test",
     "lint:report": "mkdir -p .lint-reports && biome lint --reporter=json --reporter-file=.lint-reports/biome.json ./src ./test",
-    "lint:fix": "biome lint --write ./src ./test",
+    "lint:fix": "npm run lint -- --write",
     "format": "biome format --write ./src ./test",
     "format:check": "biome format ./src ./test",
     "import": "node -r ts-node/register src/import-events.ts",

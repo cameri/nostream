@@ -22,7 +22,7 @@
 		"enabled": true,
 		"rules": {
 			"recommended": false,
-			"correctness": { "noUnusedVariables": "warn" },
+			"correctness": { "noUnusedVariables": "error" },
 			"style": { "useBlockStatements": "warn" },
 			"suspicious": { "noExplicitAny": "off" }
 		}

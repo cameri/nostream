@@ -9,7 +9,7 @@ export const withController = (controllerFactory: Factory<IController>) => async
 ) => {
   try {
     return await controllerFactory().handleRequest(request, response)
-  } catch (error) {
+  } catch (_error) {
     response
       .status(500)
       .setHeader('content-type', 'text/plain')

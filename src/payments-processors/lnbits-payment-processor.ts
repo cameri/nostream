@@ -57,7 +57,9 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
       invoice.pubkey = data.details.extra.internalId
       invoice.bolt11 = data.details.bolt11
       invoice.amountRequested = BigInt(Math.floor(data.details.amount / 1000))
-      if (data.paid) invoice.amountPaid = BigInt(Math.floor(data.details.amount / 1000))
+      if (data.paid) {
+        invoice.amountPaid = BigInt(Math.floor(data.details.amount / 1000))
+      }
       invoice.unit = InvoiceUnit.SATS
       invoice.status = data.paid?InvoiceStatus.COMPLETED:InvoiceStatus.PENDING
       invoice.description = data.details.memo
