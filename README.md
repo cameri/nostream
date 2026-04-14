@@ -209,6 +209,10 @@ Start:
   ```
   ./scripts/start_with_tor
   ```
+  or, with Nginx reverse proxy and Let's Encrypt SSL:
+  ```
+  RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com ./scripts/start_with_nginx
+  ```
 
 **Windows / WSL2 users:** Docker bind-mounts can cause PostgreSQL permission errors on Windows. Use the dedicated override file instead:
   ```
