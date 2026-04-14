@@ -93,6 +93,10 @@ const parseKinds = (value: string): number[] => {
   return Array.from(new Set(kinds))
 }
 
+const matchesOption = (arg: string, option: string): boolean => {
+  return arg === option || arg.startsWith(`${option}=`)
+}
+
 export const parseCleanDbOptions = (args: string[]): CleanDbOptions => {
   const options: CleanDbOptions = {
     all: false,
@@ -125,14 +129,14 @@ export const parseCleanDbOptions = (args: string[]): CleanDbOptions => {
       continue
     }
 
-    if (arg.startsWith('--older-than')) {
+    if (matchesOption(arg, '--older-than')) {
       const [value, nextIndex] = getOptionValue(arg, args, index)
       options.olderThanDays = parseOlderThanDays(value)
       index = nextIndex
       continue
     }
 
-    if (arg.startsWith('--kinds')) {
+    if (matchesOption(arg, '--kinds')) {
       const [value, nextIndex] = getOptionValue(arg, args, index)
       options.kinds = parseKinds(value)
       index = nextIndex
@@ -196,14 +200,15 @@ const askForConfirmation = async (): Promise<boolean> => {
   return answer.trim() === 'DELETE'
 }
 
-const runAllDelete = async (dbClient: Knex): Promise<void> => {
+const runAllDelete = async (dbClient: Knex): Promise<boolean> => {
   const hasEventTagsTable = await dbClient.schema.hasTable('event_tags')
   if (hasEventTagsTable) {
     await dbClient.raw('TRUNCATE TABLE events, event_tags RESTART IDENTITY CASCADE;')
-    return
+    return true
   }
 
   await dbClient.raw('TRUNCATE TABLE events RESTART IDENTITY CASCADE;')
+  return false
 }
 
 const runSelectiveDelete = async (dbClient: Knex, options: CleanDbOptions): Promise<number> => {
@@ -247,8 +252,12 @@ export const runCleanDb = async (args: string[] = process.argv.slice(2)): Promis
     }
 
     if (options.all) {
-      await runAllDelete(dbClient)
-      console.log('Deleted all events with TRUNCATE.')
+      const deletedEventTags = await runAllDelete(dbClient)
+      if (deletedEventTags) {
+        console.log('Deleted all rows from events and event_tags with TRUNCATE.')
+      } else {
+        console.log('Deleted all events with TRUNCATE.')
+      }
       return 0
     }
 

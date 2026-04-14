@@ -89,4 +89,12 @@ describe('parseCleanDbOptions', () => {
     expect(() => parseCleanDbOptions(['--unknown']))
       .to.throw('Unknown option: --unknown')
   })
+
+  it('rejects options that only share a prefix with supported flags', () => {
+    expect(() => parseCleanDbOptions(['--older-than-days=7']))
+      .to.throw('Unknown option: --older-than-days=7')
+
+    expect(() => parseCleanDbOptions(['--kinds-extra', '1,2,3']))
+      .to.throw('Unknown option: --kinds-extra')
+  })
 })

@@ -481,7 +481,8 @@ To see the integration test coverage report open `.coverage/integration/lcov-rep
 
 ## Relay Maintenance
 
-Use `clean-db` to wipe or prune only the `events` table data.
+Use `clean-db` to wipe or prune `events` table data. This also removes
+corresponding data from the derived `event_tags` table when present.
 
 Dry run (no deletion):
 
