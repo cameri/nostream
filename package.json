@@ -140,5 +140,8 @@
     "commitizen": {
       "path": "./node_modules/cz-conventional-changelog"
     }
+  },
+  "overrides": {
+    "axios@<0.31.0": ">=0.31.0"
   }
 }
