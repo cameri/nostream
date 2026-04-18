@@ -2,9 +2,23 @@ import { PassThrough } from 'stream'
 
 import { DatabaseClient, EventId, Pubkey } from './base'
 import { DBEvent, Event } from './event'
+import { EventKinds } from '../constants/base'
+import { EventKindsRange } from './settings'
 import { Invoice } from './invoice'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
+
+export interface EventRetentionOptions {
+  maxDays?: number
+  kindWhitelist?: (EventKinds | EventKindsRange)[]
+  pubkeyWhitelist?: Pubkey[]
+}
+
+export interface EventPurgeCounts {
+  deleted: number
+  expired: number
+  retained: number
+}
 
 export type ExposedPromiseKeys = 'then' | 'catch' | 'finally'
 
@@ -21,6 +35,7 @@ export interface IEventRepository {
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
   deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>
   hasActiveRequestToVanish(pubkey: Pubkey): Promise<boolean>
+  deleteExpiredAndRetained(options?: EventRetentionOptions): Promise<EventPurgeCounts>
 }
 
 export interface IInvoiceRepository {

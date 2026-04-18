@@ -489,6 +489,84 @@ describe('EventRepository', () => {
     })
   })
 
+  describe('deleteExpiredAndRetained', () => {
+    let clock: sinon.SinonFakeTimers
+    beforeEach(() => {
+      clock = sinon.useFakeTimers(1000000000) // 1970-01-12T13:46:40.000Z
+    })
+
+    afterEach(() => {
+      clock.restore()
+    })
+
+    it('does not delete anything when retention is not set', async () => {
+      const result = await repository.deleteExpiredAndRetained()
+
+      expect(result).to.deep.equal({
+        deleted: 0,
+        expired: 0,
+        retained: 0,
+      })
+    })
+
+    it('does not delete anything when retention.maxDays is zero or negative', async () => {
+      expect(await repository.deleteExpiredAndRetained({ maxDays: 0 })).to.deep.equal({
+        deleted: 0,
+        expired: 0,
+        retained: 0,
+      })
+      expect(await repository.deleteExpiredAndRetained({ maxDays: -1 })).to.deep.equal({
+        deleted: 0,
+        expired: 0,
+        retained: 0,
+      })
+    })
+
+    it('deletes expired, deleted and old events when retention.maxDays is set', () => {
+      const query = repository.deleteExpiredAndRetained({
+        maxDays: 7,
+      }).toString()
+
+      expect(query).to.equal('delete from "events" where "event_id" in (select "event_id" from "events" where ("expires_at" < 1000000 or "deleted_at" is not null or "event_created_at" < 395200) and not ("event_kind" = 62) limit 1000) returning "deleted_at", "expires_at", "event_created_at"')
+    })
+
+    it('excludes whitelisted kinds and pubkeys from purge', () => {
+      const query = repository.deleteExpiredAndRetained({
+        maxDays: 7,
+        kindWhitelist: [62],
+        pubkeyWhitelist: ['001122'],
+      }).toString()
+
+      expect(query).to.equal('delete from "events" where "event_id" in (select "event_id" from "events" where ("expires_at" < 1000000 or "deleted_at" is not null or "event_created_at" < 395200) and not ("event_kind" = 62) and "event_pubkey" not in (X\'001122\') limit 1000) returning "deleted_at", "expires_at", "event_created_at"')
+    })
+
+    it('always excludes kind 62 from purge, even when no kind whitelist is configured', () => {
+      const query = repository.deleteExpiredAndRetained({
+        maxDays: 7,
+      }).toString()
+
+      expect(query).to.equal('delete from "events" where "event_id" in (select "event_id" from "events" where ("expires_at" < 1000000 or "deleted_at" is not null or "event_created_at" < 395200) and not ("event_kind" = 62) limit 1000) returning "deleted_at", "expires_at", "event_created_at"')
+    })
+
+    it('excludes whitelisted kind ranges from purge', () => {
+      const query = repository.deleteExpiredAndRetained({
+        maxDays: 7,
+        kindWhitelist: [[10000, 20000]],
+      }).toString()
+
+      expect(query).to.equal('delete from "events" where "event_id" in (select "event_id" from "events" where ("expires_at" < 1000000 or "deleted_at" is not null or "event_created_at" < 395200) and not ("event_kind" between 10000 and 20000 or "event_kind" = 62) limit 1000) returning "deleted_at", "expires_at", "event_created_at"')
+    })
+
+    it('excludes a complex mix of kinds and ranges from purge', () => {
+      const query = repository.deleteExpiredAndRetained({
+        maxDays: 7,
+        kindWhitelist: [0, 62, [30000, 40000]],
+      }).toString()
+
+      expect(query).to.equal('delete from "events" where "event_id" in (select "event_id" from "events" where ("expires_at" < 1000000 or "deleted_at" is not null or "event_created_at" < 395200) and not ("event_kind" = 0 or "event_kind" = 62 or "event_kind" between 30000 and 40000) limit 1000) returning "deleted_at", "expires_at", "event_created_at"')
+    })
+  })
+
   describe('upsert', () => {
     it('replaces event based on event_pubkey and event_kind', () => {
       const event: Event = {
