@@ -12,6 +12,7 @@
     "types": ["node", "mocha", "@cucumber/cucumber"],
     "typeRoots": ["./node_modules/@types"],
     "incremental": true,
+    "skipLibCheck": true,
     "declarationMap": true,
     "inlineSourceMap": true,
     "inlineSources": true,

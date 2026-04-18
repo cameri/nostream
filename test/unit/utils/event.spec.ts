@@ -1,19 +1,23 @@
-import { expect } from 'chai'
-
+import { ALL_RELAYS, EventKinds, EventTags } from '../../../src/constants/base'
 import { CanonicalEvent, Event } from '../../../src/@types/event'
 import {
   getEventExpiration,
   isDeleteEvent,
+  isDirectMessageEvent,
   isEphemeralEvent,
   isEventIdValid,
   isEventMatchingFilter,
   isEventSignatureValid,
   isExpiredEvent,
+  isFileMessageEvent,
+  isGiftWrapEvent,
   isParameterizedReplaceableEvent,
   isReplaceableEvent,
+  isRequestToVanishEvent,
+  isSealEvent,
   serializeEvent,
 } from '../../../src/utils/event'
-import { EventKinds } from '../../../src/constants/base'
+import { expect } from 'chai'
 
 describe('NIP-01', () => {
   describe('serializeEvent', () => {
@@ -345,6 +349,60 @@ describe('NIP-16', () => {
   })
 })
 
+describe('NIP-17', () => {
+  describe('isGiftWrapEvent', () => {
+    it('returns true for kind 1059', () => {
+      expect(isGiftWrapEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.true
+    })
+
+    it('returns false for any other kind', () => {
+      expect(isGiftWrapEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isGiftWrapEvent({ kind: EventKinds.SEAL } as any)).to.be.false
+      expect(isGiftWrapEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.false
+    })
+  })
+
+  describe('isSealEvent', () => {
+    it('returns true for kind 13', () => {
+      expect(isSealEvent({ kind: EventKinds.SEAL } as any)).to.be.true
+    })
+
+    it('returns false for any other kind', () => {
+      expect(isSealEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isSealEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
+      expect(isSealEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.false
+    })
+  })
+
+  describe('isDirectMessageEvent', () => {
+    it('returns true for kind 14', () => {
+      expect(isDirectMessageEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.true
+    })
+
+    it('returns false for kind 4 (legacy NIP-04 DM)', () => {
+      expect(isDirectMessageEvent({ kind: EventKinds.ENCRYPTED_DIRECT_MESSAGE } as any)).to.be.false
+    })
+
+    it('returns false for any other kind', () => {
+      expect(isDirectMessageEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isDirectMessageEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
+      expect(isDirectMessageEvent({ kind: EventKinds.SEAL } as any)).to.be.false
+    })
+  })
+
+  describe('isFileMessageEvent', () => {
+    it('returns true for kind 15', () => {
+      expect(isFileMessageEvent({ kind: EventKinds.FILE_MESSAGE } as any)).to.be.true
+    })
+
+    it('returns false for any other kind', () => {
+      expect(isFileMessageEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isFileMessageEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.false
+      expect(isFileMessageEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
+    })
+  })
+})
+
 // describe('NIP-27', () => {
 //   describe('isEventMatchingFilter', () => {
 //     describe('#m filter', () => {
@@ -412,6 +470,64 @@ describe('NIP-09', () => {
         kind: 5 * 100000,
       } as any
       expect(isDeleteEvent(event)).to.be.false
+    })
+  })
+})
+
+describe('NIP-62', () => {
+  describe('isRequestToVanishEvent', () => {
+    it('returns true if event is kind 62', () => {
+      const event: Event = {
+        kind: 62,
+      } as any
+      expect(isRequestToVanishEvent(event)).to.be.true
+    })
+
+    it('returns false if event is not kind 62', () => {
+      const event: Event = {
+        kind: 1,
+      } as any
+      expect(isRequestToVanishEvent(event)).to.be.false
+    })
+
+    it('returns true when event contains the relay URL', () => {
+      const event: Event = {
+        kind: 62,
+        tags: [[EventTags.Relay, 'relay_url']],
+      } as any
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.true
+    })
+
+    it('returns true when event contains ALL_RELAYS', () => {
+      const event: Event = {
+        kind: 62,
+        tags: [[EventTags.Relay, ALL_RELAYS]],
+      } as any
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.true
+    })
+
+    it('returns false when relay tag does not match', () => {
+      const event: Event = {
+        kind: 62,
+        tags: [[EventTags.Relay, 'other_relay_url']],
+      } as any
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.false
+    })
+
+    it('returns false when there are no relay tags', () => {
+      const event: Event = {
+        kind: 62,
+        tags: [],
+      } as any
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.false
+    })
+
+    it('returns false when relay URL is provided for non-kind-62 event', () => {
+      const event: Event = {
+        kind: 1,
+        tags: [[EventTags.Relay, 'relay_url']],
+      } as any
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.false
     })
   })
 })

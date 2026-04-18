@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@2/schema.json",
+  "entry": [
+    "src/index.ts",
+    "src/import-events.ts",
+    "knexfile.js"
+  ],
+  "project": [
+    "src/**/*.ts"
+  ],
+  "ignoreFiles": [],
+  "commitlint": false,
+  "eslint": false,
+  "github-actions": false,
+  "husky": false,
+  "mocha": false,
+  "nyc": false,
+  "semantic-release": false
+}
