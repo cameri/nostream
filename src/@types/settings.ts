@@ -228,6 +228,29 @@ export interface Mirroring {
   static?: Mirror[]
 }
 
+export type Nip05Mode = 'enabled' | 'passive' | 'disabled'
+
+export interface Nip05Settings {
+  mode: Nip05Mode
+  /**
+   * Maximum age (in ms) of a successful verification before an author is blocked.
+   * Defaults to 604800000 (7 days) when unset.
+   */
+  verifyExpiration?: number
+  /**
+   * Minimum interval (in ms) between background re-verifications per author.
+   * Defaults to 86400000 (24 hours) when unset.
+   */
+  verifyUpdateFrequency?: number
+  /**
+   * Number of consecutive verification failures after which an author is no longer
+   * re-checked. Defaults to 20 when unset.
+   */
+  maxConsecutiveFailures?: number
+  domainWhitelist?: string[]
+  domainBlacklist?: string[]
+}
+
 export interface Settings {
   info: Info
   payments?: Payments
@@ -236,4 +259,5 @@ export interface Settings {
   workers?: Worker
   limits?: Limits
   mirroring?: Mirroring
+  nip05?: Nip05Settings
 }

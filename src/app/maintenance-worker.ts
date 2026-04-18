@@ -1,16 +1,70 @@
+import {
+  DEFAULT_NIP05_MAX_CONSECUTIVE_FAILURES,
+  DEFAULT_NIP05_VERIFY_UPDATE_FREQUENCY_MS,
+  Nip05VerificationOutcome,
+  verifyNip05Identifier,
+} from '../utils/nip05'
 import { IMaintenanceService, IPaymentsService } from '../@types/services'
 import { mergeDeepLeft, path, pipe } from 'ramda'
 import { IRunnable } from '../@types/base'
 
 import { createLogger } from '../factories/logger-factory'
 import { delayMs } from '../utils/misc'
+import { INip05VerificationRepository } from '../@types/repositories'
 import { InvoiceStatus } from '../@types/invoice'
+import { Nip05Verification } from '../@types/nip05'
 import { Settings } from '../@types/settings'
 
 const UPDATE_INVOICE_INTERVAL = 60000
+const NIP05_REVERIFICATION_BATCH_SIZE = 50
 const CLEAR_OLD_EVENTS_TIMEOUT_MS = 5000
 
 const debug = createLogger('maintenance-worker')
+
+/**
+ * Merge a re-verification outcome onto an existing verification row.
+ *
+ * Definitive outcomes (`verified`, `mismatch`, `invalid`) update `isVerified`
+ * and `lastVerifiedAt`. Transient `error` outcomes only bump `failureCount` /
+ * `lastCheckedAt` so a previously-verified author keeps their grace period
+ * until `verifyExpiration` elapses. This prevents a single network blip from
+ * immediately blocking publishing.
+ */
+export function applyReverificationOutcome(
+  existing: Nip05Verification,
+  outcome: Nip05VerificationOutcome,
+): Nip05Verification {
+  const now = new Date()
+  const base: Nip05Verification = {
+    ...existing,
+    lastCheckedAt: now,
+    updatedAt: now,
+  }
+
+  switch (outcome.status) {
+    case 'verified':
+      return {
+        ...base,
+        isVerified: true,
+        lastVerifiedAt: now,
+        failureCount: 0,
+      }
+    case 'mismatch':
+    case 'invalid':
+      return {
+        ...base,
+        isVerified: false,
+        lastVerifiedAt: null,
+        failureCount: existing.failureCount + 1,
+      }
+    case 'error':
+    default:
+      return {
+        ...base,
+        failureCount: existing.failureCount + 1,
+      }
+  }
+}
 
 export class MaintenanceWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
@@ -21,6 +75,7 @@ export class MaintenanceWorker implements IRunnable {
     private readonly paymentsService: IPaymentsService,
     private readonly maintenanceService: IMaintenanceService,
     private readonly settings: () => Settings,
+    private readonly nip05VerificationRepository: INip05VerificationRepository,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -64,6 +119,8 @@ export class MaintenanceWorker implements IRunnable {
   private async onSchedule(): Promise<void> {
     const currentSettings = this.settings()
     const clearOldEventsPromise = this.clearOldEventsSafely()
+
+    await this.processNip05Reverifications(currentSettings)
 
     if (!path(['payments','enabled'], currentSettings)) {
       await clearOldEventsPromise
@@ -118,6 +175,43 @@ export class MaintenanceWorker implements IRunnable {
     }
 
     await clearOldEventsPromise
+  }
+
+  private async processNip05Reverifications(currentSettings: Settings): Promise<void> {
+    const nip05Settings = currentSettings.nip05
+    if (!nip05Settings || nip05Settings.mode === 'disabled') {
+      return
+    }
+
+    try {
+      const updateFrequency = nip05Settings.verifyUpdateFrequency ?? DEFAULT_NIP05_VERIFY_UPDATE_FREQUENCY_MS
+      const maxFailures = nip05Settings.maxConsecutiveFailures ?? DEFAULT_NIP05_MAX_CONSECUTIVE_FAILURES
+
+      const pendingVerifications = await this.nip05VerificationRepository.findPendingVerifications(
+        updateFrequency,
+        maxFailures,
+        NIP05_REVERIFICATION_BATCH_SIZE,
+      )
+
+      if (!pendingVerifications.length) {
+        return
+      }
+
+      debug('found %d NIP-05 verifications to re-check', pendingVerifications.length)
+
+      for (const verification of pendingVerifications) {
+        try {
+          const outcome = await verifyNip05Identifier(verification.nip05, verification.pubkey)
+          const updated = applyReverificationOutcome(verification, outcome)
+          await this.nip05VerificationRepository.upsert(updated)
+          await delayMs(200 + Math.floor(Math.random() * 100))
+        } catch (error) {
+          debug('failed to re-verify NIP-05 for %s: %o', verification.pubkey, error)
+        }
+      }
+    } catch (error) {
+      debug('NIP-05 re-verification batch failed: %o', error)
+    }
   }
 
   private onError(error: Error) {
