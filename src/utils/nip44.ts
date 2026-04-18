@@ -84,11 +84,7 @@ function pad(plaintext: string): Buffer {
 function unpad(padded: Buffer): string {
   const unpaddedLen = padded.readUInt16BE(0)
   const unpadded = padded.subarray(2, 2 + unpaddedLen)
-  if (
-    unpaddedLen === 0 ||
-    unpadded.length !== unpaddedLen ||
-    padded.length !== 2 + calcPaddedLen(unpaddedLen)
-  ) {
+  if (unpaddedLen === 0 || unpadded.length !== unpaddedLen || padded.length !== 2 + calcPaddedLen(unpaddedLen)) {
     throw new Error('invalid padding')
   }
   return unpadded.toString('utf8')
@@ -98,11 +94,7 @@ function unpad(padded: Buffer): string {
  * Encrypt plaintext using NIP-44 v2.
  * Output format: base64(0x02 || nonce[32] || ciphertext || mac[32])
  */
-export function nip44Encrypt(
-  plaintext: string,
-  conversationKey: Buffer,
-  nonce: Buffer = randomBytes(32),
-): string {
+export function nip44Encrypt(plaintext: string, conversationKey: Buffer, nonce: Buffer = randomBytes(32)): string {
   const { chachaKey, chachaNonce, hmacKey } = getMessageKeys(conversationKey, nonce)
   const padded = pad(plaintext)
 

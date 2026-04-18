@@ -25,9 +25,15 @@ describe('messageHandlerFactory', () => {
     sandbox = sinon.createSandbox()
     sandbox.stub(cacheModule, 'getCacheClient').returns({
       connect: async () => {},
-      on: function() { return this },
-      once: function() { return this },
-      removeListener: function() { return this }
+      on: function () {
+        return this
+      },
+      once: function () {
+        return this
+      },
+      removeListener: function () {
+        return this
+      },
     } as any)
     eventRepository = {} as any
     userRepository = {} as any
@@ -44,29 +50,19 @@ describe('messageHandlerFactory', () => {
   })
 
   it('returns EventMessageHandler when given an EVENT message', () => {
-    message = [
-       MessageType.EVENT,
-       event,
-    ]
+    message = [MessageType.EVENT, event]
 
     expect(factory([message, adapter])).to.be.an.instanceOf(EventMessageHandler)
   })
 
   it('returns SubscribeMessageHandler when given a REQ message', () => {
-    message = [
-       MessageType.REQ,
-       '',
-       {},
-    ] as any
+    message = [MessageType.REQ, '', {}] as any
 
     expect(factory([message, adapter])).to.be.an.instanceOf(SubscribeMessageHandler)
   })
 
   it('returns UnsubscribeMessageHandler when given a REQ message', () => {
-    message = [
-       MessageType.CLOSE,
-       '',
-    ]
+    message = [MessageType.CLOSE, '']
 
     expect(factory([message, adapter])).to.be.an.instanceOf(UnsubscribeMessageHandler)
   })
@@ -76,6 +72,4 @@ describe('messageHandlerFactory', () => {
 
     expect(() => factory([message, adapter])).to.throw(Error, 'Unknown message type: undefined')
   })
-
-
 })

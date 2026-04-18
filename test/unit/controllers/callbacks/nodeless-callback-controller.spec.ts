@@ -51,9 +51,7 @@ const makeInvoice = (overrides: any = {}) => ({
   ...overrides,
 })
 
-const makeController = (overrides: {
-  paymentsService?: any
-} = {}) => {
+const makeController = (overrides: { paymentsService?: any } = {}) => {
   const paymentsService = overrides.paymentsService ?? {
     updateInvoiceStatus: sinon.stub().resolves(makeInvoice()),
     confirmInvoice: sinon.stub().resolves(),
@@ -66,10 +64,8 @@ const makeController = (overrides: {
   }
 }
 
-const makeSignature = (rawBody: Buffer) => hmacSha256(
-  process.env.NODELESS_WEBHOOK_SECRET as string,
-  rawBody,
-).toString('hex')
+const makeSignature = (rawBody: Buffer) =>
+  hmacSha256(process.env.NODELESS_WEBHOOK_SECRET as string, rawBody).toString('hex')
 
 const makeReq = (overrides: any = {}): any => {
   const body = overrides.body ?? validBody
@@ -116,10 +112,7 @@ describe('NodelessCallbackController', () => {
       const { controller } = makeController()
       const res = makeRes()
 
-      await controller.handleRequest(
-        makeReq({ body: { uuid: 'missing-required-fields' } }),
-        res,
-      )
+      await controller.handleRequest(makeReq({ body: { uuid: 'missing-required-fields' } }), res)
 
       expect(res.status).to.have.been.calledWith(400)
       expect(res.setHeader).to.have.been.calledWith('content-type', 'application/json; charset=utf8')
@@ -130,10 +123,7 @@ describe('NodelessCallbackController', () => {
       const { controller, paymentsService } = makeController()
       const res = makeRes()
 
-      await controller.handleRequest(
-        makeReq({ signature: 'invalid-signature' }),
-        res,
-      )
+      await controller.handleRequest(makeReq({ signature: 'invalid-signature' }), res)
 
       expect(res.status).to.have.been.calledWith(403)
       expect(res.send).to.have.been.calledWith('Forbidden')
@@ -156,20 +146,19 @@ describe('NodelessCallbackController', () => {
   describe('invoice state handling', () => {
     it('returns 200 without confirmation when invoice is not completed', async () => {
       const paymentsService = {
-        updateInvoiceStatus: sinon.stub().resolves(makeInvoice({
-          status: InvoiceStatus.PENDING,
-          confirmedAt: null,
-        })),
+        updateInvoiceStatus: sinon.stub().resolves(
+          makeInvoice({
+            status: InvoiceStatus.PENDING,
+            confirmedAt: null,
+          }),
+        ),
         confirmInvoice: sinon.stub().resolves(),
         sendInvoiceUpdateNotification: sinon.stub().resolves(),
       }
       const { controller } = makeController({ paymentsService })
       const res = makeRes()
 
-      await controller.handleRequest(
-        makeReq({ body: { ...validBody, status: 'new' } }),
-        res,
-      )
+      await controller.handleRequest(makeReq({ body: { ...validBody, status: 'new' } }), res)
 
       expect(res.status).to.have.been.calledWith(200)
       expect(paymentsService.confirmInvoice).to.not.have.been.called

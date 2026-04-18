@@ -122,7 +122,7 @@ export class MaintenanceWorker implements IRunnable {
 
     await this.processNip05Reverifications(currentSettings)
 
-    if (!path(['payments','enabled'], currentSettings)) {
+    if (!path(['payments', 'enabled'], currentSettings)) {
       await clearOldEventsPromise
       return
     }
@@ -148,9 +148,9 @@ export class MaintenanceWorker implements IRunnable {
         await this.paymentsService.updateInvoiceStatus({ id, status })
 
         if (
-          invoice.status !== updatedInvoice.status
-          && updatedInvoice.status == InvoiceStatus.COMPLETED
-          && updatedInvoice.confirmedAt
+          invoice.status !== updatedInvoice.status &&
+          updatedInvoice.status == InvoiceStatus.COMPLETED &&
+          updatedInvoice.confirmedAt
         ) {
           debug('confirming invoice %s & notifying %s', invoice.id, invoice.pubkey)
 

@@ -1,12 +1,7 @@
 import * as secp256k1 from '@noble/secp256k1'
 import { expect } from 'chai'
 
-import {
-  getConversationKey,
-  nip44Decrypt,
-  nip44Encrypt,
-  validateNip44Payload,
-} from '../../../src/utils/nip44'
+import { getConversationKey, nip44Decrypt, nip44Encrypt, validateNip44Payload } from '../../../src/utils/nip44'
 
 // ---------------------------------------------------------------------------
 // Helpers — compute pub from sec using the same library the relay uses

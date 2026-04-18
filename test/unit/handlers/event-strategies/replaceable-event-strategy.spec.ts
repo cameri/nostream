@@ -64,14 +64,13 @@ describe('ReplaceableEventStrategy', () => {
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
       expect(webSocketEmitStub).to.have.been.calledTwice
-      expect(webSocketEmitStub).to.have.been.calledWithExactly(
-        WebSocketAdapterEvent.Message,
-        [MessageType.OK, 'id', true, '']
-      )
-      expect(webSocketEmitStub).to.have.been.calledWithExactly(
-        WebSocketAdapterEvent.Broadcast,
-        event
-      )
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Message, [
+        MessageType.OK,
+        'id',
+        true,
+        '',
+      ])
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Broadcast, event)
     })
 
     it('does not broadcast event if event is duplicate', async () => {
@@ -80,10 +79,12 @@ describe('ReplaceableEventStrategy', () => {
       await strategy.execute(event)
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
-      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-        WebSocketAdapterEvent.Message,
-        ['OK', 'id', true, 'duplicate:']
-      )
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+        'OK',
+        'id',
+        true,
+        'duplicate:',
+      ])
     })
 
     it('rejects if unable to upsert event', async () => {
@@ -93,10 +94,12 @@ describe('ReplaceableEventStrategy', () => {
       await strategy.execute(event)
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
-      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-        WebSocketAdapterEvent.Message,
-        ['OK', 'id', false, 'error: ']
-      )
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+        'OK',
+        'id',
+        false,
+        'error: ',
+      ])
     })
   })
 })

@@ -4,7 +4,6 @@ import { withController } from '../../handlers/request-handlers/with-controller-
 
 const admissionRouter = Router()
 
-admissionRouter
-  .get('/check/:pubkey', withController(createGetAdmissionCheckController))
+admissionRouter.get('/check/:pubkey', withController(createGetAdmissionCheckController))
 
 export default admissionRouter

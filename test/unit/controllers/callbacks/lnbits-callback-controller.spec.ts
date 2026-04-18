@@ -43,10 +43,7 @@ const makeInvoice = (overrides: any = {}) => ({
   ...overrides,
 })
 
-const makeController = (overrides: {
-  paymentsService?: any
-  invoiceRepository?: any
-} = {}) => {
+const makeController = (overrides: { paymentsService?: any; invoiceRepository?: any } = {}) => {
   const paymentsService = overrides.paymentsService ?? {
     getInvoiceFromPaymentsProcessor: sinon.stub().resolves(makeInvoice()),
     updateInvoice: sinon.stub().resolves(),
@@ -66,10 +63,7 @@ const makeController = (overrides: {
 
 const makeValidQuery = (expiry = VALID_HMAC_EXPIRY) => {
   const expiryString = String(expiry)
-  const signature = hmacSha256(
-    deriveFromSecret('lnbits-callback-hmac-key'),
-    expiryString,
-  ).toString('hex')
+  const signature = hmacSha256(deriveFromSecret('lnbits-callback-hmac-key'), expiryString).toString('hex')
 
   return { hmac: `${expiryString}:${signature}` }
 }
@@ -159,10 +153,7 @@ describe('LNbitsCallbackController', () => {
       const validQuery = makeValidQuery()
       const [expiryString] = validQuery.hmac.split(':')
 
-      await controller.handleRequest(
-        makeReq({ query: { hmac: `${expiryString}:${'c'.repeat(64)}` } }),
-        res,
-      )
+      await controller.handleRequest(makeReq({ query: { hmac: `${expiryString}:${'c'.repeat(64)}` } }), res)
 
       expect(res.status).to.have.been.calledWith(403)
       expect(res.send).to.have.been.calledWith('Forbidden')
@@ -172,15 +163,9 @@ describe('LNbitsCallbackController', () => {
       const { controller } = makeController()
       const res = makeRes()
       const unsafeExpiry = '9007199254740993'
-      const signature = hmacSha256(
-        deriveFromSecret('lnbits-callback-hmac-key'),
-        unsafeExpiry,
-      ).toString('hex')
+      const signature = hmacSha256(deriveFromSecret('lnbits-callback-hmac-key'), unsafeExpiry).toString('hex')
 
-      await controller.handleRequest(
-        makeReq({ query: { hmac: `${unsafeExpiry}:${signature}` } }),
-        res,
-      )
+      await controller.handleRequest(makeReq({ query: { hmac: `${unsafeExpiry}:${signature}` } }), res)
 
       expect(res.status).to.have.been.calledWith(403)
       expect(res.send).to.have.been.calledWith('Forbidden')
@@ -190,10 +175,7 @@ describe('LNbitsCallbackController', () => {
       const { controller } = makeController()
       const res = makeRes()
 
-      await controller.handleRequest(
-        makeReq({ query: makeValidQuery(Date.now() - 60_000) }),
-        res,
-      )
+      await controller.handleRequest(makeReq({ query: makeValidQuery(Date.now() - 60_000) }), res)
 
       expect(res.status).to.have.been.calledWith(403)
       expect(res.send).to.have.been.calledWith('Forbidden')
@@ -203,10 +185,7 @@ describe('LNbitsCallbackController', () => {
       const { controller } = makeController()
       const res = makeRes()
 
-      await controller.handleRequest(
-        makeReq({ body: { invalid: true } }),
-        res,
-      )
+      await controller.handleRequest(makeReq({ body: { invalid: true } }), res)
 
       expect(res.status).to.have.been.calledWith(400)
       expect(res.setHeader).to.have.been.calledWith('content-type', 'text/plain; charset=utf8')
@@ -230,10 +209,12 @@ describe('LNbitsCallbackController', () => {
 
     it('returns 200 without confirmation when processor invoice is still pending', async () => {
       const paymentsService = {
-        getInvoiceFromPaymentsProcessor: sinon.stub().resolves(makeInvoice({
-          status: InvoiceStatus.PENDING,
-          confirmedAt: null,
-        })),
+        getInvoiceFromPaymentsProcessor: sinon.stub().resolves(
+          makeInvoice({
+            status: InvoiceStatus.PENDING,
+            confirmedAt: null,
+          }),
+        ),
         updateInvoice: sinon.stub().resolves(),
         confirmInvoice: sinon.stub().resolves(),
         sendInvoiceUpdateNotification: sinon.stub().resolves(),

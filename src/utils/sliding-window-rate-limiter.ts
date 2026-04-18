@@ -5,19 +5,13 @@ import { ICacheAdapter } from '../@types/adapters'
 const debug = createLogger('sliding-window-rate-limiter')
 
 export class SlidingWindowRateLimiter implements IRateLimiter {
-  public constructor(
-    private readonly cache: ICacheAdapter,
-  ) {}
+  public constructor(private readonly cache: ICacheAdapter) {}
 
-  public async hit(
-    key: string,
-    step: number,
-    options: IRateLimiterOptions,
-  ): Promise<boolean> {
+  public async hit(key: string, step: number, options: IRateLimiterOptions): Promise<boolean> {
     const timestamp = Date.now()
     const { period } = options
 
-    const [,, entries] = await Promise.all([
+    const [, , entries] = await Promise.all([
       this.cache.removeRangeByScoreFromSortedSet(key, 0, timestamp - period),
       this.cache.addToSortedSet(key, { [`${timestamp}:${step}`]: timestamp.toString() }),
       this.cache.getRangeFromSortedSet(key, 0, -1),

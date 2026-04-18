@@ -95,9 +95,10 @@ describe('EventMessageHandler', () => {
         strategyFactoryStub,
         eventRepository,
         userRepository,
-        () => ({
-          info: { relay_url: 'relay_url' },
-        }) as any,
+        () =>
+          ({
+            info: { relay_url: 'relay_url' },
+          }) as any,
         () => ({ hit: async () => false }),
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
@@ -110,15 +111,13 @@ describe('EventMessageHandler', () => {
       webSocket.removeAllListeners()
     })
 
-    it('rejects event if it can\'t be accepted', async () => {
+    it("rejects event if it can't be accepted", async () => {
       canAcceptEventStub.returns('reason')
 
       await handler.handleMessage(message)
 
       expect(canAcceptEventStub).to.have.been.calledOnceWithExactly(event)
-      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
-        [MessageType.OK, event.id, false, 'reason'],
-      )
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly([MessageType.OK, event.id, false, 'reason'])
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
@@ -128,9 +127,12 @@ describe('EventMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(isRateLimitedStub).to.have.been.calledOnceWithExactly(event)
-      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
-        [MessageType.OK, event.id, false, 'rate-limited: slow down'],
-      )
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly([
+        MessageType.OK,
+        event.id,
+        false,
+        'rate-limited: slow down',
+      ])
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
@@ -142,9 +144,12 @@ describe('EventMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(userRepository.isVanished as any).to.have.been.calledOnceWithExactly(event.pubkey)
-      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
-        [MessageType.OK, event.id, false, 'blocked: request to vanish active for pubkey'],
-      )
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly([
+        MessageType.OK,
+        event.id,
+        false,
+        'blocked: request to vanish active for pubkey',
+      ])
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
@@ -172,9 +177,7 @@ describe('EventMessageHandler', () => {
 
       const expiredEvent = {
         ...event,
-        tags: [
-          ['expiration', '1600000'],
-        ],
+        tags: [['expiration', '1600000']],
       }
 
       const expiredEventMessage: any = [MessageType.EVENT, expiredEvent]
@@ -183,9 +186,7 @@ describe('EventMessageHandler', () => {
 
       expect(isEventValidStub).to.have.been.calledOnceWithExactly(expiredEvent)
 
-      expect(onMessageSpy).to.have.been.calledOnceWithExactly(
-        [MessageType.OK, event.id, false, 'event is expired'],
-      )
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly([MessageType.OK, event.id, false, 'event is expired'])
       expect(strategyExecuteStub).not.to.have.been.called
     })
 
@@ -198,10 +199,7 @@ describe('EventMessageHandler', () => {
 
       expect(isEventValidStub).to.have.been.calledOnceWithExactly(event)
       expect(onMessageSpy).not.to.have.been.calledOnceWithExactly()
-      expect(strategyFactoryStub).to.have.been.calledOnceWithExactly([
-        event,
-        webSocket,
-      ])
+      expect(strategyFactoryStub).to.have.been.calledOnceWithExactly([event, webSocket])
       expect(strategyExecuteStub).not.to.have.been.called
     })
 
@@ -213,10 +211,7 @@ describe('EventMessageHandler', () => {
 
       expect(isEventValidStub).to.have.been.calledOnceWithExactly(event)
       expect(onMessageSpy).not.to.have.been.calledOnceWithExactly()
-      expect(strategyFactoryStub).to.have.been.calledOnceWithExactly([
-        event,
-        webSocket,
-      ])
+      expect(strategyFactoryStub).to.have.been.calledOnceWithExactly([event, webSocket])
       expect(strategyExecuteStub).to.have.been.calledOnceWithExactly(event)
     })
 
@@ -289,18 +284,16 @@ describe('EventMessageHandler', () => {
         it('returns undefined if maxPositiveDelta is zero', () => {
           eventLimits.createdAt.maxPositiveDelta = 0
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if createdDate is too far in the future', () => {
           eventLimits.createdAt.maxPositiveDelta = 100
           event.created_at += 101
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('rejected: created_at is more than 100 seconds in the future')
+          expect((handler as any).canAcceptEvent(event)).to.equal(
+            'rejected: created_at is more than 100 seconds in the future',
+          )
         })
       })
 
@@ -308,18 +301,16 @@ describe('EventMessageHandler', () => {
         it('returns undefined if maxNegativeDelta is zero', () => {
           eventLimits.createdAt.maxNegativeDelta = 0
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if createdDate is too far in the past', () => {
           eventLimits.createdAt.maxNegativeDelta = 100
           event.created_at -= 101
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('rejected: created_at is more than 100 seconds in the past')
+          expect((handler as any).canAcceptEvent(event)).to.equal(
+            'rejected: created_at is more than 100 seconds in the past',
+          )
         })
       })
     })
@@ -329,54 +320,42 @@ describe('EventMessageHandler', () => {
         it('returns undefined if maxLength is disabled', () => {
           eventLimits.content = [{ maxLength: 0 }]
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefned if content is not too long', () => {
           eventLimits.content = [{ maxLength: 1 }]
           event.content = 'x'.repeat(1)
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if kind does not match', () => {
           eventLimits.content = [{ kinds: [EventKinds.SET_METADATA], maxLength: 1 }]
           event.content = 'x'
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if kind matches but content is short', () => {
           eventLimits.content = [{ kinds: [EventKinds.TEXT_NOTE], maxLength: 1 }]
           event.content = 'x'
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if kind matches but content is too long', () => {
           eventLimits.content = [{ kinds: [EventKinds.TEXT_NOTE], maxLength: 1 }]
           event.content = 'xx'
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('rejected: content is longer than 1 bytes')
+          expect((handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
         })
 
         it('returns reason if content is too long', () => {
           eventLimits.content = [{ maxLength: 1 }]
           event.content = 'x'.repeat(2)
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('rejected: content is longer than 1 bytes')
+          expect((handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
         })
       })
 
@@ -384,63 +363,49 @@ describe('EventMessageHandler', () => {
         it('returns undefined if maxLength is zero', () => {
           eventLimits.content = { maxLength: 0 }
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if content is short', () => {
           eventLimits.content = { maxLength: 100 }
           event.content = 'x'.repeat(100)
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if content is too long', () => {
           eventLimits.content = { maxLength: 1 }
           event.content = 'xx'
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('rejected: content is longer than 1 bytes')
+          expect((handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
         })
 
         it('returns undefined if kind matches and content is short', () => {
           eventLimits.content = { kinds: [EventKinds.TEXT_NOTE], maxLength: 1 }
           event.content = 'x'
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if kind does not match and content is too long', () => {
           eventLimits.content = { kinds: [EventKinds.SET_METADATA], maxLength: 1 }
           event.content = 'xx'
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if content is too long', () => {
           eventLimits.content = { maxLength: 1 }
           event.content = 'xx'
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('rejected: content is longer than 1 bytes')
+          expect((handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
         })
 
         it('returns undefined if content is not set', () => {
           eventLimits.content = undefined
           event.content = 'xx'
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
       })
 
@@ -448,18 +413,16 @@ describe('EventMessageHandler', () => {
         it('returns undefined if maxNegativeDelta is zero', () => {
           eventLimits.createdAt.maxNegativeDelta = 0
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if createdDate is too far in the past', () => {
           eventLimits.createdAt.maxNegativeDelta = 100
           event.created_at -= 101
 
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('rejected: created_at is more than 100 seconds in the past')
+          expect((handler as any).canAcceptEvent(event)).to.equal(
+            'rejected: created_at is more than 100 seconds in the past',
+          )
         })
       })
     })
@@ -467,25 +430,19 @@ describe('EventMessageHandler', () => {
     describe('eventId', () => {
       describe('minLeadingZeroBits', () => {
         it('returns undefined if minLeadingZeroBits is zero', () => {
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if eventId has sufficient proof of work ', () => {
           eventLimits.eventId.minLeadingZeroBits = 15
           event.id = '0001' + 'f'.repeat(60)
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if eventId has insufficient proof of work ', () => {
           eventLimits.eventId.minLeadingZeroBits = 16
           event.id = '00' + 'f'.repeat(62)
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('pow: difficulty 8<16')
+          expect((handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<16')
         })
       })
     })
@@ -493,107 +450,81 @@ describe('EventMessageHandler', () => {
     describe('pubkey', () => {
       describe('minLeadingZeroBits', () => {
         it('returns undefined if minLeadingZeroBits is zero', () => {
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if pubkey has sufficient proof of work ', () => {
           eventLimits.pubkey.minLeadingZeroBits = 17
           event.pubkey = '00007' + 'f'.repeat(59)
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if pubkey has insufficient proof of work ', () => {
           eventLimits.pubkey.minLeadingZeroBits = 16
           event.pubkey = '0'.repeat(2) + 'f'.repeat(62)
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('pow: pubkey difficulty 8<16')
+          expect((handler as any).canAcceptEvent(event)).to.equal('pow: pubkey difficulty 8<16')
         })
       })
 
       describe('blacklist', () => {
         it('returns undefined if blacklist is empty', () => {
           eventLimits.pubkey.blacklist = []
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if pubkey is not blacklisted', () => {
           eventLimits.pubkey.blacklist = ['aabbcc']
           event.pubkey = 'fffff'
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if pubkey is not blacklisted by prefix', () => {
           eventLimits.pubkey.blacklist = ['aa55']
           event.pubkey = 'aabbcc'
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if pubkey is blacklisted', () => {
           eventLimits.pubkey.blacklist = ['aabbcc']
           event.pubkey = 'aabbcc'
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: pubkey not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
 
         it('returns reason if pubkey is blacklisted by prefix', () => {
           eventLimits.pubkey.blacklist = ['aa55']
           event.pubkey = 'aa55ccddeeff'
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: pubkey not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
       })
 
       describe('whitelist', () => {
         it('returns undefined if whitelist is empty', () => {
           eventLimits.pubkey.whitelist = []
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if pubkey is whitelisted', () => {
           eventLimits.pubkey.whitelist = ['aabbcc']
           event.pubkey = 'aabbcc'
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if pubkey is whitelisted by prefix', () => {
           eventLimits.pubkey.whitelist = ['aa55']
           event.pubkey = 'aa55ccddeeff'
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if pubkey is not whitelisted', () => {
           eventLimits.pubkey.whitelist = ['ffffff']
           event.pubkey = 'aabbcc'
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: pubkey not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
 
         it('returns reason if pubkey is not whitelisted by prefix', () => {
           eventLimits.pubkey.whitelist = ['aa55']
           event.pubkey = 'aabbccddeeff'
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: pubkey not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
       })
     })
@@ -602,92 +533,70 @@ describe('EventMessageHandler', () => {
       describe('blacklist', () => {
         it('returns undefined if blacklist is empty', () => {
           eventLimits.kind.blacklist = []
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if kind is not blacklisted', () => {
           eventLimits.kind.blacklist = [5]
           event.kind = 4
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if kind is not blacklisted in range', () => {
           eventLimits.kind.blacklist = [[1, 5]]
           event.kind = EventKinds.REACTION
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if kind is blacklisted in range', () => {
           eventLimits.kind.blacklist = [[1, 5]]
           event.kind = 4
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: event kind 4 not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 4 not allowed')
         })
       })
 
       describe('whitelist', () => {
         it('returns undefined if whitelist is empty', () => {
           eventLimits.kind.whitelist = []
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if kind is whitelisted', () => {
           eventLimits.kind.whitelist = [5]
           event.kind = 5
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns undefined if kind is whitelisted in range', () => {
           eventLimits.kind.whitelist = [[1, 5]]
           event.kind = 3
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
         it('returns reason if kind is blacklisted and whitelisted in range', () => {
           eventLimits.kind.blacklist = [3]
           eventLimits.kind.whitelist = [[1, 5]]
           event.kind = 3
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: event kind 3 not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 3 not allowed')
         })
 
         it('returns reason if kind is blacklisted and whitelisted', () => {
           eventLimits.kind.blacklist = [3]
           eventLimits.kind.whitelist = [3]
           event.kind = 3
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: event kind 3 not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 3 not allowed')
         })
 
         it('returns reason if kind is not whitelisted', () => {
           eventLimits.kind.whitelist = [5]
           event.kind = 4
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: event kind 4 not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 4 not allowed')
         })
 
         it('returns reason if kind is not whitelisted in range', () => {
           eventLimits.kind.whitelist = [[1, 5]]
           event.kind = EventKinds.REACTION
-          expect(
-            (handler as any).canAcceptEvent(event)
-          ).to.equal('blocked: event kind 7 not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 7 not allowed')
         })
       })
     })
@@ -701,7 +610,8 @@ describe('EventMessageHandler', () => {
         created_at: 1564498626,
         kind: 0,
         tags: [],
-        content: '{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}',
+        content:
+          '{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}',
         sig: 'd1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9',
       }
     })
@@ -717,7 +627,9 @@ describe('EventMessageHandler', () => {
 
     it('returns reason if event signature is not valid', () => {
       event.sig = 'wrong'
-      return expect((handler as any).isEventValid(event)).to.eventually.equal('invalid: event signature verification failed')
+      return expect((handler as any).isEventValid(event)).to.eventually.equal(
+        'invalid: event signature verification failed',
+      )
     })
 
     describe('NIP-17 inner event blocking', () => {
@@ -815,7 +727,6 @@ describe('EventMessageHandler', () => {
       settings.limits = undefined
       return expect((handler as any).isRateLimited(event)).to.eventually.be.false
     })
-
 
     it('fulfills with false if event limits setting is not set', async () => {
       settings.limits.event = undefined
@@ -923,7 +834,7 @@ describe('EventMessageHandler', () => {
         {
           period: 60000,
           rate: 1,
-        }
+        },
       )
       expect(rateLimiterHitStub.secondCall).to.have.been.calledWithExactly(
         'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:60000:[1]',
@@ -931,7 +842,7 @@ describe('EventMessageHandler', () => {
         {
           period: 60000,
           rate: 2,
-        }
+        },
       )
       expect(rateLimiterHitStub.thirdCall).to.have.been.calledWithExactly(
         'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:events:86400000:[[0,3]]',
@@ -939,10 +850,9 @@ describe('EventMessageHandler', () => {
         {
           period: 86400000,
           rate: 3,
-        }
+        },
       )
     })
-
 
     it('fulfills with false if not rate limited', async () => {
       eventLimits.rateLimits = [
@@ -1088,13 +998,13 @@ describe('EventMessageHandler', () => {
       )
     })
 
-    it ('fulfills with undefined if payments are disabled', async () => {
+    it('fulfills with undefined if payments are disabled', async () => {
       settings.payments.enabled = false
 
       return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
     })
 
-    it('fulfills with undefined if event pubkey equals relay\'s own public key', async () => {
+    it("fulfills with undefined if event pubkey equals relay's own public key", async () => {
       getRelayPublicKeyStub.returns(event.pubkey)
 
       return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
@@ -1190,7 +1100,7 @@ describe('EventMessageHandler', () => {
     describe('caching', () => {
       it('fulfills with undefined and uses cache hit for admitted user without hitting DB', async () => {
         cacheStub.getKey.resolves(CacheAdmissionState.ADMITTED)
-        
+
         await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
         expect(userRepositoryFindByPubkeyStub).not.to.have.been.called
       })
@@ -1213,7 +1123,11 @@ describe('EventMessageHandler', () => {
         userRepositoryFindByPubkeyStub.resolves(undefined)
 
         await (handler as any).isUserAdmitted(event)
-        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:is-admitted`, CacheAdmissionState.BLOCKED_NOT_ADMITTED, 60)
+        expect(cacheStub.setKey).to.have.been.calledWith(
+          `${event.pubkey}:is-admitted`,
+          CacheAdmissionState.BLOCKED_NOT_ADMITTED,
+          60,
+        )
       })
 
       it('caches insufficient balance status with 60s ttl when user balance is too low', async () => {
@@ -1221,7 +1135,11 @@ describe('EventMessageHandler', () => {
         userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, balance: 50n })
 
         await (handler as any).isUserAdmitted(event)
-        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:is-admitted`, CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE, 60)
+        expect(cacheStub.setKey).to.have.been.calledWith(
+          `${event.pubkey}:is-admitted`,
+          CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE,
+          60,
+        )
       })
 
       it('caches admitted status with 300s ttl when user is admitted and has balance', async () => {
@@ -1229,7 +1147,11 @@ describe('EventMessageHandler', () => {
         userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, balance: 150n })
 
         await (handler as any).isUserAdmitted(event)
-        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:is-admitted`, CacheAdmissionState.ADMITTED, 300)
+        expect(cacheStub.setKey).to.have.been.calledWith(
+          `${event.pubkey}:is-admitted`,
+          CacheAdmissionState.ADMITTED,
+          300,
+        )
       })
     })
   })
@@ -1278,7 +1200,7 @@ describe('EventMessageHandler', () => {
         () => ({ hit: async () => false }),
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-)
+      )
     })
 
     it('returns undefined if nip05 settings are not set', async () => {
@@ -1314,8 +1236,9 @@ describe('EventMessageHandler', () => {
     it('returns reason if no verification found for pubkey', async () => {
       nip05VerificationRepository.findByPubkey.resolves(undefined)
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 verification required')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 verification required',
+      )
     })
 
     it('returns reason if verification exists but has no lastVerifiedAt', async () => {
@@ -1325,8 +1248,9 @@ describe('EventMessageHandler', () => {
         domain: 'example.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 verification required')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 verification required',
+      )
     })
 
     it('treats isVerified=true with null lastVerifiedAt as unverified (historical/bad data)', async () => {
@@ -1336,8 +1260,9 @@ describe('EventMessageHandler', () => {
         domain: 'example.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 verification required')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 verification required',
+      )
     })
 
     it('returns reason if verification is expired', async () => {
@@ -1348,8 +1273,9 @@ describe('EventMessageHandler', () => {
         domain: 'example.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 verification expired')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 verification expired',
+      )
     })
 
     it('returns undefined if verification is valid and not expired', async () => {
@@ -1383,8 +1309,9 @@ describe('EventMessageHandler', () => {
         domain: 'spam.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 domain not allowed')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 domain not allowed',
+      )
     })
 
     it('returns reason if domain is not in whitelist', async () => {
@@ -1396,8 +1323,9 @@ describe('EventMessageHandler', () => {
         domain: 'other.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 domain not allowed')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 domain not allowed',
+      )
     })
 
     it('returns undefined if domain is in whitelist', async () => {
@@ -1448,7 +1376,7 @@ describe('EventMessageHandler', () => {
         () => ({ hit: async () => false }),
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-)
+      )
     })
 
     it('does nothing when nip05 settings are undefined', async () => {
@@ -1679,7 +1607,7 @@ describe('EventMessageHandler', () => {
         () => ({ hit: async () => false }),
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-)
+      )
     })
 
     it('returns undefined if nip05 settings are not set', async () => {
@@ -1715,8 +1643,9 @@ describe('EventMessageHandler', () => {
     it('returns reason if no verification found for pubkey', async () => {
       nip05VerificationRepository.findByPubkey.resolves(undefined)
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 verification required')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 verification required',
+      )
     })
 
     it('returns reason if verification exists but has no lastVerifiedAt', async () => {
@@ -1726,8 +1655,9 @@ describe('EventMessageHandler', () => {
         domain: 'example.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 verification required')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 verification required',
+      )
     })
 
     it('treats isVerified=true with null lastVerifiedAt as unverified (historical/bad data)', async () => {
@@ -1737,8 +1667,9 @@ describe('EventMessageHandler', () => {
         domain: 'example.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 verification required')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 verification required',
+      )
     })
 
     it('returns reason if verification is expired', async () => {
@@ -1749,8 +1680,9 @@ describe('EventMessageHandler', () => {
         domain: 'example.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 verification expired')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 verification expired',
+      )
     })
 
     it('returns undefined if verification is valid and not expired', async () => {
@@ -1784,8 +1716,9 @@ describe('EventMessageHandler', () => {
         domain: 'spam.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 domain not allowed')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 domain not allowed',
+      )
     })
 
     it('returns reason if domain is not in whitelist', async () => {
@@ -1797,8 +1730,9 @@ describe('EventMessageHandler', () => {
         domain: 'other.com',
       })
 
-      return expect((handler as any).checkNip05Verification(event))
-        .to.eventually.equal('blocked: NIP-05 domain not allowed')
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.equal(
+        'blocked: NIP-05 domain not allowed',
+      )
     })
 
     it('returns undefined if domain is in whitelist', async () => {
@@ -1849,7 +1783,7 @@ describe('EventMessageHandler', () => {
         () => ({ hit: async () => false }),
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-)
+      )
     })
 
     it('does nothing when nip05 settings are undefined', async () => {

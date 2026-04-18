@@ -14,10 +14,5 @@ export const createPostInvoiceController = (): IController => {
   const userRepository = new UserRepository(dbClient, eventRepository)
   const paymentsService = createPaymentsService()
 
-  return new PostInvoiceController(
-    userRepository,
-    paymentsService,
-    createSettings,
-    slidingWindowRateLimiterFactory,
-  )
+  return new PostInvoiceController(userRepository, paymentsService, createSettings, slidingWindowRateLimiterFactory)
 }

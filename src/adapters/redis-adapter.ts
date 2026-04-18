@@ -62,9 +62,9 @@ export class RedisAdapter implements ICacheAdapter {
     await this.connection
     debug('set %s key', key)
     if (typeof expirySeconds === 'number') {
-      return 'OK' === await this.client.set(key, value, { EX: expirySeconds })
+      return 'OK' === (await this.client.set(key, value, { EX: expirySeconds }))
     }
-    return 'OK' === await this.client.set(key, value)
+    return 'OK' === (await this.client.set(key, value))
   }
 
   public async removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number> {
@@ -85,17 +85,11 @@ export class RedisAdapter implements ICacheAdapter {
     await this.client.expire(key, expiry)
   }
 
-  public async addToSortedSet(
-    key: string,
-    set: Record<string, string>
-  ): Promise<number> {
+  public async addToSortedSet(key: string, set: Record<string, string>): Promise<number> {
     await this.connection
     debug('add %o to sorted set %s', set, key)
-    const members = Object
-        .entries(set)
-        .map(([value, score]) => ({ score: Number(score), value }))
+    const members = Object.entries(set).map(([value, score]) => ({ score: Number(score), value }))
 
     return this.client.zAdd(key, members)
   }
-
 }

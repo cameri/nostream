@@ -11,7 +11,6 @@ export interface IWebServerAdapter extends EventEmitter {
   close(callback?: () => void): void
 }
 
-
 export type IWebSocketAdapter = EventEmitter & {
   getClientId(): string
   getClientAddress(): string

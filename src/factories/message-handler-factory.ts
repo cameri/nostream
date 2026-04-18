@@ -18,14 +18,15 @@ const getCache = (): ICacheAdapter => {
   return cacheAdapter
 }
 
-export const messageHandlerFactory = (
-  eventRepository: IEventRepository,
-  userRepository: IUserRepository,
-  nip05VerificationRepository: INip05VerificationRepository,
-) => ([message, adapter]: [IncomingMessage, IWebSocketAdapter]) => {
-  switch (message[0]) {
-    case MessageType.EVENT:
-      {
+export const messageHandlerFactory =
+  (
+    eventRepository: IEventRepository,
+    userRepository: IUserRepository,
+    nip05VerificationRepository: INip05VerificationRepository,
+  ) =>
+  ([message, adapter]: [IncomingMessage, IWebSocketAdapter]) => {
+    switch (message[0]) {
+      case MessageType.EVENT: {
         return new EventMessageHandler(
           adapter,
           eventStrategyFactory(eventRepository, userRepository),
@@ -37,11 +38,11 @@ export const messageHandlerFactory = (
           getCache(),
         )
       }
-    case MessageType.REQ:
-      return new SubscribeMessageHandler(adapter, eventRepository, createSettings)
-    case MessageType.CLOSE:
-      return new UnsubscribeMessageHandler(adapter)
-    default:
-      throw new Error(`Unknown message type: ${String(message[0]).substring(0, 64)}`)
+      case MessageType.REQ:
+        return new SubscribeMessageHandler(adapter, eventRepository, createSettings)
+      case MessageType.CLOSE:
+        return new UnsubscribeMessageHandler(adapter)
+      default:
+        throw new Error(`Unknown message type: ${String(message[0]).substring(0, 64)}`)
+    }
   }
-}

@@ -22,7 +22,6 @@ import { messageSchema } from '../schemas/message-schema'
 import { Settings } from '../@types/settings'
 import { SocketAddress } from 'net'
 
-
 const debug = createLogger('web-socket-adapter')
 const debugHeartbeat = debug.extend('heartbeat')
 
@@ -58,7 +57,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.client
       .on('error', (error) => {
         if (error.name === 'RangeError' && error.message === 'Max payload size exceeded') {
-          console.error(`web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`)
+          console.error(
+            `web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`,
+          )
         } else if (error.name === 'RangeError' && error.message === 'Invalid WebSocket frame: RSV1 must be clear') {
           debug(`client ${this.clientId} (${this.getClientAddress()}) enabled compression`)
         } else {
@@ -72,8 +73,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on('pong', this.onClientPong.bind(this))
       .on('ping', this.onClientPing.bind(this))
 
-    this
-      .on(WebSocketAdapterEvent.Heartbeat, this.onHeartbeat.bind(this))
+    this.on(WebSocketAdapterEvent.Heartbeat, this.onHeartbeat.bind(this))
       .on(WebSocketAdapterEvent.Subscribe, this.onSubscribed.bind(this))
       .on(WebSocketAdapterEvent.Unsubscribe, this.onUnsubscribed.bind(this))
       .on(WebSocketAdapterEvent.Event, this.onSendEvent.bind(this))
@@ -113,9 +113,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public onSendEvent(event: Event): void {
     this.subscriptions.forEach((filters, subscriptionId) => {
-      if (
-        filters.map(isEventMatchingFilter).some((isMatch) => isMatch(event))
-      ) {
+      if (filters.map(isEventMatchingFilter).some((isMatch) => isMatch(event))) {
         debug('sending event to client %s: %o', this.clientId, event)
         this.sendMessage(createOutgoingEventMessage(subscriptionId, event))
       }
@@ -148,7 +146,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private async onClientMessage(raw: Buffer) {
     this.alive = true
     let abortable = false
-    let messageHandler: IMessageHandler & IAbortable | undefined = undefined
+    let messageHandler: (IMessageHandler & IAbortable) | undefined = undefined
     try {
       if (await this.isRateLimited(this.clientAddress.address)) {
         this.sendMessage(createNoticeMessage('rate limited'))
@@ -182,9 +180,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
           console.error(`web-socket-adapter: abort from client ${this.clientId} (${this.getClientAddress()})`)
         } else if (error.name === 'SyntaxError' || error instanceof ZodError) {
           debug('invalid message client %s (%s): %s', this.clientId, this.getClientAddress(), error.message)
-          const notice = error instanceof ZodError
-            ? `invalid: ${error.issues[0]?.message ?? error.message}`
-            : `invalid: ${error.message}`
+          const notice =
+            error instanceof ZodError
+              ? `invalid: ${error.issues[0]?.message ?? error.message}`
+              : `invalid: ${error.message}`
           this.sendMessage(createNoticeMessage(notice))
         } else {
           console.error('web-socket-adapter: unable to handle message:', error)
@@ -206,10 +205,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private async isRateLimited(client: string): Promise<boolean> {
-    const {
-      rateLimits,
-      ipWhitelist = [],
-    } = this.settings().limits?.message ?? {}
+    const { rateLimits, ipWhitelist = [] } = this.settings().limits?.message ?? {}
 
     if (!Array.isArray(rateLimits) || !rateLimits.length || ipWhitelist.includes(client)) {
       return false
@@ -217,17 +213,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     const rateLimiter = this.slidingWindowRateLimiter()
 
-    const hit = (period: number, rate: number) =>
-      rateLimiter.hit(
-        `${client}:message:${period}`,
-        1,
-        { period, rate },
-      )
+    const hit = (period: number, rate: number) => rateLimiter.hit(`${client}:message:${period}`, 1, { period, rate })
 
     let limited = false
     for (const { rate, period } of rateLimits) {
       const isRateLimited = await hit(period, rate)
-
 
       if (isRateLimited) {
         debug('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
