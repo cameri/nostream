@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 
-import { IEventRepository, IUserRepository } from '../../../src/@types/repositories'
+import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../../../src/@types/repositories'
 import { IncomingMessage, MessageType } from '../../../src/@types/messages'
 import { Event } from '../../../src/@types/event'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
@@ -13,6 +13,7 @@ describe('messageHandlerFactory', () => {
   let event: Event
   let eventRepository: IEventRepository
   let userRepository: IUserRepository
+  let nip05VerificationRepository: INip05VerificationRepository
   let message: IncomingMessage
   let adapter: IWebSocketAdapter
   let factory
@@ -20,11 +21,12 @@ describe('messageHandlerFactory', () => {
   beforeEach(() => {
     eventRepository = {} as any
     userRepository = {} as any
+    nip05VerificationRepository = {} as any
     adapter = {} as any
     event = {
       tags: [],
     } as any
-    factory = messageHandlerFactory(eventRepository, userRepository)
+    factory = messageHandlerFactory(eventRepository, userRepository, nip05VerificationRepository)
   })
 
   it('returns EventMessageHandler when given an EVENT message', () => {
