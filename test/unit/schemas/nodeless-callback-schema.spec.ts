@@ -19,11 +19,11 @@ describe('Nodeless Callback Schema', () => {
     })
 
     it('returns no error if body contains additional metadata', () => {
-      const body = { 
-        ...validBody, 
-        metadata: { 
-          ...validBody.metadata, 
-          createdAt: '2023-01-01T00:00:00Z', 
+      const body = {
+        ...validBody,
+        metadata: {
+          ...validBody.metadata,
+          createdAt: '2023-01-01T00:00:00Z',
           description: 'test payment',
           unit: 'sats',
         },
@@ -36,13 +36,15 @@ describe('Nodeless Callback Schema', () => {
       const body = { ...validBody }
       delete (body as any).uuid
       const result = validateSchema(nodelessCallbackBodySchema)(body)
-      expect(result.error).to.have.nested.property('message', '"uuid" is required')
+      expect(result.error).to.exist
+      expect(result.error?.issues[0].path).to.deep.equal(['uuid'])
     })
 
     it('returns error if metadata.requestId is not a valid pubkey', () => {
       const body = { ...validBody, metadata: { requestId: 'deadbeef' } }
       const result = validateSchema(nodelessCallbackBodySchema)(body)
-      expect(result.error).to.have.nested.property('message', '"metadata.requestId" length must be 64 characters long')
+      expect(result.error).to.exist
+      expect(result.error?.issues[0].path).to.deep.equal(['metadata', 'requestId'])
     })
   })
 })
