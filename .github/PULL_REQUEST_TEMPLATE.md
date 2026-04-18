@@ -33,4 +33,5 @@
 - [ ] I have updated the documentation accordingly.
 - [ ] I have read the **CONTRIBUTING** document.
 - [ ] I have added tests to cover my code changes.
+- [ ] I added a changeset, or this is docs-only and I added an empty changeset.
 - [ ] All new and existing tests passed.
