@@ -132,6 +132,9 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
+| paymentsProcessors.nodeless.callbackBaseURL | Public-facing Nostream's Nodeless Callback URL. (e.g. https://relay.your-domain.com/callbacks/nodeless) |
+| paymentsProcessors.nodeless.storeId         | Nodeless store ID. |
+| paymentsProcessors.opennode.callbackBaseURL | Public-facing Nostream's OpenNode Callback URL. (e.g. https://relay.your-domain.com/callbacks/opennode) |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
