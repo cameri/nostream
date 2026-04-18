@@ -67,7 +67,7 @@ NIPs with a relay-specific implementation are listed here.
 ### Standalone setup
 - PostgreSQL 14.0
 - Redis
-- Node v18
+- Node v24
 - Typescript
 
 ### Docker setups
@@ -209,6 +209,10 @@ Start:
   ```
   ./scripts/start_with_tor
   ```
+  or, with Nginx reverse proxy and Let's Encrypt SSL:
+  ```
+  RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com ./scripts/start_with_nginx
+  ```
 
 **Windows / WSL2 users:** Docker bind-mounts can cause PostgreSQL permission errors on Windows. Use the dedicated override file instead:
   ```
@@ -229,6 +233,29 @@ Print the Tor hostname:
   ```
   ./scripts/print_tor_hostname
   ```
+
+### Importing events from JSON Lines
+
+You can import NIP-01 events from a `.jsonl` file directly into the relay database.
+
+Basic import:
+  ```
+  npm run import -- ./events.jsonl
+  ```
+
+Set a custom batch size (default: `1000`):
+  ```
+  npm run import -- ./events.jsonl --batch-size 500
+  ```
+
+The importer:
+
+- Processes the file line-by-line to keep memory usage bounded.
+- Validates NIP-01 schema, event id hash, and Schnorr signature before insertion.
+- Inserts in database transactions per batch.
+- Skips duplicates without failing the whole import.
+- Prints progress in the format:
+  `[Processed: 50,000 | Inserted: 45,000 | Skipped: 5,000 | Errors: 0]`
 
 ### Running as a Service
 
@@ -553,6 +580,43 @@ npm run export -- backup-2024-01-01.jsonl # custom filename
 ```
 
 The script reads the same `DB_*` environment variables used by the relay (see [CONFIGURATION.md](CONFIGURATION.md)).
+## Relay Maintenance
+
+Use `clean-db` to wipe or prune `events` table data. This also removes
+corresponding data from the derived `event_tags` table when present.
+
+Dry run (no deletion):
+
+  ```
+  npm run clean-db -- --all --dry-run
+  ```
+
+Full wipe:
+
+  ```
+  npm run clean-db -- --all --force
+  ```
+
+Delete events older than N days:
+
+  ```
+  npm run clean-db -- --older-than=30 --force
+  ```
+
+Delete only selected kinds:
+
+  ```
+  npm run clean-db -- --kinds=1,7,4 --force
+  ```
+
+Delete only selected kinds older than N days:
+
+  ```
+  npm run clean-db -- --older-than=30 --kinds=1,7,4 --force
+  ```
+
+By default, the script asks for explicit confirmation (`Type 'DELETE' to confirm`).
+Use `--force` to skip the prompt.
 
 ## Configuration
 

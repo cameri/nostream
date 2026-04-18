@@ -2,9 +2,23 @@ import { PassThrough } from 'stream'
 
 import { DatabaseClient, EventId, Pubkey } from './base'
 import { DBEvent, Event } from './event'
+import { EventKinds } from '../constants/base'
+import { EventKindsRange } from './settings'
 import { Invoice } from './invoice'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
+
+export interface EventRetentionOptions {
+  maxDays?: number
+  kindWhitelist?: (EventKinds | EventKindsRange)[]
+  pubkeyWhitelist?: Pubkey[]
+}
+
+export interface EventPurgeCounts {
+  deleted: number
+  expired: number
+  retained: number
+}
 
 export type ExposedPromiseKeys = 'then' | 'catch' | 'finally'
 
@@ -14,9 +28,14 @@ export interface IQueryResult<T> extends Pick<Promise<T>, keyof Promise<T> & Exp
 
 export interface IEventRepository {
   create(event: Event): Promise<number>
+  createMany(events: Event[]): Promise<number>
   upsert(event: Event): Promise<number>
+  upsertMany(events: Event[]): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
+  deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>
+  hasActiveRequestToVanish(pubkey: Pubkey): Promise<boolean>
+  deleteExpiredAndRetained(options?: EventRetentionOptions): Promise<EventPurgeCounts>
 }
 
 export interface IInvoiceRepository {
@@ -43,4 +62,5 @@ export interface IUserRepository {
   findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<User | undefined>
   upsert(user: Partial<User>, client?: DatabaseClient): Promise<number>
   getBalanceByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<bigint>
+  admitUser(pubkey: Pubkey, admittedAt: Date, client?: DatabaseClient): Promise<void>
 }

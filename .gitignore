@@ -25,6 +25,11 @@ node_modules/
 .dccache
 .DS_Store
 
+# Local Setup
+redis.conf
+users.acl
+postgresql.local.conf
+
 # generate output
 dist
 

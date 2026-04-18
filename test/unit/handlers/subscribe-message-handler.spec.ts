@@ -3,6 +3,7 @@ import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
 import EventEmitter from 'events'
 import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
 
 import { IAbortable, IMessageHandler } from '../../../src/@types/message-handlers'
 import { MessageType, SubscribeMessage } from '../../../src/@types/messages'
@@ -14,10 +15,14 @@ import { PassThrough } from 'stream'
 import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 
+chai.use(sinonChai)
 chai.use(chaiAsPromised)
 const { expect } = chai
 
-const toDbEvent = (event: Event) => ({
+const toDbEvent = (
+  event: Event,
+  metadata: { expires_at?: number, deleted_at?: Date | null } = {},
+) => ({
   event_id: Buffer.from(event.id, 'hex'),
   event_kind: event.kind,
   event_pubkey: Buffer.from(event.pubkey, 'hex'),
@@ -25,6 +30,7 @@ const toDbEvent = (event: Event) => ({
   event_content: event.content,
   event_tags: event.tags,
   event_signature: Buffer.from(event.sig, 'hex'),
+  ...metadata,
 })
 
 describe('SubscribeMessageHandler', () => {
@@ -112,11 +118,13 @@ describe('SubscribeMessageHandler', () => {
 
   describe('#fetchAndSend', () => {
     let event: Event
+    let clock: Sinon.SinonFakeTimers
     let webSocketOnMessageStub: Sinon.SinonStub
     let webSocketOnSubscribeStub: Sinon.SinonStub
     let isClientSubscribedToEventStub: Sinon.SinonStub
 
     beforeEach(() => {
+      clock = Sinon.useFakeTimers(1665546189000)
       event = {
         'id': 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef',
         'pubkey': '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
@@ -134,6 +142,10 @@ describe('SubscribeMessageHandler', () => {
       webSocket.on(WebSocketAdapterEvent.Message, webSocketOnMessageStub)
       webSocket.on(WebSocketAdapterEvent.Subscribe, webSocketOnSubscribeStub)
       //streamEndSpy = sandbox.spy(Stream, '_end' as any)
+    })
+
+    afterEach(() => {
+      clock.restore()
     })
 
     it('does not send event if client is not subscribed to it', async () => {
@@ -162,6 +174,53 @@ describe('SubscribeMessageHandler', () => {
       expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
       expect(webSocketOnMessageStub).to.have.been.calledWithExactly(
         ['EVENT', subscriptionId, event],
+      )
+    })
+
+    it('does not send expired events', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+
+      const now = Math.floor(clock.now / 1000)
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      const expiredEvent: Event = {
+        ...event,
+        tags: [['expiration', String(now - 1)] as any],
+      }
+
+      stream.write(toDbEvent(expiredEvent))
+      stream.end()
+
+      await promise
+
+      expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(
+        ['EOSE', subscriptionId],
+      )
+    })
+
+    it('sends event if expiration is in the future', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+
+      const now = Math.floor(clock.now / 1000)
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      const eventWithFutureExpiration: Event = {
+        ...event,
+        tags: [['expiration', String(now + 60)] as any],
+      }
+
+      stream.write(toDbEvent(eventWithFutureExpiration))
+      stream.end()
+
+      await promise
+
+      expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
+      expect(webSocketOnMessageStub).to.have.been.calledWithExactly(
+        ['EVENT', subscriptionId, eventWithFutureExpiration],
+      )
+      expect(webSocketOnMessageStub).to.have.been.calledWithExactly(
+        ['EOSE', subscriptionId],
       )
     })
 
