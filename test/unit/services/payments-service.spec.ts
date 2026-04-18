@@ -56,6 +56,7 @@ describe('PaymentsService', () => {
 
     userRepository = {
       upsert: sandbox.stub().resolves(),
+      admitUser: sandbox.stub().resolves(),
       findByPubkey: sandbox.stub(),
     }
 
@@ -310,7 +311,7 @@ describe('PaymentsService', () => {
         amountPaid: 2n,
       }))
 
-      expect(userRepository.upsert).to.have.been.calledOnce
+      expect(userRepository.admitUser).to.have.been.calledOnce
       expect(mockTrx.commit).to.have.been.calledOnce
     })
 
@@ -323,7 +324,7 @@ describe('PaymentsService', () => {
         amountPaid: 1n,
       }))
 
-      expect(userRepository.upsert).to.have.been.calledOnce
+      expect(userRepository.admitUser).to.have.been.calledOnce
     })
 
     it('does not convert MSATS (uses amount directly)', async () => {
@@ -334,7 +335,7 @@ describe('PaymentsService', () => {
         amountPaid: 2000n,
       }))
 
-      expect(userRepository.upsert).to.have.been.calledOnce
+      expect(userRepository.admitUser).to.have.been.calledOnce
     })
 
     it('admits the user when the paid amount meets the admission fee', async () => {
@@ -346,9 +347,10 @@ describe('PaymentsService', () => {
         amountPaid: 5000n,
       }))
 
-      expect(userRepository.upsert).to.have.been.calledOnce
-      const [upsertArg] = userRepository.upsert.firstCall.args
-      expect(upsertArg).to.include({ isAdmitted: true, pubkey: 'admittedpubkey' })
+      expect(userRepository.admitUser).to.have.been.calledOnce
+      const [pubkeyArg, admittedAtArg] = userRepository.admitUser.firstCall.args
+      expect(pubkeyArg).to.equal('admittedpubkey')
+      expect(admittedAtArg).to.be.instanceOf(Date)
       expect(mockTrx.commit).to.have.been.calledOnce
     })
 
@@ -360,7 +362,7 @@ describe('PaymentsService', () => {
         amountPaid: 500n,
       }))
 
-      expect(userRepository.upsert).not.to.have.been.called
+      expect(userRepository.admitUser).not.to.have.been.called
       expect(mockTrx.commit).to.have.been.calledOnce
     })
 
@@ -369,7 +371,7 @@ describe('PaymentsService', () => {
 
       await service.confirmInvoice(makeCompletedInvoice())
 
-      expect(userRepository.upsert).not.to.have.been.called
+      expect(userRepository.admitUser).not.to.have.been.called
     })
 
     it('falls back to an empty admission array when feeSchedules is missing', async () => {
@@ -378,7 +380,7 @@ describe('PaymentsService', () => {
 
       await service.confirmInvoice(makeCompletedInvoice())
 
-      expect(userRepository.upsert).not.to.have.been.called
+      expect(userRepository.admitUser).not.to.have.been.called
     })
 
     it('ignores disabled fee schedules when computing the admission amount', async () => {
@@ -390,7 +392,7 @@ describe('PaymentsService', () => {
       }))
 
       // disabled → admissionFeeAmount = 0 → condition false → user not admitted
-      expect(userRepository.upsert).not.to.have.been.called
+      expect(userRepository.admitUser).not.to.have.been.called
     })
 
     it('skips the fee for whitelisted pubkeys', async () => {
@@ -405,7 +407,7 @@ describe('PaymentsService', () => {
       }))
 
       // pubkey starts with 'whitelisted' → isApplicableFee = false → admissionFeeAmount = 0 → not admitted
-      expect(userRepository.upsert).not.to.have.been.called
+      expect(userRepository.admitUser).not.to.have.been.called
     })
 
     it('rolls back the transaction and re-throws on error', async () => {
