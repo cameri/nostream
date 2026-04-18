@@ -73,7 +73,6 @@ Tunnel keys are persisted at `.nostr/i2p/data/` so the `.b32.i2p` address surviv
 
 - Start with I2P: `./scripts/start_with_i2p`
 - Print hostname hints: `./scripts/print_i2p_hostname`
-- Validate compose merges without starting containers (requires Docker): `npm run compose:validate` (same logic as the `compose-validate` CI job).
 
 If you've set READ_REPLICAS to 4, you should configure RR0_ through RR3_.
 
