@@ -36,7 +36,7 @@ export const getTorClient = async () => {
       client = new Tor(config)
       try{
         await client.connect()
-      }catch(error){
+      }catch(_error){
         client = undefined
       }
       debug('connected')
