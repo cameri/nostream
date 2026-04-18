@@ -570,6 +570,44 @@ To see the integration test coverage report open `.coverage/integration/lcov-rep
   open .coverage/integration/lcov-report/index.html
   ```
 
+## Relay Maintenance
+
+Use `clean-db` to wipe or prune `events` table data. This also removes
+corresponding data from the derived `event_tags` table when present.
+
+Dry run (no deletion):
+
+  ```
+  npm run clean-db -- --all --dry-run
+  ```
+
+Full wipe:
+
+  ```
+  npm run clean-db -- --all --force
+  ```
+
+Delete events older than N days:
+
+  ```
+  npm run clean-db -- --older-than=30 --force
+  ```
+
+Delete only selected kinds:
+
+  ```
+  npm run clean-db -- --kinds=1,7,4 --force
+  ```
+
+Delete only selected kinds older than N days:
+
+  ```
+  npm run clean-db -- --older-than=30 --kinds=1,7,4 --force
+  ```
+
+By default, the script asks for explicit confirmation (`Type 'DELETE' to confirm`).
+Use `--force` to skip the prompt.
+
 ## Configuration
 
 You can change the default folder by setting the `NOSTR_CONFIG_DIR` environment variable to a different path.
