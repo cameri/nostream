@@ -13,12 +13,14 @@ describe('LNbits Callback Schema', () => {
 
     it('returns error if hmac is missing', () => {
       const result = validateSchema(lnbitsCallbackQuerySchema)({})
-      expect(result.error).to.have.nested.property('message', '"hmac" is required')
+      expect(result.error).to.exist
+      expect(result.error?.issues[0].path).to.deep.equal(['hmac'])
     })
 
     it('returns error if hmac format is invalid', () => {
       const result = validateSchema(lnbitsCallbackQuerySchema)({ hmac: 'not-an-hmac' })
-      expect(result.error).to.have.nested.property('message').that.matches(/"hmac" with value "not-an-hmac" fails to match the required pattern/)
+      expect(result.error).to.exist
+      expect(result.error?.issues[0].path).to.deep.equal(['hmac'])
     })
   })
 
@@ -31,7 +33,8 @@ describe('LNbits Callback Schema', () => {
 
     it('returns error if payment_hash is not 64 chars hex', () => {
       const result = validateSchema(lnbitsCallbackBodySchema)({ payment_hash: 'abc' })
-      expect(result.error).to.have.nested.property('message', '"payment_hash" length must be 64 characters long')
+      expect(result.error).to.exist
+      expect(result.error?.issues[0].path).to.deep.equal(['payment_hash'])
     })
   })
 })

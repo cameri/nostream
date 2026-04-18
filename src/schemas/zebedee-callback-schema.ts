@@ -1,17 +1,17 @@
 import { pubkeySchema } from './base-schema'
-import Schema from 'joi'
+import { z } from 'zod'
 
-export const zebedeeCallbackBodySchema = Schema.object({
-  id: Schema.string().required(),
-  status: Schema.string().required(),
-  internalId: pubkeySchema.label('internalId').required(),
-  amount: Schema.alternatives().try(Schema.string(), Schema.number()).required(),
-  description: Schema.string().required(),
-  unit: Schema.string().required(),
-  expiresAt: Schema.string().optional(),
-  confirmedAt: Schema.string().optional(),
-  createdAt: Schema.string().optional(),
-  invoice: Schema.object({
-    request: Schema.string().required(),
-  }).unknown(false).required(),
-}).unknown(true)
+export const zebedeeCallbackBodySchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  internalId: pubkeySchema,
+  amount: z.union([z.string(), z.number()]),
+  description: z.string(),
+  unit: z.string(),
+  expiresAt: z.string().optional(),
+  confirmedAt: z.string().optional(),
+  createdAt: z.string().optional(),
+  invoice: z.object({
+    request: z.string(),
+  }).strict(),
+}).passthrough()
