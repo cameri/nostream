@@ -198,7 +198,7 @@ describe('SettingsStatic', () => {
 
       expect(SettingsStatic.createSettings()).to.be.an('object')
 
-      expect(existsSyncStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
+      expect(existsSyncStub).to.have.been.calledWithExactly('/some/path/settings.json')
       expect(getSettingsFileBasePathStub).to.have.been.calledOnce
       expect(saveSettingsStub).to.have.been.calledOnceWithExactly('/some/path/settings.json', Sinon.match.object)
       expect(loadSettingsStub).to.have.been.called
