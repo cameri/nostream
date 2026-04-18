@@ -234,6 +234,22 @@ Print the Tor hostname:
   ./scripts/print_tor_hostname
   ```
 
+Start with I2P:
+  ```
+  ./scripts/start_with_i2p
+  ```
+
+Print the I2P hostname:
+  ```
+  ./scripts/print_i2p_hostname
+  ```
+
+Verify that Docker Compose files merge correctly (no stack started; requires Docker on PATH):
+  ```
+  npm run compose:validate
+  ```
+  This runs `docker compose … config -q` for the I2P-only, Tor-only, and Tor+I2P overlay combinations (same check as the `compose-validate` CI job).
+
 ### Importing events from JSON Lines
 
 You can import NIP-01 events from a `.jsonl` file directly into the relay database.
