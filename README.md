@@ -234,6 +234,16 @@ Print the Tor hostname:
   ./scripts/print_tor_hostname
   ```
 
+Start with I2P:
+  ```
+  ./scripts/start_with_i2p
+  ```
+
+Print the I2P hostname:
+  ```
+  ./scripts/print_i2p_hostname
+  ```
+
 ### Importing events from JSON Lines
 
 You can import NIP-01 events from a `.jsonl` file directly into the relay database.
@@ -626,7 +636,7 @@ To observe client and subscription counts in real-time during a test, you can in
    ```bash
    docker compose logs -f nostream
    ```
-=======
+
 ## Export Events
 
 Export all stored events to a [JSON Lines](https://jsonlines.org/) (`.jsonl`) file. Each line is a valid NIP-01 Nostr event JSON object. The export streams rows from the database using cursors, so it works safely on relays with millions of events without loading them into memory.

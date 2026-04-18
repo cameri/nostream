@@ -58,6 +58,24 @@ The following environment variables can be set:
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
 
+## I2P
+
+I2P support is provided as a sidecar container (i2pd) via `docker-compose.i2p.yml`, mirroring the Tor setup. No application-level environment variables are needed — the i2pd container creates an I2P server tunnel that forwards traffic to nostream's WebSocket port.
+
+Configuration files live in the `i2p/` directory:
+
+| File | Description |
+|------|-------------|
+| `i2p/tunnels.conf` | Defines the I2P server tunnel pointing at nostream (port 8008). |
+| `i2p/i2pd.conf` | Minimal i2pd daemon configuration. |
+
+Tunnel keys are persisted at `.nostr/i2p/data/` so the `.b32.i2p` address survives container restarts.
+
+The i2pd web console (tunnel status, `.b32.i2p` destinations) is published to the host on **`127.0.0.1:7070`** only. Remove the `ports:` mapping in `docker-compose.i2p.yml` to disable host-side access.
+
+- Start with I2P: `./scripts/start_with_i2p`
+- Print hostname hints: `./scripts/print_i2p_hostname`
+
 If you've set READ_REPLICAS to 4, you should configure RR0_ through RR3_.
 
 # Settings
