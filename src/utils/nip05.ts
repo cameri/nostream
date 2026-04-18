@@ -47,9 +47,11 @@ interface Nip05ParsedIdentifier {
 // https://github.com/nostr-protocol/nips/blob/master/05.md
 // `names` is a map of local-part -> 64-char lowercase hex pubkey.
 // `relays` is optional and unused server-side; passthrough() keeps unknown keys.
-const nip05ResponseSchema = z.object({
-  names: z.record(z.string(), pubkeySchema),
-}).passthrough()
+const nip05ResponseSchema = z
+  .object({
+    names: z.record(z.string(), pubkeySchema),
+  })
+  .passthrough()
 
 export function parseNip05Identifier(nip05: string): Nip05ParsedIdentifier | undefined {
   if (!nip05 || typeof nip05 !== 'string') {
@@ -139,10 +141,7 @@ function isRedirectTargetSafe(targetUrl: string): boolean {
   return true
 }
 
-export async function verifyNip05Identifier(
-  nip05: string,
-  pubkey: string,
-): Promise<Nip05VerificationOutcome> {
+export async function verifyNip05Identifier(nip05: string, pubkey: string): Promise<Nip05VerificationOutcome> {
   const parsed = parseNip05Identifier(nip05)
   if (!parsed) {
     return { status: 'invalid', reason: 'unparseable NIP-05 identifier' }
@@ -156,7 +155,7 @@ export async function verifyNip05Identifier(
 
     const response = await axios.get(url, {
       timeout: VERIFICATION_TIMEOUT_MS,
-      headers: { 'Accept': 'application/json' },
+      headers: { Accept: 'application/json' },
       responseType: 'json',
       validateStatus: (status) => status === 200,
       maxRedirects: MAX_REDIRECTS,
@@ -165,8 +164,7 @@ export async function verifyNip05Identifier(
       // `beforeRedirect` is forwarded to follow-redirects by axios. Any throw
       // here aborts the request with that error, which we catch below.
       beforeRedirect: (options: { href?: string; protocol?: string; hostname?: string }) => {
-        const href = options.href
-          ?? `${options.protocol ?? ''}//${options.hostname ?? ''}`
+        const href = options.href ?? `${options.protocol ?? ''}//${options.hostname ?? ''}`
         if (!isRedirectTargetSafe(href)) {
           throw new Error(`refused redirect to unsafe target: ${href}`)
         }
@@ -203,11 +201,7 @@ export async function verifyNip05Identifier(
   }
 }
 
-export function isDomainAllowed(
-  domain: string,
-  whitelist?: string[],
-  blacklist?: string[],
-): boolean {
+export function isDomainAllowed(domain: string, whitelist?: string[], blacklist?: string[]): boolean {
   const lowerDomain = domain.toLowerCase()
 
   if (Array.isArray(blacklist) && blacklist.length > 0) {

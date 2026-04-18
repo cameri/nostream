@@ -16,7 +16,7 @@ const getZebedeeAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => 
   return {
     headers: {
       'content-type': 'application/json',
-      'apikey': process.env.ZEBEDEE_API_KEY,
+      apikey: process.env.ZEBEDEE_API_KEY,
     },
     baseURL: path(['paymentsProcessors', 'zebedee', 'baseURL'], settings),
     maxRedirects: 1,
@@ -33,8 +33,8 @@ export const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsPro
   }
 
   if (
-    !Array.isArray(settings.paymentsProcessors?.zebedee?.ipWhitelist)
-    || !settings.paymentsProcessors?.zebedee?.ipWhitelist?.length
+    !Array.isArray(settings.paymentsProcessors?.zebedee?.ipWhitelist) ||
+    !settings.paymentsProcessors?.zebedee?.ipWhitelist?.length
   ) {
     const error = new Error('Setting paymentsProcessor.zebedee.ipWhitelist is empty.')
     console.error('Unable to create payments processor.', error)

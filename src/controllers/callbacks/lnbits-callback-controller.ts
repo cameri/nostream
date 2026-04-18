@@ -16,13 +16,10 @@ const debug = createLogger('lnbits-callback-controller')
 export class LNbitsCallbackController implements IController {
   public constructor(
     private readonly paymentsService: IPaymentsService,
-    private readonly invoiceRepository: IInvoiceRepository
-  ) { }
+    private readonly invoiceRepository: IInvoiceRepository,
+  ) {}
 
-  public async handleRequest(
-    request: Request,
-    response: Response,
-  ) {
+  public async handleRequest(request: Request, response: Response) {
     debug('request headers: %o', request.headers)
     debug('request body: %o', request.body)
 
@@ -32,18 +29,14 @@ export class LNbitsCallbackController implements IController {
 
     if (paymentProcessor !== 'lnbits') {
       debug('denied request from %s to /callbacks/lnbits which is not the current payment processor', remoteAddress)
-      response
-        .status(403)
-        .send('Forbidden')
+      response.status(403).send('Forbidden')
       return
     }
 
     const queryValidation = validateSchema(lnbitsCallbackQuerySchema)(request.query)
     if (queryValidation.error) {
       debug('unauthorized request from %s to /callbacks/lnbits: invalid query %o', remoteAddress, queryValidation.error)
-      response
-        .status(403)
-        .send('Forbidden')
+      response.status(403).send('Forbidden')
       return
     }
 
@@ -52,9 +45,7 @@ export class LNbitsCallbackController implements IController {
     const expiryString = split[0]
     const expiry = Number(expiryString)
     const hasValidSplit = split.length === 2
-    const hasValidExpiry =
-      /^\d+$/.test(expiryString) &&
-      Number.isSafeInteger(expiry)
+    const hasValidExpiry = /^\d+$/.test(expiryString) && Number.isSafeInteger(expiry)
     if (
       !hasValidSplit ||
       hmacSha256(deriveFromSecret('lnbits-callback-hmac-key'), expiryString).toString('hex') !== split[1] ||
@@ -62,18 +53,13 @@ export class LNbitsCallbackController implements IController {
       expiry <= Date.now()
     ) {
       debug('unauthorized request from %s to /callbacks/lnbits: hmac signature mismatch or expired', remoteAddress)
-      response
-        .status(403)
-        .send('Forbidden')
+      response.status(403).send('Forbidden')
       return
     }
 
     const bodyValidation = validateSchema(lnbitsCallbackBodySchema)(request.body)
     if (bodyValidation.error) {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Malformed body')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Malformed body')
       return
     }
 
@@ -82,10 +68,7 @@ export class LNbitsCallbackController implements IController {
     const storedInvoice = await this.invoiceRepository.findById(body.payment_hash)
 
     if (!storedInvoice) {
-      response
-        .status(404)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('No such invoice')
+      response.status(404).setHeader('content-type', 'text/plain; charset=utf8').send('No such invoice')
       return
     }
 
@@ -97,22 +80,14 @@ export class LNbitsCallbackController implements IController {
       throw error
     }
 
-    if (
-      invoice.status !== InvoiceStatus.COMPLETED
-      && !invoice.confirmedAt
-    ) {
-      response
-        .status(200)
-        .send()
+    if (invoice.status !== InvoiceStatus.COMPLETED && !invoice.confirmedAt) {
+      response.status(200).send()
 
       return
     }
 
     if (storedInvoice.status === InvoiceStatus.COMPLETED) {
-      response
-        .status(409)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invoice is already marked paid')
+      response.status(409).setHeader('content-type', 'text/plain; charset=utf8').send('Invoice is already marked paid')
       return
     }
 
@@ -127,9 +102,6 @@ export class LNbitsCallbackController implements IController {
       throw error
     }
 
-    response
-      .status(200)
-      .setHeader('content-type', 'text/plain; charset=utf8')
-      .send('OK')
+    response.status(200).setHeader('content-type', 'text/plain; charset=utf8').send('OK')
   }
 }

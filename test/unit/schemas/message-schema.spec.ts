@@ -18,10 +18,7 @@ describe('NIP-01', () => {
 
       it('returns same message if valid', () => {
         events.forEach((event) => {
-          message = [
-            'EVENT',
-            event,
-          ] as any
+          message = ['EVENT', event] as any
 
           const result = validateSchema(messageSchema)(message)
 
@@ -101,15 +98,15 @@ describe('NIP-01', () => {
       })
 
       it('returns error if filter is missing', () => {
-        (message as any[]).splice(2, 2)
+        ;(message as any[]).splice(2, 2)
 
         const result = validateSchema(messageSchema)(message)
         expect(result).to.have.property('error').that.is.not.undefined
       })
 
       it('returns error if there are too many filters', () => {
-        (message as any[]).splice(2, 2);
-        (message as any[]).push(...range(0, 11).map(() => ({})))
+        ;(message as any[]).splice(2, 2)
+        ;(message as any[]).push(...range(0, 11).map(() => ({})))
 
         const result = validateSchema(messageSchema)(message)
         expect(result).to.have.property('error').that.is.not.undefined

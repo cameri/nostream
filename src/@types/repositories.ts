@@ -42,21 +42,9 @@ export interface IEventRepository {
 export interface IInvoiceRepository {
   findById(id: string, client?: DatabaseClient): Promise<Invoice | undefined>
   upsert(invoice: Partial<Invoice>, client?: DatabaseClient): Promise<number>
-  updateStatus(
-    invoice: Pick<Invoice, 'id' | 'status'>,
-    client?: DatabaseClient,
-  ): Promise<Invoice | undefined>
-  confirmInvoice(
-    invoiceId: string,
-    amountReceived: bigint,
-    confirmedAt: Date,
-    client?: DatabaseClient,
-  ): Promise<void>
-  findPendingInvoices(
-    offset?: number,
-    limit?: number,
-    client?: DatabaseClient,
-  ): Promise<Invoice[]>
+  updateStatus(invoice: Pick<Invoice, 'id' | 'status'>, client?: DatabaseClient): Promise<Invoice | undefined>
+  confirmInvoice(invoiceId: string, amountReceived: bigint, confirmedAt: Date, client?: DatabaseClient): Promise<void>
+  findPendingInvoices(offset?: number, limit?: number, client?: DatabaseClient): Promise<Invoice[]>
 }
 
 export interface IUserRepository {
@@ -71,10 +59,6 @@ export interface IUserRepository {
 export interface INip05VerificationRepository {
   findByPubkey(pubkey: Pubkey): Promise<Nip05Verification | undefined>
   upsert(verification: Nip05Verification): Promise<number>
-  findPendingVerifications(
-    updateFrequencyMs: number,
-    maxFailures: number,
-    limit: number,
-  ): Promise<Nip05Verification[]>
+  findPendingVerifications(updateFrequencyMs: number, maxFailures: number, limit: number): Promise<Nip05Verification[]>
   deleteByPubkey(pubkey: Pubkey): Promise<number>
 }

@@ -28,7 +28,12 @@ import {
   toPairs,
 } from 'ramda'
 
-import { ContextMetadataKey, EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
+import {
+  ContextMetadataKey,
+  EventDeduplicationMetadataKey,
+  EventExpirationTimeMetadataKey,
+  EventKinds,
+} from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import { EventPurgeCounts, EventRetentionOptions, IEventRepository, IQueryResult } from '../@types/repositories'
@@ -46,8 +51,8 @@ const groupByLengthSpec = groupBy<string, 'exact' | 'even' | 'odd'>(
       [equals(64), always('exact')],
       [even, always('even')],
       [T, always('odd')],
-    ])
-  )
+    ]),
+  ),
 )
 
 const debug = createLogger('event-repository')
@@ -56,7 +61,7 @@ export class EventRepository implements IEventRepository {
   public constructor(
     private readonly masterDbClient: DatabaseClient,
     private readonly readReplicaDbClient: DatabaseClient,
-  ) { }
+  ) {}
 
   public findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]> {
     debug('querying for %o', filters)
@@ -76,28 +81,23 @@ export class EventRepository implements IEventRepository {
                 groupByLengthSpec,
                 evolve({
                   exact: (pubkeys: string[]) =>
-                    tableFields.forEach((tableField) =>
-                      bd.orWhereIn(tableField, pubkeys.map(toBuffer))
-                    ),
+                    tableFields.forEach((tableField) => bd.orWhereIn(tableField, pubkeys.map(toBuffer))),
                   even: forEach((prefix: string) =>
                     tableFields.forEach((tableField) =>
-                      bd.orWhereRaw(
-                        `substring("${tableField}" from 1 for ?) = ?`,
-                        [prefix.length >> 1, toBuffer(prefix)]
-                      )
-                    )
+                      bd.orWhereRaw(`substring("${tableField}" from 1 for ?) = ?`, [
+                        prefix.length >> 1,
+                        toBuffer(prefix),
+                      ]),
+                    ),
                   ),
                   odd: forEach((prefix: string) =>
                     tableFields.forEach((tableField) =>
-                      bd.orWhereRaw(
-                        `substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`,
-                        [
-                          (prefix.length >> 1) + 1,
-                          `\\x${prefix}0`,
-                          `\\x${prefix}f`,
-                        ],
-                      )
-                    )
+                      bd.orWhereRaw(`substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`, [
+                        (prefix.length >> 1) + 1,
+                        `\\x${prefix}0`,
+                        `\\x${prefix}f`,
+                      ]),
+                    ),
                   ),
                 } as any),
               ),
@@ -140,19 +140,21 @@ export class EventRepository implements IEventRepository {
             ifElse(
               isEmpty,
               () => andWhereRaw('1 = 0', bd),
-              forEach((criterion: string) => void orWhereRaw(
-                'event_tags.tag_name = ? AND event_tags.tag_value = ?',
-                [filterName[1], criterion],
-                bd,
-              )),
+              forEach(
+                (criterion: string) =>
+                  void orWhereRaw(
+                    'event_tags.tag_name = ? AND event_tags.tag_value = ?',
+                    [filterName[1], criterion],
+                    bd,
+                  ),
+              ),
             )(criteria)
           })
         }),
       )(currentFilter as any)
 
       if (isTagQuery) {
-        builder.leftJoin('event_tags', 'events.event_id', 'event_tags.event_id')
-          .select('events.*')
+        builder.leftJoin('event_tags', 'events.event_id', 'event_tags.event_id').select('events.*')
       }
 
       return builder
@@ -206,10 +208,7 @@ export class EventRepository implements IEventRepository {
     debug('inserting event: %o', event)
     const row = this.toInsertRow(event)
 
-    return this.masterDbClient('events')
-      .insert(row)
-      .onConflict()
-      .ignore()
+    return this.masterDbClient('events').insert(row).onConflict().ignore()
   }
 
   public upsert(event: Event): Promise<number> {
@@ -223,20 +222,25 @@ export class EventRepository implements IEventRepository {
       // NIP-33: Parameterized Replaceable Events
       .onConflict(
         this.masterDbClient.raw(
-          '(event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000)'
-        )
+          '(event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000)',
+        ),
       )
       .merge(omit(['event_pubkey', 'event_kind', 'event_deduplication'])(row))
       .where(function () {
-        this.where('events.event_created_at', '<', row.event_created_at)
-          .orWhere(function () {
-            this.where('events.event_created_at', '=', row.event_created_at)
-              .andWhere('events.event_id', '>', row.event_id)
-          })
+        this.where('events.event_created_at', '<', row.event_created_at).orWhere(function () {
+          this.where('events.event_created_at', '=', row.event_created_at).andWhere(
+            'events.event_id',
+            '>',
+            row.event_id,
+          )
+        })
       })
 
     return {
-      then: <T1, T2>(onfulfilled: (value: number) => T1 | PromiseLike<T1>, onrejected: (reason: any) => T2 | PromiseLike<T2>) => query.then(prop('rowCount') as () => number).then(onfulfilled, onrejected),
+      then: <T1, T2>(
+        onfulfilled: (value: number) => T1 | PromiseLike<T1>,
+        onrejected: (reason: any) => T2 | PromiseLike<T2>,
+      ) => query.then(prop('rowCount') as () => number).then(onfulfilled, onrejected),
       catch: <T>(onrejected: (reason: any) => T | PromiseLike<T>) => query.catch(onrejected),
       toString: (): string => query.toString(),
     } as Promise<number>
@@ -253,10 +257,18 @@ export class EventRepository implements IEventRepository {
       .insert(rows)
       .onConflict(
         this.masterDbClient.raw(
-          '(event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000)'
-        )
+          '(event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000)',
+        ),
       )
-      .merge(['deleted_at', 'event_content', 'event_created_at', 'event_id', 'event_signature', 'event_tags', 'expires_at'])
+      .merge([
+        'deleted_at',
+        'event_content',
+        'event_created_at',
+        'event_id',
+        'event_signature',
+        'event_tags',
+        'expires_at',
+      ])
       .whereRaw('"events"."event_created_at" < "excluded"."event_created_at"')
       .then(prop('rowCount') as () => number, () => 0)
   }
@@ -336,25 +348,28 @@ export class EventRepository implements IEventRepository {
       })
     }
 
-    const retentionLimit = now - (maxDays * 86400)
+    const retentionLimit = now - maxDays * 86400
     const batchSize = 1000
 
-    debug('deleting expired and retained events (retentionLimit: %d, now: %d, batchSize: %d)', retentionLimit, now, batchSize)
+    debug(
+      'deleting expired and retained events (retentionLimit: %d, now: %d, batchSize: %d)',
+      retentionLimit,
+      now,
+      batchSize,
+    )
 
     const kindWhitelist = [
       ...(Array.isArray(options?.kindWhitelist) ? options.kindWhitelist : []),
       EventKinds.REQUEST_TO_VANISH,
     ].reduce<(number | [number, number])[]>((result, item) => {
-      const key = Array.isArray(item)
-        ? `range:${item[0]}-${item[1]}`
-        : `kind:${item}`
+      const key = Array.isArray(item) ? `range:${item[0]}-${item[1]}` : `kind:${item}`
 
-      if (!result.some((existing) => {
-        const existingKey = Array.isArray(existing)
-          ? `range:${existing[0]}-${existing[1]}`
-          : `kind:${existing}`
-        return existingKey === key
-      })) {
+      if (
+        !result.some((existing) => {
+          const existingKey = Array.isArray(existing) ? `range:${existing[0]}-${existing[1]}` : `kind:${existing}`
+          return existingKey === key
+        })
+      ) {
         result.push(item)
       }
 
@@ -364,9 +379,7 @@ export class EventRepository implements IEventRepository {
     const candidates = this.masterDbClient('events')
       .select('event_id')
       .where(function () {
-        this.where('expires_at', '<', now)
-          .orWhereNotNull('deleted_at')
-          .orWhere('event_created_at', '<', retentionLimit)
+        this.where('expires_at', '<', now).orWhereNotNull('deleted_at').orWhere('event_created_at', '<', retentionLimit)
       })
       .modify((query) => {
         query.whereNot((builder) => {
@@ -389,21 +402,27 @@ export class EventRepository implements IEventRepository {
       .whereIn('event_id', candidates)
       .del(['deleted_at', 'expires_at', 'event_created_at'])
 
-    const mapToCounts = (deletedRows: Pick<DBEvent, 'deleted_at' | 'expires_at' | 'event_created_at'>[]): EventPurgeCounts => deletedRows.reduce((counts, row) => {
-      if (row.deleted_at) {
-        counts.deleted += 1
-      } else if (typeof row.expires_at === 'number' && row.expires_at < now) {
-        counts.expired += 1
-      } else if (row.event_created_at < retentionLimit) {
-        counts.retained += 1
-      }
+    const mapToCounts = (
+      deletedRows: Pick<DBEvent, 'deleted_at' | 'expires_at' | 'event_created_at'>[],
+    ): EventPurgeCounts =>
+      deletedRows.reduce(
+        (counts, row) => {
+          if (row.deleted_at) {
+            counts.deleted += 1
+          } else if (typeof row.expires_at === 'number' && row.expires_at < now) {
+            counts.expired += 1
+          } else if (row.event_created_at < retentionLimit) {
+            counts.retained += 1
+          }
 
-      return counts
-    }, {
-      deleted: 0,
-      expired: 0,
-      retained: 0,
-    })
+          return counts
+        },
+        {
+          deleted: 0,
+          expired: 0,
+          retained: 0,
+        },
+      )
 
     const getPromise = () => query.then((rows: any) => mapToCounts(rows))
 

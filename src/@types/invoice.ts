@@ -3,7 +3,7 @@ import { Pubkey } from './base'
 export enum InvoiceUnit {
   MSATS = 'msats',
   SATS = 'sats',
-  BTC = 'btc'
+  BTC = 'btc',
 }
 
 export enum InvoiceStatus {
@@ -39,7 +39,7 @@ export interface DBInvoice {
   amount_requested: bigint
   amount_paid: bigint
   unit: InvoiceUnit
-  status: InvoiceStatus,
+  status: InvoiceStatus
   description: string
   confirmed_at: Date
   expires_at: Date

@@ -21,7 +21,7 @@ export class PaymentsService implements IPaymentsService {
     private readonly userRepository: IUserRepository,
     private readonly invoiceRepository: IInvoiceRepository,
     private readonly eventRepository: IEventRepository,
-    private readonly settings: () => Settings
+    private readonly settings: () => Settings,
   ) {}
 
   public async getPendingInvoices(): Promise<Invoice[]> {
@@ -38,7 +38,7 @@ export class PaymentsService implements IPaymentsService {
   public async getInvoiceFromPaymentsProcessor(invoice: Invoice | string): Promise<Partial<Invoice>> {
     try {
       return await this.paymentsProcessor.getInvoice(
-        typeof invoice === 'string' || invoice?.verifyURL ? invoice : invoice.id
+        typeof invoice === 'string' || invoice?.verifyURL ? invoice : invoice.id,
       )
     } catch (error) {
       console.log('Unable to get invoice from payments processor. Reason:', error)
@@ -47,11 +47,7 @@ export class PaymentsService implements IPaymentsService {
     }
   }
 
-  public async createInvoice(
-    pubkey: Pubkey,
-    amount: bigint,
-    description: string,
-  ): Promise<Invoice> {
+  public async createInvoice(pubkey: Pubkey, amount: bigint, description: string): Promise<Invoice> {
     debug('create invoice for %s for %s: %s', pubkey, amount.toString(), description)
     const transaction = new Transaction(this.dbClient)
 
@@ -60,13 +56,11 @@ export class PaymentsService implements IPaymentsService {
 
       await this.userRepository.upsert({ pubkey }, transaction.transaction)
 
-      const invoiceResponse = await this.paymentsProcessor.createInvoice(
-        {
-          amount,
-          description,
-          requestId: pubkey,
-        },
-      )
+      const invoiceResponse = await this.paymentsProcessor.createInvoice({
+        amount,
+        description,
+        requestId: pubkey,
+      })
 
       const date = new Date()
 
@@ -133,9 +127,7 @@ export class PaymentsService implements IPaymentsService {
     }
   }
 
-  public async confirmInvoice(
-    invoice: Invoice,
-  ): Promise<void> {
+  public async confirmInvoice(invoice: Invoice): Promise<void> {
     debug('confirm invoice %s: %O', invoice.id, invoice)
 
     const transaction = new Transaction(this.dbClient)
@@ -158,7 +150,7 @@ export class PaymentsService implements IPaymentsService {
         invoice.id,
         invoice.amountPaid,
         invoice.confirmedAt,
-        transaction.transaction
+        transaction.transaction,
       )
 
       const currentSettings = this.settings()
@@ -171,25 +163,17 @@ export class PaymentsService implements IPaymentsService {
         amountPaidMsat *= 1000n * 100000000n
       }
 
-      const isApplicableFee = (feeSchedule: FeeSchedule) => feeSchedule.enabled
-        && !feeSchedule.whitelists?.pubkeys?.some((prefix) => invoice.pubkey.startsWith(prefix))
+      const isApplicableFee = (feeSchedule: FeeSchedule) =>
+        feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.some((prefix) => invoice.pubkey.startsWith(prefix))
       const admissionFeeSchedules = currentSettings.payments?.feeSchedules?.admission ?? []
-      const admissionFeeAmount = admissionFeeSchedules
-        .reduce((sum, feeSchedule) => {
-          return sum + (isApplicableFee(feeSchedule) ? BigInt(feeSchedule.amount) : 0n)
-        }, 0n)
+      const admissionFeeAmount = admissionFeeSchedules.reduce((sum, feeSchedule) => {
+        return sum + (isApplicableFee(feeSchedule) ? BigInt(feeSchedule.amount) : 0n)
+      }, 0n)
 
-        if (
-          admissionFeeAmount > 0n
-          && amountPaidMsat >= admissionFeeAmount
-        ) {
-          const date = new Date()
-          await this.userRepository.admitUser(
-            invoice.pubkey,
-            date,
-            transaction.transaction,
-          )
-        }
+      if (admissionFeeAmount > 0n && amountPaidMsat >= admissionFeeAmount) {
+        const date = new Date()
+        await this.userRepository.admitUser(invoice.pubkey, date, transaction.transaction)
+      }
 
       await transaction.commit()
     } catch (error) {
@@ -205,9 +189,7 @@ export class PaymentsService implements IPaymentsService {
     const currentSettings = this.settings()
 
     const {
-      info: {
-        relay_url: relayUrl,
-      },
+      info: { relay_url: relayUrl },
     } = currentSettings
 
     const relayPrivkey = getRelayPrivateKey(relayUrl)
