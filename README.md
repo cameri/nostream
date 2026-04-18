@@ -639,6 +639,33 @@ Any changes made to the settings file will be read on the next start.
 Default settings can be found under `resources/default-settings.yaml`. Feel free to copy it to `nostream/.nostr/settings.yaml` if you would like to have a settings file before running the relay first.
 
 See [CONFIGURATION.md](CONFIGURATION.md) for a detailed explanation of each environment variable and setting.
+## Releases & Versioning
+
+This project uses [Changesets](https://github.com/changesets/changesets) for version management.
+
+### For contributors
+
+Every pull request that changes behavior, adds a feature, or fixes a bug **must include a changeset file**. The CI `changeset-check` job will fail if no changeset is present.
+
+To add a changeset:
+
+```bash
+npx changeset
+```
+
+This interactive prompt will ask you to:
+1. Select the bump type: `major`, `minor`, or `patch`
+2. Write a short summary of the change (this becomes the changelog entry)
+
+The command creates a file in `.changeset/` — commit it with your PR.
+
+### Release process
+
+1. Changesets accumulate as PRs are merged to `main`
+2. The `Changesets Release` workflow automatically opens a **"Version Packages"** PR that aggregates all pending changesets, bumps `package.json`, and updates `CHANGELOG.md`
+3. When a maintainer merges the Version Packages PR, the workflow publishes a GitHub release and creates the corresponding git tag
+4. The Docker image is then automatically built and pushed to GHCR via the `release.yml` workflow
+
 ## Dev Channel
 
 For development discussions, please use the [Nostr Typescript Relay Dev Group](https://t.me/nostream_dev).
