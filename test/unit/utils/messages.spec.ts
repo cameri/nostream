@@ -1,7 +1,14 @@
 import { expect } from 'chai'
 
-import { createEndOfStoredEventsNoticeMessage, createNoticeMessage, createOutgoingEventMessage } from '../../../src/utils/messages'
-import { Event } from '../../../src/@types/event'
+import {
+  createCommandResult,
+  createEndOfStoredEventsNoticeMessage,
+  createNoticeMessage,
+  createOutgoingEventMessage,
+  createRelayedEventMessage,
+  createSubscriptionMessage,
+} from '../../../src/utils/messages'
+import { Event, RelayedEvent } from '../../../src/@types/event'
 import { MessageType } from '../../../src/@types/messages'
 
 describe('createNotice', () => {
@@ -22,6 +29,77 @@ describe('createOutgoingEventMessage', () => {
 describe('createEndOfStoredEventsNoticeMessage', () => {
   it('returns a EOSE message', () => {
     expect(createEndOfStoredEventsNoticeMessage('subscriptionId')).to.deep.equal([MessageType.EOSE, 'subscriptionId'])
+  })
+})
+
+// NIP-20: Command Results
+describe('createCommandResult', () => {
+  it('returns an OK message with success=true and a reason', () => {
+    const eventId = 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef'
+    expect(createCommandResult(eventId, true, '')).to.deep.equal([
+      MessageType.OK,
+      eventId,
+      true,
+      '',
+    ])
+  })
+
+  it('returns an OK message with success=false and a rejection reason', () => {
+    const eventId = 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef'
+    expect(createCommandResult(eventId, false, 'blocked: content not allowed')).to.deep.equal([
+      MessageType.OK,
+      eventId,
+      false,
+      'blocked: content not allowed',
+    ])
+  })
+})
+
+// NIP-01: Subscription messages (REQ)
+describe('createSubscriptionMessage', () => {
+  it('returns a REQ message with a single filter', () => {
+    const result = createSubscriptionMessage('sub1', [{ kinds: [1] }])
+    expect(result[0]).to.equal(MessageType.REQ)
+    expect(result[1]).to.equal('sub1')
+    expect(result[2]).to.deep.equal({ kinds: [1] })
+  })
+
+  it('returns a REQ message with multiple filters', () => {
+    const filters = [{ kinds: [1] }, { kinds: [0], authors: ['somepubkey'] }]
+    const result = createSubscriptionMessage('sub2', filters)
+    expect(result[0]).to.equal(MessageType.REQ)
+    expect(result[1]).to.equal('sub2')
+    expect(result[2]).to.deep.equal(filters[0])
+    expect(result[3]).to.deep.equal(filters[1])
+  })
+})
+
+// Relayed event messages (used for event mirroring between relays)
+describe('createRelayedEventMessage', () => {
+  let event: RelayedEvent
+
+  beforeEach(() => {
+    event = {
+      id: 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef',
+      kind: 1,
+      pubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+      created_at: 1648339664,
+      tags: [],
+      content: 'hello',
+      sig: 'abc123',
+    } as any
+  })
+
+  it('returns an EVENT message without secret when no secret is provided', () => {
+    expect(createRelayedEventMessage(event)).to.deep.equal([MessageType.EVENT, event])
+  })
+
+  it('returns an EVENT message with secret appended when a secret is provided', () => {
+    expect(createRelayedEventMessage(event, 'my-secret')).to.deep.equal([
+      MessageType.EVENT,
+      event,
+      'my-secret',
+    ])
   })
 })
 
