@@ -1,3 +1,4 @@
+import accepts from 'accepts'
 import { NextFunction, Request, Response } from 'express'
 import { path, pathEq } from 'ramda'
 import { createSettings } from '../../factories/settings-factory'
@@ -10,7 +11,7 @@ import packageJson from '../../../package.json'
 export const rootRequestHandler = (request: Request, response: Response, next: NextFunction) => {
   const settings = createSettings()
 
-  if (request.headers.accept?.includes('application/nostr+json')) {
+  if (accepts(request).type(['application/nostr+json'])) {
     const {
       info: { name, description, pubkey: rawPubkey, contact, relay_url },
     } = settings

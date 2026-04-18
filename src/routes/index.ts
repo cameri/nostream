@@ -1,3 +1,4 @@
+import accepts from 'accepts'
 import express from 'express'
 
 import { nodeinfo21Handler, nodeinfoHandler } from '../handlers/request-handlers/nodeinfo-handler'
@@ -13,7 +14,7 @@ import { rootRequestHandler } from '../handlers/request-handlers/root-request-ha
 const router = express.Router()
 
 router.use((req, res, next) => {
-  if (req.method === 'GET' && req.headers.accept?.includes('application/nostr+json')) {
+  if (req.method === 'GET' && accepts(req).type(['application/nostr+json'])) {
     return rootRequestHandler(req, res, next)
   }
   next()
