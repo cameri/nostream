@@ -1,4 +1,4 @@
-import { json, Router } from 'express'
+import { json, Router, urlencoded } from 'express'
 
 import { createLNbitsCallbackController } from '../../factories/controllers/lnbits-callback-controller-factory'
 import { createNodelessCallbackController } from '../../factories/controllers/nodeless-callback-controller-factory'
@@ -20,6 +20,6 @@ router
     }),
     withController(createNodelessCallbackController),
   )
-  .post('/opennode', json(), withController(createOpenNodeCallbackController))
+  .post('/opennode', urlencoded({ extended: false }), json(), withController(createOpenNodeCallbackController))
 
 export default router

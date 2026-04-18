@@ -1,6 +1,16 @@
 import { pubkeySchema } from './base-schema'
 import { z } from 'zod'
 
+const openNodeCallbackStatuses = ['expired', 'refunded', 'unpaid', 'processing', 'underpaid', 'paid'] as const
+
+export const opennodeWebhookCallbackBodySchema = z
+  .object({
+    id: z.string(),
+    hashed_order: z.string(),
+    status: z.enum(openNodeCallbackStatuses),
+  })
+  .passthrough()
+
 export const opennodeCallbackBodySchema = z
   .object({
     id: z.string(),
