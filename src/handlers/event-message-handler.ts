@@ -2,9 +2,16 @@ import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '
 import {
   DEFAULT_NIP05_VERIFY_EXPIRATION_MS,
   extractNip05FromEvent,
+  isDomainAllowed,
+  Nip05VerificationOutcome,
+  parseNip05Identifier,
+  verifyNip05Identifier,
+} from '../utils/nip05'
+import { Event, ExpiringEvent } from '../@types/event'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
 import {
   getEventExpiration,
+  getEventProofOfWork,
   getPubkeyProofOfWork,
   getPublicKey,
   getRelayPrivateKey,

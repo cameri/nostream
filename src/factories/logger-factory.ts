@@ -14,6 +14,28 @@ type MessageLogger = ((message?: unknown, ...args: unknown[]) => void) & {
   child: (bindings: Record<string, unknown>) => MessageLogger
 }
 
+const stringifyForLog = (input: unknown): string => {
+  if (input instanceof Error) {
+    return input.stack ?? input.message
+  }
+
+  try {
+    return format('%O', input)
+  } catch {
+    return '[Unserializable]'
+  }
+}
+
+const safeFormat = (template: string, args: unknown[]): string => {
+  try {
+    return format(template, ...args)
+  } catch {
+    const extra = args.map(stringifyForLog).join(' ')
+
+    return extra ? `${template} ${extra}` : template
+  }
+}
+
 const logAtLevel = (
   instance: PinoLogger,
   level: LevelWithSilent,
@@ -26,12 +48,12 @@ const logAtLevel = (
   }
 
   if (typeof message === 'string') {
-    instance[level](format(message, ...args))
+    instance[level](safeFormat(message, args))
     return
   }
 
   if (args.length > 0) {
-    instance[level](format('%O', [message, ...args]))
+    instance[level]([message, ...args].map(stringifyForLog).join(' '))
     return
   }
 

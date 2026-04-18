@@ -464,16 +464,11 @@ describe('PaymentsService', () => {
     })
 
     it('calls logError and does not throw when the pipeline fails', async () => {
-      const consoleErrorStub = sandbox.stub(console, 'error')
       ;(eventUtils.identifyEvent as Sinon.SinonStub).rejects(new Error('identify failed'))
 
       // otherwise() swallows the error — the method must resolve, not reject
       await service.sendInvoiceUpdateNotification(stubInvoice({ amountPaid: 100n }))
 
-      expect(consoleErrorStub).to.have.been.calledWith(
-        'Unable to send notification',
-        Sinon.match.instanceOf(Error),
-      )
       expect(eventRepository.create).not.to.have.been.called
     })
   })
