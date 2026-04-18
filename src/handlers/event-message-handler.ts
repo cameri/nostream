@@ -1,7 +1,14 @@
 import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
+import {
+  DEFAULT_NIP05_VERIFY_EXPIRATION_MS,
+  extractNip05FromEvent,
+  isDomainAllowed,
+  Nip05VerificationOutcome,
+  parseNip05Identifier,
+  verifyNip05Identifier,
+} from '../utils/nip05'
 import { Event, ExpiringEvent  } from '../@types/event'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
-import { extractNip05FromEvent, isDomainAllowed, parseNip05Identifier, verifyNip05Identifier } from '../utils/nip05'
 import {
   getEventExpiration,
   getEventProofOfWork,
@@ -363,7 +370,7 @@ export class EventMessageHandler implements IMessageHandler {
 
   protected async checkNip05Verification(event: Event): Promise<string | undefined> {
     const nip05Settings = this.settings().nip05
-    if (!nip05Settings || nip05Settings.mode === 'disabled') {
+    if (!nip05Settings || nip05Settings.mode !== 'enabled') {
       return
     }
 
@@ -375,26 +382,33 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
-    if (nip05Settings.mode !== 'enabled') {
-      return
-    }
-
     const verification = await this.nip05VerificationRepository.findByPubkey(event.pubkey)
 
-    if (!verification || !verification.isVerified) {
+    if (!verification) {
       return 'blocked: NIP-05 verification required'
-    }
-
-    const expirationMs = nip05Settings.verifyExpiration ?? 604800000
-    if (verification.lastVerifiedAt) {
-      const elapsed = Date.now() - verification.lastVerifiedAt.getTime()
-      if (elapsed > expirationMs) {
-        return 'blocked: NIP-05 verification expired'
-      }
     }
 
     if (!isDomainAllowed(verification.domain, nip05Settings.domainWhitelist, nip05Settings.domainBlacklist)) {
       return 'blocked: NIP-05 domain not allowed'
+    }
+
+    // `lastVerifiedAt` is the single source of truth for "currently allowed".
+    // A transient network error during background re-verification leaves this
+    // value intact, so a verified author keeps publishing until the configured
+    // expiration elapses. Only a definitive mismatch (handled in the maintenance
+    // worker / processNip05Metadata) nulls this field and blocks the author.
+    //
+    // Historical rows could theoretically have `isVerified=true` with a null
+    // `lastVerifiedAt`; treat that as "needs re-verification" rather than
+    // "verified forever".
+    if (!verification.lastVerifiedAt) {
+      return 'blocked: NIP-05 verification required'
+    }
+
+    const expirationMs = nip05Settings.verifyExpiration ?? DEFAULT_NIP05_VERIFY_EXPIRATION_MS
+    const elapsed = Date.now() - verification.lastVerifiedAt.getTime()
+    if (elapsed > expirationMs) {
+      return 'blocked: NIP-05 verification expired'
     }
   }
 
@@ -426,24 +440,88 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
-    verifyNip05Identifier(nip05Identifier, event.pubkey)
-      .then((verified) => {
-        const now = new Date()
-        const verification: Nip05Verification = {
-          pubkey: event.pubkey,
-          nip05: nip05Identifier,
-          domain: parsed.domain,
-          isVerified: verified,
-          lastVerifiedAt: verified ? now : null,
-          lastCheckedAt: now,
-          failureCount: verified ? 0 : 1,
-          createdAt: now,
-          updatedAt: now,
-        }
-        return this.nip05VerificationRepository.upsert(verification)
+    const repo = this.nip05VerificationRepository
+    Promise.all([
+      repo.findByPubkey(event.pubkey),
+      verifyNip05Identifier(nip05Identifier, event.pubkey),
+    ])
+      .then(([existing, outcome]) => {
+        const verification = buildMetadataVerification(
+          event.pubkey,
+          nip05Identifier,
+          parsed.domain,
+          existing,
+          outcome,
+        )
+        return repo.upsert(verification)
       })
       .catch((error) => {
         debug('NIP-05 verification failed for %s: %o', event.pubkey, error)
       })
+  }
+}
+
+/**
+ * Build the row to upsert after a kind-0 verification attempt.
+ *
+ * - `verified` resets failureCount and refreshes lastVerifiedAt.
+ * - `mismatch` / `invalid` are definitive: flip to unverified, null out
+ *   lastVerifiedAt (the author is no longer the domain's owner), and bump
+ *   failureCount relative to any prior row.
+ * - `error` is transient: keep the prior isVerified/lastVerifiedAt (if any)
+ *   so previously-verified authors aren't blocked by a single network hiccup,
+ *   but still bump failureCount + lastCheckedAt so the re-verification backoff
+ *   can take effect.
+ */
+function buildMetadataVerification(
+  pubkey: string,
+  nip05: string,
+  domain: string,
+  existing: Nip05Verification | undefined,
+  outcome: Nip05VerificationOutcome,
+): Nip05Verification {
+  const now = new Date()
+  const priorFailureCount = existing?.failureCount ?? 0
+  const createdAt = existing?.createdAt ?? now
+
+  switch (outcome.status) {
+    case 'verified':
+      return {
+        pubkey,
+        nip05,
+        domain,
+        isVerified: true,
+        lastVerifiedAt: now,
+        lastCheckedAt: now,
+        failureCount: 0,
+        createdAt,
+        updatedAt: now,
+      }
+    case 'mismatch':
+    case 'invalid':
+      return {
+        pubkey,
+        nip05,
+        domain,
+        isVerified: false,
+        lastVerifiedAt: null,
+        lastCheckedAt: now,
+        failureCount: priorFailureCount + 1,
+        createdAt,
+        updatedAt: now,
+      }
+    case 'error':
+    default:
+      return {
+        pubkey,
+        nip05,
+        domain,
+        isVerified: existing?.isVerified ?? false,
+        lastVerifiedAt: existing?.lastVerifiedAt ?? null,
+        lastCheckedAt: now,
+        failureCount: priorFailureCount + 1,
+        createdAt,
+        updatedAt: now,
+      }
   }
 }

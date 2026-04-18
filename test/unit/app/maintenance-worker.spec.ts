@@ -6,8 +6,8 @@ import sinonChai from 'sinon-chai'
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
 
+import { applyReverificationOutcome, MaintenanceWorker } from '../../../src/app/maintenance-worker'
 import { IMaintenanceService, IPaymentsService } from '../../../src/@types/services'
-import { MaintenanceWorker } from '../../../src/app/maintenance-worker'
 import { Nip05Verification } from '../../../src/@types/nip05'
 import { Settings } from '../../../src/@types/settings'
 
@@ -81,6 +81,63 @@ describe('MaintenanceWorker', () => {
     sandbox.restore()
   })
 
+  const verification = (overrides: Partial<Nip05Verification> = {}): Nip05Verification => ({
+    pubkey: 'a'.repeat(64),
+    nip05: 'alice@example.com',
+    domain: 'example.com',
+    isVerified: true,
+    lastVerifiedAt: new Date(Date.now() - 100000000),
+    lastCheckedAt: new Date(Date.now() - 100000000),
+    failureCount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  })
+
+  describe('applyReverificationOutcome', () => {
+    it('marks verified on a successful outcome and resets failureCount', () => {
+      const existing = verification({ isVerified: false, lastVerifiedAt: null, failureCount: 5 })
+
+      const updated = applyReverificationOutcome(existing, { status: 'verified' })
+
+      expect(updated.isVerified).to.be.true
+      expect(updated.lastVerifiedAt).to.be.an.instanceOf(Date)
+      expect(updated.failureCount).to.equal(0)
+      expect(updated.lastCheckedAt).to.be.an.instanceOf(Date)
+    })
+
+    it('flips to unverified and nulls lastVerifiedAt on definitive mismatch', () => {
+      const existing = verification({ failureCount: 2 })
+
+      const updated = applyReverificationOutcome(existing, { status: 'mismatch' })
+
+      expect(updated.isVerified).to.be.false
+      expect(updated.lastVerifiedAt).to.be.null
+      expect(updated.failureCount).to.equal(3)
+    })
+
+    it('flips to unverified and nulls lastVerifiedAt on malformed response', () => {
+      const existing = verification()
+
+      const updated = applyReverificationOutcome(existing, { status: 'invalid', reason: 'bad json' })
+
+      expect(updated.isVerified).to.be.false
+      expect(updated.lastVerifiedAt).to.be.null
+    })
+
+    it('preserves lastVerifiedAt/isVerified on transient errors', () => {
+      const lastVerified = new Date(Date.now() - 10000)
+      const existing = verification({ lastVerifiedAt: lastVerified, failureCount: 1 })
+
+      const updated = applyReverificationOutcome(existing, { status: 'error', reason: 'ETIMEDOUT' })
+
+      expect(updated.isVerified).to.equal(existing.isVerified)
+      expect(updated.lastVerifiedAt).to.equal(lastVerified)
+      expect(updated.failureCount).to.equal(2)
+      expect(updated.lastCheckedAt).to.be.an.instanceOf(Date)
+    })
+  })
+
   describe('processNip05Reverifications', () => {
     it('returns early when nip05 settings are undefined', async () => {
       (settings as any).nip05 = undefined
@@ -112,20 +169,9 @@ describe('MaintenanceWorker', () => {
     })
 
     it('re-verifies and updates successful verifications', async () => {
-      const verification: Nip05Verification = {
-        pubkey: 'a'.repeat(64),
-        nip05: 'alice@example.com',
-        domain: 'example.com',
-        isVerified: true,
-        lastVerifiedAt: new Date(Date.now() - 100000000),
-        lastCheckedAt: new Date(Date.now() - 100000000),
-        failureCount: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-
-      nip05VerificationRepository.findPendingVerifications.resolves([verification])
-      verifyStub.resolves(true)
+      const row = verification()
+      nip05VerificationRepository.findPendingVerifications.resolves([row])
+      verifyStub.resolves({ status: 'verified' })
 
       await (worker as any).processNip05Reverifications(settings)
 
@@ -138,59 +184,41 @@ describe('MaintenanceWorker', () => {
       expect(upsertArg.lastVerifiedAt).to.be.an.instanceOf(Date)
     })
 
-    it('increments failure count on failed verification', async () => {
-      const verification: Nip05Verification = {
-        pubkey: 'b'.repeat(64),
-        nip05: 'bob@example.com',
-        domain: 'example.com',
-        isVerified: true,
-        lastVerifiedAt: new Date(Date.now() - 100000000),
-        lastCheckedAt: new Date(Date.now() - 100000000),
-        failureCount: 3,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-
-      nip05VerificationRepository.findPendingVerifications.resolves([verification])
-      verifyStub.resolves(false)
+    it('increments failure count and nulls lastVerifiedAt on definitive mismatch', async () => {
+      const row = verification({ pubkey: 'b'.repeat(64), nip05: 'bob@example.com', failureCount: 3 })
+      nip05VerificationRepository.findPendingVerifications.resolves([row])
+      verifyStub.resolves({ status: 'mismatch' })
 
       await (worker as any).processNip05Reverifications(settings)
 
       expect(nip05VerificationRepository.upsert).to.have.been.calledOnce
-
       const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
       expect(upsertArg.isVerified).to.be.false
       expect(upsertArg.failureCount).to.equal(4)
-      expect(upsertArg.lastVerifiedAt).to.deep.equal(verification.lastVerifiedAt)
+      expect(upsertArg.lastVerifiedAt).to.be.null
+    })
+
+    it('preserves prior verification on transient network errors', async () => {
+      const lastVerifiedAt = new Date(Date.now() - 10000)
+      const row = verification({ pubkey: 'c'.repeat(64), nip05: 'carol@example.com', failureCount: 1, lastVerifiedAt })
+      nip05VerificationRepository.findPendingVerifications.resolves([row])
+      verifyStub.resolves({ status: 'error', reason: 'ETIMEDOUT' })
+
+      await (worker as any).processNip05Reverifications(settings)
+
+      expect(nip05VerificationRepository.upsert).to.have.been.calledOnce
+      const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
+      expect(upsertArg.isVerified).to.be.true
+      expect(upsertArg.lastVerifiedAt).to.equal(lastVerifiedAt)
+      expect(upsertArg.failureCount).to.equal(2)
     })
 
     it('handles individual verification errors gracefully', async () => {
-      const v1: Nip05Verification = {
-        pubkey: 'a'.repeat(64),
-        nip05: 'alice@example.com',
-        domain: 'example.com',
-        isVerified: true,
-        lastVerifiedAt: new Date(),
-        lastCheckedAt: new Date(Date.now() - 100000000),
-        failureCount: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-      const v2: Nip05Verification = {
-        pubkey: 'b'.repeat(64),
-        nip05: 'bob@example.com',
-        domain: 'example.com',
-        isVerified: true,
-        lastVerifiedAt: new Date(),
-        lastCheckedAt: new Date(Date.now() - 100000000),
-        failureCount: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-
+      const v1 = verification({ pubkey: 'a'.repeat(64) })
+      const v2 = verification({ pubkey: 'b'.repeat(64), nip05: 'bob@example.com' })
       nip05VerificationRepository.findPendingVerifications.resolves([v1, v2])
       verifyStub.onFirstCall().rejects(new Error('network error'))
-      verifyStub.onSecondCall().resolves(true)
+      verifyStub.onSecondCall().resolves({ status: 'verified' })
 
       await (worker as any).processNip05Reverifications(settings)
 
@@ -227,20 +255,9 @@ describe('MaintenanceWorker', () => {
 
     it('processes in passive mode', async () => {
       (settings as any).nip05.mode = 'passive'
-      const verification: Nip05Verification = {
-        pubkey: 'c'.repeat(64),
-        nip05: 'charlie@example.com',
-        domain: 'example.com',
-        isVerified: true,
-        lastVerifiedAt: new Date(),
-        lastCheckedAt: new Date(Date.now() - 100000000),
-        failureCount: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-
-      nip05VerificationRepository.findPendingVerifications.resolves([verification])
-      verifyStub.resolves(true)
+      const row = verification({ pubkey: 'c'.repeat(64), nip05: 'charlie@example.com' })
+      nip05VerificationRepository.findPendingVerifications.resolves([row])
+      verifyStub.resolves({ status: 'verified' })
 
       await (worker as any).processNip05Reverifications(settings)
 

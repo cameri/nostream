@@ -1250,9 +1250,21 @@ describe('EventMessageHandler', () => {
         .to.eventually.equal('blocked: NIP-05 verification required')
     })
 
-    it('returns reason if verification is not verified', async () => {
+    it('returns reason if verification exists but has no lastVerifiedAt', async () => {
       nip05VerificationRepository.findByPubkey.resolves({
         isVerified: false,
+        lastVerifiedAt: null,
+        domain: 'example.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event))
+        .to.eventually.equal('blocked: NIP-05 verification required')
+    })
+
+    it('treats isVerified=true with null lastVerifiedAt as unverified (historical/bad data)', async () => {
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: true,
+        lastVerifiedAt: null,
         domain: 'example.com',
       })
 
@@ -1276,6 +1288,17 @@ describe('EventMessageHandler', () => {
       const recent = new Date(Date.now() - 1000)
       nip05VerificationRepository.findByPubkey.resolves({
         isVerified: true,
+        lastVerifiedAt: recent,
+        domain: 'example.com',
+      })
+
+      return expect((handler as any).checkNip05Verification(event)).to.eventually.be.undefined
+    })
+
+    it('allows author when lastVerifiedAt is recent even if isVerified is false (transient re-check failure)', async () => {
+      const recent = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        isVerified: false,
         lastVerifiedAt: recent,
         domain: 'example.com',
       })
@@ -1425,7 +1448,8 @@ describe('EventMessageHandler', () => {
     })
 
     it('verifies and upserts on successful verification', async () => {
-      verifyStub.resolves(true)
+      nip05VerificationRepository.findByPubkey.resolves(undefined)
+      verifyStub.resolves({ status: 'verified' })
       event.kind = EventKinds.SET_METADATA
       event.content = JSON.stringify({ nip05: 'alice@example.com' })
 
@@ -1444,8 +1468,9 @@ describe('EventMessageHandler', () => {
       expect(upsertArg.lastVerifiedAt).to.be.an.instanceOf(Date)
     })
 
-    it('upserts with failure state on failed verification', async () => {
-      verifyStub.resolves(false)
+    it('upserts with unverified state and nulls lastVerifiedAt on definitive mismatch', async () => {
+      nip05VerificationRepository.findByPubkey.resolves(undefined)
+      verifyStub.resolves({ status: 'mismatch' })
       event.kind = EventKinds.SET_METADATA
       event.content = JSON.stringify({ nip05: 'alice@example.com' })
 
@@ -1461,7 +1486,61 @@ describe('EventMessageHandler', () => {
       expect(upsertArg.lastVerifiedAt).to.be.null
     })
 
-    it('handles verification errors gracefully', async () => {
+    it('increments failureCount from existing row on definitive mismatch', async () => {
+      const priorVerifiedAt = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        pubkey: event.pubkey,
+        nip05: 'alice@example.com',
+        domain: 'example.com',
+        isVerified: true,
+        lastVerifiedAt: priorVerifiedAt,
+        lastCheckedAt: priorVerifiedAt,
+        failureCount: 2,
+        createdAt: priorVerifiedAt,
+        updatedAt: priorVerifiedAt,
+      })
+      verifyStub.resolves({ status: 'mismatch' })
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
+      expect(upsertArg.failureCount).to.equal(3)
+      expect(upsertArg.isVerified).to.be.false
+      expect(upsertArg.lastVerifiedAt).to.be.null
+    })
+
+    it('preserves prior isVerified/lastVerifiedAt on transient error', async () => {
+      const priorVerifiedAt = new Date(Date.now() - 1000)
+      nip05VerificationRepository.findByPubkey.resolves({
+        pubkey: event.pubkey,
+        nip05: 'alice@example.com',
+        domain: 'example.com',
+        isVerified: true,
+        lastVerifiedAt: priorVerifiedAt,
+        lastCheckedAt: priorVerifiedAt,
+        failureCount: 1,
+        createdAt: priorVerifiedAt,
+        updatedAt: priorVerifiedAt,
+      })
+      verifyStub.resolves({ status: 'error', reason: 'ETIMEDOUT' })
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
+      expect(upsertArg.isVerified).to.be.true
+      expect(upsertArg.lastVerifiedAt).to.equal(priorVerifiedAt)
+      expect(upsertArg.failureCount).to.equal(2)
+      expect(upsertArg.lastCheckedAt).to.be.an.instanceOf(Date)
+    })
+
+    it('handles verification errors gracefully (thrown by verifier)', async () => {
+      nip05VerificationRepository.findByPubkey.resolves(undefined)
       verifyStub.rejects(new Error('network error'))
       event.kind = EventKinds.SET_METADATA
       event.content = JSON.stringify({ nip05: 'alice@example.com' })
@@ -1474,7 +1553,8 @@ describe('EventMessageHandler', () => {
 
     it('works correctly in passive mode', async () => {
       settings.nip05.mode = 'passive'
-      verifyStub.resolves(true)
+      nip05VerificationRepository.findByPubkey.resolves(undefined)
+      verifyStub.resolves({ status: 'verified' })
       event.kind = EventKinds.SET_METADATA
       event.content = JSON.stringify({ nip05: 'alice@example.com' })
 
