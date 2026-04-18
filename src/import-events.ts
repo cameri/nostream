@@ -2,10 +2,6 @@ import { extname, resolve } from 'path'
 
 import fs from 'fs'
 
-import dotenv from 'dotenv'
-
-dotenv.config()
-
 import {
   createEventBatchPersister,
   EventImportLineError,

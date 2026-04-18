@@ -1,10 +1,7 @@
 import { createInterface } from 'readline'
-import dotenv from 'dotenv'
 import { Knex } from 'knex'
 
 import { getMasterDbClient } from './database/client'
-
-dotenv.config()
 
 type CleanDbOptions = {
   all: boolean

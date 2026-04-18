@@ -1,7 +1,7 @@
+import net from 'net'
 import { readFile, writeFile } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
-import { Tor } from 'tor-control-ts'
 
 import { createLogger } from '../factories/logger-factory'
 import { TorConfig } from '../@types/tor'
@@ -24,7 +24,75 @@ export const createTorConfig = (): TorConfig => {
   }
 }
 
-let client: Tor | undefined
+type OnionResult = { ServiceID?: string; PrivateKey?: string }
+
+export class TorClient {
+  private socket: net.Socket | undefined
+  private readonly host: string
+  private readonly port: number
+  private readonly password: string
+
+  constructor({ host, port, password }: { host?: string; port?: number; password?: string } = {}) {
+    this.host = host ?? 'localhost'
+    this.port = port ?? 9051
+    this.password = password ?? ''
+  }
+
+  connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.socket = net.connect({ host: this.host, port: this.port })
+      this.socket.once('error', reject)
+      this.socket.once('data', (data) => {
+        if (/^250/.test(data.toString())) { resolve() }
+        else { reject(new Error(`Tor auth failed: ${data}`)) }
+      })
+      this.socket.write(`AUTHENTICATE "${this.password}"\r\n`)
+    })
+  }
+
+  private sendCommand(command: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket) {
+        reject(new Error('Not connected to Tor control port'))
+        return
+      }
+      let buf = ''
+      const onData = (data: Buffer) => {
+        buf += data.toString()
+        if (buf.endsWith('\r\n')) {
+          this.socket!.off('data', onData)
+          if (/^250/.test(buf)) { resolve(buf) }
+          else { reject(new Error(buf.trim())) }
+        }
+      }
+      this.socket.on('data', onData)
+      this.socket.write(`${command}\r\n`)
+    })
+  }
+
+  async addOnion(port: number, host?: string, privateKey?: string | null): Promise<OnionResult> {
+    const key = privateKey ?? 'NEW:BEST'
+    const portSpec = host !== undefined ? `${port},${host}:${port}` : `${port}`
+    const response = await this.sendCommand(`ADD_ONION ${key} Port=${portSpec}`)
+
+    const result: OnionResult = {}
+    for (const line of response.split('\r\n')) {
+      const m = line.match(/^250[-\s](\w+)=(.+)$/)
+      if (m) { (result as Record<string, string>)[m[1]] = m[2] }
+    }
+    if (result.ServiceID) { result.ServiceID += '.onion' }
+    if (!result.PrivateKey && privateKey) { result.PrivateKey = privateKey }
+    return result
+  }
+
+  async quit(): Promise<void> {
+    await this.sendCommand('QUIT').catch(() => undefined)
+    this.socket?.destroy()
+    this.socket = undefined
+  }
+}
+
+let client: TorClient | undefined
 
 export const getTorClient = async () => {
   if (!client) {
@@ -33,7 +101,7 @@ export const getTorClient = async () => {
 
     if (config.host !== undefined) {
       debug('connecting')
-      client = new Tor(config)
+      client = new TorClient(config)
       try{
         await client.connect()
       }catch(_error){
@@ -81,7 +149,7 @@ export const addOnion = async (
       debug('saving private key to %s', path)
 
       await writeFile(path, hiddenService.PrivateKey, 'utf8')
-      return hiddenService.ServiceID
+      return hiddenService.ServiceID!
     }else{
       throw new Error(JSON.stringify(hiddenService))
     }

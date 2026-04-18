@@ -1,6 +1,4 @@
 import cluster from 'cluster'
-import dotenv from 'dotenv'
-dotenv.config()
 
 import { appFactory } from './factories/app-factory'
 import { maintenanceWorkerFactory } from './factories/maintenance-worker-factory'
