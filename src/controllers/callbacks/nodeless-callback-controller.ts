@@ -8,6 +8,8 @@ import { fromNodelessInvoice } from '../../utils/transform'
 import { hmacSha256 } from '../../utils/secret'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
+import { nodelessCallbackBodySchema } from '../../schemas/nodeless-callback-schema'
+import { validateSchema } from '../../utils/validation'
 
 const debug = createLogger('nodeless-callback-controller')
 
@@ -16,13 +18,22 @@ export class NodelessCallbackController implements IController {
     private readonly paymentsService: IPaymentsService,
   ) {}
 
-  // TODO: Validate
   public async handleRequest(
     request: Request,
     response: Response,
   ) {
     debug('callback request headers: %o', request.headers)
     debug('callback request body: %O', request.body)
+
+    const bodyValidation = validateSchema(nodelessCallbackBodySchema)(request.body)
+    if (bodyValidation.error) {
+      debug('nodeless callback request rejected: invalid body %o', bodyValidation.error)
+      response
+        .status(400)
+        .setHeader('content-type', 'application/json; charset=utf8')
+        .send('{"status":"error","message":"Malformed body"}')
+      return
+    }
 
     const settings = createSettings()
     const paymentProcessor = settings.payments?.processor

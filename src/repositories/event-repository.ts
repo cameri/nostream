@@ -31,7 +31,7 @@ import {
 import { ContextMetadataKey, EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
-import { IEventRepository, IQueryResult } from '../@types/repositories'
+import { EventPurgeCounts, EventRetentionOptions, IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
 import { isGenericTagQuery } from '../utils/filter'
@@ -122,9 +122,9 @@ export class EventRepository implements IEventRepository {
       }
 
       if (typeof currentFilter.limit === 'number') {
-        builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC')
+        builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
       } else {
-        builder.limit(500).orderBy('event_created_at', 'asc')
+        builder.limit(500).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
       }
 
       const andWhereRaw = invoker(1, 'andWhereRaw')
@@ -227,7 +227,13 @@ export class EventRepository implements IEventRepository {
         )
       )
       .merge(omit(['event_pubkey', 'event_kind', 'event_deduplication'])(row))
-      .where('events.event_created_at', '<', row.event_created_at)
+      .where(function () {
+        this.where('events.event_created_at', '<', row.event_created_at)
+          .orWhere(function () {
+            this.where('events.event_created_at', '=', row.event_created_at)
+              .andWhere('events.event_id', '>', row.event_id)
+          })
+      })
 
     return {
       then: <T1, T2>(onfulfilled: (value: number) => T1 | PromiseLike<T1>, onrejected: (reason: any) => T2 | PromiseLike<T2>) => query.then(prop('rowCount') as () => number).then(onfulfilled, onrejected),
@@ -315,5 +321,100 @@ export class EventRepository implements IEventRepository {
       .first()
 
     return Boolean(result)
+  }
+
+  public deleteExpiredAndRetained(options?: EventRetentionOptions): Promise<EventPurgeCounts> {
+    const now = Math.floor(Date.now() / 1000)
+    const maxDays = options?.maxDays
+
+    if (typeof maxDays !== 'number' || isNaN(maxDays) || maxDays <= 0) {
+      debug('skipping purge: retention.maxDays is not a positive number')
+      return Promise.resolve({
+        deleted: 0,
+        expired: 0,
+        retained: 0,
+      })
+    }
+
+    const retentionLimit = now - (maxDays * 86400)
+    const batchSize = 1000
+
+    debug('deleting expired and retained events (retentionLimit: %d, now: %d, batchSize: %d)', retentionLimit, now, batchSize)
+
+    const kindWhitelist = [
+      ...(Array.isArray(options?.kindWhitelist) ? options.kindWhitelist : []),
+      EventKinds.REQUEST_TO_VANISH,
+    ].reduce<(number | [number, number])[]>((result, item) => {
+      const key = Array.isArray(item)
+        ? `range:${item[0]}-${item[1]}`
+        : `kind:${item}`
+
+      if (!result.some((existing) => {
+        const existingKey = Array.isArray(existing)
+          ? `range:${existing[0]}-${existing[1]}`
+          : `kind:${existing}`
+        return existingKey === key
+      })) {
+        result.push(item)
+      }
+
+      return result
+    }, [])
+
+    const candidates = this.masterDbClient('events')
+      .select('event_id')
+      .where(function () {
+        this.where('expires_at', '<', now)
+          .orWhereNotNull('deleted_at')
+          .orWhere('event_created_at', '<', retentionLimit)
+      })
+      .modify((query) => {
+        query.whereNot((builder) => {
+          kindWhitelist.forEach((kindOrRange) => {
+            if (Array.isArray(kindOrRange)) {
+              builder.orWhereBetween('event_kind', kindOrRange)
+            } else {
+              builder.orWhere('event_kind', kindOrRange)
+            }
+          })
+        })
+
+        if (Array.isArray(options?.pubkeyWhitelist) && options.pubkeyWhitelist.length > 0) {
+          query.whereNotIn('event_pubkey', map(toBuffer)(options.pubkeyWhitelist))
+        }
+      })
+      .limit(batchSize)
+
+    const query = this.masterDbClient('events')
+      .whereIn('event_id', candidates)
+      .del(['deleted_at', 'expires_at', 'event_created_at'])
+
+    const mapToCounts = (deletedRows: Pick<DBEvent, 'deleted_at' | 'expires_at' | 'event_created_at'>[]): EventPurgeCounts => deletedRows.reduce((counts, row) => {
+      if (row.deleted_at) {
+        counts.deleted += 1
+      } else if (typeof row.expires_at === 'number' && row.expires_at < now) {
+        counts.expired += 1
+      } else if (row.event_created_at < retentionLimit) {
+        counts.retained += 1
+      }
+
+      return counts
+    }, {
+      deleted: 0,
+      expired: 0,
+      retained: 0,
+    })
+
+    const getPromise = () => query.then((rows: any) => mapToCounts(rows))
+
+    return {
+      then: <T1, T2>(
+        onfulfilled?: ((value: EventPurgeCounts) => T1 | PromiseLike<T1>) | null,
+        onrejected?: ((reason: any) => T2 | PromiseLike<T2>) | null,
+      ) => getPromise().then(onfulfilled as any, onrejected as any),
+      catch: <T>(onrejected?: ((reason: any) => T | PromiseLike<T>) | null) => getPromise().catch(onrejected as any),
+      finally: (onfinally?: (() => void) | null) => getPromise().finally(onfinally as any),
+      toString: (): string => query.toString(),
+    } as Promise<EventPurgeCounts> & { toString(): string }
   }
 }

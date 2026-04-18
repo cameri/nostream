@@ -6,6 +6,16 @@ before making a change.
 
 Please keep the conversations civil, respectful and focus on the topic being discussed.
 
+## Local Quality Checks
+
+Run dead code and dependency analysis before opening a pull request:
+
+```
+npm run knip
+```
+
+`npm run lint` now runs Knip first, then ESLint.
+
 ## Pull Request Process
 
 1. Update the relevant documentation with details of changes to the interface, this includes new environment
