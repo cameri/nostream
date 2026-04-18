@@ -109,6 +109,9 @@ Running `nostream` for the first time creates the settings file in `<project_roo
 | limits.event.rateLimits[].rate              | Maximum number of events during period. |
 | limits.event.whitelists.pubkeys             | List of public keys to ignore rate limits. |
 | limits.event.whitelists.ipAddresses         | List of IPs (IPv4 or IPv6) to ignore rate limits. |
+| limits.event.retention.maxDays              | Maximum number of days to retain events. Purge deletes events that are expired (`expires_at`), soft-deleted (`deleted_at`), or older than this window (`created_at`). Any non-positive value disables retention purge. |
+| limits.event.retention.kind.whitelist       | Event kinds excluded from retention purge. NIP-62 `REQUEST_TO_VANISH` is always excluded from retention purge, even if not listed here. |
+| limits.event.retention.pubkey.whitelist     | Public keys excluded from retention purge. |
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
 | limits.message.rateLimits[].period          | Rate limit period in milliseconds. |
