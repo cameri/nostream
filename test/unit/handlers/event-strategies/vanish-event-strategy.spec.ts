@@ -1,20 +1,24 @@
-import chai from 'chai'
-import chaiAsPromised from 'chai-as-promised'
 import { Event } from '../../../../src/@types/event'
 import { EventKinds } from '../../../../src/constants/base'
 import { IWebSocketAdapter } from '../../../../src/@types/adapters'
 import { MessageType } from '../../../../src/@types/messages'
-import Sinon from 'sinon'
 import { VanishEventStrategy } from '../../../../src/handlers/event-strategies/vanish-event-strategy'
 import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
 
+import chai from 'chai'
+import chaiAsPromised from 'chai-as-promised'
+import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
+
 chai.use(chaiAsPromised)
+chai.use(sinonChai)
 
 const { expect } = chai
 
 describe('VanishEventStrategy', () => {
   let webSocket: IWebSocketAdapter
   let eventRepository: any
+  let userRepository: any
   let webSocketEmitStub: Sinon.SinonStub
   let strategy: VanishEventStrategy
   let sandbox: Sinon.SinonSandbox
@@ -31,11 +35,14 @@ describe('VanishEventStrategy', () => {
       deleteByPubkeyExceptKinds: sandbox.stub().resolves(1),
       create: sandbox.stub().resolves(1),
     }
+    userRepository = {
+      setVanished: sandbox.stub().resolves(1),
+    }
     webSocketEmitStub = sandbox.stub()
     webSocket = {
       emit: webSocketEmitStub,
     } as any
-    strategy = new VanishEventStrategy(webSocket, eventRepository)
+    strategy = new VanishEventStrategy(webSocket, eventRepository, userRepository)
   })
 
   afterEach(() => {
@@ -50,6 +57,7 @@ describe('VanishEventStrategy', () => {
       [EventKinds.REQUEST_TO_VANISH],
     )
     expect(eventRepository.create).to.have.been.calledOnceWithExactly(event)
+    expect(userRepository.setVanished).to.have.been.calledOnceWithExactly(event.pubkey, true)
     expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
       WebSocketAdapterEvent.Message,
       [MessageType.OK, event.id, true, ''],

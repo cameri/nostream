@@ -35,6 +35,24 @@ paymentsProcessors:
   opennode:
     baseURL: api.opennode.com
     callbackBaseURL: https://nostream.your-domain.com/callbacks/opennode
+nip05:
+  # NIP-05 verification of event authors as a spam reduction measure.
+  # mode: 'enabled' requires NIP-05 for publishing (except kind 0),
+  #        'passive' verifies but never blocks, 'disabled' does nothing.
+  mode: disabled
+  # How long (ms) a successful verification remains valid before re-check.
+  # Matches nostr-rs-relay default of 1 week.
+  verifyExpiration: 604800000
+  # Minimum interval (ms) between re-verification attempts for a given author.
+  # Matches nostr-rs-relay default of 24 hours.
+  verifyUpdateFrequency: 86400000
+  # How many consecutive failed checks before giving up on verifying an author.
+  # Matches nostr-rs-relay default of 20.
+  maxConsecutiveFailures: 20
+  # Only allow authors with NIP-05 at these domains (empty = allow all)
+  domainWhitelist: []
+  # Block authors with NIP-05 at these domains
+  domainBlacklist: []
 network:
   maxPayloadSize: 524288
   # Comment the next line if using CloudFlare proxy

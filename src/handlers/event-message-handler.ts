@@ -1,5 +1,13 @@
 import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
-import { Event, ExpiringEvent } from '../@types/event'
+import {
+  DEFAULT_NIP05_VERIFY_EXPIRATION_MS,
+  extractNip05FromEvent,
+  isDomainAllowed,
+  Nip05VerificationOutcome,
+  parseNip05Identifier,
+  verifyNip05Identifier,
+} from '../utils/nip05'
+import { Event, ExpiringEvent  } from '../@types/event'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
 import {
   getEventExpiration,
@@ -16,7 +24,7 @@ import {
   isRequestToVanishEvent,
   isSealEvent,
 } from '../utils/event'
-import { IEventRepository, IUserRepository } from '../@types/repositories'
+import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
 import { createCommandResult } from '../utils/messages'
 import { createLogger } from '../factories/logger-factory'
@@ -24,6 +32,7 @@ import { Factory } from '../@types/base'
 import { IncomingEventMessage } from '../@types/messages'
 import { IRateLimiter } from '../@types/utils'
 import { IWebSocketAdapter } from '../@types/adapters'
+import { Nip05Verification } from '../@types/nip05'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
 const debug = createLogger('event-message-handler')
@@ -36,6 +45,7 @@ export class EventMessageHandler implements IMessageHandler {
     protected readonly userRepository: IUserRepository,
     private readonly settings: () => Settings,
     private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
+    private readonly nip05VerificationRepository: INip05VerificationRepository,
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
@@ -85,6 +95,13 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
+    reason = await this.checkNip05Verification(event)
+    if (reason) {
+      debug('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      return
+    }
+
     const strategy = this.strategyFactory([event, this.webSocket])
 
     if (typeof strategy?.execute !== 'function') {
@@ -94,6 +111,7 @@ export class EventMessageHandler implements IMessageHandler {
 
     try {
       await strategy.execute(event)
+      this.processNip05Metadata(event)
     } catch (error) {
       console.error('error handling message', message, error)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: unable to process event'))
@@ -234,8 +252,8 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
-    const existingVanishRequest = await this.eventRepository.hasActiveRequestToVanish(event.pubkey)
-    if (existingVanishRequest) {
+    const isVanished = await this.userRepository.isVanished(event.pubkey)
+    if (isVanished) {
       return 'blocked: request to vanish active for pubkey'
     }
   }
@@ -348,5 +366,162 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     return expiringEvent
+  }
+
+  protected async checkNip05Verification(event: Event): Promise<string | undefined> {
+    const nip05Settings = this.settings().nip05
+    if (!nip05Settings || nip05Settings.mode !== 'enabled') {
+      return
+    }
+
+    if (this.getRelayPublicKey() === event.pubkey) {
+      return
+    }
+
+    if (event.kind === EventKinds.SET_METADATA) {
+      return
+    }
+
+    const verification = await this.nip05VerificationRepository.findByPubkey(event.pubkey)
+
+    if (!verification) {
+      return 'blocked: NIP-05 verification required'
+    }
+
+    if (!isDomainAllowed(verification.domain, nip05Settings.domainWhitelist, nip05Settings.domainBlacklist)) {
+      return 'blocked: NIP-05 domain not allowed'
+    }
+
+    // `lastVerifiedAt` is the single source of truth for "currently allowed".
+    // A transient network error during background re-verification leaves this
+    // value intact, so a verified author keeps publishing until the configured
+    // expiration elapses. Only a definitive mismatch (handled in the maintenance
+    // worker / processNip05Metadata) nulls this field and blocks the author.
+    //
+    // Historical rows could theoretically have `isVerified=true` with a null
+    // `lastVerifiedAt`; treat that as "needs re-verification" rather than
+    // "verified forever".
+    if (!verification.lastVerifiedAt) {
+      return 'blocked: NIP-05 verification required'
+    }
+
+    const expirationMs = nip05Settings.verifyExpiration ?? DEFAULT_NIP05_VERIFY_EXPIRATION_MS
+    const elapsed = Date.now() - verification.lastVerifiedAt.getTime()
+    if (elapsed > expirationMs) {
+      return 'blocked: NIP-05 verification expired'
+    }
+  }
+
+  protected processNip05Metadata(event: Event): void {
+    const nip05Settings = this.settings().nip05
+    if (!nip05Settings || nip05Settings.mode === 'disabled') {
+      return
+    }
+
+    if (event.kind !== EventKinds.SET_METADATA) {
+      return
+    }
+
+    const nip05Identifier = extractNip05FromEvent(event)
+    if (!nip05Identifier) {
+      this.nip05VerificationRepository.deleteByPubkey(event.pubkey).catch((error) => {
+        debug('failed to remove NIP-05 verification for %s: %o', event.pubkey, error)
+      })
+      return
+    }
+
+    const parsed = parseNip05Identifier(nip05Identifier)
+    if (!parsed) {
+      return
+    }
+
+    if (!isDomainAllowed(parsed.domain, nip05Settings.domainWhitelist, nip05Settings.domainBlacklist)) {
+      debug('NIP-05 domain %s not allowed for %s', parsed.domain, event.pubkey)
+      return
+    }
+
+    const repo = this.nip05VerificationRepository
+    Promise.all([
+      repo.findByPubkey(event.pubkey),
+      verifyNip05Identifier(nip05Identifier, event.pubkey),
+    ])
+      .then(([existing, outcome]) => {
+        const verification = buildMetadataVerification(
+          event.pubkey,
+          nip05Identifier,
+          parsed.domain,
+          existing,
+          outcome,
+        )
+        return repo.upsert(verification)
+      })
+      .catch((error) => {
+        debug('NIP-05 verification failed for %s: %o', event.pubkey, error)
+      })
+  }
+}
+
+/**
+ * Build the row to upsert after a kind-0 verification attempt.
+ *
+ * - `verified` resets failureCount and refreshes lastVerifiedAt.
+ * - `mismatch` / `invalid` are definitive: flip to unverified, null out
+ *   lastVerifiedAt (the author is no longer the domain's owner), and bump
+ *   failureCount relative to any prior row.
+ * - `error` is transient: keep the prior isVerified/lastVerifiedAt (if any)
+ *   so previously-verified authors aren't blocked by a single network hiccup,
+ *   but still bump failureCount + lastCheckedAt so the re-verification backoff
+ *   can take effect.
+ */
+function buildMetadataVerification(
+  pubkey: string,
+  nip05: string,
+  domain: string,
+  existing: Nip05Verification | undefined,
+  outcome: Nip05VerificationOutcome,
+): Nip05Verification {
+  const now = new Date()
+  const priorFailureCount = existing?.failureCount ?? 0
+  const createdAt = existing?.createdAt ?? now
+
+  switch (outcome.status) {
+    case 'verified':
+      return {
+        pubkey,
+        nip05,
+        domain,
+        isVerified: true,
+        lastVerifiedAt: now,
+        lastCheckedAt: now,
+        failureCount: 0,
+        createdAt,
+        updatedAt: now,
+      }
+    case 'mismatch':
+    case 'invalid':
+      return {
+        pubkey,
+        nip05,
+        domain,
+        isVerified: false,
+        lastVerifiedAt: null,
+        lastCheckedAt: now,
+        failureCount: priorFailureCount + 1,
+        createdAt,
+        updatedAt: now,
+      }
+    case 'error':
+    default:
+      return {
+        pubkey,
+        nip05,
+        domain,
+        isVerified: existing?.isVerified ?? false,
+        lastVerifiedAt: existing?.lastVerifiedAt ?? null,
+        lastCheckedAt: now,
+        failureCount: priorFailureCount + 1,
+        createdAt,
+        updatedAt: now,
+      }
   }
 }
