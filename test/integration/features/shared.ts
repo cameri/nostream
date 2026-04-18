@@ -60,21 +60,6 @@ AfterAll({ timeout: 30000 }, async function() {
       resolve()
     })
   })
-  setTimeout(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handles = (process as any)._getActiveHandles()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const requests = (process as any)._getActiveRequests()
-    console.error('[afterall] open handles:', handles.map((h: any) => ({
-      type: h?.constructor?.name,
-      remoteAddress: h?.remoteAddress,
-      remotePort: h?.remotePort,
-      localPort: h?.localPort,
-      servername: h?.servername,
-    })))
-    console.error('[afterall] open requests:', requests.map((r: any) => r?.constructor?.name))
-    process.exit(0)
-  }, 2000).unref()
 })
 
 Before(function () {
