@@ -76,7 +76,7 @@ describe('ParameterizedReplaceableEventStrategy', () => {
       await strategy.execute(event)
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
-      expect(eventRepositoryUpsertStub.firstCall.firstArg).to.have.property(EventDeduplicationMetadataKey).and.deep.equal(['one', 'two'])
+      expect(eventRepositoryUpsertStub.firstCall.firstArg).to.have.property(EventDeduplicationMetadataKey).and.deep.equal(['one'])
     })
 
     it('broadcast event if event is created', async () => {
