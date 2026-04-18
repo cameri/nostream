@@ -6,14 +6,10 @@ import { join } from 'path'
 import { createLogger } from '../factories/logger-factory'
 import { TorConfig } from '../@types/tor'
 
-
 const debug = createLogger('tor-client')
 
 const getPrivateKeyFile = () => {
-  return join(
-    process.env.NOSTR_CONFIG_DIR ?? join(homedir(), '.nostr'),
-    'v3_onion_private_key'
-  )
+  return join(process.env.NOSTR_CONFIG_DIR ?? join(homedir(), '.nostr'), 'v3_onion_private_key')
 }
 
 export const createTorConfig = (): TorConfig => {
@@ -102,9 +98,9 @@ export const getTorClient = async () => {
     if (config.host !== undefined) {
       debug('connecting')
       client = new TorClient(config)
-      try{
+      try {
         await client.connect()
-      }catch(_error){
+      } catch (_error) {
         client = undefined
       }
       debug('connected')
@@ -115,16 +111,12 @@ export const getTorClient = async () => {
 }
 export const closeTorClient = async () => {
   if (client) {
-
     await client.quit()
     client = undefined
   }
 }
 
-export const addOnion = async (
-  port: number,
-  host?: string
-): Promise<string> => {
+export const addOnion = async (port: number, host?: string): Promise<string> => {
   let privateKey = null
   const path = getPrivateKeyFile()
 
@@ -150,10 +142,10 @@ export const addOnion = async (
 
       await writeFile(path, hiddenService.PrivateKey, 'utf8')
       return hiddenService.ServiceID!
-    }else{
+    } else {
       throw new Error(JSON.stringify(hiddenService))
     }
-  }else{
+  } else {
     throw new Error('not connect')
   }
 }
