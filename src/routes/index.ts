@@ -1,3 +1,4 @@
+import accepts from 'accepts'
 import express from 'express'
 
 import { nodeinfo21Handler, nodeinfoHandler } from '../handlers/request-handlers/nodeinfo-handler'
@@ -10,6 +11,13 @@ import { rateLimiterMiddleware } from '../handlers/request-handlers/rate-limiter
 import { rootRequestHandler } from '../handlers/request-handlers/root-request-handler'
 
 const router = express.Router()
+
+router.use((req, res, next) => {
+  if (req.method === 'GET' && accepts(req).type(['application/nostr+json'])) {
+    return rootRequestHandler(req, res, next)
+  }
+  next()
+})
 
 router.get('/', rootRequestHandler)
 router.get('/healthz', getHealthRequestHandler)
