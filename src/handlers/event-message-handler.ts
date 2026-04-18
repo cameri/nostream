@@ -252,8 +252,8 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
-    const existingVanishRequest = await this.eventRepository.hasActiveRequestToVanish(event.pubkey)
-    if (existingVanishRequest) {
+    const isVanished = await this.userRepository.isVanished(event.pubkey)
+    if (isVanished) {
       return 'blocked: request to vanish active for pubkey'
     }
   }

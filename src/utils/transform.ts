@@ -39,6 +39,7 @@ export const fromDBInvoice = applySpec<Invoice>({
 export const fromDBUser = applySpec<User>({
   pubkey: pipe(prop('pubkey') as () => Buffer, fromBuffer),
   isAdmitted: prop('is_admitted'),
+  isVanished: prop('is_vanished'),
   balance: prop('balance'),
   createdAt: prop('created_at'),
   updatedAt: prop('updated_at'),
