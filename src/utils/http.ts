@@ -43,9 +43,8 @@ export const getRemoteAddress = (request: IncomingMessage, settings: Settings): 
     logger.warn('WARNING: network.remoteIpHeader is set but network.trustedProxies is empty. Forwarded headers will be ignored. Add your proxy IP to network.trustedProxies.')
   }
 
-  const headerAddress = header
-    ? request.headers[header]
-    : undefined
+  const rawHeaderAddress = header ? request.headers[header] : undefined
+  const headerAddress = Array.isArray(rawHeaderAddress) ? rawHeaderAddress[0] : rawHeaderAddress
   const socketAddress = request.socket.remoteAddress
 
   const trustedProxy = typeof socketAddress === 'string'
