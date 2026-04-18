@@ -7,6 +7,10 @@ export enum EventKinds {
   DELETE = 5,
   REPOST = 6,
   REACTION = 7,
+  // NIP-17: Private Direct Messages
+  SEAL = 13,
+  DIRECT_MESSAGE = 14,
+  FILE_MESSAGE = 15,
   REQUEST_TO_VANISH = 62,
   // Channels
   CHANNEL_CREATION = 40,
@@ -16,6 +20,8 @@ export enum EventKinds {
   CHANNEL_MUTE_USER = 44,
   CHANNEL_RESERVED_FIRST = 45,
   CHANNEL_RESERVED_LAST = 49,
+  // NIP-17: Gift Wrap
+  GIFT_WRAP = 1059,
   // Relay-only
   RELAY_INVITE = 50,
   INVOICE_UPDATE = 402,
