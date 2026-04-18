@@ -1,5 +1,4 @@
 import express from 'express'
-import helmet from 'helmet'
 import { randomBytes } from 'crypto'
 
 import { createSettings } from './settings-factory'
@@ -34,7 +33,11 @@ export const createWebApp = () => {
         'font-src': ["'self'", 'https://cdn.jsdelivr.net/npm/'],
       }
 
-      return helmet.contentSecurityPolicy({ directives })(req, res, next)
+      const csp = Object.entries(directives)
+        .map(([key, values]) => `${key} ${values.join(' ')}`)
+        .join('; ')
+      res.setHeader('Content-Security-Policy', csp)
+      return next()
     })
     .use('/favicon.ico', express.static('./resources/favicon.ico'))
     .use('/css', express.static('./resources/css'))
