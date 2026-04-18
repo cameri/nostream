@@ -78,4 +78,26 @@ export class UserRepository implements IUserRepository {
 
     return BigInt(user.balance)
   }
+
+  public async admitUser(
+    pubkey: Pubkey,
+    admittedAt: Date,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<void> {
+    debug('admit user: %s at %s', pubkey, admittedAt)
+
+    try {
+      await client.raw(
+        'select admit_user(?, ?)',
+        [
+          toBuffer(pubkey),
+          admittedAt.toISOString(),
+        ]
+      )
+    } catch (error) {
+      console.error('Unable to admit user. Reason:', error.message)
+
+      throw error
+    }
+  }
 }
