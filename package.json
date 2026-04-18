@@ -25,6 +25,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "node -r ts-node/register src/index.ts",
+    "clean-db": "node -r ts-node/register src/clean-db.ts",
     "clean": "rimraf ./{dist,.nyc_output,.test-reports,.coverage}",
     "build": "tsc --project tsconfig.build.json",
     "prestart": "npm run build",
