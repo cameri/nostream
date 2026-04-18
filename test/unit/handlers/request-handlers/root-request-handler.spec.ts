@@ -73,6 +73,7 @@ describe('rootRequestHandler', () => {
       req = {
         header: (name: string) =>
           name === 'accept' ? 'application/nostr+json' : undefined,
+        headers: { accept: 'application/nostr+json' },
       }
     })
 
@@ -101,7 +102,11 @@ describe('rootRequestHandler', () => {
     let req: any
 
     beforeEach(() => {
-      req = { header: () => undefined }
+      req = {
+        header: (name: string) =>
+          name === 'accept' ? 'text/html' : undefined,
+        headers: { accept: 'text/html' },
+      }
     })
 
     it('loads the index.html template', () => {
