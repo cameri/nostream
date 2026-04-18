@@ -10,13 +10,29 @@ const { expect } = chai
 import * as httpUtils from '../../../../src/utils/http'
 import * as settingsFactory from '../../../../src/factories/settings-factory'
 import { InvoiceStatus, InvoiceUnit } from '../../../../src/@types/invoice'
-import { hmacSha256 } from '../../../../src/utils/secret'
-import { OpenNodeCallbackController } from '../../../../src/controllers/callbacks/opennode-callback-controller'
+import { ZebedeeCallbackController } from '../../../../src/controllers/callbacks/zebedee-callback-controller'
 
 const PUBKEY = 'a'.repeat(64)
 
 const baseSettings: any = {
-  payments: { processor: 'opennode' },
+  payments: { processor: 'zebedee' },
+  paymentsProcessors: {
+    zebedee: { ipWhitelist: [] },
+  },
+  network: { remoteIpHeader: 'x-forwarded-for' },
+}
+
+const validBody = {
+  id: 'zebedee-invoice-id',
+  status: 'completed',
+  internalId: PUBKEY,
+  amount: '1000',
+  description: 'Zebedee callback',
+  unit: 'msats',
+  confirmedAt: '2030-01-01T00:01:00.000Z',
+  invoice: {
+    request: 'lnbc1zebedeeinvoice',
+  },
 }
 
 const makeRes = (): any => ({
@@ -26,13 +42,13 @@ const makeRes = (): any => ({
 })
 
 const makeInvoice = (overrides: any = {}) => ({
-  id: 'opennode-invoice-id',
+  id: validBody.id,
   pubkey: PUBKEY,
-  bolt11: 'lnbc210n1test',
-  amountRequested: 21n,
-  unit: InvoiceUnit.SATS,
+  bolt11: validBody.invoice.request,
+  amountRequested: 1000n,
+  unit: InvoiceUnit.MSATS,
   status: InvoiceStatus.COMPLETED,
-  description: '',
+  description: validBody.description,
   confirmedAt: new Date('2030-01-01T00:01:00.000Z'),
   expiresAt: new Date('2030-01-01T00:15:00.000Z'),
   updatedAt: new Date('2030-01-01T00:01:00.000Z'),
@@ -50,60 +66,71 @@ const makeController = (overrides: {
   }
 
   return {
-    controller: new OpenNodeCallbackController(paymentsService),
+    controller: new ZebedeeCallbackController(paymentsService),
     paymentsService,
-  }
-}
-
-const makeBody = (overrides: any = {}) => {
-  const id = overrides.id ?? 'opennode-invoice-id'
-  const openNodeApiKey = process.env.OPENNODE_API_KEY as string
-
-  return {
-    id,
-    status: 'paid',
-    hashed_order: hmacSha256(openNodeApiKey, id).toString('hex'),
-    ...overrides,
   }
 }
 
 const makeReq = (overrides: any = {}): any => ({
   headers: {},
-  body: overrides.body ?? makeBody(),
+  body: validBody,
+  socket: { remoteAddress: '1.2.3.4' },
   ...overrides,
 })
 
-describe('OpenNodeCallbackController', () => {
+describe('ZebedeeCallbackController', () => {
   let createSettingsStub: sinon.SinonStub
   let getRemoteAddressStub: sinon.SinonStub
   let consoleErrorStub: sinon.SinonStub
-  let previousOpenNodeApiKey: string | undefined
 
   beforeEach(() => {
-    previousOpenNodeApiKey = process.env.OPENNODE_API_KEY
-    process.env.OPENNODE_API_KEY = 'test-api-key'
-
     createSettingsStub = sinon.stub(settingsFactory, 'createSettings').returns(baseSettings)
     getRemoteAddressStub = sinon.stub(httpUtils, 'getRemoteAddress').returns('1.2.3.4')
     consoleErrorStub = sinon.stub(console, 'error')
   })
 
   afterEach(() => {
-    if (previousOpenNodeApiKey === undefined) {
-      delete process.env.OPENNODE_API_KEY
-    } else {
-      process.env.OPENNODE_API_KEY = previousOpenNodeApiKey
-    }
-
     createSettingsStub.restore()
     getRemoteAddressStub.restore()
     consoleErrorStub.restore()
   })
 
   describe('authorization and validation', () => {
-    it('returns 403 when opennode is not the configured processor', async () => {
+    it('allows request when zebedee whitelist settings are missing', async () => {
       createSettingsStub.returns({
-        payments: { processor: 'lnbits' },
+        payments: { processor: 'zebedee' },
+        network: { remoteIpHeader: 'x-forwarded-for' },
+      })
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(makeReq(), res)
+
+      expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnce
+      expect(res.status).to.have.been.calledWith(200)
+      expect(res.send).to.have.been.calledWith('OK')
+    })
+
+    it('returns 400 for malformed request body', async () => {
+      const { controller } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(
+        makeReq({ body: { id: 'missing-required-fields' } }),
+        res,
+      )
+
+      expect(res.status).to.have.been.calledWith(400)
+      expect(res.setHeader).to.have.been.calledWith('content-type', 'text/plain; charset=utf8')
+      expect(res.send).to.have.been.calledWith('Malformed body')
+    })
+
+    it('returns 403 when remote IP is not in whitelist', async () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        paymentsProcessors: {
+          zebedee: { ipWhitelist: ['9.9.9.9'] },
+        },
       })
       const { controller, paymentsService } = makeController()
       const res = makeRes()
@@ -115,81 +142,15 @@ describe('OpenNodeCallbackController', () => {
       expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
     })
 
-    it('returns 400 for malformed request body', async () => {
+    it('returns 403 when zebedee is not the configured processor', async () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        payments: { processor: 'lnbits' },
+      })
       const { controller, paymentsService } = makeController()
       const res = makeRes()
 
-      await controller.handleRequest(
-        makeReq({ body: { id: 'missing-required-fields' } }),
-        res,
-      )
-
-      expect(res.status).to.have.been.calledWith(400)
-      expect(res.setHeader).to.have.been.calledWith('content-type', 'text/plain; charset=utf8')
-      expect(res.send).to.have.been.calledWith('Malformed body')
-      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
-    })
-
-    it('returns 400 for unknown status values', async () => {
-      const { controller, paymentsService } = makeController()
-      const res = makeRes()
-
-      await controller.handleRequest(
-        makeReq({ body: makeBody({ status: 'totally_made_up' }) }),
-        res,
-      )
-
-      expect(res.status).to.have.been.calledWith(400)
-      expect(res.send).to.have.been.calledWith('Malformed body')
-      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
-    })
-
-    it('returns 500 when OPENNODE_API_KEY is missing', async () => {
-      const { controller, paymentsService } = makeController()
-      const res = makeRes()
-
-      delete process.env.OPENNODE_API_KEY
-
-      await controller.handleRequest(
-        makeReq({
-          body: {
-            hashed_order: 'some-hash',
-            id: 'invoice-id',
-            status: 'paid',
-          },
-        }),
-        res,
-      )
-
-      expect(res.status).to.have.been.calledWith(500)
-      expect(res.setHeader).to.have.been.calledWith('content-type', 'text/plain; charset=utf8')
-      expect(res.send).to.have.been.calledWith('Internal Server Error')
-      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
-    })
-
-    it('returns 400 for malformed hashed_order', async () => {
-      const { controller, paymentsService } = makeController()
-      const res = makeRes()
-
-      await controller.handleRequest(
-        makeReq({ body: makeBody({ hashed_order: 'invalid' }) }),
-        res,
-      )
-
-      expect(res.status).to.have.been.calledWith(400)
-      expect(res.setHeader).to.have.been.calledWith('content-type', 'text/plain; charset=utf8')
-      expect(res.send).to.have.been.calledWith('Bad Request')
-      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
-    })
-
-    it('returns 403 for mismatched hashed_order', async () => {
-      const { controller, paymentsService } = makeController()
-      const res = makeRes()
-
-      await controller.handleRequest(
-        makeReq({ body: makeBody({ hashed_order: '0'.repeat(64) }) }),
-        res,
-      )
+      await controller.handleRequest(makeReq(), res)
 
       expect(res.status).to.have.been.calledWith(403)
       expect(res.send).to.have.been.calledWith('Forbidden')
@@ -211,7 +172,7 @@ describe('OpenNodeCallbackController', () => {
       const res = makeRes()
 
       await controller.handleRequest(
-        makeReq({ body: makeBody({ status: 'processing' }) }),
+        makeReq({ body: { ...validBody, status: 'pending' } }),
         res,
       )
 
@@ -222,10 +183,7 @@ describe('OpenNodeCallbackController', () => {
 
     it('confirms and notifies for completed invoices', async () => {
       const paymentsService = {
-        updateInvoiceStatus: sinon.stub().resolves(makeInvoice({
-          confirmedAt: null,
-          status: InvoiceStatus.COMPLETED,
-        })),
+        updateInvoiceStatus: sinon.stub().resolves(makeInvoice({ status: InvoiceStatus.COMPLETED })),
         confirmInvoice: sinon.stub().resolves(),
         sendInvoiceUpdateNotification: sinon.stub().resolves(),
       }
@@ -236,15 +194,12 @@ describe('OpenNodeCallbackController', () => {
 
       expect(paymentsService.confirmInvoice).to.have.been.calledOnce
       expect(paymentsService.sendInvoiceUpdateNotification).to.have.been.calledOnce
-
       expect(paymentsService.confirmInvoice).to.have.been.calledWithMatch({
-        amountPaid: 21n,
-        id: 'opennode-invoice-id',
+        id: validBody.id,
         pubkey: PUBKEY,
         status: InvoiceStatus.COMPLETED,
+        amountPaid: 1000n,
       })
-      const confirmedAtArg = paymentsService.confirmInvoice.firstCall.args[0].confirmedAt
-      expect(confirmedAtArg).to.be.instanceOf(Date)
 
       expect(res.status).to.have.been.calledWith(200)
       expect(res.setHeader).to.have.been.calledWith('content-type', 'text/plain; charset=utf8')
@@ -253,7 +208,7 @@ describe('OpenNodeCallbackController', () => {
   })
 
   describe('error propagation', () => {
-    it('rejects when invoice status update fails', async () => {
+    it('rejects when invoice update fails', async () => {
       const updateError = new Error('update failed')
       const paymentsService = {
         updateInvoiceStatus: sinon.stub().rejects(updateError),

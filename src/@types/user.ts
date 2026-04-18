@@ -3,6 +3,7 @@ import { Pubkey } from './base'
 export interface User {
   pubkey: Pubkey
   isAdmitted: boolean
+  isVanished: boolean
   balance: bigint
   tosAcceptedAt?: Date | null
   createdAt: Date
@@ -12,6 +13,7 @@ export interface User {
 export interface DBUser {
   pubkey: Buffer
   is_admitted: boolean
+  is_vanished: boolean
   balance: bigint
   created_at: Date
   updated_at: Date

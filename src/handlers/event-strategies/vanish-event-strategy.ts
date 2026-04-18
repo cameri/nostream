@@ -1,8 +1,8 @@
+import { IEventRepository, IUserRepository } from '../../@types/repositories'
 import { createCommandResult } from '../../utils/messages'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { EventKinds } from '../../constants/base'
-import { IEventRepository } from '../../@types/repositories'
 import { IEventStrategy } from '../../@types/message-handlers'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
@@ -13,6 +13,7 @@ export class VanishEventStrategy implements IEventStrategy<Event, Promise<void>>
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
+    private readonly userRepository: IUserRepository,
   ) {}
 
   public async execute(event: Event): Promise<void> {
@@ -24,6 +25,8 @@ export class VanishEventStrategy implements IEventStrategy<Event, Promise<void>>
     )
 
     const count = await this.eventRepository.create(event)
+
+    await this.userRepository.setVanished(event.pubkey, true)
 
     this.webSocket.emit(
       WebSocketAdapterEvent.Message,
