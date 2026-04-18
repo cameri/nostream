@@ -1,6 +1,10 @@
 import { Invoice } from './invoice'
 import { Pubkey } from './base'
 
+export interface IMaintenanceService {
+  clearOldEvents(): Promise<void>
+}
+
 export interface IPaymentsService {
   getInvoiceFromPaymentsProcessor(invoice: string | Invoice): Promise<Partial<Invoice>>
   createInvoice(
