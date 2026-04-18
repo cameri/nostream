@@ -9,18 +9,16 @@ import { serializeEvent } from '../../../src/utils/event'
 import { streams } from './shared'
 import { SubscriptionFilter } from '../../../src/@types/subscription'
 
-
 secp256k1.utils.sha256Sync = (...messages: Uint8Array[]) =>
-  messages.reduce((hash: Hash, message: Uint8Array) => hash.update(message),  createHash('sha256')).digest()
+  messages.reduce((hash: Hash, message: Uint8Array) => hash.update(message), createHash('sha256')).digest()
 
 export async function connect(_name: string): Promise<WebSocket> {
   const host = 'ws://localhost:18808'
   const ws = new WebSocket(host)
   return new Promise<WebSocket>((resolve, reject) => {
-    ws
-      .once('open', () => {
-        resolve(ws)
-      })
+    ws.once('open', () => {
+      resolve(ws)
+    })
       .once('error', reject)
       .once('close', () => {
         ws.removeAllListeners()
@@ -39,13 +37,12 @@ export async function createEvent(input: Partial<Event>, privkey: any): Promise<
     tags: input.tags ?? [],
   } as any
 
-  const id = createHash('sha256').update(
-    Buffer.from(JSON.stringify(serializeEvent(event)))
-  ).digest().toString('hex')
+  const id = createHash('sha256')
+    .update(Buffer.from(JSON.stringify(serializeEvent(event))))
+    .digest()
+    .toString('hex')
 
-  const sig = Buffer.from(
-    secp256k1.schnorr.signSync(id, privkey)
-  ).toString('hex')
+  const sig = Buffer.from(secp256k1.schnorr.signSync(id, privkey)).toString('hex')
 
   event.id = id
   event.sig = sig
@@ -74,11 +71,7 @@ export async function createSubscription(
   subscriptionFilters: SubscriptionFilter[],
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const data = JSON.stringify([
-      'REQ',
-      subscriptionName,
-      ...subscriptionFilters,
-    ])
+    const data = JSON.stringify(['REQ', subscriptionName, ...subscriptionFilters])
 
     ws.send(data, (error?: Error) => {
       if (error) {

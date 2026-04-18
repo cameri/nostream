@@ -11,7 +11,7 @@ const debug = createLogger('zebedee-payments-processor')
 export class ZebedeePaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
-    private settings: Factory<Settings>
+    private settings: Factory<Settings>,
   ) {}
 
   public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
@@ -32,11 +32,7 @@ export class ZebedeePaymentsProcessor implements IPaymentsProcessor {
 
   public async createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse> {
     debug('create invoice: %o', request)
-    const {
-      amount: amountMsats,
-      description,
-      requestId,
-    } = request
+    const { amount: amountMsats, description, requestId } = request
 
     const body = {
       amount: amountMsats.toString(),

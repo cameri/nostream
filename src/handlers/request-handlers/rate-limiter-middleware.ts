@@ -24,10 +24,7 @@ export const rateLimiterMiddleware = async (request: Request, response: Response
 }
 
 export async function isRateLimited(remoteAddress: string, settings: Settings): Promise<boolean> {
-  const {
-    rateLimits,
-    ipWhitelist = [],
-  } = settings.limits?.connection ?? {}
+  const { rateLimits, ipWhitelist = [] } = settings.limits?.connection ?? {}
 
   if (typeof rateLimits === 'undefined') {
     return false
@@ -40,11 +37,7 @@ export async function isRateLimited(remoteAddress: string, settings: Settings): 
   const rateLimiter = slidingWindowRateLimiterFactory()
 
   const hit = (period: number, rate: number) =>
-    rateLimiter.hit(
-      `${remoteAddress}:connection:${period}`,
-      1,
-      { period: period, rate: rate },
-    )
+    rateLimiter.hit(`${remoteAddress}:connection:${period}`, 1, { period: period, rate: rate })
 
   let limited = false
   for (const { rate, period } of rateLimits) {

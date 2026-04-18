@@ -35,15 +35,10 @@ async function exportEvents(): Promise<void> {
     abortController.abort()
   }
 
-  process
-    .on('SIGINT', onSignal)
-    .on('SIGTERM', onSignal)
+  process.on('SIGINT', onSignal).on('SIGTERM', onSignal)
 
   try {
-    const firstEvent = await db('events')
-      .select('event_id')
-      .whereNull('deleted_at')
-      .first()
+    const firstEvent = await db('events').select('event_id').whereNull('deleted_at').first()
 
     if (abortController.signal.aborted) {
       return
@@ -110,9 +105,7 @@ async function exportEvents(): Promise<void> {
 
     throw error
   } finally {
-    process
-      .off('SIGINT', onSignal)
-      .off('SIGTERM', onSignal)
+    process.off('SIGINT', onSignal).off('SIGTERM', onSignal)
 
     await db.destroy()
   }

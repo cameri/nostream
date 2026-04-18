@@ -12,7 +12,7 @@ const debug = createLogger('lnurl-payments-processor')
 export class LnurlPaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
-    private settings: Factory<Settings>
+    private settings: Factory<Settings>,
   ) {}
 
   public async getInvoice(invoice: LnurlInvoice): Promise<GetInvoiceResponse> {
@@ -35,14 +35,12 @@ export class LnurlPaymentsProcessor implements IPaymentsProcessor {
 
   public async createInvoice(request: CreateInvoiceRequest): Promise<any> {
     debug('create invoice: %o', request)
-    const {
-      amount: amountMsats,
-      description,
-      requestId,
-    } = request
+    const { amount: amountMsats, description, requestId } = request
 
     try {
-      const response = await this.httpClient.get(`${this.settings().paymentsProcessors?.lnurl?.invoiceURL}/callback?amount=${amountMsats}&comment=${description}`)
+      const response = await this.httpClient.get(
+        `${this.settings().paymentsProcessors?.lnurl?.invoiceURL}/callback?amount=${amountMsats}&comment=${description}`,
+      )
 
       const result = {
         id: randomUUID(),

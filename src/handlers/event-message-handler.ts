@@ -7,7 +7,7 @@ import {
   parseNip05Identifier,
   verifyNip05Identifier,
 } from '../utils/nip05'
-import { Event, ExpiringEvent  } from '../@types/event'
+import { Event, ExpiringEvent } from '../@types/event'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
 import {
   getEventExpiration,
@@ -26,9 +26,11 @@ import {
 } from '../utils/event'
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
+import { CacheAdmissionState } from '../constants/caching'
 import { createCommandResult } from '../utils/messages'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
+import { ICacheAdapter } from '../@types/adapters'
 import { IncomingEventMessage } from '../@types/messages'
 import { IRateLimiter } from '../@types/utils'
 import { IWebSocketAdapter } from '../@types/adapters'
@@ -46,6 +48,7 @@ export class EventMessageHandler implements IMessageHandler {
     private readonly settings: () => Settings,
     private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
     private readonly nip05VerificationRepository: INip05VerificationRepository,
+    private readonly cache: ICacheAdapter,
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
@@ -70,7 +73,10 @@ export class EventMessageHandler implements IMessageHandler {
 
     if (await this.isRateLimited(event)) {
       debug('event %s rejected: rate-limited')
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'rate-limited: slow down'))
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createCommandResult(event.id, false, 'rate-limited: slow down'),
+      )
       return
     }
 
@@ -105,16 +111,21 @@ export class EventMessageHandler implements IMessageHandler {
     const strategy = this.strategyFactory([event, this.webSocket])
 
     if (typeof strategy?.execute !== 'function') {
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: event not supported'))
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createCommandResult(event.id, false, 'error: event not supported'),
+      )
       return
     }
 
     try {
       await strategy.execute(event)
       this.processNip05Metadata(event)
-    } catch (error) {
-      console.error('error handling message', message, error)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: unable to process event'))
+    } catch (_error) {
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createCommandResult(event.id, false, 'error: unable to process event'),
+      )
     }
   }
 
@@ -127,64 +138,54 @@ export class EventMessageHandler implements IMessageHandler {
     if (this.getRelayPublicKey() === event.pubkey) {
       return
     }
-    const now = Math.floor(Date.now()/1000)
+    const now = Math.floor(Date.now() / 1000)
 
     const limits = this.settings().limits?.event ?? {}
 
     if (Array.isArray(limits.content)) {
       for (const limit of limits.content) {
         if (
-          typeof limit.maxLength !== 'undefined'
-          && limit.maxLength > 0
-          && event.content.length > limit.maxLength
-          && (
-            !Array.isArray(limit.kinds)
-            || limit.kinds.some(isEventKindOrRangeMatch(event))
-          )
+          typeof limit.maxLength !== 'undefined' &&
+          limit.maxLength > 0 &&
+          event.content.length > limit.maxLength &&
+          (!Array.isArray(limit.kinds) || limit.kinds.some(isEventKindOrRangeMatch(event)))
         ) {
           return `rejected: content is longer than ${limit.maxLength} bytes`
         }
       }
     } else if (
-      typeof limits.content?.maxLength !== 'undefined'
-      && limits.content?.maxLength > 0
-      && event.content.length > limits.content.maxLength
-      && (
-        !Array.isArray(limits.content.kinds)
-        || limits.content.kinds.some(isEventKindOrRangeMatch(event))
-      )
+      typeof limits.content?.maxLength !== 'undefined' &&
+      limits.content?.maxLength > 0 &&
+      event.content.length > limits.content.maxLength &&
+      (!Array.isArray(limits.content.kinds) || limits.content.kinds.some(isEventKindOrRangeMatch(event)))
     ) {
       return `rejected: content is longer than ${limits.content.maxLength} bytes`
     }
 
     if (
-      typeof limits.createdAt?.maxPositiveDelta !== 'undefined'
-      && limits.createdAt.maxPositiveDelta > 0
-      && event.created_at > now + limits.createdAt.maxPositiveDelta) {
+      typeof limits.createdAt?.maxPositiveDelta !== 'undefined' &&
+      limits.createdAt.maxPositiveDelta > 0 &&
+      event.created_at > now + limits.createdAt.maxPositiveDelta
+    ) {
       return `rejected: created_at is more than ${limits.createdAt.maxPositiveDelta} seconds in the future`
     }
 
     if (
-      typeof limits.createdAt?.maxNegativeDelta !== 'undefined'
-      && limits.createdAt.maxNegativeDelta > 0
-      && event.created_at < now - limits.createdAt.maxNegativeDelta) {
+      typeof limits.createdAt?.maxNegativeDelta !== 'undefined' &&
+      limits.createdAt.maxNegativeDelta > 0 &&
+      event.created_at < now - limits.createdAt.maxNegativeDelta
+    ) {
       return `rejected: created_at is more than ${limits.createdAt.maxNegativeDelta} seconds in the past`
     }
 
-    if (
-      typeof limits.eventId?.minLeadingZeroBits !== 'undefined'
-      && limits.eventId.minLeadingZeroBits > 0
-    ) {
+    if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
       const pow = getEventProofOfWork(event.id)
       if (pow < limits.eventId.minLeadingZeroBits) {
         return `pow: difficulty ${pow}<${limits.eventId.minLeadingZeroBits}`
       }
     }
 
-    if (
-      typeof limits.pubkey?.minLeadingZeroBits !== 'undefined'
-      && limits.pubkey.minLeadingZeroBits > 0
-    ) {
+    if (typeof limits.pubkey?.minLeadingZeroBits !== 'undefined' && limits.pubkey.minLeadingZeroBits > 0) {
       const pow = getPubkeyProofOfWork(event.pubkey)
       if (pow < limits.pubkey.minLeadingZeroBits) {
         return `pow: pubkey difficulty ${pow}<${limits.pubkey.minLeadingZeroBits}`
@@ -192,41 +193,43 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (
-      typeof limits.pubkey?.whitelist !== 'undefined'
-      && limits.pubkey.whitelist.length > 0
-      && !limits.pubkey.whitelist.some((prefix) => event.pubkey.startsWith(prefix))
+      typeof limits.pubkey?.whitelist !== 'undefined' &&
+      limits.pubkey.whitelist.length > 0 &&
+      !limits.pubkey.whitelist.some((prefix) => event.pubkey.startsWith(prefix))
     ) {
       return 'blocked: pubkey not allowed'
     }
 
     if (
-      typeof limits.pubkey?.blacklist !== 'undefined'
-      && limits.pubkey.blacklist.length > 0
-      && limits.pubkey.blacklist.some((prefix) => event.pubkey.startsWith(prefix))
+      typeof limits.pubkey?.blacklist !== 'undefined' &&
+      limits.pubkey.blacklist.length > 0 &&
+      limits.pubkey.blacklist.some((prefix) => event.pubkey.startsWith(prefix))
     ) {
       return 'blocked: pubkey not allowed'
     }
 
     if (
-      typeof limits.kind?.whitelist !== 'undefined'
-      && limits.kind.whitelist.length > 0
-      && !limits.kind.whitelist.some(isEventKindOrRangeMatch(event))) {
+      typeof limits.kind?.whitelist !== 'undefined' &&
+      limits.kind.whitelist.length > 0 &&
+      !limits.kind.whitelist.some(isEventKindOrRangeMatch(event))
+    ) {
       return `blocked: event kind ${event.kind} not allowed`
     }
 
     if (
-      typeof limits.kind?.blacklist !== 'undefined'
-      && limits.kind.blacklist.length > 0
-      && limits.kind.blacklist.some(isEventKindOrRangeMatch(event))) {
+      typeof limits.kind?.blacklist !== 'undefined' &&
+      limits.kind.blacklist.length > 0 &&
+      limits.kind.blacklist.some(isEventKindOrRangeMatch(event))
+    ) {
       return `blocked: event kind ${event.kind} not allowed`
     }
   }
 
   protected async isEventValid(event: Event): Promise<string | undefined> {
-    if (!await isEventIdValid(event)) {
+    if (!(await isEventIdValid(event))) {
       return 'invalid: event id does not match'
     }
-    if (!await isEventSignatureValid(event)) {
+    if (!(await isEventSignatureValid(event))) {
       return 'invalid: event signature verification failed'
     }
 
@@ -269,17 +272,17 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (
-      typeof whitelists?.pubkeys !== 'undefined'
-      && Array.isArray(whitelists?.pubkeys)
-      && whitelists.pubkeys.includes(event.pubkey)
+      typeof whitelists?.pubkeys !== 'undefined' &&
+      Array.isArray(whitelists?.pubkeys) &&
+      whitelists.pubkeys.includes(event.pubkey)
     ) {
       return false
     }
 
     if (
-      typeof whitelists?.ipAddresses !== 'undefined'
-      && Array.isArray(whitelists?.ipAddresses)
-      && whitelists.ipAddresses.includes(this.webSocket.getClientAddress())
+      typeof whitelists?.ipAddresses !== 'undefined' &&
+      Array.isArray(whitelists?.ipAddresses) &&
+      whitelists.ipAddresses.includes(this.webSocket.getClientAddress())
     ) {
       return false
     }
@@ -295,11 +298,7 @@ export class EventMessageHandler implements IMessageHandler {
         ? `${event.pubkey}:events:${period}:${toString(kinds)}`
         : `${event.pubkey}:events:${period}`
 
-      return rateLimiter.hit(
-        key,
-        1,
-        { period, rate },
-      )
+      return rateLimiter.hit(key, 1, { period, rate })
     }
 
     let limited = false
@@ -332,26 +331,52 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     const isApplicableFee = (feeSchedule: FeeSchedule) =>
-      feeSchedule.enabled
-      && !feeSchedule.whitelists?.pubkeys?.some((prefix) => event.pubkey.startsWith(prefix))
-      && !feeSchedule.whitelists?.event_kinds?.some(isEventKindOrRangeMatch(event))
+      feeSchedule.enabled &&
+      !feeSchedule.whitelists?.pubkeys?.some((prefix) => event.pubkey.startsWith(prefix)) &&
+      !feeSchedule.whitelists?.event_kinds?.some(isEventKindOrRangeMatch(event))
 
     const feeSchedules = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
     if (!Array.isArray(feeSchedules) || !feeSchedules.length) {
       return
     }
 
-    // const hasKey = await this.cache.hasKey(`${event.pubkey}:is-admitted`)
-    // TODO: use cache
+    const cacheKey = `${event.pubkey}:is-admitted`
+
+    try {
+      const cachedValue = await this.cache.getKey(cacheKey)
+      if (cachedValue === CacheAdmissionState.ADMITTED) {
+        debug('cache hit for %s admission: admitted', event.pubkey)
+        return
+      }
+      if (cachedValue === CacheAdmissionState.BLOCKED_NOT_ADMITTED) {
+        debug('cache hit for %s admission: blocked', event.pubkey)
+        return 'blocked: pubkey not admitted'
+      }
+      if (cachedValue === CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE) {
+        debug('cache hit for %s admission: insufficient balance', event.pubkey)
+        return 'blocked: insufficient balance'
+      }
+    } catch (error) {
+      debug('cache error for %s: %o', event.pubkey, error)
+    }
+
     const user = await this.userRepository.findByPubkey(event.pubkey)
     if (!user || !user.isAdmitted) {
+      this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_NOT_ADMITTED, 60)
       return 'blocked: pubkey not admitted'
     }
 
     const minBalance = currentSettings.limits?.event?.pubkey?.minBalance ?? 0n
     if (minBalance > 0n && user.balance < minBalance) {
+      this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE, 60)
       return 'blocked: insufficient balance'
     }
+
+    this.cacheSet(cacheKey, CacheAdmissionState.ADMITTED, 300)
+  }
+
+  private cacheSet(key: string, value: string, ttl: number): void {
+    this.cache.setKey(key, value, ttl).catch((error) => debug('unable to cache %s: %o', key, error))
   }
 
   protected addExpirationMetadata(event: Event): Event | ExpiringEvent {
@@ -441,18 +466,9 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     const repo = this.nip05VerificationRepository
-    Promise.all([
-      repo.findByPubkey(event.pubkey),
-      verifyNip05Identifier(nip05Identifier, event.pubkey),
-    ])
+    Promise.all([repo.findByPubkey(event.pubkey), verifyNip05Identifier(nip05Identifier, event.pubkey)])
       .then(([existing, outcome]) => {
-        const verification = buildMetadataVerification(
-          event.pubkey,
-          nip05Identifier,
-          parsed.domain,
-          existing,
-          outcome,
-        )
+        const verification = buildMetadataVerification(event.pubkey, nip05Identifier, parsed.domain, existing, outcome)
         return repo.upsert(verification)
       })
       .catch((error) => {

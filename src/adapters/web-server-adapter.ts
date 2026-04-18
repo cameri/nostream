@@ -7,9 +7,7 @@ import { IWebServerAdapter } from '../@types/adapters'
 const debug = createLogger('web-server-adapter')
 
 export class WebServerAdapter extends EventEmitter implements IWebServerAdapter {
-  public constructor(
-    protected readonly webServer: Server,
-  ) {
+  public constructor(protected readonly webServer: Server) {
     debug('created')
     super()
     this.webServer

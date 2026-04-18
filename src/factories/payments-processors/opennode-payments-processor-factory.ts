@@ -16,7 +16,7 @@ const getOpenNodeAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> =>
   return {
     headers: {
       'content-type': 'application/json',
-      'authorization': process.env.OPENNODE_API_KEY,
+      authorization: process.env.OPENNODE_API_KEY,
     },
     baseURL: path(['paymentsProcessors', 'opennode', 'baseURL'], settings),
     maxRedirects: 1,

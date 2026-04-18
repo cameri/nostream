@@ -1,16 +1,4 @@
-import {
-  always,
-  applySpec,
-  head,
-  ifElse,
-  is,
-  map,
-  omit,
-  pipe,
-  prop,
-  propSatisfies,
-  toString,
-} from 'ramda'
+import { always, applySpec, head, ifElse, is, map, omit, pipe, prop, propSatisfies, toString } from 'ramda'
 
 import { DBInvoice, Invoice, InvoiceStatus } from '../@types/invoice'
 import { fromDBInvoice, toBuffer } from '../utils/transform'
@@ -22,7 +10,7 @@ import { randomUUID } from 'crypto'
 const debug = createLogger('invoice-repository')
 
 export class InvoiceRepository implements IInvoiceRepository {
-  public constructor(private readonly dbClient: DatabaseClient) { }
+  public constructor(private readonly dbClient: DatabaseClient) {}
 
   public async confirmInvoice(
     invoiceId: string,
@@ -33,14 +21,7 @@ export class InvoiceRepository implements IInvoiceRepository {
     debug('confirming invoice %s at %s: %s', invoiceId, confirmedAt, amountPaid)
 
     try {
-      await client.raw(
-        'select confirm_invoice(?, ?, ?)',
-        [
-          invoiceId,
-          amountPaid.toString(),
-          confirmedAt.toISOString(),
-        ]
-      )
+      await client.raw('select confirm_invoice(?, ?, ?)', [invoiceId, amountPaid.toString(), confirmedAt.toISOString()])
     } catch (error) {
       console.error('Unable to confirm invoice. Reason:', error.message)
 
@@ -48,13 +29,8 @@ export class InvoiceRepository implements IInvoiceRepository {
     }
   }
 
-  public async findById(
-    id: string,
-    client: DatabaseClient = this.dbClient,
-  ): Promise<Invoice | undefined> {
-    const [dbInvoice] = await client<DBInvoice>('invoices')
-      .where('id', id)
-      .select()
+  public async findById(id: string, client: DatabaseClient = this.dbClient): Promise<Invoice | undefined> {
+    const [dbInvoice] = await client<DBInvoice>('invoices').where('id', id).select()
 
     if (!dbInvoice) {
       return
@@ -63,11 +39,7 @@ export class InvoiceRepository implements IInvoiceRepository {
     return fromDBInvoice(dbInvoice)
   }
 
-  public async findPendingInvoices(
-    offset = 0,
-    limit = 10,
-    client: DatabaseClient = this.dbClient,
-  ): Promise<Invoice[]> {
+  public async findPendingInvoices(offset = 0, limit = 10, client: DatabaseClient = this.dbClient): Promise<Invoice[]> {
     const dbInvoices = await client<DBInvoice>('invoices')
       .where('status', InvoiceStatus.PENDING)
       .offset(offset)
@@ -77,10 +49,7 @@ export class InvoiceRepository implements IInvoiceRepository {
     return dbInvoices.map(fromDBInvoice)
   }
 
-  public updateStatus(
-    invoice: Invoice,
-    client: DatabaseClient = this.dbClient,
-  ): Promise<Invoice | undefined> {
+  public updateStatus(invoice: Invoice, client: DatabaseClient = this.dbClient): Promise<Invoice | undefined> {
     debug('updating invoice status: %o', invoice)
 
     const query = client<DBInvoice>('invoices')
@@ -95,17 +64,14 @@ export class InvoiceRepository implements IInvoiceRepository {
     return {
       then: <T1, T2>(
         onfulfilled: (value: Invoice | undefined) => T1 | PromiseLike<T1>,
-        onrejected: (reason: any) => T2 | PromiseLike<T2>
+        onrejected: (reason: any) => T2 | PromiseLike<T2>,
       ) => query.then(pipe(map(fromDBInvoice), head)).then(onfulfilled, onrejected),
       catch: <T>(onrejected: (reason: any) => T | PromiseLike<T>) => query.catch(onrejected),
       toString: (): string => query.toString(),
     } as Promise<Invoice | undefined>
   }
 
-  public upsert(
-    invoice: Invoice,
-    client: DatabaseClient = this.dbClient
-  ): Promise<number> {
+  public upsert(invoice: Invoice, client: DatabaseClient = this.dbClient): Promise<number> {
     debug('upserting invoice: %o', invoice)
 
     const row = applySpec<DBInvoice>({
@@ -140,11 +106,14 @@ export class InvoiceRepository implements IInvoiceRepository {
           'expires_at',
           'created_at',
           'verify_url',
-        ])(row)
+        ])(row),
       )
 
     return {
-      then: <T1, T2>(onfulfilled: (value: number) => T1 | PromiseLike<T1>, onrejected: (reason: any) => T2 | PromiseLike<T2>) => query.then(prop('rowCount') as () => number).then(onfulfilled, onrejected),
+      then: <T1, T2>(
+        onfulfilled: (value: number) => T1 | PromiseLike<T1>,
+        onrejected: (reason: any) => T2 | PromiseLike<T2>,
+      ) => query.then(prop('rowCount') as () => number).then(onfulfilled, onrejected),
       catch: <T>(onrejected: (reason: any) => T | PromiseLike<T>) => query.catch(onrejected),
       toString: (): string => query.toString(),
     } as Promise<number>

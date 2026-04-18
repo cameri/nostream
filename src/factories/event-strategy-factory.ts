@@ -1,5 +1,12 @@
 import { IEventRepository, IUserRepository } from '../@types/repositories'
-import { isDeleteEvent, isEphemeralEvent, isGiftWrapEvent, isParameterizedReplaceableEvent, isReplaceableEvent, isRequestToVanishEvent } from '../utils/event'
+import {
+  isDeleteEvent,
+  isEphemeralEvent,
+  isGiftWrapEvent,
+  isParameterizedReplaceableEvent,
+  isReplaceableEvent,
+  isRequestToVanishEvent,
+} from '../utils/event'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
 import { EphemeralEventStrategy } from '../handlers/event-strategies/ephemeral-event-strategy'
@@ -12,10 +19,11 @@ import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strateg
 import { ReplaceableEventStrategy } from '../handlers/event-strategies/replaceable-event-strategy'
 import { VanishEventStrategy } from '../handlers/event-strategies/vanish-event-strategy'
 
-export const eventStrategyFactory = (
-  eventRepository: IEventRepository,
-  userRepository: IUserRepository,
-): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
+export const eventStrategyFactory =
+  (
+    eventRepository: IEventRepository,
+    userRepository: IUserRepository,
+  ): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
   ([event, adapter]: [Event, IWebSocketAdapter]) => {
     if (isRequestToVanishEvent(event)) {
       return new VanishEventStrategy(adapter, eventRepository, userRepository)

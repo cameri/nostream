@@ -3,10 +3,10 @@ import { escapeHtml } from '../../utils/html'
 import { getTemplate } from '../../utils/template-cache'
 import { createSettings as settings } from '../../factories/settings-factory'
 
-
-
 export const getTermsRequestHandler = (_req: Request, res: Response, next: NextFunction) => {
-  const { info: { name } } = settings()
+  const {
+    info: { name },
+  } = settings()
 
   let page: string
   try {
