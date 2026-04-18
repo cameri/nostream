@@ -2,7 +2,7 @@
 "nostream": minor
 ---
 
-Unreleased changes since v2.1.0:
+Release highlights:
 
 **Features**
 - NIP-05 verification support (#463)
@@ -14,6 +14,7 @@ Unreleased changes since v2.1.0:
 - Opt-in event retention purge (#359, #412)
 - Wipe events table script (#450)
 - Nginx reverse proxy in docker-compose (#423)
+- Docker DNS pre-flight check for connectivity verification (#398)
 - Strict validation for payment callbacks (#426)
 - Real home page with templated pages (#409)
 
@@ -24,6 +25,7 @@ Unreleased changes since v2.1.0:
 - NIP-11 served only on root path instead of relay path (#399)
 - Dockerfile: run database migrations in CMD (#422)
 - Added expired_at filter to message pipeline (#403)
+- Removed unsafe-inline and implemented script nonces for CSP hardening (#394)
 - Axios upgraded to fix CVE-2025-62718 (#466)
 
 **Refactors & Chores**
