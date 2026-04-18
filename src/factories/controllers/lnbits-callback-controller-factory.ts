@@ -5,8 +5,5 @@ import { InvoiceRepository } from '../../repositories/invoice-repository'
 import { LNbitsCallbackController } from '../../controllers/callbacks/lnbits-callback-controller'
 
 export const createLNbitsCallbackController = (): IController => {
-  return new LNbitsCallbackController(
-    createPaymentsService(),
-    new InvoiceRepository(getMasterDbClient())
-  )
+  return new LNbitsCallbackController(createPaymentsService(), new InvoiceRepository(getMasterDbClient()))
 }

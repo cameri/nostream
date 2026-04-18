@@ -3,11 +3,7 @@ import { join } from 'path'
 import fs from 'fs'
 import os from 'os'
 
-import {
-  EventImportLineError,
-  EventImportService,
-  EventImportStats,
-} from '../../../src/services/event-import-service'
+import { EventImportLineError, EventImportService, EventImportStats } from '../../../src/services/event-import-service'
 import { Event } from '../../../src/@types/event'
 import { expect } from 'chai'
 import { getEvents } from '../data/events'
@@ -39,11 +35,7 @@ describe('EventImportService', () => {
 
   it('imports valid events in batches and tracks skipped duplicates', async () => {
     const [event] = getEvents()
-    const filePath = createJsonlFile([
-      JSON.stringify(event),
-      JSON.stringify(event),
-      JSON.stringify(event),
-    ])
+    const filePath = createJsonlFile([JSON.stringify(event), JSON.stringify(event), JSON.stringify(event)])
 
     const batchCalls: Event[][] = []
     const persistBatch = async (events: Event[]): Promise<number> => {

@@ -202,7 +202,7 @@ describe('MaintenanceWorker', () => {
 
   describe('processNip05Reverifications', () => {
     it('returns early when nip05 settings are undefined', async () => {
-      ;(settingsState as any).nip05 = undefined
+      ;(settings as any).nip05 = undefined
 
       await (worker as any).processNip05Reverifications(settingsState)
 
@@ -210,7 +210,7 @@ describe('MaintenanceWorker', () => {
     })
 
     it('returns early when mode is disabled', async () => {
-      ;(settingsState as any).nip05.mode = 'disabled'
+      ;(settings as any).nip05.mode = 'disabled'
 
       await (worker as any).processNip05Reverifications(settingsState)
 
@@ -222,11 +222,7 @@ describe('MaintenanceWorker', () => {
 
       await (worker as any).processNip05Reverifications(settingsState)
 
-      expect(nip05VerificationRepository.findPendingVerifications).to.have.been.calledOnceWithExactly(
-        86400000,
-        20,
-        50,
-      )
+      expect(nip05VerificationRepository.findPendingVerifications).to.have.been.calledOnceWithExactly(86400000, 20, 50)
       expect(verifyStub).not.to.have.been.called
     })
 
@@ -290,33 +286,25 @@ describe('MaintenanceWorker', () => {
     })
 
     it('uses configured updateFrequency and maxFailures', async () => {
-      ;(settingsState as any).nip05.verifyUpdateFrequency = 3600000
-      ;(settingsState as any).nip05.maxConsecutiveFailures = 5
+      ;(settings as any).nip05.verifyUpdateFrequency = 3600000
+      ;(settings as any).nip05.maxConsecutiveFailures = 5
 
       await (worker as any).processNip05Reverifications(settingsState)
 
-      expect(nip05VerificationRepository.findPendingVerifications).to.have.been.calledOnceWithExactly(
-        3600000,
-        5,
-        50,
-      )
+      expect(nip05VerificationRepository.findPendingVerifications).to.have.been.calledOnceWithExactly(3600000, 5, 50)
     })
 
     it('uses defaults when settings values are undefined', async () => {
-      ;(settingsState as any).nip05.verifyUpdateFrequency = undefined
-      ;(settingsState as any).nip05.maxConsecutiveFailures = undefined
+      ;(settings as any).nip05.verifyUpdateFrequency = undefined
+      ;(settings as any).nip05.maxConsecutiveFailures = undefined
 
       await (worker as any).processNip05Reverifications(settingsState)
 
-      expect(nip05VerificationRepository.findPendingVerifications).to.have.been.calledOnceWithExactly(
-        86400000,
-        20,
-        50,
-      )
+      expect(nip05VerificationRepository.findPendingVerifications).to.have.been.calledOnceWithExactly(86400000, 20, 50)
     })
 
     it('processes in passive mode', async () => {
-      ;(settingsState as any).nip05.mode = 'passive'
+      ;(settings as any).nip05.mode = 'passive'
       const row = verification({ pubkey: 'c'.repeat(64), nip05: 'charlie@example.com' })
       nip05VerificationRepository.findPendingVerifications.resolves([row])
       verifyStub.resolves({ status: 'verified' })
@@ -330,7 +318,7 @@ describe('MaintenanceWorker', () => {
 
   describe('onSchedule', () => {
     it('calls maintenance service and processes invoices', async () => {
-      settingsState.payments = { enabled: true } as any
+      ;(settings as any).payments = { enabled: true }
       maintenanceService.clearOldEvents.resolves()
       paymentsService.getPendingInvoices.resolves([])
 
@@ -341,7 +329,7 @@ describe('MaintenanceWorker', () => {
     })
 
     it('calls maintenance service even if payments are disabled', async () => {
-      settingsState.payments = { enabled: false } as any
+      ;(settings as any).payments = { enabled: false }
       maintenanceService.clearOldEvents.resolves()
 
       await (worker as any).onSchedule()

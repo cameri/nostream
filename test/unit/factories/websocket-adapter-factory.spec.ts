@@ -47,11 +47,7 @@ describe('webSocketAdapterFactory', () => {
     } as any
     const webSocketServerAdapter: IWebSocketServerAdapter = {} as any
 
-    const factory = webSocketAdapterFactory(
-      eventRepository, userRepository, nip05VerificationRepository,
-    )
-    expect(
-      factory([client, request, webSocketServerAdapter])
-    ).to.be.an.instanceOf(WebSocketAdapter)
+    const factory = webSocketAdapterFactory(eventRepository, userRepository, nip05VerificationRepository)
+    expect(factory([client, request, webSocketServerAdapter])).to.be.an.instanceOf(WebSocketAdapter)
   })
 })

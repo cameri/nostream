@@ -102,9 +102,7 @@ describe('WebServerAdapter', () => {
 
       // Access private method through event handler
       // Find the clientError handler registered in constructor
-      const clientErrorCall = webServer.on.getCalls().find(
-        (call: any) => call.args[0] === 'clientError'
-      )
+      const clientErrorCall = webServer.on.getCalls().find((call: any) => call.args[0] === 'clientError')
       const handler = clientErrorCall.args[1]
 
       handler(error, socket)
@@ -116,9 +114,7 @@ describe('WebServerAdapter', () => {
       const error = new Error('some error')
       const socket: any = { writable: false, end: sandbox.stub() }
 
-      const clientErrorCall = webServer.on.getCalls().find(
-        (call: any) => call.args[0] === 'clientError'
-      )
+      const clientErrorCall = webServer.on.getCalls().find((call: any) => call.args[0] === 'clientError')
       const handler = clientErrorCall.args[1]
 
       handler(error, socket)
@@ -130,9 +126,7 @@ describe('WebServerAdapter', () => {
       const error = new Error('bad request')
       const socket: any = { writable: true, end: sandbox.stub() }
 
-      const clientErrorCall = webServer.on.getCalls().find(
-        (call: any) => call.args[0] === 'clientError'
-      )
+      const clientErrorCall = webServer.on.getCalls().find((call: any) => call.args[0] === 'clientError')
       const handler = clientErrorCall.args[1]
 
       handler(error, socket)
@@ -144,9 +138,7 @@ describe('WebServerAdapter', () => {
 
   describe('onError', () => {
     it('handles server errors without throwing', () => {
-      const errorCall = webServer.on.getCalls().find(
-        (call: any) => call.args[0] === 'error'
-      )
+      const errorCall = webServer.on.getCalls().find((call: any) => call.args[0] === 'error')
       const handler = errorCall.args[1]
 
       expect(() => handler(new Error('server error'))).not.to.throw()

@@ -19,18 +19,12 @@ export class VanishEventStrategy implements IEventStrategy<Event, Promise<void>>
   public async execute(event: Event): Promise<void> {
     debug('received request to vanish event: %o', event)
 
-    await this.eventRepository.deleteByPubkeyExceptKinds(
-      event.pubkey,
-      [EventKinds.REQUEST_TO_VANISH],
-    )
+    await this.eventRepository.deleteByPubkeyExceptKinds(event.pubkey, [EventKinds.REQUEST_TO_VANISH])
 
     const count = await this.eventRepository.create(event)
 
     await this.userRepository.setVanished(event.pubkey, true)
 
-    this.webSocket.emit(
-      WebSocketAdapterEvent.Message,
-      createCommandResult(event.id, true, count ? '' : 'duplicate:')
-    )
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))
   }
 }

@@ -11,7 +11,7 @@ const { expect } = chai
 describe('streamMap', () => {
   it('transforms chunk with given function', () => {
     const spy = sinon.spy()
-    const sum = ({ a, b }: { a: number, b: number }) => ({ sum: a + b })
+    const sum = ({ a, b }: { a: number; b: number }) => ({ sum: a + b })
 
     const stream = streamMap(sum)
     stream.on('data', spy)

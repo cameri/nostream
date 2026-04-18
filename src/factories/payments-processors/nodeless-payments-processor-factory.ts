@@ -16,8 +16,8 @@ const getNodelessAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> =>
   return {
     headers: {
       'content-type': 'application/json',
-      'authorization': `Bearer ${process.env.NODELESS_API_KEY}`,
-      'accept': 'application/json',
+      authorization: `Bearer ${process.env.NODELESS_API_KEY}`,
+      accept: 'application/json',
     },
     baseURL: path(['paymentsProcessors', 'nodeless', 'baseURL'], settings),
     maxRedirects: 1,

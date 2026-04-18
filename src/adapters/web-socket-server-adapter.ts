@@ -35,8 +35,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
 
     this.webSocketsAdapters = new WeakMap()
 
-    this
-      .on(WebSocketServerAdapterEvent.Broadcast, this.onBroadcast.bind(this))
+    this.on(WebSocketServerAdapterEvent.Broadcast, this.onBroadcast.bind(this))
 
     this.webSocketServer
       .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))

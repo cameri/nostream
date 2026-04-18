@@ -45,8 +45,12 @@ function getMessageKeys(
   conversationKey: Buffer,
   nonce: Buffer,
 ): { chachaKey: Buffer; chachaNonce: Buffer; hmacKey: Buffer } {
-  if (conversationKey.length !== 32) throw new Error('invalid conversation_key length')
-  if (nonce.length !== 32) throw new Error('invalid nonce length')
+  if (conversationKey.length !== 32) {
+    throw new Error('invalid conversation_key length')
+  }
+  if (nonce.length !== 32) {
+    throw new Error('invalid nonce length')
+  }
 
   const keys = hkdfExpand(conversationKey, nonce, 76)
   return {
@@ -57,7 +61,9 @@ function getMessageKeys(
 }
 
 function calcPaddedLen(unpaddedLen: number): number {
-  if (unpaddedLen <= 32) return 32
+  if (unpaddedLen <= 32) {
+    return 32
+  }
   const nextPower = 1 << (Math.floor(Math.log2(unpaddedLen - 1)) + 1)
   const chunk = nextPower <= 256 ? 32 : nextPower / 8
   return chunk * (Math.floor((unpaddedLen - 1) / chunk) + 1)
@@ -78,11 +84,7 @@ function pad(plaintext: string): Buffer {
 function unpad(padded: Buffer): string {
   const unpaddedLen = padded.readUInt16BE(0)
   const unpadded = padded.subarray(2, 2 + unpaddedLen)
-  if (
-    unpaddedLen === 0 ||
-    unpadded.length !== unpaddedLen ||
-    padded.length !== 2 + calcPaddedLen(unpaddedLen)
-  ) {
+  if (unpaddedLen === 0 || unpadded.length !== unpaddedLen || padded.length !== 2 + calcPaddedLen(unpaddedLen)) {
     throw new Error('invalid padding')
   }
   return unpadded.toString('utf8')
@@ -92,11 +94,7 @@ function unpad(padded: Buffer): string {
  * Encrypt plaintext using NIP-44 v2.
  * Output format: base64(0x02 || nonce[32] || ciphertext || mac[32])
  */
-export function nip44Encrypt(
-  plaintext: string,
-  conversationKey: Buffer,
-  nonce: Buffer = randomBytes(32),
-): string {
+export function nip44Encrypt(plaintext: string, conversationKey: Buffer, nonce: Buffer = randomBytes(32)): string {
   const { chachaKey, chachaNonce, hmacKey } = getMessageKeys(conversationKey, nonce)
   const padded = pad(plaintext)
 
@@ -116,14 +114,22 @@ export function nip44Encrypt(
  * Validates version byte, payload sizes, and MAC before decrypting.
  */
 export function nip44Decrypt(payload: string, conversationKey: Buffer): string {
-  if (!payload || payload[0] === '#') throw new Error('unknown version')
-  if (payload.length < 132 || payload.length > 87472) throw new Error('invalid payload size')
+  if (!payload || payload[0] === '#') {
+    throw new Error('unknown version')
+  }
+  if (payload.length < 132 || payload.length > 87472) {
+    throw new Error('invalid payload size')
+  }
 
   const data = Buffer.from(payload, 'base64')
-  if (data.length < 99 || data.length > 65603) throw new Error('invalid data size')
+  if (data.length < 99 || data.length > 65603) {
+    throw new Error('invalid data size')
+  }
 
   const version = data[0]
-  if (version !== 2) throw new Error(`unknown version ${version}`)
+  if (version !== 2) {
+    throw new Error(`unknown version ${version}`)
+  }
 
   const nonce = data.subarray(1, 33)
   const ciphertext = data.subarray(33, data.length - 32)
@@ -132,7 +138,9 @@ export function nip44Decrypt(payload: string, conversationKey: Buffer): string {
   const { chachaKey, chachaNonce, hmacKey } = getMessageKeys(conversationKey, nonce)
 
   const expectedMac = createHmac('sha256', hmacKey).update(nonce).update(ciphertext).digest()
-  if (!timingSafeEqual(expectedMac, mac)) throw new Error('invalid MAC')
+  if (!timingSafeEqual(expectedMac, mac)) {
+    throw new Error('invalid MAC')
+  }
 
   const iv = Buffer.concat([Buffer.alloc(4), chachaNonce])
   const decipher = createDecipheriv('chacha20', chachaKey, iv)
@@ -148,8 +156,12 @@ export function nip44Decrypt(payload: string, conversationKey: Buffer): string {
 const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/
 
 export function validateNip44Payload(payload: string): string | undefined {
-  if (!payload || payload[0] === '#') return 'unsupported encryption version'
-  if (payload.length < 132 || payload.length > 87472) return 'invalid payload size'
+  if (!payload || payload[0] === '#') {
+    return 'unsupported encryption version'
+  }
+  if (payload.length < 132 || payload.length > 87472) {
+    return 'invalid payload size'
+  }
 
   if (payload.length % 4 !== 0 || !BASE64_RE.test(payload)) {
     return 'payload is not valid base64'
@@ -157,8 +169,12 @@ export function validateNip44Payload(payload: string): string | undefined {
 
   const data = Buffer.from(payload, 'base64')
 
-  if (data.length < 99 || data.length > 65603) return 'invalid decoded payload size'
-  if (data[0] !== 2) return `unsupported encryption version ${data[0]}`
+  if (data.length < 99 || data.length > 65603) {
+    return 'invalid decoded payload size'
+  }
+  if (data[0] !== 2) {
+    return `unsupported encryption version ${data[0]}`
+  }
 
   return undefined
 }
