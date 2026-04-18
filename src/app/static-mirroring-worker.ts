@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 
 import { createRelayedEventMessage, createSubscriptionMessage } from '../utils/messages'
 import { EventLimits, FeeSchedule, Mirror, Settings } from '../@types/settings'
-import { getEventExpiration, getEventProofOfWork, getPubkeyProofOfWork, getPublicKey, getRelayPrivateKey, isEventIdValid, isEventKindOrRangeMatch, isEventMatchingFilter, isEventSignatureValid, isExpiredEvent } from '../utils/event'
+import { getEventExpiration, getEventProofOfWork, getPubkeyProofOfWork, getPublicKey, getRelayPrivateKey, isDirectMessageEvent, isEventIdValid, isEventKindOrRangeMatch, isEventMatchingFilter, isEventSignatureValid, isExpiredEvent, isFileMessageEvent, isSealEvent } from '../utils/event'
 import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
@@ -102,6 +102,11 @@ export class StaticMirroringWorker implements IRunnable {
             }
 
             if (!await this.isUserAdmitted(event)) {
+              return
+            }
+
+            // NIP-17: inner events (kind 13, 14, 15) must never be stored directly
+            if (isSealEvent(event) || isDirectMessageEvent(event) || isFileMessageEvent(event)) {
               return
             }
 
