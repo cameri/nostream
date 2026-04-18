@@ -7,17 +7,16 @@ import WebSocket from 'ws'
 import { Event } from '../../../../src/@types/event'
 import { SettingsStatic } from '../../../../src/utils/settings'
 import { getEventProofOfWork, getPubkeyProofOfWork } from '../../../../src/utils/event'
-import { createEvent, waitForCommand } from '../helpers'
+import { createEvent, sendEvent } from '../helpers'
 
 type PowMode = 'below' | 'at least'
 type Identity = { name: string; privkey: string; pubkey: string }
-type Nip13CommandResult = [string, string, boolean, string?]
 
 const MAX_MINING_ATTEMPTS = 200_000
 
 const ensureNip13State = (world: World<Record<string, any>>) => {
   world.parameters.nip13 = world.parameters.nip13 ?? {}
-  world.parameters.nip13.commands = world.parameters.nip13.commands ?? {}
+  world.parameters.nip13.results = world.parameters.nip13.results ?? {}
 }
 
 const snapshotSettingsIfNeeded = (world: World<Record<string, any>>) => {
@@ -97,25 +96,19 @@ const mineEventForPow = async (
   throw new Error(`Unable to mine event ID PoW ${mode} ${minLeadingZeroBits}`)
 }
 
-const sendEventAndCaptureCommand = async (ws: WebSocket, event: Event): Promise<Nip13CommandResult> => {
-  const commandPromise = waitForCommand(ws)
-
-  await new Promise<void>((resolve, reject) => {
-    ws.send(JSON.stringify(['EVENT', event]), (error?: Error) => {
-      if (error) {
-        reject(error)
-      } else {
-        resolve()
-      }
-    })
-  })
-
-  return (await commandPromise) as Nip13CommandResult
+const storeResult = (world: World<Record<string, any>>, name: string, result: { success: boolean; error?: string }) => {
+  ensureNip13State(world)
+  world.parameters.nip13.results[name] = result
 }
 
-const storeCommand = (world: World<Record<string, any>>, name: string, command: Nip13CommandResult) => {
-  ensureNip13State(world)
-  world.parameters.nip13.commands[name] = command
+const sendEventExpectFailure = async (ws: WebSocket, event: Event): Promise<string> => {
+  try {
+    await sendEvent(ws, event, true)
+  } catch (error) {
+    return (error as Error).message
+  }
+
+  throw new Error('Expected event publication to fail, but it succeeded')
 }
 
 Given(/^NIP-13 event ID minimum leading zero bits is (\d+)$/, function (this: World<Record<string, any>>, bits: string) {
@@ -133,8 +126,8 @@ When(
     const { pubkey, privkey } = this.parameters.identities[name]
     const event: Event = await createEvent({ pubkey, kind: 1, content }, privkey)
 
-    const command = await sendEventAndCaptureCommand(ws, event)
-    storeCommand(this, name, command)
+    await sendEvent(ws, event, true)
+    storeResult(this, name, { success: true })
   },
 )
 
@@ -147,10 +140,17 @@ When(
     const requiredBits = getRequiredBits('eventId')
 
     const { event, pow } = await mineEventForPow(pubkey, privkey, content, requiredBits, mode)
-    const command = await sendEventAndCaptureCommand(ws, event)
-    storeCommand(this, name, command)
+    const expectedReason = `pow: difficulty ${pow}<${requiredBits}`
+    this.parameters.nip13.expectedEventIdReason = expectedReason
 
-    this.parameters.nip13.expectedEventIdReason = `pow: difficulty ${pow}<${requiredBits}`
+    if (mode === 'below') {
+      const error = await sendEventExpectFailure(ws, event)
+      storeResult(this, name, { success: false, error })
+      return
+    }
+
+    await sendEvent(ws, event, true)
+    storeResult(this, name, { success: true })
   },
 )
 
@@ -165,35 +165,39 @@ When(
     this.parameters.identities[name] = identity
 
     const event: Event = await createEvent({ pubkey: identity.pubkey, kind: 1, content }, identity.privkey)
-    const command = await sendEventAndCaptureCommand(ws, event)
-    storeCommand(this, name, command)
-
     const pubkeyPow = getPubkeyProofOfWork(identity.pubkey)
-    this.parameters.nip13.expectedPubkeyReason = `pow: pubkey difficulty ${pubkeyPow}<${requiredBits}`
+    const expectedReason = `pow: pubkey difficulty ${pubkeyPow}<${requiredBits}`
+    this.parameters.nip13.expectedPubkeyReason = expectedReason
+
+    if (mode === 'below') {
+      const error = await sendEventExpectFailure(ws, event)
+      storeResult(this, name, { success: false, error })
+      return
+    }
+
+    await sendEvent(ws, event, true)
+    storeResult(this, name, { success: true })
   },
 )
 
 Then(/^(\w+) receives a successful NIP-13 command result$/, function (this: World<Record<string, any>>, name: string) {
-  const command = this.parameters.nip13.commands[name] as Nip13CommandResult
-
-  expect(command[0]).to.equal('OK')
-  expect(command[2]).to.equal(true)
+  const result = this.parameters.nip13.results[name] as { success: boolean; error?: string }
+  expect(result.success).to.equal(true)
+  expect(result.error).to.be.undefined
 })
 
 Then(/^(\w+) receives an unsuccessful NIP-13 event ID PoW result$/, function (this: World<Record<string, any>>, name: string) {
-  const command = this.parameters.nip13.commands[name] as Nip13CommandResult
+  const result = this.parameters.nip13.results[name] as { success: boolean; error?: string }
 
-  expect(command[0]).to.equal('OK')
-  expect(command[2]).to.equal(false)
-  expect(command[3]).to.equal(this.parameters.nip13.expectedEventIdReason)
+  expect(result.success).to.equal(false)
+  expect(result.error).to.equal(this.parameters.nip13.expectedEventIdReason)
 })
 
 Then(/^(\w+) receives an unsuccessful NIP-13 pubkey PoW result$/, function (this: World<Record<string, any>>, name: string) {
-  const command = this.parameters.nip13.commands[name] as Nip13CommandResult
+  const result = this.parameters.nip13.results[name] as { success: boolean; error?: string }
 
-  expect(command[0]).to.equal('OK')
-  expect(command[2]).to.equal(false)
-  expect(command[3]).to.equal(this.parameters.nip13.expectedPubkeyReason)
+  expect(result.success).to.equal(false)
+  expect(result.error).to.equal(this.parameters.nip13.expectedPubkeyReason)
 })
 
 After({ tags: '@nip13' }, function (this: World<Record<string, any>>) {
