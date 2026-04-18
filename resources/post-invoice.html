@@ -26,7 +26,7 @@
               Scan with your preferred Bitcoin Lightning wallet:
             </p>
             <p class="paid d-none text-success">
-              You may now connect to {{relay_url}}
+              You may now connect to {{relay_url_html}}
             </p>
             <p class="expired d-none text-secondary">
               Your invoice expired. Try again!
@@ -40,7 +40,7 @@
             </div>
             <div class="card-body d-flex flex-row justify-content-center">
               <div class="input-group input-group-sm w-100 mw-256" id="invoiceCopyGroup">
-                <input type="text" name="invoice" class="form-control form-control-sm" id="invoiceInput" value="{{invoice}}" readonly>
+                <input type="text" name="invoice" class="form-control form-control-sm" id="invoiceInput" value="{{invoice_html}}" readonly>
                 <span class="input-group-text" id="invoiceAlert">copy</span>
               </div>
             </div>
@@ -71,7 +71,7 @@
             </div>
           </div>
         </div>
-        <div class="row pending d-none">
+        <div class="row pending">
           <div class="col">
             <div class="d-flex justify-content-center mb-3">
               <button id="sendPaymentBtn" class="btn btn-lg btn-warning d-none" type="button">Pay with wallet</button>
@@ -80,7 +80,7 @@
         </div>
         <div class="row expired d-none">
           <div class="d-flex justify-content-center mb-3">
-            <input type="hidden" name="pubkey" value="{{pubkey}}" required>
+            <input type="hidden" name="pubkey" value="{{pubkey_html}}" required>
             <input type="checkbox" class="d-none" name="tosAccepted" value="yes" checked required>
             <input type="hidden" name="feeSchedule" value="admission" />
             <button class="btn btn-lg btn-primary" type="submit">Get another invoice</button>
@@ -103,13 +103,13 @@
         document.body.classList.add('dark-theme');
       }
 
-      var reference = "{{reference}}"
-      var relayUrl = "{{relay_url}}"
-      var relayPubkey = "{{relay_pubkey}}"
-      var invoice = "{{invoice}}";
-      var pubkey = "{{pubkey}}"
-      var expiresAt = "{{expires_at}}"
-      var processor = "{{processor}}"
+      var reference = {{reference_json}}
+      var relayUrl = {{relay_url_json}}
+      var relayPubkey = {{relay_pubkey_json}}
+      var invoice = {{invoice_json}}
+      var pubkey = {{pubkey_json}}
+      var expiresAt = {{expires_at_json}}
+      var processor = {{processor_json}}
       var timeout
       var paid = false
       var fallbackTimeout
@@ -125,6 +125,9 @@
 
       async function getInvoiceStatus() {
         fetch(`/invoices/${reference}/status`).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`unexpected status ${response.status}`)
+          }
           const data = await response.json()
           console.log('data', data)
           const { status } = data;
@@ -146,7 +149,7 @@
 
           hide('pending')
           show('paid')
-        }, (error) => {
+        }).catch((error) => {
           console.error('error fetching status', error)
           fallbackTimeout = setTimeout(getInvoiceStatus, getBackoffTime())
         })

@@ -1,3 +1,4 @@
+import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { isDeleteEvent, isEphemeralEvent, isGiftWrapEvent, isParameterizedReplaceableEvent, isReplaceableEvent, isRequestToVanishEvent } from '../utils/event'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
@@ -5,7 +6,6 @@ import { EphemeralEventStrategy } from '../handlers/event-strategies/ephemeral-e
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { GiftWrapEventStrategy } from '../handlers/event-strategies/gift-wrap-event-strategy'
-import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strategies/parameterized-replaceable-event-strategy'

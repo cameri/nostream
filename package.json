@@ -25,6 +25,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "node -r ts-node/register src/index.ts",
+    "clean-db": "node -r ts-node/register src/clean-db.ts",
     "clean": "rimraf ./{dist,.nyc_output,.test-reports,.coverage}",
     "build": "tsc --project tsconfig.build.json",
     "prestart": "npm run build",
@@ -39,7 +40,7 @@
     "db:migrate": "knex migrate:latest",
     "db:migrate:rollback": "knex migrate:rollback",
     "db:seed": "knex seed:run",
-    "pretest:unit": "mkdir -p .test-reports/unit",
+    "pretest:unit": "node -e \"require('fs').mkdirSync('.test-reports/unit', {recursive: true})\"",
     "test:unit": "mocha 'test/**/*.spec.ts'",
     "test:unit:watch": "npm run test:unit -- --min --watch --watch-files src/**/*,test/**/*",
     "cover:unit": "nyc --report-dir .coverage/unit npm run test:unit",
@@ -47,6 +48,7 @@
     "pretest:integration": "mkdir -p .test-reports/integration",
     "test:integration": "cucumber-js",
     "cover:integration": "nyc --report-dir .coverage/integration npm run test:integration -- -p cover",
+    "export": "node -r ts-node/register src/scripts/export-events.ts",
     "docker:compose:start": "./scripts/start",
     "docker:compose:stop": "./scripts/stop",
     "docker:compose:clean": "./scripts/clean",
@@ -107,7 +109,7 @@
     "eslint": "^9.39.4",
     "husky": "8.0.2",
     "knip": "2.43.0",
-    "mocha": "^9.2.2",
+    "mocha": "^11.7.5",
     "mochawesome": "^7.1.3",
     "nyc": "^15.1.0",
     "rimraf": "^3.0.2",
@@ -131,7 +133,6 @@
     "accepts": "^1.3.8",
     "express": "4.22.1",
     "helmet": "6.0.1",
-    "joi": "17.7.0",
     "js-yaml": "4.1.1",
     "knex": "2.4.2",
     "pg": "8.9.0",
@@ -139,7 +140,8 @@
     "ramda": "0.28.0",
     "redis": "4.5.1",
     "tor-control-ts": "^1.0.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^3.22.4"
   },
   "config": {
     "commitizen": {
