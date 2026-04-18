@@ -15,7 +15,7 @@ describe('getTemplate', () => {
   })
 
   afterEach(() => {
-    try { fs.unlinkSync(tmpFile) } catch (e) { /* ignore */ }
+    try { fs.unlinkSync(tmpFile) } catch (_e) { /* ignore */ }
   })
 
   it('returns the file content', () => {

@@ -486,6 +486,17 @@ Start:
 
 ## Tests
 
+### Linting and formatting (Biome)
+
+Run code quality checks with Biome:
+
+  ```
+  npm run lint
+  npm run lint:fix
+  npm run format
+  npm run format:check
+  ```
+
 ### Unit tests
 
 Open a terminal and change to the project's directory:
@@ -586,6 +597,52 @@ To see the integration test coverage report open `.coverage/integration/lcov-rep
   open .coverage/integration/lcov-report/index.html
   ```
 
+
+## Security & Load Testing
+
+Nostream includes a specialized security tester to simulate Slowloris-style connection holding and event flood (spam) attacks. This is used to verify relay resilience and prevent memory leaks.
+
+### Running the Tester
+  ```bash
+  # Simulates 5,000 idle "zombie" connections + 100 events/sec spam
+  npm run test:load -- --zombies 5000 --spam-rate 100
+  ```
+
+### Analyzing Memory (Heap Snapshots)
+To verify that connections are being correctly evicted and memory reclaimed:
+1. Ensure the relay is running with `--inspect` enabled (see `docker-compose.yml`).
+2. Open **Chrome DevTools** (`chrome://inspect`) and connect to the relay process.
+3. In the **Memory** tab, take a **Heap Snapshot** (Baseline).
+4. Run the load tester.
+5. Wait for the eviction cycle (default: 120s) and take a second **Heap Snapshot**.
+6. Switch the view to **Comparison** and select the Baseline snapshot.
+7. Verify that object counts (e.g., `WebSocketAdapter`, `SocketAddress`) return to baseline levels.
+
+### Server-Side Monitoring
+To observe client and subscription counts in real-time during a test, you can instrument `src/adapters/web-socket-server-adapter.ts`:
+
+1. Locate the `onHeartbeat()` method.
+2. Add the following logging logic:
+   ```typescript
+   private onHeartbeat() {
+     let totalSubs = 0;
+     let totalClients = 0;
+     this.webSocketServer.clients.forEach((webSocket) => {
+       totalClients++;
+       const webSocketAdapter = this.webSocketsAdapters.get(webSocket) as IWebSocketAdapter;
+       if (webSocketAdapter) {
+         webSocketAdapter.emit(WebSocketAdapterEvent.Heartbeat);
+         totalSubs += webSocketAdapter.getSubscriptions().size;
+       }
+     });
+     console.log(`[HEARTBEAT] Clients: ${totalClients} | Total subscriptions: ${totalSubs} | Heap Used: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB`);
+   }
+   ```
+3. View the live output via Docker logs:
+   ```bash
+   docker compose logs -f nostream
+   ```
+=======
 ## Export Events
 
 Export all stored events to a [JSON Lines](https://jsonlines.org/) (`.jsonl`) file. Each line is a valid NIP-01 Nostr event JSON object. The export streams rows from the database using cursors, so it works safely on relays with millions of events without loading them into memory.
@@ -633,6 +690,7 @@ Delete only selected kinds older than N days:
 
 By default, the script asks for explicit confirmation (`Type 'DELETE' to confirm`).
 Use `--force` to skip the prompt.
+
 
 ## Configuration
 
