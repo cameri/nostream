@@ -61,7 +61,9 @@
     "docker:test:integration": "npm run docker:integration:run -- npm run test:integration",
     "docker:cover:integration": "npm run docker:integration:run -- npm run cover:integration",
     "postdocker:integration:run": "docker compose -f ./test/integration/docker-compose.yml down",
-    "prepare": "husky install || exit 0"
+    "prepare": "husky install || exit 0",
+    "version": "changeset version",
+    "publish": "changeset tag"
   },
   "repository": {
     "type": "git",
@@ -84,11 +86,7 @@
     "@commitlint/config-conventional": "17.2.0",
     "@cucumber/cucumber": "10.2.1",
     "@cucumber/pretty-formatter": "1.0.0",
-    "@semantic-release/commit-analyzer": "9.0.2",
-    "@semantic-release/git": "10.0.1",
-    "@semantic-release/github": "8.1.0",
-    "@semantic-release/npm": "13.1.5",
-    "@semantic-release/release-notes-generator": "10.0.3",
+    "@changesets/cli": "^2.27.12",
     "@types/chai": "^4.3.1",
     "@types/chai-as-promised": "^7.1.5",
     "@types/debug": "4.1.7",
@@ -103,8 +101,6 @@
     "@types/ws": "^8.5.12",
     "chai": "^4.3.6",
     "chai-as-promised": "^7.1.1",
-    "conventional-changelog-conventionalcommits": "5.0.0",
-    "cz-conventional-changelog": "3.3.0",
     "husky": "8.0.2",
     "knip": "2.43.0",
     "mocha": "^11.7.5",
@@ -112,8 +108,6 @@
     "nyc": "^15.1.0",
     "rimraf": "^3.0.2",
     "rxjs": "7.8.0",
-    "semantic-release": "25.0.3",
-    "semantic-release-telegram": "1.6.0",
     "sinon": "15.0.1",
     "sinon-chai": "^3.7.0",
     "source-map-support": "^0.5.21",
@@ -140,11 +134,6 @@
     "tor-control-ts": "^1.0.0",
     "ws": "^8.18.0",
     "zod": "^3.22.4"
-  },
-  "config": {
-    "commitizen": {
-      "path": "./node_modules/cz-conventional-changelog"
-    }
   },
   "overrides": {
     "axios@<0.31.0": ">=0.31.0"
