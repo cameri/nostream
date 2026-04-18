@@ -58,12 +58,15 @@ BeforeAll({ timeout: 1000 }, async function () {
 })
 
 AfterAll(async function() {
-  worker.close(async () => {
-    await Promise.all([
-      dbClient.destroy(),
-      rrDbClient.destroy(),
-      cacheClient.disconnect(),
-    ])
+  await new Promise<void>((resolve) => {
+    worker.close(async () => {
+      await Promise.all([
+        cacheClient.disconnect(),
+        dbClient.destroy(),
+        rrDbClient.destroy(),
+      ])
+      resolve()
+    })
   })
 })
 
