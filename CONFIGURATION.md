@@ -71,6 +71,8 @@ Configuration files live in the `i2p/` directory:
 
 Tunnel keys are persisted at `.nostr/i2p/data/` so the `.b32.i2p` address survives container restarts.
 
+The i2pd web console (tunnel status, `.b32.i2p` destinations) is published to the host on **`127.0.0.1:7070`** only. Remove the `ports:` mapping in `docker-compose.i2p.yml` to disable host-side access.
+
 - Start with I2P: `./scripts/start_with_i2p`
 - Print hostname hints: `./scripts/print_i2p_hostname`
 
