@@ -1,0 +1,3 @@
+#!/bin/bash
+# Delegates to Node so the same validation runs on Windows (npm) and Linux/macOS.
+exec node "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/verify-compose-overlays.mjs"

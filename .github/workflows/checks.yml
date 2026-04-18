@@ -58,6 +58,16 @@ jobs:
         run: npm ci
       - name: Run ESLint
         run: npm run build:check
+  compose-validate:
+    name: Validate Docker Compose overlays (Tor / I2P)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Validate merged compose files
+        env:
+          SECRET: ci_placeholder_not_for_production_use_repeat_to_64chars_aaaaaaaa
+        run: node ./scripts/verify-compose-overlays.mjs
   test-units-and-cover:
     name: Unit Tests And Coverage
     runs-on: ubuntu-latest
@@ -65,6 +75,7 @@ jobs:
       - commit-lint
       - lint
       - build-check
+      - compose-validate
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -100,6 +111,7 @@ jobs:
       - commit-lint
       - lint
       - build-check
+      - compose-validate
     steps:
       - name: Checkout
         uses: actions/checkout@v3
