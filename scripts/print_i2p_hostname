@@ -1,0 +1,21 @@
+#!/bin/bash
+
+PROJECT_ROOT="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))/.."
+KEYS_FILE="$PROJECT_ROOT/.nostr/i2p/data/nostream.dat"
+
+if [ ! -f "$KEYS_FILE" ]; then
+  echo "I2P destination keys not found. Is the i2pd container running?"
+  echo "Expected: $KEYS_FILE"
+  exit 1
+fi
+
+# i2pd writes a binary .dat file for tunnel keys. The base32 hostname is
+# derived from the public key portion, but extracting it from the binary
+# format is non-trivial without a helper. Instead, read it from the i2pd
+# web console or container logs.
+echo "I2P destination keys exist at: $KEYS_FILE"
+echo ""
+echo "To find your .b32.i2p address, use one of these methods:"
+echo "  1. docker exec i2pd cat /home/i2pd/data/nostream.dat | head -c 391 | base32 | tr '[:upper:]' '[:lower:]' | tr '+/' '-~'"
+echo "  2. Check the i2pd web console at http://127.0.0.1:7070/?page=i2p_tunnels"
+echo "  3. docker logs i2pd 2>&1 | grep -i 'nostream'"
