@@ -11,7 +11,6 @@ const config = [
   '--format @cucumber/pretty-formatter',
   '--format html:.test-reports/integration/report.html',
   '--format json:.test-reports/integration/report.json',
-  '--publish',
 ].join(' ')
 
 module.exports = {
