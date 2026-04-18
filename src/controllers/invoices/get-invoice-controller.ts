@@ -1,10 +1,13 @@
+import { escapeHtml, safeJsonForScript } from '../../utils/html'
 import { path, pathEq } from 'ramda'
 import { Request, Response } from 'express'
-import { readFileSync } from 'fs'
 
 import { createSettings } from '../../factories/settings-factory'
+
 import { FeeSchedule } from '../../@types/settings'
 import { IController } from '../../@types/controllers'
+
+import { getTemplate } from '../../utils/template-cache'
 
 
 
@@ -19,9 +22,9 @@ export class GetInvoiceController implements IController {
       && pathEq(['payments', 'feeSchedules', 'admission', '0', 'enabled'], true, settings)) {
       const name = path<string>(['info', 'name'])(settings)
       const feeSchedule = path<FeeSchedule>(['payments', 'feeSchedules', 'admission', '0'], settings)
-      const page = readFileSync('./resources/index.html', 'utf8')
-        .replaceAll('{{name}}', name)
-        .replaceAll('{{processor}}', settings.payments.processor)
+      const page = getTemplate('./resources/get-invoice.html')
+        .replaceAll('{{name}}', escapeHtml(name))
+        .replaceAll('{{processor_json}}', safeJsonForScript(settings.payments.processor))
         .replaceAll('{{amount}}', (BigInt(feeSchedule.amount) / 1000n).toString())
         .replaceAll('{{nonce}}', res.locals.nonce)
 

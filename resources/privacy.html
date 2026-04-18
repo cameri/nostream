@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Privacy Policy - {{name}}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
+    <link rel="stylesheet" href="./css/style.css">
+  </head>
+  <body lang="en">
+    <main class="container">
+      <div class="row">
+        <div class="col">
+          <h1 class="mt-4 mb-2 text-center text-nowrap">{{name}}</h1>
+        </div>
+      </div>
+      <div class="row justify-content-center">
+        <div class="col col-md-10 col-lg-7 mb-5">
+          <h2 class="mt-3 mb-4">Privacy Policy</h2>
+
+          <h5>What we collect</h5>
+          <p>
+            When you connect to this relay, we may collect and retain the following information:
+          </p>
+          <ul>
+            <li>Your IP address, for the purpose of rate limiting, abuse detection, and spam prevention.</li>
+            <li>Your Nostr public key, if you publish events or request an admission invoice.</li>
+            <li>Events you publish, including their content, timestamps, and signatures, which are stored and distributed to other clients and relays per the Nostr protocol.</li>
+          </ul>
+
+          <h5>How we use it</h5>
+          <ul>
+            <li>To provide the relay service.</li>
+            <li>To detect and prevent abuse, spam, and misuse.</li>
+            <li>Your IP address and/or public key, in full, truncated, or as a hash digest, may be shared with other relays and clients solely for abuse reporting purposes.</li>
+          </ul>
+
+          <h5>What we do not do</h5>
+          <ul>
+            <li>We do not sell your personal data to third parties.</li>
+            <li>We do not use your data for advertising.</li>
+          </ul>
+
+          <h5>Data retention</h5>
+          <p>
+            Events you publish are stored and may be retained indefinitely. Requests to delete events
+            you have published cannot be guaranteed, as copies may exist on other relays in the Nostr
+            network.
+          </p>
+
+          <h5>Third-party services</h5>
+          <p>
+            This relay may use third-party services (such as Lightning payment processors) to facilitate
+            payments. Those services have their own privacy policies which govern their data practices.
+          </p>
+
+          <h5>Changes to this policy</h5>
+          <p>
+            This privacy policy may be updated at any time without explicit notice. Continued use of
+            the relay constitutes acceptance of the current policy.
+          </p>
+
+          <div class="mt-4">
+            <a href="/" class="text-muted small">← Back to home</a>
+            <span class="text-muted small mx-2">·</span>
+            <a href="/terms" class="text-muted small">Terms of Service</a>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.min.js" integrity="sha384-cuYeSxntonz0PPNlHhBs68uyIAVpIIOZZ5JqeqvYYIcEL727kskC66kF92t6Xl2V" crossorigin="anonymous"></script>
+    <script nonce="{{nonce}}">
+      // Check for system preference on load
+      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark-theme');
+      }
+    </script>
+  </body>
+</html>
