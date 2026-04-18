@@ -42,7 +42,6 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
 
   public close(callback?: () => void): void {
     debug('closing')
-    this.webServer.closeAllConnections()
     this.webServer.close(() => {
       this.webServer.removeAllListeners()
       this.removeAllListeners()
