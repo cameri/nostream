@@ -19,11 +19,11 @@ export class ParameterizedReplaceableEventStrategy
   public async execute(event: Event): Promise<void> {
     debug('received parameterized replaceable event: %o', event)
 
-    const [, ...deduplication] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Deduplication) ?? [null, '']
+    const [, deduplication] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Deduplication) ?? [null, '']
 
     const parameterizedReplaceableEvent: ParameterizedReplaceableEvent = {
       ...event,
-      [EventDeduplicationMetadataKey]: deduplication,
+      [EventDeduplicationMetadataKey]: deduplication ? [deduplication] : [''],
     }
 
     const count = await this.eventRepository.upsert(parameterizedReplaceableEvent)
