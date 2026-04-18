@@ -110,6 +110,20 @@ Then('the OpenNode callback response body is empty', function () {
   expect(['', undefined, null]).to.include(response.data)
 })
 
+Then('the OpenNode invoice is marked completed', async function () {
+  const dbClient = getMasterDbClient()
+  const invoiceId = this.parameters.openNodeInvoiceId
+
+  const invoice = await dbClient('invoices')
+    .where('id', invoiceId)
+    .first('status', 'confirmed_at', 'amount_paid')
+
+  expect(invoice).to.exist
+  expect(invoice.status).to.equal('completed')
+  expect(invoice.confirmed_at).to.not.equal(null)
+  expect(invoice.amount_paid).to.equal('21000')
+})
+
 After({ tags: '@opennode-callback' }, async function () {
   SettingsStatic._settings = this.parameters.previousOpenNodeCallbackSettings
 

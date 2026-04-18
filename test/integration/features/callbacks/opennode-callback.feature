@@ -18,3 +18,11 @@ Feature: OpenNode callback endpoint
     When I post a signed OpenNode callback with status "processing"
     Then the OpenNode callback response status is 200
     And the OpenNode callback response body is empty
+
+  Scenario: completes a pending invoice on paid callback
+    Given OpenNode callback processing is enabled
+    And a pending OpenNode invoice exists
+    When I post a signed OpenNode callback with status "paid"
+    Then the OpenNode callback response status is 200
+    And the OpenNode callback response body is "OK"
+    And the OpenNode invoice is marked completed
