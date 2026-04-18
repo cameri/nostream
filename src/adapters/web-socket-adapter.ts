@@ -22,8 +22,8 @@ import { messageSchema } from '../schemas/message-schema'
 import { Settings } from '../@types/settings'
 import { SocketAddress } from 'net'
 
-const debug = createLogger('web-socket-adapter')
-const debugHeartbeat = debug.extend('heartbeat')
+const logger = createLogger('web-socket-adapter')
+const debugHeartbeat = logger.extend('heartbeat')
 
 const abortableMessageHandlers: WeakMap<WebSocket, IAbortable[]> = new WeakMap()
 
@@ -57,11 +57,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.client
       .on('error', (error) => {
         if (error.name === 'RangeError' && error.message === 'Max payload size exceeded') {
-          debug.error(`web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`)
+          logger.error(`web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`)
         } else if (error.name === 'RangeError' && error.message === 'Invalid WebSocket frame: RSV1 must be clear') {
-          debug(`client ${this.clientId} (${this.getClientAddress()}) enabled compression`)
+          logger(`client ${this.clientId} (${this.getClientAddress()}) enabled compression`)
         } else {
-          debug.error(`web-socket-adapter: client error ${this.clientId} (${this.getClientAddress()}):`, error)
+          logger.error(`web-socket-adapter: client error ${this.clientId} (${this.getClientAddress()}):`, error)
         }
 
         this.client.close()
@@ -78,7 +78,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on(WebSocketAdapterEvent.Broadcast, this.onBroadcast.bind(this))
       .on(WebSocketAdapterEvent.Message, this.sendMessage.bind(this))
 
-    debug('client %s connected from %s', this.clientId, this.clientAddress.address)
+    logger('client %s connected from %s', this.clientId, this.clientAddress.address)
   }
 
   public getClientId(): string {
@@ -90,12 +90,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public onUnsubscribed(subscriptionId: string): void {
-    debug('client %s unsubscribed %s', this.clientId, subscriptionId)
+    logger('client %s unsubscribed %s', this.clientId, subscriptionId)
     this.subscriptions.delete(subscriptionId)
   }
 
   public onSubscribed(subscriptionId: string, filters: SubscriptionFilter[]): void {
-    debug('client %s subscribed %s to %o', this.clientId, subscriptionId, filters)
+    logger('client %s subscribed %s to %o', this.clientId, subscriptionId, filters)
     this.subscriptions.set(subscriptionId, filters)
   }
 
@@ -112,7 +112,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   public onSendEvent(event: Event): void {
     this.subscriptions.forEach((filters, subscriptionId) => {
       if (filters.map(isEventMatchingFilter).some((isMatch) => isMatch(event))) {
-        debug('sending event to client %s: %o', this.clientId, event)
+        logger('sending event to client %s: %o', this.clientId, event)
         this.sendMessage(createOutgoingEventMessage(subscriptionId, event))
       }
     })
@@ -127,7 +127,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public onHeartbeat(): void {
     if (!this.alive && !this.subscriptions.size) {
-      debug.error(`web-socket-adapter: pong timeout for client ${this.clientId} (${this.getClientAddress()})`)
+      logger.error(`web-socket-adapter: pong timeout for client ${this.clientId} (${this.getClientAddress()})`)
       this.client.close()
       return
     }
@@ -159,7 +159,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
       messageHandler = this.createMessageHandler([message, this]) as IMessageHandler & IAbortable
       if (!messageHandler) {
-        debug.error('web-socket-adapter: unhandled message: no handler found:', message)
+        logger.error('web-socket-adapter: unhandled message: no handler found:', message)
         return
       }
 
@@ -175,19 +175,19 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          debug.error(`web-socket-adapter: abort from client ${this.clientId} (${this.getClientAddress()})`)
+          logger.error(`web-socket-adapter: abort from client ${this.clientId} (${this.getClientAddress()})`)
         } else if (error.name === 'SyntaxError' || error instanceof ZodError) {
-          debug('invalid message client %s (%s): %s', this.clientId, this.getClientAddress(), error.message)
+          logger('invalid message client %s (%s): %s', this.clientId, this.getClientAddress(), error.message)
           const notice =
             error instanceof ZodError
               ? `invalid: ${error.issues[0]?.message ?? error.message}`
               : `invalid: ${error.message}`
           this.sendMessage(createNoticeMessage(notice))
         } else {
-          debug.error('web-socket-adapter: unable to handle message:', error)
+          logger.error('web-socket-adapter: unable to handle message:', error)
         }
       } else {
-        debug.error('web-socket-adapter: unable to handle message:', error)
+        logger.error('web-socket-adapter: unable to handle message:', error)
       }
     } finally {
       if (abortable && messageHandler) {
@@ -218,7 +218,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       const isRateLimited = await hit(period, rate)
 
       if (isRateLimited) {
-        debug('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
+        logger('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
 
         limited = true
       }
@@ -248,7 +248,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         try {
           handler.abort()
         } catch (error) {
-          debug.error('Unable to abort message handler', error)
+          logger.error('Unable to abort message handler', error)
         }
       }
     }

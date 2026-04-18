@@ -7,12 +7,12 @@ import { IPaymentsProcessor } from '../../@types/clients'
 import { NodelessPaymentsProcessor } from '../../payments-processors/nodeless-payments-processor'
 import { Settings } from '../../@types/settings'
 
-const debug = createLogger('nodeless-payments-processor-factory')
+const logger = createLogger('nodeless-payments-processor-factory')
 
 const getNodelessAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
   if (!process.env.NODELESS_API_KEY) {
     const error = new Error('NODELESS_API_KEY must be set.')
-    debug.error('Unable to get Nodeless config. %o', error)
+    logger.error('Unable to get Nodeless config. %o', error)
     throw error
   }
 

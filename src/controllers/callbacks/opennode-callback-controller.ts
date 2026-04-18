@@ -12,20 +12,20 @@ import { IPaymentsService } from '../../@types/services'
 import { opennodeWebhookCallbackBodySchema } from '../../schemas/opennode-callback-schema'
 import { validateSchema } from '../../utils/validation'
 
-const debug = createLogger('opennode-callback-controller')
+const logger = createLogger('opennode-callback-controller')
 
 export class OpenNodeCallbackController implements IController {
   public constructor(private readonly paymentsService: IPaymentsService) {}
 
   public async handleRequest(request: Request, response: Response) {
-    debug('request headers: %o', request.headers)
+    logger('request headers: %o', request.headers)
 
     const settings = createSettings()
     const remoteAddress = getRemoteAddress(request, settings)
     const paymentProcessor = settings.payments?.processor
 
     if (paymentProcessor !== 'opennode') {
-      debug('denied request from %s to /callbacks/opennode which is not the current payment processor', remoteAddress)
+      logger('denied request from %s to /callbacks/opennode which is not the current payment processor', remoteAddress)
       response
         .status(403)
         .send('Forbidden')
@@ -34,13 +34,13 @@ export class OpenNodeCallbackController implements IController {
 
     const bodyValidation = validateSchema(opennodeWebhookCallbackBodySchema)(request.body)
     if (bodyValidation.error) {
-      debug('opennode callback request rejected: invalid body %o', bodyValidation.error)
+      logger('opennode callback request rejected: invalid body %o', bodyValidation.error)
       response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Malformed body')
       return
     }
 
     const body = bodyValidation.value
-    debug(
+    logger(
       'request body metadata: hasId=%s hasHashedOrder=%s status=%s',
       typeof body.id === 'string',
       typeof body.hashed_order === 'string',
@@ -49,7 +49,7 @@ export class OpenNodeCallbackController implements IController {
 
     const openNodeApiKey = process.env.OPENNODE_API_KEY
     if (!openNodeApiKey) {
-      debug('OPENNODE_API_KEY is not configured; unable to verify OpenNode callback from %s', remoteAddress)
+      logger('OPENNODE_API_KEY is not configured; unable to verify OpenNode callback from %s', remoteAddress)
       response
         .status(500)
         .setHeader('content-type', 'text/plain; charset=utf8')
@@ -65,7 +65,7 @@ export class OpenNodeCallbackController implements IController {
       actualHex.length !== expectedHexLength
       || !/^[0-9a-f]+$/i.test(actualHex)
     ) {
-      debug('invalid hashed_order format from %s to /callbacks/opennode', remoteAddress)
+      logger('invalid hashed_order format from %s to /callbacks/opennode', remoteAddress)
       response
         .status(400)
         .setHeader('content-type', 'text/plain; charset=utf8')
@@ -78,7 +78,7 @@ export class OpenNodeCallbackController implements IController {
     if (
       !timingSafeEqual(expectedBuf, actualBuf)
     ) {
-      debug('unauthorized request from %s to /callbacks/opennode: hashed_order mismatch', remoteAddress)
+      logger('unauthorized request from %s to /callbacks/opennode: hashed_order mismatch', remoteAddress)
       response
         .status(403)
         .send('Forbidden')
@@ -99,13 +99,13 @@ export class OpenNodeCallbackController implements IController {
       status: statusMap[body.status],
     }
 
-    debug('invoice', invoice)
+    logger('invoice', invoice)
 
     let updatedInvoice: Invoice
     try {
       updatedInvoice = await this.paymentsService.updateInvoiceStatus(invoice)
     } catch (error) {
-      debug.error(`Unable to persist invoice ${invoice.id}`, error)
+      logger.error(`Unable to persist invoice ${invoice.id}`, error)
 
       throw error
     }
@@ -133,7 +133,7 @@ export class OpenNodeCallbackController implements IController {
       })
       await this.paymentsService.sendInvoiceUpdateNotification(updatedInvoice)
     } catch (error) {
-      debug.error(`Unable to confirm invoice ${invoice.id}`, error)
+      logger.error(`Unable to confirm invoice ${invoice.id}`, error)
 
       throw error
     }

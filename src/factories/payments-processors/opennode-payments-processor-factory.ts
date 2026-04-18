@@ -7,12 +7,12 @@ import { IPaymentsProcessor } from '../../@types/clients'
 import { OpenNodePaymentsProcessor } from '../../payments-processors/opennode-payments-processor'
 import { Settings } from '../../@types/settings'
 
-const debug = createLogger('opennode-payments-processor-factory')
+const logger = createLogger('opennode-payments-processor-factory')
 
 const getOpenNodeAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
   if (!process.env.OPENNODE_API_KEY) {
     const error = new Error('OPENNODE_API_KEY must be set.')
-    debug.error('Unable to get OpenNode config. %o', error)
+    logger.error('Unable to get OpenNode config. %o', error)
     throw error
   }
 
@@ -30,7 +30,7 @@ export const createOpenNodePaymentsProcessor = (settings: Settings): IPaymentsPr
   const callbackBaseURL = path(['paymentsProcessors', 'opennode', 'callbackBaseURL'], settings) as string | undefined
   if (typeof callbackBaseURL === 'undefined' || callbackBaseURL.indexOf('nostream.your-domain.com') >= 0) {
     const error = new Error('Setting paymentsProcessor.opennode.callbackBaseURL is not configured.')
-    debug.error('Unable to create payments processor. %o', error)
+    logger.error('Unable to create payments processor. %o', error)
 
     throw error
   }

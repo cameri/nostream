@@ -19,7 +19,7 @@ const UPDATE_INVOICE_INTERVAL = 60000
 const NIP05_REVERIFICATION_BATCH_SIZE = 50
 const CLEAR_OLD_EVENTS_TIMEOUT_MS = 5000
 
-const debug = createLogger('maintenance-worker')
+const logger = createLogger('maintenance-worker')
 
 /**
  * Merge a re-verification outcome onto an existing verification row.
@@ -94,14 +94,14 @@ export class MaintenanceWorker implements IRunnable {
         }),
       ])
     } catch (error) {
-      debug('unable to clear old events: %o', error)
+      logger('unable to clear old events: %o', error)
     }
   }
 
   public run(): void {
     this.interval = setInterval(async () => {
       if (this.isRunning) {
-        debug('skipping scheduled maintenance run because previous run is still in progress')
+        logger('skipping scheduled maintenance run because previous run is still in progress')
         return
       }
 
@@ -128,17 +128,17 @@ export class MaintenanceWorker implements IRunnable {
     }
 
     const invoices = await this.paymentsService.getPendingInvoices()
-    debug('found %d pending invoices', invoices.length)
+    logger('found %d pending invoices', invoices.length)
     const delay = () => delayMs(100 + Math.floor(Math.random() * 10))
 
     let successful = 0
 
     for (const invoice of invoices) {
       try {
-        debug('getting invoice %s from payment processor: %o', invoice.id, invoice)
+        logger('getting invoice %s from payment processor: %o', invoice.id, invoice)
         const updatedInvoice = await this.paymentsService.getInvoiceFromPaymentsProcessor(invoice)
         await delay()
-        debug('updating invoice status %s: %o', updatedInvoice.id, updatedInvoice)
+        logger('updating invoice status %s: %o', updatedInvoice.id, updatedInvoice)
 
         if (typeof updatedInvoice.id !== 'string' || typeof updatedInvoice.status !== 'string') {
           continue
@@ -152,7 +152,7 @@ export class MaintenanceWorker implements IRunnable {
           updatedInvoice.status == InvoiceStatus.COMPLETED &&
           updatedInvoice.confirmedAt
         ) {
-          debug('confirming invoice %s & notifying %s', invoice.id, invoice.pubkey)
+          logger('confirming invoice %s & notifying %s', invoice.id, invoice.pubkey)
 
           const update = pipe(
             mergeDeepLeft(updatedInvoice),
@@ -168,10 +168,10 @@ export class MaintenanceWorker implements IRunnable {
         }
         successful++
       } catch (error) {
-        debug.error('Unable to update invoice from payment processor. Reason:', error)
+        logger.error('Unable to update invoice from payment processor. Reason:', error)
       }
 
-      debug('updated %d of %d invoices successfully', successful, invoices.length)
+      logger('updated %d of %d invoices successfully', successful, invoices.length)
     }
 
     await clearOldEventsPromise
@@ -197,7 +197,7 @@ export class MaintenanceWorker implements IRunnable {
         return
       }
 
-      debug('found %d NIP-05 verifications to re-check', pendingVerifications.length)
+      logger('found %d NIP-05 verifications to re-check', pendingVerifications.length)
 
       for (const verification of pendingVerifications) {
         try {
@@ -206,28 +206,28 @@ export class MaintenanceWorker implements IRunnable {
           await this.nip05VerificationRepository.upsert(updated)
           await delayMs(200 + Math.floor(Math.random() * 100))
         } catch (error) {
-          debug('failed to re-verify NIP-05 for %s: %o', verification.pubkey, error)
+          logger('failed to re-verify NIP-05 for %s: %o', verification.pubkey, error)
         }
       }
     } catch (error) {
-      debug('NIP-05 re-verification batch failed: %o', error)
+      logger('NIP-05 re-verification batch failed: %o', error)
     }
   }
 
   private onError(error: Error) {
-    debug('error: %o', error)
+    logger('error: %o', error)
     throw error
   }
 
   private onExit() {
-    debug('exiting')
+    logger('exiting')
     this.close(() => {
       this.process.exit(0)
     })
   }
 
   public close(callback?: () => void) {
-    debug('closing')
+    logger('closing')
     clearInterval(this.interval)
     if (typeof callback === 'function') {
       callback()

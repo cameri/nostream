@@ -11,7 +11,7 @@ import { IInvoiceRepository } from '../../@types/repositories'
 import { IPaymentsService } from '../../@types/services'
 import { validateSchema } from '../../utils/validation'
 
-const debug = createLogger('lnbits-callback-controller')
+const logger = createLogger('lnbits-callback-controller')
 
 export class LNbitsCallbackController implements IController {
   public constructor(
@@ -20,22 +20,22 @@ export class LNbitsCallbackController implements IController {
   ) {}
 
   public async handleRequest(request: Request, response: Response) {
-    debug('request headers: %o', request.headers)
-    debug('request body: %o', request.body)
+    logger('request headers: %o', request.headers)
+    logger('request body: %o', request.body)
 
     const settings = createSettings()
     const remoteAddress = getRemoteAddress(request, settings)
     const paymentProcessor = settings.payments?.processor ?? 'null'
 
     if (paymentProcessor !== 'lnbits') {
-      debug('denied request from %s to /callbacks/lnbits which is not the current payment processor', remoteAddress)
+      logger('denied request from %s to /callbacks/lnbits which is not the current payment processor', remoteAddress)
       response.status(403).send('Forbidden')
       return
     }
 
     const queryValidation = validateSchema(lnbitsCallbackQuerySchema)(request.query)
     if (queryValidation.error) {
-      debug('unauthorized request from %s to /callbacks/lnbits: invalid query %o', remoteAddress, queryValidation.error)
+      logger('unauthorized request from %s to /callbacks/lnbits: invalid query %o', remoteAddress, queryValidation.error)
       response.status(403).send('Forbidden')
       return
     }
@@ -52,7 +52,7 @@ export class LNbitsCallbackController implements IController {
       !hasValidExpiry ||
       expiry <= Date.now()
     ) {
-      debug('unauthorized request from %s to /callbacks/lnbits: hmac signature mismatch or expired', remoteAddress)
+      logger('unauthorized request from %s to /callbacks/lnbits: hmac signature mismatch or expired', remoteAddress)
       response.status(403).send('Forbidden')
       return
     }
@@ -75,7 +75,7 @@ export class LNbitsCallbackController implements IController {
     try {
       await this.paymentsService.updateInvoice(invoice)
     } catch (error) {
-      debug.error(`Unable to persist invoice ${invoice.id}`, error)
+      logger.error(`Unable to persist invoice ${invoice.id}`, error)
 
       throw error
     }
@@ -97,7 +97,7 @@ export class LNbitsCallbackController implements IController {
       await this.paymentsService.confirmInvoice(invoice as Invoice)
       await this.paymentsService.sendInvoiceUpdateNotification(invoice as Invoice)
     } catch (error) {
-      debug.error(`Unable to confirm invoice ${invoice.id}`, error)
+      logger.error(`Unable to confirm invoice ${invoice.id}`, error)
 
       throw error
     }

@@ -8,10 +8,10 @@ import { createZebedeePaymentsProcessor } from './payments-processors/zebedee-pa
 import { IPaymentsProcessor } from '../@types/clients'
 import { NullPaymentsProcessor } from '../payments-processors/null-payments-processor'
 
-const debug = createLogger('create-payments-processor')
+const logger = createLogger('create-payments-processor')
 
 export const createPaymentsProcessor = (): IPaymentsProcessor => {
-  debug('create payments processor')
+  logger('create payments processor')
 
   const settings = createSettings()
   if (!settings.payments?.enabled) {

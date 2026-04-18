@@ -7,12 +7,12 @@ import { IPaymentsProcessor } from '../../@types/clients'
 import { Settings } from '../../@types/settings'
 import { ZebedeePaymentsProcessor } from '../../payments-processors/zebedee-payments-processor'
 
-const debug = createLogger('zebedee-payments-processor-factory')
+const logger = createLogger('zebedee-payments-processor-factory')
 
 const getZebedeeAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
   if (!process.env.ZEBEDEE_API_KEY) {
     const error = new Error('ZEBEDEE_API_KEY must be set.')
-    debug.error('Unable to get Zebedee config. %o', error)
+    logger.error('Unable to get Zebedee config. %o', error)
     throw error
   }
 
@@ -30,7 +30,7 @@ export const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsPro
   const callbackBaseURL = path(['paymentsProcessors', 'zebedee', 'callbackBaseURL'], settings) as string | undefined
   if (typeof callbackBaseURL === 'undefined' || callbackBaseURL.indexOf('nostream.your-domain.com') >= 0) {
     const error = new Error('Setting paymentsProcessor.zebedee.callbackBaseURL is not configured.')
-    debug.error('Unable to create payments processor. %o', error)
+    logger.error('Unable to create payments processor. %o', error)
 
     throw error
   }
@@ -40,7 +40,7 @@ export const createZebedeePaymentsProcessor = (settings: Settings): IPaymentsPro
     !settings.paymentsProcessors?.zebedee?.ipWhitelist?.length
   ) {
     const error = new Error('Setting paymentsProcessor.zebedee.ipWhitelist is empty.')
-    debug.error('Unable to create payments processor. %o', error)
+    logger.error('Unable to create payments processor. %o', error)
 
     throw error
   }

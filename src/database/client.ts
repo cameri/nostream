@@ -81,10 +81,10 @@ const getReadReplicaConfig = (): Knex.Config => {
 let writeClient: Knex
 
 export const getMasterDbClient = () => {
-  const debug = createLogger('database-client:get-db-client')
+  const logger = createLogger('database-client:get-db-client')
   if (!writeClient) {
     const config = getMasterConfig()
-    debug('config: %o', config)
+    logger('config: %o', config)
     writeClient = knex(config)
   }
 
@@ -98,10 +98,10 @@ export const getReadReplicaDbClient = () => {
     return getMasterDbClient()
   }
 
-  const debug = createLogger('database-client:get-read-replica-db-client')
+  const logger = createLogger('database-client:get-read-replica-db-client')
   if (!readClient) {
     const config = getReadReplicaConfig()
-    debug('config: %o', config)
+    logger('config: %o', config)
     readClient = knex(config)
   }
 

@@ -5,7 +5,7 @@ import { fromDBUser, toBuffer } from '../utils/transform'
 import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { createLogger } from '../factories/logger-factory'
 
-const debug = createLogger('user-repository')
+const logger = createLogger('user-repository')
 
 export class UserRepository implements IUserRepository {
   public constructor(
@@ -14,7 +14,7 @@ export class UserRepository implements IUserRepository {
   ) {}
 
   public async findByPubkey(pubkey: Pubkey, client: DatabaseClient = this.dbClient): Promise<User | undefined> {
-    debug('find by pubkey: %s', pubkey)
+    logger('find by pubkey: %s', pubkey)
     const [dbuser] = await client<DBUser>('users').where('pubkey', toBuffer(pubkey)).select()
 
     if (!dbuser) {
@@ -25,7 +25,7 @@ export class UserRepository implements IUserRepository {
   }
 
   public async upsert(user: Partial<User>, client: DatabaseClient = this.dbClient): Promise<number> {
-    debug('upsert: %o', user)
+    logger('upsert: %o', user)
 
     const date = new Date()
 
@@ -73,7 +73,7 @@ export class UserRepository implements IUserRepository {
   }
 
   private upsertVanishState(pubkey: Pubkey, isVanished: boolean, client: DatabaseClient): Promise<number> {
-    debug('upsert vanish state for %s: %o', pubkey, isVanished)
+    logger('upsert vanish state for %s: %o', pubkey, isVanished)
     const date = new Date()
 
     const query = client<DBUser>('users')
@@ -102,7 +102,7 @@ export class UserRepository implements IUserRepository {
   }
 
   public async getBalanceByPubkey(pubkey: Pubkey, client: DatabaseClient = this.dbClient): Promise<bigint> {
-    debug('get balance for pubkey: %s', pubkey)
+    logger('get balance for pubkey: %s', pubkey)
 
     const [user] = await client<DBUser>('users').select('balance').where('pubkey', toBuffer(pubkey)).limit(1)
 
@@ -114,12 +114,12 @@ export class UserRepository implements IUserRepository {
   }
 
   public async admitUser(pubkey: Pubkey, admittedAt: Date, client: DatabaseClient = this.dbClient): Promise<void> {
-    debug('admit user: %s at %s', pubkey, admittedAt)
+    logger('admit user: %s at %s', pubkey, admittedAt)
 
     try {
       await client.raw('select admit_user(?, ?)', [toBuffer(pubkey), admittedAt.toISOString()])
     } catch (error) {
-      console.error('Unable to admit user. Reason:', error.message)
+      logger.error('Unable to admit user. Reason:', error)
 
       throw error
     }

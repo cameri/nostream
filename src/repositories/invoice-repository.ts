@@ -7,7 +7,7 @@ import { DatabaseClient } from '../@types/base'
 import { IInvoiceRepository } from '../@types/repositories'
 import { randomUUID } from 'crypto'
 
-const debug = createLogger('invoice-repository')
+const logger = createLogger('invoice-repository')
 
 export class InvoiceRepository implements IInvoiceRepository {
   public constructor(private readonly dbClient: DatabaseClient) {}
@@ -18,12 +18,12 @@ export class InvoiceRepository implements IInvoiceRepository {
     confirmedAt: Date,
     client: DatabaseClient = this.dbClient,
   ): Promise<void> {
-    debug('confirming invoice %s at %s: %s', invoiceId, confirmedAt, amountPaid)
+    logger('confirming invoice %s at %s: %s', invoiceId, confirmedAt, amountPaid)
 
     try {
       await client.raw('select confirm_invoice(?, ?, ?)', [invoiceId, amountPaid.toString(), confirmedAt.toISOString()])
     } catch (error) {
-      debug.error('Unable to confirm invoice. Reason:', error.message)
+      logger.error('Unable to confirm invoice. Reason:', error.message)
 
       throw error
     }
@@ -50,7 +50,7 @@ export class InvoiceRepository implements IInvoiceRepository {
   }
 
   public updateStatus(invoice: Invoice, client: DatabaseClient = this.dbClient): Promise<Invoice | undefined> {
-    debug('updating invoice status: %o', invoice)
+    logger('updating invoice status: %o', invoice)
 
     const query = client<DBInvoice>('invoices')
       .update({
@@ -72,7 +72,7 @@ export class InvoiceRepository implements IInvoiceRepository {
   }
 
   public upsert(invoice: Invoice, client: DatabaseClient = this.dbClient): Promise<number> {
-    debug('upserting invoice: %o', invoice)
+    logger('upserting invoice: %o', invoice)
 
     const row = applySpec<DBInvoice>({
       id: ifElse(propSatisfies(is(String), 'id'), prop('id'), always(randomUUID())),
@@ -90,7 +90,7 @@ export class InvoiceRepository implements IInvoiceRepository {
       verify_url: prop('verifyURL'),
     })(invoice)
 
-    debug('row: %o', row)
+    logger('row: %o', row)
 
     const query = client<DBInvoice>('invoices')
       .insert(row)
