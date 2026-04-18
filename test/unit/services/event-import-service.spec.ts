@@ -2,6 +2,7 @@ import { join } from 'path'
 
 import fs from 'fs'
 import os from 'os'
+import { Readable } from 'stream'
 
 import { EventImportLineError, EventImportService, EventImportStats } from '../../../src/services/event-import-service'
 import { Event } from '../../../src/@types/event'
@@ -78,6 +79,26 @@ describe('EventImportService', () => {
     const finalProgress = progressUpdates[progressUpdates.length - 1]
 
     expect(finalProgress).to.deep.equal(stats)
+  })
+
+  it('imports valid events from a readable stream', async () => {
+    const [event] = getEvents()
+
+    const persistBatch = async (events: Event[]): Promise<number> => {
+      return events.length
+    }
+
+    const importer = new EventImportService(persistBatch)
+    const input = Readable.from([`${JSON.stringify(event)}\n`])
+
+    const stats = await importer.importFromReadable(input)
+
+    expect(stats).to.deep.equal({
+      errors: 0,
+      inserted: 1,
+      processed: 1,
+      skipped: 0,
+    })
   })
 
   it('counts malformed and invalid events as errors and keeps importing', async () => {
