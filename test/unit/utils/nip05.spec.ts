@@ -2,8 +2,10 @@ import axios from 'axios'
 import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
 import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
 
 chai.use(chaiAsPromised)
+chai.use(sinonChai)
 
 import {
   extractNip05FromEvent,
