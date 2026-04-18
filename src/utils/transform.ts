@@ -48,16 +48,25 @@ function bech32PrefixChk(prefix: string): number {
 function bech32Convert(data: number[], inBits: number, outBits: number, pad: boolean): number[] {
   let value = 0, bits = 0
   const maxV = (1 << outBits) - 1
+  const maxAcc = (1 << (inBits + outBits - 1)) - 1
+  const maxInput = (1 << inBits) - 1
   const result: number[] = []
   for (const byte of data) {
-    value = (value << inBits) | byte
+    if (!Number.isInteger(byte) || byte < 0 || byte > maxInput) {
+      throw new Error(`Invalid value for ${inBits}-bit input: ${byte}`)
+    }
+    value = ((value << inBits) | byte) & maxAcc
     bits += inBits
     while (bits >= outBits) {
       bits -= outBits
       result.push((value >> bits) & maxV)
     }
   }
-  if (pad && bits > 0) { result.push((value << (outBits - bits)) & maxV) }
+  if (pad) {
+    if (bits > 0) { result.push((value << (outBits - bits)) & maxV) }
+  } else if (bits >= inBits || ((value << (outBits - bits)) & maxV) !== 0) {
+    throw new Error('Invalid bech32 padding')
+  }
   return result
 }
 
@@ -135,8 +144,14 @@ export const fromDBUser = applySpec<User>({
 })
 
 export const fromBech32 = (input: string) => {
+  const normalizedInput = input.toLowerCase()
+
+  if (input !== normalizedInput && input !== input.toUpperCase()) {
+    throw new Error('Bech32 mixed-case input is invalid')
+  }
+
   const { prefix, words } = bech32Decode(input)
-  if (!input.startsWith(prefix)) {
+  if (!normalizedInput.startsWith(prefix)) {
     throw new Error(`Bech32 invalid prefix: ${prefix}`)
   }
 

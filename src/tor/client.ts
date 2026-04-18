@@ -46,23 +46,89 @@ export class TorClient {
     })
   }
 
+  private isCompleteTorReply(buffer: string): boolean {
+    if (!buffer.endsWith('\r\n')) {
+      return false
+    }
+
+    const lines = buffer.split('\r\n')
+    if (lines[lines.length - 1] === '') {
+      lines.pop()
+    }
+
+    if (lines.length === 0) {
+      return false
+    }
+
+    const firstLine = lines[0].match(/^(\d{3})([\s\-+])/)
+    if (!firstLine) {
+      return false
+    }
+
+    const statusCode = firstLine[1]
+    let inDataBlock = false
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+
+      if (inDataBlock) {
+        if (line === '.') {
+          inDataBlock = false
+        }
+        continue
+      }
+
+      const match = line.match(/^(\d{3})([\s\-+])/)
+      if (!match || match[1] !== statusCode) {
+        return false
+      }
+
+      if (match[2] === ' ') {
+        return i === lines.length - 1
+      }
+
+      if (match[2] === '+') {
+        inDataBlock = true
+      }
+    }
+
+    return false
+  }
+
   private sendCommand(command: string): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!this.socket) {
         reject(new Error('Not connected to Tor control port'))
         return
       }
+
+      const socket = this.socket
       let buf = ''
+
+      const cleanup = () => {
+        socket.off('data', onData)
+        socket.off('error', onError)
+      }
+
+      const onError = (error: Error) => {
+        cleanup()
+        reject(error)
+      }
+
       const onData = (data: Buffer) => {
         buf += data.toString()
-        if (buf.endsWith('\r\n')) {
-          this.socket!.off('data', onData)
-          if (/^250/.test(buf)) { resolve(buf) }
-          else { reject(new Error(buf.trim())) }
+        if (!this.isCompleteTorReply(buf)) {
+          return
         }
+
+        cleanup()
+        if (/^250/.test(buf)) { resolve(buf) }
+        else { reject(new Error(buf.trim())) }
       }
-      this.socket.on('data', onData)
-      this.socket.write(`${command}\r\n`)
+
+      socket.on('data', onData)
+      socket.on('error', onError)
+      socket.write(`${command}\r\n`)
     })
   }
 

@@ -79,7 +79,7 @@ describe('onion', () => {
     let client: TorClient | undefined = undefined
     try {
       client = await getTorClient()
-      closeTorClient()
+      await closeTorClient()
     } catch (_error) {
     }
     expect(client).be.undefined
@@ -91,7 +91,7 @@ describe('onion', () => {
     let client: TorClient | undefined = undefined
     try {
       client = await getTorClient()
-      closeTorClient()
+      await closeTorClient()
     } catch (_error) {
     }
     expect(client).be.not.undefined
@@ -105,7 +105,7 @@ describe('onion', () => {
     let domain = undefined
     try {
       domain = await addOnion(80)
-      closeTorClient()
+      await closeTorClient()
     } catch (_error) {
       void _error
     }
@@ -121,7 +121,7 @@ describe('onion', () => {
     let domain = undefined
     try {
       domain = await addOnion(80, '}')
-      closeTorClient()
+      await closeTorClient()
     } catch (_error) {
       void _error
     }
@@ -136,7 +136,7 @@ describe('onion', () => {
     let domain = undefined
     try {
       domain = await addOnion(80)
-      closeTorClient()
+      await closeTorClient()
     } catch (_error) {
       void _error
     }
@@ -152,7 +152,7 @@ describe('onion', () => {
     let domain = undefined
     try {
       domain = await addOnion(80)
-      closeTorClient()
+      await closeTorClient()
     } catch (_error) {
       void _error
     }
@@ -168,7 +168,7 @@ describe('onion', () => {
     let domain = undefined
     try {
       domain = await addOnion(80)
-      closeTorClient()
+      await closeTorClient()
     } catch (_error) {
       void _error
     }
