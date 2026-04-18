@@ -122,9 +122,9 @@ export class EventRepository implements IEventRepository {
       }
 
       if (typeof currentFilter.limit === 'number') {
-        builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC')
+        builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
       } else {
-        builder.limit(500).orderBy('event_created_at', 'asc')
+        builder.limit(500).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
       }
 
       const andWhereRaw = invoker(1, 'andWhereRaw')

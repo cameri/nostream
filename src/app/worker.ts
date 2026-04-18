@@ -1,6 +1,7 @@
 import { IRunnable } from '../@types/base'
 import { IWebSocketServerAdapter } from '../@types/adapters'
 
+import { closeCacheClient } from '../cache/client'
 import { createLogger } from '../factories/logger-factory'
 import { FSWatcher } from 'fs'
 import { SettingsStatic } from '../utils/settings'
@@ -57,7 +58,10 @@ export class AppWorker implements IRunnable {
         watcher.close()
       }
     }
-    this.adapter.close(callback)
+    this.adapter.close(async () => {
+      await closeCacheClient()
+      callback?.()
+    })
     debug('closed')
   }
 }
