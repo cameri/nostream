@@ -647,6 +647,18 @@ npm run export -- backup-2024-01-01.jsonl # custom filename
 ```
 
 The script reads the same `DB_*` environment variables used by the relay (see [CONFIGURATION.md](CONFIGURATION.md)).
+
+## Benchmark Database Queries
+
+Run the read-only query benchmark to record the planner's choices and timings for the relay's hot-path queries (REQ subscriptions, vanish checks, purge scans, pending-invoice polls):
+
+```
+npm run db:benchmark
+npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+```
+
+The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements against your configured database — it never writes. Use it to confirm the `events_active_pubkey_kind_created_at_idx`, `events_deleted_at_partial_idx`, and `invoices_pending_created_at_idx` indexes are being picked up. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](CONFIGURATION.md).
+
 ## Relay Maintenance
 
 Use `clean-db` to wipe or prune `events` table data. This also removes
