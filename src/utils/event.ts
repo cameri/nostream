@@ -2,7 +2,6 @@ import * as secp256k1 from '@noble/secp256k1'
 import { ALL_RELAYS, EventKinds, EventTags } from '../constants/base'
 import { applySpec, pipe, prop } from 'ramda'
 import { CanonicalEvent, DBEvent, Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
-import { createCipheriv, getRandomValues } from 'crypto'
 import { EventId, Pubkey, Tag } from '../@types/base'
 import cluster from 'cluster'
 import { deriveFromSecret } from './secret'
@@ -155,33 +154,6 @@ export const signEvent = (privkey: string | Buffer | undefined) => async (event:
   return { ...event, sig: Buffer.from(sig).toString('hex') }
 }
 
-export const encryptKind4Event = (
-  senderPrivkey: string | Buffer,
-  receiverPubkey: Pubkey,
-) => (event: UnsignedEvent): UnsignedEvent => {
-  const key = secp256k1
-    .getSharedSecret(senderPrivkey, `02${receiverPubkey}`, true)
-    .subarray(1)
-
-  const iv = getRandomValues(new Uint8Array(16))
-
-  // deepcode ignore InsecureCipherNoIntegrity: NIP-04 Encrypted Direct Message uses aes-256-cbc
-  const cipher = createCipheriv(
-    'aes-256-cbc',
-    Buffer.from(key),
-    iv,
-  )
-
-  let content = cipher.update(event.content, 'utf8', 'base64')
-  content += cipher.final('base64')
-  content += '?iv=' + Buffer.from(iv.buffer).toString('base64')
-
-  return {
-    ...event,
-    content,
-  }
-}
-
 export const broadcastEvent = async (event: Event): Promise<Event> => {
   return new Promise((resolve, reject) => {
     if (!cluster.isWorker || typeof process.send === 'undefined') {
@@ -274,4 +246,22 @@ export const getEventProofOfWork = (eventId: EventId): number => {
 
 export const getPubkeyProofOfWork = (pubkey: Pubkey): number => {
   return getLeadingZeroBits(Buffer.from(pubkey, 'hex'))
+}
+
+// NIP-17: Private Direct Messages helpers
+
+export const isGiftWrapEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.GIFT_WRAP
+}
+
+export const isSealEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.SEAL
+}
+
+export const isDirectMessageEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.DIRECT_MESSAGE
+}
+
+export const isFileMessageEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.FILE_MESSAGE
 }

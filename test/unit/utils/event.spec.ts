@@ -3,14 +3,18 @@ import { CanonicalEvent, Event } from '../../../src/@types/event'
 import {
   getEventExpiration,
   isDeleteEvent,
+  isDirectMessageEvent,
   isEphemeralEvent,
   isEventIdValid,
   isEventMatchingFilter,
   isEventSignatureValid,
   isExpiredEvent,
+  isFileMessageEvent,
+  isGiftWrapEvent,
   isParameterizedReplaceableEvent,
   isReplaceableEvent,
   isRequestToVanishEvent,
+  isSealEvent,
   serializeEvent,
 } from '../../../src/utils/event'
 import { expect } from 'chai'
@@ -341,6 +345,60 @@ describe('NIP-16', () => {
 
     it('returns false if event is not replaceable', () => {
       expect(isEphemeralEvent({ kind: 30000 } as any)).to.be.false
+    })
+  })
+})
+
+describe('NIP-17', () => {
+  describe('isGiftWrapEvent', () => {
+    it('returns true for kind 1059', () => {
+      expect(isGiftWrapEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.true
+    })
+
+    it('returns false for any other kind', () => {
+      expect(isGiftWrapEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isGiftWrapEvent({ kind: EventKinds.SEAL } as any)).to.be.false
+      expect(isGiftWrapEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.false
+    })
+  })
+
+  describe('isSealEvent', () => {
+    it('returns true for kind 13', () => {
+      expect(isSealEvent({ kind: EventKinds.SEAL } as any)).to.be.true
+    })
+
+    it('returns false for any other kind', () => {
+      expect(isSealEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isSealEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
+      expect(isSealEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.false
+    })
+  })
+
+  describe('isDirectMessageEvent', () => {
+    it('returns true for kind 14', () => {
+      expect(isDirectMessageEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.true
+    })
+
+    it('returns false for kind 4 (legacy NIP-04 DM)', () => {
+      expect(isDirectMessageEvent({ kind: EventKinds.ENCRYPTED_DIRECT_MESSAGE } as any)).to.be.false
+    })
+
+    it('returns false for any other kind', () => {
+      expect(isDirectMessageEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isDirectMessageEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
+      expect(isDirectMessageEvent({ kind: EventKinds.SEAL } as any)).to.be.false
+    })
+  })
+
+  describe('isFileMessageEvent', () => {
+    it('returns true for kind 15', () => {
+      expect(isFileMessageEvent({ kind: EventKinds.FILE_MESSAGE } as any)).to.be.true
+    })
+
+    it('returns false for any other kind', () => {
+      expect(isFileMessageEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isFileMessageEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.false
+      expect(isFileMessageEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
     })
   })
 })
