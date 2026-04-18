@@ -1,0 +1,28 @@
+# docker-compose.windows.yml
+#
+# Windows / WSL2 override for Nostream.
+#
+# On Windows (including WSL2), Docker bind-mounts to host paths can cause
+# PostgreSQL permission errors. This override replaces the bind-mount for
+# PostgreSQL data with a named Docker volume, which is managed entirely
+# by the Docker engine and avoids those issues.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.windows.yml up --build
+#
+# Or set COMPOSE_FILE in your .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.windows.yml
+#
+# WARNING: If you previously ran Nostream with the default docker-compose.yml
+# your data is in .nostr/data/ on the host. Before switching to this file,
+# migrate your data or it will not be accessible from the named volume.
+
+services:
+  nostream-db:
+    volumes:
+      - nostream-db-data:/var/lib/postgresql/data
+      - ${PWD}/.nostr/db-logs:/var/log/postgresql
+      - ${PWD}/postgresql.conf:/postgresql.conf
+
+volumes:
+  nostream-db-data:

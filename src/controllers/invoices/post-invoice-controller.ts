@@ -1,19 +1,23 @@
-import { FeeSchedule, Settings } from '../../@types/settings'
-import { fromBech32, toBech32 } from '../../utils/transform'
-import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
+import { path } from 'ramda'
+
 import { Request, Response } from 'express'
 
-import { createLogger } from '../../factories/logger-factory'
-import { getRemoteAddress } from '../../utils/http'
+import { FeeSchedule, Settings } from '../../@types/settings'
 import { IController } from '../../@types/controllers'
 import { Invoice } from '../../@types/invoice'
 import { IPaymentsService } from '../../@types/services'
 import { IRateLimiter } from '../../@types/utils'
 import { IUserRepository } from '../../@types/repositories'
-import { path } from 'ramda'
-import { readFileSync } from 'fs'
 
-let pageCache: string
+import { createLogger } from '../../factories/logger-factory'
+
+import { escapeHtml, safeJsonForScript } from '../../utils/html'
+import { fromBech32, toBech32 } from '../../utils/transform'
+import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
+import { getRemoteAddress } from '../../utils/http'
+import { getTemplate } from '../../utils/template-cache'
+
+
 
 const debug = createLogger('post-invoice-controller')
 
@@ -26,9 +30,7 @@ export class PostInvoiceController implements IController {
   ){}
 
   public async handleRequest(request: Request, response: Response): Promise<void> {
-    if (!pageCache) {
-      pageCache = readFileSync('./resources/invoices.html', 'utf8')
-    }
+
 
     debug('params: %o', request.params)
     debug('body: %o', request.body)
@@ -162,21 +164,26 @@ export class PostInvoiceController implements IController {
     const relayPrivkey = getRelayPrivateKey(relayUrl)
     const relayPubkey = getPublicKey(relayPrivkey)
 
-    const replacements = {
-      name: relayName,
-      reference: invoice.id,
-      relay_url: relayUrl,
-      pubkey,
-      relay_pubkey: relayPubkey,
-      expires_at: invoice.expiresAt?.toISOString() ?? '',
-      invoice: invoice.bolt11,
-      amount: amount / 1000n,
-      processor: currentSettings.payments.processor,
-    }
+    const expiresAt = invoice.expiresAt?.toISOString() ?? ''
 
-    const body = Object
-      .entries(replacements)
-      .reduce((body, [key, value]) => body.replaceAll(`{{${key}}}`, value.toString()), pageCache)
+    const pageContent = getTemplate('./resources/post-invoice.html')
+    const body = pageContent
+      // HTML text / attribute contexts — values must be HTML-escaped
+      .replaceAll('{{name}}', escapeHtml(relayName))
+      .replaceAll('{{relay_url_html}}', escapeHtml(relayUrl))
+      .replaceAll('{{invoice_html}}', escapeHtml(invoice.bolt11))
+      .replaceAll('{{pubkey_html}}', escapeHtml(pubkey))
+      .replaceAll('{{amount}}', (amount / 1000n).toString())
+      // JS contexts — safeJsonForScript serializes and escapes < to prevent </script> injection
+      .replaceAll('{{reference_json}}', safeJsonForScript(invoice.id))
+      .replaceAll('{{relay_url_json}}', safeJsonForScript(relayUrl))
+      .replaceAll('{{relay_pubkey_json}}', safeJsonForScript(relayPubkey))
+      .replaceAll('{{invoice_json}}', safeJsonForScript(invoice.bolt11))
+      .replaceAll('{{pubkey_json}}', safeJsonForScript(pubkey))
+      .replaceAll('{{expires_at_json}}', safeJsonForScript(expiresAt))
+      .replaceAll('{{processor_json}}', safeJsonForScript(currentSettings.payments.processor))
+      // nonce is crypto-random base64 — safe in both attribute and script contexts
+      .replaceAll('{{nonce}}', response.locals.nonce)
 
     response
       .status(200)

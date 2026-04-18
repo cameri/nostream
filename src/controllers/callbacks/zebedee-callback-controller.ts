@@ -7,6 +7,8 @@ import { fromZebedeeInvoice } from '../../utils/transform'
 import { getRemoteAddress } from '../../utils/http'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
+import { validateSchema } from '../../utils/validation'
+import { zebedeeCallbackBodySchema } from '../../schemas/zebedee-callback-schema'
 
 const debug = createLogger('zebedee-callback-controller')
 
@@ -15,13 +17,22 @@ export class ZebedeeCallbackController implements IController {
     private readonly paymentsService: IPaymentsService,
   ) {}
 
-  // TODO: Validate
   public async handleRequest(
     request: Request,
     response: Response,
   ) {
     debug('request headers: %o', request.headers)
     debug('request body: %O', request.body)
+
+    const bodyValidation = validateSchema(zebedeeCallbackBodySchema)(request.body)
+    if (bodyValidation.error) {
+      debug('zebedee callback request rejected: invalid body %o', bodyValidation.error)
+      response
+        .status(400)
+        .setHeader('content-type', 'text/plain; charset=utf8')
+        .send('Malformed body')
+      return
+    }
 
     const settings = createSettings()
 
