@@ -1,3 +1,4 @@
+import { IMaintenanceService, IPaymentsService } from '../@types/services'
 import { mergeDeepLeft, path, pipe } from 'ramda'
 import { IRunnable } from '../@types/base'
 
@@ -5,22 +6,24 @@ import { createLogger } from '../factories/logger-factory'
 import { delayMs } from '../utils/misc'
 import { INip05VerificationRepository } from '../@types/repositories'
 import { InvoiceStatus } from '../@types/invoice'
-import { IPaymentsService } from '../@types/services'
 import { Nip05Verification } from '../@types/nip05'
 import { Settings } from '../@types/settings'
 import { verifyNip05Identifier } from '../utils/nip05'
 
 const UPDATE_INVOICE_INTERVAL = 60000
 const NIP05_REVERIFICATION_BATCH_SIZE = 50
+const CLEAR_OLD_EVENTS_TIMEOUT_MS = 5000
 
 const debug = createLogger('maintenance-worker')
 
 export class MaintenanceWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
+  private isRunning = false
 
   public constructor(
     private readonly process: NodeJS.Process,
     private readonly paymentsService: IPaymentsService,
+    private readonly maintenanceService: IMaintenanceService,
     private readonly settings: () => Settings,
     private readonly nip05VerificationRepository: INip05VerificationRepository,
   ) {
@@ -32,16 +35,45 @@ export class MaintenanceWorker implements IRunnable {
       .on('unhandledRejection', this.onError.bind(this))
   }
 
+  private async clearOldEventsSafely(): Promise<void> {
+    try {
+      await Promise.race([
+        this.maintenanceService.clearOldEvents(),
+        delayMs(CLEAR_OLD_EVENTS_TIMEOUT_MS).then(() => {
+          throw new Error(`clearOldEvents timed out after ${CLEAR_OLD_EVENTS_TIMEOUT_MS}ms`)
+        }),
+      ])
+    } catch (error) {
+      debug('unable to clear old events: %o', error)
+    }
+  }
+
   public run(): void {
-    this.interval = setInterval(() => this.onSchedule(), UPDATE_INVOICE_INTERVAL)
+    this.interval = setInterval(async () => {
+      if (this.isRunning) {
+        debug('skipping scheduled maintenance run because previous run is still in progress')
+        return
+      }
+
+      this.isRunning = true
+      try {
+        await this.onSchedule()
+      } catch (error) {
+        this.onError(error as Error)
+      } finally {
+        this.isRunning = false
+      }
+    }, UPDATE_INVOICE_INTERVAL)
   }
 
   private async onSchedule(): Promise<void> {
     const currentSettings = this.settings()
+    const clearOldEventsPromise = this.clearOldEventsSafely()
 
     await this.processNip05Reverifications(currentSettings)
 
     if (!path(['payments','enabled'], currentSettings)) {
+      await clearOldEventsPromise
       return
     }
 
@@ -91,6 +123,8 @@ export class MaintenanceWorker implements IRunnable {
 
       debug('updated %d of %d invoices successfully', successful, invoices.length)
     }
+
+    await clearOldEventsPromise
   }
 
   private async processNip05Reverifications(currentSettings: Settings): Promise<void> {

@@ -94,6 +94,13 @@ limits:
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
   event:
+    retention:
+      maxDays: -1
+      kind:
+        whitelist:
+          - 62
+      pubkey:
+        whitelist: []
     eventId:
       minLeadingZeroBits: 0
     kind:

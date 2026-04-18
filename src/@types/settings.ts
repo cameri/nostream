@@ -69,6 +69,20 @@ export interface EventWhitelists {
   ipAddresses?: string[]
 }
 
+export interface EventRetentionKindLimits {
+  whitelist?: (EventKinds | EventKindsRange)[]
+}
+
+export interface EventRetentionPubkeyLimits {
+  whitelist?: Pubkey[]
+}
+
+export interface EventRetentionLimits {
+  maxDays?: number
+  kind?: EventRetentionKindLimits
+  pubkey?: EventRetentionPubkeyLimits
+}
+
 export interface EventLimits {
   eventId?: EventIdLimits
   pubkey?: PubkeyLimits
@@ -77,6 +91,7 @@ export interface EventLimits {
   content?: ContentLimits | ContentLimits[]
   rateLimits?: EventRateLimit[]
   whitelists?: EventWhitelists
+  retention?: EventRetentionLimits
 }
 
 export interface ClientSubscriptionLimits {

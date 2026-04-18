@@ -50,7 +50,7 @@ describe('SettingsStatic', () => {
     })
 
     it('returns path begins with user\'s home dir by default', () => {
-      expect(SettingsStatic.getDefaultSettingsFilePath()).to.be.a('string').and.equal(`${join(process.cwd(), '/resources')}/default-settings.yaml`)
+      expect(SettingsStatic.getDefaultSettingsFilePath()).to.be.a('string').and.equal(join(process.cwd(), 'resources', 'default-settings.yaml'))
     })
   })
 
@@ -259,7 +259,7 @@ describe('SettingsStatic', () => {
       SettingsStatic.saveSettings('/some/path', {key: 'value'} as any)
 
       expect(writeFileSyncStub).to.have.been.calledOnceWithExactly(
-        '/some/path/settings.yaml',
+        join('/some/path', 'settings.yaml'),
         Sinon.match.string,
         { encoding: 'utf-8' }
       )

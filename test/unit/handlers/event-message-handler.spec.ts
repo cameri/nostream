@@ -9,6 +9,7 @@ chai.use(sinonChai)
 chai.use(chaiAsPromised)
 
 import { EventLimits, Settings } from '../../../src/@types/settings'
+import { identifyEvent, signEvent } from '../../../src/utils/event'
 import { IncomingEventMessage, MessageType } from '../../../src/@types/messages'
 import { Event } from '../../../src/@types/event'
 import { EventKinds } from '../../../src/constants/base'
@@ -709,6 +710,56 @@ describe('EventMessageHandler', () => {
       event.sig = 'wrong'
       return expect((handler as any).isEventValid(event)).to.eventually.equal('invalid: event signature verification failed')
     })
+
+    describe('NIP-17 inner event blocking', () => {
+      // Use a known private key to generate valid events for kinds 13, 14, 15.
+      // The private key is the smallest valid secp256k1 scalar (value = 1).
+      const PRIVKEY = '0000000000000000000000000000000000000000000000000000000000000001'
+
+      async function makeValidEvent(kind: EventKinds): Promise<Event> {
+        const unsigned = await identifyEvent({
+          pubkey: '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798',
+          created_at: 1700000000,
+          kind,
+          tags: [],
+          content: '',
+        })
+        return signEvent(PRIVKEY)(unsigned)
+      }
+
+      it('blocks kind 13 (Seal) with a clear rejection message', async () => {
+        const sealEvent = await makeValidEvent(EventKinds.SEAL)
+        const reason = await (handler as any).isEventValid(sealEvent)
+        expect(reason).to.include('blocked')
+        expect(reason).to.include('13')
+      })
+
+      it('blocks kind 14 (Direct Message) with a clear rejection message', async () => {
+        const dmEvent = await makeValidEvent(EventKinds.DIRECT_MESSAGE)
+        const reason = await (handler as any).isEventValid(dmEvent)
+        expect(reason).to.include('blocked')
+        expect(reason).to.include('14')
+      })
+
+      it('blocks kind 15 (File Message) with a clear rejection message', async () => {
+        const fileEvent = await makeValidEvent(EventKinds.FILE_MESSAGE)
+        const reason = await (handler as any).isEventValid(fileEvent)
+        expect(reason).to.include('blocked')
+        expect(reason).to.include('15')
+      })
+
+      it('does not block a regular kind 1 event', async () => {
+        const textNote = await makeValidEvent(EventKinds.TEXT_NOTE)
+        const reason = await (handler as any).isEventValid(textNote)
+        expect(reason).to.be.undefined
+      })
+
+      it('does not block a kind 1059 (Gift Wrap) event', async () => {
+        const giftWrap = await makeValidEvent(EventKinds.GIFT_WRAP)
+        const reason = await (handler as any).isEventValid(giftWrap)
+        expect(reason).to.be.undefined
+      })
+    })
   })
 
   describe('isRateLimited', () => {
@@ -1154,6 +1205,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         {} as any,
         () => null,
+        { hasActiveRequestToVanish: async () => false } as any,
         userRepository,
         () => settings,
         () => ({ hit: async () => false }),
@@ -1299,6 +1351,7 @@ describe('EventMessageHandler', () => {
       handler = new EventMessageHandler(
         {} as any,
         () => null,
+        { hasActiveRequestToVanish: async () => false } as any,
         userRepository,
         () => settings,
         () => ({ hit: async () => false }),

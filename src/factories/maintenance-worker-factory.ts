@@ -1,3 +1,4 @@
+import { createMaintenanceService } from './maintenance-service-factory'
 import { createPaymentsService } from './payments-service-factory'
 import { createSettings } from './settings-factory'
 import { getMasterDbClient } from '../database/client'
@@ -7,5 +8,11 @@ import { Nip05VerificationRepository } from '../repositories/nip05-verification-
 export const maintenanceWorkerFactory = () => {
   const dbClient = getMasterDbClient()
   const nip05VerificationRepository = new Nip05VerificationRepository(dbClient)
-  return new MaintenanceWorker(process, createPaymentsService(), createSettings, nip05VerificationRepository)
+  return new MaintenanceWorker(
+    process,
+    createPaymentsService(),
+    createMaintenanceService(),
+    createSettings,
+    nip05VerificationRepository,
+  )
 }

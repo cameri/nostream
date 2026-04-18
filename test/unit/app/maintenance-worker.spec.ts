@@ -6,6 +6,7 @@ import sinonChai from 'sinon-chai'
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
 
+import { IMaintenanceService, IPaymentsService } from '../../../src/@types/services'
 import { MaintenanceWorker } from '../../../src/app/maintenance-worker'
 import { Nip05Verification } from '../../../src/@types/nip05'
 import { Settings } from '../../../src/@types/settings'
@@ -21,7 +22,8 @@ describe('MaintenanceWorker', () => {
   let verifyStub: Sinon.SinonStub
   let settings: Settings
   let mockProcess: any
-  let paymentsService: any
+  let paymentsService: Sinon.SinonStubbedInstance<IPaymentsService>
+  let maintenanceService: Sinon.SinonStubbedInstance<IMaintenanceService>
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
@@ -60,11 +62,16 @@ describe('MaintenanceWorker', () => {
       updateInvoiceStatus: sandbox.stub(),
       confirmInvoice: sandbox.stub(),
       sendInvoiceUpdateNotification: sandbox.stub(),
-    }
+    } as any
+
+    maintenanceService = {
+      clearOldEvents: sandbox.stub().resolves(),
+    } as any
 
     worker = new MaintenanceWorker(
       mockProcess,
-      paymentsService,
+      paymentsService as any,
+      maintenanceService as any,
       () => settings,
       nip05VerificationRepository,
     )
@@ -76,7 +83,7 @@ describe('MaintenanceWorker', () => {
 
   describe('processNip05Reverifications', () => {
     it('returns early when nip05 settings are undefined', async () => {
-      settings.nip05 = undefined
+      (settings as any).nip05 = undefined
 
       await (worker as any).processNip05Reverifications(settings)
 
@@ -84,7 +91,7 @@ describe('MaintenanceWorker', () => {
     })
 
     it('returns early when mode is disabled', async () => {
-      settings.nip05.mode = 'disabled'
+      (settings as any).nip05.mode = 'disabled'
 
       await (worker as any).processNip05Reverifications(settings)
 
@@ -193,8 +200,8 @@ describe('MaintenanceWorker', () => {
     })
 
     it('uses configured updateFrequency and maxFailures', async () => {
-      settings.nip05.verifyUpdateFrequency = 3600000
-      settings.nip05.maxConsecutiveFailures = 5
+      (settings as any).nip05.verifyUpdateFrequency = 3600000
+      ;(settings as any).nip05.maxConsecutiveFailures = 5
 
       await (worker as any).processNip05Reverifications(settings)
 
@@ -206,8 +213,8 @@ describe('MaintenanceWorker', () => {
     })
 
     it('uses defaults when settings values are undefined', async () => {
-      settings.nip05.verifyUpdateFrequency = undefined
-      settings.nip05.maxConsecutiveFailures = undefined
+      (settings as any).nip05.verifyUpdateFrequency = undefined
+      ;(settings as any).nip05.maxConsecutiveFailures = undefined
 
       await (worker as any).processNip05Reverifications(settings)
 
@@ -219,7 +226,7 @@ describe('MaintenanceWorker', () => {
     })
 
     it('processes in passive mode', async () => {
-      settings.nip05.mode = 'passive'
+      (settings as any).nip05.mode = 'passive'
       const verification: Nip05Verification = {
         pubkey: 'c'.repeat(64),
         nip05: 'charlie@example.com',
@@ -239,6 +246,29 @@ describe('MaintenanceWorker', () => {
 
       expect(verifyStub).to.have.been.calledOnce
       expect(nip05VerificationRepository.upsert).to.have.been.calledOnce
+    })
+  })
+
+  describe('onSchedule', () => {
+    it('calls maintenance service and processes invoices', async () => {
+      (settings as any).payments = { enabled: true }
+      maintenanceService.clearOldEvents.resolves()
+      paymentsService.getPendingInvoices.resolves([])
+
+      await (worker as any).onSchedule()
+
+      expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
+      expect(paymentsService.getPendingInvoices).to.have.been.calledOnce
+    })
+
+    it('calls maintenance service even if payments are disabled', async () => {
+      (settings as any).payments = { enabled: false }
+      maintenanceService.clearOldEvents.resolves()
+
+      await (worker as any).onSchedule()
+
+      expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
+      expect(paymentsService.getPendingInvoices).not.to.have.been.called
     })
   })
 })

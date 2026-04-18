@@ -74,7 +74,7 @@
         <div class="row pending d-none">
           <div class="col">
             <div class="d-flex justify-content-center mb-3">
-              <button id="sendPaymentBtn" class="btn btn-lg btn-warning d-none" type="submit">Pay with wallet</button>
+              <button id="sendPaymentBtn" class="btn btn-lg btn-warning d-none" type="button">Pay with wallet</button>
             </div>
           </div>
         </div>
@@ -88,7 +88,7 @@
         </div>
         <div class="row d-none" id="powered-by-zebedee">
           <div class="d-flex justify-content-center mb-3 mt-4">
-            <a href="https://zeb.gg/nostr-zbd-quickstart" target="_blank">
+            <a href="https://zeb.gg/nostr-zbd-quickstart" target="_blank" rel="noopener noreferrer">
               <img class="poweredbyzbd-img" src="https://cdn.zebedee.io/an/nostr/poweredbyzbd.png" />
             </a>
           </div>
@@ -152,7 +152,7 @@
         })
       }
 
-      fallbackTimeout = setTimeout(getInvoiceStatus, getBackoffTime)
+      fallbackTimeout = setTimeout(getInvoiceStatus, getBackoffTime())
 
       function connect() {
         var socket = new WebSocket(relayUrl)
