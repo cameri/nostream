@@ -1,9 +1,10 @@
 import axios, { AxiosError } from 'axios'
-import Joi from 'joi'
+import { z } from 'zod'
 
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { EventKinds } from '../constants/base'
+import { pubkeySchema } from '../schemas/base-schema'
 
 const debug = createLogger('nip05')
 
@@ -45,13 +46,10 @@ interface Nip05ParsedIdentifier {
 
 // https://github.com/nostr-protocol/nips/blob/master/05.md
 // `names` is a map of local-part -> 64-char lowercase hex pubkey.
-// `relays` is optional and unused server-side; accept and ignore to stay permissive.
-const nip05ResponseSchema = Joi.object({
-  names: Joi.object()
-    .pattern(Joi.string(), Joi.string().lowercase().hex().length(64))
-    .required(),
-  relays: Joi.any().optional(),
-}).unknown(true)
+// `relays` is optional and unused server-side; passthrough() keeps unknown keys.
+const nip05ResponseSchema = z.object({
+  names: z.record(z.string(), pubkeySchema),
+}).passthrough()
 
 export function parseNip05Identifier(nip05: string): Nip05ParsedIdentifier | undefined {
   if (!nip05 || typeof nip05 !== 'string') {
@@ -175,18 +173,16 @@ export async function verifyNip05Identifier(
       },
     })
 
-    const { error: schemaError, value: data } = nip05ResponseSchema.validate(response.data, {
-      abortEarly: true,
-      stripUnknown: false,
-      convert: false,
-    })
+    const parseResult = nip05ResponseSchema.safeParse(response.data)
 
-    if (schemaError) {
-      debug('malformed response from %s: %s', url, schemaError.message)
-      return { status: 'invalid', reason: `malformed response: ${schemaError.message}` }
+    if (!parseResult.success) {
+      const zodError = parseResult as z.SafeParseError<z.infer<typeof nip05ResponseSchema>>
+      const reason = zodError.error.issues.map((i) => i.message).join('; ')
+      debug('malformed response from %s: %s', url, reason)
+      return { status: 'invalid', reason: `malformed response: ${reason}` }
     }
 
-    const registeredPubkey = data.names[localPart]
+    const registeredPubkey = parseResult.data.names[localPart]
     if (typeof registeredPubkey !== 'string') {
       debug('name %s not found in response from %s', localPart, domain)
       return { status: 'mismatch' }
