@@ -106,7 +106,7 @@ Given(/someone called (\w+)/, async function(name: string) {
 
   const projection = (raw: MessageEvent) => JSON.parse(raw.data.toString('utf8'))
 
-  const replaySubject = new ReplaySubject(2, 1000)
+  const replaySubject = new ReplaySubject(2)
 
   fromEvent(connection, 'message').pipe(map(projection) as any,takeUntil(close)).subscribe(replaySubject)
 
