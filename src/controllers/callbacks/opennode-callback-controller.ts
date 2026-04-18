@@ -11,24 +11,16 @@ import { validateSchema } from '../../utils/validation'
 const debug = createLogger('opennode-callback-controller')
 
 export class OpenNodeCallbackController implements IController {
-  public constructor(
-    private readonly paymentsService: IPaymentsService,
-  ) {}
+  public constructor(private readonly paymentsService: IPaymentsService) {}
 
-  public async handleRequest(
-    request: Request,
-    response: Response,
-  ) {
+  public async handleRequest(request: Request, response: Response) {
     debug('request headers: %o', request.headers)
     debug('request body: %O', request.body)
 
     const bodyValidation = validateSchema(opennodeCallbackBodySchema)(request.body)
     if (bodyValidation.error) {
       debug('opennode callback request rejected: invalid body %o', bodyValidation.error)
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Malformed body')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Malformed body')
       return
     }
 
@@ -45,13 +37,8 @@ export class OpenNodeCallbackController implements IController {
       throw error
     }
 
-    if (
-      updatedInvoice.status !== InvoiceStatus.COMPLETED
-      && !updatedInvoice.confirmedAt
-    ) {
-      response
-        .status(200)
-        .send()
+    if (updatedInvoice.status !== InvoiceStatus.COMPLETED && !updatedInvoice.confirmedAt) {
+      response.status(200).send()
 
       return
     }
@@ -74,9 +61,6 @@ export class OpenNodeCallbackController implements IController {
       throw error
     }
 
-    response
-      .status(200)
-      .setHeader('content-type', 'text/plain; charset=utf8')
-      .send('OK')
+    response.status(200).setHeader('content-type', 'text/plain; charset=utf8').send('OK')
   }
 }

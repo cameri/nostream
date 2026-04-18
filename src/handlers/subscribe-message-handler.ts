@@ -2,7 +2,11 @@ import { anyPass, equals, isNil, map, propSatisfies, uniqWith } from 'ramda'
 // import { addAbortSignal } from 'stream'
 import { pipeline } from 'stream/promises'
 
-import { createEndOfStoredEventsNoticeMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import {
+  createEndOfStoredEventsNoticeMessage,
+  createNoticeMessage,
+  createOutgoingEventMessage,
+} from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { isEventMatchingFilter, isExpiredEvent, toNostrEvent } from '../utils/event'
 import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
@@ -55,12 +59,12 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const sendEOSE = () =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEndOfStoredEventsNoticeMessage(subscriptionId))
     const isSubscribedToEvent = SubscribeMessageHandler.isClientSubscribedToEvent(filters)
-    const isNotExpired = (event: Event)=>{
+    const isNotExpired = (event: Event) => {
       if (isExpiredEvent(event)) {
         return false
       }
       return true
-  }
+    }
 
     const findEvents = this.eventRepository.findByFilters(filters).stream()
 
@@ -79,7 +83,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         debug('subscription %s aborted: %o', subscriptionId, error)
-       findEvents.destroy()
+        findEvents.destroy()
       } else {
         debug('error streaming events: %o', error)
       }
@@ -97,13 +101,11 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const subscriptionLimits = this.settings().limits?.client?.subscription
 
     if (existingSubscription?.length && equals(filters, existingSubscription)) {
-        return `Duplicate subscription ${subscriptionId}: Ignoring`
+      return `Duplicate subscription ${subscriptionId}: Ignoring`
     }
 
     const maxSubscriptions = subscriptionLimits?.maxSubscriptions ?? 0
-    if (maxSubscriptions > 0
-      && !existingSubscription?.length && subscriptions.size + 1 > maxSubscriptions
-    ) {
+    if (maxSubscriptions > 0 && !existingSubscription?.length && subscriptions.size + 1 > maxSubscriptions) {
       return `Too many subscriptions: Number of subscriptions must be less than or equal to ${maxSubscriptions}`
     }
 
@@ -115,13 +117,10 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     }
 
     if (
-      typeof subscriptionLimits.maxSubscriptionIdLength === 'number'
-      && subscriptionId.length > subscriptionLimits.maxSubscriptionIdLength
+      typeof subscriptionLimits.maxSubscriptionIdLength === 'number' &&
+      subscriptionId.length > subscriptionLimits.maxSubscriptionIdLength
     ) {
       return `Subscription ID too long: Subscription ID must be less or equal to ${subscriptionLimits.maxSubscriptionIdLength}`
     }
-
-
   }
 }
-

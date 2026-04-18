@@ -22,7 +22,11 @@ describe('createOutgoingEventMessage', () => {
     const event: Event = {
       id: 'some id',
     } as any
-    expect(createOutgoingEventMessage('subscriptionId', event)).to.deep.equal([MessageType.EVENT, 'subscriptionId', event])
+    expect(createOutgoingEventMessage('subscriptionId', event)).to.deep.equal([
+      MessageType.EVENT,
+      'subscriptionId',
+      event,
+    ])
   })
 })
 
@@ -36,12 +40,7 @@ describe('createEndOfStoredEventsNoticeMessage', () => {
 describe('createCommandResult', () => {
   it('returns an OK message with success=true and a reason', () => {
     const eventId = 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef'
-    expect(createCommandResult(eventId, true, '')).to.deep.equal([
-      MessageType.OK,
-      eventId,
-      true,
-      '',
-    ])
+    expect(createCommandResult(eventId, true, '')).to.deep.equal([MessageType.OK, eventId, true, ''])
   })
 
   it('returns an OK message with success=false and a rejection reason', () => {
@@ -95,11 +94,6 @@ describe('createRelayedEventMessage', () => {
   })
 
   it('returns an EVENT message with secret appended when a secret is provided', () => {
-    expect(createRelayedEventMessage(event, 'my-secret')).to.deep.equal([
-      MessageType.EVENT,
-      event,
-      'my-secret',
-    ])
+    expect(createRelayedEventMessage(event, 'my-secret')).to.deep.equal([MessageType.EVENT, event, 'my-secret'])
   })
 })
-

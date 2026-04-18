@@ -8,12 +8,13 @@ import { messageHandlerFactory } from './message-handler-factory'
 import { slidingWindowRateLimiterFactory } from './rate-limiter-factory'
 import { WebSocketAdapter } from '../adapters/web-socket-adapter'
 
-
-export const webSocketAdapterFactory = (
-  eventRepository: IEventRepository,
-  userRepository: IUserRepository,
-  nip05VerificationRepository: INip05VerificationRepository,
-) => ([client, request, webSocketServerAdapter]: [WebSocket, IncomingMessage, IWebSocketServerAdapter]) =>
+export const webSocketAdapterFactory =
+  (
+    eventRepository: IEventRepository,
+    userRepository: IUserRepository,
+    nip05VerificationRepository: INip05VerificationRepository,
+  ) =>
+  ([client, request, webSocketServerAdapter]: [WebSocket, IncomingMessage, IWebSocketServerAdapter]) =>
     new WebSocketAdapter(
       client,
       request,

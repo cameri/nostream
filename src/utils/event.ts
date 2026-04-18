@@ -31,75 +31,67 @@ export const toNostrEvent: (event: DBEvent) => Event = applySpec({
   sig: pipe(prop('event_signature') as () => Buffer, fromBuffer),
 })
 
-export const isEventKindOrRangeMatch = ({ kind }: Event) =>
+export const isEventKindOrRangeMatch =
+  ({ kind }: Event) =>
   (item: EventKinds | EventKindsRange) =>
-    typeof item === 'number'
-      ? item === kind
-      : kind >= item[0] && kind <= item[1]
+    typeof item === 'number' ? item === kind : kind >= item[0] && kind <= item[1]
 
-export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Event): boolean => {
-  const startsWith = (input: string) => (prefix: string) => input.startsWith(prefix)
+export const isEventMatchingFilter =
+  (filter: SubscriptionFilter) =>
+  (event: Event): boolean => {
+    const startsWith = (input: string) => (prefix: string) => input.startsWith(prefix)
 
-  // NIP-01: Basic protocol flow description
+    // NIP-01: Basic protocol flow description
 
-  if (Array.isArray(filter.ids) && (
-    !filter.ids.some(startsWith(event.id))
-  )) {
-    return false
-  }
+    if (Array.isArray(filter.ids) && !filter.ids.some(startsWith(event.id))) {
+      return false
+    }
 
-  if (Array.isArray(filter.kinds) && !filter.kinds.includes(event.kind)) {
-    return false
-  }
+    if (Array.isArray(filter.kinds) && !filter.kinds.includes(event.kind)) {
+      return false
+    }
 
-  if (typeof filter.since === 'number' && event.created_at < filter.since) {
-    return false
-  }
+    if (typeof filter.since === 'number' && event.created_at < filter.since) {
+      return false
+    }
 
-  if (typeof filter.until === 'number' && event.created_at > filter.until) {
-    return false
-  }
+    if (typeof filter.until === 'number' && event.created_at > filter.until) {
+      return false
+    }
 
-  if (Array.isArray(filter.authors)) {
+    if (Array.isArray(filter.authors)) {
+      if (!filter.authors.some(startsWith(event.pubkey))) {
+        return false
+      }
+    }
+
+    // NIP-27: Multicast
+    // const targetMulticastGroups: string[] = event.tags.reduce(
+    //   (acc, tag) => (tag[0] === EventTags.Multicast)
+    //     ? [...acc, tag[1]]
+    //     : acc,
+    //   [] as string[]
+    // )
+
+    // if (targetMulticastGroups.length && !Array.isArray(filter['#m'])) {
+    //   return false
+    // }
+
+    // NIP-01: Support #e and #p tags
+    // NIP-12: Support generic tag queries
+
     if (
-      !filter.authors.some(startsWith(event.pubkey))
+      Object.entries(filter)
+        .filter(([key, criteria]) => isGenericTagQuery(key) && Array.isArray(criteria))
+        .some(([key, criteria]) => {
+          return !event.tags.some((tag) => tag[0] === key[1] && criteria.includes(tag[1]))
+        })
     ) {
       return false
     }
+
+    return true
   }
-
-  // NIP-27: Multicast
-  // const targetMulticastGroups: string[] = event.tags.reduce(
-  //   (acc, tag) => (tag[0] === EventTags.Multicast)
-  //     ? [...acc, tag[1]]
-  //     : acc,
-  //   [] as string[]
-  // )
-
-  // if (targetMulticastGroups.length && !Array.isArray(filter['#m'])) {
-  //   return false
-  // }
-
-  // NIP-01: Support #e and #p tags
-  // NIP-12: Support generic tag queries
-
-  if (
-    Object.entries(filter)
-      .filter(
-        ([key, criteria]) =>
-          isGenericTagQuery(key) && Array.isArray(criteria),
-      )
-      .some(([key, criteria]) => {
-        return !event.tags.some(
-          (tag) => tag[0] === key[1] && criteria.includes(tag[1]),
-        )
-      })
-  ) {
-    return false
-  }
-
-  return true
-}
 
 export const getEventHash = async (event: Event | UnidentifiedEvent | UnsignedEvent): Promise<string> => {
   const id = await secp256k1.utils.sha256(Buffer.from(JSON.stringify(serializeEvent(event))))
@@ -108,7 +100,7 @@ export const getEventHash = async (event: Event | UnidentifiedEvent | UnsignedEv
 }
 
 export const isEventIdValid = async (event: Event): Promise<boolean> => {
-  return event.id === await getEventHash(event)
+  return event.id === (await getEventHash(event))
 }
 
 export const isEventSignatureValid = async (event: Event): Promise<boolean> => {
@@ -149,10 +141,12 @@ export const getPublicKey = (privkey: string) => {
   return publicKeyCache[privkey]
 }
 
-export const signEvent = (privkey: string | Buffer | undefined) => async (event: UnsignedEvent): Promise<Event> => {
-  const sig = await secp256k1.schnorr.sign(event.id, privkey as any)
-  return { ...event, sig: Buffer.from(sig).toString('hex') }
-}
+export const signEvent =
+  (privkey: string | Buffer | undefined) =>
+  async (event: UnsignedEvent): Promise<Event> => {
+    const sig = await secp256k1.schnorr.sign(event.id, privkey as any)
+    return { ...event, sig: Buffer.from(sig).toString('hex') }
+  }
 
 export const broadcastEvent = async (event: Event): Promise<Event> => {
   return new Promise((resolve, reject) => {
@@ -178,10 +172,12 @@ export const broadcastEvent = async (event: Event): Promise<Event> => {
 }
 
 export const isReplaceableEvent = (event: Event): boolean => {
-  return event.kind === EventKinds.SET_METADATA
-    || event.kind === EventKinds.CONTACT_LIST
-    || event.kind === EventKinds.CHANNEL_METADATA
-    || (event.kind >= EventKinds.REPLACEABLE_FIRST && event.kind <= EventKinds.REPLACEABLE_LAST)
+  return (
+    event.kind === EventKinds.SET_METADATA ||
+    event.kind === EventKinds.CONTACT_LIST ||
+    event.kind === EventKinds.CHANNEL_METADATA ||
+    (event.kind >= EventKinds.REPLACEABLE_FIRST && event.kind <= EventKinds.REPLACEABLE_LAST)
+  )
 }
 
 export const isEphemeralEvent = (event: Event): boolean => {
@@ -189,8 +185,9 @@ export const isEphemeralEvent = (event: Event): boolean => {
 }
 
 export const isParameterizedReplaceableEvent = (event: Event): boolean => {
-  return event.kind >= EventKinds.PARAMETERIZED_REPLACEABLE_FIRST
-    && event.kind <= EventKinds.PARAMETERIZED_REPLACEABLE_LAST
+  return (
+    event.kind >= EventKinds.PARAMETERIZED_REPLACEABLE_FIRST && event.kind <= EventKinds.PARAMETERIZED_REPLACEABLE_LAST
+  )
 }
 
 export const isDeleteEvent = (event: Event): boolean => {
@@ -206,9 +203,7 @@ export const isRequestToVanishEvent = (event: Event, relayUrl?: string): boolean
     return true
   }
 
-  const relayTags = event.tags
-    .filter((tag) => tag.length >= 2 && tag[0] === EventTags.Relay)
-    .map((tag) => tag[1])
+  const relayTags = event.tags.filter((tag) => tag.length >= 2 && tag[0] === EventTags.Relay).map((tag) => tag[1])
 
   return relayTags.length > 0 && relayTags.every((relay) => relay === relayUrl || relay === ALL_RELAYS)
 }
@@ -237,7 +232,7 @@ export const getEventExpiration = (event: Event): number | undefined => {
 
   const expirationTime = Number(rawExpirationTime)
 
-  if ((Number.isSafeInteger(expirationTime) && Math.log10(expirationTime) < 10)) {
+  if (Number.isSafeInteger(expirationTime) && Math.log10(expirationTime) < 10) {
     return expirationTime
   }
 }

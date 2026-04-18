@@ -26,7 +26,7 @@ describe('VanishEventStrategy', () => {
     id: 'id',
     pubkey: 'pubkey',
     kind: EventKinds.REQUEST_TO_VANISH,
-    tags: [[ 'r', 'relay_url' ]],
+    tags: [['r', 'relay_url']],
   } as any
 
   beforeEach(() => {
@@ -52,16 +52,17 @@ describe('VanishEventStrategy', () => {
   it('deletes all events for pubkey except kind 62 events and creates the vanish event', async () => {
     await strategy.execute(event)
 
-    expect(eventRepository.deleteByPubkeyExceptKinds).to.have.been.calledOnceWithExactly(
-      event.pubkey,
-      [EventKinds.REQUEST_TO_VANISH],
-    )
+    expect(eventRepository.deleteByPubkeyExceptKinds).to.have.been.calledOnceWithExactly(event.pubkey, [
+      EventKinds.REQUEST_TO_VANISH,
+    ])
     expect(eventRepository.create).to.have.been.calledOnceWithExactly(event)
     expect(userRepository.setVanished).to.have.been.calledOnceWithExactly(event.pubkey, true)
-    expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-      WebSocketAdapterEvent.Message,
-      [MessageType.OK, event.id, true, ''],
-    )
+    expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+      MessageType.OK,
+      event.id,
+      true,
+      '',
+    ])
   })
 
   it('does not broadcast the vanish event', async () => {
@@ -75,9 +76,11 @@ describe('VanishEventStrategy', () => {
 
     await strategy.execute(event)
 
-    expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-      WebSocketAdapterEvent.Message,
-      [MessageType.OK, event.id, true, 'duplicate:'],
-    )
+    expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+      MessageType.OK,
+      event.id,
+      true,
+      'duplicate:',
+    ])
   })
 })

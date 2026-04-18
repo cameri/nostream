@@ -45,9 +45,7 @@ const makeInvoice = (overrides: any = {}) => ({
   ...overrides,
 })
 
-const makeController = (overrides: {
-  paymentsService?: any
-} = {}) => {
+const makeController = (overrides: { paymentsService?: any } = {}) => {
   const paymentsService = overrides.paymentsService ?? {
     updateInvoiceStatus: sinon.stub().resolves(makeInvoice()),
     confirmInvoice: sinon.stub().resolves(),
@@ -82,10 +80,7 @@ describe('OpenNodeCallbackController', () => {
       const { controller } = makeController()
       const res = makeRes()
 
-      await controller.handleRequest(
-        makeReq({ body: { id: 'missing-order-id' } }),
-        res,
-      )
+      await controller.handleRequest(makeReq({ body: { id: 'missing-order-id' } }), res)
 
       expect(res.status).to.have.been.calledWith(400)
       expect(res.setHeader).to.have.been.calledWith('content-type', 'text/plain; charset=utf8')
@@ -96,20 +91,19 @@ describe('OpenNodeCallbackController', () => {
   describe('invoice state handling', () => {
     it('returns 200 without confirmation for pending invoices', async () => {
       const paymentsService = {
-        updateInvoiceStatus: sinon.stub().resolves(makeInvoice({
-          status: InvoiceStatus.PENDING,
-          confirmedAt: null,
-        })),
+        updateInvoiceStatus: sinon.stub().resolves(
+          makeInvoice({
+            status: InvoiceStatus.PENDING,
+            confirmedAt: null,
+          }),
+        ),
         confirmInvoice: sinon.stub().resolves(),
         sendInvoiceUpdateNotification: sinon.stub().resolves(),
       }
       const { controller } = makeController({ paymentsService })
       const res = makeRes()
 
-      await controller.handleRequest(
-        makeReq({ body: { ...validBody, status: 'processing' } }),
-        res,
-      )
+      await controller.handleRequest(makeReq({ body: { ...validBody, status: 'processing' } }), res)
 
       expect(res.status).to.have.been.calledWith(200)
       expect(paymentsService.confirmInvoice).to.not.have.been.called

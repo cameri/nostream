@@ -270,11 +270,13 @@ export const runCleanDb = async (args: string[] = process.argv.slice(2)): Promis
 }
 
 if (require.main === module) {
-  runCleanDb().then((exitCode) => {
-    process.exitCode = exitCode
-  }).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error)
-    console.error(message)
-    process.exitCode = 1
-  })
+  runCleanDb()
+    .then((exitCode) => {
+      process.exitCode = exitCode
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(message)
+      process.exitCode = 1
+    })
 }

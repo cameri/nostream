@@ -17,8 +17,6 @@ import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
 import { getRemoteAddress } from '../../utils/http'
 import { getTemplate } from '../../utils/template-cache'
 
-
-
 const debug = createLogger('post-invoice-controller')
 
 export class PostInvoiceController implements IController {
@@ -27,11 +25,9 @@ export class PostInvoiceController implements IController {
     private readonly paymentsService: IPaymentsService,
     private readonly settings: () => Settings,
     private readonly rateLimiter: () => IRateLimiter,
-  ){}
+  ) {}
 
   public async handleRequest(request: Request, response: Response): Promise<void> {
-
-
     debug('params: %o', request.params)
     debug('body: %o', request.body)
 
@@ -43,18 +39,12 @@ export class PostInvoiceController implements IController {
 
     const limited = await this.isRateLimited(request, currentSettings)
     if (limited) {
-      response
-        .status(429)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Too many requests')
+      response.status(429).setHeader('content-type', 'text/plain; charset=utf8').send('Too many requests')
       return
     }
 
     if (!request.body || typeof request.body !== 'object') {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invalid request')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid request')
 
       return
     }
@@ -62,20 +52,14 @@ export class PostInvoiceController implements IController {
     const tosAccepted = request.body?.tosAccepted === 'yes'
 
     if (!tosAccepted) {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('ToS agreement: not accepted')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('ToS agreement: not accepted')
 
       return
     }
 
     const isAdmissionInvoice = request.body?.feeSchedule === 'admission'
     if (!isAdmissionInvoice) {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invalid fee')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid fee')
 
       return
     }
@@ -84,10 +68,7 @@ export class PostInvoiceController implements IController {
 
     let pubkey: string
     if (typeof pubkeyRaw !== 'string') {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invalid pubkey: missing')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid pubkey: missing')
 
       return
     } else if (/^[0-9a-f]{64}$/.test(pubkeyRaw)) {
@@ -96,32 +77,22 @@ export class PostInvoiceController implements IController {
       try {
         pubkey = fromBech32(pubkeyRaw)
       } catch (_error) {
-        response
-          .status(400)
-          .setHeader('content-type', 'text/plain; charset=utf8')
-          .send('Invalid pubkey: invalid npub')
+        response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid pubkey: invalid npub')
 
         return
       }
     } else {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invalid pubkey: unknown format')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid pubkey: unknown format')
 
       return
     }
 
-    const isApplicableFee = (feeSchedule: FeeSchedule) => feeSchedule.enabled
-      && !feeSchedule.whitelists?.pubkeys?.some((prefix) => pubkey.startsWith(prefix))
-    const admissionFee = currentSettings.payments?.feeSchedules.admission
-      .filter(isApplicableFee)
+    const isApplicableFee = (feeSchedule: FeeSchedule) =>
+      feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.some((prefix) => pubkey.startsWith(prefix))
+    const admissionFee = currentSettings.payments?.feeSchedules.admission.filter(isApplicableFee)
 
     if (!Array.isArray(admissionFee) || !admissionFee.length) {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('No admission fee required')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('No admission fee required')
 
       return
     }
@@ -129,35 +100,23 @@ export class PostInvoiceController implements IController {
     const minBalance = currentSettings.limits?.event?.pubkey?.minBalance
     const user = await this.userRepository.findByPubkey(pubkey)
     if (user && user.isAdmitted && (!minBalance || user.balance >= minBalance)) {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('User is already admitted.')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('User is already admitted.')
 
       return
     }
 
     let invoice: Invoice
     const amount = admissionFee.reduce((sum, fee) => {
-      return fee.enabled && !fee.whitelists?.pubkeys?.includes(pubkey)
-        ? BigInt(fee.amount) + sum
-        : sum
+      return fee.enabled && !fee.whitelists?.pubkeys?.includes(pubkey) ? BigInt(fee.amount) + sum : sum
     }, 0n)
 
     try {
       const description = `${relayName} Admission Fee for ${toBech32('npub')(pubkey)}`
 
-      invoice = await this.paymentsService.createInvoice(
-        pubkey,
-        amount,
-        description,
-      )
+      invoice = await this.paymentsService.createInvoice(pubkey, amount, description)
     } catch (error) {
       console.error('Unable to create invoice. Reason:', error)
-      response
-        .status(500)
-        .setHeader('content-type', 'text/plain')
-        .send('Unable to create invoice')
+      response.status(500).setHeader('content-type', 'text/plain').send('Unable to create invoice')
       return
     }
 
@@ -185,10 +144,7 @@ export class PostInvoiceController implements IController {
       // nonce is crypto-random base64 — safe in both attribute and script contexts
       .replaceAll('{{nonce}}', response.locals.nonce)
 
-    response
-      .status(200)
-      .setHeader('Content-Type', 'text/html; charset=utf8')
-      .send(body)
+    response.status(200).setHeader('Content-Type', 'text/html; charset=utf8').send(body)
 
     return
   }
