@@ -5,6 +5,8 @@ import { createLogger } from '../../factories/logger-factory'
 import { fromOpenNodeInvoice } from '../../utils/transform'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
+import { opennodeCallbackBodySchema } from '../../schemas/opennode-callback-schema'
+import { validateSchema } from '../../utils/validation'
 
 const debug = createLogger('opennode-callback-controller')
 
@@ -13,13 +15,22 @@ export class OpenNodeCallbackController implements IController {
     private readonly paymentsService: IPaymentsService,
   ) {}
 
-  // TODO: Validate
   public async handleRequest(
     request: Request,
     response: Response,
   ) {
     debug('request headers: %o', request.headers)
     debug('request body: %O', request.body)
+
+    const bodyValidation = validateSchema(opennodeCallbackBodySchema)(request.body)
+    if (bodyValidation.error) {
+      debug('opennode callback request rejected: invalid body %o', bodyValidation.error)
+      response
+        .status(400)
+        .setHeader('content-type', 'text/plain; charset=utf8')
+        .send('Malformed body')
+      return
+    }
 
     const invoice = fromOpenNodeInvoice(request.body)
 

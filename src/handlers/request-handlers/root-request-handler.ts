@@ -1,15 +1,17 @@
 import { NextFunction, Request, Response } from 'express'
-import { path } from 'ramda'
-
+import { path, pathEq } from 'ramda'
+import accepts from 'accepts'
 import { createSettings } from '../../factories/settings-factory'
+import { escapeHtml } from '../../utils/html'
 import { FeeSchedule } from '../../@types/settings'
 import { fromBech32 } from '../../utils/transform'
+import { getTemplate } from '../../utils/template-cache'
 import packageJson from '../../../package.json'
 
 export const rootRequestHandler = (request: Request, response: Response, next: NextFunction) => {
   const settings = createSettings()
 
-  if (request.header('accept') === 'application/nostr+json') {
+  if (accepts(request).type(['application/nostr+json'])) {
     const {
       info: { name, description, pubkey: rawPubkey, contact, relay_url },
     } = settings
@@ -73,12 +75,27 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     return
   }
 
-  const admissionFeeEnabled = path(['payments','feeSchedules','admission', '0', 'enabled'])(settings)
+  const admissionFeeEnabled = pathEq(['payments', 'enabled'], true, settings)
+    && pathEq(['payments', 'feeSchedules', 'admission', '0', 'enabled'], true, settings)
+  const admissionFee = path<FeeSchedule>(['payments', 'feeSchedules', 'admission', '0'], settings)
+  const amount = admissionFeeEnabled && admissionFee
+    ? (BigInt(admissionFee.amount) / 1000n).toString()
+    : '0'
 
-  if (admissionFeeEnabled) {
-    response.redirect(301, '/invoices')
-  } else {
-    response.status(200).setHeader('content-type', 'text/plain; charset=utf8').send('Please use a Nostr client to connect.')
+  let page: string
+  try {
+    page = getTemplate('./resources/index.html')
+      .replaceAll('{{name}}', escapeHtml(settings.info.name))
+      .replaceAll('{{description}}', escapeHtml(settings.info.description ?? ''))
+      .replaceAll('{{relay_url}}', escapeHtml(settings.info.relay_url))
+      .replaceAll('{{amount}}', amount)
+      .replaceAll('{{payments_section_class}}', admissionFeeEnabled ? '' : 'd-none')
+      .replaceAll('{{no_payments_section_class}}', admissionFeeEnabled ? 'd-none' : '')
+      .replaceAll('{{nonce}}', response.locals.nonce)
+  } catch (err) {
+    next(err)
+    return
   }
-  next()
+
+  response.status(200).setHeader('content-type', 'text/html; charset=utf8').send(page)
 }

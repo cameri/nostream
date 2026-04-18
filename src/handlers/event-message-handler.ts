@@ -7,11 +7,14 @@ import {
   getPubkeyProofOfWork,
   getPublicKey,
   getRelayPrivateKey,
+  isDirectMessageEvent,
   isEventIdValid,
   isEventKindOrRangeMatch,
   isEventSignatureValid,
   isExpiredEvent,
+  isFileMessageEvent,
   isRequestToVanishEvent,
+  isSealEvent,
 } from '../utils/event'
 import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
@@ -211,6 +214,13 @@ export class EventMessageHandler implements IMessageHandler {
 
     if (event.kind === EventKinds.REQUEST_TO_VANISH && !isRequestToVanishEvent(event, this.settings().info.relay_url)) {
       return 'invalid: request to vanish relay tag invalid'
+    }
+
+    // NIP-17: kind 13 (Seal) and kind 14 (Direct Message) are inner events that
+    // must never be published directly to a relay. They are encrypted inside a
+    // kind 1059 Gift Wrap (NIP-59) before being sent here.
+    if (isSealEvent(event) || isDirectMessageEvent(event) || isFileMessageEvent(event)) {
+      return `blocked: kind ${event.kind} events must not be published directly; wrap them in a kind 1059 gift wrap`
     }
   }
 

@@ -1,16 +1,17 @@
 import EventEmitter from 'events'
 
-import Sinon, { SinonFakeTimers } from 'sinon'
 import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
+import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
+
+import * as misc from '../../../src/utils/misc'
+import { IMaintenanceService, IPaymentsService } from '../../../src/@types/services'
+import { InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
+import { MaintenanceWorker } from '../../../src/app/maintenance-worker'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
-
-import * as misc from '../../../src/utils/misc'
-import { InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
-import { MaintenanceWorker } from '../../../src/app/maintenance-worker'
 
 const { expect } = chai
 
@@ -18,7 +19,8 @@ describe('MaintenanceWorker', () => {
   let sandbox: Sinon.SinonSandbox
   let worker: MaintenanceWorker
   let fakeProcess: EventEmitter & { exit: Sinon.SinonStub }
-  let paymentsService: any
+  let paymentsService: Sinon.SinonStubbedInstance<IPaymentsService>
+  let maintenanceService: Sinon.SinonStubbedInstance<IMaintenanceService>
   let settings: Sinon.SinonStub
 
   const pendingInvoice = {
@@ -40,7 +42,7 @@ describe('MaintenanceWorker', () => {
 
     fakeProcess = Object.assign(new EventEmitter(), {
       exit: sandbox.stub(),
-    }) as any
+    }) as EventEmitter & { exit: Sinon.SinonStub }
 
     paymentsService = {
       getPendingInvoices: sandbox.stub(),
@@ -48,20 +50,28 @@ describe('MaintenanceWorker', () => {
       updateInvoiceStatus: sandbox.stub().resolves(),
       confirmInvoice: sandbox.stub().resolves(),
       sendInvoiceUpdateNotification: sandbox.stub().resolves(),
-    }
+    } as any
+
+    maintenanceService = {
+      clearOldEvents: sandbox.stub().resolves(),
+    } as any
 
     settings = sandbox.stub()
 
-    // Prevent real setTimeout delays inside onSchedule
+    // Prevent real timeouts and randomized per-invoice delays.
     sandbox.stub(misc, 'delayMs').resolves()
 
-    worker = new MaintenanceWorker(fakeProcess as any, paymentsService, settings)
+    worker = new MaintenanceWorker(
+      fakeProcess as any,
+      paymentsService,
+      maintenanceService,
+      settings as any,
+    )
   })
 
   afterEach(() => {
     sandbox.restore()
   })
-
 
   describe('constructor', () => {
     it('registers SIGINT, SIGHUP, and SIGTERM handlers', () => {
@@ -76,9 +86,8 @@ describe('MaintenanceWorker', () => {
     })
   })
 
-
   describe('run', () => {
-    let clock: SinonFakeTimers
+    let clock: Sinon.SinonFakeTimers
 
     beforeEach(() => {
       clock = Sinon.useFakeTimers()
@@ -96,17 +105,18 @@ describe('MaintenanceWorker', () => {
       worker.run()
       await clock.tickAsync(60000)
 
+      expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
       expect(paymentsService.getPendingInvoices).to.have.been.calledOnce
     })
   })
 
-
   describe('onSchedule', () => {
-    it('does nothing when payments are disabled', async () => {
+    it('calls maintenance service even when payments are disabled', async () => {
       settings.returns({ payments: { enabled: false } })
 
       await (worker as any).onSchedule()
 
+      expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
       expect(paymentsService.getPendingInvoices).not.to.have.been.called
     })
 
@@ -116,23 +126,25 @@ describe('MaintenanceWorker', () => {
 
       await (worker as any).onSchedule()
 
+      expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
       expect(paymentsService.getPendingInvoices).to.have.been.calledOnce
     })
 
     it('skips an invoice when the processor returns no id', async () => {
       settings.returns({ payments: { enabled: true } })
       paymentsService.getPendingInvoices.resolves([pendingInvoice])
-      paymentsService.getInvoiceFromPaymentsProcessor.resolves({ status: InvoiceStatus.PENDING }) // no id
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({ status: InvoiceStatus.PENDING })
 
       await (worker as any).onSchedule()
 
+      expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
       expect(paymentsService.updateInvoiceStatus).not.to.have.been.called
     })
 
     it('skips an invoice when the processor returns no status', async () => {
       settings.returns({ payments: { enabled: true } })
       paymentsService.getPendingInvoices.resolves([pendingInvoice])
-      paymentsService.getInvoiceFromPaymentsProcessor.resolves({ id: 'inv-1' }) // no status
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({ id: 'inv-1' })
 
       await (worker as any).onSchedule()
 
@@ -144,12 +156,15 @@ describe('MaintenanceWorker', () => {
       paymentsService.getPendingInvoices.resolves([pendingInvoice])
       paymentsService.getInvoiceFromPaymentsProcessor.resolves({
         id: 'inv-1',
-        status: InvoiceStatus.PENDING, // same status — no confirm
+        status: InvoiceStatus.PENDING,
       })
 
       await (worker as any).onSchedule()
 
-      expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnce
+      expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnceWithExactly({
+        id: 'inv-1',
+        status: InvoiceStatus.PENDING,
+      })
       expect(paymentsService.confirmInvoice).not.to.have.been.called
     })
 
@@ -158,7 +173,7 @@ describe('MaintenanceWorker', () => {
       paymentsService.getPendingInvoices.resolves([pendingInvoice])
       paymentsService.getInvoiceFromPaymentsProcessor.resolves({
         id: 'inv-1',
-        status: InvoiceStatus.EXPIRED, // changed but not COMPLETED
+        status: InvoiceStatus.EXPIRED,
       })
 
       await (worker as any).onSchedule()
@@ -180,6 +195,7 @@ describe('MaintenanceWorker', () => {
 
       expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnce
       expect(paymentsService.confirmInvoice).not.to.have.been.called
+      expect(paymentsService.sendInvoiceUpdateNotification).not.to.have.been.called
     })
 
     it('confirms and notifies when status changes to COMPLETED with confirmedAt', async () => {
@@ -215,11 +231,11 @@ describe('MaintenanceWorker', () => {
 
       await (worker as any).onSchedule()
 
+      expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
       expect(consoleErrorStub).to.have.been.calledOnce
       expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnce
     })
   })
-
 
   describe('onError', () => {
     it('re-throws the error received from the process', () => {
@@ -229,7 +245,6 @@ describe('MaintenanceWorker', () => {
     })
   })
 
-
   describe('onExit', () => {
     it('calls close and then exits the process with code 0', () => {
       fakeProcess.emit('SIGTERM')
@@ -237,7 +252,6 @@ describe('MaintenanceWorker', () => {
       expect(fakeProcess.exit).to.have.been.calledOnceWithExactly(0)
     })
   })
-
 
   describe('close', () => {
     it('invokes the callback when one is provided', () => {
