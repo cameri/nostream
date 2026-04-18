@@ -23,3 +23,10 @@ export const getCacheClient = (): CacheClient => {
 
   return instance
 }
+
+export const closeCacheClient = async (): Promise<void> => {
+  if (instance?.isOpen) {
+    await instance.disconnect()
+    instance = undefined
+  }
+}
