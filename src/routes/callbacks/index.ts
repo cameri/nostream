@@ -11,11 +11,15 @@ const router = Router()
 router
   .post('/zebedee', json(), withController(createZebedeeCallbackController))
   .post('/lnbits', json(), withController(createLNbitsCallbackController))
-  .post('/nodeless', json({
-    verify(req, _res, buf) {
-      (req as any).rawBody = buf
-    },
-  }), withController(createNodelessCallbackController))
+  .post(
+    '/nodeless',
+    json({
+      verify(req, _res, buf) {
+        ;(req as any).rawBody = buf
+      },
+    }),
+    withController(createNodelessCallbackController),
+  )
   .post('/opennode', urlencoded({ extended: false }), json(), withController(createOpenNodeCallbackController))
 
 export default router

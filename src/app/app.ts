@@ -26,12 +26,9 @@ export class App implements IRunnable {
 
     this.workers = new WeakMap()
 
-    this.cluster
-      .on('message', this.onClusterMessage.bind(this))
-      .on('exit', this.onClusterExit.bind(this))
+    this.cluster.on('message', this.onClusterMessage.bind(this)).on('exit', this.onClusterExit.bind(this))
 
-    this.process
-      .on('SIGTERM', this.onExit.bind(this))
+    this.process.on('SIGTERM', this.onExit.bind(this))
 
     debug('started')
   }
@@ -65,7 +62,12 @@ export class App implements IRunnable {
       logCentered(`Payments provider: ${path(['payments', 'processor'], settings)}`, width)
     }
 
-    if (paymentsEnabled && (typeof this.process.env.SECRET !== 'string' || this.process.env.SECRET === '' || this.process.env.SECRET === 'changeme')) {
+    if (
+      paymentsEnabled &&
+      (typeof this.process.env.SECRET !== 'string' ||
+        this.process.env.SECRET === '' ||
+        this.process.env.SECRET === 'changeme')
+    ) {
       console.error('Please configure the secret using the SECRET environment variable.')
       this.process.exit(1)
     }
@@ -108,11 +110,14 @@ export class App implements IRunnable {
     debug('settings: %O', settings)
 
     const host = `${hostname()}:${port}`
-    addOnion(torHiddenServicePort, host).then(value=>{
-      logCentered(`Tor hidden service: ${value}:${torHiddenServicePort}`, width)
-    }, () => {
-      logCentered('Tor hidden service: disabled', width)
-    })
+    addOnion(torHiddenServicePort, host).then(
+      (value) => {
+        logCentered(`Tor hidden service: ${value}:${torHiddenServicePort}`, width)
+      },
+      () => {
+        logCentered('Tor hidden service: disabled', width)
+      },
+    )
   }
 
   private onClusterMessage(source: Worker, message: Serializable) {
@@ -127,7 +132,7 @@ export class App implements IRunnable {
     }
   }
 
-  private onClusterExit(deadWorker: Worker, code: number, signal: string)  {
+  private onClusterExit(deadWorker: Worker, code: number, signal: string) {
     debug('worker %s died', deadWorker.process.pid)
 
     if (code === 0 || signal === 'SIGINT') {

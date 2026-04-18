@@ -20,6 +20,6 @@ export const createPaymentsService = () => {
     userRepository,
     invoiceRepository,
     eventRepository,
-    createSettings
+    createSettings,
   )
 }

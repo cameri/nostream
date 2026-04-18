@@ -7,7 +7,9 @@ import { escapeHtml } from '../../utils/html'
 import { getTemplate } from '../../utils/template-cache'
 
 export const getPrivacyRequestHandler = (_req: Request, res: Response, next: NextFunction) => {
-  const { info: { name } } = settings()
+  const {
+    info: { name },
+  } = settings()
 
   let page: string
   try {

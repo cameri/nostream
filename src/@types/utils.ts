@@ -1,6 +1,6 @@
 export interface IRateLimiterOptions {
-  period: number;
-  rate: number;
+  period: number
+  rate: number
 }
 
 export interface IRateLimiter {

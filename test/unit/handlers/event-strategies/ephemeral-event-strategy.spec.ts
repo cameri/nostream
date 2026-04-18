@@ -40,19 +40,13 @@ describe('EphemeralEventStrategy', () => {
     it('broadcasts event', async () => {
       await strategy.execute(event)
 
-      expect(webSocketEmitStub.firstCall).to.have.been.calledWithExactly(
-        WebSocketAdapterEvent.Message,
-        [
-          MessageType.OK,
-          event.id,
-          true,
-          '',
-        ]
-      )
-      expect(webSocketEmitStub.secondCall).to.have.been.calledWithExactly(
-        WebSocketAdapterEvent.Broadcast,
-        event
-      )
+      expect(webSocketEmitStub.firstCall).to.have.been.calledWithExactly(WebSocketAdapterEvent.Message, [
+        MessageType.OK,
+        event.id,
+        true,
+        '',
+      ])
+      expect(webSocketEmitStub.secondCall).to.have.been.calledWithExactly(WebSocketAdapterEvent.Broadcast, event)
     })
   })
 })

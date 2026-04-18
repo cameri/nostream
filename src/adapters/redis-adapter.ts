@@ -42,7 +42,7 @@ export class RedisAdapter implements ICacheAdapter {
   }
 
   private onClientError(error: Error) {
-    console.error('Unable to connect to Redis.', error)
+    debug('Unable to connect to Redis.', error)
     // throw error
   }
 
@@ -58,10 +58,13 @@ export class RedisAdapter implements ICacheAdapter {
     return this.client.get(key)
   }
 
-  public async setKey(key: string, value: string): Promise<boolean> {
+  public async setKey(key: string, value: string, expirySeconds?: number): Promise<boolean> {
     await this.connection
-    debug('get %s key', key)
-    return 'OK' === await this.client.set(key, value)
+    debug('set %s key', key)
+    if (typeof expirySeconds === 'number') {
+      return 'OK' === (await this.client.set(key, value, { EX: expirySeconds }))
+    }
+    return 'OK' === (await this.client.set(key, value))
   }
 
   public async removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number> {
@@ -82,17 +85,11 @@ export class RedisAdapter implements ICacheAdapter {
     await this.client.expire(key, expiry)
   }
 
-  public async addToSortedSet(
-    key: string,
-    set: Record<string, string>
-  ): Promise<number> {
+  public async addToSortedSet(key: string, set: Record<string, string>): Promise<number> {
     await this.connection
     debug('add %o to sorted set %s', set, key)
-    const members = Object
-        .entries(set)
-        .map(([value, score]) => ({ score: Number(score), value }))
+    const members = Object.entries(set).map(([value, score]) => ({ score: Number(score), value }))
 
     return this.client.zAdd(key, members)
   }
-
 }

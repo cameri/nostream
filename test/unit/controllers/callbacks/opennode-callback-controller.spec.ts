@@ -40,9 +40,7 @@ const makeInvoice = (overrides: any = {}) => ({
   ...overrides,
 })
 
-const makeController = (overrides: {
-  paymentsService?: any
-} = {}) => {
+const makeController = (overrides: { paymentsService?: any } = {}) => {
   const paymentsService = overrides.paymentsService ?? {
     updateInvoiceStatus: sinon.stub().resolves(makeInvoice()),
     confirmInvoice: sinon.stub().resolves(),
@@ -200,10 +198,12 @@ describe('OpenNodeCallbackController', () => {
   describe('invoice state handling', () => {
     it('returns 200 without confirmation for pending invoices', async () => {
       const paymentsService = {
-        updateInvoiceStatus: sinon.stub().resolves(makeInvoice({
-          status: InvoiceStatus.PENDING,
-          confirmedAt: null,
-        })),
+        updateInvoiceStatus: sinon.stub().resolves(
+          makeInvoice({
+            status: InvoiceStatus.PENDING,
+            confirmedAt: null,
+          }),
+        ),
         confirmInvoice: sinon.stub().resolves(),
         sendInvoiceUpdateNotification: sinon.stub().resolves(),
       }

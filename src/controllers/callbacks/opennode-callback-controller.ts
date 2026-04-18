@@ -15,14 +15,9 @@ import { validateSchema } from '../../utils/validation'
 const debug = createLogger('opennode-callback-controller')
 
 export class OpenNodeCallbackController implements IController {
-  public constructor(
-    private readonly paymentsService: IPaymentsService,
-  ) {}
+  public constructor(private readonly paymentsService: IPaymentsService) {}
 
-  public async handleRequest(
-    request: Request,
-    response: Response,
-  ) {
+  public async handleRequest(request: Request, response: Response) {
     debug('request headers: %o', request.headers)
 
     const settings = createSettings()
@@ -40,10 +35,7 @@ export class OpenNodeCallbackController implements IController {
     const bodyValidation = validateSchema(opennodeWebhookCallbackBodySchema)(request.body)
     if (bodyValidation.error) {
       debug('opennode callback request rejected: invalid body %o', bodyValidation.error)
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Malformed body')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Malformed body')
       return
     }
 
@@ -146,9 +138,6 @@ export class OpenNodeCallbackController implements IController {
       throw error
     }
 
-    response
-      .status(200)
-      .setHeader('content-type', 'text/plain; charset=utf8')
-      .send('OK')
+    response.status(200).setHeader('content-type', 'text/plain; charset=utf8').send('OK')
   }
 }

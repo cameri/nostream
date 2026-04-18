@@ -6,7 +6,6 @@ import { IPaymentsProcessor } from '../../@types/clients'
 import { LNbitsPaymentsProcessor } from '../../payments-processors/lnbits-payment-processor'
 import { Settings } from '../../@types/settings'
 
-
 const getLNbitsAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
   if (!process.env.LNBITS_API_KEY) {
     throw new Error('LNBITS_API_KEY must be set to an invoice or admin key.')

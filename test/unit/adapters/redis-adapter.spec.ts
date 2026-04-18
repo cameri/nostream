@@ -169,7 +169,7 @@ describe('RedisAdapter', () => {
     it('transforms record entries to score/value members and calls client.zAdd', async () => {
       client.zAdd.resolves(2)
 
-      const set = { 'member1': '100', 'member2': '200' }
+      const set = { member1: '100', member2: '200' }
       const result = await adapter.addToSortedSet('sorted-key', set)
 
       expect(client.zAdd).to.have.been.calledOnce

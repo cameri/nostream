@@ -88,10 +88,7 @@ describe('WebSocketAdapter', () => {
 
   describe('constructor', () => {
     it('extracts clientId from sec-websocket-key header', () => {
-      const expectedId = Buffer.from(
-        Buffer.from('test-key-123', 'utf8').toString('base64'),
-        'base64',
-      ).toString('hex')
+      const expectedId = Buffer.from(Buffer.from('test-key-123', 'utf8').toString('base64'), 'base64').toString('hex')
 
       expect(adapter.getClientId()).to.equal(expectedId)
     })
@@ -301,9 +298,7 @@ describe('WebSocketAdapter', () => {
       adapter.onSubscribed('sub-2', [{ kinds: [2] }])
 
       // Trigger the close handler
-      const closeCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'close'
-      )
+      const closeCall = client.on.getCalls().find((call: any) => call.args[0] === 'close')
       const onClose = closeCall.args[1]
       onClose()
 
@@ -311,9 +306,7 @@ describe('WebSocketAdapter', () => {
     })
 
     it('removes all listeners from client', () => {
-      const closeCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'close'
-      )
+      const closeCall = client.on.getCalls().find((call: any) => call.args[0] === 'close')
       const onClose = closeCall.args[1]
       onClose()
 
@@ -327,9 +320,7 @@ describe('WebSocketAdapter', () => {
       adapter.emit(WebSocketAdapterEvent.Heartbeat)
 
       // Trigger pong handler - should set alive = true
-      const pongCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'pong'
-      )
+      const pongCall = client.on.getCalls().find((call: any) => call.args[0] === 'pong')
       const onPong = pongCall.args[1]
       onPong()
 
@@ -342,9 +333,7 @@ describe('WebSocketAdapter', () => {
 
   describe('onClientPing', () => {
     it('responds with pong', () => {
-      const pingCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'ping'
-      )
+      const pingCall = client.on.getCalls().find((call: any) => call.args[0] === 'ping')
       const onPing = pingCall.args[1]
       const data = Buffer.from('ping-data')
 
@@ -356,9 +345,7 @@ describe('WebSocketAdapter', () => {
 
   describe('error handling', () => {
     it('closes client on RangeError with max payload exceeded', () => {
-      const errorCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'error'
-      )
+      const errorCall = client.on.getCalls().find((call: any) => call.args[0] === 'error')
       const onError = errorCall.args[1]
 
       const error = new RangeError('Max payload size exceeded')
@@ -369,9 +356,7 @@ describe('WebSocketAdapter', () => {
     })
 
     it('closes client on RSV1 compression error', () => {
-      const errorCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'error'
-      )
+      const errorCall = client.on.getCalls().find((call: any) => call.args[0] === 'error')
       const onError = errorCall.args[1]
 
       const error = new RangeError('Invalid WebSocket frame: RSV1 must be clear')
@@ -382,9 +367,7 @@ describe('WebSocketAdapter', () => {
     })
 
     it('closes client on generic errors', () => {
-      const errorCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'error'
-      )
+      const errorCall = client.on.getCalls().find((call: any) => call.args[0] === 'error')
       const onError = errorCall.args[1]
 
       const error = new Error('something went wrong')
@@ -399,9 +382,7 @@ describe('WebSocketAdapter', () => {
     it('handles invalid JSON gracefully', async () => {
       client.readyState = WebSocket.OPEN
 
-      const messageCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'message'
-      )
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
       const onMessage = messageCall.args[1]
 
       await onMessage(Buffer.from('not-json'))
@@ -430,9 +411,7 @@ describe('WebSocketAdapter', () => {
         hit: sandbox.stub().resolves(true),
       })
 
-      const messageCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'message'
-      )
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
       const onMessage = messageCall.args[1]
 
       // Valid JSON message that would pass parsing
@@ -451,9 +430,7 @@ describe('WebSocketAdapter', () => {
         },
       })
 
-      const messageCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'message'
-      )
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
       const onMessage = messageCall.args[1]
 
       // Invalid JSON will cause a parsing NOTICE, not a rate-limit NOTICE
@@ -478,9 +455,7 @@ describe('WebSocketAdapter', () => {
         },
       })
 
-      const messageCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'message'
-      )
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
       const onMessage = messageCall.args[1]
 
       await onMessage(Buffer.from('invalid'))
@@ -495,9 +470,7 @@ describe('WebSocketAdapter', () => {
       // First heartbeat sets alive = false
       adapter.emit(WebSocketAdapterEvent.Heartbeat)
 
-      const messageCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'message'
-      )
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
       const onMessage = messageCall.args[1]
 
       // Receiving any message sets alive = true
@@ -524,9 +497,7 @@ describe('WebSocketAdapter', () => {
         handleMessage: sandbox.stub().rejects(abortError),
       })
 
-      const messageCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'message'
-      )
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
       const onMessage = messageCall.args[1]
 
       await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub-1', {}])))
@@ -545,9 +516,7 @@ describe('WebSocketAdapter', () => {
 
       createMessageHandler.returns(null)
 
-      const messageCall = client.on.getCalls().find(
-        (call: any) => call.args[0] === 'message'
-      )
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
       const onMessage = messageCall.args[1]
 
       // Should not throw and should not send any message
@@ -635,4 +604,3 @@ describe('WebSocketAdapter', () => {
     })
   })
 })
-

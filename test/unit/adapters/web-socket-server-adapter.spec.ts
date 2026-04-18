@@ -49,23 +49,19 @@ describe('WebSocketServerAdapter', () => {
 
     createWebSocketAdapter = sandbox.stub()
 
-    settings = () => ({
-      network: {
-        remoteIpHeader: '',
-      },
-      limits: {
-        connection: {
-          rateLimits: [],
+    settings = () =>
+      ({
+        network: {
+          remoteIpHeader: '',
         },
-      },
-    }) as any
+        limits: {
+          connection: {
+            rateLimits: [],
+          },
+        },
+      }) as any
 
-    adapter = new WebSocketServerAdapter(
-      webServer,
-      webSocketServer,
-      createWebSocketAdapter,
-      settings,
-    )
+    adapter = new WebSocketServerAdapter(webServer, webSocketServer, createWebSocketAdapter, settings)
   })
 
   afterEach(() => {
@@ -102,11 +98,7 @@ describe('WebSocketServerAdapter', () => {
       const OPEN = 1
       const CLOSING = 2
 
-      webSocketServer.clients = new Set([
-        { readyState: OPEN },
-        { readyState: OPEN },
-        { readyState: CLOSING },
-      ] as any)
+      webSocketServer.clients = new Set([{ readyState: OPEN }, { readyState: OPEN }, { readyState: CLOSING }] as any)
 
       expect(adapter.getConnectedClients()).to.equal(2)
     })
@@ -123,10 +115,7 @@ describe('WebSocketServerAdapter', () => {
       const terminateStub1 = sandbox.stub()
       const terminateStub2 = sandbox.stub()
 
-      webSocketServer.clients = new Set([
-        { terminate: terminateStub1 },
-        { terminate: terminateStub2 },
-      ] as any)
+      webSocketServer.clients = new Set([{ terminate: terminateStub1 }, { terminate: terminateStub2 }] as any)
 
       webServer.close.callsFake((cb: () => void) => cb())
       webSocketServer.close.callsFake((cb: () => void) => cb())
@@ -185,9 +174,9 @@ describe('WebSocketServerAdapter', () => {
       createWebSocketAdapter.returns(mockAdapter)
 
       // Populate the WeakMap by invoking onConnection
-      const connectionCall = webSocketServer.on.getCalls().find(
-        (call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection
-      )
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
       const onConnection = connectionCall.args[1]
       const mockReq = {
         headers: {},
@@ -230,9 +219,9 @@ describe('WebSocketServerAdapter', () => {
       createWebSocketAdapter.returns(mockWsAdapter)
 
       // Populate the WeakMap via onConnection
-      const connectionCall = webSocketServer.on.getCalls().find(
-        (call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection
-      )
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
       const onConnection = connectionCall.args[1]
       const mockReq = {
         headers: {},
@@ -252,9 +241,9 @@ describe('WebSocketServerAdapter', () => {
       const mockWsAdapter = { getClientId: () => 'test-id', getClientAddress: () => '127.0.0.1' }
       createWebSocketAdapter.returns(mockWsAdapter)
 
-      const connectionCall = webSocketServer.on.getCalls().find(
-        (call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection
-      )
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
       const onConnection = connectionCall.args[1]
 
       const mockClient = {}
@@ -272,9 +261,9 @@ describe('WebSocketServerAdapter', () => {
       const terminateStub = sandbox.stub()
       isRateLimitedStub.resolves(true)
 
-      const connectionCall = webSocketServer.on.getCalls().find(
-        (call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection
-      )
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
       const onConnection = connectionCall.args[1]
 
       const mockClient = { terminate: terminateStub }

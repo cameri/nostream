@@ -199,7 +199,7 @@ export interface NodelessPaymentsProcessor {
 }
 
 export interface PaymentsProcessors {
-  lnurl?: LnurlPaymentsProcessor,
+  lnurl?: LnurlPaymentsProcessor
   zebedee?: ZebedeePaymentsProcessor
   lnbits?: LNbitsPaymentsProcessor
   nodeless?: NodelessPaymentsProcessor

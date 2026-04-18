@@ -1,4 +1,19 @@
-import { always, applySpec, cond, equals, ifElse, is, isNil, multiply, path, pathSatisfies, pipe, prop, propSatisfies, T } from 'ramda'
+import {
+  always,
+  applySpec,
+  cond,
+  equals,
+  ifElse,
+  is,
+  isNil,
+  multiply,
+  path,
+  pathSatisfies,
+  pipe,
+  prop,
+  propSatisfies,
+  T,
+} from 'ramda'
 import { bech32 } from 'bech32'
 
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
@@ -51,14 +66,14 @@ export const fromBech32 = (input: string) => {
     throw new Error(`Bech32 invalid prefix: ${prefix}`)
   }
 
-  return Buffer.from(
-    bech32.fromWords(words).slice(0, 32)
-  ).toString('hex')
+  return Buffer.from(bech32.fromWords(words).slice(0, 32)).toString('hex')
 }
 
-export const toBech32 = (prefix: string) => (input: string): string => {
-  return bech32.encode(prefix, bech32.toWords(Buffer.from(input, 'hex')))
-}
+export const toBech32 =
+  (prefix: string) =>
+  (input: string): string => {
+    return bech32.encode(prefix, bech32.toWords(Buffer.from(input, 'hex')))
+  }
 
 export const toDate = (input: string | number) => new Date(input)
 
@@ -70,21 +85,9 @@ export const fromZebedeeInvoice = applySpec<Invoice>({
   description: prop('description'),
   unit: prop('unit'),
   status: prop('status'),
-  expiresAt: ifElse(
-    propSatisfies(is(String), 'expiresAt'),
-    pipe(prop('expiresAt'), toDate),
-    always(null),
-  ),
-  confirmedAt: ifElse(
-    propSatisfies(is(String), 'confirmedAt'),
-    pipe(prop('confirmedAt'), toDate),
-    always(null),
-  ),
-  createdAt: ifElse(
-    propSatisfies(is(String), 'createdAt'),
-    pipe(prop('createdAt'), toDate),
-    always(null),
-  ),
+  expiresAt: ifElse(propSatisfies(is(String), 'expiresAt'), pipe(prop('expiresAt'), toDate), always(null)),
+  confirmedAt: ifElse(propSatisfies(is(String), 'confirmedAt'), pipe(prop('confirmedAt'), toDate), always(null)),
+  createdAt: ifElse(propSatisfies(is(String), 'createdAt'), pipe(prop('createdAt'), toDate), always(null)),
   rawResponse: toJSON,
 })
 
@@ -110,21 +113,13 @@ export const fromNodelessInvoice = applySpec<Invoice>({
   expiresAt: ifElse(
     propSatisfies(is(String), 'expiresAt'),
     pipe(prop('expiresAt'), toDate),
-    ifElse(
-      propSatisfies(is(String), 'createdAt'),
-      pipe(prop('createdAt'), toDate, addTime(15 * 60000)),
-      always(null),
-    ),
+    ifElse(propSatisfies(is(String), 'createdAt'), pipe(prop('createdAt'), toDate, addTime(15 * 60000)), always(null)),
   ),
   confirmedAt: cond([
     [propSatisfies(is(String), 'paidAt'), pipe(prop('paidAt'), toDate)],
     [T, always(null)],
   ]),
-  createdAt: ifElse(
-    propSatisfies(is(String), 'createdAt'),
-    pipe(prop('createdAt'), toDate),
-    always(null),
-  ),
+  createdAt: ifElse(propSatisfies(is(String), 'createdAt'), pipe(prop('createdAt'), toDate), always(null)),
   // rawResponse: toJSON,
 })
 
@@ -134,14 +129,10 @@ export const fromOpenNodeInvoice = applySpec<Invoice>({
   bolt11: ifElse(
     pathSatisfies(is(String), ['lightning_invoice', 'payreq']),
     path(['lightning_invoice', 'payreq']),
-    path(['lightning', 'payreq'])
+    path(['lightning', 'payreq']),
   ),
   amountRequested: pipe(
-    ifElse(
-      propSatisfies(is(Number), 'amount'),
-      prop('amount'),
-      prop('price'),
-    ) as () => number,
+    ifElse(propSatisfies(is(Number), 'amount'), prop('amount'), prop('price')) as () => number,
     toBigInt,
   ),
   description: prop('description'),
@@ -160,7 +151,10 @@ export const fromOpenNodeInvoice = applySpec<Invoice>({
   expiresAt: pipe(
     cond([
       [pathSatisfies(is(String), ['lightning', 'expires_at']), path(['lightning', 'expires_at'])],
-      [pathSatisfies(is(Number), ['lightning_invoice', 'expires_at']), pipe(path(['lightning_invoice', 'expires_at']), multiply(1000))],
+      [
+        pathSatisfies(is(Number), ['lightning_invoice', 'expires_at']),
+        pipe(path(['lightning_invoice', 'expires_at']), multiply(1000)),
+      ],
     ]),
     toDate,
   ),
@@ -169,11 +163,7 @@ export const fromOpenNodeInvoice = applySpec<Invoice>({
     [T, always(null)],
   ]),
   createdAt: pipe(
-    ifElse(
-      propSatisfies(is(Number), 'created_at'),
-      pipe(prop('created_at'), multiply(1000)),
-      prop('created_at'),
-    ),
+    ifElse(propSatisfies(is(Number), 'created_at'), pipe(prop('created_at'), multiply(1000)), prop('created_at')),
     toDate,
   ),
   rawResponse: toJSON,

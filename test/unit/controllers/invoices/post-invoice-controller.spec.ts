@@ -31,12 +31,9 @@ const baseSettings = {
   },
 }
 
-const makeController = (overrides: {
-  settings?: () => any
-  userRepository?: any
-  paymentsService?: any
-  rateLimiter?: any
-} = {}) => {
+const makeController = (
+  overrides: { settings?: () => any; userRepository?: any; paymentsService?: any; rateLimiter?: any } = {},
+) => {
   return new PostInvoiceController(
     overrides.userRepository ?? { findByPubkey: sinon.stub().resolves(null) },
     overrides.paymentsService ?? {
@@ -164,9 +161,12 @@ describe('PostInvoiceController', () => {
       const controller = makeController()
       const res = makeRes()
 
-      await controller.handleRequest({
-        body: { ...validBody, pubkey: 'npub1invalidvalue' },
-      } as any, res)
+      await controller.handleRequest(
+        {
+          body: { ...validBody, pubkey: 'npub1invalidvalue' },
+        } as any,
+        res,
+      )
 
       expect(res.status).to.have.been.calledWith(400)
       expect(res.send).to.have.been.calledWith('Invalid pubkey: invalid npub')
@@ -176,9 +176,12 @@ describe('PostInvoiceController', () => {
       const controller = makeController()
       const res = makeRes()
 
-      await controller.handleRequest({
-        body: { ...validBody, pubkey: 'notahexpubkey' },
-      } as any, res)
+      await controller.handleRequest(
+        {
+          body: { ...validBody, pubkey: 'notahexpubkey' },
+        } as any,
+        res,
+      )
 
       expect(res.status).to.have.been.calledWith(400)
       expect(res.send).to.have.been.calledWith('Invalid pubkey: unknown format')
@@ -305,8 +308,8 @@ describe('PostInvoiceController', () => {
     it('leaves no unreplaced template variables in the output', async () => {
       getTemplateStub.returns(
         '{{name}}{{relay_url_html}}{{invoice_html}}{{pubkey_html}}{{amount}}' +
-        '{{reference_json}}{{relay_url_json}}{{relay_pubkey_json}}' +
-        '{{invoice_json}}{{pubkey_json}}{{expires_at_json}}{{processor_json}}{{nonce}}'
+          '{{reference_json}}{{relay_url_json}}{{relay_pubkey_json}}' +
+          '{{invoice_json}}{{pubkey_json}}{{expires_at_json}}{{processor_json}}{{nonce}}',
       )
       const controller = makeController()
       const res = makeRes()

@@ -54,47 +54,42 @@ describe('parseCleanDbOptions', () => {
   })
 
   it('throws when no deletion target is provided', () => {
-    expect(() => parseCleanDbOptions(['--force']))
-      .to.throw('Select a target with --all, --older-than, or --kinds')
+    expect(() => parseCleanDbOptions(['--force'])).to.throw('Select a target with --all, --older-than, or --kinds')
   })
 
   it('throws when --all is combined with selective options', () => {
-    expect(() => parseCleanDbOptions(['--all', '--older-than=30']))
-      .to.throw('--all cannot be combined with --older-than or --kinds')
+    expect(() => parseCleanDbOptions(['--all', '--older-than=30'])).to.throw(
+      '--all cannot be combined with --older-than or --kinds',
+    )
 
-    expect(() => parseCleanDbOptions(['--all', '--kinds=1,7']))
-      .to.throw('--all cannot be combined with --older-than or --kinds')
+    expect(() => parseCleanDbOptions(['--all', '--kinds=1,7'])).to.throw(
+      '--all cannot be combined with --older-than or --kinds',
+    )
   })
 
   it('throws on invalid --older-than values', () => {
-    expect(() => parseCleanDbOptions(['--older-than=0']))
-      .to.throw('--older-than must be a positive integer')
+    expect(() => parseCleanDbOptions(['--older-than=0'])).to.throw('--older-than must be a positive integer')
 
-    expect(() => parseCleanDbOptions(['--older-than=-1']))
-      .to.throw('--older-than must be a positive integer')
+    expect(() => parseCleanDbOptions(['--older-than=-1'])).to.throw('--older-than must be a positive integer')
 
-    expect(() => parseCleanDbOptions(['--older-than=abc']))
-      .to.throw('--older-than must be a positive integer')
+    expect(() => parseCleanDbOptions(['--older-than=abc'])).to.throw('--older-than must be a positive integer')
   })
 
   it('throws on invalid --kinds values', () => {
-    expect(() => parseCleanDbOptions(['--kinds=']))
-      .to.throw('Missing value for --kinds')
+    expect(() => parseCleanDbOptions(['--kinds='])).to.throw('Missing value for --kinds')
 
-    expect(() => parseCleanDbOptions(['--kinds=1,abc']))
-      .to.throw('--kinds must be a comma-separated list of non-negative integers')
+    expect(() => parseCleanDbOptions(['--kinds=1,abc'])).to.throw(
+      '--kinds must be a comma-separated list of non-negative integers',
+    )
   })
 
   it('throws on unknown options', () => {
-    expect(() => parseCleanDbOptions(['--unknown']))
-      .to.throw('Unknown option: --unknown')
+    expect(() => parseCleanDbOptions(['--unknown'])).to.throw('Unknown option: --unknown')
   })
 
   it('rejects options that only share a prefix with supported flags', () => {
-    expect(() => parseCleanDbOptions(['--older-than-days=7']))
-      .to.throw('Unknown option: --older-than-days=7')
+    expect(() => parseCleanDbOptions(['--older-than-days=7'])).to.throw('Unknown option: --older-than-days=7')
 
-    expect(() => parseCleanDbOptions(['--kinds-extra', '1,2,3']))
-      .to.throw('Unknown option: --kinds-extra')
+    expect(() => parseCleanDbOptions(['--kinds-extra', '1,2,3'])).to.throw('Unknown option: --kinds-extra')
   })
 })
