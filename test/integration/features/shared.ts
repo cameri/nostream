@@ -57,11 +57,11 @@ BeforeAll({ timeout: 1000 }, async function () {
   worker.run()
 })
 
-AfterAll(async function() {
+AfterAll({ timeout: 30000 }, async function() {
   await new Promise<void>((resolve) => {
     worker.close(async () => {
       await Promise.all([
-        cacheClient.disconnect(),
+        cacheClient.isOpen ? cacheClient.disconnect() : Promise.resolve(),
         dbClient.destroy(),
         rrDbClient.destroy(),
       ])
