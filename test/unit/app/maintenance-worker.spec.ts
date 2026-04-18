@@ -202,7 +202,7 @@ describe('MaintenanceWorker', () => {
 
   describe('processNip05Reverifications', () => {
     it('returns early when nip05 settings are undefined', async () => {
-      ;(settings as any).nip05 = undefined
+      settingsState.nip05 = undefined
 
       await (worker as any).processNip05Reverifications(settingsState)
 
@@ -210,7 +210,7 @@ describe('MaintenanceWorker', () => {
     })
 
     it('returns early when mode is disabled', async () => {
-      ;(settings as any).nip05.mode = 'disabled'
+      settingsState.nip05!.mode = 'disabled'
 
       await (worker as any).processNip05Reverifications(settingsState)
 
@@ -286,8 +286,8 @@ describe('MaintenanceWorker', () => {
     })
 
     it('uses configured updateFrequency and maxFailures', async () => {
-      ;(settings as any).nip05.verifyUpdateFrequency = 3600000
-      ;(settings as any).nip05.maxConsecutiveFailures = 5
+      settingsState.nip05!.verifyUpdateFrequency = 3600000
+      settingsState.nip05!.maxConsecutiveFailures = 5
 
       await (worker as any).processNip05Reverifications(settingsState)
 
@@ -295,8 +295,8 @@ describe('MaintenanceWorker', () => {
     })
 
     it('uses defaults when settings values are undefined', async () => {
-      ;(settings as any).nip05.verifyUpdateFrequency = undefined
-      ;(settings as any).nip05.maxConsecutiveFailures = undefined
+      settingsState.nip05!.verifyUpdateFrequency = undefined
+      settingsState.nip05!.maxConsecutiveFailures = undefined
 
       await (worker as any).processNip05Reverifications(settingsState)
 
@@ -304,7 +304,7 @@ describe('MaintenanceWorker', () => {
     })
 
     it('processes in passive mode', async () => {
-      ;(settings as any).nip05.mode = 'passive'
+      settingsState.nip05!.mode = 'passive'
       const row = verification({ pubkey: 'c'.repeat(64), nip05: 'charlie@example.com' })
       nip05VerificationRepository.findPendingVerifications.resolves([row])
       verifyStub.resolves({ status: 'verified' })
@@ -318,7 +318,7 @@ describe('MaintenanceWorker', () => {
 
   describe('onSchedule', () => {
     it('calls maintenance service and processes invoices', async () => {
-      ;(settings as any).payments = { enabled: true }
+      settingsState.payments = { enabled: true } as any
       maintenanceService.clearOldEvents.resolves()
       paymentsService.getPendingInvoices.resolves([])
 
@@ -329,7 +329,7 @@ describe('MaintenanceWorker', () => {
     })
 
     it('calls maintenance service even if payments are disabled', async () => {
-      ;(settings as any).payments = { enabled: false }
+      settingsState.payments = { enabled: false } as any
       maintenanceService.clearOldEvents.resolves()
 
       await (worker as any).onSchedule()
