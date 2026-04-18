@@ -48,6 +48,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-01: Basic protocol flow description
 - [x] NIP-02: Contact list and petnames
 - [x] NIP-04: Encrypted Direct Message
+- [x] NIP-05: Mapping Nostr keys to DNS-based internet identifiers
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
 - [x] NIP-11a: Relay Information Document Extensions
@@ -61,6 +62,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-28: Public Chat
 - [x] NIP-33: Parameterized Replaceable Events
 - [x] NIP-40: Expiration Timestamp
+- [x] NIP-44: Encrypted Payloads (Versioned)
 
 ## Requirements
 
