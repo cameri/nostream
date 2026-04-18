@@ -470,6 +470,17 @@ Start:
 
 ## Tests
 
+### Linting and formatting (Biome)
+
+Run code quality checks with Biome:
+
+  ```
+  npm run lint
+  npm run lint:fix
+  npm run format
+  npm run format:check
+  ```
+
 ### Unit tests
 
 Open a terminal and change to the project's directory:
