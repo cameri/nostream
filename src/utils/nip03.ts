@@ -58,7 +58,6 @@ const MAX_OTS_BYTES = 16 * 1024
 const MAX_VARBYTES_LENGTH = 8 * 1024
 const MAX_VARUINT_VALUE = Number.MAX_SAFE_INTEGER
 const MAX_RECURSION_DEPTH = 128
-const SHA256_DIGEST_LENGTH = 32
 
 /**
  * Enum-like classification of attestations we care about. Unknown tags are
@@ -100,15 +99,13 @@ export type OtsParseResult = { ok: true; summary: OtsFileSummary } | { ok: false
 /**
  * Minimal cursor over a Buffer used by the OTS parser. All reads are
  * bounds-checked; exceeding the buffer throws a descriptive error.
+ *
+ * Exported for unit tests only — application code should use `parseOtsFile`.
  */
-class OtsReader {
+export class OtsReader {
   private offset = 0
 
   public constructor(private readonly buf: Buffer) {}
-
-  public get position(): number {
-    return this.offset
-  }
 
   public get remaining(): number {
     return this.buf.length - this.offset
@@ -371,10 +368,6 @@ export function validateOtsProof(base64Content: string, targetEventId: string): 
 
   if (summary.fileHashOp !== 'sha256') {
     return `ots proof must use sha256 file hash op (got ${summary.fileHashOp})`
-  }
-
-  if (summary.digest.length !== SHA256_DIGEST_LENGTH * 2) {
-    return 'ots proof digest is not 32 bytes'
   }
 
   const normalizedTarget = typeof targetEventId === 'string' ? targetEventId.toLowerCase() : ''
