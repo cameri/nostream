@@ -48,6 +48,7 @@
     "pretest:integration": "mkdir -p .test-reports/integration",
     "test:integration": "cucumber-js",
     "cover:integration": "nyc --report-dir .coverage/integration npm run test:integration -- -p cover",
+    "export": "node -r ts-node/register src/scripts/export-events.ts",
     "docker:compose:start": "./scripts/start",
     "docker:compose:stop": "./scripts/stop",
     "docker:compose:clean": "./scripts/clean",
