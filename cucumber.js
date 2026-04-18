@@ -4,6 +4,7 @@ const base = [
   '--require test/integration/features/**/*.ts',
   '--require test/integration/features/*.ts',
   '--publish-quiet',
+  '--force-exit',
 ].join(' ')
 
 const config = [
