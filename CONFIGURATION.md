@@ -143,6 +143,6 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
-| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.processor                          | Either `zebedee`, `nodeless`, `opennode`, `lnbits`, `lnurl`. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. |
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
