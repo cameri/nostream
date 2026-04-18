@@ -19,4 +19,4 @@ jobs:
         with:
           requireScope: false
           subjectPattern: ^.+$
-          subjectPatternError: PR title must follow Conventional Commits format (e.g. "feat: add feature" or "fix(scope): fix bug").
+          subjectPatternError: 'PR title must follow Conventional Commits format (e.g. "feat: add feature" or "fix(scope): fix bug").'
