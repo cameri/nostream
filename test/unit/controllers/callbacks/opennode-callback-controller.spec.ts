@@ -87,7 +87,7 @@ describe('OpenNodeCallbackController', () => {
     expect(updateInvoiceStatusStub).not.to.have.been.called
   })
 
-  it('returns bad request for malformed callback bodies', async () => {
+  it('returns malformed body for invalid callback bodies', async () => {
     request.body = {
       id: 'invoice-id',
     }
@@ -96,11 +96,11 @@ describe('OpenNodeCallbackController', () => {
 
     expect(statusStub).to.have.been.calledOnceWithExactly(400)
     expect(setHeaderStub).to.have.been.calledOnceWithExactly('content-type', 'text/plain; charset=utf8')
-    expect(sendStub).to.have.been.calledOnceWithExactly('Bad Request')
+    expect(sendStub).to.have.been.calledOnceWithExactly('Malformed body')
     expect(updateInvoiceStatusStub).not.to.have.been.called
   })
 
-  it('returns bad request for unknown status values', async () => {
+  it('returns malformed body for unknown status values', async () => {
     request.body = {
       hashed_order: 'some-hash',
       id: 'invoice-id',
@@ -110,7 +110,7 @@ describe('OpenNodeCallbackController', () => {
     await controller.handleRequest(request, response)
 
     expect(statusStub).to.have.been.calledOnceWithExactly(400)
-    expect(sendStub).to.have.been.calledOnceWithExactly('Bad Request')
+    expect(sendStub).to.have.been.calledOnceWithExactly('Malformed body')
     expect(updateInvoiceStatusStub).not.to.have.been.called
   })
 

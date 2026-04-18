@@ -9,6 +9,8 @@ import { getRemoteAddress } from '../../utils/http'
 import { hmacSha256 } from '../../utils/secret'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
+import { opennodeWebhookCallbackBodySchema } from '../../schemas/opennode-callback-schema'
+import { validateSchema } from '../../utils/validation'
 
 const debug = createLogger('opennode-callback-controller')
 
@@ -22,12 +24,6 @@ export class OpenNodeCallbackController implements IController {
     response: Response,
   ) {
     debug('request headers: %o', request.headers)
-    debug(
-      'request body metadata: hasId=%s hasHashedOrder=%s status=%s',
-      typeof request.body?.id === 'string',
-      typeof request.body?.hashed_order === 'string',
-      typeof request.body?.status === 'string' ? request.body.status : 'missing',
-    )
 
     const settings = createSettings()
     const remoteAddress = getRemoteAddress(request, settings)
@@ -41,21 +37,23 @@ export class OpenNodeCallbackController implements IController {
       return
     }
 
-    const validStatuses = ['expired', 'refunded', 'unpaid', 'processing', 'underpaid', 'paid']
-
-    if (
-      !request.body
-      || typeof request.body.id !== 'string'
-      || typeof request.body.hashed_order !== 'string'
-      || typeof request.body.status !== 'string'
-      || !validStatuses.includes(request.body.status)
-    ) {
+    const bodyValidation = validateSchema(opennodeWebhookCallbackBodySchema)(request.body)
+    if (bodyValidation.error) {
+      debug('opennode callback request rejected: invalid body %o', bodyValidation.error)
       response
         .status(400)
         .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Bad Request')
+        .send('Malformed body')
       return
     }
+
+    const body = bodyValidation.value
+    debug(
+      'request body metadata: hasId=%s hasHashedOrder=%s status=%s',
+      typeof body.id === 'string',
+      typeof body.hashed_order === 'string',
+      body.status,
+    )
 
     const openNodeApiKey = process.env.OPENNODE_API_KEY
     if (!openNodeApiKey) {
@@ -67,8 +65,8 @@ export class OpenNodeCallbackController implements IController {
       return
     }
 
-    const expectedBuf = hmacSha256(openNodeApiKey, request.body.id)
-    const actualHex = request.body.hashed_order
+    const expectedBuf = hmacSha256(openNodeApiKey, body.id)
+    const actualHex = body.hashed_order
     const expectedHexLength = expectedBuf.length * 2
 
     if (
@@ -105,8 +103,8 @@ export class OpenNodeCallbackController implements IController {
     }
 
     const invoice: Pick<Invoice, 'id' | 'status'> = {
-      id: request.body.id,
-      status: statusMap[request.body.status],
+      id: body.id,
+      status: statusMap[body.status],
     }
 
     debug('invoice', invoice)
