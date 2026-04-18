@@ -22,9 +22,9 @@ describe('Zebedee Callback Schema', () => {
     })
 
     it('returns no error if body contains unknown additional fields', () => {
-      const body = { 
-        ...validBody, 
-        extraProperty: true, 
+      const body = {
+        ...validBody,
+        extraProperty: true,
       }
       const result = validateSchema(zebedeeCallbackBodySchema)(body)
       expect(result.error).to.be.undefined
@@ -33,7 +33,8 @@ describe('Zebedee Callback Schema', () => {
     it('returns error if internalId is not a valid pubkey', () => {
       const body = { ...validBody, internalId: 'deadbeef' }
       const result = validateSchema(zebedeeCallbackBodySchema)(body)
-      expect(result.error).to.have.nested.property('message', '"internalId" length must be 64 characters long')
+      expect(result.error).to.exist
+      expect(result.error?.issues[0].path).to.deep.equal(['internalId'])
     })
   })
 })

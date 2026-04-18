@@ -2,6 +2,7 @@ import cluster from 'cluster'
 import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
 import { WebSocket } from 'ws'
+import { ZodError } from 'zod'
 
 import { ContextMetadata, Factory } from '../@types/base'
 import { createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
@@ -179,9 +180,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           console.error(`web-socket-adapter: abort from client ${this.clientId} (${this.getClientAddress()})`)
-        } else if (error.name === 'SyntaxError' || error.name === 'ZodError') {
+        } else if (error.name === 'SyntaxError' || error instanceof ZodError) {
           debug('invalid message client %s (%s): %s', this.clientId, this.getClientAddress(), error.message)
-          this.sendMessage(createNoticeMessage(`invalid: ${error.message}`))
+          const notice = error instanceof ZodError
+            ? `invalid: ${error.issues[0]?.message ?? error.message}`
+            : `invalid: ${error.message}`
+          this.sendMessage(createNoticeMessage(notice))
         } else {
           console.error('web-socket-adapter: unable to handle message:', error)
         }
