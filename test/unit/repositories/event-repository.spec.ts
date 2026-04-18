@@ -57,7 +57,7 @@ describe('EventRepository', () => {
 
         const query = repository.findByFilters(filters).toString()
 
-        expect(query).to.equal('select * from "events" order by "event_created_at" asc limit 500')
+        expect(query).to.equal('select * from "events" order by "event_created_at" asc, "event_id" asc limit 500')
       })
 
       describe('authors', () => {
@@ -66,7 +66,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one author', () => {
@@ -74,7 +74,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_pubkey" in (X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\')) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where ("event_pubkey" in (X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\')) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by two authors', () => {
@@ -89,7 +89,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_pubkey" in (X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\', X\'32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245\')) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where ("event_pubkey" in (X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\', X\'32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245\')) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one author prefix (even length)', () => {
@@ -103,7 +103,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_pubkey" from 1 for 3) = X\'22e804\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where (substring("event_pubkey" from 1 for 3) = X\'22e804\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one author prefix (odd length)', () => {
@@ -117,7 +117,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_pubkey" from 1 for 4) BETWEEN E\'\\\\x22e804f0\' AND E\'\\\\x22e804ff\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where (substring("event_pubkey" from 1 for 4) BETWEEN E\'\\\\x22e804f0\' AND E\'\\\\x22e804ff\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by two author prefix (first even, second odd)', () => {
@@ -132,7 +132,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_pubkey" from 1 for 3) = X\'22e804\' or substring("event_pubkey" from 1 for 4) BETWEEN E\'\\\\x32e18270\' AND E\'\\\\x32e1827f\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where (substring("event_pubkey" from 1 for 3) = X\'22e804\' or substring("event_pubkey" from 1 for 4) BETWEEN E\'\\\\x32e18270\' AND E\'\\\\x32e1827f\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
       })
 
@@ -142,7 +142,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one id', () => {
@@ -150,7 +150,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_id" in (X\'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\')) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where ("event_id" in (X\'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\')) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by two ids', () => {
@@ -165,7 +165,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_id" in (X\'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\', X\'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\')) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where ("event_id" in (X\'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\', X\'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\')) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one id prefix (even length)', () => {
@@ -179,7 +179,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_id" from 1 for 2) = X\'abcd\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where (substring("event_id" from 1 for 2) = X\'abcd\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one id prefix (odd length)', () => {
@@ -193,7 +193,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_id" from 1 for 2) BETWEEN E\'\\\\xabc0\' AND E\'\\\\xabcf\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where (substring("event_id" from 1 for 2) BETWEEN E\'\\\\xabc0\' AND E\'\\\\xabcf\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by two id prefix (first even, second odd)', () => {
@@ -208,7 +208,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_id" from 1 for 3) = X\'abcdef\' or substring("event_id" from 1 for 2) BETWEEN E\'\\\\xabc0\' AND E\'\\\\xabcf\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where (substring("event_id" from 1 for 3) = X\'abcdef\' or substring("event_id" from 1 for 2) BETWEEN E\'\\\\xabc0\' AND E\'\\\\xabcf\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
       })
 
@@ -218,7 +218,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where 1 = 0 order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where 1 = 0 order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one kind', () => {
@@ -226,7 +226,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where "event_kind" in (1) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where "event_kind" in (1) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by two kinds', () => {
@@ -234,7 +234,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where "event_kind" in (1, 2) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where "event_kind" in (1, 2) order by "event_created_at" asc, "event_id" asc limit 500')
         })
       })
 
@@ -244,7 +244,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc, "event_id" asc limit 500')
         })
       })
 
@@ -254,7 +254,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc, "event_id" asc limit 500')
         })
       })
 
@@ -264,7 +264,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" order by "event_created_at" DESC limit 1000')
+          expect(query).to.equal('select * from "events" order by "event_created_at" DESC, "event_id" asc limit 1000')
         })
       })
 
@@ -274,7 +274,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one #e tag', () => {
@@ -282,7 +282,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by two #e tag', () => {
@@ -290,7 +290,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'e\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'e\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
       })
 
@@ -300,7 +300,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one #p tag', () => {
@@ -308,7 +308,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by two #p tag', () => {
@@ -316,7 +316,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'p\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'p\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
       })
 
@@ -326,7 +326,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by one #r tag', () => {
@@ -334,7 +334,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
 
         it('selects events by two #r tag', () => {
@@ -342,7 +342,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'r\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'r\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc, "event_id" asc limit 500')
         })
       })
     })
@@ -353,7 +353,7 @@ describe('EventRepository', () => {
 
         const query = repository.findByFilters(filters).toString()
 
-        expect(query).to.equal('(select * from "events") union (select * from "events" order by "event_created_at" asc limit 500) order by "event_created_at" asc limit 500')
+        expect(query).to.equal('(select * from "events") union (select * from "events" order by "event_created_at" asc, "event_id" asc limit 500) order by "event_created_at" asc, "event_id" asc limit 500')
       })
     })
 
@@ -363,7 +363,7 @@ describe('EventRepository', () => {
 
         const query = repository.findByFilters(filters).toString()
 
-        expect(query).to.equal('(select * from "events" where "event_kind" in (1)) union (select * from "events" where (substring("event_id" from 1 for 3) BETWEEN E\'\\\\xaaaaa0\' AND E\'\\\\xaaaaaf\') order by "event_created_at" asc limit 500) union (select * from "events" where (substring("event_pubkey" from 1 for 3) BETWEEN E\'\\\\xbbbbb0\' AND E\'\\\\xbbbbbf\') order by "event_created_at" asc limit 500) union (select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc limit 500) union (select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc limit 500) union (select * from "events" order by "event_created_at" DESC limit 1000) order by "event_created_at" asc limit 500')
+        expect(query).to.equal('(select * from "events" where "event_kind" in (1)) union (select * from "events" where (substring("event_id" from 1 for 3) BETWEEN E\'\\\\xaaaaa0\' AND E\'\\\\xaaaaaf\') order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where (substring("event_pubkey" from 1 for 3) BETWEEN E\'\\\\xbbbbb0\' AND E\'\\\\xbbbbbf\') order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" order by "event_created_at" DESC, "event_id" asc limit 1000) order by "event_created_at" asc, "event_id" asc limit 500')
       })
     })
   })
