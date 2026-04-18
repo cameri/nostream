@@ -12,16 +12,13 @@ export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<v
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
-  ) { }
+  ) {}
 
   public async execute(event: Event): Promise<void> {
     debug('received replaceable event: %o', event)
     try {
       const count = await this.eventRepository.upsert(event)
-      this.webSocket.emit(
-        WebSocketAdapterEvent.Message,
-        createCommandResult(event.id, true, (count) ? '' : 'duplicate:'),
-      )
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))
       if (count) {
         this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
       }
@@ -35,10 +32,7 @@ export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<v
           return
         }
 
-        this.webSocket.emit(
-          WebSocketAdapterEvent.Message,
-          createCommandResult(event.id, false, 'error: '),
-        )
+        this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: '))
       }
     }
   }

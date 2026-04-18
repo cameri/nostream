@@ -32,17 +32,12 @@ export class SettingsStatic {
   }
 
   public static loadAndParseJsonFile(path: string) {
-    return JSON.parse(
-      fs.readFileSync(
-        path,
-        { encoding: 'utf-8' }
-      )
-    )
+    return JSON.parse(fs.readFileSync(path, { encoding: 'utf-8' }))
   }
 
   public static settingsFileType(path: string): SettingsFileTypes | undefined {
     const files: string[] = fs.readdirSync(path)
-    const filteredFile = files.find(fn => fn.startsWith('settings'))
+    const filteredFile = files.find((fn) => fn.startsWith('settings'))
     if (filteredFile) {
       const extension = extname(filteredFile).substring(1)
       if (SettingsFileTypes[extension]) {
@@ -88,10 +83,7 @@ export class SettingsStatic {
 
     try {
       if (fileType) {
-        SettingsStatic._settings = mergeDeepRight(
-          defaults,
-          SettingsStatic.loadSettings(settingsFilePath, fileType)
-        )
+        SettingsStatic._settings = mergeDeepRight(defaults, SettingsStatic.loadSettings(settingsFilePath, fileType))
       } else {
         SettingsStatic.saveSettings(basePath, defaults)
         SettingsStatic._settings = mergeDeepRight({}, defaults)
@@ -111,11 +103,7 @@ export class SettingsStatic {
 
   public static saveSettings(path: string, settings: Settings) {
     debug('saving settings to %s: %o', path, settings)
-    return fs.writeFileSync(
-      join(path, 'settings.yaml'),
-      yaml.dump(settings),
-      { encoding: 'utf-8' },
-    )
+    return fs.writeFileSync(join(path, 'settings.yaml'), yaml.dump(settings), { encoding: 'utf-8' })
   }
 
   public static watchSettings() {
@@ -130,9 +118,6 @@ export class SettingsStatic {
       SettingsStatic.createSettings()
     }
 
-    return [
-      fs.watch(defaultsFilePath, 'utf8', reload),
-      fs.watch(settingsFilePath, 'utf8', reload),
-    ]
+    return [fs.watch(defaultsFilePath, 'utf8', reload), fs.watch(settingsFilePath, 'utf8', reload)]
   }
 }

@@ -71,8 +71,7 @@ describe('rootRequestHandler', () => {
     beforeEach(() => {
       createSettingsStub.returns(baseSettings)
       req = {
-        header: (name: string) =>
-          name === 'accept' ? 'application/nostr+json' : undefined,
+        header: (name: string) => (name === 'accept' ? 'application/nostr+json' : undefined),
         headers: { accept: 'application/nostr+json' },
       }
     })
@@ -103,8 +102,7 @@ describe('rootRequestHandler', () => {
 
     beforeEach(() => {
       req = {
-        header: (name: string) =>
-          name === 'accept' ? 'text/html' : undefined,
+        header: (name: string) => (name === 'accept' ? 'text/html' : undefined),
         headers: { accept: 'text/html' },
       }
     })

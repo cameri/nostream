@@ -11,7 +11,7 @@ const debug = createLogger('nodeless-payments-processor')
 export class NodelessPaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
-    private settings: Factory<Settings>
+    private settings: Factory<Settings>,
   ) {}
 
   public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
@@ -34,11 +34,7 @@ export class NodelessPaymentsProcessor implements IPaymentsProcessor {
 
   public async createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse> {
     debug('create invoice: %O', request)
-    const {
-      amount: amountMsats,
-      description,
-      requestId,
-    } = request
+    const { amount: amountMsats, description, requestId } = request
 
     const amountSats = Number(amountMsats / 1000n)
 

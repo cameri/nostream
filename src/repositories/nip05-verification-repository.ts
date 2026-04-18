@@ -21,9 +21,7 @@ const fromDBNip05Verification = applySpec<Nip05Verification>({
 })
 
 export class Nip05VerificationRepository implements INip05VerificationRepository {
-  public constructor(
-    private readonly dbClient: DatabaseClient,
-  ) {}
+  public constructor(private readonly dbClient: DatabaseClient) {}
 
   public async findByPubkey(pubkey: Pubkey): Promise<Nip05Verification | undefined> {
     debug('find by pubkey: %s', pubkey)
@@ -56,18 +54,15 @@ export class Nip05VerificationRepository implements INip05VerificationRepository
       updated_at: now,
     }
 
-    const query = this.dbClient<DBNip05Verification>('nip05_verifications')
-      .insert(row)
-      .onConflict('pubkey')
-      .merge({
-        nip05: row.nip05,
-        domain: row.domain,
-        is_verified: row.is_verified,
-        last_verified_at: row.last_verified_at,
-        last_checked_at: row.last_checked_at,
-        failure_count: row.failure_count,
-        updated_at: now,
-      })
+    const query = this.dbClient<DBNip05Verification>('nip05_verifications').insert(row).onConflict('pubkey').merge({
+      nip05: row.nip05,
+      domain: row.domain,
+      is_verified: row.is_verified,
+      last_verified_at: row.last_verified_at,
+      last_checked_at: row.last_checked_at,
+      failure_count: row.failure_count,
+      updated_at: now,
+    })
 
     return {
       then: <T1, T2>(
@@ -100,8 +95,6 @@ export class Nip05VerificationRepository implements INip05VerificationRepository
   public async deleteByPubkey(pubkey: Pubkey): Promise<number> {
     debug('delete by pubkey: %s', pubkey)
 
-    return this.dbClient<DBNip05Verification>('nip05_verifications')
-      .where('pubkey', toBuffer(pubkey))
-      .delete()
+    return this.dbClient<DBNip05Verification>('nip05_verifications').where('pubkey', toBuffer(pubkey)).delete()
   }
 }

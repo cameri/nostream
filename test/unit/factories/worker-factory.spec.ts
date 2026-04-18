@@ -7,7 +7,6 @@ import { AppWorker } from '../../../src/app/worker'
 import { SettingsStatic } from '../../../src/utils/settings'
 import { workerFactory } from '../../../src/factories/worker-factory'
 
-
 describe('workerFactory', () => {
   let createSettingsStub: Sinon.SinonStub
   let getMasterDbClientStub: Sinon.SinonStub
@@ -30,9 +29,7 @@ describe('workerFactory', () => {
       info: {
         relay_url: 'url',
       },
-      network: {
-
-      },
+      network: {},
     })
 
     const worker = workerFactory()

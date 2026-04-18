@@ -10,10 +10,6 @@ export const createGetAdmissionCheckController = () => {
   const readReplicaDbClient = getReadReplicaDbClient()
   const eventRepository = new EventRepository(dbClient, readReplicaDbClient)
   const userRepository = new UserRepository(dbClient, eventRepository)
-  
-  return new GetSubmissionCheckController(
-    userRepository,
-    createSettings,
-    slidingWindowRateLimiterFactory
-  )
+
+  return new GetSubmissionCheckController(userRepository, createSettings, slidingWindowRateLimiterFactory)
 }

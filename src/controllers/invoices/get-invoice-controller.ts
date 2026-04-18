@@ -9,17 +9,14 @@ import { IController } from '../../@types/controllers'
 
 import { getTemplate } from '../../utils/template-cache'
 
-
-
 export class GetInvoiceController implements IController {
-  public async handleRequest(
-    _req: Request,
-    res: Response,
-  ): Promise<void> {
+  public async handleRequest(_req: Request, res: Response): Promise<void> {
     const settings = createSettings()
 
-    if (pathEq(['payments', 'enabled'], true, settings)
-      && pathEq(['payments', 'feeSchedules', 'admission', '0', 'enabled'], true, settings)) {
+    if (
+      pathEq(['payments', 'enabled'], true, settings) &&
+      pathEq(['payments', 'feeSchedules', 'admission', '0', 'enabled'], true, settings)
+    ) {
       const name = path<string>(['info', 'name'])(settings)
       const feeSchedule = path<FeeSchedule>(['payments', 'feeSchedules', 'admission', '0'], settings)
       const page = getTemplate('./resources/get-invoice.html')

@@ -29,7 +29,9 @@ export class MaintenanceService implements IMaintenanceService {
       })
       const totalDeleted = deletedCounts.deleted + deletedCounts.expired + deletedCounts.retained
       if (totalDeleted > 0) {
-        console.info(`[Maintenance] Deleted events: deleted=${deletedCounts.deleted}, expired=${deletedCounts.expired}, retained=${deletedCounts.retained}.`)
+        console.info(
+          `[Maintenance] Deleted events: deleted=${deletedCounts.deleted}, expired=${deletedCounts.expired}, retained=${deletedCounts.retained}.`,
+        )
       }
     } catch (error) {
       console.error('Unable to purge events. Reason:', error)

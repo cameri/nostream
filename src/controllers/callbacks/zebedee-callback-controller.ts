@@ -13,24 +13,16 @@ import { zebedeeCallbackBodySchema } from '../../schemas/zebedee-callback-schema
 const debug = createLogger('zebedee-callback-controller')
 
 export class ZebedeeCallbackController implements IController {
-  public constructor(
-    private readonly paymentsService: IPaymentsService,
-  ) {}
+  public constructor(private readonly paymentsService: IPaymentsService) {}
 
-  public async handleRequest(
-    request: Request,
-    response: Response,
-  ) {
+  public async handleRequest(request: Request, response: Response) {
     debug('request headers: %o', request.headers)
     debug('request body: %O', request.body)
 
     const bodyValidation = validateSchema(zebedeeCallbackBodySchema)(request.body)
     if (bodyValidation.error) {
       debug('zebedee callback request rejected: invalid body %o', bodyValidation.error)
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Malformed body')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Malformed body')
       return
     }
 
@@ -42,17 +34,13 @@ export class ZebedeeCallbackController implements IController {
 
     if (ipWhitelist.length && !ipWhitelist.includes(remoteAddress)) {
       debug('unauthorized request from %s to /callbacks/zebedee', remoteAddress)
-      response
-        .status(403)
-        .send('Forbidden')
+      response.status(403).send('Forbidden')
       return
     }
 
     if (paymentProcessor !== 'zebedee') {
       debug('denied request from %s to /callbacks/zebedee which is not the current payment processor', remoteAddress)
-      response
-        .status(403)
-        .send('Forbidden')
+      response.status(403).send('Forbidden')
       return
     }
 
@@ -69,13 +57,8 @@ export class ZebedeeCallbackController implements IController {
       throw error
     }
 
-    if (
-      updatedInvoice.status !== InvoiceStatus.COMPLETED
-      && !updatedInvoice.confirmedAt
-    ) {
-      response
-        .status(200)
-        .send()
+    if (updatedInvoice.status !== InvoiceStatus.COMPLETED && !updatedInvoice.confirmedAt) {
+      response.status(200).send()
 
       return
     }
@@ -99,9 +82,6 @@ export class ZebedeeCallbackController implements IController {
       throw error
     }
 
-    response
-      .status(200)
-      .setHeader('content-type', 'text/plain; charset=utf8')
-      .send('OK')
+    response.status(200).setHeader('content-type', 'text/plain; charset=utf8').send('OK')
   }
 }
