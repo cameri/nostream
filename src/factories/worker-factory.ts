@@ -8,6 +8,7 @@ import { AppWorker } from '../app/worker'
 import { createSettings } from '../factories/settings-factory'
 import { createWebApp } from './web-app-factory'
 import { EventRepository } from '../repositories/event-repository'
+import { Nip05VerificationRepository } from '../repositories/nip05-verification-repository'
 import { UserRepository } from '../repositories/user-repository'
 import { webSocketAdapterFactory } from './websocket-adapter-factory'
 import { WebSocketServerAdapter } from '../adapters/web-socket-server-adapter'
@@ -17,6 +18,7 @@ export const workerFactory = (): AppWorker => {
   const readReplicaDbClient = getReadReplicaDbClient()
   const eventRepository = new EventRepository(dbClient, readReplicaDbClient)
   const userRepository = new UserRepository(dbClient, eventRepository)
+  const nip05VerificationRepository = new Nip05VerificationRepository(dbClient)
 
   const settings = createSettings()
 
@@ -58,7 +60,7 @@ export const workerFactory = (): AppWorker => {
   const adapter = new WebSocketServerAdapter(
     server,
     webSocketServer,
-    webSocketAdapterFactory(eventRepository, userRepository),
+    webSocketAdapterFactory(eventRepository, userRepository, nip05VerificationRepository),
     createSettings,
   )
 

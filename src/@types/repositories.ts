@@ -5,6 +5,7 @@ import { DBEvent, Event } from './event'
 import { EventKinds } from '../constants/base'
 import { EventKindsRange } from './settings'
 import { Invoice } from './invoice'
+import { Nip05Verification } from './nip05'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
 
@@ -65,4 +66,15 @@ export interface IUserRepository {
   isVanished(pubkey: Pubkey, client?: DatabaseClient): Promise<boolean>
   setVanished(pubkey: Pubkey, vanished: boolean, client?: DatabaseClient): Promise<number>
   admitUser(pubkey: Pubkey, admittedAt: Date, client?: DatabaseClient): Promise<void>
+}
+
+export interface INip05VerificationRepository {
+  findByPubkey(pubkey: Pubkey): Promise<Nip05Verification | undefined>
+  upsert(verification: Nip05Verification): Promise<number>
+  findPendingVerifications(
+    updateFrequencyMs: number,
+    maxFailures: number,
+    limit: number,
+  ): Promise<Nip05Verification[]>
+  deleteByPubkey(pubkey: Pubkey): Promise<number>
 }
