@@ -5,6 +5,7 @@ import { nodeinfo21Handler, nodeinfoHandler } from '../handlers/request-handlers
 import admissionRouter from './admissions'
 import callbacksRouter from './callbacks'
 import { getHealthRequestHandler } from '../handlers/request-handlers/get-health-request-handler'
+import { getPrivacyRequestHandler } from '../handlers/request-handlers/get-privacy-request-handler'
 import { getTermsRequestHandler } from '../handlers/request-handlers/get-terms-request-handler'
 import invoiceRouter from './invoices'
 import { rateLimiterMiddleware } from '../handlers/request-handlers/rate-limiter-middleware'
@@ -22,6 +23,7 @@ router.use((req, res, next) => {
 router.get('/', rootRequestHandler)
 router.get('/healthz', getHealthRequestHandler)
 router.get('/terms', getTermsRequestHandler)
+router.get('/privacy', getPrivacyRequestHandler)
 
 router.get('/.well-known/nodeinfo', nodeinfoHandler)
 router.get('/nodeinfo/2.1', nodeinfo21Handler)
