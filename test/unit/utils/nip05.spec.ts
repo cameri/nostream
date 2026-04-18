@@ -2,8 +2,10 @@ import axios from 'axios'
 import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
 import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
 
 chai.use(chaiAsPromised)
+chai.use(sinonChai)
 
 import {
   extractNip05FromEvent,
@@ -211,8 +213,12 @@ describe('NIP-05 utils', () => {
 
       const config = axiosGetStub.firstCall.args[1]
       expect(config.maxRedirects).to.equal(1)
-      expect(config.maxContentLength).to.be.a('number').and.to.be.at.most(64 * 1024)
-      expect(config.maxBodyLength).to.be.a('number').and.to.be.at.most(64 * 1024)
+      expect(config.maxContentLength)
+        .to.be.a('number')
+        .and.to.be.at.most(64 * 1024)
+      expect(config.maxBodyLength)
+        .to.be.a('number')
+        .and.to.be.at.most(64 * 1024)
       expect(config.validateStatus(200)).to.be.true
       expect(config.validateStatus(301)).to.be.false
       expect(typeof config.beforeRedirect).to.equal('function')

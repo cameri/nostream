@@ -21,18 +21,12 @@ export class GiftWrapEventStrategy implements IEventStrategy<Event, Promise<void
 
     const reason = this.validateGiftWrap(event)
     if (reason) {
-      this.webSocket.emit(
-        WebSocketAdapterEvent.Message,
-        createCommandResult(event.id, false, `invalid: ${reason}`),
-      )
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, `invalid: ${reason}`))
       return
     }
 
     const count = await this.eventRepository.create(event)
-    this.webSocket.emit(
-      WebSocketAdapterEvent.Message,
-      createCommandResult(event.id, true, count ? '' : 'duplicate:'),
-    )
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))
 
     if (count) {
       this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
@@ -41,9 +35,7 @@ export class GiftWrapEventStrategy implements IEventStrategy<Event, Promise<void
 
   private validateGiftWrap(event: Event): string | undefined {
     // NIP-17: gift wrap MUST have exactly one p tag (one recipient per wrap)
-    const recipientTags = event.tags.filter(
-      (tag) => tag.length >= 2 && tag[0] === EventTags.Pubkey,
-    )
+    const recipientTags = event.tags.filter((tag) => tag.length >= 2 && tag[0] === EventTags.Pubkey)
 
     if (recipientTags.length === 0) {
       return 'gift wrap event (kind 1059) must have a p tag identifying the recipient'

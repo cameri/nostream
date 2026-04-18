@@ -1,13 +1,4 @@
-import {
-  After,
-  AfterAll,
-  Before,
-  BeforeAll,
-  Given,
-  Then,
-  When,
-  World,
-} from '@cucumber/cucumber'
+import { After, AfterAll, Before, BeforeAll, Given, Then, When, World } from '@cucumber/cucumber'
 import { assocPath, pipe } from 'ramda'
 import { fromEvent, map, Observable, ReplaySubject, Subject, takeUntil } from 'rxjs'
 import WebSocket, { MessageEvent } from 'ws'
@@ -53,7 +44,7 @@ BeforeAll({ timeout: 1000 }, async function () {
   worker.run()
 })
 
-AfterAll({ timeout: 30000 }, async function() {
+AfterAll({ timeout: 30000 }, async function () {
   await new Promise<void>((resolve) => {
     worker.close(async () => {
       await Promise.all([dbClient.destroy(), rrDbClient.destroy()])
@@ -80,14 +71,17 @@ After(async function () {
   this.parameters.clients = {}
 
   await dbClient('events')
-    .whereIn('event_pubkey', Object
-        .values(this.parameters.identities as Record<string, { pubkey: string }>)
-        .map(({ pubkey }) => Buffer.from(pubkey, 'hex')),
-    ).delete()
+    .whereIn(
+      'event_pubkey',
+      Object.values(this.parameters.identities as Record<string, { pubkey: string }>).map(({ pubkey }) =>
+        Buffer.from(pubkey, 'hex'),
+      ),
+    )
+    .delete()
   this.parameters.identities = {}
 })
 
-Given(/someone called (\w+)/, async function(name: string) {
+Given(/someone called (\w+)/, async function (name: string) {
   const connection = await connect(name)
   this.parameters.identities[name] = this.parameters.identities[name] ?? createIdentity(name)
   this.parameters.clients[name] = connection
@@ -100,15 +94,14 @@ Given(/someone called (\w+)/, async function(name: string) {
 
   const replaySubject = new ReplaySubject(2, 1000)
 
-  fromEvent(connection, 'message').pipe(map(projection) as any,takeUntil(close)).subscribe(replaySubject)
+  fromEvent(connection, 'message')
+    .pipe(map(projection) as any, takeUntil(close))
+    .subscribe(replaySubject)
 
-  streams.set(
-    connection,
-    replaySubject,
-  )
+  streams.set(connection, replaySubject)
 })
 
-When(/(\w+) subscribes to author (\w+)$/, async function(this: World<Record<string, any>>, from: string, to: string) {
+When(/(\w+) subscribes to author (\w+)$/, async function (this: World<Record<string, any>>, from: string, to: string) {
   const ws = this.parameters.clients[from] as WebSocket
   const pubkey = this.parameters.identities[to].pubkey
   const subscription = { name: `test-${Math.random()}`, filters: [{ authors: [pubkey] }] }
@@ -117,23 +110,23 @@ When(/(\w+) subscribes to author (\w+)$/, async function(this: World<Record<stri
   await createSubscription(ws, subscription.name, subscription.filters)
 })
 
-Then(/(\w+) unsubscribes from author \w+/, async function(from: string) {
+Then(/(\w+) unsubscribes from author \w+/, async function (from: string) {
   const ws = this.parameters.clients[from] as WebSocket
   const subscription = this.parameters.subscriptions[from].pop()
   return new Promise<void>((resolve, reject) => {
-    ws.send(JSON.stringify(['CLOSE', subscription.name]), (err) => err ? reject(err) : resolve())
+    ws.send(JSON.stringify(['CLOSE', subscription.name]), (err) => (err ? reject(err) : resolve()))
   })
 })
 
-Then(/^(\w+) sends their last draft event (successfully|unsuccessfully)$/, async function(
-  name: string,
-  successfullyOrNot: string,
-) {
-  const ws = this.parameters.clients[name] as WebSocket
+Then(
+  /^(\w+) sends their last draft event (successfully|unsuccessfully)$/,
+  async function (name: string, successfullyOrNot: string) {
+    const ws = this.parameters.clients[name] as WebSocket
 
-  const event = this.parameters.events[name].findLast((event: Event) => event[isDraft])
+    const event = this.parameters.events[name].findLast((event: Event) => event[isDraft])
 
-  delete event[isDraft]
+    delete event[isDraft]
 
-  await sendEvent(ws, event, (successfullyOrNot) === 'successfully')
-})
+    await sendEvent(ws, event, successfullyOrNot === 'successfully')
+  },
+)

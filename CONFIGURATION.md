@@ -58,71 +58,91 @@ The following environment variables can be set:
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
 
+## I2P
+
+I2P support is provided as a sidecar container (i2pd) via `docker-compose.i2p.yml`, mirroring the Tor setup. No application-level environment variables are needed — the i2pd container creates an I2P server tunnel that forwards traffic to nostream's WebSocket port.
+
+Configuration files live in the `i2p/` directory:
+
+| File | Description |
+|------|-------------|
+| `i2p/tunnels.conf` | Defines the I2P server tunnel pointing at nostream (port 8008). |
+| `i2p/i2pd.conf` | Minimal i2pd daemon configuration. |
+
+Tunnel keys are persisted at `.nostr/i2p/data/` so the `.b32.i2p` address survives container restarts.
+
+The i2pd web console (tunnel status, `.b32.i2p` destinations) is published to the host on **`127.0.0.1:7070`** only. Remove the `ports:` mapping in `docker-compose.i2p.yml` to disable host-side access.
+
+- Start with I2P: `./scripts/start_with_i2p`
+- Print hostname hints: `./scripts/print_i2p_hostname`
+
 If you've set READ_REPLICAS to 4, you should configure RR0_ through RR3_.
 
 # Settings
 
 Running `nostream` for the first time creates the settings file in `<project_root>/.nostr/settings.yaml`. If the file is not created and an error is thrown ensure that the `<project_root>/.nostr` folder exists. The configuration directory can be changed by setting the `NOSTR_CONFIG_DIR` environment variable. `nostream` will pick up any changes to this settings file without needing to restart.
 
+The settings below are listed in alphabetical order by name. Please keep this table sorted when adding new entries.
+
 | Name                                        | Description                                                                   |
 |---------------------------------------------|-------------------------------------------------------------------------------|
-| info.relay_url                              | Public-facing URL of your relay. (e.g. wss://relay.your-domain.com) |
-| info.name                                   | Public name of your relay. (e.g. TBG's Public Relay) |
-| info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
-| info.pubkey                                 | Relay operator's Nostr pubkey in hex format. |
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
-| network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
-| network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
-| payments.enabled                            | Enabled payments. Defaults to false. |
-| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
-| payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
-| payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |
-| payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
-| payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
-| paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
-| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
-| paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
-| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
-| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
-| paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
-| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
-| mirroring.static[].filters                  | Subscription filters used to mirror. |
-| mirroring.static[].limits.event                   | Event limit overrides for this mirror. See configurations under limits.event. |
-| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
-| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
-| workers.count                               | Number of workers to spin up to handle incoming connections. |
-|                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
+| info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
+| info.name                                   | Public name of your relay. (e.g. TBG's Public Relay) |
+| info.pubkey                                 | Relay operator's Nostr pubkey in hex format. |
+| info.relay_url                              | Public-facing URL of your relay. (e.g. wss://relay.your-domain.com) |
+| limits.admissionCheck.ipWhitelist           | List of IPs (IPv4 or IPv6) to ignore rate limits. |
+| limits.admissionCheck.rateLimits[].period   | Rate limit period in milliseconds. |
+| limits.admissionCheck.rateLimits[].rate     | Maximum number of admission checks during period. |
+| limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
+| limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
+| limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
+| limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
+| limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
+| limits.event.createdAt.minNegativeDelta     | Maximum number of secodns an event's `created_at` can be in the past.  Defaults to zero. Disabled when set to zero. |
 | limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. |
 |                                             | Defaults to zero. Disabled when set to zero. |
-| limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
+| limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
+| limits.event.pubkey.blacklist               | List of public keys to always reject. Public keys in this list will not be able to post to this relay. |
 | limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. |
 |                                             | Defaults to zero. Disabled when set to zero. |
 | limits.event.pubkey.whitelist               | List of public keys to always allow. Only public keys in this list will be able to post to this relay. Use for private relays. |
-| limits.event.pubkey.blacklist               | List of public keys to always reject. Public keys in this list will not be able to post to this relay. |
-| limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.createdAt.minNegativeDelta     | Maximum number of secodns an event's `created_at` can be in the past.  Defaults to zero. Disabled when set to zero. |
-| limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
-| limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.rateLimits[].kinds             | List of event kinds rate limited. Use `[min, max]` for ranges. Optional. |
 | limits.event.rateLimits[].period            | Rate limiting period in milliseconds. |
 | limits.event.rateLimits[].rate              | Maximum number of events during period. |
-| limits.event.whitelists.pubkeys             | List of public keys to ignore rate limits. |
-| limits.event.whitelists.ipAddresses         | List of IPs (IPv4 or IPv6) to ignore rate limits. |
-| limits.event.retention.maxDays              | Maximum number of days to retain events. Purge deletes events that are expired (`expires_at`), soft-deleted (`deleted_at`), or older than this window (`created_at`). Any non-positive value disables retention purge. |
 | limits.event.retention.kind.whitelist       | Event kinds excluded from retention purge. NIP-62 `REQUEST_TO_VANISH` is always excluded from retention purge, even if not listed here. |
+| limits.event.retention.maxDays              | Maximum number of days to retain events. Purge deletes events that are expired (`expires_at`), soft-deleted (`deleted_at`), or older than this window (`created_at`). Any non-positive value disables retention purge. |
 | limits.event.retention.pubkey.whitelist     | Public keys excluded from retention purge. |
-| limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
-| limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
+| limits.event.whitelists.ipAddresses         | List of IPs (IPv4 or IPv6) to ignore rate limits. |
+| limits.event.whitelists.pubkeys             | List of public keys to ignore rate limits. |
+| limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.message.rateLimits[].period          | Rate limit period in milliseconds. |
 | limits.message.rateLimits[].rate            | Maximum number of messages during period. |
-| limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
-| limits.admissionCheck.rateLimits[].period          | Rate limit period in milliseconds. |
-| limits.admissionCheck.rateLimits[].rate            | Maximum number of admission checks during period. |
-| limits.admissionCheck.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
+| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
+| mirroring.static[].filters                  | Subscription filters used to mirror. |
+| mirroring.static[].limits.event             | Event limit overrides for this mirror. See configurations under limits.event. |
+| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
+| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
+| network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
+| network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
+| nip05.domainBlacklist                       | List of domains blocked from NIP-05 verification. Authors with NIP-05 at these domains will be rejected. |
+| nip05.domainWhitelist                       | List of domains allowed for NIP-05 verification. If set, only authors verified at these domains can publish. |
+| nip05.maxConsecutiveFailures                | Number of consecutive verification failures before giving up on an author. Defaults to 20. |
 | nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
-| nip05.maxConsecutiveFailures                | Number of consecutive verification failures before giving up on an author. Defaults to 20. |
-| nip05.domainWhitelist                       | List of domains allowed for NIP-05 verification. If set, only authors verified at these domains can publish. |
-| nip05.domainBlacklist                       | List of domains blocked from NIP-05 verification. Authors with NIP-05 at these domains will be rejected. |
+| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
+| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
+| paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
+| paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
+| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
+| paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
+| payments.enabled                            | Enabled payments. Defaults to false. |
+| payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |
+| payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
+| payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
+| payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
+| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| workers.count                               | Number of workers to spin up to handle incoming connections. |
+|                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |

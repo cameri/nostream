@@ -1,8 +1,39 @@
+import { opennodeCallbackBodySchema, opennodeWebhookCallbackBodySchema } from '../../../src/schemas/opennode-callback-schema'
 import { expect } from 'chai'
-import { opennodeCallbackBodySchema } from '../../../src/schemas/opennode-callback-schema'
 import { validateSchema } from '../../../src/utils/validation'
 
 describe('OpenNode Callback Schema', () => {
+  describe('opennodeWebhookCallbackBodySchema', () => {
+    const validWebhookBody = {
+      hashed_order: 'a'.repeat(64),
+      id: 'some-id',
+      status: 'paid',
+    }
+
+    it('returns no error if webhook body is valid', () => {
+      const result = validateSchema(opennodeWebhookCallbackBodySchema)(validWebhookBody)
+      expect(result.error).to.be.undefined
+    })
+
+    it('returns error if hashed_order is missing', () => {
+      const body = { ...validWebhookBody }
+      delete (body as any).hashed_order
+      const result = validateSchema(opennodeWebhookCallbackBodySchema)(body)
+      expect(result.error).to.exist
+      expect(result.error?.issues[0].path).to.deep.equal(['hashed_order'])
+    })
+
+    it('returns error if status is not in accepted values', () => {
+      const body = {
+        ...validWebhookBody,
+        status: 'not-a-valid-status',
+      }
+      const result = validateSchema(opennodeWebhookCallbackBodySchema)(body)
+      expect(result.error).to.exist
+      expect(result.error?.issues[0].path).to.deep.equal(['status'])
+    })
+  })
+
   describe('opennodeCallbackBodySchema', () => {
     const validBody = {
       id: 'some-id',

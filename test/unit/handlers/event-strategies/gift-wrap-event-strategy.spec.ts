@@ -91,14 +91,13 @@ describe('GiftWrapEventStrategy', () => {
         await strategy.execute(event)
 
         expect(webSocketEmitStub).to.have.been.calledTwice
-        expect(webSocketEmitStub).to.have.been.calledWithExactly(
-          WebSocketAdapterEvent.Message,
-          [MessageType.OK, event.id, true, ''],
-        )
-        expect(webSocketEmitStub).to.have.been.calledWithExactly(
-          WebSocketAdapterEvent.Broadcast,
-          event,
-        )
+        expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Message, [
+          MessageType.OK,
+          event.id,
+          true,
+          '',
+        ])
+        expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Broadcast, event)
       })
 
       it('sends OK with duplicate marker and does not broadcast when event already exists', async () => {
@@ -106,10 +105,12 @@ describe('GiftWrapEventStrategy', () => {
 
         await strategy.execute(event)
 
-        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-          WebSocketAdapterEvent.Message,
-          [MessageType.OK, event.id, true, 'duplicate:'],
-        )
+        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+          MessageType.OK,
+          event.id,
+          true,
+          'duplicate:',
+        ])
       })
     })
 
@@ -120,10 +121,12 @@ describe('GiftWrapEventStrategy', () => {
         await strategy.execute(event)
 
         expect(eventRepositoryCreateStub).not.to.have.been.called
-        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-          WebSocketAdapterEvent.Message,
-          [MessageType.OK, event.id, false, Sinon.match(/invalid:.*p tag/)],
-        )
+        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+          MessageType.OK,
+          event.id,
+          false,
+          Sinon.match(/invalid:.*p tag/),
+        ])
       })
 
       it('rejects when there are multiple p tags', async () => {
@@ -135,10 +138,12 @@ describe('GiftWrapEventStrategy', () => {
         await strategy.execute(event)
 
         expect(eventRepositoryCreateStub).not.to.have.been.called
-        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-          WebSocketAdapterEvent.Message,
-          [MessageType.OK, event.id, false, Sinon.match(/invalid:.*exactly one p tag/)],
-        )
+        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+          MessageType.OK,
+          event.id,
+          false,
+          Sinon.match(/invalid:.*exactly one p tag/),
+        ])
       })
 
       it('accepts p tag with an optional relay hint', async () => {
@@ -148,10 +153,12 @@ describe('GiftWrapEventStrategy', () => {
         await strategy.execute(event)
 
         expect(eventRepositoryCreateStub).to.have.been.calledOnce
-        expect(webSocketEmitStub).to.have.been.calledWithExactly(
-          WebSocketAdapterEvent.Message,
-          [MessageType.OK, event.id, true, ''],
-        )
+        expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Message, [
+          MessageType.OK,
+          event.id,
+          true,
+          '',
+        ])
       })
     })
 
@@ -162,10 +169,12 @@ describe('GiftWrapEventStrategy', () => {
         await strategy.execute(event)
 
         expect(eventRepositoryCreateStub).not.to.have.been.called
-        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-          WebSocketAdapterEvent.Message,
-          [MessageType.OK, event.id, false, Sinon.match(/invalid:.*NIP-44/)],
-        )
+        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+          MessageType.OK,
+          event.id,
+          false,
+          Sinon.match(/invalid:.*NIP-44/),
+        ])
       })
 
       it('rejects when content is plain text instead of a NIP-44 payload', async () => {
@@ -174,10 +183,12 @@ describe('GiftWrapEventStrategy', () => {
         await strategy.execute(event)
 
         expect(eventRepositoryCreateStub).not.to.have.been.called
-        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-          WebSocketAdapterEvent.Message,
-          [MessageType.OK, event.id, false, Sinon.match(/invalid:.*NIP-44/)],
-        )
+        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+          MessageType.OK,
+          event.id,
+          false,
+          Sinon.match(/invalid:.*NIP-44/),
+        ])
       })
 
       it('rejects when content signals an unsupported version (#)', async () => {
@@ -186,10 +197,12 @@ describe('GiftWrapEventStrategy', () => {
         await strategy.execute(event)
 
         expect(eventRepositoryCreateStub).not.to.have.been.called
-        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-          WebSocketAdapterEvent.Message,
-          [MessageType.OK, event.id, false, Sinon.match(/invalid:.*NIP-44/)],
-        )
+        expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+          MessageType.OK,
+          event.id,
+          false,
+          Sinon.match(/invalid:.*NIP-44/),
+        ])
       })
     })
   })

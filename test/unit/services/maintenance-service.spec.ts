@@ -23,10 +23,7 @@ describe('MaintenanceService', () => {
     } as any
     settings = sandbox.stub()
 
-    service = new MaintenanceService(
-      eventRepository as any,
-      settings as any,
-    )
+    service = new MaintenanceService(eventRepository as any, settings as any)
   })
 
   afterEach(() => {
@@ -65,7 +62,9 @@ describe('MaintenanceService', () => {
         kindWhitelist: [62],
         pubkeyWhitelist: ['aabbcc'],
       })
-      expect(consoleInfoStub).to.have.been.calledOnceWithExactly('[Maintenance] Deleted events: deleted=4, expired=3, retained=3.')
+      expect(consoleInfoStub).to.have.been.calledOnceWithExactly(
+        '[Maintenance] Deleted events: deleted=4, expired=3, retained=3.',
+      )
     })
 
     it('does not purge events when retention.maxDays is -1', async () => {

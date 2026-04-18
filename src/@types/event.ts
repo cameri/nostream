@@ -1,5 +1,10 @@
 import { ContextMetadata, EventId, Pubkey, Tag } from './base'
-import { ContextMetadataKey, EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
+import {
+  ContextMetadataKey,
+  EventDeduplicationMetadataKey,
+  EventExpirationTimeMetadataKey,
+  EventKinds,
+} from '../constants/base'
 
 export interface BaseEvent {
   id: EventId

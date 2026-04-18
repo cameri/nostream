@@ -68,13 +68,10 @@ describe('DeleteEventStrategy', () => {
     it('deletes events if it has e tags', async () => {
       await strategy.execute(event)
 
-      expect(eventRepositoryDeleteByPubkeyAndIdsStub).to.have.been.calledOnceWithExactly(
-        event.pubkey,
-        [
-          '0000000000000000000000000000000000000000000000000000000000000000',
-          'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-        ]
-      )
+      expect(eventRepositoryDeleteByPubkeyAndIdsStub).to.have.been.calledOnceWithExactly(event.pubkey, [
+        '0000000000000000000000000000000000000000000000000000000000000000',
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      ])
     })
 
     it('does not delete events if there are no e tags', async () => {
@@ -92,14 +89,13 @@ describe('DeleteEventStrategy', () => {
 
       expect(eventRepositoryCreateStub).to.have.been.calledOnceWithExactly(event)
       expect(webSocketEmitStub).to.have.been.calledTwice
-      expect(webSocketEmitStub).to.have.been.calledWithExactly(
-        WebSocketAdapterEvent.Message,
-        [MessageType.OK, 'id', true, '']
-      )
-      expect(webSocketEmitStub).to.have.been.calledWithExactly(
-        WebSocketAdapterEvent.Broadcast,
-        event
-      )
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Message, [
+        MessageType.OK,
+        'id',
+        true,
+        '',
+      ])
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Broadcast, event)
     })
 
     it('does not broadcast event if duplicate', async () => {
@@ -107,10 +103,12 @@ describe('DeleteEventStrategy', () => {
 
       await strategy.execute(event)
 
-      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-        WebSocketAdapterEvent.Message,
-        [MessageType.OK, 'id', true, 'duplicate:']
-      )
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+        MessageType.OK,
+        'id',
+        true,
+        'duplicate:',
+      ])
     })
 
     it('rejects if unable to create event', async () => {
