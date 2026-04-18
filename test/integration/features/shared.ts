@@ -68,9 +68,10 @@ AfterAll({ timeout: 30000 }, async function() {
       resolve()
     })
   })
-  // Rate limiter holds a Redis singleton with no teardown path; exit explicitly
-  // so nyc can flush coverage before the process is killed.
-  process.exit(0)
+  // The rate limiter's Redis singleton has no teardown path and keeps the process
+  // alive. Schedule a watchdog exit so Cucumber can print its summary first;
+  // unref() means the timer won't prevent a natural exit if handles close sooner.
+  setTimeout(() => process.exit(0), 2000).unref()
 })
 
 Before(function () {
