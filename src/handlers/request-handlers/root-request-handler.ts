@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express'
-import accepts from 'accepts'
 import { path, pathEq } from 'ramda'
+import accepts from 'accepts'
 
 import { createSettings } from '../../factories/settings-factory'
 import { escapeHtml } from '../../utils/html'
