@@ -45,7 +45,7 @@
     "cover:unit": "nyc --report-dir .coverage/unit npm run test:unit",
     "docker:build": "docker build -t nostream .",
     "pretest:integration": "mkdir -p .test-reports/integration",
-    "test:load": "node ./scripts/security-load-test.js",
+    "test:load": "node -r ts-node/register ./scripts/security-load-test.ts",
     "test:integration": "cucumber-js",
     "cover:integration": "nyc --report-dir .coverage/integration npm run test:integration -- -p cover",
     "docker:compose:start": "./scripts/start",
