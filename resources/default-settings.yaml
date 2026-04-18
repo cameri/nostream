@@ -57,6 +57,8 @@ network:
   maxPayloadSize: 524288
   # Comment the next line if using CloudFlare proxy
   remoteIpHeader: x-forwarded-for
+  # Optional: only trust forwarding headers from these proxy IPs
+  trustedProxies: []
   # Uncomment the next line if using CloudFlare proxy
   # remoteIpHeader: cf-connecting-ip
 workers:

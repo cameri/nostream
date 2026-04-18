@@ -184,3 +184,30 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].rate            | Maximum number of admission checks during period. |
 | limits.admissionCheck.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.rateLimiter.strategy | Rate limiting strategy. Either `ewma` or `sliding_window`. Defaults to `ewma`. When using `ewma`, the `period` field in each rate limit serves as the half-life for the exponential decay function. Note: when switching from `sliding_window` to `ewma`, consider increasing `rate` values slightly as EWMA penalizes bursty behavior more aggressively. |
+| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
+| mirroring.static[].filters                  | Subscription filters used to mirror. |
+| mirroring.static[].limits.event             | Event limit overrides for this mirror. See configurations under limits.event. |
+| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
+| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
+| network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
+| network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
+| network.trustedProxies                      | Optional allow-list of proxy IPs allowed to set `network.remoteIpHeader`; otherwise socket remote IP is used. |
+| nip05.domainBlacklist                       | List of domains blocked from NIP-05 verification. Authors with NIP-05 at these domains will be rejected. |
+| nip05.domainWhitelist                       | List of domains allowed for NIP-05 verification. If set, only authors verified at these domains can publish. |
+| nip05.maxConsecutiveFailures                | Number of consecutive verification failures before giving up on an author. Defaults to 20. |
+| nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
+| nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
+| nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
+| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
+| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
+| paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
+| paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
+| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
+| paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
+| payments.enabled                            | Enabled payments. Defaults to false. |
+| payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |
+| payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
+| payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
+| payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
+| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |
