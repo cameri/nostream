@@ -68,6 +68,9 @@ AfterAll({ timeout: 30000 }, async function() {
       resolve()
     })
   })
+  // Rate limiter holds a Redis singleton with no teardown path; exit explicitly
+  // so nyc can flush coverage before the process is killed.
+  process.exit(0)
 })
 
 Before(function () {
