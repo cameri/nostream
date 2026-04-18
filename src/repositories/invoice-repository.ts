@@ -23,7 +23,7 @@ export class InvoiceRepository implements IInvoiceRepository {
     try {
       await client.raw('select confirm_invoice(?, ?, ?)', [invoiceId, amountPaid.toString(), confirmedAt.toISOString()])
     } catch (error) {
-      console.error('Unable to confirm invoice. Reason:', error.message)
+      debug.error('Unable to confirm invoice. Reason:', error.message)
 
       throw error
     }

@@ -57,13 +57,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.client
       .on('error', (error) => {
         if (error.name === 'RangeError' && error.message === 'Max payload size exceeded') {
-          console.error(
-            `web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`,
-          )
+          debug.error(`web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`)
         } else if (error.name === 'RangeError' && error.message === 'Invalid WebSocket frame: RSV1 must be clear') {
           debug(`client ${this.clientId} (${this.getClientAddress()}) enabled compression`)
         } else {
-          console.error(`web-socket-adapter: client error ${this.clientId} (${this.getClientAddress()}):`, error)
+          debug.error(`web-socket-adapter: client error ${this.clientId} (${this.getClientAddress()}):`, error)
         }
 
         this.client.close()
@@ -129,7 +127,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public onHeartbeat(): void {
     if (!this.alive && !this.subscriptions.size) {
-      console.error(`web-socket-adapter: pong timeout for client ${this.clientId} (${this.getClientAddress()})`)
+      debug.error(`web-socket-adapter: pong timeout for client ${this.clientId} (${this.getClientAddress()})`)
       this.client.close()
       return
     }
@@ -161,7 +159,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
       messageHandler = this.createMessageHandler([message, this]) as IMessageHandler & IAbortable
       if (!messageHandler) {
-        console.error('web-socket-adapter: unhandled message: no handler found:', message)
+        debug.error('web-socket-adapter: unhandled message: no handler found:', message)
         return
       }
 
@@ -177,7 +175,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          console.error(`web-socket-adapter: abort from client ${this.clientId} (${this.getClientAddress()})`)
+          debug.error(`web-socket-adapter: abort from client ${this.clientId} (${this.getClientAddress()})`)
         } else if (error.name === 'SyntaxError' || error instanceof ZodError) {
           debug('invalid message client %s (%s): %s', this.clientId, this.getClientAddress(), error.message)
           const notice =
@@ -186,10 +184,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
               : `invalid: ${error.message}`
           this.sendMessage(createNoticeMessage(notice))
         } else {
-          console.error('web-socket-adapter: unable to handle message:', error)
+          debug.error('web-socket-adapter: unable to handle message:', error)
         }
       } else {
-        console.error('web-socket-adapter: unable to handle message:', error)
+        debug.error('web-socket-adapter: unable to handle message:', error)
       }
     } finally {
       if (abortable && messageHandler) {
@@ -250,7 +248,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         try {
           handler.abort()
         } catch (error) {
-          console.error('Unable to abort message handler', error)
+          debug.error('Unable to abort message handler', error)
         }
       }
     }

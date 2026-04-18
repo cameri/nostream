@@ -203,7 +203,7 @@ export const addOnion = async (port: number, host?: string): Promise<string> => 
     debug('hidden service: %s:%d', hiddenService.ServiceID, port)
 
     if (hiddenService?.PrivateKey) {
-      console.log('saving private key to %s', path)
+      debug.info('saving private key to %s', path)
       debug('saving private key to %s', path)
 
       await writeFile(path, hiddenService.PrivateKey, 'utf8')

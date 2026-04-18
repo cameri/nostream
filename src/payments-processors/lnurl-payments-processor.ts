@@ -27,7 +27,7 @@ export class LnurlPaymentsProcessor implements IPaymentsProcessor {
         status: response.data.settled ? InvoiceStatus.COMPLETED : InvoiceStatus.PENDING,
       }
     } catch (error) {
-      console.error(`Unable to get invoice ${invoice.id}. Reason:`, error)
+      debug.error(`Unable to get invoice ${invoice.id}. Reason:`, error)
 
       throw error
     }
@@ -60,7 +60,7 @@ export class LnurlPaymentsProcessor implements IPaymentsProcessor {
 
       return result
     } catch (error) {
-      console.error('Unable to request invoice. Reason:', error.message)
+      debug.error('Unable to request invoice. Reason:', error.message)
 
       throw error
     }

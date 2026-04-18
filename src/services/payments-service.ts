@@ -29,7 +29,7 @@ export class PaymentsService implements IPaymentsService {
     try {
       return await this.invoiceRepository.findPendingInvoices(0, 10)
     } catch (error) {
-      console.log('Unable to get pending invoices.', error)
+      debug.info('Unable to get pending invoices.', error)
 
       throw error
     }
@@ -41,7 +41,7 @@ export class PaymentsService implements IPaymentsService {
         typeof invoice === 'string' || invoice?.verifyURL ? invoice : invoice.id,
       )
     } catch (error) {
-      console.log('Unable to get invoice from payments processor. Reason:', error)
+      debug.info('Unable to get invoice from payments processor. Reason:', error)
 
       throw error
     }
@@ -98,7 +98,7 @@ export class PaymentsService implements IPaymentsService {
       }
     } catch (error) {
       await transaction.rollback()
-      console.error('Unable to create invoice:', error)
+      debug.error('Unable to create invoice:', error)
 
       throw error
     }
@@ -112,7 +112,7 @@ export class PaymentsService implements IPaymentsService {
         status: invoice.status,
       })
     } catch (error) {
-      console.error('Unable to update invoice. Reason:', error)
+      debug.error('Unable to update invoice. Reason:', error)
       throw error
     }
   }
@@ -122,7 +122,7 @@ export class PaymentsService implements IPaymentsService {
     try {
       return await this.invoiceRepository.updateStatus(invoice)
     } catch (error) {
-      console.error('Unable to update invoice. Reason:', error)
+      debug.error('Unable to update invoice. Reason:', error)
       throw error
     }
   }
@@ -177,7 +177,7 @@ export class PaymentsService implements IPaymentsService {
 
       await transaction.commit()
     } catch (error) {
-      console.error('Unable to confirm invoice. Reason:', error)
+      debug.error('Unable to confirm invoice. Reason:', error)
       await transaction.rollback()
 
       throw error
@@ -230,7 +230,7 @@ export class PaymentsService implements IPaymentsService {
       return event
     }
 
-    const logError = (error: Error) => console.error('Unable to send notification', error)
+    const logError = (error: Error) => debug.error('Unable to send notification', error)
 
     await pipe(
       identifyEvent,

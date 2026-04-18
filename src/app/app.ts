@@ -36,7 +36,7 @@ export class App implements IRunnable {
   public run(): void {
     const settings = this.settings()
     this.watchers = SettingsStatic.watchSettings()
-    console.log(`
+    debug.info(`
  ███▄    █  ▒█████    ██████ ▄▄▄█████▓ ██▀███  ▓█████ ▄▄▄       ███▄ ▄███▓
  ██ ▀█   █ ▒██▒  ██▒▒██    ▒ ▓  ██▒ ▓▒▓██ ▒ ██▒▓█   ▀▒████▄    ▓██▒▀█▀ ██▒
 ▓██  ▀█ ██▒▒██░  ██▒░ ▓██▄   ▒ ▓██░ ▒░▓██ ░▄█ ▒▒███  ▒██  ▀█▄  ▓██    ▓██░
@@ -52,7 +52,7 @@ export class App implements IRunnable {
 
     const logCentered = (input: string, width: number) => {
       const start = (width - input.length) >> 1
-      console.log(' '.repeat(start), input)
+      debug.info(' '.repeat(start), input)
     }
     logCentered(`v${packageJson.version}`, width)
     logCentered(`NIPs implemented: ${packageJson.supportedNips}`, width)
@@ -68,7 +68,7 @@ export class App implements IRunnable {
         this.process.env.SECRET === '' ||
         this.process.env.SECRET === 'changeme')
     ) {
-      console.error('Please configure the secret using the SECRET environment variable.')
+      debug.error('Please configure the secret using the SECRET environment variable.')
       this.process.exit(1)
     }
 
@@ -152,14 +152,14 @@ export class App implements IRunnable {
   }
 
   private onExit() {
-    console.log('exiting')
+    debug.info('exiting')
     this.close(() => {
       this.process.exit(0)
     })
   }
 
   public close(callback?: (...args: any[]) => void): void {
-    console.log('close')
+    debug.info('close')
     if (Array.isArray(this.watchers)) {
       for (const watcher of this.watchers) {
         watcher.close()

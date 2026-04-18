@@ -168,7 +168,7 @@ export class MaintenanceWorker implements IRunnable {
         }
         successful++
       } catch (error) {
-        console.error('Unable to update invoice from payment processor. Reason:', error)
+        debug.error('Unable to update invoice from payment processor. Reason:', error)
       }
 
       debug('updated %d of %d invoices successfully', successful, invoices.length)

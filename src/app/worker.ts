@@ -36,12 +36,12 @@ export class AppWorker implements IRunnable {
 
   private onError(error: Error) {
     if (error.name === 'TypeError' && error.message === "Cannot read properties of undefined (reading '__knexUid')") {
-      console.error(
-        "Unable to acquire connection. Please increase DB_MAX_POOL_SIZE, DB_ACQUIRE_CONNECTION_TIMEOUT and tune postgresql.conf to make use of server's resources.",
+      debug.error(
+        'Unable to acquire connection. Please increase DB_MAX_POOL_SIZE, DB_ACQUIRE_CONNECTION_TIMEOUT and tune postgresql.conf to make use of server\'s resources.'
       )
       return
     }
-    console.error('uncaught error:', error)
+    debug.error('uncaught error:', error)
   }
 
   private onExit() {

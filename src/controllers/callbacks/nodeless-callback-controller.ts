@@ -37,7 +37,7 @@ export class NodelessCallbackController implements IController {
     const actual = request.headers['nodeless-signature']
 
     if (expected !== actual) {
-      console.error('nodeless callback request rejected: signature mismatch:', { expected, actual })
+      debug.error('nodeless callback request rejected: signature mismatch:', { expected, actual })
       response.status(403).send('Forbidden')
       return
     }
@@ -68,7 +68,7 @@ export class NodelessCallbackController implements IController {
       updatedInvoice = await this.paymentsService.updateInvoiceStatus(invoice)
       debug('updated invoice: %O', updatedInvoice)
     } catch (error) {
-      console.error(`Unable to persist invoice ${invoice.id}`, error)
+      debug.error(`Unable to persist invoice ${invoice.id}`, error)
 
       throw error
     }
@@ -86,7 +86,7 @@ export class NodelessCallbackController implements IController {
       await this.paymentsService.confirmInvoice(invoice)
       await this.paymentsService.sendInvoiceUpdateNotification(updatedInvoice)
     } catch (error) {
-      console.error(`Unable to confirm invoice ${invoice.id}`, error)
+      debug.error(`Unable to confirm invoice ${invoice.id}`, error)
 
       throw error
     }

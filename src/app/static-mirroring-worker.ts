@@ -53,7 +53,7 @@ export class StaticMirroringWorker implements IRunnable {
   public run(): void {
     const currentSettings = this.settings()
 
-    console.log('mirroring', currentSettings.mirroring)
+    debug.info('mirroring', currentSettings.mirroring)
 
     this.config = path(['mirroring', 'static', process.env.MIRROR_INDEX], currentSettings) as Mirror
 

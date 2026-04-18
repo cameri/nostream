@@ -2,16 +2,9 @@ import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '
 import {
   DEFAULT_NIP05_VERIFY_EXPIRATION_MS,
   extractNip05FromEvent,
-  isDomainAllowed,
-  Nip05VerificationOutcome,
-  parseNip05Identifier,
-  verifyNip05Identifier,
-} from '../utils/nip05'
-import { Event, ExpiringEvent } from '../@types/event'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
 import {
   getEventExpiration,
-  getEventProofOfWork,
   getPubkeyProofOfWork,
   getPublicKey,
   getRelayPrivateKey,
@@ -121,11 +114,9 @@ export class EventMessageHandler implements IMessageHandler {
     try {
       await strategy.execute(event)
       this.processNip05Metadata(event)
-    } catch (_error) {
-      this.webSocket.emit(
-        WebSocketAdapterEvent.Message,
-        createCommandResult(event.id, false, 'error: unable to process event'),
-      )
+    } catch (error) {
+      debug.error('error handling message', message, error)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: unable to process event'))
     }
   }
 

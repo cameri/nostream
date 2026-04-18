@@ -42,7 +42,7 @@ export class RedisAdapter implements ICacheAdapter {
   }
 
   private onClientError(error: Error) {
-    debug('Unable to connect to Redis.', error)
+    debug.error('Unable to connect to Redis.', error)
     // throw error
   }
 

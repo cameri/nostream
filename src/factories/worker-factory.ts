@@ -5,6 +5,7 @@ import { WebSocketServer } from 'ws'
 
 import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
 import { AppWorker } from '../app/worker'
+import { createLogger } from './logger-factory'
 import { createSettings } from '../factories/settings-factory'
 import { createWebApp } from './web-app-factory'
 import { EventRepository } from '../repositories/event-repository'
@@ -12,6 +13,8 @@ import { Nip05VerificationRepository } from '../repositories/nip05-verification-
 import { UserRepository } from '../repositories/user-repository'
 import { webSocketAdapterFactory } from './websocket-adapter-factory'
 import { WebSocketServerAdapter } from '../adapters/web-socket-server-adapter'
+
+const debug = createLogger('worker-factory')
 
 export const workerFactory = (): AppWorker => {
   const dbClient = getMasterDbClient()
@@ -29,7 +32,7 @@ export const workerFactory = (): AppWorker => {
 
   let maxPayloadSize: number | undefined
   if (pathSatisfies(is(String), ['network', 'max_payload_size'], settings)) {
-    console.warn(`WARNING: Setting network.max_payload_size is deprecated and will be removed in a future version.
+    debug.warn(`WARNING: Setting network.max_payload_size is deprecated and will be removed in a future version.
         Use network.maxPayloadSize instead.`)
     maxPayloadSize = path(['network', 'max_payload_size'], settings)
   } else {

@@ -1,3 +1,9 @@
+const pino = require('pino')
+
+const logger = pino({
+  level: process.env.LOG_LEVEL || 'info',
+})
+
 exports.up = async function (knex) {
   // Create the event_tags table
   await knex.schema.createTable('event_tags', function (table) {
@@ -70,7 +76,7 @@ exports.up = async function (knex) {
     processedEvents++
     const currentPercentage = Math.floor(processedEvents / totalEvents * 100)
     if (currentPercentage > lastPercentage) {
-      console.log(`${new Date().toLocaleString()} Migration progress: ${currentPercentage}% (${processedEvents}/${totalEvents})`)
+      logger.info(`${new Date().toLocaleString()} Migration progress: ${currentPercentage}% (${processedEvents}/${totalEvents})`)
       lastPercentage = currentPercentage
     }
   }

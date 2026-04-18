@@ -3,6 +3,8 @@ import 'pg-query-stream'
 import knex, { Knex } from 'knex'
 import { createLogger } from '../factories/logger-factory'
 
+const poolLogger = createLogger('database-client:pool-monitor')
+
 ;((knex) => {
   const lastUpdate = {}
   knex.Client.prototype.releaseConnection = function (connection) {
@@ -14,9 +16,7 @@ import { createLogger } from '../factories/logger-factory'
       lastUpdate[tag] = lastUpdate[tag] ?? now
       if (now - lastUpdate[tag] >= 60000) {
         lastUpdate[tag] = now
-        console.log(
-          `${tag} connection pool: ${this.pool.numUsed()} used / ${this.pool.numFree()} free / ${this.pool.numPendingAcquires()} pending`,
-        )
+        poolLogger.info(`${tag} connection pool: ${this.pool.numUsed()} used / ${this.pool.numFree()} free / ${this.pool.numPendingAcquires()} pending`)
       }
     }
 

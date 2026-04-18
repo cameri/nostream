@@ -52,7 +52,7 @@ export class ZebedeeCallbackController implements IController {
     try {
       updatedInvoice = await this.paymentsService.updateInvoiceStatus(invoice)
     } catch (error) {
-      console.error(`Unable to persist invoice ${invoice.id}`, error)
+      debug.error(`Unable to persist invoice ${invoice.id}`, error)
 
       throw error
     }
@@ -77,7 +77,7 @@ export class ZebedeeCallbackController implements IController {
       })
       await this.paymentsService.sendInvoiceUpdateNotification(updatedInvoice)
     } catch (error) {
-      console.error(`Unable to confirm invoice ${invoice.id}`, error)
+      debug.error(`Unable to confirm invoice ${invoice.id}`, error)
 
       throw error
     }

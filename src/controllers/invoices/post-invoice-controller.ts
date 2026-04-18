@@ -115,8 +115,11 @@ export class PostInvoiceController implements IController {
 
       invoice = await this.paymentsService.createInvoice(pubkey, amount, description)
     } catch (error) {
-      console.error('Unable to create invoice. Reason:', error)
-      response.status(500).setHeader('content-type', 'text/plain').send('Unable to create invoice')
+      debug.error('Unable to create invoice. Reason:', error)
+      response
+        .status(500)
+        .setHeader('content-type', 'text/plain')
+        .send('Unable to create invoice')
       return
     }
 

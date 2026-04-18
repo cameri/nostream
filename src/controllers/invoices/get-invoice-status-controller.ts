@@ -37,7 +37,7 @@ export class GetInvoiceStatusController implements IController {
         status: invoice.status,
       })
     } catch (error) {
-      console.error(`get-invoice-status-controller: unable to get invoice ${invoiceId}:`, error)
+      debug.error(`get-invoice-status-controller: unable to get invoice ${invoiceId}:`, error)
 
       response
         .status(500)

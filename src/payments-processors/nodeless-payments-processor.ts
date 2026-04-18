@@ -26,7 +26,7 @@ export class NodelessPaymentsProcessor implements IPaymentsProcessor {
 
       return fromNodelessInvoice(response.data.data)
     } catch (error) {
-      console.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
+      debug.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
 
       throw error
     }
@@ -66,7 +66,7 @@ export class NodelessPaymentsProcessor implements IPaymentsProcessor {
 
       return result
     } catch (error) {
-      console.error('Unable to request invoice. Reason:', error.message)
+      debug.error('Unable to request invoice. Reason:', error.message)
 
       throw error
     }

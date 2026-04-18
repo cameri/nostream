@@ -75,7 +75,7 @@ export class LNbitsCallbackController implements IController {
     try {
       await this.paymentsService.updateInvoice(invoice)
     } catch (error) {
-      console.error(`Unable to persist invoice ${invoice.id}`, error)
+      debug.error(`Unable to persist invoice ${invoice.id}`, error)
 
       throw error
     }
@@ -97,7 +97,7 @@ export class LNbitsCallbackController implements IController {
       await this.paymentsService.confirmInvoice(invoice as Invoice)
       await this.paymentsService.sendInvoiceUpdateNotification(invoice as Invoice)
     } catch (error) {
-      console.error(`Unable to confirm invoice ${invoice.id}`, error)
+      debug.error(`Unable to confirm invoice ${invoice.id}`, error)
 
       throw error
     }
