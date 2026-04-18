@@ -3,7 +3,7 @@ module.exports = {
   parserOptions: {
     sourceType: 'module',
   },
-  plugins: ['@typescript-eslint/eslint-plugin'],
+  plugins: ['@typescript-eslint'],
   extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
   root: true,
   env: {
@@ -11,15 +11,25 @@ module.exports = {
   },
   ignorePatterns: ['dist', 'tslint.json', 'node_modules'],
   rules: {
-    '@typescript-eslint/interface-name-prefix': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
-    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        caughtErrors: 'none',
+      },
+    ],
+    '@typescript-eslint/no-require-imports': 'off',
+
     semi: ['error', 'never'],
     quotes: ['error', 'single', { avoidEscape: true }],
-    'sort-imports': ['error', {
-      ignoreCase: true,
-      allowSeparatedGroups: true,
-    }],
+    'sort-imports': [
+      'error',
+      {
+        ignoreCase: true,
+        allowSeparatedGroups: true,
+      },
+    ],
     curly: [2, 'multi-line'],
     'max-len': [
       'error',
@@ -32,4 +42,12 @@ module.exports = {
     ],
     'comma-dangle': ['error', 'always-multiline'],
   },
+  overrides: [
+    {
+      files: ['test/**/*.ts', '**/*.spec.ts'],
+      rules: {
+        '@typescript-eslint/no-unused-expressions': 'off',
+      },
+    },
+  ],
 }
