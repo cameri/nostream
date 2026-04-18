@@ -16,9 +16,9 @@ describe('OpenNode Callback Schema', () => {
     })
 
     it('returns no error if body contains additional expected fields', () => {
-      const body = { 
-        ...validBody, 
-        amount: 1000, 
+      const body = {
+        ...validBody,
+        amount: 1000,
         created_at: 1672531200,
         lightning_invoice: { payreq: 'lnbc1...' },
       }
@@ -30,7 +30,8 @@ describe('OpenNode Callback Schema', () => {
       const body = { ...validBody }
       delete (body as any).order_id
       const result = validateSchema(opennodeCallbackBodySchema)(body)
-      expect(result.error).to.have.nested.property('message', '"order_id" is required')
+      expect(result.error).to.exist
+      expect(result.error?.issues[0].path).to.deep.equal(['order_id'])
     })
   })
 })

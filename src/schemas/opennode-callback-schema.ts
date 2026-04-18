@@ -1,20 +1,20 @@
 import { pubkeySchema } from './base-schema'
-import Schema from 'joi'
+import { z } from 'zod'
 
-export const opennodeCallbackBodySchema = Schema.object({
-  id: Schema.string().required(),
-  status: Schema.string().required(),
-  order_id: pubkeySchema.label('order_id').required(),
-  description: Schema.string().allow('').optional(),
-  amount: Schema.number().optional(),
-  price: Schema.number().optional(),
-  created_at: Schema.alternatives().try(Schema.number(), Schema.string()).optional(),
-  lightning_invoice: Schema.object({
-    payreq: Schema.string().optional(),
-    expires_at: Schema.number().optional(),
-  }).unknown(true).optional(),
-  lightning: Schema.object({
-    payreq: Schema.string().optional(),
-    expires_at: Schema.string().optional(),
-  }).unknown(true).optional(),
-}).unknown(true)
+export const opennodeCallbackBodySchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  order_id: pubkeySchema,
+  description: z.string().or(z.literal('')).optional(),
+  amount: z.number().optional(),
+  price: z.number().optional(),
+  created_at: z.union([z.number(), z.string()]).optional(),
+  lightning_invoice: z.object({
+    payreq: z.string().optional(),
+    expires_at: z.number().optional(),
+  }).passthrough().optional(),
+  lightning: z.object({
+    payreq: z.string().optional(),
+    expires_at: z.string().optional(),
+  }).passthrough().optional(),
+}).passthrough()
