@@ -31,10 +31,11 @@ const enrichEventMetadata = (event: Event): Event => {
   }
 
   if (isParameterizedReplaceableEvent(event)) {
-    const [, ...deduplication] = event.tags.find(
-      (tag) => tag.length >= 2 && tag[0] === EventTags.Deduplication,
-    ) ?? [null, '']
-    enriched = { ...enriched, [EventDeduplicationMetadataKey]: deduplication }
+    const [, deduplication] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Deduplication) ?? [
+      null,
+      '',
+    ]
+    enriched = { ...enriched, [EventDeduplicationMetadataKey]: deduplication ? [deduplication] : [''] }
   }
 
   return enriched
