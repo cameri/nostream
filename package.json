@@ -44,7 +44,6 @@
     "pretest:unit": "node -e \"require('fs').mkdirSync('.test-reports/unit', {recursive: true})\"",
     "test:unit": "mocha 'test/**/*.spec.ts'",
     "test:unit:dashboard": "mocha 'test/unit/dashboard-service/**/*.spec.ts'",
-    "test:e2e:dashboard:ws": "node scripts/check_dashboard_ws_updates.js",
     "test:unit:watch": "npm run test:unit -- --min --watch --watch-files src/**/*,test/**/*",
     "cover:unit": "nyc --report-dir .coverage/unit npm run test:unit",
     "docker:build": "docker build -t nostream .",
