@@ -43,8 +43,11 @@ When(/(\w+) sends a text_note event expecting to be rate limited/, async functio
 
   await new Promise<void>((resolve, reject) => {
     ws.send(JSON.stringify(['EVENT', event]), (err) => {
-      if (err) reject(err)
-      else resolve()
+      if (err) {
+        reject(err)
+      } else {
+        resolve()
+      }
     })
   })
 
