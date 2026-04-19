@@ -210,21 +210,6 @@ describe('SubscribeMessageHandler', () => {
       expect(webSocketOnMessageStub).to.have.been.calledWithExactly(['EOSE', subscriptionId])
     })
 
-    it('does not send expired stored events', async () => {
-      isClientSubscribedToEventStub.returns(always(true))
-
-      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
-
-      stream.write(toDbEvent(event, { expires_at: Math.floor(Date.now() / 1000) - 1 }))
-      stream.end()
-
-      await promise
-
-      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(
-        ['EOSE', subscriptionId],
-      )
-    })
-
     it('sends EOSE', async () => {
       const promise = (handler as any).fetchAndSend(subscriptionId, filters)
 

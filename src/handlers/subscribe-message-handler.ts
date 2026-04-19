@@ -59,7 +59,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const sendEOSE = () =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEndOfStoredEventsNoticeMessage(subscriptionId))
     const isSubscribedToEvent = SubscribeMessageHandler.isClientSubscribedToEvent(filters)
-    const isNotExpired = (event: Event) => {
+    const isTagUnexpired = (event: Event) => {
       if (isExpiredEvent(event)) {
         return false
       }
@@ -74,9 +74,8 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       await pipeline(
         findEvents,
         streamFilter(propSatisfies(isNil, 'deleted_at')),
-        streamFilter(SubscribeMessageHandler.isNotExpired),
         streamMap(toNostrEvent),
-        streamFilter(isNotExpired),
+        streamFilter(isTagUnexpired),
         streamFilter(isSubscribedToEvent),
         streamEach(sendEvent),
         streamEnd(sendEOSE),
@@ -94,11 +93,6 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   private static isClientSubscribedToEvent(filters: SubscriptionFilter[]): (event: Event) => boolean {
     return anyPass(map(isEventMatchingFilter)(filters))
-  }
-
-  private static isNotExpired(event: { expires_at?: number }): boolean {
-    const now = Math.floor(Date.now() / 1000)
-    return typeof event.expires_at !== 'number' || event.expires_at > now
   }
 
   private canSubscribe(subscriptionId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
