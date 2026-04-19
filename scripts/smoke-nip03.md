@@ -25,7 +25,7 @@ would use.
 ## Prerequisites
 
 - A running nostream relay (default `ws://127.0.0.1:8008`).
-- Node.js >= 18 (for built-in `WebSocket`).
+- Node.js (same as the repo; the script runs via `ts-node` and uses the `ws` package).
 - [`opentimestamps-client`](https://github.com/opentimestamps/opentimestamps-client)
   for the real `ots` step (optional; the script auto-detects and skips
   gracefully if it's not installed):
@@ -51,7 +51,7 @@ would use.
 ```bash
 npm run smoke:nip03
 # or, with non-default relays:
-node scripts/smoke-nip03.mjs \
+npx ts-node scripts/smoke-nip03.ts \
   --local-relay ws://127.0.0.1:8008 \
   --source-relay wss://nostr-pub.wellorder.net
 ```

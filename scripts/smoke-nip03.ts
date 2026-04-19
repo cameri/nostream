@@ -33,20 +33,44 @@
  *   - test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts
  *
  * Usage:
- *   node scripts/smoke-nip03.mjs \
+ *   npx ts-node scripts/smoke-nip03.ts \
  *     [--local-relay ws://127.0.0.1:8008] \
  *     [--source-relay wss://nos.lol,wss://relay.damus.io,...] \
  *     [--event-id <hex>] \
  *     [--skip-ots-verify]
  *
- * Requires Node >= 18 (for built-in WebSocket).
+ * Uses the `ws` package (same stack as `scripts/security-load-test.ts`).
  */
 
 import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import WebSocket, { type RawData } from 'ws'
+
+type CliArgs = Record<string, string | boolean>
+
+/** Minimal Nostr event shape for NIP-03 smoke (kind 1040). */
+interface NostrEvent {
+  id: string
+  pubkey: string
+  created_at: number
+  kind: number
+  tags: string[][]
+  content: string
+  sig: string
+}
+
+/**
+ * Parsed JSON from Nostr relay messages.
+ * Relay may send `EVENT`, `EOSE`, `OK`, `CLOSED`, `NOTICE`, etc.
+ */
+type RelayMessage =
+  | ['EVENT', string, NostrEvent]
+  | ['EOSE', string]
+  | ['OK', string, boolean, string]
+  | ['CLOSED', string, string?]
 
 const DEFAULT_SOURCE_RELAYS = [
   'wss://nos.lol',
@@ -57,23 +81,27 @@ const DEFAULT_SOURCE_RELAYS = [
 ]
 
 const args = parseArgs(process.argv.slice(2))
-const LOCAL_RELAY = args['local-relay'] ?? 'ws://127.0.0.1:8008'
-const SOURCE_RELAYS = (args['source-relay'] ?? DEFAULT_SOURCE_RELAYS.join(','))
+const LOCAL_RELAY = (typeof args['local-relay'] === 'string' && args['local-relay']) || 'ws://127.0.0.1:8008'
+const SOURCE_RELAYS = (
+  typeof args['source-relay'] === 'string' && args['source-relay']
+    ? args['source-relay']
+    : DEFAULT_SOURCE_RELAYS.join(',')
+)
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean)
-const PINNED_EVENT_ID = args['event-id']
+const PINNED_EVENT_ID = typeof args['event-id'] === 'string' ? args['event-id'] : undefined
 const SKIP_OTS_VERIFY = Boolean(args['skip-ots-verify']) || process.env.SKIP_OTS_VERIFY === '1'
 
 let passed = 0
 let failed = 0
 
-function ok(label) {
+function ok(label: string): void {
   passed++
   console.log(`  PASS  ${label}`)
 }
 
-function fail(label, detail) {
+function fail(label: string, detail?: string): void {
   failed++
   console.log(`  FAIL  ${label}`)
   if (detail) {
@@ -83,8 +111,8 @@ function fail(label, detail) {
   }
 }
 
-function parseArgs(argv) {
-  const out = {}
+function parseArgs(argv: string[]): CliArgs {
+  const out: CliArgs = {}
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (!a.startsWith('--')) continue
@@ -100,9 +128,9 @@ function parseArgs(argv) {
   return out
 }
 
-async function openSocket(url, timeoutMs = 10000) {
+async function openSocket(url: string, timeoutMs = 10000): Promise<WebSocket> {
   const ws = new WebSocket(url)
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       try {
         ws.close()
@@ -111,11 +139,11 @@ async function openSocket(url, timeoutMs = 10000) {
       }
       reject(new Error(`timed out opening ${url}`))
     }, timeoutMs)
-    ws.addEventListener('open', () => {
+    ws.once('open', () => {
       clearTimeout(timer)
       resolve()
     })
-    ws.addEventListener('error', (e) => {
+    ws.once('error', (e: Error) => {
       clearTimeout(timer)
       reject(new Error(`socket error opening ${url}: ${e?.message ?? e}`))
     })
@@ -123,36 +151,49 @@ async function openSocket(url, timeoutMs = 10000) {
   return ws
 }
 
-function sendJson(ws, msg) {
+function sendJson(ws: WebSocket, msg: unknown[]): void {
   ws.send(JSON.stringify(msg))
 }
 
-function isHex64(s) {
+function isHex64(s: unknown): s is string {
   return typeof s === 'string' && /^[0-9a-f]{64}$/.test(s)
 }
 
-function isPlausibleNip03(event) {
-  if (!event || event.kind !== 1040) return false
-  const eTag = Array.isArray(event.tags) && event.tags.find((t) => Array.isArray(t) && t[0] === 'e')
+function isPlausibleNip03(event: unknown): event is NostrEvent {
+  if (!event || typeof event !== 'object') return false
+  const e = event as Record<string, unknown>
+  if (e.kind !== 1040) return false
+  const tags = e.tags
+  if (!Array.isArray(tags)) return false
+  const eTag = tags.find((t) => Array.isArray(t) && t[0] === 'e')
   if (!eTag || !isHex64(eTag[1])) return false
-  if (typeof event.content !== 'string' || event.content.length < 40) return false
+  if (typeof e.content !== 'string' || e.content.length < 40) return false
   try {
-    const buf = Buffer.from(event.content, 'base64')
-    // OTS magic header starts with 0x00 'OpenTimestamps'...
+    const buf = Buffer.from(e.content, 'base64')
     return buf.length > 40 && buf[0] === 0x00 && buf.slice(1, 15).toString('ascii') === 'OpenTimestamps'
   } catch {
     return false
   }
 }
 
-async function discoverRecentNip03(relayUrl, limit = 10) {
+function parseRelayMessage(data: RawData): RelayMessage | undefined {
+  try {
+    const parsed = JSON.parse(String(data)) as unknown
+    if (!Array.isArray(parsed)) return undefined
+    return parsed as RelayMessage
+  } catch {
+    return undefined
+  }
+}
+
+async function discoverRecentNip03(relayUrl: string, limit = 10): Promise<NostrEvent[]> {
   const ws = await openSocket(relayUrl, 8000)
   const subId = `disc-${randomUUID().slice(0, 8)}`
-  const collected = []
+  const collected: NostrEvent[] = []
   let settled = false
 
   return new Promise((resolve) => {
-    const done = (value) => {
+    const done = (value: NostrEvent[]) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
@@ -167,14 +208,9 @@ async function discoverRecentNip03(relayUrl, limit = 10) {
 
     const timer = setTimeout(() => done(collected), 8000)
 
-    ws.addEventListener('message', (msg) => {
-      let parsed
-      try {
-        parsed = JSON.parse(String(msg.data))
-      } catch {
-        return
-      }
-      if (!Array.isArray(parsed)) return
+    ws.on('message', (data: RawData) => {
+      const parsed = parseRelayMessage(data)
+      if (!parsed) return
       if (parsed[0] === 'EVENT' && parsed[1] === subId) {
         if (isPlausibleNip03(parsed[2])) {
           collected.push(parsed[2])
@@ -184,19 +220,19 @@ async function discoverRecentNip03(relayUrl, limit = 10) {
       }
     })
 
-    ws.addEventListener('error', () => done(collected))
+    ws.on('error', () => done(collected))
 
     sendJson(ws, ['REQ', subId, { kinds: [1040], limit }])
   })
 }
 
-async function fetchEvent(relayUrl, eventId, timeoutMs = 15000) {
+async function fetchEvent(relayUrl: string, eventId: string, timeoutMs = 15000): Promise<NostrEvent | undefined> {
   const ws = await openSocket(relayUrl, 10000)
   const subId = `fetch-${randomUUID().slice(0, 8)}`
   let settled = false
 
   return new Promise((resolve, reject) => {
-    const done = (fn, value) => {
+    const done = <T>(fn: (v: T) => void, value: T) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
@@ -209,19 +245,13 @@ async function fetchEvent(relayUrl, eventId, timeoutMs = 15000) {
       fn(value)
     }
 
-    const timer = setTimeout(
-      () => done(reject, new Error(`timed out fetching ${eventId} from ${relayUrl}`)),
-      timeoutMs,
-    )
+    const timer = setTimeout(() => {
+      done(reject, new Error(`timed out fetching ${eventId} from ${relayUrl}`))
+    }, timeoutMs)
 
-    ws.addEventListener('message', (msg) => {
-      let parsed
-      try {
-        parsed = JSON.parse(String(msg.data))
-      } catch {
-        return
-      }
-      if (!Array.isArray(parsed)) return
+    ws.on('message', (data: RawData) => {
+      const parsed = parseRelayMessage(data)
+      if (!parsed) return
       if (parsed[0] === 'EVENT' && parsed[1] === subId) {
         done(resolve, parsed[2])
       } else if (parsed[0] === 'EOSE' && parsed[1] === subId) {
@@ -235,7 +265,11 @@ async function fetchEvent(relayUrl, eventId, timeoutMs = 15000) {
   })
 }
 
-async function publishEvent(relayUrl, event, timeoutMs = 15000) {
+async function publishEvent(
+  relayUrl: string,
+  event: NostrEvent,
+  timeoutMs = 15000,
+): Promise<{ accepted: boolean; reason: string }> {
   const ws = await openSocket(relayUrl, 10000)
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -243,14 +277,10 @@ async function publishEvent(relayUrl, event, timeoutMs = 15000) {
       reject(new Error(`timed out waiting for OK on ${event.id} from ${relayUrl}`))
     }, timeoutMs)
 
-    ws.addEventListener('message', (msg) => {
-      let parsed
-      try {
-        parsed = JSON.parse(String(msg.data))
-      } catch {
-        return
-      }
-      if (Array.isArray(parsed) && parsed[0] === 'OK' && parsed[1] === event.id) {
+    ws.on('message', (data: RawData) => {
+      const parsed = parseRelayMessage(data)
+      if (!parsed) return
+      if (parsed[0] === 'OK' && parsed[1] === event.id) {
         clearTimeout(timer)
         ws.close()
         resolve({ accepted: Boolean(parsed[2]), reason: String(parsed[3] ?? '') })
@@ -261,13 +291,19 @@ async function publishEvent(relayUrl, event, timeoutMs = 15000) {
   })
 }
 
-function hasOtsBinary() {
+function hasOtsBinary(): boolean {
   try {
     const probe = spawnSync('ots', ['--version'], { encoding: 'utf8' })
     return probe.status === 0
   } catch {
     return false
   }
+}
+
+interface OtsClientResult {
+  info: { status: number | null; combined: string }
+  otsPath: string
+  verify?: { status: number | null; combined: string }
 }
 
 /**
@@ -285,12 +321,16 @@ function hasOtsBinary() {
  * `ots verify -d <targetEventId> <file>` which performs the full check
  * against a Bitcoin node.
  */
-function runOtsClient(base64Content, targetEventId, { alsoVerify = false } = {}) {
+function runOtsClient(
+  base64Content: string,
+  targetEventId: string,
+  { alsoVerify = false }: { alsoVerify?: boolean } = {},
+): OtsClientResult {
   const dir = mkdtempSync(join(tmpdir(), 'nip03-'))
   const otsPath = join(dir, 'proof.ots')
   writeFileSync(otsPath, Buffer.from(base64Content, 'base64'))
   const info = spawnSync('ots', ['info', otsPath], { encoding: 'utf8' })
-  const result = {
+  const result: OtsClientResult = {
     info: {
       status: info.status,
       combined: `${info.stdout ?? ''}\n${info.stderr ?? ''}`,
@@ -307,7 +347,7 @@ function runOtsClient(base64Content, targetEventId, { alsoVerify = false } = {})
   return result
 }
 
-async function findEventAndSource() {
+async function findEventAndSource(): Promise<{ event: NostrEvent; source: string }> {
   if (PINNED_EVENT_ID) {
     if (!isHex64(PINNED_EVENT_ID)) {
       throw new Error(`--event-id must be 32-byte lowercase hex, got ${PINNED_EVENT_ID}`)
@@ -320,7 +360,8 @@ async function findEventAndSource() {
           return { event: ev, source: relay }
         }
       } catch (e) {
-        console.log(`    ${relay}: ${e.message}`)
+        const err = e instanceof Error ? e : new Error(String(e))
+        console.log(`    ${relay}: ${err.message}`)
       }
     }
     throw new Error(`pinned event ${PINNED_EVENT_ID} not found on any source relay`)
@@ -331,20 +372,21 @@ async function findEventAndSource() {
     try {
       const candidates = await discoverRecentNip03(relay)
       if (candidates.length > 0) {
-        // Pick the newest that looks well-formed.
         candidates.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))
         return { event: candidates[0], source: relay }
       }
     } catch (e) {
-      console.log(`    ${relay}: ${e.message}`)
+      const err = e instanceof Error ? e : new Error(String(e))
+      console.log(`    ${relay}: ${err.message}`)
     }
   }
   throw new Error(
-    `no kind 1040 events found on any of: ${SOURCE_RELAYS.join(', ')}. ` + `Pass --event-id <hex> to pin a specific one.`,
+    `no kind 1040 events found on any of: ${SOURCE_RELAYS.join(', ')}. ` +
+      `Pass --event-id <hex> to pin a specific one.`,
   )
 }
 
-async function main() {
+async function main(): Promise<void> {
   console.log('NIP-03 end-to-end smoke test')
   console.log(`  local relay:   ${LOCAL_RELAY}`)
   console.log(`  source relays: ${SOURCE_RELAYS.join(', ')}`)
@@ -352,18 +394,24 @@ async function main() {
   console.log('')
 
   console.log('1) Discovering a real NIP-03 event from public relays')
-  let event
-  let source
+  let event: NostrEvent
+  let source: string
   try {
     const found = await findEventAndSource()
     event = found.event
     source = found.source
   } catch (e) {
-    fail('discovered a real NIP-03 event', e.message)
+    const err = e instanceof Error ? e : new Error(String(e))
+    fail('discovered a real NIP-03 event', err.message)
     finish()
     return
   }
   const eTag = event.tags.find((t) => t[0] === 'e')
+  if (!eTag || !isHex64(eTag[1])) {
+    fail('discovered a real NIP-03 event', 'missing valid e tag')
+    finish()
+    return
+  }
   ok(
     `discovered ${event.id.slice(0, 12)}… on ${source} ` +
       `(pubkey=${event.pubkey.slice(0, 8)}…, attests e=${eTag[1].slice(0, 12)}…, content=${event.content.length} chars)`,
@@ -417,7 +465,8 @@ async function main() {
       fail('local relay accepted real NIP-03 event', `OK false, reason="${res.reason}"`)
     }
   } catch (e) {
-    fail('local relay accepted real NIP-03 event', e.message)
+    const err = e instanceof Error ? e : new Error(String(e))
+    fail('local relay accepted real NIP-03 event', err.message)
   }
 
   console.log('')
@@ -434,13 +483,14 @@ async function main() {
       ok('local relay returned the same event (id, sig, content) on REQ')
     }
   } catch (e) {
-    fail('local relay returned the stored event on REQ', e.message)
+    const err = e instanceof Error ? e : new Error(String(e))
+    fail('local relay returned the stored event on REQ', err.message)
   }
 
   finish()
 }
 
-function finish() {
+function finish(): void {
   console.log('')
   console.log(`summary: ${passed} passed, ${failed} failed`)
   if (failed === 0) {
