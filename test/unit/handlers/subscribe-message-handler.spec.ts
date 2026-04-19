@@ -17,7 +17,7 @@ import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 chai.use(chaiAsPromised)
 const { expect } = chai
 
-const toDbEvent = (event: Event) => ({
+const toDbEvent = (event: Event, override: Record<string, unknown> = {}) => ({
   event_id: Buffer.from(event.id, 'hex'),
   event_kind: event.kind,
   event_pubkey: Buffer.from(event.pubkey, 'hex'),
@@ -25,6 +25,7 @@ const toDbEvent = (event: Event) => ({
   event_content: event.content,
   event_tags: event.tags,
   event_signature: Buffer.from(event.sig, 'hex'),
+  ...override,
 })
 
 describe('SubscribeMessageHandler', () => {
@@ -162,6 +163,21 @@ describe('SubscribeMessageHandler', () => {
       expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
       expect(webSocketOnMessageStub).to.have.been.calledWithExactly(
         ['EVENT', subscriptionId, event],
+      )
+    })
+
+    it('does not send expired stored events', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      stream.write(toDbEvent(event, { expires_at: Math.floor(Date.now() / 1000) - 1 }))
+      stream.end()
+
+      await promise
+
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(
+        ['EOSE', subscriptionId],
       )
     })
 

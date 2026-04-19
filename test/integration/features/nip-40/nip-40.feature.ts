@@ -68,8 +68,10 @@ When(/^(\w+) sends a text_note event with content "([^"]+)" and expiration in (\
 ) {
   const expirationTime = now() + Number(durationSeconds)
   const event = await createTextNoteWithExpiration(this, name, content, expirationTime)
+  const expirationTag = event.tags.find((tag) => tag[0] === EventTags.Expiration)
 
-  expect(event[EventExpirationTimeMetadataKey]).to.equal(expirationTime)
+  expect(expirationTag).to.not.equal(undefined)
+  expect(Number(expirationTag?.[1])).to.equal(expirationTime)
 })
 
 When(/^(\w+) waits until (\w+)'s last text_note event expires$/, async function(

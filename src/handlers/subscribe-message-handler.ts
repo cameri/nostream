@@ -64,6 +64,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       await pipeline(
         findEvents,
         streamFilter(propSatisfies(isNil, 'deleted_at')),
+        streamFilter(SubscribeMessageHandler.isNotExpired),
         streamMap(toNostrEvent),
         streamFilter(isSubscribedToEvent),
         streamEach(sendEvent),
@@ -82,6 +83,11 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   private static isClientSubscribedToEvent(filters: SubscriptionFilter[]): (event: Event) => boolean {
     return anyPass(map(isEventMatchingFilter)(filters))
+  }
+
+  private static isNotExpired(event: { expires_at?: number }): boolean {
+    const now = Math.floor(Date.now() / 1000)
+    return typeof event.expires_at !== 'number' || event.expires_at > now
   }
 
   private canSubscribe(subscriptionId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
@@ -108,7 +114,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     }
 
     if (
-      typeof subscriptionLimits.maxSubscriptionIdLength === 'number'
+      typeof subscriptionLimits?.maxSubscriptionIdLength === 'number'
       && subscriptionId.length > subscriptionLimits.maxSubscriptionIdLength
     ) {
       return `Subscription ID too long: Subscription ID must be less or equal to ${subscriptionLimits.maxSubscriptionIdLength}`
