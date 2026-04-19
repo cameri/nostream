@@ -89,7 +89,7 @@ export class PostInvoiceController implements IController {
 
     const isApplicableFee = (feeSchedule: FeeSchedule) =>
       feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.includes(pubkey)
-    const admissionFee = currentSettings.payments?.feeSchedules.admission.filter(isApplicableFee)
+    const admissionFee = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee) ?? []
 
     if (!Array.isArray(admissionFee) || !admissionFee.length) {
       response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('No admission fee required')

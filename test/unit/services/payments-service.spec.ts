@@ -395,7 +395,7 @@ describe('PaymentsService', () => {
       expect(userRepository.admitUser).not.to.have.been.called
     })
 
-    it('skips the fee for whitelisted pubkeys(exact match)', async () => {
+    it('skips the fee for whitelisted pubkeys (exact match)', async () => {
       settings.returns(makeSettings([
         { enabled: true, amount: 1000n, whitelists: { pubkeys: ['whitelistedpubkey'] } },
       ]))
@@ -406,7 +406,7 @@ describe('PaymentsService', () => {
         amountPaid: 5000n,
       }))
 
-      // pubkey starts with 'whitelisted' → isApplicableFee = false → admissionFeeAmount = 0 → not admitted
+      // pubkey does not exactly match whitelist entry -> fee applies -> user must pay to get admitted
       expect(userRepository.admitUser).not.to.have.been.called
     })
 
