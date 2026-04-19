@@ -41,6 +41,23 @@ const timestampToDate = (unixSeconds?: number): Date | null => {
   return null
 }
 
+const toSafeNumber = (value: bigint, fieldName: string): number => {
+  if (value < 0n) {
+    throw new Error(`${fieldName} must be a non-negative bigint.`)
+  }
+
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`${fieldName} exceeds Number.MAX_SAFE_INTEGER.`)
+  }
+
+  const asNumber = Number(value)
+  if (!Number.isSafeInteger(asNumber)) {
+    throw new Error(`${fieldName} is not a safe integer.`)
+  }
+
+  return asNumber
+}
+
 export class AlbyNwcInvoice implements Invoice {
   id: string
   pubkey: string
@@ -117,24 +134,42 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
         )) as NwcTransaction
         const status = mapNwcStateToInvoiceStatus(transaction.state)
 
-        const invoice = new AlbyNwcInvoice()
-        invoice.id = transaction.payment_hash || invoiceId
-        invoice.pubkey = typeof invoiceOrId === 'string' ? '' : invoiceOrId.pubkey
-        invoice.bolt11 = transaction.invoice || (typeof invoiceOrId === 'string' ? '' : invoiceOrId.bolt11)
-        invoice.amountRequested =
-          typeof transaction.amount === 'number' && Number.isFinite(transaction.amount)
-            ? BigInt(Math.trunc(transaction.amount))
-            : typeof invoiceOrId === 'string'
-              ? 0n
+        const invoice: GetInvoiceResponse = {
+          id: transaction.payment_hash || invoiceId,
+          status,
+          confirmedAt: status === InvoiceStatus.COMPLETED ? (timestampToDate(transaction.settled_at) ?? new Date()) : null,
+          expiresAt: timestampToDate(transaction.expires_at),
+          updatedAt: new Date(),
+        }
+
+        if (typeof invoiceOrId !== 'string') {
+          invoice.pubkey = invoiceOrId.pubkey
+          invoice.bolt11 = transaction.invoice || invoiceOrId.bolt11
+          invoice.amountRequested =
+            typeof transaction.amount === 'number' && Number.isFinite(transaction.amount)
+              ? BigInt(Math.trunc(transaction.amount))
               : invoiceOrId.amountRequested
-        invoice.amountPaid = status === InvoiceStatus.COMPLETED ? invoice.amountRequested : undefined
-        invoice.unit = InvoiceUnit.MSATS
-        invoice.status = status
-        invoice.description = transaction.description || (typeof invoiceOrId === 'string' ? '' : invoiceOrId.description)
-        invoice.confirmedAt = status === InvoiceStatus.COMPLETED ? (timestampToDate(transaction.settled_at) ?? new Date()) : null
-        invoice.expiresAt = timestampToDate(transaction.expires_at)
-        invoice.createdAt = timestampToDate(transaction.created_at) ?? new Date()
-        invoice.updatedAt = new Date()
+          invoice.amountPaid = status === InvoiceStatus.COMPLETED ? invoice.amountRequested : undefined
+          invoice.unit = InvoiceUnit.MSATS
+          invoice.description = transaction.description || invoiceOrId.description
+          invoice.createdAt = timestampToDate(transaction.created_at) ?? invoiceOrId.createdAt
+        } else {
+          if (transaction.invoice) {
+            invoice.bolt11 = transaction.invoice
+          }
+          if (typeof transaction.amount === 'number' && Number.isFinite(transaction.amount)) {
+            invoice.amountRequested = BigInt(Math.trunc(transaction.amount))
+            invoice.amountPaid = status === InvoiceStatus.COMPLETED ? invoice.amountRequested : undefined
+            invoice.unit = InvoiceUnit.MSATS
+          }
+          if (transaction.description) {
+            invoice.description = transaction.description
+          }
+          const createdAt = timestampToDate(transaction.created_at)
+          if (createdAt) {
+            invoice.createdAt = createdAt
+          }
+        }
 
         return invoice
       })
@@ -155,9 +190,10 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
     try {
       return await this.withClient(async (client) => {
         const expirySeconds = this.settings().paymentsProcessors?.alby?.invoiceExpirySeconds
+        const amount = toSafeNumber(amountMsats, 'CreateInvoiceRequest.amount')
         const transaction = (await this.withReplyTimeout(
           client.makeInvoice({
-            amount: Number(amountMsats),
+            amount,
             description,
             expiry: expirySeconds,
           }),

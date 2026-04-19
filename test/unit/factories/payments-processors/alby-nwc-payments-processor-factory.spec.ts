@@ -15,6 +15,7 @@ describe('createAlbyNwcPaymentsProcessor', () => {
     paymentsProcessors: {
       alby: {
         replyTimeoutMs: 10_000,
+        invoiceExpirySeconds: 900,
       },
     },
   } as any
@@ -52,10 +53,26 @@ describe('createAlbyNwcPaymentsProcessor', () => {
         paymentsProcessors: {
           alby: {
             replyTimeoutMs: 0,
+            invoiceExpirySeconds: 900,
           },
         },
       } as any)
     ).to.throw('Setting paymentsProcessors.alby.replyTimeoutMs must be a positive number.')
+  })
+
+  it('throws when settings.paymentsProcessors.alby.invoiceExpirySeconds is invalid', () => {
+    process.env.ALBY_NWC_URL = 'nostr+walletconnect://wallet?relay=wss://relay&secret=abc'
+
+    expect(() =>
+      createAlbyNwcPaymentsProcessor({
+        paymentsProcessors: {
+          alby: {
+            replyTimeoutMs: 10_000,
+            invoiceExpirySeconds: 0,
+          },
+        },
+      } as any)
+    ).to.throw('Setting paymentsProcessors.alby.invoiceExpirySeconds must be a positive integer.')
   })
 
   it('creates the processor when config is valid', () => {

@@ -206,4 +206,16 @@ describe('AlbyNwcPaymentsProcessor', () => {
 
     expect(clearTimeoutSpy.called).to.equal(true)
   })
+
+  it('throws when createInvoice amount exceeds Number.MAX_SAFE_INTEGER', async () => {
+    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+
+    await expect(
+      processor.createInvoice({
+        amount: BigInt(Number.MAX_SAFE_INTEGER) + 1n,
+        description: 'Unsafe amount',
+        requestId: 'pubkey-unsafe',
+      })
+    ).to.be.rejectedWith('CreateInvoiceRequest.amount exceeds Number.MAX_SAFE_INTEGER.')
+  })
 })

@@ -36,6 +36,13 @@ const getAlbyNwcConfig = (settings: Settings): { nwcUrl: string; replyTimeoutMs:
     throw error
   }
 
+  const invoiceExpirySeconds = settings.paymentsProcessors?.alby?.invoiceExpirySeconds
+  if (typeof invoiceExpirySeconds !== 'number' || !Number.isInteger(invoiceExpirySeconds) || invoiceExpirySeconds <= 0) {
+    const error = new Error('Setting paymentsProcessors.alby.invoiceExpirySeconds must be a positive integer.')
+    debug('Unable to create Alby NWC payments processor. %o', error)
+    throw error
+  }
+
   return { nwcUrl, replyTimeoutMs }
 }
 
