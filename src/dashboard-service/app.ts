@@ -1,16 +1,15 @@
-import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
 import { IKPICollector, SnapshotService } from './services/snapshot-service'
 import { createDashboardRouter } from './api/dashboard-router'
 import { createLogger } from '../factories/logger-factory'
 import { DashboardServiceConfig } from './config'
+import { DashboardUpdateVersionService } from './services/dashboard-update-version-service'
 import { DashboardWebSocketHub } from './ws/dashboard-ws-hub'
 import express from 'express'
 import { getHealthRequestHandler } from './handlers/request-handlers/get-health-request-handler'
+import { getReadReplicaDbClient } from '../database/client'
 import http from 'http'
-import { IncrementalKPICollectorService } from './services/incremental-kpi-collector-service'
 import { KPICollectorService } from './services/kpi-collector-service'
 import { PollingScheduler } from './polling/polling-scheduler'
-import { StatefulIncrementalKPICollectorService } from './services/stateful-incremental-service'
 import { WebSocketServer } from 'ws'
 const debug = createLogger('dashboard-service:app')
 
@@ -25,15 +24,15 @@ export interface DashboardService {
 
 export const createDashboardService = (config: DashboardServiceConfig): DashboardService => {
   console.info(
-    'dashboard-service: creating service (host=%s, port=%d, wsPath=%s, pollIntervalMs=%d, useDummyData=%s, collectorMode=%s)',
+    'dashboard-service: creating service (host=%s, port=%d, wsPath=%s, pollIntervalMs=%d, useDummyData=%s)',
     config.host,
     config.port,
     config.wsPath,
     config.pollIntervalMs,
     config.useDummyData,
-    config.collectorMode,
   )
 
+  const dbClient = config.useDummyData ? undefined : getReadReplicaDbClient()
   const collector: IKPICollector = config.useDummyData
     ? {
       collectMetrics: async () => ({
@@ -43,18 +42,13 @@ export const createDashboardService = (config: DashboardServiceConfig): Dashboar
         topTalkers: { allTime: [], recent: [] },
       }),
     }
-    : (() => {
-      if (config.collectorMode === 'stateful-incremental') {
-        return new StatefulIncrementalKPICollectorService(getMasterDbClient())
-      }
+    : new KPICollectorService(dbClient)
 
-      const dbClient = getReadReplicaDbClient()
-      return config.collectorMode === 'incremental'
-        ? new IncrementalKPICollectorService(dbClient)
-        : new KPICollectorService(dbClient)
-    })()
+  const updateVersionProvider = typeof dbClient === 'undefined'
+    ? undefined
+    : new DashboardUpdateVersionService(dbClient)
 
-  const snapshotService = new SnapshotService(collector)
+  const snapshotService = new SnapshotService(collector, updateVersionProvider)
 
   const app = express()
     .disable('x-powered-by')

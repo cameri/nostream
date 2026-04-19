@@ -23,7 +23,13 @@ export interface IKPICollector {
   close?(): Promise<void> | void
 }
 
+export interface IKPIUpdateVersionProvider {
+  getCurrentVersion(): Promise<string | undefined>
+}
+
 export class SnapshotService {
+  private lastCollectedVersion: string | undefined
+
   private metricsFingerprint = JSON.stringify(defaultMetrics())
 
   private sequence = 0
@@ -35,7 +41,10 @@ export class SnapshotService {
     metrics: defaultMetrics(),
   }
 
-  public constructor(private readonly collector: IKPICollector) { }
+  public constructor(
+    private readonly collector: IKPICollector,
+    private readonly updateVersionProvider?: IKPIUpdateVersionProvider,
+  ) { }
 
   public getSnapshot(): KPISnapshot {
     return this.snapshot
@@ -47,8 +56,27 @@ export class SnapshotService {
    * are responsible for catching and deciding how to surface errors.
    */
   public async refresh(): Promise<ISnapshotRefreshResult> {
+    const currentVersion = await this.updateVersionProvider?.getCurrentVersion()
+
+    if (
+      typeof currentVersion !== 'undefined'
+      && typeof this.lastCollectedVersion !== 'undefined'
+      && currentVersion === this.lastCollectedVersion
+      && this.snapshot.status === 'live'
+    ) {
+      debug('dashboard revision unchanged, skipping KPI collection')
+      return {
+        snapshot: this.snapshot,
+        changed: false,
+      }
+    }
+
     const metrics = await this.collector.collectMetrics()
     const nextFingerprint = JSON.stringify(metrics)
+
+    if (typeof currentVersion !== 'undefined') {
+      this.lastCollectedVersion = currentVersion
+    }
 
     if (nextFingerprint === this.metricsFingerprint && this.snapshot.status === 'live') {
       debug('metrics unchanged, skipping snapshot sequence update')

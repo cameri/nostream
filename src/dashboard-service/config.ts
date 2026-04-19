@@ -1,13 +1,12 @@
+import { parseArgs } from 'util'
+
 export interface DashboardServiceConfig {
   host: string
   port: number
   wsPath: string
   pollIntervalMs: number
   useDummyData: boolean
-  collectorMode: DashboardCollectorMode
 }
-
-export type DashboardCollectorMode = 'full' | 'incremental' | 'stateful-incremental'
 
 const parseBoolean = (value: string | undefined, fallback = false): boolean => {
   if (typeof value === 'undefined') {
@@ -30,29 +29,21 @@ const parseInteger = (value: string | undefined, fallback: number): number => {
   return parsed
 }
 
-const parseCollectorMode = (
-  value: string | undefined,
-  fallback: DashboardCollectorMode = 'full',
-): DashboardCollectorMode => {
-  if (typeof value === 'undefined') {
-    return fallback
-  }
-
-  const normalized = value.toLowerCase()
-  if (normalized === 'full' || normalized === 'incremental' || normalized === 'stateful-incremental') {
-    return normalized
-  }
-  
-  return fallback
-}
-
 export const getDashboardServiceConfig = (): DashboardServiceConfig => {
+  const { values } = parseArgs({
+    args: process.argv.slice(2),
+    options: {
+      port: { type: 'string', short: 'p' },
+      host: { type: 'string', short: 'h' },
+    },
+    strict: false,
+  })
+
   return {
-    host: process.env.DASHBOARD_SERVICE_HOST ?? '127.0.0.1',
-    port: parseInteger(process.env.DASHBOARD_SERVICE_PORT, 8011),
+    host: (values.host as string) ?? process.env.DASHBOARD_SERVICE_HOST ?? '127.0.0.1',
+    port: parseInteger(values.port as string, parseInteger(process.env.DASHBOARD_SERVICE_PORT, 8011)),
     wsPath: process.env.DASHBOARD_WS_PATH ?? '/api/v1/kpis/stream',
     pollIntervalMs: parseInteger(process.env.DASHBOARD_POLL_INTERVAL_MS, 5000),
     useDummyData: parseBoolean(process.env.DASHBOARD_USE_DUMMY_DATA, false),
-    collectorMode: parseCollectorMode(process.env.DASHBOARD_COLLECTOR_MODE, 'full'),
   }
 }
