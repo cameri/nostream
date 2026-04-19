@@ -112,5 +112,53 @@ describe('NIP-01', () => {
         expect(result).to.have.property('error').that.is.not.undefined
       })
     })
+
+    describe('COUNT', () => {
+      beforeEach(() => {
+        message = [
+          'COUNT',
+          'id',
+          {
+            ids: ['aaaa', 'bbbb', 'cccc'],
+            authors: ['aaaa', 'bbbb', 'cccc'],
+            kinds: [0, 1, 2, 3],
+            since: 1000,
+            until: 1000,
+            limit: 100,
+            '#e': ['aa', 'bb', 'cc'],
+            '#p': ['dd', 'ee', 'ff'],
+            '#r': ['00', '11', '22'],
+          },
+        ] as any
+      })
+
+      it('returns same message if valid', () => {
+        const result = validateSchema(messageSchema)(message)
+        expect(result.error).to.be.undefined
+        expect(result).to.have.deep.property('value', message)
+      })
+
+      it('returns error if query ID is missing', () => {
+        message[1] = null
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+
+      it('returns error if filter is missing', () => {
+        ;(message as any[]).splice(2, 1)
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+
+      it('returns error if there are too many filters', () => {
+        ;(message as any[]).splice(2, 1)
+        ;(message as any[]).push(...range(0, 11).map(() => ({})))
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+    })
   })
 })

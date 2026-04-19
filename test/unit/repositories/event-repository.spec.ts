@@ -417,6 +417,71 @@ describe('EventRepository', () => {
     })
   })
 
+  describe('.countByFilters', () => {
+    it('throws error if filters is empty', async () => {
+      try {
+        await repository.countByFilters([])
+        expect.fail('Expected countByFilters to throw')
+      } catch (error) {
+        expect((error as Error).message).to.equal('Filters cannot be empty')
+      }
+    })
+
+    it('returns count value from query result', async () => {
+      sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '42' }),
+        }),
+      } as any)
+
+      const result = await repository.countByFilters([{}])
+
+      expect(result).to.equal(42)
+    })
+
+    it('builds union query when there are multiple filters', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ kinds: [1] }, { authors: ['22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793'] }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include(' union ')
+    })
+
+    it('joins tags table for generic tag filters', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('left join "event_tags"')
+      expect(sql).to.include('event_tags.tag_name')
+    })
+
+    it('filters out deleted and expired events', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ kinds: [1] }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('"events"."deleted_at" is null')
+      expect(sql).to.include('"events"."expires_at" is null')
+      expect(sql).to.include('"events"."expires_at" >')
+    })
+  })
+
   describe('.create', () => {
     let insertStub: sinon.SinonStub
     beforeEach(() => {
