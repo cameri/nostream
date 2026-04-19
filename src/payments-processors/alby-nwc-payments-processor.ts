@@ -140,9 +140,9 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
       })
     } catch (error) {
       if (error instanceof nwc.Nip47WalletError || error instanceof nwc.Nip47ReplyTimeoutError) {
-        console.error(`Unable to get Alby NWC invoice ${invoiceId}. Reason:`, error.message)
+        debug('Unable to get Alby NWC invoice %s. Reason: %s', invoiceId, error.message)
       } else {
-        console.error(`Unable to get Alby NWC invoice ${invoiceId}. Reason:`, error)
+        debug('Unable to get Alby NWC invoice %s. Reason: %o', invoiceId, error)
       }
       throw error
     }
@@ -183,9 +183,9 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
       })
     } catch (error) {
       if (error instanceof nwc.Nip47WalletError || error instanceof nwc.Nip47ReplyTimeoutError) {
-        console.error('Unable to request Alby NWC invoice. Reason:', error.message)
+        debug('Unable to request Alby NWC invoice. Reason: %s', error.message)
       } else {
-        console.error('Unable to request Alby NWC invoice. Reason:', error)
+        debug('Unable to request Alby NWC invoice. Reason: %o', error)
       }
       throw error
     }
