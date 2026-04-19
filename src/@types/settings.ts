@@ -198,9 +198,9 @@ export interface OpenNodePaymentsProcessor {
   callbackBaseURL: string
 }
 
-export interface NodelessPaymentsProcessor {
-  baseURL: string
-  storeId: string
+export interface AlbyPaymentsProcessor {
+  invoiceExpirySeconds: number
+  replyTimeoutMs: number
 }
 
 export interface PaymentsProcessors {
@@ -209,6 +209,7 @@ export interface PaymentsProcessors {
   lnbits?: LNbitsPaymentsProcessor
   nodeless?: NodelessPaymentsProcessor
   opennode?: OpenNodePaymentsProcessor
+  alby?: AlbyPaymentsProcessor
 }
 
 export interface Local {

@@ -57,6 +57,7 @@ The following environment variables can be set:
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
+| ALBY_NWC_URL                     | Alby NWC connection URL (`nostr+walletconnect://...`) | |
 
 ## I2P
 
@@ -154,3 +155,4 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].rate            | Maximum number of admission checks during period. |
 | limits.admissionCheck.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.rateLimiter.strategy | Rate limiting strategy. Either `ewma` or `sliding_window`. Defaults to `ewma`. When using `ewma`, the `period` field in each rate limit serves as the half-life for the exponential decay function. Note: when switching from `sliding_window` to `ewma`, consider increasing `rate` values slightly as EWMA penalizes bursty behavior more aggressively. |
+| payments.processor                          | One of `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `alby`. |
