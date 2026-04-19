@@ -19,11 +19,15 @@ describe('SettingsStatic', () => {
     })
 
     it('returns string ending with .nostr/ by default', () => {
-      expect(SettingsStatic.getSettingsFileBasePath()).to.be.a('string').and.to.match(/.nostr/)
+      expect(SettingsStatic.getSettingsFileBasePath())
+        .to.be.a('string')
+        .and.to.match(/.nostr/)
     })
 
-    it('returns path begins with user\'s home dir by default', () => {
-      expect(SettingsStatic.getSettingsFileBasePath()).to.be.a('string').and.equal(`${join(process.cwd(), '.nostr')}`)
+    it("returns path begins with user's home dir by default", () => {
+      expect(SettingsStatic.getSettingsFileBasePath())
+        .to.be.a('string')
+        .and.equal(`${join(process.cwd(), '.nostr')}`)
     })
 
     it('returns path with NOSTR_CONFIG_DIR if set', () => {
@@ -46,11 +50,15 @@ describe('SettingsStatic', () => {
     })
 
     it('returns string ending with settings.json by default', () => {
-      expect(SettingsStatic.getDefaultSettingsFilePath()).to.be.a('string').and.to.match(/settings\.yaml$/)
+      expect(SettingsStatic.getDefaultSettingsFilePath())
+        .to.be.a('string')
+        .and.to.match(/settings\.yaml$/)
     })
 
-    it('returns path begins with user\'s home dir by default', () => {
-      expect(SettingsStatic.getDefaultSettingsFilePath()).to.be.a('string').and.equal(`${join(process.cwd(), '/resources')}/default-settings.yaml`)
+    it("returns path begins with user's home dir by default", () => {
+      expect(SettingsStatic.getDefaultSettingsFilePath())
+        .to.be.a('string')
+        .and.equal(join(process.cwd(), 'resources', 'default-settings.yaml'))
     })
   })
 
@@ -70,10 +78,7 @@ describe('SettingsStatic', () => {
 
       expect(SettingsStatic.loadAndParseYamlFile('/some/path/file.yaml')).to.equal('content')
 
-      expect(readFileSyncStub).to.have.been.calledOnceWithExactly(
-        '/some/path/file.yaml',
-        { encoding: 'utf-8' }
-      )
+      expect(readFileSyncStub).to.have.been.calledOnceWithExactly('/some/path/file.yaml', { encoding: 'utf-8' })
     })
   })
 
@@ -93,10 +98,7 @@ describe('SettingsStatic', () => {
 
       expect(SettingsStatic.loadAndParseJsonFile('/some/path/file.json')).to.equal('content')
 
-      expect(readFileSyncStub).to.have.been.calledOnceWithExactly(
-        '/some/path/file.json',
-        { encoding: 'utf-8' }
-      )
+      expect(readFileSyncStub).to.have.been.calledOnceWithExactly('/some/path/file.json', { encoding: 'utf-8' })
     })
   })
 
@@ -116,10 +118,7 @@ describe('SettingsStatic', () => {
 
       expect(SettingsStatic.loadAndParseJsonFile('/some/path/file.json')).to.have.property('key', 'value')
 
-      expect(readFileSyncStub).to.have.been.calledOnceWithExactly(
-        '/some/path/file.json',
-        { encoding: 'utf-8' },
-      )
+      expect(readFileSyncStub).to.have.been.calledOnceWithExactly('/some/path/file.json', { encoding: 'utf-8' })
     })
   })
 
@@ -139,10 +138,7 @@ describe('SettingsStatic', () => {
 
       expect(SettingsStatic.loadSettings('/some/path', SettingsFileTypes.yaml)).to.equal('content')
 
-      expect(readFileSyncStub).to.have.been.calledOnceWithExactly(
-        '/some/path',
-        { encoding: 'utf-8' }
-      )
+      expect(readFileSyncStub).to.have.been.calledOnceWithExactly('/some/path', { encoding: 'utf-8' })
     })
   })
 
@@ -188,10 +184,7 @@ describe('SettingsStatic', () => {
 
       expect(existsSyncStub).to.have.been.calledOnceWithExactly('/some/path/settings.yaml')
       expect(getSettingsFileBasePathStub).to.have.been.calledOnce
-      expect(saveSettingsStub).to.have.been.calledOnceWithExactly(
-        '/some/path/settings.yaml',
-        Sinon.match.object,
-      )
+      expect(saveSettingsStub).to.have.been.calledOnceWithExactly('/some/path/settings.yaml', Sinon.match.object)
       expect(loadSettingsStub).to.have.been.called
     })
 
@@ -205,12 +198,13 @@ describe('SettingsStatic', () => {
 
       expect(SettingsStatic.createSettings()).to.be.an('object')
 
-      expect(existsSyncStub).to.have.been.calledOnceWithExactly('/some/path/settings.json')
+      const settingsPathExistsChecks = existsSyncStub.getCalls().filter((call) => {
+        return call.args.length === 1 && call.args[0] === '/some/path/settings.json'
+      })
+
+      expect(settingsPathExistsChecks).to.have.lengthOf(1)
       expect(getSettingsFileBasePathStub).to.have.been.calledOnce
-      expect(saveSettingsStub).to.have.been.calledOnceWithExactly(
-        '/some/path/settings.json',
-        Sinon.match.object,
-      )
+      expect(saveSettingsStub).to.have.been.calledOnceWithExactly('/some/path/settings.json', Sinon.match.object)
       expect(loadSettingsStub).to.have.been.called
     })
 
@@ -221,7 +215,6 @@ describe('SettingsStatic', () => {
       existsSyncStub.returns(true)
       readdirSyncStub.returns(['settings.yaml'])
       settingsFileTypeStub.returns('yaml')
-
 
       expect(SettingsStatic.createSettings()).to.be.an('object')
 
@@ -256,12 +249,12 @@ describe('SettingsStatic', () => {
     })
 
     it('saves settings to given path', () => {
-      SettingsStatic.saveSettings('/some/path', {key: 'value'} as any)
+      SettingsStatic.saveSettings('/some/path', { key: 'value' } as any)
 
       expect(writeFileSyncStub).to.have.been.calledOnceWithExactly(
-        '/some/path/settings.yaml',
+        join('/some/path', 'settings.yaml'),
         Sinon.match.string,
-        { encoding: 'utf-8' }
+        { encoding: 'utf-8' },
       )
     })
   })

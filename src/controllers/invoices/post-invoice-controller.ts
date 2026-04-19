@@ -1,21 +1,23 @@
-import { FeeSchedule, Settings } from '../../@types/settings'
-import { fromBech32, toBech32 } from '../../utils/transform'
-import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
+import { path } from 'ramda'
+
 import { Request, Response } from 'express'
 
-import { createLogger } from '../../factories/logger-factory'
-import { getRemoteAddress } from '../../utils/http'
+import { FeeSchedule, Settings } from '../../@types/settings'
 import { IController } from '../../@types/controllers'
 import { Invoice } from '../../@types/invoice'
 import { IPaymentsService } from '../../@types/services'
 import { IRateLimiter } from '../../@types/utils'
 import { IUserRepository } from '../../@types/repositories'
-import { path } from 'ramda'
-import { readFileSync } from 'fs'
 
-let pageCache: string
+import { createLogger } from '../../factories/logger-factory'
 
-const debug = createLogger('post-invoice-controller')
+import { escapeHtml, safeJsonForScript } from '../../utils/html'
+import { fromBech32, toBech32 } from '../../utils/transform'
+import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
+import { getRemoteAddress } from '../../utils/http'
+import { getTemplate } from '../../utils/template-cache'
+
+const logger = createLogger('post-invoice-controller')
 
 export class PostInvoiceController implements IController {
   public constructor(
@@ -23,15 +25,11 @@ export class PostInvoiceController implements IController {
     private readonly paymentsService: IPaymentsService,
     private readonly settings: () => Settings,
     private readonly rateLimiter: () => IRateLimiter,
-  ){}
+  ) {}
 
   public async handleRequest(request: Request, response: Response): Promise<void> {
-    if (!pageCache) {
-      pageCache = readFileSync('./resources/invoices.html', 'utf8')
-    }
-
-    debug('params: %o', request.params)
-    debug('body: %o', request.body)
+    logger('params: %o', request.params)
+    logger('body: %o', request.body)
 
     const currentSettings = this.settings()
 
@@ -41,18 +39,12 @@ export class PostInvoiceController implements IController {
 
     const limited = await this.isRateLimited(request, currentSettings)
     if (limited) {
-      response
-        .status(429)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Too many requests')
+      response.status(429).setHeader('content-type', 'text/plain; charset=utf8').send('Too many requests')
       return
     }
 
     if (!request.body || typeof request.body !== 'object') {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invalid request')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid request')
 
       return
     }
@@ -60,20 +52,14 @@ export class PostInvoiceController implements IController {
     const tosAccepted = request.body?.tosAccepted === 'yes'
 
     if (!tosAccepted) {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('ToS agreement: not accepted')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('ToS agreement: not accepted')
 
       return
     }
 
     const isAdmissionInvoice = request.body?.feeSchedule === 'admission'
     if (!isAdmissionInvoice) {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invalid fee')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid fee')
 
       return
     }
@@ -82,10 +68,7 @@ export class PostInvoiceController implements IController {
 
     let pubkey: string
     if (typeof pubkeyRaw !== 'string') {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invalid pubkey: missing')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid pubkey: missing')
 
       return
     } else if (/^[0-9a-f]{64}$/.test(pubkeyRaw)) {
@@ -93,33 +76,23 @@ export class PostInvoiceController implements IController {
     } else if (/^npub1/.test(pubkeyRaw)) {
       try {
         pubkey = fromBech32(pubkeyRaw)
-      } catch (error) {
-        response
-          .status(400)
-          .setHeader('content-type', 'text/plain; charset=utf8')
-          .send('Invalid pubkey: invalid npub')
+      } catch (_error) {
+        response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid pubkey: invalid npub')
 
         return
       }
     } else {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('Invalid pubkey: unknown format')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid pubkey: unknown format')
 
       return
     }
 
-    const isApplicableFee = (feeSchedule: FeeSchedule) => feeSchedule.enabled
-      && !feeSchedule.whitelists?.pubkeys?.some((prefix) => pubkey.startsWith(prefix))
-    const admissionFee = currentSettings.payments?.feeSchedules.admission
-      .filter(isApplicableFee)
+    const isApplicableFee = (feeSchedule: FeeSchedule) =>
+      feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.includes(pubkey)
+    const admissionFee = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee) ?? []
 
     if (!Array.isArray(admissionFee) || !admissionFee.length) {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('No admission fee required')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('No admission fee required')
 
       return
     }
@@ -127,31 +100,20 @@ export class PostInvoiceController implements IController {
     const minBalance = currentSettings.limits?.event?.pubkey?.minBalance
     const user = await this.userRepository.findByPubkey(pubkey)
     if (user && user.isAdmitted && (!minBalance || user.balance >= minBalance)) {
-      response
-        .status(400)
-        .setHeader('content-type', 'text/plain; charset=utf8')
-        .send('User is already admitted.')
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('User is already admitted.')
 
       return
     }
 
     let invoice: Invoice
-    const amount = admissionFee.reduce((sum, fee) => {
-      return fee.enabled && !fee.whitelists?.pubkeys?.includes(pubkey)
-        ? BigInt(fee.amount) + sum
-        : sum
-    }, 0n)
+    const amount = admissionFee.reduce((sum, fee) => BigInt(fee.amount) + sum, 0n)
 
     try {
       const description = `${relayName} Admission Fee for ${toBech32('npub')(pubkey)}`
 
-      invoice = await this.paymentsService.createInvoice(
-        pubkey,
-        amount,
-        description,
-      )
+      invoice = await this.paymentsService.createInvoice(pubkey, amount, description)
     } catch (error) {
-      console.error('Unable to create invoice. Reason:', error)
+      logger.error('Unable to create invoice. Reason:', error)
       response
         .status(500)
         .setHeader('content-type', 'text/plain')
@@ -162,26 +124,28 @@ export class PostInvoiceController implements IController {
     const relayPrivkey = getRelayPrivateKey(relayUrl)
     const relayPubkey = getPublicKey(relayPrivkey)
 
-    const replacements = {
-      name: relayName,
-      reference: invoice.id,
-      relay_url: relayUrl,
-      pubkey,
-      relay_pubkey: relayPubkey,
-      expires_at: invoice.expiresAt?.toISOString() ?? '',
-      invoice: invoice.bolt11,
-      amount: amount / 1000n,
-      processor: currentSettings.payments.processor,
-    }
+    const expiresAt = invoice.expiresAt?.toISOString() ?? ''
 
-    const body = Object
-      .entries(replacements)
-      .reduce((body, [key, value]) => body.replaceAll(`{{${key}}}`, value.toString()), pageCache)
+    const pageContent = getTemplate('./resources/post-invoice.html')
+    const body = pageContent
+      // HTML text / attribute contexts — values must be HTML-escaped
+      .replaceAll('{{name}}', escapeHtml(relayName))
+      .replaceAll('{{relay_url_html}}', escapeHtml(relayUrl))
+      .replaceAll('{{invoice_html}}', escapeHtml(invoice.bolt11))
+      .replaceAll('{{pubkey_html}}', escapeHtml(pubkey))
+      .replaceAll('{{amount}}', (amount / 1000n).toString())
+      // JS contexts — safeJsonForScript serializes and escapes < to prevent </script> injection
+      .replaceAll('{{reference_json}}', safeJsonForScript(invoice.id))
+      .replaceAll('{{relay_url_json}}', safeJsonForScript(relayUrl))
+      .replaceAll('{{relay_pubkey_json}}', safeJsonForScript(relayPubkey))
+      .replaceAll('{{invoice_json}}', safeJsonForScript(invoice.bolt11))
+      .replaceAll('{{pubkey_json}}', safeJsonForScript(pubkey))
+      .replaceAll('{{expires_at_json}}', safeJsonForScript(expiresAt))
+      .replaceAll('{{processor_json}}', safeJsonForScript(currentSettings.payments.processor))
+      // nonce is crypto-random base64 — safe in both attribute and script contexts
+      .replaceAll('{{nonce}}', response.locals.nonce)
 
-    response
-      .status(200)
-      .setHeader('Content-Type', 'text/html; charset=utf8')
-      .send(body)
+    response.status(200).setHeader('Content-Type', 'text/html; charset=utf8').send(body)
 
     return
   }
@@ -200,7 +164,7 @@ export class PostInvoiceController implements IController {
       const rateLimiter = this.rateLimiter()
       for (const { rate, period } of rateLimits) {
         if (await rateLimiter.hit(`${remoteAddress}:invoice:${period}`, 1, { period, rate })) {
-          debug('rate limited %s: %d in %d milliseconds', remoteAddress, rate, period)
+          logger('rate limited %s: %d in %d milliseconds', remoteAddress, rate, period)
           limited = true
         }
       }

@@ -1,0 +1,48 @@
+services:
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nostream-nginx
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ${PWD}/nginx/conf.d:/etc/nginx/conf.d
+      - ${PWD}/nginx/ssl:/etc/nginx/ssl
+      - certbot-webroot:/var/www/certbot
+    depends_on:
+      - nostream
+    restart: on-failure
+    # Run nginx in foreground (so container exits if nginx dies).
+    # A background loop watches for a signal file created by certbot
+    # after cert issuance/renewal, and reloads nginx within seconds.
+    command: >
+      /bin/sh -c "while :; do
+        if [ -f /etc/nginx/ssl/reload-nginx ]; then
+          if nginx -t && nginx -s reload; then
+            rm -f /etc/nginx/ssl/reload-nginx;
+          fi;
+        fi;
+        sleep 5;
+      done & nginx -g 'daemon off;'"
+    networks:
+      default:
+
+  certbot:
+    image: certbot/certbot:v2.11.0
+    container_name: nostream-certbot
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?RELAY_DOMAIN required}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:?CERTBOT_EMAIL required}
+    volumes:
+      - ${PWD}/nginx/ssl:/etc/letsencrypt
+      - ${PWD}/scripts/certbot_entrypoint.sh:/entrypoint.sh:ro
+      - certbot-webroot:/var/www/certbot
+    entrypoint: /entrypoint.sh
+    depends_on:
+      - nginx
+    restart: on-failure
+    networks:
+      default:
+
+volumes:
+  certbot-webroot:

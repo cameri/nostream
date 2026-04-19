@@ -7,21 +7,24 @@ import { fromZebedeeInvoice } from '../../utils/transform'
 import { getRemoteAddress } from '../../utils/http'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
+import { validateSchema } from '../../utils/validation'
+import { zebedeeCallbackBodySchema } from '../../schemas/zebedee-callback-schema'
 
-const debug = createLogger('zebedee-callback-controller')
+const logger = createLogger('zebedee-callback-controller')
 
 export class ZebedeeCallbackController implements IController {
-  public constructor(
-    private readonly paymentsService: IPaymentsService,
-  ) {}
+  public constructor(private readonly paymentsService: IPaymentsService) {}
 
-  // TODO: Validate
-  public async handleRequest(
-    request: Request,
-    response: Response,
-  ) {
-    debug('request headers: %o', request.headers)
-    debug('request body: %O', request.body)
+  public async handleRequest(request: Request, response: Response) {
+    logger('request headers: %o', request.headers)
+    logger('request body: %O', request.body)
+
+    const bodyValidation = validateSchema(zebedeeCallbackBodySchema)(request.body)
+    if (bodyValidation.error) {
+      logger('zebedee callback request rejected: invalid body %o', bodyValidation.error)
+      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Malformed body')
+      return
+    }
 
     const settings = createSettings()
 
@@ -30,41 +33,32 @@ export class ZebedeeCallbackController implements IController {
     const paymentProcessor = settings.payments?.processor
 
     if (ipWhitelist.length && !ipWhitelist.includes(remoteAddress)) {
-      debug('unauthorized request from %s to /callbacks/zebedee', remoteAddress)
-      response
-        .status(403)
-        .send('Forbidden')
+      logger('unauthorized request from %s to /callbacks/zebedee', remoteAddress)
+      response.status(403).send('Forbidden')
       return
     }
 
     if (paymentProcessor !== 'zebedee') {
-      debug('denied request from %s to /callbacks/zebedee which is not the current payment processor', remoteAddress)
-      response
-        .status(403)
-        .send('Forbidden')
+      logger('denied request from %s to /callbacks/zebedee which is not the current payment processor', remoteAddress)
+      response.status(403).send('Forbidden')
       return
     }
 
     const invoice = fromZebedeeInvoice(request.body)
 
-    debug('invoice', invoice)
+    logger('invoice', invoice)
 
     let updatedInvoice: Invoice
     try {
       updatedInvoice = await this.paymentsService.updateInvoiceStatus(invoice)
     } catch (error) {
-      console.error(`Unable to persist invoice ${invoice.id}`, error)
+      logger.error(`Unable to persist invoice ${invoice.id}`, error)
 
       throw error
     }
 
-    if (
-      updatedInvoice.status !== InvoiceStatus.COMPLETED
-      && !updatedInvoice.confirmedAt
-    ) {
-      response
-        .status(200)
-        .send()
+    if (updatedInvoice.status !== InvoiceStatus.COMPLETED && !updatedInvoice.confirmedAt) {
+      response.status(200).send()
 
       return
     }
@@ -83,14 +77,11 @@ export class ZebedeeCallbackController implements IController {
       })
       await this.paymentsService.sendInvoiceUpdateNotification(updatedInvoice)
     } catch (error) {
-      console.error(`Unable to confirm invoice ${invoice.id}`, error)
+      logger.error(`Unable to confirm invoice ${invoice.id}`, error)
 
       throw error
     }
 
-    response
-      .status(200)
-      .setHeader('content-type', 'text/plain; charset=utf8')
-      .send('OK')
+    response.status(200).setHeader('content-type', 'text/plain; charset=utf8').send('OK')
   }
 }

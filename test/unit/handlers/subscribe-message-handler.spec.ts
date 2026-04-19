@@ -3,6 +3,7 @@ import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
 import EventEmitter from 'events'
 import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
 
 import { IAbortable, IMessageHandler } from '../../../src/@types/message-handlers'
 import { MessageType, SubscribeMessage } from '../../../src/@types/messages'
@@ -14,10 +15,11 @@ import { PassThrough } from 'stream'
 import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 
+chai.use(sinonChai)
 chai.use(chaiAsPromised)
 const { expect } = chai
 
-const toDbEvent = (event: Event, override: Record<string, unknown> = {}) => ({
+const toDbEvent = (event: Event, metadata: { expires_at?: number; deleted_at?: Date | null } = {}) => ({
   event_id: Buffer.from(event.id, 'hex'),
   event_kind: event.kind,
   event_pubkey: Buffer.from(event.pubkey, 'hex'),
@@ -25,7 +27,7 @@ const toDbEvent = (event: Event, override: Record<string, unknown> = {}) => ({
   event_content: event.content,
   event_tags: event.tags,
   event_signature: Buffer.from(event.sig, 'hex'),
-  ...override,
+  ...metadata,
 })
 
 describe('SubscribeMessageHandler', () => {
@@ -60,11 +62,7 @@ describe('SubscribeMessageHandler', () => {
     eventRepository = {
       findByFilters: eventRepositoryFindByFiltersStub,
     } as any
-    handler = new SubscribeMessageHandler(
-      webSocket,
-      eventRepository,
-      settingsFactory,
-    )
+    handler = new SubscribeMessageHandler(webSocket, eventRepository, settingsFactory)
   })
 
   afterEach(() => {
@@ -94,9 +92,7 @@ describe('SubscribeMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(
-        ['NOTICE', 'Subscription rejected: reason']
-      )
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(['NOTICE', 'Subscription rejected: reason'])
     })
 
     it('emits subscribe event if subscription is accepted', async () => {
@@ -108,24 +104,25 @@ describe('SubscribeMessageHandler', () => {
       expect(webSocketOnSubscribeStub).to.have.been.calledOnceWith(subscriptionId)
       expect(fetchAndSendStub).to.have.been.calledOnceWithExactly(subscriptionId, filters)
     })
-
   })
 
   describe('#fetchAndSend', () => {
     let event: Event
+    let clock: Sinon.SinonFakeTimers
     let webSocketOnMessageStub: Sinon.SinonStub
     let webSocketOnSubscribeStub: Sinon.SinonStub
     let isClientSubscribedToEventStub: Sinon.SinonStub
 
     beforeEach(() => {
+      clock = Sinon.useFakeTimers(1665546189000)
       event = {
-        'id': 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef',
-        'pubkey': '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
-        'created_at': 1648339664,
-        'kind': 1,
-        'tags': [],
-        'content': 'learning terraform rn!',
-        'sig': 'ec8b2bc640c8c7e92fbc0e0a6f539da2635068a99809186f15106174d727456132977c78f3371d0ab01c108173df75750f33d8e04c4d7980bbb3fb70ba1e3848',
+        id: 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef',
+        pubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+        created_at: 1648339664,
+        kind: 1,
+        tags: [],
+        content: 'learning terraform rn!',
+        sig: 'ec8b2bc640c8c7e92fbc0e0a6f539da2635068a99809186f15106174d727456132977c78f3371d0ab01c108173df75750f33d8e04c4d7980bbb3fb70ba1e3848',
       }
 
       isClientSubscribedToEventStub = sandbox.stub(SubscribeMessageHandler, 'isClientSubscribedToEvent' as any)
@@ -135,6 +132,10 @@ describe('SubscribeMessageHandler', () => {
       webSocket.on(WebSocketAdapterEvent.Message, webSocketOnMessageStub)
       webSocket.on(WebSocketAdapterEvent.Subscribe, webSocketOnSubscribeStub)
       //streamEndSpy = sandbox.spy(Stream, '_end' as any)
+    })
+
+    afterEach(() => {
+      clock.restore()
     })
 
     it('does not send event if client is not subscribed to it', async () => {
@@ -161,9 +162,52 @@ describe('SubscribeMessageHandler', () => {
       await promise
 
       expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
-      expect(webSocketOnMessageStub).to.have.been.calledWithExactly(
-        ['EVENT', subscriptionId, event],
-      )
+      expect(webSocketOnMessageStub).to.have.been.calledWithExactly(['EVENT', subscriptionId, event])
+    })
+
+    it('does not send expired events', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+
+      const now = Math.floor(clock.now / 1000)
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      const expiredEvent: Event = {
+        ...event,
+        tags: [['expiration', String(now - 1)] as any],
+      }
+
+      stream.write(toDbEvent(expiredEvent))
+      stream.end()
+
+      await promise
+
+      expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(['EOSE', subscriptionId])
+    })
+
+    it('sends event if expiration is in the future', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+
+      const now = Math.floor(clock.now / 1000)
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      const eventWithFutureExpiration: Event = {
+        ...event,
+        tags: [['expiration', String(now + 60)] as any],
+      }
+
+      stream.write(toDbEvent(eventWithFutureExpiration))
+      stream.end()
+
+      await promise
+
+      expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
+      expect(webSocketOnMessageStub).to.have.been.calledWithExactly([
+        'EVENT',
+        subscriptionId,
+        eventWithFutureExpiration,
+      ])
+      expect(webSocketOnMessageStub).to.have.been.calledWithExactly(['EOSE', subscriptionId])
     })
 
     it('does not send expired stored events', async () => {
@@ -188,9 +232,7 @@ describe('SubscribeMessageHandler', () => {
 
       await promise
 
-      expect(webSocketOnMessageStub).to.have.been.calledWithExactly(
-        ['EOSE', subscriptionId],
-      )
+      expect(webSocketOnMessageStub).to.have.been.calledWithExactly(['EOSE', subscriptionId])
     })
 
     it('ends event stream if error occurs', async () => {
@@ -285,8 +327,9 @@ describe('SubscribeMessageHandler', () => {
       filters = [{ authors: ['aa'] }]
       subscriptions.set(subscriptionId, filters)
 
-      expect((handler as any).canSubscribe(subscriptionId, filters))
-        .to.equal('Duplicate subscription subscriptionId: Ignoring')
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
+        'Duplicate subscription subscriptionId: Ignoring',
+      )
     })
 
     it('returns reason if client subscriptions exceed limits', () => {
@@ -301,7 +344,9 @@ describe('SubscribeMessageHandler', () => {
       })
       subscriptions.set('other-sub', [])
 
-      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal('Too many subscriptions: Number of subscriptions must be less than or equal to 1')
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
+        'Too many subscriptions: Number of subscriptions must be less than or equal to 1',
+      )
     })
 
     it('returns reason if filter count exceeds limit', () => {
@@ -314,11 +359,11 @@ describe('SubscribeMessageHandler', () => {
           },
         },
       })
-      filters = [
-        {}, {},
-      ]
+      filters = [{}, {}]
 
-      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal('Too many filters: Number of filters per susbscription must be less then or equal to 1')
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
+        'Too many filters: Number of filters per susbscription must be less then or equal to 1',
+      )
     })
   })
 })

@@ -1,11 +1,13 @@
 import axios, { CreateAxiosDefaults } from 'axios'
 import { path } from 'ramda'
 
+import { createLogger } from '../logger-factory'
 import { createSettings } from '../settings-factory'
 import { IPaymentsProcessor } from '../../@types/clients'
 import { LNbitsPaymentsProcessor } from '../../payments-processors/lnbits-payment-processor'
 import { Settings } from '../../@types/settings'
 
+const logger = createLogger('lnbits-payments-processor-factory')
 
 const getLNbitsAxiosConfig = (settings: Settings): CreateAxiosDefaults<any> => {
   if (!process.env.LNBITS_API_KEY) {
@@ -26,7 +28,7 @@ export const createLNbitsPaymentProcessor = (settings: Settings): IPaymentsProce
   const callbackBaseURL = path(['paymentsProcessors', 'lnbits', 'callbackBaseURL'], settings) as string | undefined
   if (typeof callbackBaseURL === 'undefined' || callbackBaseURL.indexOf('nostream.your-domain.com') >= 0) {
     const error = new Error('Setting paymentsProcessor.lnbits.callbackBaseURL is not configured.')
-    console.error('Unable to create payments processor.', error)
+    logger.error('Unable to create payments processor. %o', error)
 
     throw error
   }

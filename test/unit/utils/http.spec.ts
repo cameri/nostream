@@ -22,29 +22,14 @@ describe('getRemoteAddress', () => {
   })
 
   it('returns address using network.remote_ip_address when set', () => {
-    expect(
-      getRemoteAddress(
-        request,
-        { network: { 'remote_ip_header': header } } as any,
-      )
-    ).to.equal(address)
+    expect(getRemoteAddress(request, { network: { remote_ip_header: header } } as any)).to.equal(address)
   })
 
   it('returns address using network.remoteIpAddress when set', () => {
-    expect(
-      getRemoteAddress(
-        request,
-        { network: { remoteIpHeader: header } } as any,
-      )
-    ).to.equal(address)
+    expect(getRemoteAddress(request, { network: { remoteIpHeader: header } } as any)).to.equal(address)
   })
 
   it('returns address from socket when header is unset', () => {
-    expect(
-      getRemoteAddress(
-        request,
-        { network: { } } as any,
-      )
-    ).to.equal(socketAddress)
+    expect(getRemoteAddress(request, { network: {} } as any)).to.equal(socketAddress)
   })
 })

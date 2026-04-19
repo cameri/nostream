@@ -47,7 +47,9 @@ NIPs with a relay-specific implementation are listed here.
 
 - [x] NIP-01: Basic protocol flow description
 - [x] NIP-02: Contact list and petnames
+- [x] NIP-03: OpenTimestamps Attestations for Events
 - [x] NIP-04: Encrypted Direct Message
+- [x] NIP-05: Mapping Nostr keys to DNS-based internet identifiers
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
 - [x] NIP-11a: Relay Information Document Extensions
@@ -61,13 +63,14 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-28: Public Chat
 - [x] NIP-33: Parameterized Replaceable Events
 - [x] NIP-40: Expiration Timestamp
+- [x] NIP-44: Encrypted Payloads (Versioned)
 
 ## Requirements
 
 ### Standalone setup
 - PostgreSQL 14.0
 - Redis
-- Node v18
+- Node v24
 - Typescript
 
 ### Docker setups
@@ -209,6 +212,20 @@ Start:
   ```
   ./scripts/start_with_tor
   ```
+  or, with Nginx reverse proxy and Let's Encrypt SSL:
+  ```
+  RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com ./scripts/start_with_nginx
+  ```
+
+**Windows / WSL2 users:** Docker bind-mounts can cause PostgreSQL permission errors on Windows. Use the dedicated override file instead:
+  ```
+  docker compose -f docker-compose.yml -f docker-compose.windows.yml up --build
+  ```
+  Or add this to your `.env` file so you don't have to type it every time:
+  ```
+  COMPOSE_FILE=docker-compose.yml:docker-compose.windows.yml
+  ```
+  > **Note:** If you previously ran Nostream on Linux/Mac and are switching to Windows, your existing data lives at `.nostr/data/` on the host. You'll need to copy it into the Docker named volume manually or it won't be visible to the new setup.
 
 Stop the server with:
   ```
@@ -219,6 +236,49 @@ Print the Tor hostname:
   ```
   ./scripts/print_tor_hostname
   ```
+
+Start with I2P:
+  ```
+  ./scripts/start_with_i2p
+  ```
+
+Print the I2P hostname:
+  ```
+  ./scripts/print_i2p_hostname
+  ```
+
+### Importing events from JSON Lines
+
+You can import NIP-01 events from `.jsonl` files directly into the relay database.
+Compressed files are also supported and decompressed on-the-fly:
+
+- `.jsonl.gz` (Gzip)
+- `.jsonl.xz` (XZ)
+
+Basic import:
+  ```
+  npm run import -- ./events.jsonl
+  ```
+
+Import a compressed backup:
+  ```
+  npm run import -- ./events.jsonl.gz
+  npm run import -- ./events.jsonl.xz
+  ```
+
+Set a custom batch size (default: `1000`):
+  ```
+  npm run import -- ./events.jsonl --batch-size 500
+  ```
+
+The importer:
+
+- Processes the file line-by-line to keep memory usage bounded.
+- Validates NIP-01 schema, event id hash, and Schnorr signature before insertion.
+- Inserts in database transactions per batch.
+- Skips duplicates without failing the whole import.
+- Prints progress in the format:
+  `[Processed: 50,000 | Inserted: 45,000 | Skipped: 5,000 | Errors: 0]`
 
 ### Running as a Service
 
@@ -262,6 +322,60 @@ The logs can be viewed with:
   ```
   journalctl -u nostream
   ```
+
+## Troubleshooting
+
+### Linux: Docker DNS resolution failures (`EAI_AGAIN`)
+
+On some Linux environments (especially rolling-release distros or setups using
+`systemd-resolved`), `docker compose` builds can fail with DNS errors such as:
+
+- `getaddrinfo EAI_AGAIN registry.npmjs.org`
+- `Temporary failure in name resolution`
+
+To fix this, configure Docker daemon DNS in `/etc/docker/daemon.json`.
+
+1. Create or update `/etc/docker/daemon.json`:
+
+  ```
+  sudo mkdir -p /etc/docker
+  sudo nano /etc/docker/daemon.json
+  ```
+
+  Add or update the file with:
+
+  ```
+  {
+    "dns": ["1.1.1.1", "8.8.8.8"]
+  }
+  ```
+
+  If this file already exists, merge the `dns` key into the existing JSON
+  instead of replacing the entire file.
+
+  If your environment does not allow public resolvers, replace `1.1.1.1` and
+  `8.8.8.8` with DNS servers approved by your network.
+
+2. Restart Docker:
+
+  ```
+  sudo systemctl restart docker
+  ```
+
+3. Verify DNS works inside containers:
+
+  ```
+  docker run --rm busybox nslookup registry.npmjs.org
+  ```
+
+4. Retry starting nostream:
+
+  ```
+  ./scripts/start
+  ```
+
+Note: avoid `127.0.0.53` in Docker DNS settings because it points to the host's
+local resolver stub and is often unreachable from containers.
 
 ## Quick Start (Standalone)
 
@@ -372,12 +486,23 @@ Clone repository and enter directory:
 
 Start:
   ```
-  ./scripts/start_local
+  ./scripts/start
   ```
 
   This will run in the foreground of the terminal until you stop it with Ctrl+C.
 
 ## Tests
+
+### Linting and formatting (Biome)
+
+Run code quality checks with Biome:
+
+  ```
+  npm run lint
+  npm run lint:fix
+  npm run format
+  npm run format:check
+  ```
 
 ### Unit tests
 
@@ -478,6 +603,147 @@ To see the integration test coverage report open `.coverage/integration/lcov-rep
   ```
   open .coverage/integration/lcov-report/index.html
   ```
+
+
+## Security & Load Testing
+
+Nostream includes a specialized security tester to simulate Slowloris-style connection holding and event flood (spam) attacks. This is used to verify relay resilience and prevent memory leaks.
+
+### Running the Tester
+  ```bash
+  # Simulates 5,000 idle "zombie" connections + 100 events/sec spam
+  npm run test:load -- --zombies 5000 --spam-rate 100
+  ```
+
+### Analyzing Memory (Heap Snapshots)
+To verify that connections are being correctly evicted and memory reclaimed:
+1. Ensure the relay is running with `--inspect` enabled (see `docker-compose.yml`).
+2. Open **Chrome DevTools** (`chrome://inspect`) and connect to the relay process.
+3. In the **Memory** tab, take a **Heap Snapshot** (Baseline).
+4. Run the load tester.
+5. Wait for the eviction cycle (default: 120s) and take a second **Heap Snapshot**.
+6. Switch the view to **Comparison** and select the Baseline snapshot.
+7. Verify that object counts (e.g., `WebSocketAdapter`, `SocketAddress`) return to baseline levels.
+
+### Server-Side Monitoring
+To observe client and subscription counts in real-time during a test, you can instrument `src/adapters/web-socket-server-adapter.ts`:
+
+1. Locate the `onHeartbeat()` method.
+2. Add the following logging logic:
+   ```typescript
+   private onHeartbeat() {
+     let totalSubs = 0;
+     let totalClients = 0;
+     this.webSocketServer.clients.forEach((webSocket) => {
+       totalClients++;
+       const webSocketAdapter = this.webSocketsAdapters.get(webSocket) as IWebSocketAdapter;
+       if (webSocketAdapter) {
+         webSocketAdapter.emit(WebSocketAdapterEvent.Heartbeat);
+         totalSubs += webSocketAdapter.getSubscriptions().size;
+       }
+     });
+     console.log(`[HEARTBEAT] Clients: ${totalClients} | Total subscriptions: ${totalSubs} | Heap Used: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB`);
+   }
+   ```
+3. View the live output via Docker logs:
+   ```bash
+   docker compose logs -f nostream
+   ```
+## Export Events
+
+Export all stored events to a [JSON Lines](https://jsonlines.org/) (`.jsonl`) file. Each line is a valid NIP-01 Nostr event JSON object. The export streams rows from the database using cursors, so it works safely on relays with millions of events without loading them into memory.
+
+Optional compression is supported for lower storage and transfer costs:
+
+- Gzip via Node's native `zlib`
+- XZ via `lzma-native`
+
+```
+npm run export                            # writes to events.jsonl
+npm run export -- backup-2024-01-01.jsonl # custom filename
+npm run export -- backup.jsonl.gz --compress --format=gzip
+npm run export -- backup.jsonl.xz --compress --format=xz
+```
+
+Flags:
+
+- `--compress` / `-z`: enable compression.
+- `--format <gzip|gz|xz>`: compression format. If omitted while compression is enabled,
+  format is inferred from file extension (`.gz` / `.xz`) and defaults to `gzip`.
+
+After completion, the exporter prints a summary with:
+
+- Raw bytes generated from JSONL lines
+- Output bytes written to disk
+- Compression delta (smaller/larger)
+- Throughput in events/sec and bytes/sec
+
+Optional XZ tuning (environment variables):
+
+- `NOSTREAM_XZ_THREADS`: max worker threads for XZ compression.
+  Defaults to `4` and is automatically capped to available CPU cores minus one.
+- `NOSTREAM_XZ_PRESET`: compression preset from `0` (fastest, larger output)
+  to `9` (slowest, smallest output). Default is `6`.
+
+The script reads the same `DB_*` environment variables used by the relay (see [CONFIGURATION.md](CONFIGURATION.md)).
+
+## Benchmark Database Queries
+
+Run the read-only query benchmark to record the planner's choices and timings for the relay's hot-path queries (REQ subscriptions, vanish checks, purge scans, pending-invoice polls):
+
+```
+npm run db:benchmark
+npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+```
+
+The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements against your configured database — it never writes. It loads `DB_*` variables from `.env` automatically (via `node --env-file-if-exists=.env`), so no extra setup is required beyond the one you already need to run the relay. Use it to confirm the `events_active_pubkey_kind_created_at_idx`, `events_deleted_at_partial_idx`, and `invoices_pending_created_at_idx` indexes are being picked up.
+
+For a reproducible before/after proof on a throwaway dataset, run:
+
+```
+npm run db:verify-index-impact
+```
+
+It seeds ~200k synthetic events, drops the hot-path indexes, runs EXPLAIN (ANALYZE, BUFFERS) for each hot query, recreates the indexes, and prints a BEFORE/AFTER table. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](CONFIGURATION.md).
+
+## Relay Maintenance
+
+Use `clean-db` to wipe or prune `events` table data. This also removes
+corresponding data from the derived `event_tags` table when present.
+
+Dry run (no deletion):
+
+  ```
+  npm run clean-db -- --all --dry-run
+  ```
+
+Full wipe:
+
+  ```
+  npm run clean-db -- --all --force
+  ```
+
+Delete events older than N days:
+
+  ```
+  npm run clean-db -- --older-than=30 --force
+  ```
+
+Delete only selected kinds:
+
+  ```
+  npm run clean-db -- --kinds=1,7,4 --force
+  ```
+
+Delete only selected kinds older than N days:
+
+  ```
+  npm run clean-db -- --older-than=30 --kinds=1,7,4 --force
+  ```
+
+By default, the script asks for explicit confirmation (`Type 'DELETE' to confirm`).
+Use `--force` to skip the prompt.
+
 
 ## Configuration
 

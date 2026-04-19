@@ -9,23 +9,14 @@ export enum MessageType {
   CLOSE = 'CLOSE',
   NOTICE = 'NOTICE',
   EOSE = 'EOSE',
-  OK = 'OK'
+  OK = 'OK',
 }
 
-export type IncomingMessage = (
-  | SubscribeMessage
-  | IncomingEventMessage
-  | UnsubscribeMessage
-  ) & {
-    [ContextMetadataKey]?: ContextMetadata
-  }
+export type IncomingMessage = (SubscribeMessage | IncomingEventMessage | UnsubscribeMessage) & {
+  [ContextMetadataKey]?: ContextMetadata
+}
 
-
-export type OutgoingMessage =
-  | OutgoingEventMessage
-  | EndOfStoredEventsNotice
-  | NoticeMessage
-  | CommandResult
+export type OutgoingMessage = OutgoingEventMessage | EndOfStoredEventsNotice | NoticeMessage | CommandResult
 
 export type SubscribeMessage = {
   [index in Range<2, 100>]: SubscriptionFilter

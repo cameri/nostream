@@ -4,10 +4,10 @@ export enum WebSocketAdapterEvent {
   Broadcast = 'broadcast',
   Subscribe = 'subscribe',
   Unsubscribe = 'unsubscribe',
-  Heartbeat = 'heartbeat'
+  Heartbeat = 'heartbeat',
 }
 
 export enum WebSocketServerAdapterEvent {
   Broadcast = 'broadcast',
-  Connection = 'connection'
+  Connection = 'connection',
 }

@@ -1,8 +1,3 @@
-import {
-  RedisClientType,
-  RedisFunctions,
-  RedisModules,
-  RedisScripts,
-} from 'redis'
+import { RedisClientType, RedisFunctions, RedisModules, RedisScripts } from 'redis'
 
 export type CacheClient = RedisClientType<RedisModules, RedisFunctions, RedisScripts>

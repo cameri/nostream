@@ -38,7 +38,7 @@ describe('SlidingWindowRateLimiter', () => {
       getKey: getKeyStub,
       hasKey: hasKeyStub,
       setKey: setKeyStub,
-    }
+    } as unknown as ICacheAdapter
     rateLimiter = new SlidingWindowRateLimiter(cache)
   })
 
@@ -49,22 +49,16 @@ describe('SlidingWindowRateLimiter', () => {
 
   it('returns true if rate limited', async () => {
     const now = Date.now()
-    getRangeFromSortedSetStub.resolves([
-      `${now}:6`,
-      `${now}:4`,
-      `${now}:1`,
-    ])
+    getRangeFromSortedSetStub.resolves([`${now}:6`, `${now}:4`, `${now}:1`])
 
     const actualResult = await rateLimiter.hit('key', 1, { period: 60000, rate: 10 })
 
     expect(actualResult).to.be.true
   })
 
-  it('returns false if not rate limited',async () => {
+  it('returns false if not rate limited', async () => {
     const now = Date.now()
-    getRangeFromSortedSetStub.resolves([
-      `${now}:10`,
-    ])
+    getRangeFromSortedSetStub.resolves([`${now}:10`])
 
     const actualResult = await rateLimiter.hit('key', 1, { period: 60000, rate: 10 })
 

@@ -8,21 +8,27 @@ import { fromNodelessInvoice } from '../../utils/transform'
 import { hmacSha256 } from '../../utils/secret'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
+import { nodelessCallbackBodySchema } from '../../schemas/nodeless-callback-schema'
+import { validateSchema } from '../../utils/validation'
 
-const debug = createLogger('nodeless-callback-controller')
+const logger = createLogger('nodeless-callback-controller')
 
 export class NodelessCallbackController implements IController {
-  public constructor(
-    private readonly paymentsService: IPaymentsService,
-  ) {}
+  public constructor(private readonly paymentsService: IPaymentsService) {}
 
-  // TODO: Validate
-  public async handleRequest(
-    request: Request,
-    response: Response,
-  ) {
-    debug('callback request headers: %o', request.headers)
-    debug('callback request body: %O', request.body)
+  public async handleRequest(request: Request, response: Response) {
+    logger('callback request headers: %o', request.headers)
+    logger('callback request body: %O', request.body)
+
+    const bodyValidation = validateSchema(nodelessCallbackBodySchema)(request.body)
+    if (bodyValidation.error) {
+      logger('nodeless callback request rejected: invalid body %o', bodyValidation.error)
+      response
+        .status(400)
+        .setHeader('content-type', 'application/json; charset=utf8')
+        .send('{"status":"error","message":"Malformed body"}')
+      return
+    }
 
     const settings = createSettings()
     const paymentProcessor = settings.payments?.processor
@@ -31,18 +37,14 @@ export class NodelessCallbackController implements IController {
     const actual = request.headers['nodeless-signature']
 
     if (expected !== actual) {
-      console.error('nodeless callback request rejected: signature mismatch:', { expected, actual })
-      response
-        .status(403)
-        .send('Forbidden')
+      logger.error('nodeless callback request rejected: signature mismatch:', { expected, actual })
+      response.status(403).send('Forbidden')
       return
     }
 
     if (paymentProcessor !== 'nodeless') {
-      debug('denied request from %s to /callbacks/nodeless which is not the current payment processor')
-      response
-        .status(403)
-        .send('Forbidden')
+      logger('denied request from %s to /callbacks/nodeless which is not the current payment processor')
+      response.status(403).send('Forbidden')
       return
     }
 
@@ -51,41 +53,28 @@ export class NodelessCallbackController implements IController {
       status: prop('status'),
       satsAmount: prop('amount'),
       metadata: prop('metadata'),
-      paidAt: ifElse(
-        propEq('status', 'paid'),
-        always(new Date().toISOString()),
-        always(null),
-      ),
-      createdAt: ifElse(
-        propSatisfies(is(String), 'createdAt'),
-        prop('createdAt'),
-        path(['metadata', 'createdAt']),
-      ),
+      paidAt: ifElse(propEq('status', 'paid'), always(new Date().toISOString()), always(null)),
+      createdAt: ifElse(propSatisfies(is(String), 'createdAt'), prop('createdAt'), path(['metadata', 'createdAt'])),
     })(request.body)
 
-    debug('nodeless invoice: %O', nodelessInvoice)
+    logger('nodeless invoice: %O', nodelessInvoice)
 
     const invoice = fromNodelessInvoice(nodelessInvoice)
 
-    debug('invoice: %O', invoice)
+    logger('invoice: %O', invoice)
 
     let updatedInvoice: Invoice
     try {
       updatedInvoice = await this.paymentsService.updateInvoiceStatus(invoice)
-      debug('updated invoice: %O', updatedInvoice)
+      logger('updated invoice: %O', updatedInvoice)
     } catch (error) {
-      console.error(`Unable to persist invoice ${invoice.id}`, error)
+      logger.error(`Unable to persist invoice ${invoice.id}`, error)
 
       throw error
     }
 
-    if (
-      updatedInvoice.status !== InvoiceStatus.COMPLETED
-      && !updatedInvoice.confirmedAt
-    ) {
-      response
-        .status(200)
-        .send()
+    if (updatedInvoice.status !== InvoiceStatus.COMPLETED && !updatedInvoice.confirmedAt) {
+      response.status(200).send()
 
       return
     }
@@ -97,14 +86,11 @@ export class NodelessCallbackController implements IController {
       await this.paymentsService.confirmInvoice(invoice)
       await this.paymentsService.sendInvoiceUpdateNotification(updatedInvoice)
     } catch (error) {
-      console.error(`Unable to confirm invoice ${invoice.id}`, error)
+      logger.error(`Unable to confirm invoice ${invoice.id}`, error)
 
       throw error
     }
 
-    response
-      .status(200)
-      .setHeader('content-type', 'application/json; charset=utf8')
-      .send('{"status":"ok"}')
+    response.status(200).setHeader('content-type', 'application/json; charset=utf8').send('{"status":"ok"}')
   }
 }
