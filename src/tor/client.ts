@@ -6,7 +6,7 @@ import { join } from 'path'
 import { createLogger } from '../factories/logger-factory'
 import { TorConfig } from '../@types/tor'
 
-const debug = createLogger('tor-client')
+const logger = createLogger('tor-client')
 
 const getPrivateKeyFile = () => {
   return join(process.env.NOSTR_CONFIG_DIR ?? join(homedir(), '.nostr'), 'v3_onion_private_key')
@@ -159,17 +159,17 @@ let client: TorClient | undefined
 export const getTorClient = async () => {
   if (!client) {
     const config = createTorConfig()
-    debug('config: %o', config)
+    logger('config: %o', config)
 
     if (config.host !== undefined) {
-      debug('connecting')
+      logger('connecting')
       client = new TorClient(config)
       try {
         await client.connect()
       } catch (_error) {
         client = undefined
       }
-      debug('connected')
+      logger('connected')
     }
   }
 
@@ -187,24 +187,23 @@ export const addOnion = async (port: number, host?: string): Promise<string> => 
   const path = getPrivateKeyFile()
 
   try {
-    debug('reading private key from %s', path)
+    logger('reading private key from %s', path)
     const data = await readFile(path, 'utf8')
     if (data?.length) {
       privateKey = data
-      debug('privateKey: %o', privateKey)
+      logger('privateKey: %o', privateKey)
     }
   } catch (error) {
-    debug('error reading private key: %o', error)
+    logger('error reading private key: %o', error)
   }
 
   const client = await getTorClient()
   if (client) {
     const hiddenService = await client.addOnion(port, host, privateKey)
-    debug('hidden service: %s:%d', hiddenService.ServiceID, port)
+    logger('hidden service: %s:%d', hiddenService.ServiceID, port)
 
     if (hiddenService?.PrivateKey) {
-      console.log('saving private key to %s', path)
-      debug('saving private key to %s', path)
+      logger.info('saving private key to %s', path)
 
       await writeFile(path, hiddenService.PrivateKey, 'utf8')
       return hiddenService.ServiceID!

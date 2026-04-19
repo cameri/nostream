@@ -7,7 +7,7 @@ import { mergeDeepRight } from 'ramda'
 import { createLogger } from '../factories/logger-factory'
 import { Settings } from '../@types/settings'
 
-const debug = createLogger('settings')
+const logger = createLogger('settings')
 
 export enum SettingsFileTypes {
   yaml = 'yaml',
@@ -49,11 +49,11 @@ export class SettingsStatic {
   }
 
   public static loadSettings(path: string, fileType: SettingsFileTypes) {
-    debug('loading settings from %s', path)
+    logger('loading settings from %s', path)
 
     switch (fileType) {
       case SettingsFileTypes.json: {
-        console.warn('settings.json is deprecated, please use a yaml file based on resources/default-settings.yaml')
+        logger.warn('settings.json is deprecated, please use a yaml file based on resources/default-settings.yaml')
         return SettingsStatic.loadAndParseJsonFile(path)
       }
       case SettingsFileTypes.yaml: {
@@ -69,7 +69,7 @@ export class SettingsStatic {
     if (SettingsStatic._settings) {
       return SettingsStatic._settings
     }
-    debug('creating settings')
+    logger('creating settings')
 
     const basePath = SettingsStatic.getSettingsFileBasePath()
     if (!fs.existsSync(basePath)) {
@@ -95,14 +95,14 @@ export class SettingsStatic {
 
       return SettingsStatic._settings
     } catch (error) {
-      debug('error reading config file at %s: %o', settingsFilePath, error)
+      logger('error reading config file at %s: %o', settingsFilePath, error)
 
       return defaults
     }
   }
 
   public static saveSettings(path: string, settings: Settings) {
-    debug('saving settings to %s: %o', path, settings)
+    logger('saving settings to %s: %o', path, settings)
     return fs.writeFileSync(join(path, 'settings.yaml'), yaml.dump(settings), { encoding: 'utf-8' })
   }
 
@@ -113,7 +113,7 @@ export class SettingsStatic {
     const settingsFilePath = join(basePath, `settings.${fileType}`)
 
     const reload = () => {
-      debug('reloading settings')
+      logger('reloading settings')
       SettingsStatic._settings = undefined
       SettingsStatic.createSettings()
     }

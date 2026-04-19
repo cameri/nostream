@@ -5,14 +5,14 @@ import { getRemoteAddress } from '../../utils/http'
 import { rateLimiterFactory } from '../../factories/rate-limiter-factory'
 import { Settings } from '../../@types/settings'
 
-const debug = createLogger('rate-limiter-middleware')
+const logger = createLogger('rate-limiter-middleware')
 
 export const rateLimiterMiddleware = async (request: Request, response: Response, next: NextFunction) => {
   const currentSettings = createSettings()
 
   const clientAddress = getRemoteAddress(request, currentSettings).split(',')[0]
 
-  debug('request received from %s: %o', clientAddress, request.headers)
+  logger('request received from %s: %o', clientAddress, request.headers)
 
   if (await isRateLimited(clientAddress, currentSettings)) {
     response.destroy()
@@ -44,7 +44,7 @@ export async function isRateLimited(remoteAddress: string, settings: Settings): 
     const isRateLimited = await hit(period, rate)
 
     if (isRateLimited) {
-      debug('rate limited %s: %d messages / %d ms exceeded', remoteAddress, rate, period)
+      logger('rate limited %s: %d messages / %d ms exceeded', remoteAddress, rate, period)
 
       limited = true
     }
