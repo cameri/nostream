@@ -7,7 +7,7 @@ import { IUserRepository } from '../../@types/repositories'
 import { path } from 'ramda'
 import { Settings } from '../../@types/settings'
 
-const debug = createLogger('get-admission-check-controller')
+const logger = createLogger('get-admission-check-controller')
 
 export class GetSubmissionCheckController implements IController {
   public constructor(
@@ -54,7 +54,7 @@ export class GetSubmissionCheckController implements IController {
       const rateLimiter = this.rateLimiter()
       for (const { rate, period } of rateLimits) {
         if (await rateLimiter.hit(`${remoteAddress}:admission-check:${period}`, 1, { period, rate })) {
-          debug('rate limited %s: %d in %d milliseconds', remoteAddress, rate, period)
+          logger('rate limited %s: %d in %d milliseconds', remoteAddress, rate, period)
           limited = true
         }
       }

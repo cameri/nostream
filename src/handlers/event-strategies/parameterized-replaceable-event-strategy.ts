@@ -7,7 +7,7 @@ import { IEventStrategy } from '../../@types/message-handlers'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
-const debug = createLogger('parameterized-replaceable-event-strategy')
+const logger = createLogger('parameterized-replaceable-event-strategy')
 
 export class ParameterizedReplaceableEventStrategy implements IEventStrategy<Event, Promise<void>> {
   public constructor(
@@ -16,7 +16,7 @@ export class ParameterizedReplaceableEventStrategy implements IEventStrategy<Eve
   ) {}
 
   public async execute(event: Event): Promise<void> {
-    debug('received parameterized replaceable event: %o', event)
+    logger('received parameterized replaceable event: %o', event)
 
     const [, deduplication] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Deduplication) ?? [
       null,

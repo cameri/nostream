@@ -29,7 +29,7 @@ import { OutgoingEventMessage } from '../@types/messages'
 import { RelayedEvent } from '../@types/event'
 import { WebSocketServerAdapterEvent } from '../constants/adapter'
 
-const debug = createLogger('static-mirror-worker')
+const logger = createLogger('static-mirror-worker')
 
 export class StaticMirroringWorker implements IRunnable {
   private client: WebSocket | undefined
@@ -53,7 +53,7 @@ export class StaticMirroringWorker implements IRunnable {
   public run(): void {
     const currentSettings = this.settings()
 
-    console.log('mirroring', currentSettings.mirroring)
+    logger.info('mirroring', currentSettings.mirroring)
 
     this.config = path(['mirroring', 'static', process.env.MIRROR_INDEX], currentSettings) as Mirror
 
@@ -62,16 +62,16 @@ export class StaticMirroringWorker implements IRunnable {
     const createMirror = (config: Mirror) => {
       const subscriptionId = `mirror-${randomUUID()}`
 
-      debug('connecting to %s', config.address)
+      logger('connecting to %s', config.address)
 
       return new WebSocket(config.address, { timeout: 5000 })
         .on('open', function () {
-          debug('connected to %s', config.address)
+          logger('connected to %s', config.address)
 
           if (Array.isArray(config.filters) && config.filters?.length) {
             const filters = config.filters.map((filter) => ({ ...filter, since }))
 
-            debug('subscribing with %s: %o', subscriptionId, filters)
+            logger('subscribing with %s: %o', subscriptionId, filters)
 
             this.send(JSON.stringify(createSubscriptionMessage(subscriptionId, filters)))
           }
@@ -85,7 +85,7 @@ export class StaticMirroringWorker implements IRunnable {
             }
 
             if (message[0] !== 'EVENT' || message[1] !== subscriptionId) {
-              debug('%s >> local: %o', config.address, message)
+              logger('%s >> local: %o', config.address, message)
               return
             }
 
@@ -126,7 +126,7 @@ export class StaticMirroringWorker implements IRunnable {
 
             since = Math.floor(Date.now() / 1000) - 30
 
-            debug('%s >> local: %s', config.address, event.id)
+            logger('%s >> local: %s', config.address, event.id)
 
             const inserted = await this.eventRepository.create(event)
 
@@ -138,11 +138,11 @@ export class StaticMirroringWorker implements IRunnable {
               })
             }
           } catch (error) {
-            debug('unable to process message: %o', error)
+            logger('unable to process message: %o', error)
           }
         })
         .on('close', (code, reason) => {
-          debug(`disconnected (${code}): ${reason.toString()}`)
+          logger(`disconnected (${code}): ${reason.toString()}`)
 
           setTimeout(() => {
             this.client.removeAllListeners()
@@ -150,7 +150,7 @@ export class StaticMirroringWorker implements IRunnable {
           }, 5000)
         })
         .on('error', function (error) {
-          debug('connection error: %o', error)
+          logger('connection error: %o', error)
         })
     }
 
@@ -164,7 +164,7 @@ export class StaticMirroringWorker implements IRunnable {
 
   private canAcceptEvent(event: Event): boolean {
     if (this.getRelayPublicKey() === event.pubkey) {
-      debug(`event ${event.id} not accepted: pubkey is relay pubkey`)
+      logger(`event ${event.id} not accepted: pubkey is relay pubkey`)
       return false
     }
 
@@ -184,7 +184,7 @@ export class StaticMirroringWorker implements IRunnable {
           event.content.length > limit.maxLength &&
           (!Array.isArray(limit.kinds) || limit.kinds.some(isEventKindOrRangeMatch(event)))
         ) {
-          debug(`event ${event.id} not accepted: content is longer than ${limit.maxLength} bytes`)
+          logger(`event ${event.id} not accepted: content is longer than ${limit.maxLength} bytes`)
           return false
         }
       }
@@ -194,7 +194,7 @@ export class StaticMirroringWorker implements IRunnable {
       event.content.length > limits.content.maxLength &&
       (!Array.isArray(limits.content.kinds) || limits.content.kinds.some(isEventKindOrRangeMatch(event)))
     ) {
-      debug(`event ${event.id} not accepted: content is longer than ${limits.content.maxLength} bytes`)
+      logger(`event ${event.id} not accepted: content is longer than ${limits.content.maxLength} bytes`)
       return false
     }
 
@@ -203,7 +203,7 @@ export class StaticMirroringWorker implements IRunnable {
       limits.createdAt.maxPositiveDelta > 0 &&
       event.created_at > now + limits.createdAt.maxPositiveDelta
     ) {
-      debug(
+      logger(
         `event ${event.id} not accepted: created_at is more than ${limits.createdAt.maxPositiveDelta} seconds in the future`,
       )
       return false
@@ -214,7 +214,7 @@ export class StaticMirroringWorker implements IRunnable {
       limits.createdAt.maxNegativeDelta > 0 &&
       event.created_at < now - limits.createdAt.maxNegativeDelta
     ) {
-      debug(
+      logger(
         `event ${event.id} not accepted: created_at is more than ${limits.createdAt.maxNegativeDelta} seconds in the past`,
       )
       return false
@@ -223,7 +223,7 @@ export class StaticMirroringWorker implements IRunnable {
     if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
       const pow = getEventProofOfWork(event.id)
       if (pow < limits.eventId.minLeadingZeroBits) {
-        debug(`event ${event.id} not accepted: pow difficulty ${pow}<${limits.eventId.minLeadingZeroBits}`)
+        logger(`event ${event.id} not accepted: pow difficulty ${pow}<${limits.eventId.minLeadingZeroBits}`)
         return false
       }
     }
@@ -231,7 +231,7 @@ export class StaticMirroringWorker implements IRunnable {
     if (typeof limits.pubkey?.minLeadingZeroBits !== 'undefined' && limits.pubkey.minLeadingZeroBits > 0) {
       const pow = getPubkeyProofOfWork(event.pubkey)
       if (pow < limits.pubkey.minLeadingZeroBits) {
-        debug(`event ${event.id} not accepted: pow pubkey difficulty ${pow}<${limits.pubkey.minLeadingZeroBits}`)
+        logger(`event ${event.id} not accepted: pow pubkey difficulty ${pow}<${limits.pubkey.minLeadingZeroBits}`)
         return false
       }
     }
@@ -241,7 +241,7 @@ export class StaticMirroringWorker implements IRunnable {
       limits.pubkey.whitelist.length > 0 &&
       !limits.pubkey.whitelist.includes(event.pubkey)
     ) {
-      debug(`event ${event.id} not accepted: pubkey not allowed: ${event.pubkey}`)
+      logger(`event ${event.id} not accepted: pubkey not allowed: ${event.pubkey}`)
       return false
     }
 
@@ -250,7 +250,7 @@ export class StaticMirroringWorker implements IRunnable {
       limits.pubkey.blacklist.length > 0 &&
       limits.pubkey.blacklist.includes(event.pubkey)
     ) {
-      debug(`event ${event.id} not accepted: pubkey not allowed: ${event.pubkey}`)
+      logger(`event ${event.id} not accepted: pubkey not allowed: ${event.pubkey}`)
       return false
     }
 
@@ -259,7 +259,7 @@ export class StaticMirroringWorker implements IRunnable {
       limits.kind.whitelist.length > 0 &&
       !limits.kind.whitelist.some(isEventKindOrRangeMatch(event))
     ) {
-      debug(`blocked: event kind ${event.kind} not allowed`)
+      logger(`blocked: event kind ${event.kind} not allowed`)
       return false
     }
 
@@ -268,7 +268,7 @@ export class StaticMirroringWorker implements IRunnable {
       limits.kind.blacklist.length > 0 &&
       limits.kind.blacklist.some(isEventKindOrRangeMatch(event))
     ) {
-      debug(`blocked: event kind ${event.kind} not allowed`)
+      logger(`blocked: event kind ${event.kind} not allowed`)
       return false
     }
 
@@ -299,13 +299,13 @@ export class StaticMirroringWorker implements IRunnable {
 
     const user = await this.userRepository.findByPubkey(event.pubkey)
     if (user?.isAdmitted !== true) {
-      debug(`user not admitted: ${event.pubkey}`)
+      logger(`user not admitted: ${event.pubkey}`)
       return false
     }
 
     const minBalance = currentSettings.limits?.event?.pubkey?.minBalance
     if (minBalance && user.balance < minBalance) {
-      debug(`user not admitted: user balance ${user.balance} < ${minBalance}`)
+      logger(`user not admitted: user balance ${user.balance} < ${minBalance}`)
       return false
     }
 
@@ -326,24 +326,24 @@ export class StaticMirroringWorker implements IRunnable {
 
     const eventToRelay = createRelayedEventMessage(event, this.config.secret)
     const outboundMessage = JSON.stringify(eventToRelay)
-    debug('%s >> %s: %s', message.source ?? 'local', this.config.address, outboundMessage)
+    logger('%s >> %s: %s', message.source ?? 'local', this.config.address, outboundMessage)
     this.client.send(outboundMessage)
   }
 
   private onError(error: Error) {
-    debug('error: %o', error)
+    logger('error: %o', error)
     throw error
   }
 
   private onExit() {
-    debug('exiting')
+    logger('exiting')
     this.close(() => {
       this.process.exit(0)
     })
   }
 
   public close(callback?: () => void) {
-    debug('closing')
+    logger('closing')
     if (this.client) {
       this.client.terminate()
     }

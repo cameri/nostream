@@ -262,11 +262,21 @@ Print the I2P hostname:
 
 ### Importing events from JSON Lines
 
-You can import NIP-01 events from a `.jsonl` file directly into the relay database.
+You can import NIP-01 events from `.jsonl` files directly into the relay database.
+Compressed files are also supported and decompressed on-the-fly:
+
+- `.jsonl.gz` (Gzip)
+- `.jsonl.xz` (XZ)
 
 Basic import:
   ```
   npm run import -- ./events.jsonl
+  ```
+
+Import a compressed backup:
+  ```
+  npm run import -- ./events.jsonl.gz
+  npm run import -- ./events.jsonl.xz
   ```
 
 Set a custom batch size (default: `1000`):
@@ -652,15 +662,41 @@ To observe client and subscription counts in real-time during a test, you can in
    ```bash
    docker compose logs -f nostream
    ```
-
 ## Export Events
 
 Export all stored events to a [JSON Lines](https://jsonlines.org/) (`.jsonl`) file. Each line is a valid NIP-01 Nostr event JSON object. The export streams rows from the database using cursors, so it works safely on relays with millions of events without loading them into memory.
 
+Optional compression is supported for lower storage and transfer costs:
+
+- Gzip via Node's native `zlib`
+- XZ via `lzma-native`
+
 ```
 npm run export                            # writes to events.jsonl
 npm run export -- backup-2024-01-01.jsonl # custom filename
+npm run export -- backup.jsonl.gz --compress --format=gzip
+npm run export -- backup.jsonl.xz --compress --format=xz
 ```
+
+Flags:
+
+- `--compress` / `-z`: enable compression.
+- `--format <gzip|gz|xz>`: compression format. If omitted while compression is enabled,
+  format is inferred from file extension (`.gz` / `.xz`) and defaults to `gzip`.
+
+After completion, the exporter prints a summary with:
+
+- Raw bytes generated from JSONL lines
+- Output bytes written to disk
+- Compression delta (smaller/larger)
+- Throughput in events/sec and bytes/sec
+
+Optional XZ tuning (environment variables):
+
+- `NOSTREAM_XZ_THREADS`: max worker threads for XZ compression.
+  Defaults to `4` and is automatically capped to available CPU cores minus one.
+- `NOSTREAM_XZ_PRESET`: compression preset from `0` (fastest, larger output)
+  to `9` (slowest, smallest output). Default is `6`.
 
 The script reads the same `DB_*` environment variables used by the relay (see [CONFIGURATION.md](CONFIGURATION.md)).
 

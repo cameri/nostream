@@ -8,7 +8,7 @@ import { IWebSocketAdapter } from '../../@types/adapters'
 import { validateNip44Payload } from '../../utils/nip44'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
-const debug = createLogger('gift-wrap-event-strategy')
+const logger = createLogger('gift-wrap-event-strategy')
 
 export class GiftWrapEventStrategy implements IEventStrategy<Event, Promise<void>> {
   public constructor(
@@ -17,7 +17,7 @@ export class GiftWrapEventStrategy implements IEventStrategy<Event, Promise<void
   ) {}
 
   public async execute(event: Event): Promise<void> {
-    debug('received gift wrap event: %o', event)
+    logger('received gift wrap event: %o', event)
 
     const reason = this.validateGiftWrap(event)
     if (reason) {
