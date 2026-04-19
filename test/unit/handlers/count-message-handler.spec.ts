@@ -129,5 +129,20 @@ describe('CountMessageHandler', () => {
         'error: unable to count events',
       ])
     })
+
+    it('returns CLOSED when COUNT is disabled in settings', async () => {
+      handler = new CountMessageHandler(webSocket, eventRepository, () => ({ nip45: { enabled: false } }) as Settings)
+
+      const message = [MessageType.COUNT, 'q1', {}] as any
+
+      await handler.handleMessage(message)
+
+      expect(eventRepository.countByFilters).to.not.have.been.called
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        MessageType.CLOSED,
+        'q1',
+        'COUNT is disabled by relay configuration',
+      ])
+    })
   })
 })

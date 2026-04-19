@@ -95,7 +95,7 @@ export class EventRepository implements IEventRepository {
   }
 
   public async countByFilters(filters: SubscriptionFilter[]): Promise<number> {
-    debug('counting events for %o', filters)
+    logger('counting events for %o', filters)
 
     if (!Array.isArray(filters) || !filters.length) {
       throw new Error('Filters cannot be empty')
