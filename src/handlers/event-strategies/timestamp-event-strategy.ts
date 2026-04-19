@@ -1,12 +1,12 @@
-import { createCommandResult } from '../../utils/messages'
-import { createLogger } from '../../factories/logger-factory'
-import { Event } from '../../@types/event'
-import { EventTags } from '../../constants/base'
-import { IEventRepository } from '../../@types/repositories'
-import { IEventStrategy } from '../../@types/message-handlers'
 import { IWebSocketAdapter } from '../../@types/adapters'
-import { validateOtsProof } from '../../utils/nip03'
+import { Event } from '../../@types/event'
+import { IEventStrategy } from '../../@types/message-handlers'
+import { IEventRepository } from '../../@types/repositories'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
+import { EventTags } from '../../constants/base'
+import { createLogger } from '../../factories/logger-factory'
+import { createCommandResult } from '../../utils/messages'
+import { validateOtsProof } from '../../utils/nip03'
 
 const debug = createLogger('timestamp-event-strategy')
 
@@ -63,23 +63,30 @@ export class TimestampEventStrategy implements IEventStrategy<Event, Promise<voi
       return 'opentimestamps event (kind 1040) must reference exactly one event'
     }
 
+    // NIP-01 defines event ids as 32-byte lowercase hex. We enforce that
+    // here so consumers can rely on a canonical form and so
+    // `validateOtsProof` sees bytes that already match by literal equality.
     const targetEventId = eTags[0][1]
-    if (!/^[0-9a-f]{64}$/i.test(targetEventId)) {
+    if (!/^[0-9a-f]{64}$/.test(targetEventId)) {
       return 'opentimestamps e tag must contain a 32-byte lowercase hex event id'
     }
 
-    // If a `k` tag is present it should parse as a non-negative integer. We
-    // don't enforce it against the actual target event's kind (the relay may
-    // not have seen that event), but we do require it to be well-formed so
-    // downstream consumers can trust the field.
-    const kTag = event.tags.find((tag) => Array.isArray(tag) && tag.length >= 2 && tag[0] === EventTags.Kind)
-    if (kTag) {
-      const parsed = Number(kTag[1])
-      if (!Number.isInteger(parsed) || parsed < 0 || !/^\d+$/.test(String(kTag[1]))) {
+    // NIP-03's `k` tag is optional and effectively singular: it carries the
+    // kind of the referenced event. Multiple `k` tags would be ambiguous —
+    // and accepting an event where only the first `k` is well-formed would
+    // let malformed trailing `k` tags sneak through. Reject multiples and
+    // validate the lone value as a non-negative integer.
+    const kTags = event.tags.filter((tag) => Array.isArray(tag) && tag.length >= 2 && tag[0] === EventTags.Kind)
+    if (kTags.length > 1) {
+      return 'opentimestamps event (kind 1040) must have at most one k tag'
+    }
+    if (kTags.length === 1) {
+      const raw = String(kTags[0][1])
+      if (!/^\d+$/.test(raw) || !Number.isInteger(Number(raw)) || Number(raw) < 0) {
         return 'opentimestamps k tag must be a non-negative integer kind'
       }
     }
 
-    return validateOtsProof(event.content, targetEventId.toLowerCase())
+    return validateOtsProof(event.content, targetEventId)
   }
 }

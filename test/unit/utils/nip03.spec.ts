@@ -216,6 +216,13 @@ describe('NIP-03 — OpenTimestamps', () => {
       expect(result.reason).to.match(/unsupported file hash op/)
     })
 
+    it('rejects an unsupported ots file version', () => {
+      const parts = [MAGIC, writeVarUint(2), Buffer.from([OP_SHA256]), DIGEST, bitcoinAttestation(1)]
+      const buf = Buffer.concat(parts)
+      const result = expectFailure(parseOtsFile(buf))
+      expect(result.reason).to.match(/unsupported ots version/)
+    })
+
     it('rejects truncated proofs without crashing', () => {
       const good = buildOts(DIGEST, [bitcoinAttestation(1)])
       const truncated = good.subarray(0, good.length - 3)

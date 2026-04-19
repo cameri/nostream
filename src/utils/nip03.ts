@@ -59,6 +59,11 @@ const MAX_VARBYTES_LENGTH = 8 * 1024
 const MAX_VARUINT_VALUE = Number.MAX_SAFE_INTEGER
 const MAX_RECURSION_DEPTH = 128
 
+// Only v1 of the OpenTimestamps file format is defined today. A future
+// bump would change the byte layout we parse below, so treat anything else
+// as unknown rather than best-effort decoding it.
+const SUPPORTED_OTS_VERSION = 1
+
 /**
  * Enum-like classification of attestations we care about. Unknown tags are
  * reported as `unknown` rather than hard-failing: the OTS format is explicitly
@@ -307,6 +312,9 @@ export function parseOtsFile(buf: Buffer): OtsParseResult {
     }
 
     const version = reader.readVarUint()
+    if (version !== SUPPORTED_OTS_VERSION) {
+      return { ok: false, reason: `unsupported ots version ${version}` }
+    }
 
     const fileHashOp = reader.readByte()
     const { algo, length } = parseFileHashOp(fileHashOp)

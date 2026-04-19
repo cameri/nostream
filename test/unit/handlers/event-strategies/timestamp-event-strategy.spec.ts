@@ -6,16 +6,16 @@ import sinonChai from 'sinon-chai'
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
 
+import { IWebSocketAdapter } from '../../../../src/@types/adapters'
 import { DatabaseClient } from '../../../../src/@types/base'
 import { Event } from '../../../../src/@types/event'
-import { EventKinds } from '../../../../src/constants/base'
-import { EventRepository } from '../../../../src/repositories/event-repository'
-import { IEventRepository } from '../../../../src/@types/repositories'
 import { IEventStrategy } from '../../../../src/@types/message-handlers'
-import { IWebSocketAdapter } from '../../../../src/@types/adapters'
 import { MessageType } from '../../../../src/@types/messages'
-import { TimestampEventStrategy } from '../../../../src/handlers/event-strategies/timestamp-event-strategy'
+import { IEventRepository } from '../../../../src/@types/repositories'
 import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
+import { EventKinds } from '../../../../src/constants/base'
+import { TimestampEventStrategy } from '../../../../src/handlers/event-strategies/timestamp-event-strategy'
+import { EventRepository } from '../../../../src/repositories/event-repository'
 
 const { expect } = chai
 
@@ -132,15 +132,6 @@ describe('TimestampEventStrategy', () => {
       ])
     })
 
-    it('accepts upper-case hex in the e tag', async () => {
-      event.tags = [['e', targetEventId.toUpperCase()]]
-      eventRepositoryCreateStub.resolves(1)
-
-      await strategy.execute(event)
-
-      expect(eventRepositoryCreateStub).to.have.been.calledOnce
-    })
-
     it('accepts an event without a k tag', async () => {
       event.tags = [['e', targetEventId]]
       eventRepositoryCreateStub.resolves(1)
@@ -197,6 +188,20 @@ describe('TimestampEventStrategy', () => {
       ])
     })
 
+    it('rejects upper-case hex in the e tag (NIP-01 requires lowercase)', async () => {
+      event.tags = [['e', targetEventId.toUpperCase()]]
+
+      await strategy.execute(event)
+
+      expect(eventRepositoryCreateStub).not.to.have.been.called
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+        MessageType.OK,
+        event.id,
+        false,
+        Sinon.match(/invalid:.*hex event id/),
+      ])
+    })
+
     it('rejects a non-integer k tag', async () => {
       event.tags = [
         ['e', targetEventId],
@@ -211,6 +216,41 @@ describe('TimestampEventStrategy', () => {
         event.id,
         false,
         Sinon.match(/invalid:.*k tag/),
+      ])
+    })
+
+    it('rejects a negative k tag', async () => {
+      event.tags = [
+        ['e', targetEventId],
+        ['k', '-1'],
+      ]
+
+      await strategy.execute(event)
+
+      expect(eventRepositoryCreateStub).not.to.have.been.called
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+        MessageType.OK,
+        event.id,
+        false,
+        Sinon.match(/invalid:.*k tag/),
+      ])
+    })
+
+    it('rejects when multiple k tags are present', async () => {
+      event.tags = [
+        ['e', targetEventId],
+        ['k', '1'],
+        ['k', '2'],
+      ]
+
+      await strategy.execute(event)
+
+      expect(eventRepositoryCreateStub).not.to.have.been.called
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+        MessageType.OK,
+        event.id,
+        false,
+        Sinon.match(/invalid:.*at most one k tag/),
       ])
     })
 
