@@ -5,10 +5,13 @@ import { ICacheAdapter } from '../@types/adapters'
 const debug = createLogger('redis-adapter')
 
 export class RedisAdapter implements ICacheAdapter {
+
   private connection: Promise<void>
 
+  private scriptShas: Map<string, string> = new Map()
+
   public constructor(private readonly client: CacheClient) {
-    this.connection = client.connect()
+    this.connection = client.isOpen ? Promise.resolve() : client.connect()
 
     this.connection.catch((error) => this.onClientError(error))
 
@@ -92,4 +95,32 @@ export class RedisAdapter implements ICacheAdapter {
 
     return this.client.zAdd(key, members)
   }
+
+  public async deleteKey(key: string): Promise<number> {
+    await this.connection
+    debug('delete %s key', key)
+    return this.client.del(key)
+  }
+
+  public async getHKey(key: string, field: string): Promise<string> {
+    await this.connection
+    debug('get %s field for key %s', field, key)
+    return await this.client.hGet(key, field) ?? ''
+  }
+
+  public async setHKey(key: string, fields: Record<string, string>): Promise<boolean> {
+    await this.connection
+    debug('set %s key', key)
+    return await this.client.hSet(key, fields) >= 0
+  }
+
+  public async eval(script: string, keys: string[], args: string[]): Promise<unknown> {
+    await this.connection
+    if (!this.scriptShas.has(script)) {
+      const sha = await this.client.scriptLoad(script)
+      this.scriptShas.set(script, sha)
+    }
+    return await this.client.evalSha(this.scriptShas.get(script)!, { keys, arguments: args })
+  }
+
 }

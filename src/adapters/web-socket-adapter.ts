@@ -38,7 +38,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     private readonly request: IncomingHttpMessage,
     private readonly webSocketServer: IWebSocketServerAdapter,
     private readonly createMessageHandler: Factory<IMessageHandler, [IncomingMessage, IWebSocketAdapter]>,
-    private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
+    private readonly rateLimiter: Factory<IRateLimiter>,
     private readonly settings: Factory<Settings>,
   ) {
     super()
@@ -211,7 +211,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       return false
     }
 
-    const rateLimiter = this.slidingWindowRateLimiter()
+    const rateLimiter = this.rateLimiter()
 
     const hit = (period: number, rate: number) => rateLimiter.hit(`${client}:message:${period}`, 1, { period, rate })
 

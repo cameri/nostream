@@ -2,8 +2,8 @@ import { NextFunction, Request, Response } from 'express'
 import { createLogger } from '../../factories/logger-factory'
 import { createSettings } from '../../factories/settings-factory'
 import { getRemoteAddress } from '../../utils/http'
+import { rateLimiterFactory } from '../../factories/rate-limiter-factory'
 import { Settings } from '../../@types/settings'
-import { slidingWindowRateLimiterFactory } from '../../factories/rate-limiter-factory'
 
 const debug = createLogger('rate-limiter-middleware')
 
@@ -34,7 +34,7 @@ export async function isRateLimited(remoteAddress: string, settings: Settings): 
     return false
   }
 
-  const rateLimiter = slidingWindowRateLimiterFactory()
+  const rateLimiter = rateLimiterFactory()
 
   const hit = (period: number, rate: number) =>
     rateLimiter.hit(`${remoteAddress}:connection:${period}`, 1, { period: period, rate: rate })

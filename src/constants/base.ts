@@ -22,6 +22,8 @@ export enum EventKinds {
   CHANNEL_RESERVED_LAST = 49,
   // NIP-17: Gift Wrap
   GIFT_WRAP = 1059,
+  // NIP-03: OpenTimestamps attestation
+  OPEN_TIMESTAMPS = 1040,
   // Relay-only
   RELAY_INVITE = 50,
   INVOICE_UPDATE = 402,
@@ -48,6 +50,8 @@ export enum EventTags {
   Deduplication = 'd',
   Expiration = 'expiration',
   Invoice = 'bolt11',
+  // NIP-03: target event kind on an OpenTimestamps attestation
+  Kind = 'k',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'
