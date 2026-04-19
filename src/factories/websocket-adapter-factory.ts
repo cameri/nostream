@@ -5,7 +5,7 @@ import { IEventRepository, INip05VerificationRepository, IUserRepository } from 
 import { createSettings } from './settings-factory'
 import { IWebSocketServerAdapter } from '../@types/adapters'
 import { messageHandlerFactory } from './message-handler-factory'
-import { slidingWindowRateLimiterFactory } from './rate-limiter-factory'
+import { rateLimiterFactory } from './rate-limiter-factory'
 import { WebSocketAdapter } from '../adapters/web-socket-adapter'
 
 export const webSocketAdapterFactory =
@@ -20,6 +20,6 @@ export const webSocketAdapterFactory =
       request,
       webSocketServerAdapter,
       messageHandlerFactory(eventRepository, userRepository, nip05VerificationRepository),
-      slidingWindowRateLimiterFactory,
+      rateLimiterFactory,
       createSettings,
     )

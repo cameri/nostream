@@ -64,6 +64,9 @@ workers:
 mirroring:
   static: []
 limits:
+  # strategy selection configuration for rate limiting:
+  rateLimiter:
+    strategy: ewma
   invoice:
     rateLimits:
       - period: 60000

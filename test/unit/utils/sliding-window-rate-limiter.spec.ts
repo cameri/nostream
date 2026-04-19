@@ -38,7 +38,7 @@ describe('SlidingWindowRateLimiter', () => {
       getKey: getKeyStub,
       hasKey: hasKeyStub,
       setKey: setKeyStub,
-    }
+    } as unknown as ICacheAdapter
     rateLimiter = new SlidingWindowRateLimiter(cache)
   })
 
