@@ -138,9 +138,26 @@ const createImportStream = async (absoluteFilePath: string) => {
     }
   }
 
+  const decompressor = createDecompressionStream(compressionFormat)
+
+  source.on('error', (error) => {
+    if (!decompressor.destroyed) {
+      decompressor.destroy(error)
+    }
+  })
+
+  const closeSource = () => {
+    if (!source.destroyed) {
+      source.destroy()
+    }
+  }
+
+  decompressor.on('close', closeSource)
+  decompressor.on('error', closeSource)
+
   return {
     compressionFormat,
-    stream: source.pipe(createDecompressionStream(compressionFormat)),
+    stream: source.pipe(decompressor),
   }
 }
 
