@@ -17,6 +17,16 @@ import {
   parseCompressionFormat,
 } from '../../../src/utils/compression'
 
+const hasLzmaNative = (): boolean => {
+  try {
+    require.resolve('lzma-native')
+
+    return true
+  } catch {
+    return false
+  }
+}
+
 const toBuffer = async (stream: NodeJS.ReadableStream): Promise<Buffer> => {
   const chunks: Buffer[] = []
 
@@ -37,6 +47,9 @@ const expectStreamToFail = async (stream: NodeJS.ReadableStream): Promise<void> 
 }
 
 describe('compression utils', () => {
+  const xzAvailable = hasLzmaNative()
+  const itIfXzAvailable = xzAvailable ? it : it.skip
+
   const tempDirs: string[] = []
 
   const createTempFile = (name: string, data: Buffer): string => {
@@ -169,7 +182,7 @@ describe('compression utils', () => {
     expect(decompressed.equals(input)).to.equal(true)
   })
 
-  it('round-trips data with xz streams', async () => {
+  itIfXzAvailable('round-trips data with xz streams', async () => {
     const input = Buffer.from('nostream-xz-test\n'.repeat(2048), 'utf-8')
 
     const compressed = await toBuffer(
@@ -244,7 +257,7 @@ describe('compression utils', () => {
     )
   })
 
-  it('fails to decompress invalid xz payloads', async () => {
+  itIfXzAvailable('fails to decompress invalid xz payloads', async () => {
     const invalidPayload = Buffer.from('not-an-xz-stream', 'utf-8')
 
     await expectStreamToFail(
@@ -254,7 +267,9 @@ describe('compression utils', () => {
 
   it('round-trips binary payloads across boundary sizes', async () => {
     const sizes = [0, 1, 2, 31, 32, 33, 1024, 8192]
-    const formats = [CompressionFormat.GZIP, CompressionFormat.XZ]
+    const formats = xzAvailable
+      ? [CompressionFormat.GZIP, CompressionFormat.XZ]
+      : [CompressionFormat.GZIP]
 
     for (const size of sizes) {
       const input = Buffer.alloc(size)
