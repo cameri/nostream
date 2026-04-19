@@ -1,0 +1,72 @@
+import { Then, When, World } from '@cucumber/cucumber'
+import axios, { AxiosResponse } from 'axios'
+import chai from 'chai'
+
+import packageJson from '../../../../package.json'
+import { createSettings } from '../../../../src/factories/settings-factory'
+
+chai.use(require('sinon-chai'))
+const { expect } = chai
+
+const BASE_URL = 'http://localhost:18808'
+
+When('a client requests the relay information document', async function(this: World<Record<string, any>>) {
+  const response: AxiosResponse = await axios.get(BASE_URL, {
+    headers: { Accept: 'application/nostr+json' },
+    validateStatus: () => true,
+  })
+  this.parameters.httpResponse = response
+})
+
+When('a client requests the root path with Accept header {string}', async function(
+  this: World<Record<string, any>>,
+  acceptHeader: string,
+) {
+  const response: AxiosResponse = await axios.get(BASE_URL, {
+    headers: { Accept: acceptHeader },
+    validateStatus: () => true,
+  })
+  this.parameters.httpResponse = response
+})
+
+Then('the response status is {int}', function(this: World<Record<string, any>>, status: number) {
+  expect(this.parameters.httpResponse.status).to.equal(status)
+})
+
+Then('the response Content-Type includes {string}', function(
+  this: World<Record<string, any>>,
+  contentType: string,
+) {
+  expect(this.parameters.httpResponse.headers['content-type']).to.include(contentType)
+})
+
+Then('the response Content-Type does not include {string}', function(
+  this: World<Record<string, any>>,
+  contentType: string,
+) {
+  expect(this.parameters.httpResponse.headers['content-type']).to.not.include(contentType)
+})
+
+Then('the relay information document contains the required fields', function(this: World<Record<string, any>>) {
+  const doc = this.parameters.httpResponse.data
+  for (const field of ['name', 'description', 'pubkey', 'supported_nips', 'software', 'version']) {
+    expect(doc, `expected relay info doc to have field "${field}"`).to.have.property(field)
+  }
+})
+
+Then('the supported_nips field matches the NIPs declared in package.json', function(this: World<Record<string, any>>) {
+  const doc = this.parameters.httpResponse.data
+  expect(doc.supported_nips).to.deep.equal(packageJson.supportedNips)
+})
+
+Then('the response body is not a relay information document', function(this: World<Record<string, any>>) {
+  const body = this.parameters.httpResponse.data
+  const isRelayInfoDoc = typeof body === 'object' && body !== null && 'supported_nips' in body
+  expect(isRelayInfoDoc).to.equal(false)
+})
+
+Then('the limitation object contains a max_filters field', function(this: World<Record<string, any>>) {
+  const doc = this.parameters.httpResponse.data
+  const expectedMaxFilters = createSettings().limits?.client?.subscription?.maxFilters
+  expect(doc.limitation.max_filters).to.equal(expectedMaxFilters)
+})
