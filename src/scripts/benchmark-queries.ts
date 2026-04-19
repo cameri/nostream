@@ -150,13 +150,14 @@ function summarizePlan(plan: ExplainPlanNode): { indexes: string[]; scans: strin
 }
 
 async function explain(db: Knex, query: Knex.QueryBuilder | Knex.Raw): Promise<ExplainResult> {
-  const { sql, bindings } = query.toSQL().toNative
-    ? (query as any).toSQL().toNative()
-    : { sql: query.toString(), bindings: [] as unknown[] }
+  // Keep placeholders in Knex's `?` form so `db.raw(sql, bindings)` substitutes
+  // them correctly — `.toNative()` rewrites them to `$1, $2, …`, which makes
+  // Knex's binding check fail ("Expected N bindings, saw 0").
+  const { sql, bindings } = query.toSQL()
 
   const { rows } = await db.raw<{ rows: { 'QUERY PLAN': ExplainResult[] }[] }>(
     `EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) ${sql}`,
-    bindings,
+    bindings as readonly unknown[],
   )
   return rows[0]['QUERY PLAN'][0]
 }
