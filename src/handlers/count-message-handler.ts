@@ -5,7 +5,7 @@ import { IMessageHandler } from '../@types/message-handlers'
 import { CountMessage } from '../@types/messages'
 import { IEventRepository } from '../@types/repositories'
 import { Settings } from '../@types/settings'
-import { SubscriptionFilter } from '../@types/subscription'
+import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 import { createLogger } from '../factories/logger-factory'
 import { createClosedMessage, createCountResultMessage } from '../utils/messages'
@@ -43,19 +43,19 @@ export class CountMessageHandler implements IMessageHandler {
     }
   }
 
-  private canCount(queryId: string, filters: SubscriptionFilter[]): string | undefined {
+  private canCount(queryId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
     const subscriptionLimits = this.settings().limits?.client?.subscription
     const maxFilters = subscriptionLimits?.maxFilters ?? 0
 
     if (maxFilters > 0 && filters.length > maxFilters) {
-      return `Too many filters: Number of filters per count query must be less then or equal to ${maxFilters}`
+      return `Too many filters: Number of filters per count query must be less than or equal to ${maxFilters}`
     }
 
     if (
       typeof subscriptionLimits?.maxSubscriptionIdLength === 'number' &&
       queryId.length > subscriptionLimits.maxSubscriptionIdLength
     ) {
-      return `Query ID too long: Query ID must be less or equal to ${subscriptionLimits.maxSubscriptionIdLength}`
+      return `Query ID too long: Query ID must be less than or equal to ${subscriptionLimits.maxSubscriptionIdLength}`
     }
   }
 }

@@ -439,6 +439,18 @@ describe('EventRepository', () => {
       expect(result).to.equal(42)
     })
 
+    it('uses countDistinct on event_id to avoid duplicate counts', async () => {
+      const countDistinctStub = sandbox.stub().returns({
+        first: async () => ({ count: '1' }),
+      })
+
+      sandbox.stub(rrDbClient, 'from').returns({ countDistinct: countDistinctStub } as any)
+
+      await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
+
+      expect(countDistinctStub).to.have.been.calledOnceWithExactly({ count: 'event_id' })
+    })
+
     it('builds union query when there are multiple filters', async () => {
       const fromStub = sandbox.stub(rrDbClient, 'from').returns({
         countDistinct: () => ({
@@ -464,6 +476,20 @@ describe('EventRepository', () => {
       const sql = fromStub.firstCall.args[0].toString()
       expect(sql).to.include('left join "event_tags"')
       expect(sql).to.include('event_tags.tag_name')
+      expect(sql).to.include('event_tags.tag_value')
+    })
+
+    it('applies limit ordering when a filter includes limit', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ limit: 3 }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('order by "event_created_at" DESC, "event_id" asc limit 3')
     })
 
     it('filters out deleted and expired events', async () => {

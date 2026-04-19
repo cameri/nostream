@@ -152,6 +152,13 @@ describe('NIP-01', () => {
         expect(result).to.have.property('error').that.is.not.undefined
       })
 
+      it('returns error if filter is not an object', () => {
+        message[2] = null
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+
       it('returns error if there are too many filters', () => {
         ;(message as any[]).splice(2, 1)
         ;(message as any[]).push(...range(0, 11).map(() => ({})))
