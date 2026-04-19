@@ -395,9 +395,9 @@ describe('PaymentsService', () => {
       expect(userRepository.admitUser).not.to.have.been.called
     })
 
-    it('skips the fee for whitelisted pubkeys', async () => {
+    it('skips the fee for whitelisted pubkeys(exact match)', async () => {
       settings.returns(makeSettings([
-        { enabled: true, amount: 1000n, whitelists: { pubkeys: ['whitelisted'] } },
+        { enabled: true, amount: 1000n, whitelists: { pubkeys: ['whitelistedpubkey'] } },
       ]))
 
       await service.confirmInvoice(makeCompletedInvoice({
@@ -409,6 +409,19 @@ describe('PaymentsService', () => {
       // pubkey starts with 'whitelisted' → isApplicableFee = false → admissionFeeAmount = 0 → not admitted
       expect(userRepository.admitUser).not.to.have.been.called
     })
+
+    it('applies the fee when pubkey is not an exact whitelist match (prefix alone is insufficient)', async () => {
+      settings.returns(makeSettings([
+        { enabled: true, amount: 1000n, whitelists: { pubkeys: ['whitelisted'] } },
+      ]))
+      await service.confirmInvoice(makeCompletedInvoice({
+        pubkey: 'whitelistedpubkey',
+        unit: InvoiceUnit.MSATS,
+        amountPaid: 5000n,
+      }))
+      expect(userRepository.admitUser).to.have.been.calledOnce
+    })
+
 
     it('rolls back the transaction and re-throws on error', async () => {
       settings.returns(makeSettings([]))
