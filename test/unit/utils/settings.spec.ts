@@ -198,7 +198,11 @@ describe('SettingsStatic', () => {
 
       expect(SettingsStatic.createSettings()).to.be.an('object')
 
-      expect(existsSyncStub).to.have.been.calledWithExactly('/some/path/settings.json')
+      const settingsPathExistsChecks = existsSyncStub.getCalls().filter((call) => {
+        return call.args.length === 1 && call.args[0] === '/some/path/settings.json'
+      })
+
+      expect(settingsPathExistsChecks).to.have.lengthOf(1)
       expect(getSettingsFileBasePathStub).to.have.been.calledOnce
       expect(saveSettingsStub).to.have.been.calledOnceWithExactly('/some/path/settings.json', Sinon.match.object)
       expect(loadSettingsStub).to.have.been.called

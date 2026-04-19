@@ -463,7 +463,7 @@ describe('PaymentsService', () => {
       expect(eventUtils.broadcastEvent as Sinon.SinonStub).to.have.been.calledOnce
     })
 
-    it('calls logError and does not throw when the pipeline fails', async () => {
+    it('does not throw when the pipeline fails', async () => {
       ;(eventUtils.identifyEvent as Sinon.SinonStub).rejects(new Error('identify failed'))
 
       // otherwise() swallows the error — the method must resolve, not reject

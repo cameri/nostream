@@ -47,6 +47,26 @@ const logAtLevel = (
     return
   }
 
+  const errorFromArgs = args.find((arg) => arg instanceof Error) as Error | undefined
+
+  if (errorFromArgs) {
+    if (typeof message === 'string') {
+      instance[level]({ err: errorFromArgs }, safeFormat(message, args))
+      return
+    }
+
+    const data = [message, ...args].filter((arg) => !(arg instanceof Error))
+    const formatted = data.map(stringifyForLog).join(' ')
+
+    if (formatted) {
+      instance[level]({ err: errorFromArgs }, formatted)
+    } else {
+      instance[level]({ err: errorFromArgs })
+    }
+
+    return
+  }
+
   if (typeof message === 'string') {
     instance[level](safeFormat(message, args))
     return
@@ -87,7 +107,7 @@ const createMessageLogger = (instance: PinoLogger, scope: string): MessageLogger
 
 export const createLogger = (
   namespace: string,
-  options: { enabled?: boolean; stdout?: boolean } = { enabled: false, stdout: false },
+  options: { enabled?: boolean } = { enabled: false },
 ) => {
   const prefix = cluster.isWorker ? (process.env.WORKER_TYPE ?? 'worker') : 'primary'
   const scope = namespace ? `${prefix}:${namespace}` : prefix

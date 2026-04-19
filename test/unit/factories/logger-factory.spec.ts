@@ -67,6 +67,28 @@ describe('createLogger', () => {
     Sinon.assert.calledOnceWithExactly(rootInstance.error, { err: error })
   })
 
+  it('logs structured err when Error is passed as an arg to string message', () => {
+    const logger = createLogger('payments')
+    const error = new Error('boom')
+
+    logger.error('Unable to create invoice. Reason:', error)
+
+    Sinon.assert.calledOnce(rootInstance.error)
+    Sinon.assert.calledWith(rootInstance.error, { err: error })
+    expect(rootInstance.error.firstCall.args[1]).to.be.a('string').and.include('Unable to create invoice. Reason:')
+  })
+
+  it('keeps non-error args in message while logging structured err', () => {
+    const logger = createLogger('payments')
+    const error = new Error('boom')
+
+    logger.error('error handling message', { kind: 1 }, error)
+
+    Sinon.assert.calledOnce(rootInstance.error)
+    Sinon.assert.calledWith(rootInstance.error, { err: error })
+    expect(rootInstance.error.firstCall.args[1]).to.be.a('string').and.include("kind: 1")
+  })
+
   it('logs mixed non-string messages safely', () => {
     const logger = createLogger('payments')
 

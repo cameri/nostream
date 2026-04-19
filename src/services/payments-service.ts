@@ -29,7 +29,7 @@ export class PaymentsService implements IPaymentsService {
     try {
       return await this.invoiceRepository.findPendingInvoices(0, 10)
     } catch (error) {
-      logger.info('Unable to get pending invoices.', error)
+      logger.error('Unable to get pending invoices.', error)
 
       throw error
     }
@@ -41,7 +41,7 @@ export class PaymentsService implements IPaymentsService {
         typeof invoice === 'string' || invoice?.verifyURL ? invoice : invoice.id,
       )
     } catch (error) {
-      logger.info('Unable to get invoice from payments processor. Reason:', error)
+      logger.error('Unable to get invoice from payments processor. Reason:', error)
 
       throw error
     }
