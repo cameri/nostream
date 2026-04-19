@@ -1,4 +1,3 @@
-import accepts from 'accepts'
 import { NextFunction, Request, Response } from 'express'
 import { path, pathEq } from 'ramda'
 import { createSettings } from '../../factories/settings-factory'
@@ -8,10 +7,38 @@ import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
 import packageJson from '../../../package.json'
 
+export const hasExplicitNostrJsonAcceptHeader = (request: Request): boolean => {
+  const acceptHeader = request.headers.accept
+
+  if (!acceptHeader) {
+    return false
+  }
+
+  return acceptHeader.split(',').some((token) => {
+    const [mediaType, ...params] = token
+      .split(';')
+      .map((value) => value.trim().toLowerCase())
+
+    if (mediaType !== 'application/nostr+json') {
+      return false
+    }
+
+    const quality = params.find((param) => param.startsWith('q='))
+
+    if (!quality) {
+      return true
+    }
+
+    const qValue = Number.parseFloat(quality.slice(2))
+
+    return !Number.isNaN(qValue) && qValue > 0
+  })
+}
+
 export const rootRequestHandler = (request: Request, response: Response, next: NextFunction) => {
   const settings = createSettings()
 
-  if (accepts(request).type(['application/nostr+json'])) {
+  if (hasExplicitNostrJsonAcceptHeader(request)) {
     const {
       info: { name, description, pubkey: rawPubkey, contact, relay_url },
     } = settings

@@ -14,6 +14,11 @@ Feature: NIP-11
     Then the response Content-Type does not include "application/nostr+json"
     And the response body is not a relay information document
 
+  Scenario: Relay serves HTML for typical browser Accept header
+    When a browser requests the root path
+    Then the response Content-Type includes "text/html"
+    And the response body is not a relay information document
+
   Scenario: Relay information document reports max_filters from settings
     When a client requests the relay information document
     Then the limitation object contains a max_filters field

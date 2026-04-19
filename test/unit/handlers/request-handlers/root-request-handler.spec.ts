@@ -7,7 +7,10 @@ const { expect } = chai
 
 import * as settingsFactory from '../../../../src/factories/settings-factory'
 import * as templateCache from '../../../../src/utils/template-cache'
-import { rootRequestHandler } from '../../../../src/handlers/request-handlers/root-request-handler'
+import {
+  hasExplicitNostrJsonAcceptHeader,
+  rootRequestHandler,
+} from '../../../../src/handlers/request-handlers/root-request-handler'
 
 const baseSettings = {
   info: {
@@ -39,6 +42,23 @@ const settingsWithFee = {
     },
   },
 }
+
+describe('hasExplicitNostrJsonAcceptHeader', () => {
+  it('returns true for explicit application/nostr+json', () => {
+    expect(hasExplicitNostrJsonAcceptHeader({ headers: { accept: 'application/nostr+json' } } as any)).to.equal(true)
+  })
+
+  it('returns false for typical browser Accept header', () => {
+    const browserAcceptHeader =
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+
+    expect(hasExplicitNostrJsonAcceptHeader({ headers: { accept: browserAcceptHeader } } as any)).to.equal(false)
+  })
+
+  it('returns false when q=0 for application/nostr+json', () => {
+    expect(hasExplicitNostrJsonAcceptHeader({ headers: { accept: 'application/nostr+json;q=0' } } as any)).to.equal(false)
+  })
+})
 
 describe('rootRequestHandler', () => {
   let createSettingsStub: sinon.SinonStub
