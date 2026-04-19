@@ -17,6 +17,7 @@
 import { Knex } from 'knex'
 
 import { EventKinds } from '../constants/base'
+import { InvoiceStatus } from '../@types/invoice'
 import { getMasterDbClient } from '../database/client'
 
 type ExplainPlanNode = {
@@ -61,6 +62,16 @@ type CliOptions = {
   horizonDays: number
 }
 
+function parseIntArg(raw: string | undefined, fallback: number, { min = Number.NEGATIVE_INFINITY } = {}): number {
+  // Use Number.isFinite rather than falsy-coalescing so `0` is a valid input
+  // (e.g. `--kind 0` selects SET_METADATA, which is a valid Nostr kind).
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+  return Math.max(min, parsed)
+}
+
 function parseArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
     runs: 3,
@@ -73,19 +84,19 @@ function parseArgs(argv: string[]): CliOptions {
     const next = argv[i + 1]
     switch (arg) {
       case '--runs':
-        opts.runs = Math.max(1, Number(next) || opts.runs)
+        opts.runs = parseIntArg(next, opts.runs, { min: 1 })
         i++
         break
       case '--kind':
-        opts.kind = Number(next) || opts.kind
+        opts.kind = parseIntArg(next, opts.kind, { min: 0 })
         i++
         break
       case '--limit':
-        opts.limit = Math.max(1, Number(next) || opts.limit)
+        opts.limit = parseIntArg(next, opts.limit, { min: 1 })
         i++
         break
       case '--horizon-days':
-        opts.horizonDays = Math.max(1, Number(next) || opts.horizonDays)
+        opts.horizonDays = parseIntArg(next, opts.horizonDays, { min: 1 })
         i++
         break
       case '--help':
@@ -165,14 +176,13 @@ function buildCases(): BenchmarkCase[] {
     {
       name: 'REQ: authors + kinds ORDER BY created_at DESC',
       description:
-        "NIP-01 REQ with a single pubkey filter + kind=TEXT_NOTE. Canonical per-author subscription; should hit events_active_pubkey_kind_created_at_idx.",
+        'NIP-01 REQ with a single pubkey filter + kind=TEXT_NOTE. Canonical per-author subscription; shape matches EventRepository.findByFilters and should hit events_active_pubkey_kind_created_at_idx.',
       skipIf: (ctx) => (ctx.samplePubkey ? undefined : 'no events rows found'),
       build: (ctx) =>
         ctx.db('events')
           .select('event_id', 'event_pubkey', 'event_kind', 'event_created_at')
           .where('event_pubkey', ctx.samplePubkey as Buffer)
           .whereIn('event_kind', [ctx.kind])
-          .whereNull('deleted_at')
           .orderBy('event_created_at', 'desc')
           .orderBy('event_id', 'asc')
           .limit(ctx.limit),
@@ -180,7 +190,7 @@ function buildCases(): BenchmarkCase[] {
     {
       name: 'REQ: kind + created_at time range',
       description:
-        'REQ with no authors but a time window and a kind. Exercises the (kind, created_at) access paths.',
+        'REQ with no authors but a time window and a kind. Matches findByFilters for the (kinds, since, until) case; exercises the (kind, created_at) access paths.',
       build: (ctx) => {
         const now = Math.floor(Date.now() / 1000)
         const since = now - ctx.horizonSeconds
@@ -188,15 +198,15 @@ function buildCases(): BenchmarkCase[] {
           .select('event_id')
           .where('event_kind', ctx.kind)
           .whereBetween('event_created_at', [since, now])
-          .whereNull('deleted_at')
           .orderBy('event_created_at', 'desc')
+          .orderBy('event_id', 'asc')
           .limit(ctx.limit)
       },
     },
     {
       name: 'hasActiveRequestToVanish (pubkey + kind=62 + not deleted)',
       description:
-        'Exact query run on every inbound event via UserRepository.isVanished; latency here is a per-message tax.',
+        'Exact query run on every inbound event via UserRepository.isVanished; latency here is a per-message tax. This is the only hot path that filters on deleted_at.',
       skipIf: (ctx) => (ctx.samplePubkey ? undefined : 'no events rows found'),
       build: (ctx) =>
         ctx.db('events')
@@ -225,10 +235,16 @@ function buildCases(): BenchmarkCase[] {
     {
       name: 'findPendingInvoices (status=pending ORDER BY created_at)',
       description:
-        'InvoiceRepository poll; hits invoices_pending_created_at_idx when present.',
+        'Exact shape of InvoiceRepository.findPendingInvoices; hits invoices_pending_created_at_idx when present.',
       skipIf: (ctx) => (ctx.invoiceCount > 0 ? undefined : 'invoices table is empty'),
       build: (ctx) =>
-        ctx.db('invoices').select('id').where('status', 'pending').orderBy('created_at', 'asc').limit(ctx.limit),
+        ctx
+          .db('invoices')
+          .select('id')
+          .where('status', InvoiceStatus.PENDING)
+          .orderBy('created_at', 'asc')
+          .offset(0)
+          .limit(ctx.limit),
     },
   ]
 }
@@ -236,7 +252,9 @@ function buildCases(): BenchmarkCase[] {
 async function gatherContext(db: Knex, options: CliOptions): Promise<BenchContext> {
   const [{ count: eventCountText = '0' } = { count: '0' }] = await db('events').count('* as count')
   const [{ count: invoiceCountText = '0' } = { count: '0' }] = await db('invoices').count('* as count')
-  const sample = await db('events').select('event_pubkey').whereNull('deleted_at').limit(1).first()
+  // Pick any pubkey with rows — production REQ does not filter on deleted_at,
+  // so the benchmark should not either.
+  const sample = await db('events').select('event_pubkey').limit(1).first()
 
   return {
     db,

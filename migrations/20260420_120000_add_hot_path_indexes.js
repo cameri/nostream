@@ -14,41 +14,54 @@
 exports.config = { transaction: false }
 
 exports.up = async function (knex) {
-  // Covers the hottest write-adjacent reads:
+  // Covers the hottest subscription / per-message reads:
   //
-  //   1. `EventRepository.hasActiveRequestToVanish(pubkey)`
+  //   1. NIP-01 REQ with `authors` + `kinds` ordered by created_at DESC
+  //      (see EventRepository.findByFilters):
+  //        WHERE event_pubkey = ? AND event_kind IN (...)
+  //        ORDER BY event_created_at DESC, event_id ASC LIMIT N
+  //
+  //   2. `EventRepository.hasActiveRequestToVanish(pubkey)` — invoked on every
+  //      inbound event via UserRepository.isVanished:
   //        WHERE event_pubkey = ? AND event_kind = 62 AND deleted_at IS NULL
-  //        -- invoked on every inbound event via UserRepository.isVanished
   //
-  //   2. `EventRepository.deleteByPubkeyExceptKinds(pubkey, kinds)`
+  //   3. `EventRepository.deleteByPubkeyExceptKinds(pubkey, kinds)`:
   //        WHERE event_pubkey = ? AND event_kind NOT IN (...) AND deleted_at IS NULL
   //
-  //   3. NIP-01 REQ with `authors` + `kinds` filters ordered by created_at:
-  //        WHERE event_pubkey IN (...) AND event_kind IN (...)
-  //        ORDER BY event_created_at DESC LIMIT N
+  // The index is intentionally NOT partial on `deleted_at IS NULL`: the REQ
+  // subscription path in findByFilters does not currently add that predicate,
+  // so a partial index would be ineligible for the most important query shape.
+  // Soft-deleted rows are a small fraction of total rows in practice (they get
+  // hard-deleted by the retention sweep), so the bloat is negligible compared
+  // to the benefit of the index being usable by the hot path.
   //
-  // Partial on `deleted_at IS NULL` so soft-deleted rows never bloat the index.
-  // DESC on event_created_at lets the planner satisfy LIMIT N without a sort.
+  // Including `event_id` as the final column makes the composite key match the
+  // full ORDER BY (created_at DESC, event_id ASC) used by findByFilters, so the
+  // planner can satisfy LIMIT N directly from the index without an extra sort
+  // step for the tie-breaker.
   await knex.raw(`
     CREATE INDEX CONCURRENTLY IF NOT EXISTS events_active_pubkey_kind_created_at_idx
-    ON events (event_pubkey, event_kind, event_created_at DESC)
-    WHERE deleted_at IS NULL
+    ON events (event_pubkey, event_kind, event_created_at DESC, event_id)
   `)
 
-  // Supports the retention/purge scan in `deleteExpiredAndRetained`:
+  // Supports the retention / purge scan in `deleteExpiredAndRetained` and the
+  // vanish hard-delete follow-up:
   //   WHERE deleted_at IS NOT NULL
-  // Partial index is tiny because well-maintained relays hard-delete these rows
-  // periodically and most events have deleted_at IS NULL.
+  // Partial index is tiny because well-maintained relays hard-delete these
+  // rows periodically and the vast majority of events have deleted_at IS NULL.
   await knex.raw(`
     CREATE INDEX CONCURRENTLY IF NOT EXISTS events_deleted_at_partial_idx
     ON events (deleted_at)
     WHERE deleted_at IS NOT NULL
   `)
 
-  // Supports `InvoiceRepository.findPendingInvoices` which is polled by the
-  // maintenance worker:
-  //   WHERE status = 'pending' ORDER BY created_at
-  // Partial on status='pending' so the index only contains the rows we scan.
+  // Supports `InvoiceRepository.findPendingInvoices`, which is polled by the
+  // maintenance worker to detect settled invoices:
+  //   WHERE status = 'pending' ORDER BY created_at ASC OFFSET ? LIMIT ?
+  // Partial on status = 'pending' so the index only contains the rows the
+  // poller actually scans. Keyed on `created_at` so the planner can satisfy
+  // the ORDER BY straight from the index (FIFO polling, bounded tail latency
+  // even with large pending backlogs).
   await knex.raw(`
     CREATE INDEX CONCURRENTLY IF NOT EXISTS invoices_pending_created_at_idx
     ON invoices (created_at)

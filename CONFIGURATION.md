@@ -84,9 +84,9 @@ The schema ships with a small, query-driven set of indexes. The most important o
 
 | Index                                        | Covers                                                                                                   |
 |----------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| `events_active_pubkey_kind_created_at_idx`   | `REQ` with `authors`+`kinds` ordered by `created_at DESC`; `hasActiveRequestToVanish`; by-pubkey deletes. Partial on `deleted_at IS NULL`. |
+| `events_active_pubkey_kind_created_at_idx`   | `REQ` with `authors`+`kinds` ordered by `created_at DESC, event_id ASC`; `hasActiveRequestToVanish`; by-pubkey deletes. Composite key `(event_pubkey, event_kind, event_created_at DESC, event_id)` so the ORDER BY tie-breaker is satisfied from the index without a sort step. |
 | `events_deleted_at_partial_idx`              | Retention purge over soft-deleted rows. Partial on `deleted_at IS NOT NULL`.                             |
-| `invoices_pending_created_at_idx`            | `findPendingInvoices` poll. Partial on `status = 'pending'`.                                              |
+| `invoices_pending_created_at_idx`            | `findPendingInvoices` poll (`ORDER BY created_at ASC`). Partial on `status = 'pending'`.                  |
 | `event_tags (tag_name, tag_value)`           | NIP-01 generic tag filters (`#e`, `#p`, …) via the normalized `event_tags` table.                         |
 | `events_event_created_at_index`              | Time-range scans (`since` / `until`).                                                                    |
 | `events_event_kind_index`                    | Kind-only filters and purge kind-whitelist logic.                                                        |
@@ -94,11 +94,17 @@ The schema ships with a small, query-driven set of indexes. The most important o
 Run the read-only benchmark against your own database to confirm the planner is using the expected indexes and to record baseline latencies:
 
 ```sh
-NODE_OPTIONS="-r dotenv/config" npm run db:benchmark
-NODE_OPTIONS="-r dotenv/config" npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+npm run db:benchmark
+npm run db:benchmark -- --runs 5 --kind 1 --limit 500
 ```
 
-The benchmark issues only `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements — it never writes. Flags: `--runs <n>` (default 3), `--kind <n>` (default 1 / `TEXT_NOTE`), `--limit <n>` (default 500), `--horizon-days <n>` (default 7), `--help`.
+The `db:benchmark` script loads the local `.env` file automatically (via `node --env-file-if-exists=.env`), using the same `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` variables as the relay. The benchmark issues only `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements — it never writes. Flags: `--runs <n>` (default 3), `--kind <n>` (default 1 / `TEXT_NOTE`; pass `0` for SET_METADATA), `--limit <n>` (default 500), `--horizon-days <n>` (default 7), `--help`.
+
+For a full before/after proof of the index impact (seeds a throwaway dataset, drops and recreates the indexes, and prints a BEFORE/AFTER table), use:
+
+```sh
+npm run db:verify-index-impact
+```
 
 The hot-path index migration (`20260420_120000_add_hot_path_indexes.js`) uses `CREATE INDEX CONCURRENTLY`, so it can be applied to a running relay without taking `ACCESS EXCLUSIVE` locks on the `events` or `invoices` tables.
 
