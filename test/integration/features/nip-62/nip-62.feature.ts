@@ -25,11 +25,15 @@ Then(
   async function (name: string, count: string, author: string) {
     const ws = this.parameters.clients[name] as WebSocket
     const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
-    const events = await waitForEventCount(ws, subscription.name, Number(count), true)
+    const expectedCount = Number(count)
+    const expectedPubkey = this.parameters.identities[author].pubkey
+    const events = await waitForEventCount(ws, subscription.name, expectedCount, true)
 
-    expect(events.length).to.equal(Number(count))
-    expect(events[0].kind).to.equal(EventKinds.REQUEST_TO_VANISH)
-    expect(events[0].pubkey).to.equal(this.parameters.identities[author].pubkey)
+    expect(events.length).to.equal(expectedCount)
+    for (const event of events) {
+      expect(event.kind).to.equal(EventKinds.REQUEST_TO_VANISH)
+      expect(event.pubkey).to.equal(expectedPubkey)
+    }
   },
 )
 
@@ -38,6 +42,10 @@ Then(
   async function (name: string, reason: string) {
     const ws = this.parameters.clients[name] as WebSocket
     const event = this.parameters.events[name].findLast((event: Event) => event[isDraft])
+
+    if (!event) {
+      throw new Error(`No draft event found for ${name}`)
+    }
 
     delete event[isDraft]
 
