@@ -4,6 +4,23 @@ import { createLogger } from '../factories/logger-factory'
 
 const logger = createLogger('cache-client')
 
+const redactRedisUrlCredentials = (url: string): string => {
+  try {
+    const parsedUrl = new URL(url)
+
+    if (!parsedUrl.username && !parsedUrl.password) {
+      return url
+    }
+
+    parsedUrl.username = parsedUrl.username ? '***' : ''
+    parsedUrl.password = parsedUrl.password ? '***' : ''
+
+    return parsedUrl.toString()
+  } catch {
+    return url
+  }
+}
+
 export const getCacheConfig = (): RedisClientOptions => {
   if (process.env.REDIS_URI) {
     return {
@@ -20,7 +37,8 @@ export const getCacheConfig = (): RedisClientOptions => {
     const username = process.env.REDIS_USER ?? 'default'
 
     return {
-      url: `redis://${username}:${process.env.REDIS_PASSWORD}@${host}:${port}`,
+      url: `redis://${host}:${port}`,
+      username,
       password: process.env.REDIS_PASSWORD,
     }
   }
@@ -37,7 +55,10 @@ export const getCacheClient = (): CacheClient => {
     const config = getCacheConfig()
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password: _, ...loggableConfig } = config
-    logger('config: %o', loggableConfig)
+    logger('config: %o', {
+      ...loggableConfig,
+      ...(loggableConfig.url ? { url: redactRedisUrlCredentials(loggableConfig.url) } : {}),
+    })
     instance = createClient(config)
   }
 

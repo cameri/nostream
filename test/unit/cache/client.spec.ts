@@ -3,7 +3,7 @@ import { expect } from 'chai'
 import { getCacheConfig } from '../../../src/cache/client'
 
 describe('getCacheConfig', () => {
-  const originalEnv = { ...process.env }
+  const originalEnv = process.env
 
   beforeEach(() => {
     process.env = { ...originalEnv }
@@ -14,7 +14,7 @@ describe('getCacheConfig', () => {
     delete process.env.REDIS_PORT
   })
 
-  after(() => {
+  afterEach(() => {
     process.env = originalEnv
   })
 
@@ -29,7 +29,7 @@ describe('getCacheConfig', () => {
     })
   })
 
-  it('builds authenticated redis url when REDIS_PASSWORD is set', () => {
+  it('builds authenticated redis config when REDIS_PASSWORD is set', () => {
     process.env.REDIS_HOST = 'localhost'
     process.env.REDIS_PORT = '6379'
     process.env.REDIS_USER = 'default'
@@ -38,7 +38,22 @@ describe('getCacheConfig', () => {
     const config = getCacheConfig()
 
     expect(config).to.deep.equal({
-      url: 'redis://default:secret@localhost:6379',
+      url: 'redis://localhost:6379',
+      username: 'default',
+      password: 'secret',
+    })
+  })
+
+  it('defaults REDIS_USER to default when REDIS_PASSWORD is set and REDIS_USER is unset', () => {
+    process.env.REDIS_HOST = 'localhost'
+    process.env.REDIS_PORT = '6379'
+    process.env.REDIS_PASSWORD = 'secret'
+
+    const config = getCacheConfig()
+
+    expect(config).to.deep.equal({
+      url: 'redis://localhost:6379',
+      username: 'default',
       password: 'secret',
     })
   })
