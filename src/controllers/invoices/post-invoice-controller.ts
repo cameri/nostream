@@ -17,7 +17,7 @@ import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
 import { getRemoteAddress } from '../../utils/http'
 import { getTemplate } from '../../utils/template-cache'
 
-const debug = createLogger('post-invoice-controller')
+const logger = createLogger('post-invoice-controller')
 
 export class PostInvoiceController implements IController {
   public constructor(
@@ -28,8 +28,8 @@ export class PostInvoiceController implements IController {
   ) {}
 
   public async handleRequest(request: Request, response: Response): Promise<void> {
-    debug('params: %o', request.params)
-    debug('body: %o', request.body)
+    logger('params: %o', request.params)
+    logger('body: %o', request.body)
 
     const currentSettings = this.settings()
 
@@ -113,8 +113,11 @@ export class PostInvoiceController implements IController {
 
       invoice = await this.paymentsService.createInvoice(pubkey, amount, description)
     } catch (error) {
-      console.error('Unable to create invoice. Reason:', error)
-      response.status(500).setHeader('content-type', 'text/plain').send('Unable to create invoice')
+      logger.error('Unable to create invoice. Reason:', error)
+      response
+        .status(500)
+        .setHeader('content-type', 'text/plain')
+        .send('Unable to create invoice')
       return
     }
 
@@ -161,7 +164,7 @@ export class PostInvoiceController implements IController {
       const rateLimiter = this.rateLimiter()
       for (const { rate, period } of rateLimits) {
         if (await rateLimiter.hit(`${remoteAddress}:invoice:${period}`, 1, { period, rate })) {
-          debug('rate limited %s: %d in %d milliseconds', remoteAddress, rate, period)
+          logger('rate limited %s: %d in %d milliseconds', remoteAddress, rate, period)
           limited = true
         }
       }
