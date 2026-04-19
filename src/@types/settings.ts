@@ -22,6 +22,10 @@ export interface RateLimit {
   rate: number
 }
 
+export interface RateLimiterSettings {
+  strategy: 'ewma' | 'sliding_window'
+}
+
 export interface EventIdLimits {
   minLeadingZeroBits?: number
 }
@@ -133,6 +137,7 @@ export interface AdmissionCheckLimits {
 }
 
 export interface Limits {
+  rateLimiter?: RateLimiterSettings
   invoice?: InvoiceLimits
   admissionCheck?: AdmissionCheckLimits
   connection?: ConnectionLimits

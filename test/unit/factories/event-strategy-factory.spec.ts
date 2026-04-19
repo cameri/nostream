@@ -13,6 +13,7 @@ import { IEventStrategy } from '../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
 import { ReplaceableEventStrategy } from '../../../src/handlers/event-strategies/replaceable-event-strategy'
+import { TimestampEventStrategy } from '../../../src/handlers/event-strategies/timestamp-event-strategy'
 import { VanishEventStrategy } from '../../../src/handlers/event-strategies/vanish-event-strategy'
 
 describe('eventStrategyFactory', () => {
@@ -64,6 +65,11 @@ describe('eventStrategyFactory', () => {
   it('returns GiftWrapEventStrategy given a gift wrap event', () => {
     event.kind = EventKinds.GIFT_WRAP
     expect(factory([event, adapter])).to.be.an.instanceOf(GiftWrapEventStrategy)
+  })
+
+  it('returns TimestampEventStrategy given an opentimestamps (NIP-03) event', () => {
+    event.kind = EventKinds.OPEN_TIMESTAMPS
+    expect(factory([event, adapter])).to.be.an.instanceOf(TimestampEventStrategy)
   })
 
   it('returns ParameterizedReplaceableEventStrategy given a delete event', () => {

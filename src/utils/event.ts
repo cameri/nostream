@@ -262,3 +262,8 @@ export const isDirectMessageEvent = (event: Event): boolean => {
 export const isFileMessageEvent = (event: Event): boolean => {
   return event.kind === EventKinds.FILE_MESSAGE
 }
+
+// NIP-03: OpenTimestamps attestation
+export const isOpenTimestampsEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.OPEN_TIMESTAMPS
+}

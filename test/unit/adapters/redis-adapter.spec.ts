@@ -34,6 +34,12 @@ describe('RedisAdapter', () => {
       zAdd: sandbox.stub(),
       removeListener: sandbox.stub(),
       once: sandbox.stub(),
+      del: sandbox.stub(),
+      hGet: sandbox.stub(),
+      hSet: sandbox.stub(),
+      scriptLoad: sandbox.stub(),
+      evalSha: sandbox.stub(),
+      isOpen: false,
     }
 
     adapter = new RedisAdapter(client)
@@ -191,6 +197,71 @@ describe('RedisAdapter', () => {
       const callArgs = client.zAdd.firstCall.args
       expect(callArgs[1]).to.deep.equal([{ score: 50, value: 'only-member' }])
       expect(result).to.equal(1)
+    })
+  })
+
+  describe('deleteKey', () => {
+    it('calls client.del with the key and returns the result', async () => {
+      client.del.resolves(1)
+
+      const result = await adapter.deleteKey('test-key')
+
+      expect(client.del).to.have.been.calledOnceWithExactly('test-key')
+      expect(result).to.equal(1)
+    })
+  })
+
+  describe('getHKey', () => {
+    it('calls client.hGet with key and field and returns the value', async () => {
+      client.hGet.resolves('test-value')
+
+      const result = await adapter.getHKey('test-key', 'test-field')
+
+      expect(client.hGet).to.have.been.calledOnceWithExactly('test-key', 'test-field')
+      expect(result).to.equal('test-value')
+    })
+
+    it('returns empty string when field does not exist', async () => {
+      client.hGet.resolves(undefined)
+
+      const result = await adapter.getHKey('test-key', 'missing-field')
+
+      expect(result).to.equal('')
+    })
+  })
+
+  describe('setHKey', () => {
+    it('calls client.hSet with key and fields and returns true', async () => {
+      client.hSet.resolves(1)
+
+      const result = await adapter.setHKey('test-key', { field1: 'value1', field2: 'value2' })
+
+      expect(client.hSet).to.have.been.calledOnceWithExactly('test-key', { field1: 'value1', field2: 'value2' })
+      expect(result).to.be.true
+    })
+  })
+
+  describe('eval', () => {
+    it('loads script on first call and uses evalSha', async () => {
+      client.scriptLoad.resolves('abc123sha')
+      client.evalSha.resolves(1)
+
+      const result = await adapter.eval('local x = 1', ['key1'], ['arg1'])
+
+      expect(client.scriptLoad).to.have.been.calledOnce
+      expect(client.evalSha).to.have.been.calledOnceWithExactly('abc123sha', { keys: ['key1'], arguments: ['arg1'] })
+      expect(result).to.equal(1)
+    })
+
+    it('reuses cached SHA on subsequent calls', async () => {
+      client.scriptLoad.resolves('abc123sha')
+      client.evalSha.resolves(0)
+
+      await adapter.eval('local x = 1', ['key1'], ['arg1'])
+      await adapter.eval('local x = 1', ['key1'], ['arg1'])
+
+      expect(client.scriptLoad).to.have.been.calledOnce
+      expect(client.evalSha).to.have.been.calledTwice
     })
   })
 })
