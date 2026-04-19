@@ -64,6 +64,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-33: Parameterized Replaceable Events
 - [x] NIP-40: Expiration Timestamp
 - [x] NIP-44: Encrypted Payloads (Versioned)
+- [x] NIP-62: Request to Vanish
 
 ## Requirements
 
