@@ -98,19 +98,19 @@ export class RedisAdapter implements ICacheAdapter {
 
   public async deleteKey(key: string): Promise<number> {
     await this.connection
-    debug('delete %s key', key)
+    logger('delete %s key', key)
     return this.client.del(key)
   }
 
   public async getHKey(key: string, field: string): Promise<string> {
     await this.connection
-    debug('get %s field for key %s', field, key)
+    logger('get %s field for key %s', field, key)
     return await this.client.hGet(key, field) ?? ''
   }
 
   public async setHKey(key: string, fields: Record<string, string>): Promise<boolean> {
     await this.connection
-    debug('set %s key', key)
+    logger('set %s key', key)
     return await this.client.hSet(key, fields) >= 0
   }
 
