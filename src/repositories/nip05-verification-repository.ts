@@ -6,7 +6,7 @@ import { fromBuffer, toBuffer } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
 import { INip05VerificationRepository } from '../@types/repositories'
 
-const debug = createLogger('nip05-verification-repository')
+const logger = createLogger('nip05-verification-repository')
 
 const fromDBNip05Verification = applySpec<Nip05Verification>({
   pubkey: pipe(prop('pubkey') as () => Buffer, fromBuffer),
@@ -24,7 +24,7 @@ export class Nip05VerificationRepository implements INip05VerificationRepository
   public constructor(private readonly dbClient: DatabaseClient) {}
 
   public async findByPubkey(pubkey: Pubkey): Promise<Nip05Verification | undefined> {
-    debug('find by pubkey: %s', pubkey)
+    logger('find by pubkey: %s', pubkey)
 
     const [row] = await this.dbClient<DBNip05Verification>('nip05_verifications')
       .where('pubkey', toBuffer(pubkey))
@@ -38,7 +38,7 @@ export class Nip05VerificationRepository implements INip05VerificationRepository
   }
 
   public async upsert(verification: Nip05Verification): Promise<number> {
-    debug('upsert: %s (%s)', verification.pubkey, verification.nip05)
+    logger('upsert: %s (%s)', verification.pubkey, verification.nip05)
 
     const now = new Date()
 
@@ -79,7 +79,7 @@ export class Nip05VerificationRepository implements INip05VerificationRepository
     maxFailures: number,
     limit: number,
   ): Promise<Nip05Verification[]> {
-    debug('find pending verifications (frequency: %dms, maxFailures: %d)', updateFrequencyMs, maxFailures)
+    logger('find pending verifications (frequency: %dms, maxFailures: %d)', updateFrequencyMs, maxFailures)
 
     const cutoff = new Date(Date.now() - updateFrequencyMs)
 
@@ -93,7 +93,7 @@ export class Nip05VerificationRepository implements INip05VerificationRepository
   }
 
   public async deleteByPubkey(pubkey: Pubkey): Promise<number> {
-    debug('delete by pubkey: %s', pubkey)
+    logger('delete by pubkey: %s', pubkey)
 
     return this.dbClient<DBNip05Verification>('nip05_verifications').where('pubkey', toBuffer(pubkey)).delete()
   }

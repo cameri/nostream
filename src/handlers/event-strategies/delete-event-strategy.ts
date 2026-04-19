@@ -8,7 +8,7 @@ import { IWebSocketAdapter } from '../../@types/adapters'
 import { Tag } from '../../@types/base'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
-const debug = createLogger('delete-event-strategy')
+const logger = createLogger('delete-event-strategy')
 
 export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>> {
   public constructor(
@@ -17,7 +17,7 @@ export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>>
   ) {}
 
   public async execute(event: Event): Promise<void> {
-    debug('received delete event: %o', event)
+    logger('received delete event: %o', event)
 
     const isValidETag = (tag: Tag) => tag.length >= 2 && tag[0] === EventTags.Event && /^[0-9a-f]{64}$/.test(tag[1])
 

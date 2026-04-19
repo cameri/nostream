@@ -19,7 +19,7 @@ import { Settings } from '../@types/settings'
 import { SubscribeMessage } from '../@types/messages'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
-const debug = createLogger('subscribe-message-handler')
+const logger = createLogger('subscribe-message-handler')
 
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   //private readonly abortController: AbortController
@@ -42,7 +42,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
     const reason = this.canSubscribe(subscriptionId, filters)
     if (reason) {
-      debug('subscription %s with %o rejected: %s', subscriptionId, filters, reason)
+      logger('subscription %s with %o rejected: %s', subscriptionId, filters, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Subscription rejected: ${reason}`))
       return
     }
@@ -53,7 +53,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   }
 
   private async fetchAndSend(subscriptionId: string, filters: SubscriptionFilter[]): Promise<void> {
-    debug('fetching events for subscription %s with filters %o', subscriptionId, filters)
+    logger('fetching events for subscription %s with filters %o', subscriptionId, filters)
     const sendEvent = (event: Event) =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createOutgoingEventMessage(subscriptionId, event))
     const sendEOSE = () =>
@@ -82,10 +82,10 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       )
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        debug('subscription %s aborted: %o', subscriptionId, error)
+        logger('subscription %s aborted: %o', subscriptionId, error)
         findEvents.destroy()
       } else {
-        debug('error streaming events: %o', error)
+        logger('error streaming events: %o', error)
       }
       throw error
     }

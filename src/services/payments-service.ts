@@ -12,7 +12,7 @@ import { IPaymentsProcessor } from '../@types/clients'
 import { IPaymentsService } from '../@types/services'
 import { Transaction } from '../database/transaction'
 
-const debug = createLogger('payments-service')
+const logger = createLogger('payments-service')
 
 export class PaymentsService implements IPaymentsService {
   public constructor(
@@ -25,11 +25,11 @@ export class PaymentsService implements IPaymentsService {
   ) {}
 
   public async getPendingInvoices(): Promise<Invoice[]> {
-    debug('get pending invoices')
+    logger('get pending invoices')
     try {
       return await this.invoiceRepository.findPendingInvoices(0, 10)
     } catch (error) {
-      console.log('Unable to get pending invoices.', error)
+      logger.error('Unable to get pending invoices.', error)
 
       throw error
     }
@@ -41,14 +41,14 @@ export class PaymentsService implements IPaymentsService {
         typeof invoice === 'string' || invoice?.verifyURL ? invoice : invoice.id,
       )
     } catch (error) {
-      console.log('Unable to get invoice from payments processor. Reason:', error)
+      logger.error('Unable to get invoice from payments processor. Reason:', error)
 
       throw error
     }
   }
 
   public async createInvoice(pubkey: Pubkey, amount: bigint, description: string): Promise<Invoice> {
-    debug('create invoice for %s for %s: %s', pubkey, amount.toString(), description)
+    logger('create invoice for %s for %s: %s', pubkey, amount.toString(), description)
     const transaction = new Transaction(this.dbClient)
 
     try {
@@ -98,37 +98,37 @@ export class PaymentsService implements IPaymentsService {
       }
     } catch (error) {
       await transaction.rollback()
-      console.error('Unable to create invoice:', error)
+      logger.error('Unable to create invoice:', error)
 
       throw error
     }
   }
 
   public async updateInvoice(invoice: Partial<Invoice>): Promise<void> {
-    debug('update invoice %s: %o', invoice.id, invoice)
+    logger('update invoice %s: %o', invoice.id, invoice)
     try {
       await this.invoiceRepository.updateStatus({
         id: invoice.id,
         status: invoice.status,
       })
     } catch (error) {
-      console.error('Unable to update invoice. Reason:', error)
+      logger.error('Unable to update invoice. Reason:', error)
       throw error
     }
   }
 
   public async updateInvoiceStatus(invoice: Pick<Invoice, 'id' | 'status'>): Promise<Invoice> {
-    debug('update invoice %s: %o', invoice.id, invoice)
+    logger('update invoice %s: %o', invoice.id, invoice)
     try {
       return await this.invoiceRepository.updateStatus(invoice)
     } catch (error) {
-      console.error('Unable to update invoice. Reason:', error)
+      logger.error('Unable to update invoice. Reason:', error)
       throw error
     }
   }
 
   public async confirmInvoice(invoice: Invoice): Promise<void> {
-    debug('confirm invoice %s: %O', invoice.id, invoice)
+    logger('confirm invoice %s: %O', invoice.id, invoice)
 
     const transaction = new Transaction(this.dbClient)
 
@@ -177,7 +177,7 @@ export class PaymentsService implements IPaymentsService {
 
       await transaction.commit()
     } catch (error) {
-      console.error('Unable to confirm invoice. Reason:', error)
+      logger.error('Unable to confirm invoice. Reason:', error)
       await transaction.rollback()
 
       throw error
@@ -185,7 +185,7 @@ export class PaymentsService implements IPaymentsService {
   }
 
   public async sendInvoiceUpdateNotification(invoice: Invoice): Promise<void> {
-    debug('invoice updated notification %s: %o', invoice.id, invoice)
+    logger('invoice updated notification %s: %o', invoice.id, invoice)
     const currentSettings = this.settings()
 
     const {
@@ -230,7 +230,7 @@ export class PaymentsService implements IPaymentsService {
       return event
     }
 
-    const logError = (error: Error) => console.error('Unable to send notification', error)
+    const logError = (error: Error) => logger.error('Unable to send notification', error)
 
     await pipe(
       identifyEvent,
