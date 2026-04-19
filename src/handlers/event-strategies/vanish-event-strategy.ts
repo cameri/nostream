@@ -7,7 +7,7 @@ import { IEventStrategy } from '../../@types/message-handlers'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
-const debug = createLogger('vanish-event-strategy')
+const logger = createLogger('vanish-event-strategy')
 
 export class VanishEventStrategy implements IEventStrategy<Event, Promise<void>> {
   public constructor(
@@ -17,7 +17,7 @@ export class VanishEventStrategy implements IEventStrategy<Event, Promise<void>>
   ) {}
 
   public async execute(event: Event): Promise<void> {
-    debug('received request to vanish event: %o', event)
+    logger('received request to vanish event: %o', event)
 
     await this.eventRepository.deleteByPubkeyExceptKinds(event.pubkey, [EventKinds.REQUEST_TO_VANISH])
 

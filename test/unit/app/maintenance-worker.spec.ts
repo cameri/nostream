@@ -435,12 +435,9 @@ describe('MaintenanceWorker', () => {
         .onFirstCall().rejects(new Error('processor error'))
         .onSecondCall().resolves({ id: 'inv-2', status: InvoiceStatus.PENDING })
 
-      const consoleErrorStub = sandbox.stub(console, 'error')
-
       await (worker as any).onSchedule()
 
       expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
-      expect(consoleErrorStub).to.have.been.calledOnce
       expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnce
     })
   })

@@ -6,7 +6,7 @@ import { Event } from '../@types/event'
 import { EventKinds } from '../constants/base'
 import { pubkeySchema } from '../schemas/base-schema'
 
-const debug = createLogger('nip05')
+const logger = createLogger('nip05')
 
 const VERIFICATION_TIMEOUT_MS = 10000
 // NIP-05 responses are trivially small; cap hard to protect relay memory/bandwidth.
@@ -87,7 +87,7 @@ export function extractNip05FromEvent(event: Event): string | undefined {
       return metadata.nip05
     }
   } catch {
-    debug('failed to parse metadata content for event %s', event.id)
+    logger('failed to parse metadata content for event %s', event.id)
   }
 
   return undefined
@@ -151,7 +151,7 @@ export async function verifyNip05Identifier(nip05: string, pubkey: string): Prom
   const url = `https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(localPart)}`
 
   try {
-    debug('verifying %s for pubkey %s via %s', nip05, pubkey, url)
+    logger('verifying %s for pubkey %s via %s', nip05, pubkey, url)
 
     const response = await axios.get(url, {
       timeout: VERIFICATION_TIMEOUT_MS,
@@ -176,27 +176,27 @@ export async function verifyNip05Identifier(nip05: string, pubkey: string): Prom
     if (!parseResult.success) {
       const zodError = parseResult as z.SafeParseError<z.infer<typeof nip05ResponseSchema>>
       const reason = zodError.error.issues.map((i) => i.message).join('; ')
-      debug('malformed response from %s: %s', url, reason)
+      logger('malformed response from %s: %s', url, reason)
       return { status: 'invalid', reason: `malformed response: ${reason}` }
     }
 
     const registeredPubkey = parseResult.data.names[localPart]
     if (typeof registeredPubkey !== 'string') {
-      debug('name %s not found in response from %s', localPart, domain)
+      logger('name %s not found in response from %s', localPart, domain)
       return { status: 'mismatch' }
     }
 
     if (registeredPubkey.toLowerCase() !== pubkey.toLowerCase()) {
-      debug('pubkey mismatch for %s (got %s)', nip05, registeredPubkey)
+      logger('pubkey mismatch for %s (got %s)', nip05, registeredPubkey)
       return { status: 'mismatch' }
     }
 
-    debug('verification succeeded for %s', nip05)
+    logger('verification succeeded for %s', nip05)
     return { status: 'verified' }
   } catch (error: unknown) {
     const axiosError = error as AxiosError
     const message = axiosError?.message ?? (error instanceof Error ? error.message : String(error))
-    debug('verification request failed for %s: %s', nip05, message)
+    logger('verification request failed for %s: %s', nip05, message)
     return { status: 'error', reason: message }
   }
 }

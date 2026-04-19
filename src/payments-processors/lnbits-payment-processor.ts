@@ -8,7 +8,7 @@ import { Factory } from '../@types/base'
 import { Pubkey } from '../@types/base'
 import { Settings } from '../@types/settings'
 
-const debug = createLogger('lnbits-payments-processor')
+const logger = createLogger('lnbits-payments-processor')
 
 export class LNbitsInvoice implements Invoice {
   id: string
@@ -46,7 +46,7 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
   ) {}
 
   public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
-    debug('get invoice: %s', invoiceId)
+    logger('get invoice: %s', invoiceId)
     try {
       const response = await this.httpClient.get(`/api/v1/payments/${invoiceId}`, {
         maxRedirects: 1,
@@ -69,14 +69,14 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
       invoice.updatedAt = new Date()
       return invoice
     } catch (error) {
-      console.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
+      logger.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
 
       throw error
     }
   }
 
   public async createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse> {
-    debug('create invoice: %o', request)
+    logger('create invoice: %o', request)
     const { amount: amountMsats, description, requestId: internalId } = request
 
     const callbackURL = new URL(this.settings().paymentsProcessors?.lnbits?.callbackBaseURL)
@@ -97,12 +97,12 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
     }
 
     try {
-      debug('request body: %o', body)
+      logger('request body: %o', body)
       const response = await this.httpClient.post('/api/v1/payments', body, {
         maxRedirects: 1,
       })
 
-      debug('response: %o', response.data)
+      logger('response: %o', response.data)
 
       const invoiceResponse = await this.httpClient.get(
         `/api/v1/payments/${encodeURIComponent(response.data.payment_hash)}`,
@@ -110,7 +110,7 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
           maxRedirects: 1,
         },
       )
-      debug('invoice data response: %o', invoiceResponse.data)
+      logger('invoice data response: %o', invoiceResponse.data)
 
       const invoice = new LNbitsCreateInvoiceResponse()
       const data = invoiceResponse.data
@@ -131,7 +131,7 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
 
       return invoice
     } catch (error) {
-      console.error('Unable to request invoice. Reason:', error.message)
+      logger.error('Unable to request invoice. Reason:', error.message)
 
       throw error
     }

@@ -2,7 +2,7 @@ import { createClient, RedisClientOptions } from 'redis'
 import { CacheClient } from '../@types/cache'
 import { createLogger } from '../factories/logger-factory'
 
-const debug = createLogger('cache-client')
+const logger = createLogger('cache-client')
 
 export const getCacheConfig = (): RedisClientOptions => ({
   url: process.env.REDIS_URI
@@ -18,7 +18,7 @@ export const getCacheClient = (): CacheClient => {
     const config = getCacheConfig()
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password: _, ...loggableConfig } = config
-    debug('config: %o', loggableConfig)
+    logger('config: %o', loggableConfig)
     instance = createClient(config)
   }
 
