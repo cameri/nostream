@@ -43,6 +43,8 @@
     "db:migrate": "knex migrate:latest",
     "db:migrate:rollback": "knex migrate:rollback",
     "db:seed": "knex seed:run",
+    "db:benchmark": "node --env-file-if-exists=.env -r ts-node/register src/scripts/benchmark-queries.ts",
+    "db:verify-index-impact": "node --env-file-if-exists=.env -r ts-node/register scripts/verify-index-impact.ts",
     "pretest:unit": "node -e \"require('fs').mkdirSync('.test-reports/unit', {recursive: true})\"",
     "test:unit": "mocha 'test/**/*.spec.ts'",
     "test:unit:watch": "npm run test:unit -- --min --watch --watch-files src/**/*,test/**/*",

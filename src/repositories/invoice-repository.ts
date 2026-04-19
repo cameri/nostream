@@ -40,8 +40,12 @@ export class InvoiceRepository implements IInvoiceRepository {
   }
 
   public async findPendingInvoices(offset = 0, limit = 10, client: DatabaseClient = this.dbClient): Promise<Invoice[]> {
+    // Order by created_at ASC for deterministic FIFO polling: oldest pending
+    // invoices are picked up first, and the scan is index-only against
+    // invoices_pending_created_at_idx (partial on status = 'pending').
     const dbInvoices = await client<DBInvoice>('invoices')
       .where('status', InvoiceStatus.PENDING)
+      .orderBy('created_at', 'asc')
       .offset(offset)
       .limit(limit)
       .select()
