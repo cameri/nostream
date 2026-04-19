@@ -4,7 +4,13 @@ import fs from 'fs'
 import os from 'os'
 import { Readable } from 'stream'
 
-import { EventImportLineError, EventImportService, EventImportStats } from '../../../src/services/event-import-service'
+import {
+  createEventBatchPersister,
+  EventImportLineError,
+  EventImportService,
+  EventImportStats,
+} from '../../../src/services/event-import-service'
+import { EventDeduplicationMetadataKey, EventKinds, EventTags } from '../../../src/constants/base'
 import { Event } from '../../../src/@types/event'
 import { expect } from 'chai'
 import { getEvents } from '../data/events'
@@ -190,5 +196,37 @@ describe('EventImportService', () => {
       expect((error as Error).message).to.equal('database unavailable')
       expect(lineErrors.length).to.equal(0)
     }
+  })
+
+  it('normalizes parameterized replaceable deduplication to first d tag value', async () => {
+    const parameterizedEvent: Event = {
+      id: 'a'.repeat(64),
+      pubkey: 'b'.repeat(64),
+      created_at: 1,
+      kind: EventKinds.PARAMETERIZED_REPLACEABLE_FIRST,
+      tags: [[EventTags.Deduplication, 'one', 'two']],
+      content: 'hello',
+      sig: 'c'.repeat(128),
+    }
+
+    let upsertedEvents: Event[] = []
+
+    const eventRepository = {
+      create: async () => 0,
+      createMany: async () => 0,
+      upsert: async () => 0,
+      upsertMany: async (events: Event[]) => {
+        upsertedEvents = events
+        return events.length
+      },
+      deleteByPubkeyAndIds: async () => 0,
+    } as any
+
+    const persistBatch = createEventBatchPersister(eventRepository)
+    const inserted = await persistBatch([parameterizedEvent])
+
+    expect(inserted).to.equal(1)
+    expect(upsertedEvents).to.have.length(1)
+    expect((upsertedEvents[0] as any)[EventDeduplicationMetadataKey]).to.deep.equal(['one'])
   })
 })

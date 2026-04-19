@@ -46,9 +46,9 @@ export class EventMessageHandler implements IMessageHandler {
     protected readonly eventRepository: IEventRepository,
     protected readonly userRepository: IUserRepository,
     private readonly settings: () => Settings,
-    private readonly slidingWindowRateLimiter: Factory<IRateLimiter>,
     private readonly nip05VerificationRepository: INip05VerificationRepository,
     private readonly cache: ICacheAdapter,
+    private readonly rateLimiter: Factory<IRateLimiter>,
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
@@ -195,7 +195,7 @@ export class EventMessageHandler implements IMessageHandler {
     if (
       typeof limits.pubkey?.whitelist !== 'undefined' &&
       limits.pubkey.whitelist.length > 0 &&
-      !limits.pubkey.whitelist.some((prefix) => event.pubkey.startsWith(prefix))
+      !limits.pubkey.whitelist.includes(event.pubkey)
     ) {
       return 'blocked: pubkey not allowed'
     }
@@ -203,7 +203,7 @@ export class EventMessageHandler implements IMessageHandler {
     if (
       typeof limits.pubkey?.blacklist !== 'undefined' &&
       limits.pubkey.blacklist.length > 0 &&
-      limits.pubkey.blacklist.some((prefix) => event.pubkey.startsWith(prefix))
+      limits.pubkey.blacklist.includes(event.pubkey)
     ) {
       return 'blocked: pubkey not allowed'
     }
@@ -287,7 +287,7 @@ export class EventMessageHandler implements IMessageHandler {
       return false
     }
 
-    const rateLimiter = this.slidingWindowRateLimiter()
+    const rateLimiter = this.rateLimiter()
 
     const toString = (input: any | any[]): string => {
       return Array.isArray(input) ? `[${input.map(toString)}]` : input.toString()
@@ -332,7 +332,7 @@ export class EventMessageHandler implements IMessageHandler {
 
     const isApplicableFee = (feeSchedule: FeeSchedule) =>
       feeSchedule.enabled &&
-      !feeSchedule.whitelists?.pubkeys?.some((prefix) => event.pubkey.startsWith(prefix)) &&
+      !feeSchedule.whitelists?.pubkeys?.includes(event.pubkey) &&
       !feeSchedule.whitelists?.event_kinds?.some(isEventKindOrRangeMatch(event))
 
     const feeSchedules = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)

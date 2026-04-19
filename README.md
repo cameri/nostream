@@ -47,7 +47,9 @@ NIPs with a relay-specific implementation are listed here.
 
 - [x] NIP-01: Basic protocol flow description
 - [x] NIP-02: Contact list and petnames
+- [x] NIP-03: OpenTimestamps Attestations for Events
 - [x] NIP-04: Encrypted Direct Message
+- [x] NIP-05: Mapping Nostr keys to DNS-based internet identifiers
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
 - [x] NIP-11a: Relay Information Document Extensions
@@ -61,6 +63,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-28: Public Chat
 - [x] NIP-33: Parameterized Replaceable Events
 - [x] NIP-40: Expiration Timestamp
+- [x] NIP-44: Encrypted Payloads (Versioned)
 
 ## Requirements
 
@@ -683,6 +686,26 @@ Optional XZ tuning (environment variables):
   to `9` (slowest, smallest output). Default is `6`.
 
 The script reads the same `DB_*` environment variables used by the relay (see [CONFIGURATION.md](CONFIGURATION.md)).
+
+## Benchmark Database Queries
+
+Run the read-only query benchmark to record the planner's choices and timings for the relay's hot-path queries (REQ subscriptions, vanish checks, purge scans, pending-invoice polls):
+
+```
+npm run db:benchmark
+npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+```
+
+The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements against your configured database — it never writes. It loads `DB_*` variables from `.env` automatically (via `node --env-file-if-exists=.env`), so no extra setup is required beyond the one you already need to run the relay. Use it to confirm the `events_active_pubkey_kind_created_at_idx`, `events_deleted_at_partial_idx`, and `invoices_pending_created_at_idx` indexes are being picked up.
+
+For a reproducible before/after proof on a throwaway dataset, run:
+
+```
+npm run db:verify-index-impact
+```
+
+It seeds ~200k synthetic events, drops the hot-path indexes, runs EXPLAIN (ANALYZE, BUFFERS) for each hot query, recreates the indexes, and prints a BEFORE/AFTER table. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](CONFIGURATION.md).
+
 ## Relay Maintenance
 
 Use `clean-db` to wipe or prune `events` table data. This also removes

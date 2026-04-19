@@ -88,8 +88,8 @@ export class PostInvoiceController implements IController {
     }
 
     const isApplicableFee = (feeSchedule: FeeSchedule) =>
-      feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.some((prefix) => pubkey.startsWith(prefix))
-    const admissionFee = currentSettings.payments?.feeSchedules.admission.filter(isApplicableFee)
+      feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.includes(pubkey)
+    const admissionFee = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee) ?? []
 
     if (!Array.isArray(admissionFee) || !admissionFee.length) {
       response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('No admission fee required')
@@ -106,9 +106,7 @@ export class PostInvoiceController implements IController {
     }
 
     let invoice: Invoice
-    const amount = admissionFee.reduce((sum, fee) => {
-      return fee.enabled && !fee.whitelists?.pubkeys?.includes(pubkey) ? BigInt(fee.amount) + sum : sum
-    }, 0n)
+    const amount = admissionFee.reduce((sum, fee) => BigInt(fee.amount) + sum, 0n)
 
     try {
       const description = `${relayName} Admission Fee for ${toBech32('npub')(pubkey)}`

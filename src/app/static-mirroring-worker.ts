@@ -239,7 +239,7 @@ export class StaticMirroringWorker implements IRunnable {
     if (
       typeof limits.pubkey?.whitelist !== 'undefined' &&
       limits.pubkey.whitelist.length > 0 &&
-      !limits.pubkey.whitelist.some((prefix) => event.pubkey.startsWith(prefix))
+      !limits.pubkey.whitelist.includes(event.pubkey)
     ) {
       debug(`event ${event.id} not accepted: pubkey not allowed: ${event.pubkey}`)
       return false
@@ -248,7 +248,7 @@ export class StaticMirroringWorker implements IRunnable {
     if (
       typeof limits.pubkey?.blacklist !== 'undefined' &&
       limits.pubkey.blacklist.length > 0 &&
-      limits.pubkey.blacklist.some((prefix) => event.pubkey.startsWith(prefix))
+      limits.pubkey.blacklist.includes(event.pubkey)
     ) {
       debug(`event ${event.id} not accepted: pubkey not allowed: ${event.pubkey}`)
       return false
@@ -288,7 +288,7 @@ export class StaticMirroringWorker implements IRunnable {
 
     const isApplicableFee = (feeSchedule: FeeSchedule) =>
       feeSchedule.enabled &&
-      !feeSchedule.whitelists?.pubkeys?.some((prefix) => event.pubkey.startsWith(prefix)) &&
+      !feeSchedule.whitelists?.pubkeys?.includes(event.pubkey) &&
       !feeSchedule.whitelists?.event_kinds?.some(isEventKindOrRangeMatch(event))
 
     const feeSchedules = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
