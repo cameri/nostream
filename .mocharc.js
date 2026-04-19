@@ -1,4 +1,5 @@
 module.exports = {
+  spec: 'test/**/*.spec.ts',
   extension: ['ts'],
   require: ['ts-node/register'],
   reporter: 'mochawesome',

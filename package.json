@@ -43,7 +43,7 @@
     "db:migrate:rollback": "knex migrate:rollback",
     "db:seed": "knex seed:run",
     "pretest:unit": "node -e \"require('fs').mkdirSync('.test-reports/unit', {recursive: true})\"",
-    "test:unit": "mocha 'test/**/*.spec.ts'",
+    "test:unit": "mocha",
     "test:unit:watch": "npm run test:unit -- --min --watch --watch-files src/**/*,test/**/*",
     "cover:unit": "nyc --report-dir .coverage/unit npm run test:unit",
     "docker:build": "docker build -t nostream .",
