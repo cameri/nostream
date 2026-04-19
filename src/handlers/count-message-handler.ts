@@ -21,6 +21,12 @@ export class CountMessageHandler implements IMessageHandler {
 
   public async handleMessage(message: CountMessage): Promise<void> {
     const queryId = message[1]
+    const countEnabled = this.settings().nip45?.enabled ?? true
+    if (!countEnabled) {
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createClosedMessage(queryId, 'COUNT is disabled by relay configuration'))
+      return
+    }
+
     // Some clients send the same filter more than once.
     // We remove duplicates so we do less DB work.
     const filters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
