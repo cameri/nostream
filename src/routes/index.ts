@@ -13,7 +13,7 @@ import { hasExplicitNostrJsonAcceptHeader, rootRequestHandler } from '../handler
 const router = express.Router()
 
 router.use((req, res, next) => {
-  if (req.method === 'GET' && hasExplicitNostrJsonAcceptHeader(req)) {
+  if (req.method === 'GET' && req.path === '/' && hasExplicitNostrJsonAcceptHeader(req)) {
     return rootRequestHandler(req, res, next)
   }
   next()

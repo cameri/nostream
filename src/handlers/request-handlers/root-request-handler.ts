@@ -14,7 +14,9 @@ export const hasExplicitNostrJsonAcceptHeader = (request: Request): boolean => {
     return false
   }
 
-  return acceptHeader.split(',').some((token) => {
+  const acceptHeaderValue = Array.isArray(acceptHeader) ? acceptHeader.join(',') : acceptHeader
+
+  return acceptHeaderValue.split(',').some((token) => {
     const [mediaType, ...params] = token
       .split(';')
       .map((value) => value.trim().toLowerCase())
