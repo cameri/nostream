@@ -478,7 +478,7 @@ describe('EventMessageHandler', () => {
           expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if pubkey is not blacklisted by prefix', () => {
+        it('returns undefined if pubkey is not an exact match in the blacklist', () => {
           eventLimits.pubkey.blacklist = ['aa55']
           event.pubkey = 'aabbcc'
           expect((handler as any).canAcceptEvent(event)).to.be.undefined
@@ -490,10 +490,10 @@ describe('EventMessageHandler', () => {
           expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
 
-        it('returns reason if pubkey is blacklisted by prefix', () => {
+        it('returns undefined if pubkey extends a blacklist entry but is not an exact match', () => {
           eventLimits.pubkey.blacklist = ['aa55']
           event.pubkey = 'aa55ccddeeff'
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
       })
 
@@ -509,10 +509,10 @@ describe('EventMessageHandler', () => {
           expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if pubkey is whitelisted by prefix', () => {
+        it('returns reason if pubkey is not an exact match in the whitelist', () => {
           eventLimits.pubkey.whitelist = ['aa55']
           event.pubkey = 'aa55ccddeeff'
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
 
         it('returns reason if pubkey is not whitelisted', () => {
@@ -521,7 +521,7 @@ describe('EventMessageHandler', () => {
           expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
 
-        it('returns reason if pubkey is not whitelisted by prefix', () => {
+        it('returns reason if pubkey is not whitelisted by exact match', () => {
           eventLimits.pubkey.whitelist = ['aa55']
           event.pubkey = 'aabbccddeeff'
           expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')

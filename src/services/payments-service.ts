@@ -164,7 +164,7 @@ export class PaymentsService implements IPaymentsService {
       }
 
       const isApplicableFee = (feeSchedule: FeeSchedule) =>
-        feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.some((prefix) => invoice.pubkey.startsWith(prefix))
+        feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.includes(invoice.pubkey)
       const admissionFeeSchedules = currentSettings.payments?.feeSchedules?.admission ?? []
       const admissionFeeAmount = admissionFeeSchedules.reduce((sum, feeSchedule) => {
         return sum + (isApplicableFee(feeSchedule) ? BigInt(feeSchedule.amount) : 0n)
