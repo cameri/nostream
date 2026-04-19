@@ -17,8 +17,13 @@ import { Event } from '../@types/event'
 import { eventSchema } from '../schemas/event-schema'
 import { IEventRepository } from '../@types/repositories'
 
+type EventWithImportMetadata = Event & {
+  [EventDeduplicationMetadataKey]?: string[]
+  [EventExpirationTimeMetadataKey]?: number
+}
+
 const enrichEventMetadata = (event: Event): Event => {
-  let enriched: any = event
+  let enriched: EventWithImportMetadata = event
 
   const expiration = getEventExpiration(event)
   if (expiration) {
@@ -33,7 +38,7 @@ const enrichEventMetadata = (event: Event): Event => {
     enriched = { ...enriched, [EventDeduplicationMetadataKey]: deduplication ? [deduplication] : [''] }
   }
 
-  return enriched as Event
+  return enriched
 }
 
 const DEFAULT_BATCH_SIZE = 1000
@@ -64,67 +69,85 @@ const getErrorMessage = (error: unknown): string => {
   return String(error)
 }
 
+const isDestroyableStream = (
+  stream: NodeJS.ReadableStream,
+): stream is NodeJS.ReadableStream & { destroy: () => void } => {
+  const candidate = stream as { destroy?: unknown }
+
+  return typeof candidate.destroy === 'function'
+}
+
 export const createEventBatchPersister =
   (eventRepository: IEventRepository) =>
-  async (events: Event[]): Promise<number> => {
-    if (!events.length) {
-      return 0
-    }
-
-    let inserted = 0
-
-    const regularEvents: Event[] = []
-    const replaceableEvents: Event[] = []
-
-    for (const event of events) {
-      if (isEphemeralEvent(event)) {
-        continue
+    async (events: Event[]): Promise<number> => {
+      if (!events.length) {
+        return 0
       }
 
-      if (isDeleteEvent(event)) {
-        // flush pending batches before applying deletes
-        inserted += await eventRepository.createMany(regularEvents.splice(0))
-        inserted += await eventRepository.upsertMany(replaceableEvents.splice(0))
+      let inserted = 0
 
-        const eventIdsToDelete = event.tags.reduce(
-          (ids, tag) =>
-            tag.length >= 2 && tag[0] === EventTags.Event && /^[0-9a-f]{64}$/.test(tag[1]) ? [...ids, tag[1]] : ids,
-          [] as string[],
-        )
+      const regularEvents: Event[] = []
+      const replaceableEvents: Event[] = []
 
-        if (eventIdsToDelete.length) {
-          await eventRepository.deleteByPubkeyAndIds(event.pubkey, eventIdsToDelete)
+      for (const event of events) {
+        if (isEphemeralEvent(event)) {
+          continue
         }
 
-        inserted += await eventRepository.create(enrichEventMetadata(event))
-        continue
+        if (isDeleteEvent(event)) {
+          // flush pending batches before applying deletes
+          inserted += await eventRepository.createMany(regularEvents.splice(0))
+          inserted += await eventRepository.upsertMany(replaceableEvents.splice(0))
+
+          const eventIdsToDelete = event.tags.reduce(
+            (ids, tag) =>
+              tag.length >= 2
+              && tag[0] === EventTags.Event
+              && /^[0-9a-f]{64}$/.test(tag[1])
+                ? [...ids, tag[1]]
+                : ids,
+            [] as string[]
+          )
+
+          if (eventIdsToDelete.length) {
+            await eventRepository.deleteByPubkeyAndIds(event.pubkey, eventIdsToDelete)
+          }
+
+          inserted += await eventRepository.create(enrichEventMetadata(event))
+          continue
+        }
+
+        const enrichedEvent = enrichEventMetadata(event)
+
+        if (isReplaceableEvent(event) || isParameterizedReplaceableEvent(event)) {
+          replaceableEvents.push(enrichedEvent)
+          continue
+        }
+
+        regularEvents.push(enrichedEvent)
       }
 
-      const enrichedEvent = enrichEventMetadata(event)
+      // flush remaining
+      inserted += await eventRepository.createMany(regularEvents)
+      inserted += await eventRepository.upsertMany(replaceableEvents)
 
-      if (isReplaceableEvent(event) || isParameterizedReplaceableEvent(event)) {
-        replaceableEvents.push(enrichedEvent)
-        continue
-      }
-
-      regularEvents.push(enrichedEvent)
+      return inserted
     }
 
-    // flush remaining
-    inserted += await eventRepository.createMany(regularEvents)
-    inserted += await eventRepository.upsertMany(replaceableEvents)
-
-    return inserted
-  }
-
 export class EventImportService {
-  public constructor(private readonly persistBatch: (events: Event[]) => Promise<number>) {}
+  public constructor(
+    private readonly persistBatch: (events: Event[]) => Promise<number>,
+  ) {}
 
-  public async importFromJsonl(filePath: string, options: EventImportOptions = {}): Promise<EventImportStats> {
-    const batchSize =
-      typeof options.batchSize === 'number' && Number.isInteger(options.batchSize) && options.batchSize > 0
-        ? options.batchSize
-        : DEFAULT_BATCH_SIZE
+  public async importFromReadable(
+    input: NodeJS.ReadableStream,
+    options: EventImportOptions = {},
+  ): Promise<EventImportStats> {
+    const batchSize = (
+      typeof options.batchSize === 'number'
+      && Number.isInteger(options.batchSize)
+      && options.batchSize > 0
+    ) ? options.batchSize : DEFAULT_BATCH_SIZE
 
     const onLineError = options.onLineError ?? (() => undefined)
     const onProgress = options.onProgress ?? (() => undefined)
@@ -146,27 +169,25 @@ export class EventImportService {
         return
       }
 
-      const batchSize = batch.length
+      const currentBatchSize = batch.length
       const inserted = await this.persistBatch(batch)
 
-      if (!Number.isInteger(inserted) || inserted < 0 || inserted > batchSize) {
-        throw new Error(`Invalid insert count (${inserted}) for batch size ${batchSize}`)
+      if (!Number.isInteger(inserted) || inserted < 0 || inserted > currentBatchSize) {
+        throw new Error(
+          `Invalid insert count (${inserted}) for batch size ${currentBatchSize}`,
+        )
       }
 
       stats.inserted += inserted
-      stats.skipped += batchSize - inserted
+      stats.skipped += currentBatchSize - inserted
       batch.length = 0
 
       onProgress({ ...stats })
     }
 
-    const stream = fs.createReadStream(filePath, {
-      encoding: 'utf-8',
-    })
-
     const lineReader = readline.createInterface({
       crlfDelay: Infinity,
-      input: stream,
+      input,
     })
 
     try {
@@ -184,11 +205,11 @@ export class EventImportService {
         try {
           event = validateEventSchema(JSON.parse(trimmedLine)) as Event
 
-          if (!(await isEventIdValid(event))) {
+          if (!await isEventIdValid(event)) {
             throw new Error('invalid: event id does not match')
           }
 
-          if (!(await isEventSignatureValid(event))) {
+          if (!await isEventSignatureValid(event)) {
             throw new Error('invalid: event signature verification failed')
           }
         } catch (error) {
@@ -213,7 +234,20 @@ export class EventImportService {
       return stats
     } finally {
       lineReader.close()
-      stream.destroy()
+      if (isDestroyableStream(input)) {
+        input.destroy()
+      }
     }
+  }
+
+  public async importFromJsonl(
+    filePath: string,
+    options: EventImportOptions = {},
+  ): Promise<EventImportStats> {
+    const stream = fs.createReadStream(filePath, {
+      encoding: 'utf-8',
+    })
+
+    return this.importFromReadable(stream, options)
   }
 }
