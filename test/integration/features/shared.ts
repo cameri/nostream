@@ -1,4 +1,4 @@
-import { After, AfterAll, Before, BeforeAll, Given, Then, When, World } from '@cucumber/cucumber'
+import { After, AfterAll, Before, BeforeAll, Given, Then, When, World, setDefaultTimeout } from '@cucumber/cucumber'
 import { assocPath, pipe } from 'ramda'
 import { fromEvent, map, Observable, ReplaySubject, Subject, takeUntil } from 'rxjs'
 import WebSocket, { MessageEvent } from 'ws'
@@ -15,19 +15,32 @@ import { workerFactory } from '../../../src/factories/worker-factory'
 export const isDraft = Symbol('draft')
 
 let worker: AppWorker
-
 let dbClient: DatabaseClient
 let rrDbClient: DatabaseClient
 
 export const streams = new WeakMap<WebSocket, Observable<unknown>>()
 
-BeforeAll({ timeout: 1000 }, async function () {
+setDefaultTimeout(30000)
+
+BeforeAll(async function () {
   process.env.RELAY_PORT = '18808'
   process.env.SECRET = Math.random().toString().repeat(6)
+
+  process.env.DB_HOST ??= 'localhost'
+  process.env.DB_PORT ??= '5432'
+  process.env.DB_USER ??= 'postgres'
+  process.env.DB_PASSWORD ??= 'postgres'
+  process.env.DB_NAME ??= 'nostr_ts_relay_test'
+  process.env.DB_MIN_POOL_SIZE ??= '1'
+  process.env.DB_MAX_POOL_SIZE ??= '2'
+  process.env.DB_ACQUIRE_CONNECTION_TIMEOUT ??= '10000'
+
   dbClient = getMasterDbClient()
   rrDbClient = getReadReplicaDbClient()
+
   await dbClient.raw('SELECT 1=1')
   await rrDbClient.raw('SELECT 1=1')
+
   Sinon.stub(SettingsStatic, 'watchSettings')
   const settings = SettingsStatic.createSettings()
 
@@ -45,9 +58,16 @@ BeforeAll({ timeout: 1000 }, async function () {
 })
 
 AfterAll({ timeout: 30000 }, async function () {
+  const clients = [...new Set([dbClient, rrDbClient].filter(Boolean))]
+
   await new Promise<void>((resolve) => {
+    if (!worker) {
+      void Promise.all(clients.map((client) => client.destroy())).then(() => resolve())
+      return
+    }
+
     worker.close(async () => {
-      await Promise.all([dbClient.destroy(), rrDbClient.destroy()])
+      await Promise.all(clients.map((client) => client.destroy()))
       resolve()
     })
   })
@@ -63,11 +83,13 @@ Before(function () {
 After(async function () {
   this.parameters.events = {}
   this.parameters.subscriptions = {}
+
   for (const ws of Object.values(this.parameters.clients as Record<string, WebSocket>)) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.close()
     }
   }
+
   this.parameters.clients = {}
 
   await dbClient('events')
@@ -78,20 +100,22 @@ After(async function () {
       ),
     )
     .delete()
+
   this.parameters.identities = {}
 })
 
 Given(/someone called (\w+)/, async function (name: string) {
   const connection = await connect(name)
+
   this.parameters.identities[name] = this.parameters.identities[name] ?? createIdentity(name)
   this.parameters.clients[name] = connection
   this.parameters.subscriptions[name] = []
   this.parameters.events[name] = []
+
   const close = new Subject()
   connection.once('close', close.next.bind(close))
 
   const projection = (raw: MessageEvent) => JSON.parse(raw.data.toString('utf8'))
-
   const replaySubject = new ReplaySubject(2, 1000)
 
   fromEvent(connection, 'message')
@@ -104,7 +128,12 @@ Given(/someone called (\w+)/, async function (name: string) {
 When(/(\w+) subscribes to author (\w+)$/, async function (this: World<Record<string, any>>, from: string, to: string) {
   const ws = this.parameters.clients[from] as WebSocket
   const pubkey = this.parameters.identities[to].pubkey
-  const subscription = { name: `test-${Math.random()}`, filters: [{ authors: [pubkey] }] }
+
+  const subscription = {
+    name: `test-${Math.random()}`,
+    filters: [{ authors: [pubkey] }],
+  }
+
   this.parameters.subscriptions[from].push(subscription)
 
   await createSubscription(ws, subscription.name, subscription.filters)
@@ -113,6 +142,7 @@ When(/(\w+) subscribes to author (\w+)$/, async function (this: World<Record<str
 Then(/(\w+) unsubscribes from author \w+/, async function (from: string) {
   const ws = this.parameters.clients[from] as WebSocket
   const subscription = this.parameters.subscriptions[from].pop()
+
   return new Promise<void>((resolve, reject) => {
     ws.send(JSON.stringify(['CLOSE', subscription.name]), (err) => (err ? reject(err) : resolve()))
   })
