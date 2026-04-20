@@ -37,7 +37,7 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import { Nip05Verification } from '../@types/nip05'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
-const debug = createLogger('event-message-handler')
+const logger = createLogger('event-message-handler')
 
 export class EventMessageHandler implements IMessageHandler {
   public constructor(
@@ -58,13 +58,13 @@ export class EventMessageHandler implements IMessageHandler {
 
     let reason = await this.isEventValid(event)
     if (reason) {
-      debug('event %s rejected: %s', event.id, reason)
+      logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
       return
     }
 
     if (isExpiredEvent(event)) {
-      debug('event %s rejected: expired')
+      logger('event %s rejected: expired')
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'event is expired'))
       return
     }
@@ -72,7 +72,7 @@ export class EventMessageHandler implements IMessageHandler {
     event = this.addExpirationMetadata(event)
 
     if (await this.isRateLimited(event)) {
-      debug('event %s rejected: rate-limited')
+      logger('event %s rejected: rate-limited')
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
         createCommandResult(event.id, false, 'rate-limited: slow down'),
@@ -82,28 +82,28 @@ export class EventMessageHandler implements IMessageHandler {
 
     reason = this.canAcceptEvent(event)
     if (reason) {
-      debug('event %s rejected: %s', event.id, reason)
+      logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.isBlockedByRequestToVanish(event)
     if (reason) {
-      debug('event %s rejected: %s', event.id, reason)
+      logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.isUserAdmitted(event)
     if (reason) {
-      debug('event %s rejected: %s', event.id, reason)
+      logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.checkNip05Verification(event)
     if (reason) {
-      debug('event %s rejected: %s', event.id, reason)
+      logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
       return
     }
@@ -121,11 +121,9 @@ export class EventMessageHandler implements IMessageHandler {
     try {
       await strategy.execute(event)
       this.processNip05Metadata(event)
-    } catch (_error) {
-      this.webSocket.emit(
-        WebSocketAdapterEvent.Message,
-        createCommandResult(event.id, false, 'error: unable to process event'),
-      )
+    } catch (error) {
+      logger.error('error handling message', message, error)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: unable to process event'))
     }
   }
 
@@ -195,7 +193,7 @@ export class EventMessageHandler implements IMessageHandler {
     if (
       typeof limits.pubkey?.whitelist !== 'undefined' &&
       limits.pubkey.whitelist.length > 0 &&
-      !limits.pubkey.whitelist.some((prefix) => event.pubkey.startsWith(prefix))
+      !limits.pubkey.whitelist.includes(event.pubkey)
     ) {
       return 'blocked: pubkey not allowed'
     }
@@ -203,7 +201,7 @@ export class EventMessageHandler implements IMessageHandler {
     if (
       typeof limits.pubkey?.blacklist !== 'undefined' &&
       limits.pubkey.blacklist.length > 0 &&
-      limits.pubkey.blacklist.some((prefix) => event.pubkey.startsWith(prefix))
+      limits.pubkey.blacklist.includes(event.pubkey)
     ) {
       return 'blocked: pubkey not allowed'
     }
@@ -311,7 +309,7 @@ export class EventMessageHandler implements IMessageHandler {
       const isRateLimited = await hit({ period, rate, kinds })
 
       if (isRateLimited) {
-        debug('rate limited %s: %d events / %d ms exceeded', event.pubkey, rate, period)
+        logger('rate limited %s: %d events / %d ms exceeded', event.pubkey, rate, period)
 
         limited = true
       }
@@ -332,7 +330,7 @@ export class EventMessageHandler implements IMessageHandler {
 
     const isApplicableFee = (feeSchedule: FeeSchedule) =>
       feeSchedule.enabled &&
-      !feeSchedule.whitelists?.pubkeys?.some((prefix) => event.pubkey.startsWith(prefix)) &&
+      !feeSchedule.whitelists?.pubkeys?.includes(event.pubkey) &&
       !feeSchedule.whitelists?.event_kinds?.some(isEventKindOrRangeMatch(event))
 
     const feeSchedules = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
@@ -345,19 +343,19 @@ export class EventMessageHandler implements IMessageHandler {
     try {
       const cachedValue = await this.cache.getKey(cacheKey)
       if (cachedValue === CacheAdmissionState.ADMITTED) {
-        debug('cache hit for %s admission: admitted', event.pubkey)
+        logger('cache hit for %s admission: admitted', event.pubkey)
         return
       }
       if (cachedValue === CacheAdmissionState.BLOCKED_NOT_ADMITTED) {
-        debug('cache hit for %s admission: blocked', event.pubkey)
+        logger('cache hit for %s admission: blocked', event.pubkey)
         return 'blocked: pubkey not admitted'
       }
       if (cachedValue === CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE) {
-        debug('cache hit for %s admission: insufficient balance', event.pubkey)
+        logger('cache hit for %s admission: insufficient balance', event.pubkey)
         return 'blocked: insufficient balance'
       }
     } catch (error) {
-      debug('cache error for %s: %o', event.pubkey, error)
+      logger('cache error for %s: %o', event.pubkey, error)
     }
 
     const user = await this.userRepository.findByPubkey(event.pubkey)
@@ -376,7 +374,7 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   private cacheSet(key: string, value: string, ttl: number): void {
-    this.cache.setKey(key, value, ttl).catch((error) => debug('unable to cache %s: %o', key, error))
+    this.cache.setKey(key, value, ttl).catch((error) => logger('unable to cache %s: %o', key, error))
   }
 
   protected addExpirationMetadata(event: Event): Event | ExpiringEvent {
@@ -450,7 +448,7 @@ export class EventMessageHandler implements IMessageHandler {
     const nip05Identifier = extractNip05FromEvent(event)
     if (!nip05Identifier) {
       this.nip05VerificationRepository.deleteByPubkey(event.pubkey).catch((error) => {
-        debug('failed to remove NIP-05 verification for %s: %o', event.pubkey, error)
+        logger('failed to remove NIP-05 verification for %s: %o', event.pubkey, error)
       })
       return
     }
@@ -461,7 +459,7 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (!isDomainAllowed(parsed.domain, nip05Settings.domainWhitelist, nip05Settings.domainBlacklist)) {
-      debug('NIP-05 domain %s not allowed for %s', parsed.domain, event.pubkey)
+      logger('NIP-05 domain %s not allowed for %s', parsed.domain, event.pubkey)
       return
     }
 
@@ -472,7 +470,7 @@ export class EventMessageHandler implements IMessageHandler {
         return repo.upsert(verification)
       })
       .catch((error) => {
-        debug('NIP-05 verification failed for %s: %o', event.pubkey, error)
+        logger('NIP-05 verification failed for %s: %o', event.pubkey, error)
       })
   }
 }

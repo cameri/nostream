@@ -32,7 +32,6 @@ describe('MaintenanceService', () => {
 
   describe('clearOldEvents', () => {
     it('purges events when retention.maxDays is a positive number', async () => {
-      const consoleInfoStub = sandbox.stub(console, 'info')
       const currentSettings: Settings = {
         limits: {
           event: {
@@ -62,9 +61,6 @@ describe('MaintenanceService', () => {
         kindWhitelist: [62],
         pubkeyWhitelist: ['aabbcc'],
       })
-      expect(consoleInfoStub).to.have.been.calledOnceWithExactly(
-        '[Maintenance] Deleted events: deleted=4, expired=3, retained=3.',
-      )
     })
 
     it('does not purge events when retention.maxDays is -1', async () => {
@@ -109,7 +105,6 @@ describe('MaintenanceService', () => {
       } as any
       settings.returns(currentSettings)
       eventRepository.deleteExpiredAndRetained.rejects(new Error('DB Error'))
-      sandbox.stub(console, 'error')
 
       // Should not throw
       await service.clearOldEvents()

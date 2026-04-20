@@ -8,6 +8,9 @@
   "project": [
     "src/**/*.ts"
   ],
+  "ignoreDependencies": [
+    "lzma-native"
+  ],
   "ignoreFiles": [],
   "commitlint": false,
   "eslint": false,

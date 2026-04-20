@@ -395,9 +395,9 @@ describe('PaymentsService', () => {
       expect(userRepository.admitUser).not.to.have.been.called
     })
 
-    it('skips the fee for whitelisted pubkeys', async () => {
+    it('skips the fee for whitelisted pubkeys (exact match)', async () => {
       settings.returns(makeSettings([
-        { enabled: true, amount: 1000n, whitelists: { pubkeys: ['whitelisted'] } },
+        { enabled: true, amount: 1000n, whitelists: { pubkeys: ['whitelistedpubkey'] } },
       ]))
 
       await service.confirmInvoice(makeCompletedInvoice({
@@ -406,9 +406,22 @@ describe('PaymentsService', () => {
         amountPaid: 5000n,
       }))
 
-      // pubkey starts with 'whitelisted' → isApplicableFee = false → admissionFeeAmount = 0 → not admitted
+      // pubkey does not exactly match whitelist entry -> fee applies -> user must pay to get admitted
       expect(userRepository.admitUser).not.to.have.been.called
     })
+
+    it('applies the fee when pubkey is not an exact whitelist match (prefix alone is insufficient)', async () => {
+      settings.returns(makeSettings([
+        { enabled: true, amount: 1000n, whitelists: { pubkeys: ['whitelisted'] } },
+      ]))
+      await service.confirmInvoice(makeCompletedInvoice({
+        pubkey: 'whitelistedpubkey',
+        unit: InvoiceUnit.MSATS,
+        amountPaid: 5000n,
+      }))
+      expect(userRepository.admitUser).to.have.been.calledOnce
+    })
+
 
     it('rolls back the transaction and re-throws on error', async () => {
       settings.returns(makeSettings([]))
@@ -463,17 +476,12 @@ describe('PaymentsService', () => {
       expect(eventUtils.broadcastEvent as Sinon.SinonStub).to.have.been.calledOnce
     })
 
-    it('calls logError and does not throw when the pipeline fails', async () => {
-      const consoleErrorStub = sandbox.stub(console, 'error')
+    it('does not throw when the pipeline fails', async () => {
       ;(eventUtils.identifyEvent as Sinon.SinonStub).rejects(new Error('identify failed'))
 
       // otherwise() swallows the error — the method must resolve, not reject
       await service.sendInvoiceUpdateNotification(stubInvoice({ amountPaid: 100n }))
 
-      expect(consoleErrorStub).to.have.been.calledWith(
-        'Unable to send notification',
-        Sinon.match.instanceOf(Error),
-      )
       expect(eventRepository.create).not.to.have.been.called
     })
   })

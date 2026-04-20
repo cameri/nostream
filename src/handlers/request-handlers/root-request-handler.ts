@@ -36,7 +36,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       limitation: {
         max_message_length: settings.network.maxPayloadSize,
         max_subscriptions: settings.limits?.client?.subscription?.maxSubscriptions,
-        max_filters: settings.limits?.client?.subscription?.maxFilterValues,
+        max_filters: settings.limits?.client?.subscription?.maxFilters,
         max_limit: settings.limits?.client?.subscription?.maxLimit,
         max_subid_length: settings.limits?.client?.subscription?.maxSubscriptionIdLength,
         min_prefix: settings.limits?.client?.subscription?.minPrefixLength,

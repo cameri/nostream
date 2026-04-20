@@ -6,7 +6,7 @@ import { createLogger } from '../factories/logger-factory'
 import { FSWatcher } from 'fs'
 import { SettingsStatic } from '../utils/settings'
 
-const debug = createLogger('app-worker')
+const logger = createLogger('app-worker')
 export class AppWorker implements IRunnable {
   private watchers: FSWatcher[] | undefined
 
@@ -36,23 +36,23 @@ export class AppWorker implements IRunnable {
 
   private onError(error: Error) {
     if (error.name === 'TypeError' && error.message === "Cannot read properties of undefined (reading '__knexUid')") {
-      console.error(
-        "Unable to acquire connection. Please increase DB_MAX_POOL_SIZE, DB_ACQUIRE_CONNECTION_TIMEOUT and tune postgresql.conf to make use of server's resources.",
+      logger.error(
+        'Unable to acquire connection. Please increase DB_MAX_POOL_SIZE, DB_ACQUIRE_CONNECTION_TIMEOUT and tune postgresql.conf to make use of server\'s resources.'
       )
       return
     }
-    console.error('uncaught error:', error)
+    logger.error('uncaught error:', error)
   }
 
   private onExit() {
-    debug('exiting')
+    logger('exiting')
     this.close(() => {
       this.process.exit(0)
     })
   }
 
   public close(callback?: () => void) {
-    debug('closing')
+    logger('closing')
     if (Array.isArray(this.watchers)) {
       for (const watcher of this.watchers) {
         watcher.close()
@@ -62,6 +62,6 @@ export class AppWorker implements IRunnable {
       await closeCacheClient()
       callback?.()
     })
-    debug('closed')
+    logger('closed')
   }
 }

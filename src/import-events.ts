@@ -1,7 +1,12 @@
-import { extname, resolve } from 'path'
+import { resolve } from 'path'
 
 import fs from 'fs'
 
+import {
+  CompressionFormat,
+  createDecompressionStream,
+  detectCompressionFormat,
+} from './utils/compression'
 import {
   createEventBatchPersister,
   EventImportLineError,
@@ -27,8 +32,10 @@ const formatProgress = (stats: EventImportStats): string => {
 }
 
 const printUsage = (): void => {
-  console.log('Usage: npm run import -- <file.jsonl> [--batch-size <number>]')
+  console.log('Usage: npm run import -- <file> [--batch-size <number>]')
   console.log('Example: npm run import -- ./events.jsonl --batch-size 1000')
+  console.log('Example: npm run import -- ./events.jsonl.gz')
+  console.log('Example: npm run import -- ./events.jsonl.xz')
 }
 
 const parseBatchSize = (value: string): number => {
@@ -41,7 +48,7 @@ const parseBatchSize = (value: string): number => {
   return parsedValue
 }
 
-const parseCliArgs = (args: string[]): CliOptions => {
+export const parseCliArgs = (args: string[]): CliOptions => {
   let batchSize = DEFAULT_BATCH_SIZE
   let filePath: string | undefined
 
@@ -72,7 +79,7 @@ const parseCliArgs = (args: string[]): CliOptions => {
       continue
     }
 
-    if (arg.startsWith('--')) {
+    if (arg.startsWith('-')) {
       throw new Error(`Unknown option: ${arg}`)
     }
 
@@ -84,7 +91,7 @@ const parseCliArgs = (args: string[]): CliOptions => {
   }
 
   if (!filePath) {
-    throw new Error('Missing path to .jsonl file')
+    throw new Error('Missing input file path')
   }
 
   return {
@@ -97,10 +104,6 @@ const parseCliArgs = (args: string[]): CliOptions => {
 const ensureValidInputFile = (filePath: string): string => {
   const absolutePath = resolve(process.cwd(), filePath)
 
-  if (extname(absolutePath).toLowerCase() !== '.jsonl') {
-    throw new Error('Input file must have a .jsonl extension')
-  }
-
   if (!fs.existsSync(absolutePath)) {
     throw new Error(`Input file does not exist: ${absolutePath}`)
   }
@@ -111,6 +114,51 @@ const ensureValidInputFile = (filePath: string): string => {
   }
 
   return absolutePath
+}
+
+const getCompressionLabel = (format: CompressionFormat): string => {
+  switch (format) {
+    case CompressionFormat.GZIP:
+      return 'gzip'
+    case CompressionFormat.XZ:
+      return 'xz'
+    default:
+      return String(format)
+  }
+}
+
+const createImportStream = async (absoluteFilePath: string) => {
+  const compressionFormat = await detectCompressionFormat(absoluteFilePath)
+  const source = fs.createReadStream(absoluteFilePath)
+
+  if (!compressionFormat) {
+    return {
+      compressionFormat,
+      stream: source,
+    }
+  }
+
+  const decompressor = createDecompressionStream(compressionFormat)
+
+  source.on('error', (error) => {
+    if (!decompressor.destroyed) {
+      decompressor.destroy(error)
+    }
+  })
+
+  const closeSource = () => {
+    if (!source.destroyed) {
+      source.destroy()
+    }
+  }
+
+  decompressor.on('close', closeSource)
+  decompressor.on('error', closeSource)
+
+  return {
+    compressionFormat,
+    stream: source.pipe(decompressor),
+  }
 }
 
 const run = async (): Promise<void> => {
@@ -147,7 +195,12 @@ const run = async (): Promise<void> => {
   const startedAt = Date.now()
 
   try {
-    const stats = await importer.importFromJsonl(absoluteFilePath, {
+    const { stream, compressionFormat } = await createImportStream(absoluteFilePath)
+    if (compressionFormat) {
+      console.log(`Detected ${getCompressionLabel(compressionFormat)} compression. Decompressing on-the-fly...`)
+    }
+
+    const stats = await importer.importFromReadable(stream, {
       batchSize: options.batchSize,
       onLineError,
       onProgress,

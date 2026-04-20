@@ -6,7 +6,7 @@ import { IEventStrategy } from '../../@types/message-handlers'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
-const debug = createLogger('replaceable-event-strategy')
+const logger = createLogger('replaceable-event-strategy')
 
 export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<void>> {
   public constructor(
@@ -15,7 +15,7 @@ export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<v
   ) {}
 
   public async execute(event: Event): Promise<void> {
-    debug('received replaceable event: %o', event)
+    logger('received replaceable event: %o', event)
     try {
       const count = await this.eventRepository.upsert(event)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))

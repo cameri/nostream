@@ -55,7 +55,7 @@ const groupByLengthSpec = groupBy<string, 'exact' | 'even' | 'odd'>(
   ),
 )
 
-const debug = createLogger('event-repository')
+const logger = createLogger('event-repository')
 
 export class EventRepository implements IEventRepository {
   public constructor(
@@ -64,7 +64,7 @@ export class EventRepository implements IEventRepository {
   ) {}
 
   public findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]> {
-    debug('querying for %o', filters)
+    logger('querying for %o', filters)
     if (!Array.isArray(filters) || !filters.length) {
       throw new Error('Filters cannot be empty')
     }
@@ -205,14 +205,14 @@ export class EventRepository implements IEventRepository {
   }
 
   private insert(event: Event) {
-    debug('inserting event: %o', event)
+    logger('inserting event: %o', event)
     const row = this.toInsertRow(event)
 
     return this.masterDbClient('events').insert(row).onConflict().ignore()
   }
 
   public upsert(event: Event): Promise<number> {
-    debug('upserting event: %o', event)
+    logger('upserting event: %o', event)
 
     const row = this.toUpsertRow(event)
 
@@ -300,7 +300,7 @@ export class EventRepository implements IEventRepository {
   }
 
   public deleteByPubkeyAndIds(pubkey: string, eventIdsToDelete: EventId[]): Promise<number> {
-    debug('deleting events from %s: %o', pubkey, eventIdsToDelete)
+    logger('deleting events from %s: %o', pubkey, eventIdsToDelete)
 
     return this.masterDbClient('events')
       .where('event_pubkey', toBuffer(pubkey))
@@ -313,7 +313,7 @@ export class EventRepository implements IEventRepository {
   }
 
   public deleteByPubkeyExceptKinds(pubkey: string, excludedKinds: number[]): Promise<number> {
-    debug('deleting events from %s except kinds %o', pubkey, excludedKinds)
+    logger('deleting events from %s except kinds %o', pubkey, excludedKinds)
 
     return this.masterDbClient('events')
       .where('event_pubkey', toBuffer(pubkey))
@@ -340,7 +340,7 @@ export class EventRepository implements IEventRepository {
     const maxDays = options?.maxDays
 
     if (typeof maxDays !== 'number' || isNaN(maxDays) || maxDays <= 0) {
-      debug('skipping purge: retention.maxDays is not a positive number')
+      logger('skipping purge: retention.maxDays is not a positive number')
       return Promise.resolve({
         deleted: 0,
         expired: 0,
@@ -351,7 +351,7 @@ export class EventRepository implements IEventRepository {
     const retentionLimit = now - maxDays * 86400
     const batchSize = 1000
 
-    debug(
+    logger(
       'deleting expired and retained events (retentionLimit: %d, now: %d, batchSize: %d)',
       retentionLimit,
       now,

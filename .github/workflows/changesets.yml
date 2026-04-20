@@ -12,6 +12,9 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     environment: release
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -32,5 +35,6 @@ jobs:
           version: npm run changeset:version
           publish: npm run changeset:tag
           createGithubReleases: true
+          title: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
