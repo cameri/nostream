@@ -115,10 +115,17 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
 
   private withClient = async <T>(fn: (client: nwc.NWCClient) => Promise<T>): Promise<T> => {
     const client = new nwc.NWCClient({ nostrWalletConnectUrl: this.nwcUrl })
+    let caughtError: unknown
 
     try {
       return await fn(client)
+    } catch (error) {
+      caughtError = error
+      throw error
     } finally {
+      if (caughtError instanceof nwc.Nip47ReplyTimeoutError) {
+        await new Promise((resolve) => setTimeout(resolve, this.replyTimeoutMs + 100))
+      }
       client.close()
     }
   }

@@ -151,6 +151,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
     })
 
     await clock.tickAsync(51)
+    await clock.tickAsync(151)
 
     await expect(pending).to.be.rejectedWith('reply timeout after 50ms')
     expect(closeStub).to.have.been.calledOnce
