@@ -1,9 +1,9 @@
 import { runInfo } from '../commands/info'
 import { runStartMenu } from './menus/start'
+import { runStopMenu } from './menus/stop'
 import { runConfigureMenu } from './menus/configure'
 import { runManageMenu } from './menus/manage'
 import { runDevMenu } from './menus/dev'
-import { runStop } from '../commands/stop'
 import { createState } from './state'
 import { tuiPrompts } from './prompts'
 
@@ -35,7 +35,7 @@ export const runTui = async (): Promise<number> => {
         await runStartMenu()
         break
       case 'stop':
-        await runStop({ all: true }, [])
+        await runStopMenu()
         break
       case 'configure':
         await runConfigureMenu()
