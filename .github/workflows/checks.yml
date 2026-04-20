@@ -58,6 +58,10 @@ jobs:
         run: npm ci
       - name: Run build check
         run: npm run build:check
+      - name: Build artifacts
+        run: npm run build
+      - name: Verify built CLI entrypoint
+        run: npm run verify:cli:build
   test-units-and-cover:
     name: Unit Tests And Coverage
     runs-on: ubuntu-latest
@@ -76,6 +80,8 @@ jobs:
         run: npm ci
       - name: Run unit tests
         run: npm run test:unit
+      - name: Run CLI test suite
+        run: npm run test:cli
       - name: Run coverage for unit tests
         run: npm run cover:unit
         if: ${{ always() }}

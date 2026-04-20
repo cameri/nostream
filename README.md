@@ -113,7 +113,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
    - On `.nostr/settings.yaml` file make the following changes:
      - `payments.processor` to `zebedee`
      - `paymentsProcessors.zebedee.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/zebedee`)
-   - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
+   - Restart Nostream (`nostream stop` followed by `nostream start`)
    - Read the in-depth guide for more information: [Set Up a Paid Nostr Relay with ZEBEDEE API](https://docs.zebedee.io/docs/guides/nostr-relay)
 
 3. [Nodeless](https://nodeless.io/?ref=587f477f-ba1c-4bd3-8986-8302c98f6731)
@@ -131,7 +131,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `nodeless`
      - Set `paymentsProcessors.nodeless.storeId` to your store ID
-   - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
+   - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 4. [OpenNode](https://www.opennode.com/)
    - Complete the step "Before you begin"
@@ -146,7 +146,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
 
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `opennode`
-   - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
+   - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 5. [LNBITS](https://lnbits.com/)
     - Complete the step "Before you begin"
@@ -163,7 +163,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
       - Set `payments.processor` to `lnbits`
       - set `lnbits.baseURL` to your LNbits instance URL (e.g. `https://{YOUR_LNBITS_DOMAIN_HERE}/`)
       - Set `paymentsProcessors.lnbits.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/lnbits`)
-    - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
+    - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 6. [Alby](https://getalby.com/) or any LNURL Provider with [LNURL-verify](https://github.com/lnurl/luds/issues/182) support
     - Complete the step "Before you begin"
@@ -171,7 +171,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
     - On your `.nostr/settings.yaml` file make the following changes:
       - Set `payments.processor` to `lnurl`
       - Set `lnurl.invoiceURL` to your LNURL (e.g. `https://getalby.com/lnurlp/your-username`)
-    - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
+    - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 7. Ensure payments are required for your public key
    - Visit https://{YOUR-DOMAIN}/
@@ -186,6 +186,18 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
    - You should get back the few notes you sent earlier
 
 ## Quick Start (Docker Compose)
+
+For full command reference and interactive mode documentation, see [CLI.md](CLI.md).
+Non-interactive CLI usage conventions:
+- exit `0` on success
+- exit `1` on runtime/validation errors
+- exit `2` on usage errors (invalid command/options)
+
+Optional global installation from a source checkout:
+  ```
+  npm i -g .
+  nostream --help
+  ```
 
 Install Docker following the [official guide](https://docs.docker.com/engine/install/).
 You may have to uninstall Docker if you installed it using a different guide.
@@ -206,58 +218,72 @@ Copy the output and paste it into an `.env` file:
 
 Start:
   ```
-  ./scripts/start
+  nostream start
   ```
   or
   ```
-  ./scripts/start_with_tor
+  nostream start --tor
   ```
-  or, with Nginx reverse proxy and Let's Encrypt SSL:
+  or
   ```
-  RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com ./scripts/start_with_nginx
+  nostream start --i2p
   ```
-
-**Windows / WSL2 users:** Docker bind-mounts can cause PostgreSQL permission errors on Windows. Use the dedicated override file instead:
+  or
   ```
-  docker compose -f docker-compose.yml -f docker-compose.windows.yml up --build
+  RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com nostream start --nginx
   ```
-  Or add this to your `.env` file so you don't have to type it every time:
-  ```
-  COMPOSE_FILE=docker-compose.yml:docker-compose.windows.yml
-  ```
-  > **Note:** If you previously ran Nostream on Linux/Mac and are switching to Windows, your existing data lives at `.nostr/data/` on the host. You'll need to copy it into the Docker named volume manually or it won't be visible to the new setup.
 
 Stop the server with:
   ```
-  ./scripts/stop
+  nostream stop
   ```
 
 Print the Tor hostname:
   ```
-  ./scripts/print_tor_hostname
+  nostream info --tor-hostname
   ```
 
-Start with I2P:
+Print I2P hostname(s):
   ```
-  ./scripts/start_with_i2p
-  ```
-
-Print the I2P hostname:
-  ```
-  ./scripts/print_i2p_hostname
+  nostream info --i2p-hostname
   ```
 
-### Importing events from JSON Lines
+Legacy script replacements:
 
-You can import NIP-01 events from `.jsonl` files directly into the relay database.
-Compressed files are also supported and decompressed on-the-fly:
+```
+scripts/start                -> nostream start
+scripts/start_with_tor       -> nostream start --tor
+scripts/start_with_i2p       -> nostream start --i2p
+scripts/start_with_nginx     -> nostream start --nginx
+scripts/stop                 -> nostream stop
+scripts/print_tor_hostname   -> nostream info --tor-hostname
+scripts/print_i2p_hostname   -> nostream info --i2p-hostname
+scripts/update               -> nostream update
+scripts/clean                -> nostream clean
+```
+
+### Importing events from JSON Lines or JSON Arrays
+
+You can import NIP-01 events from `.jsonl` (JSON Lines) or `.json` (JSON array) files directly into the relay database.
+
+Compressed `.jsonl` files are also supported and decompressed on-the-fly:
 
 - `.jsonl.gz` (Gzip)
 - `.jsonl.xz` (XZ)
 
 Basic import:
   ```
-  npm run import -- ./events.jsonl
+  nostream import ./events.jsonl
+  ```
+
+Equivalent alias form:
+  ```
+  nostream import --file ./events.jsonl
+  ```
+
+Import from a JSON array file (compatible with `nostream export --format json`):
+  ```
+  nostream import --file ./events.json
   ```
 
 Import a compressed backup:
@@ -268,12 +294,13 @@ Import a compressed backup:
 
 Set a custom batch size (default: `1000`):
   ```
-  npm run import -- ./events.jsonl --batch-size 500
+  nostream import ./events.jsonl --batch-size 500
   ```
 
 The importer:
 
 - Processes the file line-by-line to keep memory usage bounded.
+- Streams JSON array items one by one to keep memory usage bounded.
 - Validates NIP-01 schema, event id hash, and Schnorr signature before insertion.
 - Inserts in database transactions per batch.
 - Skips duplicates without failing the whole import.
@@ -303,8 +330,8 @@ You can [install as a systemd service](https://www.swissrouting.com/nostr.html#i
   RestartSec=5
   User=nostr
   WorkingDirectory=/home/nostr/nostream
-  ExecStart=/home/nostr/nostream/scripts/start
-  ExecStop=/home/nostr/nostream/scripts/stop
+  ExecStart=/usr/bin/env bash -lc 'cd /home/nostr/nostream && nostream start'
+  ExecStop=/usr/bin/env bash -lc 'cd /home/nostr/nostream && nostream stop'
 
   [Install]
   WantedBy=multi-user.target
@@ -371,7 +398,7 @@ To fix this, configure Docker daemon DNS in `/etc/docker/daemon.json`.
 4. Retry starting nostream:
 
   ```
-  ./scripts/start
+  nostream start
   ```
 
 Note: avoid `127.0.0.53` in Docker DNS settings because it points to the host's
@@ -486,7 +513,7 @@ Clone repository and enter directory:
 
 Start:
   ```
-  ./scripts/start
+  nostream start
   ```
 
   This will run in the foreground of the terminal until you stop it with Ctrl+C.
@@ -651,7 +678,7 @@ To observe client and subscription counts in real-time during a test, you can in
    ```
 ## Export Events
 
-Export all stored events to a [JSON Lines](https://jsonlines.org/) (`.jsonl`) file. Each line is a valid NIP-01 Nostr event JSON object. The export streams rows from the database using cursors, so it works safely on relays with millions of events without loading them into memory.
+Export all stored events to either [JSON Lines](https://jsonlines.org/) (`.jsonl`) or JSON array (`.json`) format. The export streams rows from the database using cursors, so it works safely on relays with millions of events without loading them into memory.
 
 Optional compression is supported for lower storage and transfer costs:
 
@@ -663,6 +690,8 @@ npm run export                            # writes to events.jsonl
 npm run export -- backup-2024-01-01.jsonl # custom filename
 npm run export -- backup.jsonl.gz --compress --format=gzip
 npm run export -- backup.jsonl.xz --compress --format=xz
+nostream export --output backup-2024-01-01.jsonl # alias form
+nostream export --output backup-2024-01-01.json --format json # JSON array output
 ```
 
 Flags:
@@ -705,43 +734,42 @@ npm run db:verify-index-impact
 ```
 
 It seeds ~200k synthetic events, drops the hot-path indexes, runs EXPLAIN (ANALYZE, BUFFERS) for each hot query, recreates the indexes, and prints a BEFORE/AFTER table. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](CONFIGURATION.md).
-
 ## Relay Maintenance
 
-Use `clean-db` to wipe or prune `events` table data. This also removes
+Use `nostream dev db:clean` to wipe or prune `events` table data. This also removes
 corresponding data from the derived `event_tags` table when present.
 
 Dry run (no deletion):
 
   ```
-  npm run clean-db -- --all --dry-run
+  nostream dev db:clean --all --dry-run
   ```
 
 Full wipe:
 
   ```
-  npm run clean-db -- --all --force
+  nostream dev db:clean --all --force
   ```
 
 Delete events older than N days:
 
   ```
-  npm run clean-db -- --older-than=30 --force
+  nostream dev db:clean --older-than=30 --force
   ```
 
 Delete only selected kinds:
 
   ```
-  npm run clean-db -- --kinds=1,7,4 --force
+  nostream dev db:clean --kinds=1,7,4 --force
   ```
 
 Delete only selected kinds older than N days:
 
   ```
-  npm run clean-db -- --older-than=30 --kinds=1,7,4 --force
+  nostream dev db:clean --older-than=30 --kinds=1,7,4 --force
   ```
 
-By default, the script asks for explicit confirmation (`Type 'DELETE' to confirm`).
+By default, the command asks for explicit confirmation (`Type 'DELETE' to confirm`).
 Use `--force` to skip the prompt.
 
 
@@ -749,7 +777,7 @@ Use `--force` to skip the prompt.
 
 You can change the default folder by setting the `NOSTR_CONFIG_DIR` environment variable to a different path.
 
-Run nostream using one of the quick-start guides at least once and `nostream/.nostr/settings.json` will be created.
+Run nostream using one of the quick-start guides at least once and `nostream/.nostr/settings.yaml` will be created.
 Any changes made to the settings file will be read on the next start.
 
 Default settings can be found under `resources/default-settings.yaml`. Feel free to copy it to `nostream/.nostr/settings.yaml` if you would like to have a settings file before running the relay first.
