@@ -16,10 +16,9 @@ Feature: NIP-40 Event expiration for standalone events
     And Bob subscribes to text_note events from Alice
     Then Bob receives a text_note event from Alice with content "not yet expired"
 
-  Scenario: Stored event is not returned to new subscribers after expiration time passes
+  Scenario: Stored expired event is not returned to new subscribers
     Given someone called Alice
     And someone called Bob
-    When Alice sends a text_note event with content "short lived" and expiration in 2 seconds
-    And Bob waits until Alice's last text_note event expires
+    When Alice has a stored text_note event with content "short lived" and expiration in the past
     And Bob subscribes to text_note events from Alice
     Then Bob receives 0 text_note events and EOSE

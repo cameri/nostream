@@ -3,18 +3,12 @@ import { expect } from 'chai'
 import WebSocket from 'ws'
 
 import { createEvent, createSubscription, publishEvent, waitForEventCount } from '../helpers'
-import { Event, ExpiringEvent } from '../../../../src/@types/event'
+import { ExpiringEvent } from '../../../../src/@types/event'
 import { EventExpirationTimeMetadataKey, EventKinds, EventTags } from '../../../../src/constants/base'
+import { getMasterDbClient } from '../../../../src/database/client'
+import { EventRepository } from '../../../../src/repositories/event-repository'
 
 const now = (): number => Math.floor(Date.now() / 1000)
-
-const wait = async (ms: number): Promise<void> => {
-  if (ms <= 0) {
-    return
-  }
-
-  await new Promise<void>((resolve) => setTimeout(resolve, ms))
-}
 
 const createTextNoteWithExpiration = async (
   world: World<Record<string, any>>,
@@ -44,6 +38,37 @@ const createTextNoteWithExpiration = async (
   return event
 }
 
+const seedStoredTextNoteWithExpiration = async (
+  world: World<Record<string, any>>,
+  name: string,
+  content: string,
+  expirationTime: number,
+): Promise<ExpiringEvent> => {
+  const { pubkey, privkey } = world.parameters.identities[name]
+  const dbClient = getMasterDbClient()
+  const repository = new EventRepository(dbClient, dbClient)
+
+  const event = await createEvent(
+    {
+      pubkey,
+      kind: EventKinds.TEXT_NOTE,
+      created_at: expirationTime - 30,
+      content,
+      tags: [[EventTags.Expiration, expirationTime.toString()]],
+    },
+    privkey,
+  ) as ExpiringEvent
+
+  event[EventExpirationTimeMetadataKey] = expirationTime
+
+  const inserted = await repository.create(event)
+  expect(inserted).to.equal(1)
+
+  world.parameters.events[name].push(event)
+
+  return event
+}
+
 When(/^(\w+) sends a text_note event with content "([^"]+)" and expiration in the past$/, async function(
   this: World<Record<string, any>>,
   name: string,
@@ -60,6 +85,14 @@ When(/^(\w+) sends a text_note event with content "([^"]+)" and expiration in th
   await createTextNoteWithExpiration(this, name, content, now() + 30)
 })
 
+When(/^(\w+) has a stored text_note event with content "([^"]+)" and expiration in the past$/, async function(
+  this: World<Record<string, any>>,
+  name: string,
+  content: string,
+) {
+  await seedStoredTextNoteWithExpiration(this, name, content, now() - 10)
+})
+
 When(/^(\w+) sends a text_note event with content "([^"]+)" and expiration in (\d+) seconds$/, async function(
   this: World<Record<string, any>>,
   name: string,
@@ -72,22 +105,6 @@ When(/^(\w+) sends a text_note event with content "([^"]+)" and expiration in (\
 
   expect(expirationTag).to.not.equal(undefined)
   expect(Number(expirationTag?.[1])).to.equal(expirationTime)
-})
-
-When(/^(\w+) waits until (\w+)'s last text_note event expires$/, async function(
-  this: World<Record<string, any>>,
-  _name: string,
-  author: string,
-) {
-  const events = this.parameters.events[author] as Event[]
-  const event = events[events.length - 1] as ExpiringEvent
-  const expirationTime = event[EventExpirationTimeMetadataKey]
-
-  expect(expirationTime).to.be.a('number')
-
-  const millisecondsUntilExpired = (Number(expirationTime) - now() + 1) * 1000
-
-  await wait(millisecondsUntilExpired)
 })
 
 When(/^(\w+) subscribes to text_note events from (\w+)$/, async function(
