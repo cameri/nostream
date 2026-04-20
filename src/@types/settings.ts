@@ -14,6 +14,7 @@ export interface Info {
 export interface Network {
   maxPayloadSize?: number
   remoteIpHeader?: string
+  trustedProxies?: string[]
 }
 
 export interface RateLimit {
