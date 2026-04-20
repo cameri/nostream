@@ -174,18 +174,16 @@ export class EventRepository implements IEventRepository {
 
   public async createMany(events: Event[]): Promise<number> {
     if (!events.length) {
-        .merge([
-          'deleted_at',
-          'event_content',
-          'event_created_at',
-          'event_id',
-          'event_signature',
-          'event_tags',
-          'expires_at',
-        ])
-        .whereRaw(
-          '("events"."event_created_at" < "excluded"."event_created_at" or ("events"."event_created_at" = "excluded"."event_created_at" and "events"."event_id" > "excluded"."event_id"))',
-        )
+      return 0
+    }
+
+    const rows = events.map((event) => this.toInsertRow(event))
+
+    return this.masterDbClient('events')
+      .insert(rows)
+      .onConflict()
+      .ignore()
+      .then(prop('rowCount') as () => number, () => 0)
   }
 
   private toInsertRow(event: Event) {
@@ -262,7 +260,6 @@ export class EventRepository implements IEventRepository {
           '(event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000)',
         ),
       )
-<<<<<<< HEAD
       .merge([
         'deleted_at',
         'event_content',
@@ -272,11 +269,9 @@ export class EventRepository implements IEventRepository {
         'event_tags',
         'expires_at',
       ])
-      .whereRaw('"events"."event_created_at" < "excluded"."event_created_at"')
-=======
-      .merge(['deleted_at', 'event_content', 'event_created_at', 'event_id', 'event_signature', 'event_tags', 'expires_at'])
-      .whereRaw('("events"."event_created_at" < "excluded"."event_created_at" or ("events"."event_created_at" = "excluded"."event_created_at" and "events"."event_id" > "excluded"."event_id"))')
->>>>>>> 03e4d60 (fix: add tie-breaker to upsertMany)
+      .whereRaw(
+        '("events"."event_created_at" < "excluded"."event_created_at" or ("events"."event_created_at" = "excluded"."event_created_at" and "events"."event_id" > "excluded"."event_id"))',
+      )
       .then(prop('rowCount') as () => number, () => 0)
   }
 
