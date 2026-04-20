@@ -55,10 +55,10 @@ Given('Alby NWC payments are enabled with URI scheme {string}', async function (
         ...(settings?.payments?.feeSchedules ?? {}),
         admission: [
           {
+            ...(admission[0] ?? {}),
             enabled: true,
             amount: ADMISSION_FEE_MSATS,
             whitelists: {},
-            ...(admission[0] ?? {}),
           },
         ],
       },
@@ -214,6 +214,10 @@ When('I request an admission invoice for pubkey {string}', async function (this:
 
   this.parameters.albyInvoiceHttpResponse = response
   this.parameters.albyTestPubkeys = [...(this.parameters.albyTestPubkeys ?? []), pubkey]
+
+  if (response.status === 400) {
+    throw new Error(`Unexpected 400 response body: ${String(response.data)}`)
+  }
 })
 
 Then('the invoice request response status is {int}', function (this: World<Record<string, any>>, statusCode: number) {
