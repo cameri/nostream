@@ -538,4 +538,41 @@ describe('EventRepository', () => {
       )
     })
   })
+
+  describe('upsertMany', () => {
+    it('returns 0 when no events are provided', async () => {
+      const result = await repository.upsertMany([])
+
+      expect(result).to.equal(0)
+    })
+
+    it('applies NIP-01 tie-breaker in batch conflict condition', async () => {
+      const thenStub = sandbox.stub().callsFake((onfulfilled) => Promise.resolve(onfulfilled({ rowCount: 1 })))
+      const whereRawStub = sandbox.stub().returns({ then: thenStub })
+      const mergeStub = sandbox.stub().returns({ whereRaw: whereRawStub })
+      const onConflictStub = sandbox.stub().returns({ merge: mergeStub })
+      const insertStub = sandbox.stub().returns({ onConflict: onConflictStub })
+      const masterDbClientStub = sandbox.stub().returns({ insert: insertStub }) as unknown as DatabaseClient
+
+      ;(masterDbClientStub as any).raw = sandbox.stub().returns('conflict-target')
+
+      repository = new EventRepository(masterDbClientStub, rrDbClient)
+
+      const event: Event = {
+        id: 'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a',
+        pubkey: '55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503',
+        created_at: 1564498626,
+        kind: 0,
+        tags: [],
+        content: '{"name":"ottman@minds.io"}',
+        sig: 'd1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9',
+        [ContextMetadataKey]: { remoteAddress: { address: '::1' } as any },
+      }
+
+      const result = await repository.upsertMany([event])
+
+      expect(whereRawStub).to.have.been.calledOnceWithExactly('("events"."event_created_at" < "excluded"."event_created_at" or ("events"."event_created_at" = "excluded"."event_created_at" and "events"."event_id" > "excluded"."event_id"))')
+      expect(result).to.equal(1)
+    })
+  })
 })
