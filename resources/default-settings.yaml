@@ -55,10 +55,16 @@ nip05:
   domainBlacklist: []
 network:
   maxPayloadSize: 524288
-  # Comment the next line if using CloudFlare proxy
-  remoteIpHeader: x-forwarded-for
-  # Uncomment the next line if using CloudFlare proxy
+  # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
+  # remoteIpHeader: x-forwarded-for
   # remoteIpHeader: cf-connecting-ip
+  # Proxy IPs allowed to set remoteIpHeader (loopback and common docker internal)
+  trustedProxies:
+    - "127.0.0.1"
+    - "::ffff:127.0.0.1"
+    - "::1"
+    - "10.10.10.1"
+    - "::ffff:10.10.10.1"
 workers:
   count: 0
 mirroring:
