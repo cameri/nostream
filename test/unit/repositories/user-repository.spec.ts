@@ -262,7 +262,7 @@ describe('UserRepository', () => {
     it('encodes pubkey as hex buffer in SQL', () => {
       const sql = repository.setVanished(pubkeyHex, false).toString()
 
-      expect(sql).to.include(pubkeyHex)
+      expect(sql).to.include(`X'${pubkeyHex}'`)
     })
   })
 

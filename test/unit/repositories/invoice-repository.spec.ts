@@ -247,13 +247,13 @@ describe('InvoiceRepository', () => {
       const { id: _id, ...invoiceWithoutId } = testInvoice
       const sql = repository.upsert(invoiceWithoutId as Invoice).toString()
 
-      expect(sql).to.include('insert into "invoices"')
+      expect(sql).to.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)
     })
 
     it('encodes pubkey as hex buffer in SQL', () => {
       const sql = repository.upsert(testInvoice).toString()
 
-      expect(sql).to.include(pubkeyHex)
+      expect(sql).to.include(`X'${pubkeyHex}'`)
     })
 
     it('includes all required invoice fields', () => {
