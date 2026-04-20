@@ -7,6 +7,7 @@ const { expect } = chai
 
 import * as settingsFactory from '../../../../src/factories/settings-factory'
 import * as templateCache from '../../../../src/utils/template-cache'
+import { DEFAULT_FILTER_LIMIT } from '../../../../src/constants/base'
 import { rootRequestHandler } from '../../../../src/handlers/request-handlers/root-request-handler'
 
 const baseSettings = {
@@ -125,6 +126,16 @@ describe('rootRequestHandler', () => {
       expect(doc.terms_of_service).to.equal('https://relay.example.com/terms')
     })
 
+    it('does not include optional NIP-11 fields when not configured', () => {
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc).to.not.have.property('banner')
+      expect(doc).to.not.have.property('icon')
+      expect(doc).to.not.have.property('self')
+      expect(doc).to.not.have.property('terms_of_service')
+    })
+
     it('includes NIP-11 limitation created_at and default_limit fields', () => {
       createSettingsStub.returns({
         ...baseSettings,
@@ -145,7 +156,7 @@ describe('rootRequestHandler', () => {
       const doc = res.send.firstCall.args[0]
       expect(doc.limitation.created_at_lower_limit).to.equal(86400)
       expect(doc.limitation.created_at_upper_limit).to.equal(300)
-      expect(doc.limitation.default_limit).to.equal(500)
+      expect(doc.limitation.default_limit).to.equal(DEFAULT_FILTER_LIMIT)
     })
 
     it('sets limitation.restricted_writes based on active write restrictions', () => {

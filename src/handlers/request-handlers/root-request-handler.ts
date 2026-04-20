@@ -4,6 +4,7 @@ import { path, pathEq } from 'ramda'
 import { createSettings } from '../../factories/settings-factory'
 import { escapeHtml } from '../../utils/html'
 import { FeeSchedule } from '../../@types/settings'
+import { DEFAULT_FILTER_LIMIT } from '../../constants/base'
 import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
 import packageJson from '../../../package.json'
@@ -41,16 +42,16 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     const relayInformationDocument = {
       name,
       description,
-      banner,
-      icon,
+      ...(banner !== undefined ? { banner } : {}),
+      ...(icon !== undefined ? { icon } : {}),
       pubkey,
-      self,
+      ...(self !== undefined ? { self } : {}),
       contact,
       supported_nips: packageJson.supportedNips,
       supported_nip_extensions: packageJson.supportedNipExtensions,
       software: packageJson.repository.url,
       version: packageJson.version,
-      terms_of_service,
+      ...(terms_of_service !== undefined ? { terms_of_service } : {}),
       limitation: {
         max_message_length: settings.network.maxPayloadSize,
         max_subscriptions: settings.limits?.client?.subscription?.maxSubscriptions,
@@ -67,7 +68,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         payment_required: settings.payments?.enabled,
         created_at_lower_limit: createdAtLimits?.maxNegativeDelta,
         created_at_upper_limit: createdAtLimits?.maxPositiveDelta,
-        default_limit: 500,
+        default_limit: DEFAULT_FILTER_LIMIT,
         restricted_writes: hasWriteRestriction,
       },
       payments_url: paymentsUrl.toString(),
