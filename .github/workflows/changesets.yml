@@ -21,19 +21,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
       - uses: actions/setup-node@v3
         with:
           node-version-file: .nvmrc
-          cache: npm
+          cache: pnpm
 
       - name: Install package dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Create Release Pull Request or Publish
         uses: changesets/action@v1
         with:
-          version: npm run changeset:version
-          publish: npm run changeset:tag
+          version: pnpm run changeset:version
+          publish: pnpm run changeset:tag
           createGithubReleases: true
           title: "chore(release): version packages"
         env:

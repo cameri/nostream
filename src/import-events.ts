@@ -32,10 +32,10 @@ const formatProgress = (stats: EventImportStats): string => {
 }
 
 const printUsage = (): void => {
-  console.log('Usage: npm run import -- <file> [--batch-size <number>]')
-  console.log('Example: npm run import -- ./events.jsonl --batch-size 1000')
-  console.log('Example: npm run import -- ./events.jsonl.gz')
-  console.log('Example: npm run import -- ./events.jsonl.xz')
+  console.log('Usage: pnpm run import <file> [--batch-size <number>]')
+  console.log('Example: pnpm run import ./events.jsonl --batch-size 1000')
+  console.log('Example: pnpm run import ./events.jsonl.gz')
+  console.log('Example: pnpm run import ./events.jsonl.xz')
 }
 
 const parseBatchSize = (value: string): number => {

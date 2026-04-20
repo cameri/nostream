@@ -2,13 +2,13 @@ FROM node:24-alpine AS build
 
 WORKDIR /build
 
-COPY ["package.json", "package-lock.json", "./"]
+COPY ["package.json", "pnpm-lock.yaml", "./"]
 
-RUN npm install --quiet
+RUN corepack enable && pnpm install --frozen-lockfile --silent
 
 COPY . .
 
-RUN npm run build
+RUN pnpm run build
 
 FROM node:24-alpine
 
@@ -24,8 +24,9 @@ RUN apk add --no-cache --update git
 ADD resources /app/resources
 
 COPY --from=build /build/dist .
+COPY --from=build /build/package.json /build/pnpm-lock.yaml ./
 
-RUN npm install --omit=dev --quiet
+RUN corepack enable && pnpm install --prod --frozen-lockfile --silent
 
 USER node:node
 
