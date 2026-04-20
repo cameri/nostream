@@ -21,11 +21,8 @@
   <a href="https://github.com/cameri/nostream/blob/main/LICENSE">
     <img alt="GitHub license" src="https://img.shields.io/github/license/Cameri/nostream" />
   </a>
-  <a href='https://coveralls.io/github/Cameri/nostream?branch=main'>
-    <img  alt='Coverage Status' src='https://coveralls.io/repos/github/Cameri/nostream/badge.svg?branch=main' />
-  </a>
-  <a href='https://sonarcloud.io/project/overview?id=Cameri_nostr-ts-relay'>
-    <img alt='Sonarcloud quality gate' src='https://sonarcloud.io/api/project_badges/measure?project=Cameri_nostr&metric=alert_status' />
+  <a href='https://coveralls.io/github/cameri/nostream?branch=main'>
+    <img alt='Coverage Status' src='https://coveralls.io/repos/github/cameri/nostream/badge.svg?branch=main' />
   </a>
   <a href='https://github.com/cameri/nostream/actions'>
     <img alt='Build status' src='https://github.com/cameri/nostream/actions/workflows/checks.yml/badge.svg?branch=main&event=push' />
