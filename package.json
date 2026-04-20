@@ -50,7 +50,7 @@
     "db:seed": "knex seed:run",
     "db:benchmark": "node --env-file-if-exists=.env -r ts-node/register src/scripts/benchmark-queries.ts",
     "db:verify-index-impact": "node --env-file-if-exists=.env -r ts-node/register scripts/verify-index-impact.ts",
-    "pretest:unit": "node -e \"require('fs').mkdirSync('.test-reports/unit', {recursive: true})\"",
+    "pretest:unit": "npm run build && node -e \"require('fs').mkdirSync('.test-reports/unit', {recursive: true})\"",
     "test:unit": "mocha 'test/**/*.spec.ts'",
     "pretest:cli": "npm run build",
     "test:cli": "mocha 'test/unit/cli/**/*.spec.ts'",
