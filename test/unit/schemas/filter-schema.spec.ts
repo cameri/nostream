@@ -22,6 +22,19 @@ describe('NIP-01', () => {
       }
     })
 
+    it('accepts uppercase tag filters (#A-Z)', () => {
+      const filterWithUppercase = {
+        ...filter,
+        '#I': ['identifier1', 'identifier2'],
+        '#K': ['1111'],
+        '#E': ['aa', 'bb'],
+        '#A': ['10000:pubkey:dtag'],
+      }
+      const result = validateSchema(filterSchema)(filterWithUppercase)
+      expect(result.error).to.be.undefined
+      expect(result.value).to.deep.equal(filterWithUppercase)
+    })
+
     it('returns same filter if filter is valid', () => {
       const result = validateSchema(filterSchema)(filter)
 

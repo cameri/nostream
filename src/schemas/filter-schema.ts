@@ -16,7 +16,7 @@ export const filterSchema = z
   .catchall(z.array(z.string().min(1).max(1024)))
   .superRefine((data, ctx) => {
     for (const key of Object.keys(data)) {
-      if (!knownFilterKeys.has(key) && !/^#[a-z]$/.test(key)) {
+      if (!knownFilterKeys.has(key) && !/^#[a-zA-Z]$/.test(key)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `Unknown key: ${key}`,
