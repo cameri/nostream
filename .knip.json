@@ -3,6 +3,7 @@
   "entry": [
     "src/index.ts",
     "src/import-events.ts",
+    "src/cli/index.ts",
     "knexfile.js"
   ],
   "project": [
@@ -11,7 +12,9 @@
   "ignoreDependencies": [
     "lzma-native"
   ],
-  "ignoreFiles": [],
+  "ignore": [
+    ".nostr/**"
+  ],
   "commitlint": false,
   "eslint": false,
   "github-actions": false,
