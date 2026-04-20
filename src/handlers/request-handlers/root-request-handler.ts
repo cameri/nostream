@@ -13,7 +13,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
 
   if (accepts(request).type(['application/nostr+json'])) {
     const {
-      info: { name, description, pubkey: rawPubkey, contact, relay_url },
+      info: { name, description, banner, icon, pubkey: rawPubkey, self: rawSelf, contact, relay_url, terms_of_service },
     } = settings
 
     const paymentsUrl = new URL(relay_url)
@@ -23,16 +23,21 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     const content = settings.limits?.event?.content
 
     const pubkey = rawPubkey.startsWith('npub1') ? fromBech32(rawPubkey) : rawPubkey
+    const self = rawSelf?.startsWith('npub1') ? fromBech32(rawSelf) : rawSelf
 
     const relayInformationDocument = {
       name,
       description,
+      banner,
+      icon,
       pubkey,
+      self,
       contact,
       supported_nips: packageJson.supportedNips,
       supported_nip_extensions: packageJson.supportedNipExtensions,
       software: packageJson.repository.url,
       version: packageJson.version,
+      terms_of_service,
       limitation: {
         max_message_length: settings.network.maxPayloadSize,
         max_subscriptions: settings.limits?.client?.subscription?.maxSubscriptions,
@@ -68,6 +73,8 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     response
       .setHeader('content-type', 'application/nostr+json')
       .setHeader('access-control-allow-origin', '*')
+      .setHeader('access-control-allow-headers', '*')
+      .setHeader('access-control-allow-methods', 'GET, OPTIONS')
       .status(200)
       .send(relayInformationDocument)
 

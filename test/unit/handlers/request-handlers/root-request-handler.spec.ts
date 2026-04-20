@@ -83,6 +83,14 @@ describe('rootRequestHandler', () => {
       expect(res.status).to.have.been.calledWith(200)
     })
 
+    it('sets required NIP-11 CORS headers', () => {
+      rootRequestHandler(req, res, next)
+
+      expect(res.setHeader).to.have.been.calledWith('access-control-allow-origin', '*')
+      expect(res.setHeader).to.have.been.calledWith('access-control-allow-headers', '*')
+      expect(res.setHeader).to.have.been.calledWith('access-control-allow-methods', 'GET, OPTIONS')
+    })
+
     it('includes the relay name in the response', () => {
       rootRequestHandler(req, res, next)
 
@@ -94,6 +102,27 @@ describe('rootRequestHandler', () => {
       rootRequestHandler(req, res, next)
 
       expect(getTemplateStub).to.not.have.been.called
+    })
+
+    it('includes optional NIP-11 fields when configured', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        info: {
+          ...baseSettings.info,
+          banner: 'https://relay.example.com/banner.png',
+          icon: 'https://relay.example.com/icon.png',
+          self: 'f'.repeat(64),
+          terms_of_service: 'https://relay.example.com/terms',
+        },
+      })
+
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.banner).to.equal('https://relay.example.com/banner.png')
+      expect(doc.icon).to.equal('https://relay.example.com/icon.png')
+      expect(doc.self).to.equal('f'.repeat(64))
+      expect(doc.terms_of_service).to.equal('https://relay.example.com/terms')
     })
   })
 
