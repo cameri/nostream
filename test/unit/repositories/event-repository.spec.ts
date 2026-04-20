@@ -575,6 +575,23 @@ describe('EventRepository', () => {
         'insert into "events" ("event_content", "event_created_at", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (\'I\'\'ve set up mirroring between relays: https://i.imgur.com/HxCDipB.png\', 1648351380, X\'6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407\', 1, X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\', X\'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768\', \'[["p","8355095016fddbe31fcf1453b26f613553e9758cf2263e190eac8fd96a3d3de9","wss://nostr-pub.wellorder.net"],["e","7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96","wss://nostr-relay.untethr.me"]]\', NULL, \'::1\') on conflict do nothing',
       )
     })
+
+    it('preserves subject tag when serializing text note tags', () => {
+      const event: Event = {
+        id: '6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407',
+        pubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+        created_at: 1648351380,
+        kind: 1,
+        tags: [[EventTags.Subject, 'Weekly notes']],
+        content: 'hello',
+        sig: 'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768',
+        [ContextMetadataKey]: { remoteAddress: { address: '::1' } as any },
+      }
+
+      const query = (repository as any).insert(event).toString()
+
+      expect(query).to.include('[["subject","Weekly notes"]]')
+    })
   })
 
   describe('deleteByPubkeyAndIds', () => {
