@@ -21,6 +21,19 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     paymentsUrl.pathname = '/invoices'
 
     const content = settings.limits?.event?.content
+    const eventLimits = settings.limits?.event
+    const createdAtLimits = eventLimits?.createdAt
+    const hasAdmissionRestriction =
+      settings.payments?.enabled === true &&
+      Boolean(settings.payments?.feeSchedules?.admission?.some((feeSchedule) => feeSchedule.enabled))
+    const hasWriteRestriction =
+      hasAdmissionRestriction ||
+      (eventLimits?.eventId?.minLeadingZeroBits ?? 0) > 0 ||
+      (eventLimits?.pubkey?.minLeadingZeroBits ?? 0) > 0 ||
+      (eventLimits?.pubkey?.whitelist?.length ?? 0) > 0 ||
+      (eventLimits?.pubkey?.blacklist?.length ?? 0) > 0 ||
+      (eventLimits?.kind?.whitelist?.length ?? 0) > 0 ||
+      (eventLimits?.kind?.blacklist?.length ?? 0) > 0
 
     const pubkey = rawPubkey.startsWith('npub1') ? fromBech32(rawPubkey) : rawPubkey
     const self = rawSelf?.startsWith('npub1') ? fromBech32(rawSelf) : rawSelf
@@ -49,9 +62,13 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         max_content_length: Array.isArray(content)
           ? content[0].maxLength // best guess since we have per-kind limits
           : content?.maxLength,
-        min_pow_difficulty: settings.limits?.event?.eventId?.minLeadingZeroBits,
+        min_pow_difficulty: eventLimits?.eventId?.minLeadingZeroBits,
         auth_required: false,
         payment_required: settings.payments?.enabled,
+        created_at_lower_limit: createdAtLimits?.maxNegativeDelta,
+        created_at_upper_limit: createdAtLimits?.maxPositiveDelta,
+        default_limit: 500,
+        restricted_writes: hasWriteRestriction,
       },
       payments_url: paymentsUrl.toString(),
       fees: Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(
