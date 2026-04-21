@@ -1,4 +1,7 @@
 import {
+  ClosedMessage,
+  CountResultMessage,
+  CountResultPayload,
   EndOfStoredEventsNotice,
   IncomingEventMessage,
   IncomingRelayedEventMessage,
@@ -27,6 +30,15 @@ export const createEndOfStoredEventsNoticeMessage = (subscriptionId: Subscriptio
 // NIP-20
 export const createCommandResult = (eventId: EventId, successful: boolean, message: string) => {
   return [MessageType.OK, eventId, successful, message]
+}
+
+// NIP-45
+export const createCountResultMessage = (queryId: SubscriptionId, payload: CountResultPayload): CountResultMessage => {
+  return [MessageType.COUNT, queryId, payload]
+}
+
+export const createClosedMessage = (queryId: SubscriptionId, reason: string): ClosedMessage => {
+  return [MessageType.CLOSED, queryId, reason]
 }
 
 export const createSubscriptionMessage = (
