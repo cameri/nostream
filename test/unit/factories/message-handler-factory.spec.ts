@@ -6,6 +6,7 @@ import { Event } from '../../../src/@types/event'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { messageHandlerFactory } from '../../../src/factories/message-handler-factory'
+import { CountMessageHandler } from '../../../src/handlers/count-message-handler'
 import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../../../src/handlers/unsubscribe-message-handler'
 import * as cacheModule from '../../../src/cache/client'
@@ -65,6 +66,12 @@ describe('messageHandlerFactory', () => {
     message = [MessageType.CLOSE, '']
 
     expect(factory([message, adapter])).to.be.an.instanceOf(UnsubscribeMessageHandler)
+  })
+
+  it('returns CountMessageHandler when given a COUNT message', () => {
+    message = [MessageType.COUNT, 'q1', {}] as any
+
+    expect(factory([message, adapter])).to.be.an.instanceOf(CountMessageHandler)
   })
 
   it('throws when given an invalid message', () => {
