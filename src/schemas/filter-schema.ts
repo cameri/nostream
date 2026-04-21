@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { createdAtSchema, kindSchema, prefixSchema } from './base-schema'
+import { isGenericTagQuery } from '../utils/filter'
 
 const knownFilterKeys = new Set(['ids', 'authors', 'kinds', 'since', 'until', 'limit'])
 
@@ -16,7 +17,7 @@ export const filterSchema = z
   .catchall(z.array(z.string().min(1).max(1024)))
   .superRefine((data, ctx) => {
     for (const key of Object.keys(data)) {
-      if (!knownFilterKeys.has(key) && !/^#[a-z]$/.test(key)) {
+      if (!knownFilterKeys.has(key) && !isGenericTagQuery(key)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `Unknown key: ${key}`,
