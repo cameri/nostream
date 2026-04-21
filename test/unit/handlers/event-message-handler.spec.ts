@@ -291,9 +291,9 @@ describe('EventMessageHandler', () => {
           eventLimits.createdAt.maxPositiveDelta = 100
           event.created_at += 101
 
-          expect((handler as any).canAcceptEvent(event)).to.equal(
-            'rejected: created_at is more than 100 seconds in the future',
-          )
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.equal('rejected: created_at is more than 100 seconds in the future')
         })
       })
 
