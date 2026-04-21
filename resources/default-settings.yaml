@@ -53,6 +53,8 @@ nip05:
   domainWhitelist: []
   # Block authors with NIP-05 at these domains
   domainBlacklist: []
+nip45:
+  enabled: true
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.

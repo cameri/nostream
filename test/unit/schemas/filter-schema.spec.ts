@@ -22,6 +22,32 @@ describe('NIP-01', () => {
       }
     })
 
+    it('accepts NIP-22 comment threading filters for kind 1111', () => {
+      const nip22Filter = {
+        kinds: [1111],
+        '#E': ['aaaa'],
+        '#K': ['1'],
+        '#I': ['identifier1'],
+        '#A': ['10000:pubkey:dtag'],
+      }
+      const result = validateSchema(filterSchema)(nip22Filter)
+      expect(result.error).to.be.undefined
+      expect(result.value).to.deep.equal(nip22Filter)
+    })
+
+    it('accepts uppercase tag filters (#A-Z)', () => {
+      const filterWithUppercase = {
+        ...filter,
+        '#I': ['identifier1', 'identifier2'],
+        '#K': ['1111'],
+        '#E': ['aa', 'bb'],
+        '#A': ['10000:pubkey:dtag'],
+      }
+      const result = validateSchema(filterSchema)(filterWithUppercase)
+      expect(result.error).to.be.undefined
+      expect(result.value).to.deep.equal(filterWithUppercase)
+    })
+
     it('returns same filter if filter is valid', () => {
       const result = validateSchema(filterSchema)(filter)
 
