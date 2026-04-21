@@ -59,7 +59,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const sendEOSE = () =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEndOfStoredEventsNoticeMessage(subscriptionId))
     const isSubscribedToEvent = SubscribeMessageHandler.isClientSubscribedToEvent(filters)
-    const isNotExpired = (event: Event) => {
+    const isTagUnexpired = (event: Event) => {
       if (isExpiredEvent(event)) {
         return false
       }
@@ -75,7 +75,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
         findEvents,
         streamFilter(propSatisfies(isNil, 'deleted_at')),
         streamMap(toNostrEvent),
-        streamFilter(isNotExpired),
+        streamFilter(isTagUnexpired),
         streamFilter(isSubscribedToEvent),
         streamEach(sendEvent),
         streamEnd(sendEOSE),
@@ -117,7 +117,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     }
 
     if (
-      typeof subscriptionLimits.maxSubscriptionIdLength === 'number' &&
+      typeof subscriptionLimits?.maxSubscriptionIdLength === 'number' &&
       subscriptionId.length > subscriptionLimits.maxSubscriptionIdLength
     ) {
       return `Subscription ID too long: Subscription ID must be less or equal to ${subscriptionLimits.maxSubscriptionIdLength}`
