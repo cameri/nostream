@@ -21,9 +21,7 @@
     44,
     45
   ],
-  "supportedNipExtensions": [
-    "11a"
-  ],
+  "supportedNipExtensions": [],
   "main": "src/index.ts",
   "scripts": {
     "dev": "node --env-file-if-exists=.env -r ts-node/register src/index.ts",

@@ -8,7 +8,11 @@ export interface Info {
   name: string
   description: string
   pubkey: string
+  banner?: string
+  icon?: string
+  self?: string
   contact: string
+  terms_of_service?: string
 }
 
 export interface Network {
