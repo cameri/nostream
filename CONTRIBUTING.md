@@ -11,10 +11,10 @@ Please keep the conversations civil, respectful and focus on the topic being dis
 Run dead code and dependency analysis before opening a pull request:
 
 ```
-npm run knip
+pnpm run knip
 ```
 
-`npm run lint` now runs Biome.
+`pnpm run lint` now runs Biome.
 
 ## Pull Request Process
 
@@ -35,7 +35,7 @@ Every pull request that changes behavior, adds a feature, or fixes a bug **must 
 To add a changeset:
 
 ```bash
-npx changeset
+pnpm exec changeset
 ```
 
 This interactive prompt will ask you to:
@@ -49,7 +49,7 @@ The command creates a file in `.changeset/` — commit it with your PR.
 If your PR only updates documentation and should not affect versioning, add an empty changeset:
 
 ```bash
-npx changeset --empty
+pnpm exec changeset --empty
 ```
 
 Commit the generated `.changeset/*.md` file with your PR. This satisfies CI without producing a version bump or changelog entry.
@@ -66,6 +66,6 @@ Commit the generated `.changeset/*.md` file with your PR. This satisfies CI with
 Run Biome checks before opening a pull request:
 
 ```
-npm run lint
-npm run format:check
+pnpm run lint
+pnpm run format:check
 ```

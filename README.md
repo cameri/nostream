@@ -255,18 +255,18 @@ Compressed files are also supported and decompressed on-the-fly:
 
 Basic import:
   ```
-  npm run import -- ./events.jsonl
+  pnpm run import ./events.jsonl
   ```
 
 Import a compressed backup:
   ```
-  npm run import -- ./events.jsonl.gz
-  npm run import -- ./events.jsonl.xz
+  pnpm run import ./events.jsonl.gz
+  pnpm run import ./events.jsonl.xz
   ```
 
 Set a custom batch size (default: `1000`):
   ```
-  npm run import -- ./events.jsonl --batch-size 500
+  pnpm run import ./events.jsonl --batch-size 500
   ```
 
 The importer:
@@ -437,14 +437,14 @@ Clone repository and enter directory:
 Install dependencies:
 
   ```
-  npm install -g knex
-  npm install
+  corepack enable
+  pnpm install
   ```
 
 Run migrations (at least once and after pulling new changes):
 
   ```
-  NODE_OPTIONS="-r dotenv/config" npm run db:migrate
+  NODE_OPTIONS="-r dotenv/config" pnpm run db:migrate
   ```
 
 Create .nostr folder inside nostream project folder and copy over the settings file:
@@ -457,19 +457,19 @@ Create .nostr folder inside nostream project folder and copy over the settings f
 To start in development mode:
 
   ```
-  npm run dev
+  pnpm run dev
   ```
 
 Or, start in production mode:
 
   ```
-  npm run start
+  pnpm run start
   ```
 
 To clean up the build, coverage and test reports run:
 
   ```
-  npm run clean
+  pnpm run clean
   ```
 ## Development Quick Start (Docker Compose)
 
@@ -496,10 +496,10 @@ Start:
 Run code quality checks with Biome:
 
   ```
-  npm run lint
-  npm run lint:fix
-  npm run format
-  npm run format:check
+  pnpm run lint
+  pnpm run lint:fix
+  pnpm run format
+  pnpm run format:check
   ```
 
 ### Unit tests
@@ -512,19 +512,19 @@ Open a terminal and change to the project's directory:
 Run unit tests with:
 
   ```
-  npm run test:unit
+  pnpm run test:unit
   ```
 
 Or, run unit tests in watch mode:
 
   ```
-  npm run test:unit:watch
+  pnpm run test:unit:watch
   ```
 
 To get unit test coverage run:
 
   ```
-  npm run cover:unit
+  pnpm run cover:unit
   ```
 
 To see the unit tests report open `.test-reports/unit/index.html` with a browser:
@@ -547,13 +547,13 @@ Open a terminal and change to the project's directory:
 Run integration tests with:
 
   ```
-  npm run docker:test:integration
+  pnpm run docker:test:integration
   ```
 
 And to get integration test coverage run:
 
   ```
-  npm run docker:cover:integration
+  pnpm run docker:cover:integration
   ```
 
 ### Integration tests (Standalone)
@@ -582,7 +582,7 @@ Set the following environment variables:
 Then run the integration tests:
 
   ```
-  npm run test:integration
+  pnpm run test:integration
   ```
 
 To see the integration tests report open `.test-reports/integration/report.html` with a browser:
@@ -593,7 +593,7 @@ To see the integration tests report open `.test-reports/integration/report.html`
 To get the integration test coverage run:
 
   ```
-  npm run cover:integration
+  pnpm run cover:integration
   ```
 
 To see the integration test coverage report open `.coverage/integration/lcov-report/index.html` with a browser.
@@ -610,7 +610,7 @@ Nostream includes a specialized security tester to simulate Slowloris-style conn
 ### Running the Tester
   ```bash
   # Simulates 5,000 idle "zombie" connections + 100 events/sec spam
-  npm run test:load -- --zombies 5000 --spam-rate 100
+  pnpm run test:load --zombies 5000 --spam-rate 100
   ```
 
 ### Analyzing Memory (Heap Snapshots)
@@ -657,10 +657,10 @@ Optional compression is supported for lower storage and transfer costs:
 - XZ via `lzma-native`
 
 ```
-npm run export                            # writes to events.jsonl
-npm run export -- backup-2024-01-01.jsonl # custom filename
-npm run export -- backup.jsonl.gz --compress --format=gzip
-npm run export -- backup.jsonl.xz --compress --format=xz
+pnpm run export                            # writes to events.jsonl
+pnpm run export backup-2024-01-01.jsonl # custom filename
+pnpm run export backup.jsonl.gz --compress --format=gzip
+pnpm run export backup.jsonl.xz --compress --format=xz
 ```
 
 Flags:
@@ -690,8 +690,8 @@ The script reads the same `DB_*` environment variables used by the relay (see [C
 Run the read-only query benchmark to record the planner's choices and timings for the relay's hot-path queries (REQ subscriptions, vanish checks, purge scans, pending-invoice polls):
 
 ```
-npm run db:benchmark
-npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+pnpm run db:benchmark
+pnpm run db:benchmark --runs 5 --kind 1 --limit 500
 ```
 
 The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements against your configured database — it never writes. It loads `DB_*` variables from `.env` automatically (via `node --env-file-if-exists=.env`), so no extra setup is required beyond the one you already need to run the relay. Use it to confirm the `events_active_pubkey_kind_created_at_idx`, `events_deleted_at_partial_idx`, and `invoices_pending_created_at_idx` indexes are being picked up.
@@ -699,7 +699,7 @@ The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements a
 For a reproducible before/after proof on a throwaway dataset, run:
 
 ```
-npm run db:verify-index-impact
+pnpm run db:verify-index-impact
 ```
 
 It seeds ~200k synthetic events, drops the hot-path indexes, runs EXPLAIN (ANALYZE, BUFFERS) for each hot query, recreates the indexes, and prints a BEFORE/AFTER table. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](CONFIGURATION.md).
@@ -712,31 +712,31 @@ corresponding data from the derived `event_tags` table when present.
 Dry run (no deletion):
 
   ```
-  npm run clean-db -- --all --dry-run
+  pnpm run clean-db --all --dry-run
   ```
 
 Full wipe:
 
   ```
-  npm run clean-db -- --all --force
+  pnpm run clean-db --all --force
   ```
 
 Delete events older than N days:
 
   ```
-  npm run clean-db -- --older-than=30 --force
+  pnpm run clean-db --older-than=30 --force
   ```
 
 Delete only selected kinds:
 
   ```
-  npm run clean-db -- --kinds=1,7,4 --force
+  pnpm run clean-db --kinds=1,7,4 --force
   ```
 
 Delete only selected kinds older than N days:
 
   ```
-  npm run clean-db -- --older-than=30 --kinds=1,7,4 --force
+  pnpm run clean-db --older-than=30 --kinds=1,7,4 --force
   ```
 
 By default, the script asks for explicit confirmation (`Type 'DELETE' to confirm`).

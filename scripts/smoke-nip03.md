@@ -49,9 +49,9 @@ would use.
 ## Running the automated script
 
 ```bash
-npm run smoke:nip03
+pnpm run smoke:nip03
 # or, with non-default relays:
-npx ts-node scripts/smoke-nip03.ts \
+pnpm exec ts-node scripts/smoke-nip03.ts \
   --local-relay ws://127.0.0.1:8008 \
   --source-relay wss://nostr-pub.wellorder.net
 ```
