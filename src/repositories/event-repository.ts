@@ -308,7 +308,9 @@ export class EventRepository implements IEventRepository {
         'event_tags',
         'expires_at',
       ])
-      .whereRaw('"events"."event_created_at" < "excluded"."event_created_at"')
+      .whereRaw(
+        '("events"."event_created_at" < "excluded"."event_created_at" or ("events"."event_created_at" = "excluded"."event_created_at" and "events"."event_id" > "excluded"."event_id"))',
+      )
       .then(prop('rowCount') as () => number, () => 0)
   }
 
