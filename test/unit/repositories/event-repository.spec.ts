@@ -417,6 +417,97 @@ describe('EventRepository', () => {
     })
   })
 
+  describe('.countByFilters', () => {
+    it('throws error if filters is empty', async () => {
+      try {
+        await repository.countByFilters([])
+        expect.fail('Expected countByFilters to throw')
+      } catch (error) {
+        expect((error as Error).message).to.equal('Filters cannot be empty')
+      }
+    })
+
+    it('returns count value from query result', async () => {
+      sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '42' }),
+        }),
+      } as any)
+
+      const result = await repository.countByFilters([{}])
+
+      expect(result).to.equal(42)
+    })
+
+    it('uses countDistinct on event_id to avoid duplicate counts', async () => {
+      const countDistinctStub = sandbox.stub().returns({
+        first: async () => ({ count: '1' }),
+      })
+
+      sandbox.stub(rrDbClient, 'from').returns({ countDistinct: countDistinctStub } as any)
+
+      await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
+
+      expect(countDistinctStub).to.have.been.calledOnceWithExactly({ count: 'event_id' })
+    })
+
+    it('builds union query when there are multiple filters', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ kinds: [1] }, { authors: ['22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793'] }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include(' union ')
+    })
+
+    it('joins tags table for generic tag filters', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('left join "event_tags"')
+      expect(sql).to.include('event_tags.tag_name')
+      expect(sql).to.include('event_tags.tag_value')
+    })
+
+    it('applies limit ordering when a filter includes limit', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ limit: 3 }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('order by "event_created_at" DESC, "event_id" asc limit 3')
+    })
+
+    it('filters out deleted and expired events', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ kinds: [1] }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('"events"."deleted_at" is null')
+      expect(sql).to.include('"events"."expires_at" is null')
+      expect(sql).to.include('"events"."expires_at" >')
+    })
+  })
+
   describe('.create', () => {
     let insertStub: sinon.SinonStub
     beforeEach(() => {
@@ -536,6 +627,43 @@ describe('EventRepository', () => {
       expect(query).to.equal(
         'insert into "events" ("deleted_at", "event_content", "event_created_at", "event_deduplication", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (NULL, \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, \'["deduplication"]\', X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\', NULL, \'::1\') on conflict (event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000) do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"remote_address" = \'::1\',"expires_at" = NULL,"deleted_at" = NULL where ("events"."event_created_at" < 1564498626 or ("events"."event_created_at" = 1564498626 and "events"."event_id" > X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\'))',
       )
+    })
+  })
+
+  describe('upsertMany', () => {
+    it('returns 0 when no events are provided', async () => {
+      const result = await repository.upsertMany([])
+
+      expect(result).to.equal(0)
+    })
+
+    it('applies NIP-01 tie-breaker in batch conflict condition', async () => {
+      const thenStub = sandbox.stub().callsFake((onfulfilled) => Promise.resolve(onfulfilled({ rowCount: 1 })))
+      const whereRawStub = sandbox.stub().returns({ then: thenStub })
+      const mergeStub = sandbox.stub().returns({ whereRaw: whereRawStub })
+      const onConflictStub = sandbox.stub().returns({ merge: mergeStub })
+      const insertStub = sandbox.stub().returns({ onConflict: onConflictStub })
+      const masterDbClientStub = sandbox.stub().returns({ insert: insertStub }) as unknown as DatabaseClient
+
+      ;(masterDbClientStub as any).raw = sandbox.stub().returns('conflict-target')
+
+      repository = new EventRepository(masterDbClientStub, rrDbClient)
+
+      const event: Event = {
+        id: 'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a',
+        pubkey: '55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503',
+        created_at: 1564498626,
+        kind: 0,
+        tags: [],
+        content: '{"name":"ottman@minds.io"}',
+        sig: 'd1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9',
+        [ContextMetadataKey]: { remoteAddress: { address: '::1' } as any },
+      }
+
+      const result = await repository.upsertMany([event])
+
+      expect(whereRawStub).to.have.been.calledOnceWithExactly('("events"."event_created_at" < "excluded"."event_created_at" or ("events"."event_created_at" = "excluded"."event_created_at" and "events"."event_id" > "excluded"."event_id"))')
+      expect(result).to.equal(1)
     })
   })
 })
