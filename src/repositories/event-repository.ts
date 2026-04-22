@@ -30,6 +30,7 @@ import {
 
 import {
   ContextMetadataKey,
+  DEFAULT_FILTER_LIMIT,
   EventDeduplicationMetadataKey,
   EventExpirationTimeMetadataKey,
   EventKinds,
@@ -76,7 +77,7 @@ export class EventRepository implements IEventRepository {
       if (typeof currentFilter.limit === 'number') {
         builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
       } else {
-        builder.limit(500).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
+        builder.limit(DEFAULT_FILTER_LIMIT).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
       }
 
       if (isTagQuery) {

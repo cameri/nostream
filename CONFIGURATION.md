@@ -127,11 +127,15 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 
 | Name                                        | Description                                                                   |
 |---------------------------------------------|-------------------------------------------------------------------------------|
+| info.banner                                 | Public banner image URL for the relay information document. |
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
 | info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
+| info.icon                                   | Public icon image URL for the relay information document. |
 | info.name                                   | Public name of your relay. (e.g. TBG's Public Relay) |
 | info.pubkey                                 | Relay operator's Nostr pubkey in hex format. |
 | info.relay_url                              | Public-facing URL of your relay. (e.g. wss://relay.your-domain.com) |
+| info.self                                   | Relay pubkey in hex format for the relay information document `self` field. |
+| info.terms_of_service                       | Public URL to relay terms of service. |
 | limits.admissionCheck.ipWhitelist           | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.admissionCheck.rateLimits[].period   | Rate limit period in milliseconds. |
 | limits.admissionCheck.rateLimits[].rate     | Maximum number of admission checks during period. |
