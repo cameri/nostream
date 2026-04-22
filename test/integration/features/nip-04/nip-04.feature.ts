@@ -2,7 +2,7 @@ import { Then, When, World } from '@cucumber/cucumber'
 import { expect } from 'chai'
 import WebSocket from 'ws'
 
-import { createEvent, createSubscription, sendEvent, waitForNextEvent } from '../helpers'
+import { createEvent, createSubscription, sendEvent, waitForEOSE, waitForNextEvent } from '../helpers'
 import { EventKinds, EventTags } from '../../../../src/constants/base'
 import { CommandResult } from '../../../../src/@types/messages'
 import { Event } from '../../../../src/@types/event'
@@ -41,6 +41,7 @@ When(/^(\w+) subscribes to tag p with (\w+) pubkey$/, async function(
   this.parameters.subscriptions[name].push(subscription)
 
   await createSubscription(ws, subscription.name, subscription.filters)
+  await waitForEOSE(ws, subscription.name)
 })
 
 Then(/(\w+) receives an encrypted_direct_message event from (\w+) with content "([^"]+?)" tagged for (\w+)/, async function(
