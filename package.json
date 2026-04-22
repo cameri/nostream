@@ -70,7 +70,7 @@
     "postdocker:integration:run": "docker compose -f ./test/integration/docker-compose.yml down",
     "prepare": "husky install || exit 0",
     "changeset:version": "changeset version",
-    "changeset:tag": "changeset tag"
+    "changeset:publish": "changeset publish"
   },
   "repository": {
     "type": "git",
