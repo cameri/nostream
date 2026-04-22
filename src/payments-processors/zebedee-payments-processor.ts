@@ -6,16 +6,16 @@ import { createLogger } from '../factories/logger-factory'
 import { fromZebedeeInvoice } from '../utils/transform'
 import { Settings } from '../@types/settings'
 
-const debug = createLogger('zebedee-payments-processor')
+const logger = createLogger('zebedee-payments-processor')
 
 export class ZebedeePaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private httpClient: AxiosInstance,
-    private settings: Factory<Settings>
+    private settings: Factory<Settings>,
   ) {}
 
   public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
-    debug('get invoice: %s', invoiceId)
+    logger('get invoice: %s', invoiceId)
 
     try {
       const response = await this.httpClient.get(`/v0/charges/${invoiceId}`, {
@@ -24,19 +24,15 @@ export class ZebedeePaymentsProcessor implements IPaymentsProcessor {
 
       return fromZebedeeInvoice(response.data.data)
     } catch (error) {
-      console.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
+      logger.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
 
       throw error
     }
   }
 
   public async createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse> {
-    debug('create invoice: %o', request)
-    const {
-      amount: amountMsats,
-      description,
-      requestId,
-    } = request
+    logger('create invoice: %o', request)
+    const { amount: amountMsats, description, requestId } = request
 
     const body = {
       amount: amountMsats.toString(),
@@ -46,18 +42,18 @@ export class ZebedeePaymentsProcessor implements IPaymentsProcessor {
     }
 
     try {
-      debug('request body: %o', body)
+      logger('request body: %o', body)
       const response = await this.httpClient.post('/v0/charges', body, {
         maxRedirects: 1,
       })
 
       const result = fromZebedeeInvoice(response.data.data)
 
-      debug('result: %o', result)
+      logger('result: %o', result)
 
       return result
     } catch (error) {
-      console.error('Unable to request invoice. Reason:', error.message)
+      logger.error('Unable to request invoice. Reason:', error.message)
 
       throw error
     }

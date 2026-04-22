@@ -1,4 +1,7 @@
 import {
+  ClosedMessage,
+  CountResultMessage,
+  CountResultPayload,
   EndOfStoredEventsNotice,
   IncomingEventMessage,
   IncomingRelayedEventMessage,
@@ -15,17 +18,12 @@ export const createNoticeMessage = (notice: string): NoticeMessage => {
   return [MessageType.NOTICE, notice]
 }
 
-export const createOutgoingEventMessage = (
-  subscriptionId: SubscriptionId,
-  event: Event,
-): OutgoingMessage => {
+export const createOutgoingEventMessage = (subscriptionId: SubscriptionId, event: Event): OutgoingMessage => {
   return [MessageType.EVENT, subscriptionId, event]
 }
 
 // NIP-15
-export const createEndOfStoredEventsNoticeMessage = (
-  subscriptionId: SubscriptionId,
-): EndOfStoredEventsNotice => {
+export const createEndOfStoredEventsNoticeMessage = (subscriptionId: SubscriptionId): EndOfStoredEventsNotice => {
   return [MessageType.EOSE, subscriptionId]
 }
 
@@ -34,18 +32,29 @@ export const createCommandResult = (eventId: EventId, successful: boolean, messa
   return [MessageType.OK, eventId, successful, message]
 }
 
+// NIP-45
+export const createCountResultMessage = (queryId: SubscriptionId, payload: CountResultPayload): CountResultMessage => {
+  return [MessageType.COUNT, queryId, payload]
+}
+
+export const createClosedMessage = (queryId: SubscriptionId, reason: string): ClosedMessage => {
+  return [MessageType.CLOSED, queryId, reason]
+}
+
 export const createSubscriptionMessage = (
   subscriptionId: SubscriptionId,
-  filters: SubscriptionFilter[]
+  filters: SubscriptionFilter[],
 ): SubscribeMessage => {
   return [MessageType.REQ, subscriptionId, ...filters] as any
 }
 
-export const createRelayedEventMessage =
-  (event: RelayedEvent, secret?: string): IncomingRelayedEventMessage | IncomingEventMessage => {
-    if (!secret) {
-      return [MessageType.EVENT, event]
-    }
-
-    return [MessageType.EVENT, event, secret]
+export const createRelayedEventMessage = (
+  event: RelayedEvent,
+  secret?: string,
+): IncomingRelayedEventMessage | IncomingEventMessage => {
+  if (!secret) {
+    return [MessageType.EVENT, event]
   }
+
+  return [MessageType.EVENT, event, secret]
+}

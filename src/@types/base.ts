@@ -16,21 +16,15 @@ type ExtraTagValues = {
 }
 
 export interface TagBase extends ExtraTagValues {
-  0: TagName;
+  0: TagName
   1: string
 }
 
-type Enumerate<
-  N extends number,
-  Acc extends number[] = [],
-> = Acc['length'] extends N
+type Enumerate<N extends number, Acc extends number[] = []> = Acc['length'] extends N
   ? Acc[number]
   : Enumerate<N, [...Acc, Acc['length']]>
 
-export type Range<F extends number, T extends number> = Exclude<
-  Enumerate<T>,
-  Enumerate<F>
->
+export type Range<F extends number, T extends number> = Exclude<Enumerate<T>, Enumerate<F>>
 
 export type Factory<TOutput = any, TInput = void> = (input: TInput) => TOutput
 

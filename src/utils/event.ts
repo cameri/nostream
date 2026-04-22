@@ -1,11 +1,8 @@
 import * as secp256k1 from '@noble/secp256k1'
-
+import { ALL_RELAYS, EventKinds, EventTags } from '../constants/base'
 import { applySpec, pipe, prop } from 'ramda'
 import { CanonicalEvent, DBEvent, Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
-import { createCipheriv, getRandomValues } from 'crypto'
 import { EventId, Pubkey, Tag } from '../@types/base'
-import { EventKinds, EventTags } from '../constants/base'
-
 import cluster from 'cluster'
 import { deriveFromSecret } from './secret'
 import { EventKindsRange } from '../@types/settings'
@@ -34,75 +31,67 @@ export const toNostrEvent: (event: DBEvent) => Event = applySpec({
   sig: pipe(prop('event_signature') as () => Buffer, fromBuffer),
 })
 
-export const isEventKindOrRangeMatch = ({ kind }: Event) =>
+export const isEventKindOrRangeMatch =
+  ({ kind }: Event) =>
   (item: EventKinds | EventKindsRange) =>
-    typeof item === 'number'
-      ? item === kind
-      : kind >= item[0] && kind <= item[1]
+    typeof item === 'number' ? item === kind : kind >= item[0] && kind <= item[1]
 
-export const isEventMatchingFilter = (filter: SubscriptionFilter) => (event: Event): boolean => {
-  const startsWith = (input: string) => (prefix: string) => input.startsWith(prefix)
+export const isEventMatchingFilter =
+  (filter: SubscriptionFilter) =>
+  (event: Event): boolean => {
+    const startsWith = (input: string) => (prefix: string) => input.startsWith(prefix)
 
-  // NIP-01: Basic protocol flow description
+    // NIP-01: Basic protocol flow description
 
-  if (Array.isArray(filter.ids) && (
-    !filter.ids.some(startsWith(event.id))
-  )) {
-    return false
-  }
+    if (Array.isArray(filter.ids) && !filter.ids.some(startsWith(event.id))) {
+      return false
+    }
 
-  if (Array.isArray(filter.kinds) && !filter.kinds.includes(event.kind)) {
-    return false
-  }
+    if (Array.isArray(filter.kinds) && !filter.kinds.includes(event.kind)) {
+      return false
+    }
 
-  if (typeof filter.since === 'number' && event.created_at < filter.since) {
-    return false
-  }
+    if (typeof filter.since === 'number' && event.created_at < filter.since) {
+      return false
+    }
 
-  if (typeof filter.until === 'number' && event.created_at > filter.until) {
-    return false
-  }
+    if (typeof filter.until === 'number' && event.created_at > filter.until) {
+      return false
+    }
 
-  if (Array.isArray(filter.authors)) {
+    if (Array.isArray(filter.authors)) {
+      if (!filter.authors.some(startsWith(event.pubkey))) {
+        return false
+      }
+    }
+
+    // NIP-27: Multicast
+    // const targetMulticastGroups: string[] = event.tags.reduce(
+    //   (acc, tag) => (tag[0] === EventTags.Multicast)
+    //     ? [...acc, tag[1]]
+    //     : acc,
+    //   [] as string[]
+    // )
+
+    // if (targetMulticastGroups.length && !Array.isArray(filter['#m'])) {
+    //   return false
+    // }
+
+    // NIP-01: Support #e and #p tags
+    // NIP-12: Support generic tag queries
+
     if (
-      !filter.authors.some(startsWith(event.pubkey))
+      Object.entries(filter)
+        .filter(([key, criteria]) => isGenericTagQuery(key) && Array.isArray(criteria))
+        .some(([key, criteria]) => {
+          return !event.tags.some((tag) => tag[0] === key[1] && criteria.includes(tag[1]))
+        })
     ) {
       return false
     }
+
+    return true
   }
-
-  // NIP-27: Multicast
-  // const targetMulticastGroups: string[] = event.tags.reduce(
-  //   (acc, tag) => (tag[0] === EventTags.Multicast)
-  //     ? [...acc, tag[1]]
-  //     : acc,
-  //   [] as string[]
-  // )
-
-  // if (targetMulticastGroups.length && !Array.isArray(filter['#m'])) {
-  //   return false
-  // }
-
-  // NIP-01: Support #e and #p tags
-  // NIP-12: Support generic tag queries
-
-  if (
-    Object.entries(filter)
-      .filter(
-        ([key, criteria]) =>
-          isGenericTagQuery(key) && Array.isArray(criteria),
-      )
-      .some(([key, criteria]) => {
-        return !event.tags.some(
-          (tag) => tag[0] === key[1] && criteria.includes(tag[1]),
-        )
-      })
-  ) {
-    return false
-  }
-
-  return true
-}
 
 export const getEventHash = async (event: Event | UnidentifiedEvent | UnsignedEvent): Promise<string> => {
   const id = await secp256k1.utils.sha256(Buffer.from(JSON.stringify(serializeEvent(event))))
@@ -111,7 +100,7 @@ export const getEventHash = async (event: Event | UnidentifiedEvent | UnsignedEv
 }
 
 export const isEventIdValid = async (event: Event): Promise<boolean> => {
-  return event.id === await getEventHash(event)
+  return event.id === (await getEventHash(event))
 }
 
 export const isEventSignatureValid = async (event: Event): Promise<boolean> => {
@@ -152,37 +141,12 @@ export const getPublicKey = (privkey: string) => {
   return publicKeyCache[privkey]
 }
 
-export const signEvent = (privkey: string | Buffer | undefined) => async (event: UnsignedEvent): Promise<Event> => {
-  const sig = await secp256k1.schnorr.sign(event.id, privkey as any)
-  return { ...event, sig: Buffer.from(sig).toString('hex') }
-}
-
-export const encryptKind4Event = (
-  senderPrivkey: string | Buffer,
-  receiverPubkey: Pubkey,
-) => (event: UnsignedEvent): UnsignedEvent => {
-  const key = secp256k1
-    .getSharedSecret(senderPrivkey, `02${receiverPubkey}`, true)
-    .subarray(1)
-
-  const iv = getRandomValues(new Uint8Array(16))
-
-  // deepcode ignore InsecureCipherNoIntegrity: NIP-04 Encrypted Direct Message uses aes-256-cbc
-  const cipher = createCipheriv(
-    'aes-256-cbc',
-    Buffer.from(key),
-    iv,
-  )
-
-  let content = cipher.update(event.content, 'utf8', 'base64')
-  content += cipher.final('base64')
-  content += '?iv=' + Buffer.from(iv.buffer).toString('base64')
-
-  return {
-    ...event,
-    content,
+export const signEvent =
+  (privkey: string | Buffer | undefined) =>
+  async (event: UnsignedEvent): Promise<Event> => {
+    const sig = await secp256k1.schnorr.sign(event.id, privkey as any)
+    return { ...event, sig: Buffer.from(sig).toString('hex') }
   }
-}
 
 export const broadcastEvent = async (event: Event): Promise<Event> => {
   return new Promise((resolve, reject) => {
@@ -208,10 +172,12 @@ export const broadcastEvent = async (event: Event): Promise<Event> => {
 }
 
 export const isReplaceableEvent = (event: Event): boolean => {
-  return event.kind === EventKinds.SET_METADATA
-    || event.kind === EventKinds.CONTACT_LIST
-    || event.kind === EventKinds.CHANNEL_METADATA
-    || (event.kind >= EventKinds.REPLACEABLE_FIRST && event.kind <= EventKinds.REPLACEABLE_LAST)
+  return (
+    event.kind === EventKinds.SET_METADATA ||
+    event.kind === EventKinds.CONTACT_LIST ||
+    event.kind === EventKinds.CHANNEL_METADATA ||
+    (event.kind >= EventKinds.REPLACEABLE_FIRST && event.kind <= EventKinds.REPLACEABLE_LAST)
+  )
 }
 
 export const isEphemeralEvent = (event: Event): boolean => {
@@ -219,12 +185,27 @@ export const isEphemeralEvent = (event: Event): boolean => {
 }
 
 export const isParameterizedReplaceableEvent = (event: Event): boolean => {
-  return event.kind >= EventKinds.PARAMETERIZED_REPLACEABLE_FIRST
-    && event.kind <= EventKinds.PARAMETERIZED_REPLACEABLE_LAST
+  return (
+    event.kind >= EventKinds.PARAMETERIZED_REPLACEABLE_FIRST && event.kind <= EventKinds.PARAMETERIZED_REPLACEABLE_LAST
+  )
 }
 
 export const isDeleteEvent = (event: Event): boolean => {
   return event.kind === EventKinds.DELETE
+}
+
+export const isRequestToVanishEvent = (event: Event, relayUrl?: string): boolean => {
+  if (event.kind !== EventKinds.REQUEST_TO_VANISH) {
+    return false
+  }
+
+  if (typeof relayUrl === 'undefined') {
+    return true
+  }
+
+  const relayTags = event.tags.filter((tag) => tag.length >= 2 && tag[0] === EventTags.Relay).map((tag) => tag[1])
+
+  return relayTags.length > 0 && relayTags.every((relay) => relay === relayUrl || relay === ALL_RELAYS)
 }
 
 export const isExpiredEvent = (event: Event): boolean => {
@@ -245,11 +226,13 @@ export const isExpiredEvent = (event: Event): boolean => {
 
 export const getEventExpiration = (event: Event): number | undefined => {
   const [, rawExpirationTime] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Expiration) ?? []
-  if (!rawExpirationTime) return
+  if (!rawExpirationTime) {
+    return
+  }
 
   const expirationTime = Number(rawExpirationTime)
 
-  if ((Number.isSafeInteger(expirationTime) && Math.log10(expirationTime) < 10)) {
+  if (Number.isSafeInteger(expirationTime) && Math.log10(expirationTime) < 10) {
     return expirationTime
   }
 }
@@ -260,4 +243,27 @@ export const getEventProofOfWork = (eventId: EventId): number => {
 
 export const getPubkeyProofOfWork = (pubkey: Pubkey): number => {
   return getLeadingZeroBits(Buffer.from(pubkey, 'hex'))
+}
+
+// NIP-17: Private Direct Messages helpers
+
+export const isGiftWrapEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.GIFT_WRAP
+}
+
+export const isSealEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.SEAL
+}
+
+export const isDirectMessageEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.DIRECT_MESSAGE
+}
+
+export const isFileMessageEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.FILE_MESSAGE
+}
+
+// NIP-03: OpenTimestamps attestation
+export const isOpenTimestampsEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.OPEN_TIMESTAMPS
 }

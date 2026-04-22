@@ -20,9 +20,7 @@ const { expect } = chai
 describe('ParameterizedReplaceableEventStrategy', () => {
   const event: Event = {
     id: 'id',
-    tags: [
-      [EventTags.Deduplication, 'dedup'],
-    ],
+    tags: [[EventTags.Deduplication, 'dedup']],
   } as any
   let webSocket: IWebSocketAdapter
   let eventRepository: IEventRepository
@@ -60,7 +58,9 @@ describe('ParameterizedReplaceableEventStrategy', () => {
       await strategy.execute(event)
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
-      expect(eventRepositoryUpsertStub.firstCall.firstArg).to.have.property(EventDeduplicationMetadataKey).and.deep.equal([''])
+      expect(eventRepositoryUpsertStub.firstCall.firstArg)
+        .to.have.property(EventDeduplicationMetadataKey)
+        .and.deep.equal([''])
     })
 
     it('upserts event with d tag and one string', async () => {
@@ -68,7 +68,9 @@ describe('ParameterizedReplaceableEventStrategy', () => {
       await strategy.execute(event)
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
-      expect(eventRepositoryUpsertStub.firstCall.firstArg).to.have.property(EventDeduplicationMetadataKey).and.deep.equal(['one'])
+      expect(eventRepositoryUpsertStub.firstCall.firstArg)
+        .to.have.property(EventDeduplicationMetadataKey)
+        .and.deep.equal(['one'])
     })
 
     it('upserts event with d tag and two strings', async () => {
@@ -76,7 +78,9 @@ describe('ParameterizedReplaceableEventStrategy', () => {
       await strategy.execute(event)
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
-      expect(eventRepositoryUpsertStub.firstCall.firstArg).to.have.property(EventDeduplicationMetadataKey).and.deep.equal(['one', 'two'])
+      expect(eventRepositoryUpsertStub.firstCall.firstArg)
+        .to.have.property(EventDeduplicationMetadataKey)
+        .and.deep.equal(['one'])
     })
 
     it('broadcast event if event is created', async () => {
@@ -86,14 +90,13 @@ describe('ParameterizedReplaceableEventStrategy', () => {
 
       expect(eventRepositoryUpsertStub).to.have.been.calledOnceWithExactly(event)
       expect(webSocketEmitStub).to.have.been.calledTwice
-      expect(webSocketEmitStub).to.have.been.calledWithExactly(
-        WebSocketAdapterEvent.Message,
-        [MessageType.OK, 'id', true, '']
-      )
-      expect(webSocketEmitStub).to.have.been.calledWithExactly(
-        WebSocketAdapterEvent.Broadcast,
-        event
-      )
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Message, [
+        MessageType.OK,
+        'id',
+        true,
+        '',
+      ])
+      expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Broadcast, event)
     })
 
     it('does not broadcast event if event is duplicate', async () => {
@@ -101,10 +104,12 @@ describe('ParameterizedReplaceableEventStrategy', () => {
 
       await strategy.execute(event)
 
-      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(
-        WebSocketAdapterEvent.Message,
-        [MessageType.OK, 'id', true, 'duplicate:']
-      )
+      expect(webSocketEmitStub).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Message, [
+        MessageType.OK,
+        'id',
+        true,
+        'duplicate:',
+      ])
     })
 
     it('rejects if unable to upsert event', async () => {

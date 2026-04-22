@@ -1,0 +1,19 @@
+services:
+  i2pd:
+    image: purplei2p/i2pd:release-2.59.0
+    container_name: i2pd
+    depends_on:
+      - nostream
+    volumes:
+      - ${PWD}/.nostr/i2p/data:/home/i2pd/data
+      - ${PWD}/i2p/i2pd.conf:/home/i2pd/data/i2pd.conf:ro
+      - ${PWD}/i2p/tunnels.conf:/home/i2pd/data/tunnels.conf:ro
+    ports:
+      # i2pd web console — bound to 127.0.0.1 on the host so operators can
+      # look up the .b32.i2p destination without exposing router state
+      # to the LAN. Remove this mapping to disable host-side access.
+      - 127.0.0.1:7070:7070
+    restart: on-failure
+    networks:
+      default:
+        ipv4_address: 10.10.10.252

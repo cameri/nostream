@@ -21,11 +21,8 @@
   <a href="https://github.com/cameri/nostream/blob/main/LICENSE">
     <img alt="GitHub license" src="https://img.shields.io/github/license/Cameri/nostream" />
   </a>
-  <a href='https://coveralls.io/github/Cameri/nostream?branch=main'>
-    <img  alt='Coverage Status' src='https://coveralls.io/repos/github/Cameri/nostream/badge.svg?branch=main' />
-  </a>
-  <a href='https://sonarcloud.io/project/overview?id=Cameri_nostr-ts-relay'>
-    <img alt='Sonarcloud quality gate' src='https://sonarcloud.io/api/project_badges/measure?project=Cameri_nostr&metric=alert_status' />
+  <a href='https://coveralls.io/github/cameri/nostream?branch=main'>
+    <img alt='Coverage Status' src='https://coveralls.io/repos/github/cameri/nostream/badge.svg?branch=main' />
   </a>
   <a href='https://github.com/cameri/nostream/actions'>
     <img alt='Build status' src='https://github.com/cameri/nostream/actions/workflows/checks.yml/badge.svg?branch=main&event=push' />
@@ -47,10 +44,11 @@ NIPs with a relay-specific implementation are listed here.
 
 - [x] NIP-01: Basic protocol flow description
 - [x] NIP-02: Contact list and petnames
+- [x] NIP-03: OpenTimestamps Attestations for Events
 - [x] NIP-04: Encrypted Direct Message
+- [x] NIP-05: Mapping Nostr keys to DNS-based internet identifiers
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
-- [x] NIP-11a: Relay Information Document Extensions
 - [x] NIP-12: Generic tag queries
 - [x] NIP-13: Proof of Work
 - [x] NIP-15: End of Stored Events Notice
@@ -61,13 +59,16 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-28: Public Chat
 - [x] NIP-33: Parameterized Replaceable Events
 - [x] NIP-40: Expiration Timestamp
+- [x] NIP-44: Encrypted Payloads (Versioned)
+- [x] NIP-45: Event Counts
+- [x] NIP-62: Request to Vanish
 
 ## Requirements
 
 ### Standalone setup
 - PostgreSQL 14.0
 - Redis
-- Node v18
+- Node v24
 - Typescript
 
 ### Docker setups
@@ -209,6 +210,20 @@ Start:
   ```
   ./scripts/start_with_tor
   ```
+  or, with Nginx reverse proxy and Let's Encrypt SSL:
+  ```
+  RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com ./scripts/start_with_nginx
+  ```
+
+**Windows / WSL2 users:** Docker bind-mounts can cause PostgreSQL permission errors on Windows. Use the dedicated override file instead:
+  ```
+  docker compose -f docker-compose.yml -f docker-compose.windows.yml up --build
+  ```
+  Or add this to your `.env` file so you don't have to type it every time:
+  ```
+  COMPOSE_FILE=docker-compose.yml:docker-compose.windows.yml
+  ```
+  > **Note:** If you previously ran Nostream on Linux/Mac and are switching to Windows, your existing data lives at `.nostr/data/` on the host. You'll need to copy it into the Docker named volume manually or it won't be visible to the new setup.
 
 Stop the server with:
   ```
@@ -219,6 +234,49 @@ Print the Tor hostname:
   ```
   ./scripts/print_tor_hostname
   ```
+
+Start with I2P:
+  ```
+  ./scripts/start_with_i2p
+  ```
+
+Print the I2P hostname:
+  ```
+  ./scripts/print_i2p_hostname
+  ```
+
+### Importing events from JSON Lines
+
+You can import NIP-01 events from `.jsonl` files directly into the relay database.
+Compressed files are also supported and decompressed on-the-fly:
+
+- `.jsonl.gz` (Gzip)
+- `.jsonl.xz` (XZ)
+
+Basic import:
+  ```
+  npm run import -- ./events.jsonl
+  ```
+
+Import a compressed backup:
+  ```
+  npm run import -- ./events.jsonl.gz
+  npm run import -- ./events.jsonl.xz
+  ```
+
+Set a custom batch size (default: `1000`):
+  ```
+  npm run import -- ./events.jsonl --batch-size 500
+  ```
+
+The importer:
+
+- Processes the file line-by-line to keep memory usage bounded.
+- Validates NIP-01 schema, event id hash, and Schnorr signature before insertion.
+- Inserts in database transactions per batch.
+- Skips duplicates without failing the whole import.
+- Prints progress in the format:
+  `[Processed: 50,000 | Inserted: 45,000 | Skipped: 5,000 | Errors: 0]`
 
 ### Running as a Service
 
@@ -262,6 +320,60 @@ The logs can be viewed with:
   ```
   journalctl -u nostream
   ```
+
+## Troubleshooting
+
+### Linux: Docker DNS resolution failures (`EAI_AGAIN`)
+
+On some Linux environments (especially rolling-release distros or setups using
+`systemd-resolved`), `docker compose` builds can fail with DNS errors such as:
+
+- `getaddrinfo EAI_AGAIN registry.npmjs.org`
+- `Temporary failure in name resolution`
+
+To fix this, configure Docker daemon DNS in `/etc/docker/daemon.json`.
+
+1. Create or update `/etc/docker/daemon.json`:
+
+  ```
+  sudo mkdir -p /etc/docker
+  sudo nano /etc/docker/daemon.json
+  ```
+
+  Add or update the file with:
+
+  ```
+  {
+    "dns": ["1.1.1.1", "8.8.8.8"]
+  }
+  ```
+
+  If this file already exists, merge the `dns` key into the existing JSON
+  instead of replacing the entire file.
+
+  If your environment does not allow public resolvers, replace `1.1.1.1` and
+  `8.8.8.8` with DNS servers approved by your network.
+
+2. Restart Docker:
+
+  ```
+  sudo systemctl restart docker
+  ```
+
+3. Verify DNS works inside containers:
+
+  ```
+  docker run --rm busybox nslookup registry.npmjs.org
+  ```
+
+4. Retry starting nostream:
+
+  ```
+  ./scripts/start
+  ```
+
+Note: avoid `127.0.0.53` in Docker DNS settings because it points to the host's
+local resolver stub and is often unreachable from containers.
 
 ## Quick Start (Standalone)
 
@@ -359,125 +471,108 @@ To clean up the build, coverage and test reports run:
   ```
   npm run clean
   ```
-## Development Quick Start (Docker Compose)
 
-Install Docker Desktop following the [official guide](https://docs.docker.com/desktop/).
-You may have to uninstall Docker on your machine if you installed it using a different guide.
+## Development & Contributing
 
-Clone repository and enter directory:
-  ```
-  git clone git@github.com:Cameri/nostream.git
-  cd nostream
-  ```
+For development environment setup, testing, linting, load testing, and contribution guidelines
+(including the issue fairness policy, husky pre-commit hooks, and changeset workflow), see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-Start:
-  ```
-  ./scripts/start_local
-  ```
+## Export Events
 
-  This will run in the foreground of the terminal until you stop it with Ctrl+C.
+Export all stored events to a [JSON Lines](https://jsonlines.org/) (`.jsonl`) file. Each line is a valid NIP-01 Nostr event JSON object. The export streams rows from the database using cursors, so it works safely on relays with millions of events without loading them into memory.
 
-## Tests
+Optional compression is supported for lower storage and transfer costs:
 
-### Unit tests
+- Gzip via Node's native `zlib`
+- XZ via `lzma-native`
 
-Open a terminal and change to the project's directory:
-  ```
-  cd /path/to/nostream
-  ```
+```
+npm run export                            # writes to events.jsonl
+npm run export -- backup-2024-01-01.jsonl # custom filename
+npm run export -- backup.jsonl.gz --compress --format=gzip
+npm run export -- backup.jsonl.xz --compress --format=xz
+```
 
-Run unit tests with:
+Flags:
 
-  ```
-  npm run test:unit
-  ```
+- `--compress` / `-z`: enable compression.
+- `--format <gzip|gz|xz>`: compression format. If omitted while compression is enabled,
+  format is inferred from file extension (`.gz` / `.xz`) and defaults to `gzip`.
 
-Or, run unit tests in watch mode:
+After completion, the exporter prints a summary with:
 
-  ```
-  npm run test:unit:watch
-  ```
+- Raw bytes generated from JSONL lines
+- Output bytes written to disk
+- Compression delta (smaller/larger)
+- Throughput in events/sec and bytes/sec
 
-To get unit test coverage run:
+Optional XZ tuning (environment variables):
 
-  ```
-  npm run cover:unit
-  ```
+- `NOSTREAM_XZ_THREADS`: max worker threads for XZ compression.
+  Defaults to `4` and is automatically capped to available CPU cores minus one.
+- `NOSTREAM_XZ_PRESET`: compression preset from `0` (fastest, larger output)
+  to `9` (slowest, smallest output). Default is `6`.
 
-To see the unit tests report open `.test-reports/unit/index.html` with a browser:
-  ```
-  open .test-reports/unit/index.html
-  ```
+The script reads the same `DB_*` environment variables used by the relay (see [CONFIGURATION.md](CONFIGURATION.md)).
 
-To see the unit tests coverage report open `.coverage/unit/lcov-report/index.html` with a browser:
-  ```
-  open .coverage/unit/lcov-report/index.html
-  ```
+## Benchmark Database Queries
 
-### Integration tests (Docker Compose)
+Run the read-only query benchmark to record the planner's choices and timings for the relay's hot-path queries (REQ subscriptions, vanish checks, purge scans, pending-invoice polls):
 
-Open a terminal and change to the project's directory:
-  ```
-  cd /path/to/nostream
-  ```
+```
+npm run db:benchmark
+npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+```
 
-Run integration tests with:
+The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements against your configured database — it never writes. It loads `DB_*` variables from `.env` automatically (via `node --env-file-if-exists=.env`), so no extra setup is required beyond the one you already need to run the relay. Use it to confirm the `events_active_pubkey_kind_created_at_idx`, `events_deleted_at_partial_idx`, and `invoices_pending_created_at_idx` indexes are being picked up.
 
-  ```
-  npm run docker:test:integration
-  ```
+For a reproducible before/after proof on a throwaway dataset, run:
 
-And to get integration test coverage run:
+```
+npm run db:verify-index-impact
+```
 
-  ```
-  npm run docker:cover:integration
-  ```
+It seeds ~200k synthetic events, drops the hot-path indexes, runs EXPLAIN (ANALYZE, BUFFERS) for each hot query, recreates the indexes, and prints a BEFORE/AFTER table. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](CONFIGURATION.md).
 
-### Integration tests (Standalone)
+## Relay Maintenance
 
-Open a terminal and change to the project's directory:
-  ```
-  cd /path/to/nostream
-  ```
+Use `clean-db` to wipe or prune `events` table data. This also removes
+corresponding data from the derived `event_tags` table when present.
 
-Set the following environment variables:
+Dry run (no deletion):
 
   ```
-  DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
-
-  or
-
-  DB_HOST=localhost
-  DB_PORT=5432
-  DB_NAME=nostr_ts_relay_test
-  DB_USER=postgres
-  DB_PASSWORD=postgres
-  DB_MIN_POOL_SIZE=1
-  DB_MAX_POOL_SIZE=2
+  npm run clean-db -- --all --dry-run
   ```
 
-Then run the integration tests:
+Full wipe:
 
   ```
-  npm run test:integration
+  npm run clean-db -- --all --force
   ```
 
-To see the integration tests report open `.test-reports/integration/report.html` with a browser:
-  ```
-  open .test-reports/integration/report.html
-  ```
-
-To get the integration test coverage run:
+Delete events older than N days:
 
   ```
-  npm run cover:integration
+  npm run clean-db -- --older-than=30 --force
   ```
 
-To see the integration test coverage report open `.coverage/integration/lcov-report/index.html` with a browser.
+Delete only selected kinds:
 
   ```
-  open .coverage/integration/lcov-report/index.html
+  npm run clean-db -- --kinds=1,7,4 --force
   ```
+
+Delete only selected kinds older than N days:
+
+  ```
+  npm run clean-db -- --older-than=30 --kinds=1,7,4 --force
+  ```
+
+By default, the script asks for explicit confirmation (`Type 'DELETE' to confirm`).
+Use `--force` to skip the prompt.
+
 
 ## Configuration
 
@@ -489,6 +584,7 @@ Any changes made to the settings file will be read on the next start.
 Default settings can be found under `resources/default-settings.yaml`. Feel free to copy it to `nostream/.nostr/settings.yaml` if you would like to have a settings file before running the relay first.
 
 See [CONFIGURATION.md](CONFIGURATION.md) for a detailed explanation of each environment variable and setting.
+
 ## Dev Channel
 
 For development discussions, please use the [Nostr Typescript Relay Dev Group](https://t.me/nostream_dev).

@@ -57,7 +57,7 @@ describe('EventRepository', () => {
 
         const query = repository.findByFilters(filters).toString()
 
-        expect(query).to.equal('select * from "events" order by "event_created_at" asc limit 500')
+        expect(query).to.equal('select * from "events" order by "event_created_at" asc, "event_id" asc limit 500')
       })
 
       describe('authors', () => {
@@ -66,7 +66,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one author', () => {
@@ -74,7 +76,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_pubkey" in (X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\')) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where ("event_pubkey" in (X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\')) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by two authors', () => {
@@ -89,50 +93,51 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_pubkey" in (X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\', X\'32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245\')) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where ("event_pubkey" in (X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\', X\'32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245\')) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one author prefix (even length)', () => {
           const filters = [
             {
-              authors: [
-                '22e804',
-              ],
+              authors: ['22e804'],
             },
           ]
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_pubkey" from 1 for 3) = X\'22e804\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where (substring("event_pubkey" from 1 for 3) = X\'22e804\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one author prefix (odd length)', () => {
           const filters = [
             {
-              authors: [
-                '22e804f',
-              ],
+              authors: ['22e804f'],
             },
           ]
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_pubkey" from 1 for 4) BETWEEN E\'\\\\x22e804f0\' AND E\'\\\\x22e804ff\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where (substring("event_pubkey" from 1 for 4) BETWEEN E\'\\\\x22e804f0\' AND E\'\\\\x22e804ff\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by two author prefix (first even, second odd)', () => {
           const filters = [
             {
-              authors: [
-                '22e804',
-                '32e1827',
-              ],
+              authors: ['22e804', '32e1827'],
             },
           ]
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_pubkey" from 1 for 3) = X\'22e804\' or substring("event_pubkey" from 1 for 4) BETWEEN E\'\\\\x32e18270\' AND E\'\\\\x32e1827f\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where (substring("event_pubkey" from 1 for 3) = X\'22e804\' or substring("event_pubkey" from 1 for 4) BETWEEN E\'\\\\x32e18270\' AND E\'\\\\x32e1827f\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
       })
 
@@ -142,7 +147,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one id', () => {
@@ -150,7 +157,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_id" in (X\'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\')) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where ("event_id" in (X\'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\')) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by two ids', () => {
@@ -165,50 +174,51 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where ("event_id" in (X\'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\', X\'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\')) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where ("event_id" in (X\'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\', X\'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\')) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one id prefix (even length)', () => {
           const filters = [
             {
-              ids: [
-                'abcd',
-              ],
+              ids: ['abcd'],
             },
           ]
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_id" from 1 for 2) = X\'abcd\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where (substring("event_id" from 1 for 2) = X\'abcd\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one id prefix (odd length)', () => {
           const filters = [
             {
-              ids: [
-                'abc',
-              ],
+              ids: ['abc'],
             },
           ]
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_id" from 1 for 2) BETWEEN E\'\\\\xabc0\' AND E\'\\\\xabcf\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where (substring("event_id" from 1 for 2) BETWEEN E\'\\\\xabc0\' AND E\'\\\\xabcf\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by two id prefix (first even, second odd)', () => {
           const filters = [
             {
-              ids: [
-                'abcdef',
-                'abc',
-              ],
+              ids: ['abcdef', 'abc'],
             },
           ]
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where (substring("event_id" from 1 for 3) = X\'abcdef\' or substring("event_id" from 1 for 2) BETWEEN E\'\\\\xabc0\' AND E\'\\\\xabcf\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where (substring("event_id" from 1 for 3) = X\'abcdef\' or substring("event_id" from 1 for 2) BETWEEN E\'\\\\xabc0\' AND E\'\\\\xabcf\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
       })
 
@@ -218,7 +228,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where 1 = 0 order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where 1 = 0 order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one kind', () => {
@@ -226,7 +238,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where "event_kind" in (1) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where "event_kind" in (1) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by two kinds', () => {
@@ -234,7 +248,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where "event_kind" in (1, 2) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where "event_kind" in (1, 2) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
       })
 
@@ -244,7 +260,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
       })
 
@@ -254,7 +272,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
       })
 
@@ -264,7 +284,7 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select * from "events" order by "event_created_at" DESC limit 1000')
+          expect(query).to.equal('select * from "events" order by "event_created_at" DESC, "event_id" asc limit 1000')
         })
       })
 
@@ -274,7 +294,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one #e tag', () => {
@@ -282,7 +304,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by two #e tag', () => {
@@ -290,7 +314,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'e\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'e\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
       })
 
@@ -300,7 +326,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one #p tag', () => {
@@ -308,7 +336,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by two #p tag', () => {
@@ -316,7 +346,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'p\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'p\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
       })
 
@@ -326,7 +358,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by one #r tag', () => {
@@ -334,7 +368,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
 
         it('selects events by two #r tag', () => {
@@ -342,7 +378,9 @@ describe('EventRepository', () => {
 
           const query = repository.findByFilters(filters).toString()
 
-          expect(query).to.equal('select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'r\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc limit 500')
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'r\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
         })
       })
     })
@@ -353,18 +391,120 @@ describe('EventRepository', () => {
 
         const query = repository.findByFilters(filters).toString()
 
-        expect(query).to.equal('(select * from "events") union (select * from "events" order by "event_created_at" asc limit 500) order by "event_created_at" asc limit 500')
+        expect(query).to.equal(
+          '(select * from "events") union (select * from "events" order by "event_created_at" asc, "event_id" asc limit 500) order by "event_created_at" asc, "event_id" asc limit 500',
+        )
       })
     })
 
     describe('many filters', () => {
       it('selects union of all filters', () => {
-        const filters = [{ kinds: [1] }, { ids: ['aaaaa'] }, { authors: ['bbbbb'] }, { since: 1000 }, { until: 1000 }, { limit: 1000 }]
+        const filters = [
+          { kinds: [1] },
+          { ids: ['aaaaa'] },
+          { authors: ['bbbbb'] },
+          { since: 1000 },
+          { until: 1000 },
+          { limit: 1000 },
+        ]
 
         const query = repository.findByFilters(filters).toString()
 
-        expect(query).to.equal('(select * from "events" where "event_kind" in (1)) union (select * from "events" where (substring("event_id" from 1 for 3) BETWEEN E\'\\\\xaaaaa0\' AND E\'\\\\xaaaaaf\') order by "event_created_at" asc limit 500) union (select * from "events" where (substring("event_pubkey" from 1 for 3) BETWEEN E\'\\\\xbbbbb0\' AND E\'\\\\xbbbbbf\') order by "event_created_at" asc limit 500) union (select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc limit 500) union (select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc limit 500) union (select * from "events" order by "event_created_at" DESC limit 1000) order by "event_created_at" asc limit 500')
+        expect(query).to.equal(
+          '(select * from "events" where "event_kind" in (1)) union (select * from "events" where (substring("event_id" from 1 for 3) BETWEEN E\'\\\\xaaaaa0\' AND E\'\\\\xaaaaaf\') order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where (substring("event_pubkey" from 1 for 3) BETWEEN E\'\\\\xbbbbb0\' AND E\'\\\\xbbbbbf\') order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" order by "event_created_at" DESC, "event_id" asc limit 1000) order by "event_created_at" asc, "event_id" asc limit 500',
+        )
       })
+    })
+  })
+
+  describe('.countByFilters', () => {
+    it('throws error if filters is empty', async () => {
+      try {
+        await repository.countByFilters([])
+        expect.fail('Expected countByFilters to throw')
+      } catch (error) {
+        expect((error as Error).message).to.equal('Filters cannot be empty')
+      }
+    })
+
+    it('returns count value from query result', async () => {
+      sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '42' }),
+        }),
+      } as any)
+
+      const result = await repository.countByFilters([{}])
+
+      expect(result).to.equal(42)
+    })
+
+    it('uses countDistinct on event_id to avoid duplicate counts', async () => {
+      const countDistinctStub = sandbox.stub().returns({
+        first: async () => ({ count: '1' }),
+      })
+
+      sandbox.stub(rrDbClient, 'from').returns({ countDistinct: countDistinctStub } as any)
+
+      await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
+
+      expect(countDistinctStub).to.have.been.calledOnceWithExactly({ count: 'event_id' })
+    })
+
+    it('builds union query when there are multiple filters', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ kinds: [1] }, { authors: ['22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793'] }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include(' union ')
+    })
+
+    it('joins tags table for generic tag filters', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('left join "event_tags"')
+      expect(sql).to.include('event_tags.tag_name')
+      expect(sql).to.include('event_tags.tag_value')
+    })
+
+    it('applies limit ordering when a filter includes limit', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ limit: 3 }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('order by "event_created_at" DESC, "event_id" asc limit 3')
+    })
+
+    it('filters out deleted and expired events', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ kinds: [1] }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('"events"."deleted_at" is null')
+      expect(sql).to.include('"events"."expires_at" is null')
+      expect(sql).to.include('"events"."expires_at" >')
     })
   })
 
@@ -377,8 +517,7 @@ describe('EventRepository', () => {
     it('calls insert with given event and returns row count', async () => {
       const event: Event = {
         id: '6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407',
-        pubkey:
-          '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+        pubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
         created_at: 1648351380,
         kind: 1,
         tags: [
@@ -393,8 +532,7 @@ describe('EventRepository', () => {
             'wss://nostr-relay.untethr.me',
           ],
         ],
-        content:
-          "I've set up mirroring between relays: https://i.imgur.com/HxCDipB.png",
+        content: "I've set up mirroring between relays: https://i.imgur.com/HxCDipB.png",
         sig: 'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768',
       }
 
@@ -411,8 +549,7 @@ describe('EventRepository', () => {
     it('inserts event if there is no conflict', () => {
       const event: Event = {
         id: '6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407',
-        pubkey:
-          '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+        pubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
         created_at: 1648351380,
         kind: 1,
         tags: [
@@ -427,15 +564,16 @@ describe('EventRepository', () => {
             'wss://nostr-relay.untethr.me',
           ],
         ],
-        content:
-          "I've set up mirroring between relays: https://i.imgur.com/HxCDipB.png",
+        content: "I've set up mirroring between relays: https://i.imgur.com/HxCDipB.png",
         sig: 'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768',
         [ContextMetadataKey]: { remoteAddress: { address: '::1' } as any },
       }
 
       const query = (repository as any).insert(event).toString()
 
-      expect(query).to.equal('insert into "events" ("event_content", "event_created_at", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (\'I\'\'ve set up mirroring between relays: https://i.imgur.com/HxCDipB.png\', 1648351380, X\'6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407\', 1, X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\', X\'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768\', \'[["p","8355095016fddbe31fcf1453b26f613553e9758cf2263e190eac8fd96a3d3de9","wss://nostr-pub.wellorder.net"],["e","7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96","wss://nostr-relay.untethr.me"]]\', NULL, \'::1\') on conflict do nothing')
+      expect(query).to.equal(
+        'insert into "events" ("event_content", "event_created_at", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (\'I\'\'ve set up mirroring between relays: https://i.imgur.com/HxCDipB.png\', 1648351380, X\'6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407\', 1, X\'22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793\', X\'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768\', \'[["p","8355095016fddbe31fcf1453b26f613553e9758cf2263e190eac8fd96a3d3de9","wss://nostr-pub.wellorder.net"],["e","7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96","wss://nostr-relay.untethr.me"]]\', NULL, \'::1\') on conflict do nothing',
+      )
     })
   })
 
@@ -443,44 +581,89 @@ describe('EventRepository', () => {
     it('marks event as deleted by pubkey & event_id if not deleted', () => {
       const query = repository.deleteByPubkeyAndIds('001122', ['aabbcc', 'ddeeff']).toString()
 
-      expect(query).to.equal('update "events" set "deleted_at" = now() where "event_pubkey" = X\'001122\' and "event_id" in (X\'aabbcc\', X\'ddeeff\') and "deleted_at" is null')
+      expect(query).to.equal(
+        'update "events" set "deleted_at" = now() where "event_pubkey" = X\'001122\' and "event_id" in (X\'aabbcc\', X\'ddeeff\') and not "event_kind" = 62 and "deleted_at" is null',
+      )
     })
   })
 
   describe('upsert', () => {
     it('replaces event based on event_pubkey and event_kind', () => {
       const event: Event = {
-        'id': 'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a',
-        'pubkey': '55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503',
-        'created_at': 1564498626,
-        'kind': 0,
-        'tags': [],
-        'content': '{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}',
-        'sig': 'd1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9',
+        id: 'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a',
+        pubkey: '55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503',
+        created_at: 1564498626,
+        kind: 0,
+        tags: [],
+        content:
+          '{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}',
+        sig: 'd1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9',
         [ContextMetadataKey]: { remoteAddress: { address: '::1' } as any },
       }
 
       const query = repository.upsert(event).toString()
 
-      expect(query).to.equal('insert into "events" ("deleted_at", "event_content", "event_created_at", "event_deduplication", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (NULL, \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, \'["55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503",0]\', X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\', NULL, \'::1\') on conflict (event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000) do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"remote_address" = \'::1\',"expires_at" = NULL,"deleted_at" = NULL where "events"."event_created_at" < 1564498626')
+      expect(query).to.equal(
+        'insert into "events" ("deleted_at", "event_content", "event_created_at", "event_deduplication", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (NULL, \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, \'["55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503",0]\', X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\', NULL, \'::1\') on conflict (event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000) do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"remote_address" = \'::1\',"expires_at" = NULL,"deleted_at" = NULL where ("events"."event_created_at" < 1564498626 or ("events"."event_created_at" = 1564498626 and "events"."event_id" > X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\'))',
+      )
     })
 
     it('replaces event based on event_pubkey, event_kind and event_deduplication', () => {
       const event: ParameterizedReplaceableEvent = {
-        'id': 'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a',
-        'pubkey': '55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503',
-        'created_at': 1564498626,
-        'kind': 0,
-        'tags': [],
+        id: 'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a',
+        pubkey: '55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503',
+        created_at: 1564498626,
+        kind: 0,
+        tags: [],
         [EventDeduplicationMetadataKey]: ['deduplication'],
         [ContextMetadataKey]: { remoteAddress: { address: '::1' } as any },
-        'content': '{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}',
-        'sig': 'd1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9',
+        content:
+          '{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}',
+        sig: 'd1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9',
       }
 
       const query = repository.upsert(event).toString()
 
-      expect(query).to.equal('insert into "events" ("deleted_at", "event_content", "event_created_at", "event_deduplication", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (NULL, \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, \'["deduplication"]\', X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\', NULL, \'::1\') on conflict (event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000) do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"remote_address" = \'::1\',"expires_at" = NULL,"deleted_at" = NULL where "events"."event_created_at" < 1564498626')
+      expect(query).to.equal(
+        'insert into "events" ("deleted_at", "event_content", "event_created_at", "event_deduplication", "event_id", "event_kind", "event_pubkey", "event_signature", "event_tags", "expires_at", "remote_address") values (NULL, \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\', 1564498626, \'["deduplication"]\', X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\', 0, X\'55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503\', X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\', \'[]\', NULL, \'::1\') on conflict (event_pubkey, event_kind, event_deduplication) WHERE (event_kind = 0 OR event_kind = 3 OR event_kind = 41 OR (event_kind >= 10000 AND event_kind < 20000)) OR (event_kind >= 30000 AND event_kind < 40000) do update set "event_id" = X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\',"event_created_at" = 1564498626,"event_tags" = \'[]\',"event_content" = \'{"name":"ottman@minds.io","about":"","picture":"https://feat-2311-nostr.minds.io/icon/1002952989368913934/medium/1564498626/1564498626/1653379539"}\',"event_signature" = X\'d1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9\',"remote_address" = \'::1\',"expires_at" = NULL,"deleted_at" = NULL where ("events"."event_created_at" < 1564498626 or ("events"."event_created_at" = 1564498626 and "events"."event_id" > X\'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a\'))',
+      )
+    })
+  })
+
+  describe('upsertMany', () => {
+    it('returns 0 when no events are provided', async () => {
+      const result = await repository.upsertMany([])
+
+      expect(result).to.equal(0)
+    })
+
+    it('applies NIP-01 tie-breaker in batch conflict condition', async () => {
+      const thenStub = sandbox.stub().callsFake((onfulfilled) => Promise.resolve(onfulfilled({ rowCount: 1 })))
+      const whereRawStub = sandbox.stub().returns({ then: thenStub })
+      const mergeStub = sandbox.stub().returns({ whereRaw: whereRawStub })
+      const onConflictStub = sandbox.stub().returns({ merge: mergeStub })
+      const insertStub = sandbox.stub().returns({ onConflict: onConflictStub })
+      const masterDbClientStub = sandbox.stub().returns({ insert: insertStub }) as unknown as DatabaseClient
+
+      ;(masterDbClientStub as any).raw = sandbox.stub().returns('conflict-target')
+
+      repository = new EventRepository(masterDbClientStub, rrDbClient)
+
+      const event: Event = {
+        id: 'e527fe8b0f64a38c6877f943a9e8841074056ba72aceb31a4c85e6d10b27095a',
+        pubkey: '55b702c167c85eb1c2d5ab35d68bedd1a35b94c01147364d2395c2f66f35a503',
+        created_at: 1564498626,
+        kind: 0,
+        tags: [],
+        content: '{"name":"ottman@minds.io"}',
+        sig: 'd1de98733de2b412549aa64454722d9b66ab3c68e9e0d0f9c5d42e7bd54c30a06174364b683d2c8dbb386ff47f31e6cb7e2f3c3498d8819ee80421216c8309a9',
+        [ContextMetadataKey]: { remoteAddress: { address: '::1' } as any },
+      }
+
+      const result = await repository.upsertMany([event])
+
+      expect(whereRawStub).to.have.been.calledOnceWithExactly('("events"."event_created_at" < "excluded"."event_created_at" or ("events"."event_created_at" = "excluded"."event_created_at" and "events"."event_id" > "excluded"."event_id"))')
+      expect(result).to.equal(1)
     })
   })
 })

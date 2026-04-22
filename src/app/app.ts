@@ -11,7 +11,7 @@ import { Serializable } from 'child_process'
 import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
 
-const debug = createLogger('app-primary')
+const logger = createLogger('app-primary')
 
 export class App implements IRunnable {
   private workers: WeakMap<Worker, Record<string, string>>
@@ -22,24 +22,21 @@ export class App implements IRunnable {
     private readonly cluster: Cluster,
     private readonly settings: () => Settings,
   ) {
-    debug('starting')
+    logger('starting')
 
     this.workers = new WeakMap()
 
-    this.cluster
-      .on('message', this.onClusterMessage.bind(this))
-      .on('exit', this.onClusterExit.bind(this))
+    this.cluster.on('message', this.onClusterMessage.bind(this)).on('exit', this.onClusterExit.bind(this))
 
-    this.process
-      .on('SIGTERM', this.onExit.bind(this))
+    this.process.on('SIGTERM', this.onExit.bind(this))
 
-    debug('started')
+    logger('started')
   }
 
   public run(): void {
     const settings = this.settings()
     this.watchers = SettingsStatic.watchSettings()
-    console.log(`
+    logger.info(`
  ███▄    █  ▒█████    ██████ ▄▄▄█████▓ ██▀███  ▓█████ ▄▄▄       ███▄ ▄███▓
  ██ ▀█   █ ▒██▒  ██▒▒██    ▒ ▓  ██▒ ▓▒▓██ ▒ ██▒▓█   ▀▒████▄    ▓██▒▀█▀ ██▒
 ▓██  ▀█ ██▒▒██░  ██▒░ ▓██▄   ▒ ▓██░ ▒░▓██ ░▄█ ▒▒███  ▒██  ▀█▄  ▓██    ▓██░
@@ -55,7 +52,7 @@ export class App implements IRunnable {
 
     const logCentered = (input: string, width: number) => {
       const start = (width - input.length) >> 1
-      console.log(' '.repeat(start), input)
+      logger.info(' '.repeat(start), input)
     }
     logCentered(`v${packageJson.version}`, width)
     logCentered(`NIPs implemented: ${packageJson.supportedNips}`, width)
@@ -65,8 +62,13 @@ export class App implements IRunnable {
       logCentered(`Payments provider: ${path(['payments', 'processor'], settings)}`, width)
     }
 
-    if (paymentsEnabled && (typeof this.process.env.SECRET !== 'string' || this.process.env.SECRET === '' || this.process.env.SECRET === 'changeme')) {
-      console.error('Please configure the secret using the SECRET environment variable.')
+    if (
+      paymentsEnabled &&
+      (typeof this.process.env.SECRET !== 'string' ||
+        this.process.env.SECRET === '' ||
+        this.process.env.SECRET === 'changeme')
+    ) {
+      logger.error('Please configure the secret using the SECRET environment variable.')
       this.process.exit(1)
     }
 
@@ -80,7 +82,7 @@ export class App implements IRunnable {
     }
 
     for (let i = 0; i < workerCount; i++) {
-      debug('starting worker')
+      logger('starting worker')
       createWorker({
         WORKER_TYPE: 'worker',
         WORKER_INDEX: i.toString(),
@@ -105,36 +107,39 @@ export class App implements IRunnable {
       logCentered(`${mirrors.length} static-mirroring worker started`, width)
     }
 
-    debug('settings: %O', settings)
+    logger('settings: %O', settings)
 
     const host = `${hostname()}:${port}`
-    addOnion(torHiddenServicePort, host).then(value=>{
-      logCentered(`Tor hidden service: ${value}:${torHiddenServicePort}`, width)
-    }, () => {
-      logCentered('Tor hidden service: disabled', width)
-    })
+    addOnion(torHiddenServicePort, host).then(
+      (value) => {
+        logCentered(`Tor hidden service: ${value}:${torHiddenServicePort}`, width)
+      },
+      () => {
+        logCentered('Tor hidden service: disabled', width)
+      },
+    )
   }
 
   private onClusterMessage(source: Worker, message: Serializable) {
-    debug('message received from worker %s: %o', source.process.pid, message)
+    logger('message received from worker %s: %o', source.process.pid, message)
     for (const worker of Object.values(this.cluster.workers as any) as Worker[]) {
       if (source.id === worker.id) {
         continue
       }
 
-      debug('sending message to worker %s: %o', worker.process.pid, message)
+      logger('sending message to worker %s: %o', worker.process.pid, message)
       worker.send(message)
     }
   }
 
-  private onClusterExit(deadWorker: Worker, code: number, signal: string)  {
-    debug('worker %s died', deadWorker.process.pid)
+  private onClusterExit(deadWorker: Worker, code: number, signal: string) {
+    logger('worker %s died', deadWorker.process.pid)
 
     if (code === 0 || signal === 'SIGINT') {
       return
     }
     setTimeout(() => {
-      debug('starting worker')
+      logger('starting worker')
       const workerEnv = this.workers.get(deadWorker)
       if (!workerEnv) {
         throw new Error('Mistakes were made')
@@ -142,19 +147,19 @@ export class App implements IRunnable {
       const newWorker = this.cluster.fork(workerEnv)
       this.workers.set(newWorker, workerEnv)
 
-      debug('started worker %s', newWorker.process.pid)
+      logger('started worker %s', newWorker.process.pid)
     }, 10000)
   }
 
   private onExit() {
-    console.log('exiting')
+    logger.info('exiting')
     this.close(() => {
       this.process.exit(0)
     })
   }
 
   public close(callback?: (...args: any[]) => void): void {
-    console.log('close')
+    logger.info('close')
     if (Array.isArray(this.watchers)) {
       for (const watcher of this.watchers) {
         watcher.close()

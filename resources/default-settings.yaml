@@ -2,8 +2,12 @@ info:
   relay_url: wss://nostream.your-domain.com
   name: nostream.your-domain.com
   description: A nostr relay written in Typescript.
+  banner: https://nostream.your-domain.com/banner.png
+  icon: https://nostream.your-domain.com/icon.png
   pubkey: replace-with-your-pubkey-in-hex
+  self: replace-with-your-relay-pubkey-in-hex
   contact: mailto:operator@your-domain.com
+  terms_of_service: https://nostream.your-domain.com/terms
 payments:
   enabled: false
   processor: zebedee
@@ -35,17 +39,46 @@ paymentsProcessors:
   opennode:
     baseURL: api.opennode.com
     callbackBaseURL: https://nostream.your-domain.com/callbacks/opennode
+nip05:
+  # NIP-05 verification of event authors as a spam reduction measure.
+  # mode: 'enabled' requires NIP-05 for publishing (except kind 0),
+  #        'passive' verifies but never blocks, 'disabled' does nothing.
+  mode: disabled
+  # How long (ms) a successful verification remains valid before re-check.
+  # Matches nostr-rs-relay default of 1 week.
+  verifyExpiration: 604800000
+  # Minimum interval (ms) between re-verification attempts for a given author.
+  # Matches nostr-rs-relay default of 24 hours.
+  verifyUpdateFrequency: 86400000
+  # How many consecutive failed checks before giving up on verifying an author.
+  # Matches nostr-rs-relay default of 20.
+  maxConsecutiveFailures: 20
+  # Only allow authors with NIP-05 at these domains (empty = allow all)
+  domainWhitelist: []
+  # Block authors with NIP-05 at these domains
+  domainBlacklist: []
+nip45:
+  enabled: true
 network:
   maxPayloadSize: 524288
-  # Comment the next line if using CloudFlare proxy
-  remoteIpHeader: x-forwarded-for
-  # Uncomment the next line if using CloudFlare proxy
+  # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
+  # remoteIpHeader: x-forwarded-for
   # remoteIpHeader: cf-connecting-ip
+  # Proxy IPs allowed to set remoteIpHeader (loopback and common docker internal)
+  trustedProxies:
+    - "127.0.0.1"
+    - "::ffff:127.0.0.1"
+    - "::1"
+    - "10.10.10.1"
+    - "::ffff:10.10.10.1"
 workers:
   count: 0
 mirroring:
   static: []
 limits:
+  # strategy selection configuration for rate limiting:
+  rateLimiter:
+    strategy: ewma
   invoice:
     rateLimits:
       - period: 60000
@@ -76,6 +109,13 @@ limits:
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
   event:
+    retention:
+      maxDays: -1
+      kind:
+        whitelist:
+          - 62
+      pubkey:
+        whitelist: []
     eventId:
       minLeadingZeroBits: 0
     kind:

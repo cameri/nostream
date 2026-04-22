@@ -25,6 +25,11 @@ node_modules/
 .dccache
 .DS_Store
 
+# Local Setup
+redis.conf
+users.acl
+postgresql.local.conf
+
 # generate output
 dist
 
@@ -39,3 +44,5 @@ dist
 
 # Docker Compose overrides
 docker-compose.overrides.yml
+# Export output
+*.jsonl

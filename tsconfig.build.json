@@ -16,8 +16,9 @@
     "inlineSources": false,
     "resolveJsonModule": true,
     "esModuleInterop": true,
-    "lib": ["ESNext"],
-    "incremental": true
+    "lib": ["ESNext", "DOM"],
+    "incremental": true,
+    "skipLibCheck": true
   },
   "ts-node": {
     "transpileOnly": true

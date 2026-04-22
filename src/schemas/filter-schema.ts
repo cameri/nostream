@@ -1,12 +1,28 @@
-import Schema from 'joi'
+import { z } from 'zod'
 
 import { createdAtSchema, kindSchema, prefixSchema } from './base-schema'
+import { isGenericTagQuery } from '../utils/filter'
 
-export const filterSchema = Schema.object({
-  ids: Schema.array().items(prefixSchema.label('prefixOrId')),
-  authors: Schema.array().items(prefixSchema.label('prefixOrAuthor')),
-  kinds: Schema.array().items(kindSchema),
-  since: createdAtSchema,
-  until: createdAtSchema,
-  limit: Schema.number().min(0).multiple(1),
-}).pattern(/^#[a-z]$/, Schema.array().items(Schema.string().max(1024)))
+const knownFilterKeys = new Set(['ids', 'authors', 'kinds', 'since', 'until', 'limit'])
+
+export const filterSchema = z
+  .object({
+    ids: z.array(prefixSchema).optional(),
+    authors: z.array(prefixSchema).optional(),
+    kinds: z.array(kindSchema).optional(),
+    since: createdAtSchema.optional(),
+    until: createdAtSchema.optional(),
+    limit: z.number().int().min(0).optional(),
+  })
+  .catchall(z.array(z.string().min(1).max(1024)))
+  .superRefine((data, ctx) => {
+    for (const key of Object.keys(data)) {
+      if (!knownFilterKeys.has(key) && !isGenericTagQuery(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Unknown key: ${key}`,
+          path: [key],
+        })
+      }
+    }
+  })

@@ -3,7 +3,7 @@ import { IncomingMessage } from 'http'
 import Sinon from 'sinon'
 import WebSocket from 'ws'
 
-import { IEventRepository, IUserRepository } from '../../../src/@types/repositories'
+import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../../../src/@types/repositories'
 import { IWebSocketServerAdapter } from '../../../src/@types/adapters'
 import { SettingsStatic } from '../../../src/utils/settings'
 import { WebSocketAdapter } from '../../../src/adapters/web-socket-adapter'
@@ -31,6 +31,7 @@ describe('webSocketAdapterFactory', () => {
     })
     const eventRepository: IEventRepository = {} as any
     const userRepository: IUserRepository = {} as any
+    const nip05VerificationRepository: INip05VerificationRepository = {} as any
 
     const client: WebSocket = {
       on: onStub,
@@ -46,8 +47,7 @@ describe('webSocketAdapterFactory', () => {
     } as any
     const webSocketServerAdapter: IWebSocketServerAdapter = {} as any
 
-    expect(
-      webSocketAdapterFactory(eventRepository, userRepository)([client, request, webSocketServerAdapter])
-    ).to.be.an.instanceOf(WebSocketAdapter)
+    const factory = webSocketAdapterFactory(eventRepository, userRepository, nip05VerificationRepository)
+    expect(factory([client, request, webSocketServerAdapter])).to.be.an.instanceOf(WebSocketAdapter)
   })
 })

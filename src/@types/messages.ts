@@ -9,28 +9,28 @@ export enum MessageType {
   CLOSE = 'CLOSE',
   NOTICE = 'NOTICE',
   EOSE = 'EOSE',
-  OK = 'OK'
+  OK = 'OK',
+  COUNT = 'COUNT',
+  CLOSED = 'CLOSED',
 }
 
-export type IncomingMessage = (
-  | SubscribeMessage
-  | IncomingEventMessage
-  | UnsubscribeMessage
-  ) & {
-    [ContextMetadataKey]?: ContextMetadata
-  }
+export type IncomingMessage = (SubscribeMessage | IncomingEventMessage | UnsubscribeMessage | CountMessage) & {
+  [ContextMetadataKey]?: ContextMetadata
+}
 
-
-export type OutgoingMessage =
-  | OutgoingEventMessage
-  | EndOfStoredEventsNotice
-  | NoticeMessage
-  | CommandResult
+export type OutgoingMessage = OutgoingEventMessage | EndOfStoredEventsNotice | NoticeMessage | CommandResult | CountResultMessage | ClosedMessage
 
 export type SubscribeMessage = {
   [index in Range<2, 100>]: SubscriptionFilter
 } & {
   0: MessageType.REQ
+  1: SubscriptionId
+} & Array<SubscriptionFilter>
+
+export type CountMessage = {
+  [index in Range<2, 100>]: SubscriptionFilter
+} & {
+  0: MessageType.COUNT
   1: SubscriptionId
 } & Array<SubscriptionFilter>
 
@@ -70,4 +70,22 @@ export interface CommandResult {
 export interface EndOfStoredEventsNotice {
   0: MessageType.EOSE
   1: SubscriptionId
+}
+
+export interface CountResultPayload {
+  count: number
+  approximate?: boolean
+  hll?: string
+}
+
+export interface CountResultMessage {
+  0: MessageType.COUNT
+  1: SubscriptionId
+  2: CountResultPayload
+}
+
+export interface ClosedMessage {
+  0: MessageType.CLOSED
+  1: SubscriptionId
+  2: string
 }

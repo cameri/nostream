@@ -1,14 +1,6 @@
-import Schema from 'joi'
+import { z } from 'zod'
 
-import {
-  createdAtSchema,
-  idSchema,
-  kindSchema,
-  pubkeySchema,
-  signatureSchema,
-  tagSchema,
-} from './base-schema'
-
+import { createdAtSchema, idSchema, kindSchema, pubkeySchema, signatureSchema, tagSchema } from './base-schema'
 
 /**
  * {
@@ -25,15 +17,15 @@ import {
  *   "sig": <64-bytes signature of the sha256 hash of the serialized event data, which is the same as the "id" field>,
  * }
  */
-export const eventSchema = Schema.object({
-  // NIP-01
-  id: idSchema.required(),
-  pubkey: pubkeySchema.required(),
-  created_at: createdAtSchema.required(),
-  kind: kindSchema.required(),
-  tags: Schema.array().items(tagSchema).required(),
-  content: Schema.string()
-    .allow('')
-    .required(),
-  sig: signatureSchema.required(),
-}).unknown(false)
+export const eventSchema = z
+  .object({
+    // NIP-01
+    id: idSchema,
+    pubkey: pubkeySchema,
+    created_at: createdAtSchema,
+    kind: kindSchema,
+    tags: z.array(tagSchema),
+    content: z.string(),
+    sig: signatureSchema,
+  })
+  .strict()

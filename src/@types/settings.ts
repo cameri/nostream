@@ -8,18 +8,27 @@ export interface Info {
   name: string
   description: string
   pubkey: string
+  banner?: string
+  icon?: string
+  self?: string
   contact: string
+  terms_of_service?: string
 }
 
 export interface Network {
   maxPayloadSize?: number
   remoteIpHeader?: string
+  trustedProxies?: string[]
 }
 
 export interface RateLimit {
   description?: string
   period: number
   rate: number
+}
+
+export interface RateLimiterSettings {
+  strategy: 'ewma' | 'sliding_window'
 }
 
 export interface EventIdLimits {
@@ -69,6 +78,20 @@ export interface EventWhitelists {
   ipAddresses?: string[]
 }
 
+export interface EventRetentionKindLimits {
+  whitelist?: (EventKinds | EventKindsRange)[]
+}
+
+export interface EventRetentionPubkeyLimits {
+  whitelist?: Pubkey[]
+}
+
+export interface EventRetentionLimits {
+  maxDays?: number
+  kind?: EventRetentionKindLimits
+  pubkey?: EventRetentionPubkeyLimits
+}
+
 export interface EventLimits {
   eventId?: EventIdLimits
   pubkey?: PubkeyLimits
@@ -77,6 +100,7 @@ export interface EventLimits {
   content?: ContentLimits | ContentLimits[]
   rateLimits?: EventRateLimit[]
   whitelists?: EventWhitelists
+  retention?: EventRetentionLimits
 }
 
 export interface ClientSubscriptionLimits {
@@ -118,6 +142,7 @@ export interface AdmissionCheckLimits {
 }
 
 export interface Limits {
+  rateLimiter?: RateLimiterSettings
   invoice?: InvoiceLimits
   admissionCheck?: AdmissionCheckLimits
   connection?: ConnectionLimits
@@ -184,7 +209,7 @@ export interface NodelessPaymentsProcessor {
 }
 
 export interface PaymentsProcessors {
-  lnurl?: LnurlPaymentsProcessor,
+  lnurl?: LnurlPaymentsProcessor
   zebedee?: ZebedeePaymentsProcessor
   lnbits?: LNbitsPaymentsProcessor
   nodeless?: NodelessPaymentsProcessor
@@ -213,6 +238,33 @@ export interface Mirroring {
   static?: Mirror[]
 }
 
+export type Nip05Mode = 'enabled' | 'passive' | 'disabled'
+
+export interface Nip45Settings {
+  enabled?: boolean
+}
+
+export interface Nip05Settings {
+  mode: Nip05Mode
+  /**
+   * Maximum age (in ms) of a successful verification before an author is blocked.
+   * Defaults to 604800000 (7 days) when unset.
+   */
+  verifyExpiration?: number
+  /**
+   * Minimum interval (in ms) between background re-verifications per author.
+   * Defaults to 86400000 (24 hours) when unset.
+   */
+  verifyUpdateFrequency?: number
+  /**
+   * Number of consecutive verification failures after which an author is no longer
+   * re-checked. Defaults to 20 when unset.
+   */
+  maxConsecutiveFailures?: number
+  domainWhitelist?: string[]
+  domainBlacklist?: string[]
+}
+
 export interface Settings {
   info: Info
   payments?: Payments
@@ -221,4 +273,6 @@ export interface Settings {
   workers?: Worker
   limits?: Limits
   mirroring?: Mirroring
+  nip05?: Nip05Settings
+  nip45?: Nip45Settings
 }

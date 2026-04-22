@@ -2,9 +2,13 @@ import { anyPass, equals, isNil, map, propSatisfies, uniqWith } from 'ramda'
 // import { addAbortSignal } from 'stream'
 import { pipeline } from 'stream/promises'
 
-import { createEndOfStoredEventsNoticeMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import {
+  createEndOfStoredEventsNoticeMessage,
+  createNoticeMessage,
+  createOutgoingEventMessage,
+} from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
-import { isEventMatchingFilter, toNostrEvent } from '../utils/event'
+import { isEventMatchingFilter, isExpiredEvent, toNostrEvent } from '../utils/event'
 import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { createLogger } from '../factories/logger-factory'
@@ -15,7 +19,7 @@ import { Settings } from '../@types/settings'
 import { SubscribeMessage } from '../@types/messages'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
-const debug = createLogger('subscribe-message-handler')
+const logger = createLogger('subscribe-message-handler')
 
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   //private readonly abortController: AbortController
@@ -38,7 +42,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
     const reason = this.canSubscribe(subscriptionId, filters)
     if (reason) {
-      debug('subscription %s with %o rejected: %s', subscriptionId, filters, reason)
+      logger('subscription %s with %o rejected: %s', subscriptionId, filters, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Subscription rejected: ${reason}`))
       return
     }
@@ -49,12 +53,18 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   }
 
   private async fetchAndSend(subscriptionId: string, filters: SubscriptionFilter[]): Promise<void> {
-    debug('fetching events for subscription %s with filters %o', subscriptionId, filters)
+    logger('fetching events for subscription %s with filters %o', subscriptionId, filters)
     const sendEvent = (event: Event) =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createOutgoingEventMessage(subscriptionId, event))
     const sendEOSE = () =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEndOfStoredEventsNoticeMessage(subscriptionId))
     const isSubscribedToEvent = SubscribeMessageHandler.isClientSubscribedToEvent(filters)
+    const isTagUnexpired = (event: Event) => {
+      if (isExpiredEvent(event)) {
+        return false
+      }
+      return true
+    }
 
     const findEvents = this.eventRepository.findByFilters(filters).stream()
 
@@ -65,16 +75,17 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
         findEvents,
         streamFilter(propSatisfies(isNil, 'deleted_at')),
         streamMap(toNostrEvent),
+        streamFilter(isTagUnexpired),
         streamFilter(isSubscribedToEvent),
         streamEach(sendEvent),
         streamEnd(sendEOSE),
       )
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        debug('subscription %s aborted: %o', subscriptionId, error)
-       findEvents.destroy()
+        logger('subscription %s aborted: %o', subscriptionId, error)
+        findEvents.destroy()
       } else {
-        debug('error streaming events: %o', error)
+        logger('error streaming events: %o', error)
       }
       throw error
     }
@@ -90,13 +101,11 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const subscriptionLimits = this.settings().limits?.client?.subscription
 
     if (existingSubscription?.length && equals(filters, existingSubscription)) {
-        return `Duplicate subscription ${subscriptionId}: Ignoring`
+      return `Duplicate subscription ${subscriptionId}: Ignoring`
     }
 
     const maxSubscriptions = subscriptionLimits?.maxSubscriptions ?? 0
-    if (maxSubscriptions > 0
-      && !existingSubscription?.length && subscriptions.size + 1 > maxSubscriptions
-    ) {
+    if (maxSubscriptions > 0 && !existingSubscription?.length && subscriptions.size + 1 > maxSubscriptions) {
       return `Too many subscriptions: Number of subscriptions must be less than or equal to ${maxSubscriptions}`
     }
 
@@ -108,12 +117,10 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     }
 
     if (
-      typeof subscriptionLimits.maxSubscriptionIdLength === 'number'
-      && subscriptionId.length > subscriptionLimits.maxSubscriptionIdLength
+      typeof subscriptionLimits?.maxSubscriptionIdLength === 'number' &&
+      subscriptionId.length > subscriptionLimits.maxSubscriptionIdLength
     ) {
       return `Subscription ID too long: Subscription ID must be less or equal to ${subscriptionLimits.maxSubscriptionIdLength}`
     }
-
-
   }
 }

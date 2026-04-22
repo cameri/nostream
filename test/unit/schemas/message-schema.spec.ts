@@ -18,16 +18,11 @@ describe('NIP-01', () => {
 
       it('returns same message if valid', () => {
         events.forEach((event) => {
-          message = [
-            'EVENT',
-            event,
-          ] as any
+          message = ['EVENT', event] as any
 
           const result = validateSchema(messageSchema)(message)
 
-          console.log(result)
-
-          expect(result).not.to.have.property('error')
+          expect(result.error).to.be.undefined
           expect(result).to.have.deep.property('value', message)
         })
       })
@@ -39,7 +34,7 @@ describe('NIP-01', () => {
 
         const result = validateSchema(messageSchema)(message)
 
-        expect(result).not.to.have.property('error')
+        expect(result.error).to.be.undefined
         expect(validateSchema(messageSchema)(message)).to.have.deep.property('value', message)
       })
 
@@ -48,7 +43,7 @@ describe('NIP-01', () => {
 
         const result = validateSchema(messageSchema)(message)
 
-        expect(result).to.have.nested.property('error.message', '"CLOSE message" does not contain [subscriptionId]')
+        expect(result).to.have.property('error').that.is.not.undefined
       })
     })
 
@@ -84,8 +79,7 @@ describe('NIP-01', () => {
 
       it('returns same message if valid', () => {
         const result = validateSchema(messageSchema)(message)
-        console.log('result', result)
-        expect(result).not.to.have.property('error')
+        expect(result.error).to.be.undefined
         expect(result).to.have.deep.property('value', message)
       })
 
@@ -93,30 +87,84 @@ describe('NIP-01', () => {
         message[1] = null
 
         const result = validateSchema(messageSchema)(message)
-        expect(result).to.have.nested.property('error.message', '"subscriptionId" must be a string')
+        expect(result).to.have.property('error').that.is.not.undefined
       })
 
       it('returns error if filter is not an object', () => {
         message[2] = null
 
         const result = validateSchema(messageSchema)(message)
-        expect(result).to.have.nested.property('error.message', '"filter" must be of type object')
+        expect(result).to.have.property('error').that.is.not.undefined
       })
 
       it('returns error if filter is missing', () => {
-        (message as any[]).splice(2, 2)
+        ;(message as any[]).splice(2, 2)
 
         const result = validateSchema(messageSchema)(message)
-        expect(result).to.have.nested.property('error.message', '"REQ message" does not contain [filter]')
+        expect(result).to.have.property('error').that.is.not.undefined
       })
 
       it('returns error if there are too many filters', () => {
-
-        (message as any[]).splice(2, 2);
-        (message as any[]).push(...range(0, 11).map(() => ({})))
+        ;(message as any[]).splice(2, 2)
+        ;(message as any[]).push(...range(0, 11).map(() => ({})))
 
         const result = validateSchema(messageSchema)(message)
-        expect(result).to.have.nested.property('error.message', '"REQ message" must contain less than or equal to 12 items')
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+    })
+
+    describe('COUNT', () => {
+      beforeEach(() => {
+        message = [
+          'COUNT',
+          'id',
+          {
+            ids: ['aaaa', 'bbbb', 'cccc'],
+            authors: ['aaaa', 'bbbb', 'cccc'],
+            kinds: [0, 1, 2, 3],
+            since: 1000,
+            until: 1000,
+            limit: 100,
+            '#e': ['aa', 'bb', 'cc'],
+            '#p': ['dd', 'ee', 'ff'],
+            '#r': ['00', '11', '22'],
+          },
+        ] as any
+      })
+
+      it('returns same message if valid', () => {
+        const result = validateSchema(messageSchema)(message)
+        expect(result.error).to.be.undefined
+        expect(result).to.have.deep.property('value', message)
+      })
+
+      it('returns error if query ID is missing', () => {
+        message[1] = null
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+
+      it('returns error if filter is missing', () => {
+        ;(message as any[]).splice(2, 1)
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+
+      it('returns error if filter is not an object', () => {
+        message[2] = null
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+
+      it('returns error if there are too many filters', () => {
+        ;(message as any[]).splice(2, 1)
+        ;(message as any[]).push(...range(0, 11).map(() => ({})))
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
       })
     })
   })

@@ -10,9 +10,9 @@ export const createPaymentsService = () => {
   const dbClient = getMasterDbClient()
   const rrDbClient = getReadReplicaDbClient()
   const invoiceRepository = new InvoiceRepository(dbClient)
-  const userRepository = new UserRepository(dbClient)
-  const paymentsProcessor = createPaymentsProcessor()
   const eventRepository = new EventRepository(dbClient, rrDbClient)
+  const userRepository = new UserRepository(dbClient, eventRepository)
+  const paymentsProcessor = createPaymentsProcessor()
 
   return new PaymentsService(
     dbClient,
@@ -20,6 +20,6 @@ export const createPaymentsService = () => {
     userRepository,
     invoiceRepository,
     eventRepository,
-    createSettings
+    createSettings,
   )
 }

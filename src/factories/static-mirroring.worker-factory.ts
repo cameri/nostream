@@ -8,12 +8,7 @@ export const staticMirroringWorkerFactory = () => {
   const dbClient = getMasterDbClient()
   const readReplicaDbClient = getReadReplicaDbClient()
   const eventRepository = new EventRepository(dbClient, readReplicaDbClient)
-  const userRepository = new UserRepository(dbClient)
+  const userRepository = new UserRepository(dbClient, eventRepository)
 
-  return new StaticMirroringWorker(
-    eventRepository,
-    userRepository,
-    process,
-    createSettings,
-  )
+  return new StaticMirroringWorker(eventRepository, userRepository, process, createSettings)
 }

@@ -12,14 +12,14 @@ import { isRateLimited } from '../handlers/request-handlers/rate-limiter-middlew
 import { Settings } from '../@types/settings'
 import { WebServerAdapter } from './web-server-adapter'
 
-const debug = createLogger('web-socket-server-adapter')
+const logger = createLogger('web-socket-server-adapter')
 
 const WSS_CLIENT_HEALTH_PROBE_INTERVAL = 120000
 
 export class WebSocketServerAdapter extends WebServerAdapter implements IWebSocketServerAdapter {
   private webSocketsAdapters: WeakMap<WebSocket, IWebSocketAdapter>
 
-  private heartbeatInterval: NodeJS.Timer
+  private heartbeatInterval: NodeJS.Timeout
 
   public constructor(
     webServer: Server,
@@ -30,40 +30,39 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     >,
     private readonly settings: () => Settings,
   ) {
-    debug('created')
+    logger('created')
     super(webServer)
 
     this.webSocketsAdapters = new WeakMap()
 
-    this
-      .on(WebSocketServerAdapterEvent.Broadcast, this.onBroadcast.bind(this))
+    this.on(WebSocketServerAdapterEvent.Broadcast, this.onBroadcast.bind(this))
 
     this.webSocketServer
       .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))
       .on('error', (error) => {
-        debug('error: %o', error)
+        logger('error: %o', error)
       })
     this.heartbeatInterval = setInterval(this.onHeartbeat.bind(this), WSS_CLIENT_HEALTH_PROBE_INTERVAL)
   }
 
   public close(callback?: () => void): void {
     super.close(() => {
-      debug('closing')
+      logger('closing')
       clearInterval(this.heartbeatInterval)
       this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
         const webSocketAdapter = this.webSocketsAdapters.get(webSocket)
         if (webSocketAdapter) {
-          debug('terminating client %s: %s', webSocketAdapter.getClientId(), webSocketAdapter.getClientAddress())
+          logger('terminating client %s: %s', webSocketAdapter.getClientId(), webSocketAdapter.getClientAddress())
         }
         webSocket.terminate()
       })
-      debug('closing web socket server')
+      logger('closing web socket server')
       this.webSocketServer.close(() => {
         this.webSocketServer.removeAllListeners()
         if (typeof callback !== 'undefined') {
           callback()
         }
-        debug('closed')
+        logger('closed')
       })
     })
     this.removeAllListeners()
@@ -90,10 +89,10 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     const currentSettings = this.settings()
     const remoteAddress = getRemoteAddress(req, currentSettings)
 
-    debug('client %s connected: %o', remoteAddress, req.headers)
+    logger('client %s connected: %o', remoteAddress, req.headers)
 
     if (await isRateLimited(remoteAddress, currentSettings)) {
-      debug('client %s terminated: rate-limited', remoteAddress)
+      logger('client %s terminated: rate-limited', remoteAddress)
       client.terminate()
       return
     }

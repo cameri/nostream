@@ -6,22 +6,19 @@ import { IEventStrategy } from '../../@types/message-handlers'
 import { IWebSocketAdapter } from '../../@types/adapters'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
-const debug = createLogger('replaceable-event-strategy')
+const logger = createLogger('replaceable-event-strategy')
 
 export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<void>> {
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
-  ) { }
+  ) {}
 
   public async execute(event: Event): Promise<void> {
-    debug('received replaceable event: %o', event)
+    logger('received replaceable event: %o', event)
     try {
       const count = await this.eventRepository.upsert(event)
-      this.webSocket.emit(
-        WebSocketAdapterEvent.Message,
-        createCommandResult(event.id, true, (count) ? '' : 'duplicate:'),
-      )
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))
       if (count) {
         this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
       }
@@ -35,10 +32,7 @@ export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<v
           return
         }
 
-        this.webSocket.emit(
-          WebSocketAdapterEvent.Message,
-          createCommandResult(event.id, false, 'error: '),
-        )
+        this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: '))
       }
     }
   }

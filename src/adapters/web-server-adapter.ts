@@ -4,13 +4,11 @@ import { Server } from 'http'
 import { createLogger } from '../factories/logger-factory'
 import { IWebServerAdapter } from '../@types/adapters'
 
-const debug = createLogger('web-server-adapter')
+const logger = createLogger('web-server-adapter')
 
 export class WebServerAdapter extends EventEmitter implements IWebServerAdapter {
-  public constructor(
-    protected readonly webServer: Server,
-  ) {
-    debug('created')
+  public constructor(protected readonly webServer: Server) {
+    logger('created')
     super()
     this.webServer
       .on('error', this.onError.bind(this))
@@ -20,28 +18,28 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
   }
 
   public listen(port: number): void {
-    debug('attempt to listen on port %d', port)
+    logger('attempt to listen on port %d', port)
     this.webServer.listen(port)
   }
 
   private onListening() {
-    debug('listening for incoming connections')
+    logger('listening for incoming connections')
   }
 
   private onError(error: Error) {
-    console.error('web-server-adapter: error:', error)
+    logger.error('web-server-adapter: error:', error)
   }
 
   private onClientError(error: Error, socket: Duplex) {
     if (error['code'] === 'ECONNRESET' || !socket.writable) {
       return
     }
-    console.error('web-server-adapter: client socket error:', error)
+    logger.error('web-server-adapter: client socket error:', error)
     socket.end('HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n')
   }
 
   public close(callback?: () => void): void {
-    debug('closing')
+    logger('closing')
     this.webServer.close(() => {
       this.webServer.removeAllListeners()
       this.removeAllListeners()
@@ -49,10 +47,10 @@ export class WebServerAdapter extends EventEmitter implements IWebServerAdapter 
         callback()
       }
     })
-    debug('closed')
+    logger('closed')
   }
 
   protected onClose() {
-    debug('stopped listening to incoming connections')
+    logger('stopped listening to incoming connections')
   }
 }

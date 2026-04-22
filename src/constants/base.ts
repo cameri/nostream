@@ -7,6 +7,11 @@ export enum EventKinds {
   DELETE = 5,
   REPOST = 6,
   REACTION = 7,
+  // NIP-17: Private Direct Messages
+  SEAL = 13,
+  DIRECT_MESSAGE = 14,
+  FILE_MESSAGE = 15,
+  REQUEST_TO_VANISH = 62,
   // Channels
   CHANNEL_CREATION = 40,
   CHANNEL_METADATA = 41,
@@ -15,6 +20,10 @@ export enum EventKinds {
   CHANNEL_MUTE_USER = 44,
   CHANNEL_RESERVED_FIRST = 45,
   CHANNEL_RESERVED_LAST = 49,
+  // NIP-17: Gift Wrap
+  GIFT_WRAP = 1059,
+  // NIP-03: OpenTimestamps attestation
+  OPEN_TIMESTAMPS = 1040,
   // Relay-only
   RELAY_INVITE = 50,
   INVOICE_UPDATE = 402,
@@ -36,11 +45,17 @@ export enum EventKinds {
 export enum EventTags {
   Event = 'e',
   Pubkey = 'p',
+  Relay = 'r',
   //  Multicast = 'm',
   Deduplication = 'd',
   Expiration = 'expiration',
   Invoice = 'bolt11',
+  // NIP-03: target event kind on an OpenTimestamps attestation
+  Kind = 'k',
 }
+
+export const ALL_RELAYS = 'ALL_RELAYS'
+export const DEFAULT_FILTER_LIMIT = 500
 
 export enum PaymentsProcessors {
   LNURL = 'lnurl',
