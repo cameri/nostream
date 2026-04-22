@@ -29,12 +29,12 @@ jobs:
       - name: Install package dependencies
         run: npm ci
 
-      - name: Create Release Pull Request or Publish
+      - name: Create Release Pull Request
         uses: changesets/action@v1
         with:
           version: npm run changeset:version
-          publish: npm run changeset:tag
           createGithubReleases: true
-          title: "chore(release): version packages"
+          title: "chore: release new version 🚀"
+          commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
