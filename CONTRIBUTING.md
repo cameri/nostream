@@ -353,8 +353,8 @@ This applies to PRs that exclusively contain:
 ### Release process
 
 1. Changesets accumulate as PRs are merged to `main`
-2. The `Changesets Release` workflow automatically opens a **"Version Packages"** PR that aggregates all pending changesets, bumps `package.json`, and updates `CHANGELOG.md`
-3. When a maintainer merges the Version Packages PR, the workflow publishes a GitHub release and creates the corresponding git tag
+2. The `Changesets Release` workflow automatically opens a **"chore: release new version 🚀"** PR that aggregates all pending changesets, bumps `package.json`, and updates `CHANGELOG.md`
+3. When a maintainer merges the **"chore: release new version 🚀"** PR, the workflow publishes a GitHub release and creates the corresponding git tag
 4. The Docker image is then automatically built and pushed to GHCR via the `release.yml` workflow
 
 ## Code Quality
