@@ -3,9 +3,10 @@ import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
 import { WebSocket } from 'ws'
 import { ZodError } from 'zod'
+import { randomBytes } from 'crypto'
 
 import { ContextMetadata, Factory } from '../@types/base'
-import { createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import { createAuthChallengeMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, OutgoingMessage } from '../@types/messages'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
@@ -32,6 +33,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private clientAddress: SocketAddress
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
+  private challenge: string
 
   public constructor(
     private readonly client: WebSocket,
@@ -79,6 +81,13 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on(WebSocketAdapterEvent.Message, this.sendMessage.bind(this))
 
     logger('client %s connected from %s', this.clientId, this.clientAddress.address)
+
+    this.challenge = randomBytes(16).toString('hex')
+    this.sendMessage(createAuthChallengeMessage(this.challenge))
+  }
+
+  public getChallenge(): string {
+    return this.challenge
   }
 
   public getClientId(): string {

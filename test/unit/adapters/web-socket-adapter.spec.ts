@@ -77,6 +77,7 @@ describe('WebSocketAdapter', () => {
       slidingWindowRateLimiter,
       settingsFactory,
     )
+    client.send.resetHistory()
   })
 
   afterEach(() => {

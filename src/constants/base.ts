@@ -40,6 +40,7 @@ export enum EventKinds {
   PARAMETERIZED_REPLACEABLE_FIRST = 30000,
   PARAMETERIZED_REPLACEABLE_LAST = 39999,
   USER_APPLICATION_FIRST = 40000,
+  AUTH = 22242,
 }
 
 export enum EventTags {
@@ -52,6 +53,7 @@ export enum EventTags {
   Invoice = 'bolt11',
   // NIP-03: target event kind on an OpenTimestamps attestation
   Kind = 'k',
+  Challenge = 'challenge',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'

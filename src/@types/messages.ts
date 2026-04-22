@@ -12,13 +12,14 @@ export enum MessageType {
   OK = 'OK',
   COUNT = 'COUNT',
   CLOSED = 'CLOSED',
+  AUTH = 'AUTH',
 }
 
-export type IncomingMessage = (SubscribeMessage | IncomingEventMessage | UnsubscribeMessage | CountMessage) & {
+export type IncomingMessage = (SubscribeMessage | IncomingEventMessage | UnsubscribeMessage | CountMessage | AuthMessage) & {
   [ContextMetadataKey]?: ContextMetadata
 }
 
-export type OutgoingMessage = OutgoingEventMessage | EndOfStoredEventsNotice | NoticeMessage | CommandResult | CountResultMessage | ClosedMessage
+export type OutgoingMessage = OutgoingEventMessage | EndOfStoredEventsNotice | NoticeMessage | CommandResult | CountResultMessage | ClosedMessage | AuthChallengeMessage
 
 export type SubscribeMessage = {
   [index in Range<2, 100>]: SubscriptionFilter
@@ -88,4 +89,14 @@ export interface ClosedMessage {
   0: MessageType.CLOSED
   1: SubscriptionId
   2: string
+}
+
+export interface AuthMessage {
+  0: MessageType.AUTH
+  1: Event
+}
+
+export interface AuthChallengeMessage {
+  0: MessageType.AUTH
+  1: string
 }

@@ -75,7 +75,6 @@ services:
     restart: on-failure
     networks:
       default:
-        ipv4_address: 10.10.10.2
 
   nostream-db:
     image: postgres:15
