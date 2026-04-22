@@ -2,6 +2,7 @@ import { ICacheAdapter, IWebSocketAdapter } from '../@types/adapters'
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IncomingMessage, MessageType } from '../@types/messages'
 import { createSettings } from './settings-factory'
+import { CountMessageHandler } from '../handlers/count-message-handler'
 import { EventMessageHandler } from '../handlers/event-message-handler'
 import { eventStrategyFactory } from './event-strategy-factory'
 import { getCacheClient } from '../cache/client'
@@ -42,6 +43,8 @@ export const messageHandlerFactory =
         return new SubscribeMessageHandler(adapter, eventRepository, createSettings)
       case MessageType.CLOSE:
         return new UnsubscribeMessageHandler(adapter)
+      case MessageType.COUNT:
+        return new CountMessageHandler(adapter, eventRepository, createSettings)
       default:
         throw new Error(`Unknown message type: ${String(message[0]).substring(0, 64)}`)
     }

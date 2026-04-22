@@ -2,8 +2,12 @@ info:
   relay_url: wss://nostream.your-domain.com
   name: nostream.your-domain.com
   description: A nostr relay written in Typescript.
+  banner: https://nostream.your-domain.com/banner.png
+  icon: https://nostream.your-domain.com/icon.png
   pubkey: replace-with-your-pubkey-in-hex
+  self: replace-with-your-relay-pubkey-in-hex
   contact: mailto:operator@your-domain.com
+  terms_of_service: https://nostream.your-domain.com/terms
 payments:
   enabled: false
   processor: zebedee
@@ -53,12 +57,20 @@ nip05:
   domainWhitelist: []
   # Block authors with NIP-05 at these domains
   domainBlacklist: []
+nip45:
+  enabled: true
 network:
   maxPayloadSize: 524288
-  # Comment the next line if using CloudFlare proxy
-  remoteIpHeader: x-forwarded-for
-  # Uncomment the next line if using CloudFlare proxy
+  # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
+  # remoteIpHeader: x-forwarded-for
   # remoteIpHeader: cf-connecting-ip
+  # Proxy IPs allowed to set remoteIpHeader (loopback and common docker internal)
+  trustedProxies:
+    - "127.0.0.1"
+    - "::ffff:127.0.0.1"
+    - "::1"
+    - "10.10.10.1"
+    - "::ffff:10.10.10.1"
 workers:
   count: 0
 mirroring:

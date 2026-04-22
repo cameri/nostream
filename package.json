@@ -18,11 +18,10 @@
     28,
     33,
     40,
-    44
+    44,
+    45
   ],
-  "supportedNipExtensions": [
-    "11a"
-  ],
+  "supportedNipExtensions": [],
   "main": "src/index.ts",
   "bin": {
     "nostream": "./dist/src/cli/index.js"

@@ -86,7 +86,7 @@ The schema ships with a small, query-driven set of indexes. The most important o
 | `events_active_pubkey_kind_created_at_idx`   | `REQ` with `authors`+`kinds` ordered by `created_at DESC, event_id ASC`; `hasActiveRequestToVanish`; by-pubkey deletes. Composite key `(event_pubkey, event_kind, event_created_at DESC, event_id)` so the ORDER BY tie-breaker is satisfied from the index without a sort step. |
 | `events_deleted_at_partial_idx`              | Retention purge over soft-deleted rows. Partial on `deleted_at IS NOT NULL`.                             |
 | `invoices_pending_created_at_idx`            | `findPendingInvoices` poll (`ORDER BY created_at ASC`). Partial on `status = 'pending'`.                  |
-| `event_tags (tag_name, tag_value)`           | NIP-01 generic tag filters (`#e`, `#p`, …) via the normalized `event_tags` table.                         |
+| `event_tags (tag_name, tag_value)`           | NIP-01 generic tag filters (`#e`, `#p`, `#K`, `#I`, …) via the normalized `event_tags` table. Both lowercase and uppercase single-letter tag filters are supported. |
 | `events_event_created_at_index`              | Time-range scans (`since` / `until`).                                                                    |
 | `events_event_kind_index`                    | Kind-only filters and purge kind-whitelist logic.                                                        |
 
@@ -107,6 +107,17 @@ npm run db:verify-index-impact
 
 The hot-path index migration (`20260420_120000_add_hot_path_indexes.js`) uses `CREATE INDEX CONCURRENTLY`, so it can be applied to a running relay without taking `ACCESS EXCLUSIVE` locks on the `events` or `invoices` tables.
 
+## Tag filter scope
+
+Subscription filters support single-letter tag filters using the `#<letter>` key syntax (NIP-01). Both lowercase (`#a`–`#z`) and uppercase (`#A`–`#Z`) variants are accepted.
+
+| Scope | Examples | Usage |
+|-------|---------|-------|
+| Lowercase (`#a`–`#z`) | `#e`, `#p`, `#a`, `#k` | Standard NIP-01 tag queries; parent-level references in NIP-22 comment threading |
+| Uppercase (`#A`–`#Z`) | `#E`, `#P`, `#A`, `#K`, `#I` | Root-level references in NIP-22 comment threading and other NIPs that use uppercase to distinguish root vs. parent scope |
+
+**NIP-22 comment threading (kind 1111):** NIP-22 comment events use lowercase tags (`#e`, `#a`, `#i`, `#k`) to reference the immediate parent and uppercase tags (`#E`, `#A`, `#I`, `#K`) to reference the root item. Filters must therefore accept both cases to allow clients to query the full comment thread hierarchy. For example, to find all comments on a root event: `{"kinds":[1111],"#E":["<root-event-id>"]}`, or to find comments of a specific root kind: `{"kinds":[1111],"#K":["1"]}`.
+
 # Settings
 
 Running `nostream` for the first time creates the settings file in `<project_root>/.nostr/settings.yaml`. If the file is not created and an error is thrown ensure that the `<project_root>/.nostr` folder exists. The configuration directory can be changed by setting the `NOSTR_CONFIG_DIR` environment variable. `nostream` will pick up any changes to this settings file without needing to restart.
@@ -115,11 +126,15 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 
 | Name                                        | Description                                                                   |
 |---------------------------------------------|-------------------------------------------------------------------------------|
+| info.banner                                 | Public banner image URL for the relay information document. |
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
 | info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
+| info.icon                                   | Public icon image URL for the relay information document. |
 | info.name                                   | Public name of your relay. (e.g. TBG's Public Relay) |
 | info.pubkey                                 | Relay operator's Nostr pubkey in hex format. |
 | info.relay_url                              | Public-facing URL of your relay. (e.g. wss://relay.your-domain.com) |
+| info.self                                   | Relay pubkey in hex format for the relay information document `self` field. |
+| info.terms_of_service                       | Public URL to relay terms of service. |
 | limits.admissionCheck.ipWhitelist           | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.admissionCheck.rateLimits[].period   | Rate limit period in milliseconds. |
 | limits.admissionCheck.rateLimits[].rate     | Maximum number of admission checks during period. |
@@ -128,14 +143,12 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.createdAt.minNegativeDelta     | Maximum number of secodns an event's `created_at` can be in the past.  Defaults to zero. Disabled when set to zero. |
-| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. |
-|                                             | Defaults to zero. Disabled when set to zero. |
+| limits.event.createdAt.minNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
+| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
 | limits.event.pubkey.blacklist               | List of public keys to always reject. Public keys in this list will not be able to post to this relay. |
-| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. |
-|                                             | Defaults to zero. Disabled when set to zero. |
+| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. Defaults to zero. Disabled when set to zero. |
 | limits.event.pubkey.whitelist               | List of public keys to always allow. Only public keys in this list will be able to post to this relay. Use for private relays. |
 | limits.event.rateLimits[].kinds             | List of event kinds rate limited. Use `[min, max]` for ranges. Optional. |
 | limits.event.rateLimits[].period | Rate limiting period in milliseconds. For `sliding_window`: the time window during which requests are counted. For `ewma`: the half-life of the exponential decay — shorter values forget bursts faster, longer values are stricter on bursty clients. |
@@ -164,6 +177,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
+| nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
@@ -183,3 +197,30 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].rate            | Maximum number of admission checks during period. |
 | limits.admissionCheck.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.rateLimiter.strategy | Rate limiting strategy. Either `ewma` or `sliding_window`. Defaults to `ewma`. When using `ewma`, the `period` field in each rate limit serves as the half-life for the exponential decay function. Note: when switching from `sliding_window` to `ewma`, consider increasing `rate` values slightly as EWMA penalizes bursty behavior more aggressively. |
+| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
+| mirroring.static[].filters                  | Subscription filters used to mirror. |
+| mirroring.static[].limits.event             | Event limit overrides for this mirror. See configurations under limits.event. |
+| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
+| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
+| network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
+| network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
+| network.trustedProxies                      | Optional allow-list of proxy IPs allowed to set `network.remoteIpHeader`; otherwise socket remote IP is used. |
+| nip05.domainBlacklist                       | List of domains blocked from NIP-05 verification. Authors with NIP-05 at these domains will be rejected. |
+| nip05.domainWhitelist                       | List of domains allowed for NIP-05 verification. If set, only authors verified at these domains can publish. |
+| nip05.maxConsecutiveFailures                | Number of consecutive verification failures before giving up on an author. Defaults to 20. |
+| nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
+| nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
+| nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
+| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
+| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
+| paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
+| paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
+| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
+| paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
+| payments.enabled                            | Enabled payments. Defaults to false. |
+| payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |
+| payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
+| payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
+| payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
+| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |
