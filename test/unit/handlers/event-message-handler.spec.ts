@@ -13,7 +13,7 @@ import { identifyEvent, signEvent } from '../../../src/utils/event'
 import { IncomingEventMessage, MessageType } from '../../../src/@types/messages'
 import { CacheAdmissionState } from '../../../src/constants/caching'
 import { Event } from '../../../src/@types/event'
-import { EventKinds } from '../../../src/constants/base'
+import { EventKinds, EventExpirationTimeMetadataKey, EventTags } from '../../../src/constants/base'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { IUserRepository } from '../../../src/@types/repositories'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
@@ -172,6 +172,23 @@ describe('EventMessageHandler', () => {
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
+    it('rejects event if NIP-05 verification is required', async () => {
+      canAcceptEventStub.returns(undefined)
+      isEventValidStub.resolves(undefined)
+      isUserAdmitted.resolves(undefined)
+      sandbox.stub(EventMessageHandler.prototype, 'checkNip05Verification' as any).resolves('blocked: NIP-05 verification required')
+
+      await handler.handleMessage(message)
+
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly([
+        MessageType.OK,
+        event.id,
+        false,
+        'blocked: NIP-05 verification required',
+      ])
+      expect(strategyFactoryStub).not.to.have.been.called
+    })
+
     it('rejects event if it is expired', async () => {
       isEventValidStub.resolves(undefined)
 
@@ -280,6 +297,14 @@ describe('EventMessageHandler', () => {
     })
 
     describe('createdAt', () => {
+      it('returns undefined if event pubkey equals relay public key', () => {
+        sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any).returns(event.pubkey)
+        eventLimits.createdAt.maxPositiveDelta = 1
+        event.created_at += 999
+
+        expect((handler as any).canAcceptEvent(event)).to.be.undefined
+      })
+
       describe('maxPositiveDelta', () => {
         it('returns undefined if maxPositiveDelta is zero', () => {
           eventLimits.createdAt.maxPositiveDelta = 0
@@ -291,9 +316,9 @@ describe('EventMessageHandler', () => {
           eventLimits.createdAt.maxPositiveDelta = 100
           event.created_at += 101
 
-          expect((handler as any).canAcceptEvent(event)).to.equal(
-            'rejected: created_at is more than 100 seconds in the future',
-          )
+          expect(
+            (handler as any).canAcceptEvent(event)
+          ).to.equal('rejected: created_at is more than 100 seconds in the future')
         })
       })
 
@@ -616,6 +641,22 @@ describe('EventMessageHandler', () => {
       }
     })
 
+    it('returns reason if request to vanish relay tag does not match relay URL', async () => {
+      const privkey = '0000000000000000000000000000000000000000000000000000000000000001'
+      const unsignedEvent = await identifyEvent({
+        pubkey: '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798',
+        created_at: 1700000000,
+        kind: EventKinds.REQUEST_TO_VANISH,
+        tags: [[EventTags.Relay, 'wss://another-relay.example']],
+        content: '',
+      })
+      const vanishEvent = await signEvent(privkey)(unsignedEvent)
+
+      return expect((handler as any).isEventValid(vanishEvent)).to.eventually.equal(
+        'invalid: request to vanish relay tag invalid',
+      )
+    })
+
     it('returns undefined if event is valid', () => {
       return expect((handler as any).isEventValid(event)).to.eventually.be.undefined
     })
@@ -683,6 +724,36 @@ describe('EventMessageHandler', () => {
     })
   })
 
+  describe('isBlockedByRequestToVanish', () => {
+    beforeEach(() => {
+      handler = new EventMessageHandler(
+        {} as any,
+        () => null,
+        {} as any,
+        userRepository,
+        () =>
+          ({
+            info: { relay_url: 'relay_url' },
+          }) as any,
+        {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: async () => false }),
+      )
+    })
+
+    it('returns undefined for request to vanish events', async () => {
+      event.kind = EventKinds.REQUEST_TO_VANISH
+
+      return expect((handler as any).isBlockedByRequestToVanish(event)).to.eventually.be.undefined
+    })
+
+    it("returns undefined if event pubkey equals relay's own public key", async () => {
+      sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any).returns(event.pubkey)
+
+      return expect((handler as any).isBlockedByRequestToVanish(event)).to.eventually.be.undefined
+    })
+  })
+
   describe('isRateLimited', () => {
     let eventLimits: EventLimits
     let settings: Settings
@@ -741,6 +812,21 @@ describe('EventMessageHandler', () => {
     it('fulfills with false if rate limits setting is empty', async () => {
       eventLimits.rateLimits = []
       return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+    })
+
+    it("fulfills with false if event pubkey equals relay's own public key", async () => {
+      sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any).returns(event.pubkey)
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+      ]
+
+      const actualResult = await (handler as any).isRateLimited(event)
+
+      expect(actualResult).to.be.false
+      expect(rateLimiterHitStub).not.to.have.been.called
     })
 
     it('skips rate limiter if IP is whitelisted', async () => {
@@ -1098,6 +1184,17 @@ describe('EventMessageHandler', () => {
     })
 
     describe('caching', () => {
+      it('falls back to repository lookup when cache read fails', async () => {
+        cacheStub.getKey.rejects(new Error('cache unavailable'))
+        settings.limits.event.pubkey.minBalance = 100n
+        userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, balance: 150n })
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+
+        expect(userRepositoryFindByPubkeyStub).to.have.been.calledOnceWithExactly(event.pubkey)
+        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:is-admitted`, CacheAdmissionState.ADMITTED, 300)
+      })
+
       it('fulfills with undefined and uses cache hit for admitted user without hitting DB', async () => {
         cacheStub.getKey.resolves(CacheAdmissionState.ADMITTED)
 
@@ -1341,6 +1438,35 @@ describe('EventMessageHandler', () => {
     })
   })
 
+  describe('addExpirationMetadata', () => {
+    beforeEach(() => {
+      handler = new EventMessageHandler(
+        {} as any,
+        () => null,
+        {} as any,
+        userRepository,
+        () =>
+          ({
+            info: { relay_url: 'relay_url' },
+          }) as any,
+        {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: async () => false }),
+      )
+    })
+
+    it('adds expiration metadata when expiration tag is present', () => {
+      const expiringEvent: Event = {
+        ...event,
+        tags: [[EventTags.Expiration, '1665547000']],
+      }
+
+      const enriched = (handler as any).addExpirationMetadata(expiringEvent)
+
+      expect((enriched as any)[EventExpirationTimeMetadataKey]).to.equal(1665547000)
+    })
+  })
+
   describe('processNip05Metadata', () => {
     let settings: Settings
     let nip05VerificationRepository: any
@@ -1412,6 +1538,18 @@ describe('EventMessageHandler', () => {
     })
 
     it('deletes verification when kind-0 has no nip05 in content', async () => {
+      event.kind = EventKinds.SET_METADATA
+      event.content = JSON.stringify({ name: 'alice' })
+
+      ;(handler as any).processNip05Metadata(event)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(nip05VerificationRepository.deleteByPubkey).to.have.been.calledOnceWithExactly(event.pubkey)
+      expect(verifyStub).not.to.have.been.called
+    })
+
+    it('ignores delete errors when kind-0 has no nip05 in content', async () => {
+      nip05VerificationRepository.deleteByPubkey.rejects(new Error('db down'))
       event.kind = EventKinds.SET_METADATA
       event.content = JSON.stringify({ name: 'alice' })
 

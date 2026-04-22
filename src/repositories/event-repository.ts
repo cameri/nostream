@@ -30,6 +30,7 @@ import {
 
 import {
   ContextMetadataKey,
+  DEFAULT_FILTER_LIMIT,
   EventDeduplicationMetadataKey,
   EventExpirationTimeMetadataKey,
   EventKinds,
@@ -76,7 +77,7 @@ export class EventRepository implements IEventRepository {
       if (typeof currentFilter.limit === 'number') {
         builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
       } else {
-        builder.limit(500).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
+        builder.limit(DEFAULT_FILTER_LIMIT).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
       }
 
       if (isTagQuery) {
@@ -308,7 +309,9 @@ export class EventRepository implements IEventRepository {
         'event_tags',
         'expires_at',
       ])
-      .whereRaw('"events"."event_created_at" < "excluded"."event_created_at"')
+      .whereRaw(
+        '("events"."event_created_at" < "excluded"."event_created_at" or ("events"."event_created_at" = "excluded"."event_created_at" and "events"."event_id" > "excluded"."event_id"))',
+      )
       .then(prop('rowCount') as () => number, () => 0)
   }
 

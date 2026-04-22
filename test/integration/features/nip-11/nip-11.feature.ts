@@ -3,6 +3,7 @@ import axios, { AxiosResponse } from 'axios'
 import chai from 'chai'
 
 import packageJson from '../../../../package.json'
+import { DEFAULT_FILTER_LIMIT } from '../../../../src/constants/base'
 import { createSettings } from '../../../../src/factories/settings-factory'
 
 chai.use(require('sinon-chai'))
@@ -69,4 +70,33 @@ Then('the limitation object contains a max_filters field', function(this: World<
   const doc = this.parameters.httpResponse.data
   const expectedMaxFilters = createSettings().limits?.client?.subscription?.maxFilters
   expect(doc.limitation.max_filters).to.equal(expectedMaxFilters)
+})
+
+Then('the relay information response includes required NIP-11 CORS headers', function(
+  this: World<Record<string, any>>,
+) {
+  const headers = this.parameters.httpResponse.headers
+  expect(headers['access-control-allow-origin']).to.equal('*')
+  expect(headers['access-control-allow-headers']).to.equal('*')
+  expect(headers['access-control-allow-methods']).to.equal('GET, OPTIONS')
+})
+
+Then('the limitation object contains NIP-11 parity fields and values', function(this: World<Record<string, any>>) {
+  const doc = this.parameters.httpResponse.data
+  const settings = createSettings()
+  const eventLimits = settings.limits?.event
+
+  const expectedRestrictedWrites =
+    Boolean(settings.payments?.enabled && settings.payments?.feeSchedules?.admission?.some((fee) => fee.enabled)) ||
+    (eventLimits?.eventId?.minLeadingZeroBits ?? 0) > 0 ||
+    (eventLimits?.pubkey?.minLeadingZeroBits ?? 0) > 0 ||
+    (eventLimits?.pubkey?.whitelist?.length ?? 0) > 0 ||
+    (eventLimits?.pubkey?.blacklist?.length ?? 0) > 0 ||
+    (eventLimits?.kind?.whitelist?.length ?? 0) > 0 ||
+    (eventLimits?.kind?.blacklist?.length ?? 0) > 0
+
+  expect(doc.limitation.created_at_lower_limit).to.equal(eventLimits?.createdAt?.maxNegativeDelta)
+  expect(doc.limitation.created_at_upper_limit).to.equal(eventLimits?.createdAt?.maxPositiveDelta)
+  expect(doc.limitation.default_limit).to.equal(DEFAULT_FILTER_LIMIT)
+  expect(doc.limitation.restricted_writes).to.equal(expectedRestrictedWrites)
 })
