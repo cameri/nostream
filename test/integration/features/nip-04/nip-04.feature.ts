@@ -1,11 +1,13 @@
 import { Then, When, World } from '@cucumber/cucumber'
 import { expect } from 'chai'
+import { Observable } from 'rxjs'
 import WebSocket from 'ws'
 
+import { CommandResult, MessageType, OutgoingMessage } from '../../../../src/@types/messages'
 import { createEvent, createSubscription, sendEvent, waitForEOSE, waitForNextEvent } from '../helpers'
 import { EventKinds, EventTags } from '../../../../src/constants/base'
-import { CommandResult } from '../../../../src/@types/messages'
 import { Event } from '../../../../src/@types/event'
+import { streams } from '../shared'
 
 When(/^(\w+) sends an encrypted_direct_message event with content "([^"]+)" to (\w+)$/, async function(
   name: string,
@@ -64,13 +66,32 @@ Then(/(\w+) receives an encrypted_direct_message event from (\w+) with content "
 When(/^(\w+) resubmits their last event$/, async function(name: string) {
   const ws = this.parameters.clients[name] as WebSocket
   const event = this.parameters.events[name][this.parameters.events[name].length - 1] as Event
-  const command = await sendEvent(ws, event) as CommandResult
-  this.parameters.commands = this.parameters.commands ?? {}
-  this.parameters.commands[name] = command
+
+  await new Promise<void>((resolve, reject) => {
+    ws.send(JSON.stringify(['EVENT', event]), (err?: Error) => err ? reject(err) : resolve())
+  })
+
+  this.parameters.lastResubmittedEventId = this.parameters.lastResubmittedEventId ?? {}
+  this.parameters.lastResubmittedEventId[name] = event.id
 })
 
-Then(/^(\w+) receives a successful command result with message "([^"]+)"$/, function(name: string, message: string) {
-  const command = this.parameters.commands[name] as CommandResult
+Then(/^(\w+) receives a successful command result with message "([^"]+)"$/, async function(name: string, message: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const eventId = this.parameters.lastResubmittedEventId[name] as string
+  const observable = streams.get(ws) as Observable<OutgoingMessage>
+  const command = await new Promise<CommandResult>((resolve, reject) => {
+    observable.subscribe((response: OutgoingMessage) => {
+      if (
+        response[0] === MessageType.OK &&
+        response[1] === eventId &&
+        response[3] === message
+      ) {
+        resolve(response)
+      } else if (response[0] === MessageType.NOTICE) {
+        reject(new Error(response[1]))
+      }
+    })
+  })
 
   expect(command[2]).to.equal(true)
   expect(command[3]).to.equal(message)
