@@ -77,7 +77,7 @@ services:
     entrypoint:
       - sh
       - -c
-      - 'cd code && corepack enable && pnpm dlx --package=knex@2.4.0 --package=pg@8.8.0 knex migrate:latest'
+      - 'cd code && corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm dlx --package=knex@2.4.0 --package=pg@8.8.0 knex migrate:latest'
     volumes:
       - ../../migrations:/code/migrations
       - ../../knexfile.js:/code/knexfile.js
