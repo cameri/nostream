@@ -444,7 +444,7 @@ Install dependencies:
 Run migrations (at least once and after pulling new changes):
 
   ```
-  NODE_OPTIONS="-r dotenv/config" pnpm run db:migrate
+  pnpm db:migrate
   ```
 
 Create .nostr folder inside nostream project folder and copy over the settings file:

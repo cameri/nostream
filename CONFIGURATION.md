@@ -94,8 +94,8 @@ The schema ships with a small, query-driven set of indexes. The most important o
 Run the read-only benchmark against your own database to confirm the planner is using the expected indexes and to record baseline latencies:
 
 ```sh
-pnpm run db:benchmark
-pnpm run db:benchmark --runs 5 --kind 1 --limit 500
+pnpm db:benchmark
+pnpm db:benchmark --runs 5 --kind 1 --limit 500
 ```
 
 The `db:benchmark` script loads the local `.env` file automatically (via `node --env-file-if-exists=.env`), using the same `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` variables as the relay. The benchmark issues only `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements — it never writes. Flags: `--runs <n>` (default 3), `--kind <n>` (default 1 / `TEXT_NOTE`; pass `0` for SET_METADATA), `--limit <n>` (default 500), `--horizon-days <n>` (default 7), `--help`.
@@ -103,7 +103,7 @@ The `db:benchmark` script loads the local `.env` file automatically (via `node -
 For a full before/after proof of the index impact (seeds a throwaway dataset, drops and recreates the indexes, and prints a BEFORE/AFTER table), use:
 
 ```sh
-pnpm run db:verify-index-impact
+pnpm db:verify-index-impact
 ```
 
 The hot-path index migration (`20260420_120000_add_hot_path_indexes.js`) uses `CREATE INDEX CONCURRENTLY`, so it can be applied to a running relay without taking `ACCESS EXCLUSIVE` locks on the `events` or `invoices` tables.

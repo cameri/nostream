@@ -97,7 +97,7 @@ SECRET=aaabbbccc...dddeeefff
 Run migrations (at least once and after pulling new changes):
 
 ```
-NODE_OPTIONS="-r dotenv/config" pnpm run db:migrate
+pnpm db:migrate
 ```
 
 Create the `.nostr` folder and copy the default settings file:
