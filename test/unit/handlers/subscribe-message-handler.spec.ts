@@ -236,6 +236,22 @@ describe('SubscribeMessageHandler', () => {
       await expect(promise).to.eventually.be.rejectedWith(error)
       expect(closeSpy).to.have.been.called
     })
+
+    it('destroys event stream if aborted', async () => {
+      const error = new Error('aborted')
+      error.name = 'AbortError'
+      isClientSubscribedToEventStub.returns(always(true))
+
+      const fetch = () => (handler as any).fetchAndSend(subscriptionId, filters)
+      const destroySpy = sandbox.spy(stream, 'destroy')
+
+      const promise = fetch()
+
+      stream.emit('error', error)
+
+      await expect(promise).to.eventually.be.rejectedWith(error)
+      expect(destroySpy).to.have.been.called
+    })
   })
 
   describe('.isClientSubscribedToEvent', () => {
@@ -349,6 +365,36 @@ describe('SubscribeMessageHandler', () => {
       expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
         'Too many filters: Number of filters per susbscription must be less then or equal to 1',
       )
+    })
+
+    it('returns reason if subscription id is too long', () => {
+      settingsFactory.returns({
+        limits: {
+          client: {
+            subscription: {
+              maxSubscriptionIdLength: 5,
+            },
+          },
+        },
+      })
+
+      expect((handler as any).canSubscribe('123456', filters)).to.equal(
+        'Subscription ID too long: Subscription ID must be less or equal to 5',
+      )
+    })
+
+    it('returns undefined if subscription id matches max length', () => {
+      settingsFactory.returns({
+        limits: {
+          client: {
+            subscription: {
+              maxSubscriptionIdLength: 6,
+            },
+          },
+        },
+      })
+
+      expect((handler as any).canSubscribe('123456', filters)).to.be.undefined
     })
   })
 })

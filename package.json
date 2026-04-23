@@ -2,6 +2,7 @@
   "name": "nostream",
   "version": "2.1.1",
   "packageManager": "pnpm@10.33.0",
+  "private": true,
   "description": "A Nostr relay written in Typescript.",
   "supportedNips": [
     1,
@@ -19,11 +20,10 @@
     28,
     33,
     40,
-    44
+    44,
+    45
   ],
-  "supportedNipExtensions": [
-    "11a"
-  ],
+  "supportedNipExtensions": [],
   "main": "src/index.ts",
   "scripts": {
     "dev": "node --env-file-if-exists=.env -r ts-node/register src/index.ts",
@@ -71,8 +71,8 @@
     "docker:cover:integration": "pnpm run docker:integration:run pnpm run cover:integration",
     "postdocker:integration:run": "docker compose -f ./test/integration/docker-compose.yml down",
     "prepare": "husky install || exit 0",
-    "changeset:version": "changeset version",
-    "changeset:tag": "changeset tag"
+    "changeset:version": "changeset version && pnpm install --lockfile-only",
+    "changeset:publish": "changeset publish"
   },
   "repository": {
     "type": "git",
@@ -83,7 +83,7 @@
     "relay",
     "typescript"
   ],
-  "author": "Ricardo Arturo Cabral Mej\u00eda (npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m)",
+  "author": "Ricardo Arturo Cabral Mejía (npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m)",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/cameri/nostream/issues"
@@ -91,6 +91,7 @@
   "homepage": "https://github.com/cameri/nostream#readme",
   "devDependencies": {
     "@biomejs/biome": "^2.4.11",
+    "@changesets/changelog-github": "0.6.0",
     "@changesets/cli": "^2.27.12",
     "@commitlint/cli": "17.2.0",
     "@commitlint/config-conventional": "17.2.0",

@@ -30,6 +30,7 @@ import {
 
 import {
   ContextMetadataKey,
+  DEFAULT_FILTER_LIMIT,
   EventDeduplicationMetadataKey,
   EventExpirationTimeMetadataKey,
   EventKinds,
@@ -71,90 +72,16 @@ export class EventRepository implements IEventRepository {
     const queries = filters.map((currentFilter) => {
       const builder = this.readReplicaDbClient<DBEvent>('events')
 
-      forEachObjIndexed((tableFields: string[], filterName: string | number) => {
-        builder.andWhere((bd) => {
-          cond([
-            [isEmpty, () => void bd.whereRaw('1 = 0')],
-            [
-              complement(isNil),
-              pipe(
-                groupByLengthSpec,
-                evolve({
-                  exact: (pubkeys: string[]) =>
-                    tableFields.forEach((tableField) => bd.orWhereIn(tableField, pubkeys.map(toBuffer))),
-                  even: forEach((prefix: string) =>
-                    tableFields.forEach((tableField) =>
-                      bd.orWhereRaw(`substring("${tableField}" from 1 for ?) = ?`, [
-                        prefix.length >> 1,
-                        toBuffer(prefix),
-                      ]),
-                    ),
-                  ),
-                  odd: forEach((prefix: string) =>
-                    tableFields.forEach((tableField) =>
-                      bd.orWhereRaw(`substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`, [
-                        (prefix.length >> 1) + 1,
-                        `\\x${prefix}0`,
-                        `\\x${prefix}f`,
-                      ]),
-                    ),
-                  ),
-                } as any),
-              ),
-            ],
-          ])(currentFilter[filterName] as string[])
-        })
-      })({
-        authors: ['event_pubkey'],
-        ids: ['event_id'],
-      })
-
-      if (Array.isArray(currentFilter.kinds)) {
-        builder.whereIn('event_kind', currentFilter.kinds)
-      }
-
-      if (typeof currentFilter.since === 'number') {
-        builder.where('event_created_at', '>=', currentFilter.since)
-      }
-
-      if (typeof currentFilter.until === 'number') {
-        builder.where('event_created_at', '<=', currentFilter.until)
-      }
+      const isTagQuery = this.applyFilterConditions(builder, currentFilter)
 
       if (typeof currentFilter.limit === 'number') {
         builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
       } else {
-        builder.limit(500).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
+        builder.limit(DEFAULT_FILTER_LIMIT).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
       }
 
-      const andWhereRaw = invoker(1, 'andWhereRaw')
-      const orWhereRaw = invoker(2, 'orWhereRaw')
-
-      let isTagQuery = false
-      pipe(
-        toPairs,
-        filter(pipe(nth(0) as () => string, isGenericTagQuery)) as any,
-        forEach(([filterName, criteria]: [string, string[]]) => {
-          isTagQuery = true
-          builder.andWhere((bd) => {
-            ifElse(
-              isEmpty,
-              () => andWhereRaw('1 = 0', bd),
-              forEach(
-                (criterion: string) =>
-                  void orWhereRaw(
-                    'event_tags.tag_name = ? AND event_tags.tag_value = ?',
-                    [filterName[1], criterion],
-                    bd,
-                  ),
-              ),
-            )(criteria)
-          })
-        }),
-      )(currentFilter as any)
-
       if (isTagQuery) {
-        builder.leftJoin('event_tags', 'events.event_id', 'event_tags.event_id').select('events.*')
+        builder.select('events.*')
       }
 
       return builder
@@ -166,6 +93,119 @@ export class EventRepository implements IEventRepository {
     }
 
     return query
+  }
+
+  public async countByFilters(filters: SubscriptionFilter[]): Promise<number> {
+    logger('counting events for %o', filters)
+
+    if (!Array.isArray(filters) || !filters.length) {
+      throw new Error('Filters cannot be empty')
+    }
+
+    const now = Math.floor(Date.now() / 1000)
+
+    const queries = filters.map((currentFilter) => {
+      const builder = this.readReplicaDbClient<DBEvent>('events').select('events.event_id')
+
+      const isTagQuery = this.applyFilterConditions(builder, currentFilter)
+
+      if (typeof currentFilter.limit === 'number') {
+        builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
+      }
+
+      if (isTagQuery) {
+        builder.select('events.event_id')
+      }
+
+      builder.whereNull('events.deleted_at').andWhere((bd) => {
+        bd.whereNull('events.expires_at').orWhere('events.expires_at', '>', now)
+      })
+
+      return builder
+    })
+
+    const [query, ...subqueries] = queries
+    if (subqueries.length) {
+      query.union(subqueries, true)
+    }
+
+    const result = await this.readReplicaDbClient.from(query.as('matching_events')).countDistinct({ count: 'event_id' }).first()
+
+    return Number(result?.count ?? 0)
+  }
+
+  private applyFilterConditions(builder: any, currentFilter: SubscriptionFilter): boolean {
+    forEachObjIndexed((tableFields: string[], filterName: string | number) => {
+      builder.andWhere((bd) => {
+        cond([
+          [isEmpty, () => void bd.whereRaw('1 = 0')],
+          [
+            complement(isNil),
+            pipe(
+              groupByLengthSpec,
+              evolve({
+                exact: (pubkeys: string[]) =>
+                  tableFields.forEach((tableField) => bd.orWhereIn(tableField, pubkeys.map(toBuffer))),
+                even: forEach((prefix: string) =>
+                  tableFields.forEach((tableField) =>
+                    bd.orWhereRaw(`substring("${tableField}" from 1 for ?) = ?`, [prefix.length >> 1, toBuffer(prefix)]),
+                  ),
+                ),
+                odd: forEach((prefix: string) =>
+                  tableFields.forEach((tableField) =>
+                    bd.orWhereRaw(`substring("${tableField}" from 1 for ?) BETWEEN ? AND ?`, [
+                      (prefix.length >> 1) + 1,
+                      `\\x${prefix}0`,
+                      `\\x${prefix}f`,
+                    ]),
+                  ),
+                ),
+              } as any),
+            ),
+          ],
+        ])(currentFilter[filterName] as string[])
+      })
+    })({ authors: ['event_pubkey'], ids: ['event_id'] })
+
+    if (Array.isArray(currentFilter.kinds)) {
+      builder.whereIn('event_kind', currentFilter.kinds)
+    }
+
+    if (typeof currentFilter.since === 'number') {
+      builder.where('event_created_at', '>=', currentFilter.since)
+    }
+
+    if (typeof currentFilter.until === 'number') {
+      builder.where('event_created_at', '<=', currentFilter.until)
+    }
+
+    const andWhereRaw = invoker(1, 'andWhereRaw')
+    const orWhereRaw = invoker(2, 'orWhereRaw')
+
+    let isTagQuery = false
+    pipe(
+      toPairs,
+      filter(pipe(nth(0) as () => string, isGenericTagQuery)) as any,
+      forEach(([filterName, criteria]: [string, string[]]) => {
+        isTagQuery = true
+        builder.andWhere((bd) => {
+          ifElse(
+            isEmpty,
+            () => andWhereRaw('1 = 0', bd),
+            forEach(
+              (criterion: string) =>
+                void orWhereRaw('event_tags.tag_name = ? AND event_tags.tag_value = ?', [filterName[1], criterion], bd),
+            ),
+          )(criteria)
+        })
+      }),
+    )(currentFilter as any)
+
+    if (isTagQuery) {
+      builder.leftJoin('event_tags', 'events.event_id', 'event_tags.event_id')
+    }
+
+    return isTagQuery
   }
 
   public async create(event: Event): Promise<number> {
@@ -269,7 +309,9 @@ export class EventRepository implements IEventRepository {
         'event_tags',
         'expires_at',
       ])
-      .whereRaw('"events"."event_created_at" < "excluded"."event_created_at"')
+      .whereRaw(
+        '("events"."event_created_at" < "excluded"."event_created_at" or ("events"."event_created_at" = "excluded"."event_created_at" and "events"."event_id" > "excluded"."event_id"))',
+      )
       .then(prop('rowCount') as () => number, () => 0)
   }
 

@@ -55,6 +55,7 @@ export enum EventTags {
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'
+export const DEFAULT_FILTER_LIMIT = 500
 
 export enum PaymentsProcessors {
   LNURL = 'lnurl',

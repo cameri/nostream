@@ -49,7 +49,6 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-05: Mapping Nostr keys to DNS-based internet identifiers
 - [x] NIP-09: Event deletion
 - [x] NIP-11: Relay information document
-- [x] NIP-11a: Relay Information Document Extensions
 - [x] NIP-12: Generic tag queries
 - [x] NIP-13: Proof of Work
 - [x] NIP-15: End of Stored Events Notice
@@ -61,6 +60,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-33: Parameterized Replaceable Events
 - [x] NIP-40: Expiration Timestamp
 - [x] NIP-44: Encrypted Payloads (Versioned)
+- [x] NIP-45: Event Counts
 - [x] NIP-62: Request to Vanish
 
 ## Requirements
@@ -471,182 +471,13 @@ To clean up the build, coverage and test reports run:
   ```
   pnpm run clean
   ```
-## Development Quick Start (Docker Compose)
 
-Install Docker Desktop following the [official guide](https://docs.docker.com/desktop/).
-You may have to uninstall Docker on your machine if you installed it using a different guide.
+## Development & Contributing
 
-Clone repository and enter directory:
-  ```
-  git clone git@github.com:Cameri/nostream.git
-  cd nostream
-  ```
+For development environment setup, testing, linting, load testing, and contribution guidelines
+(including the issue fairness policy, husky pre-commit hooks, and changeset workflow), see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-Start:
-  ```
-  ./scripts/start
-  ```
-
-  This will run in the foreground of the terminal until you stop it with Ctrl+C.
-
-## Tests
-
-### Linting and formatting (Biome)
-
-Run code quality checks with Biome:
-
-  ```
-  pnpm run lint
-  pnpm run lint:fix
-  pnpm run format
-  pnpm run format:check
-  ```
-
-### Unit tests
-
-Open a terminal and change to the project's directory:
-  ```
-  cd /path/to/nostream
-  ```
-
-Run unit tests with:
-
-  ```
-  pnpm run test:unit
-  ```
-
-Or, run unit tests in watch mode:
-
-  ```
-  pnpm run test:unit:watch
-  ```
-
-To get unit test coverage run:
-
-  ```
-  pnpm run cover:unit
-  ```
-
-To see the unit tests report open `.test-reports/unit/index.html` with a browser:
-  ```
-  open .test-reports/unit/index.html
-  ```
-
-To see the unit tests coverage report open `.coverage/unit/lcov-report/index.html` with a browser:
-  ```
-  open .coverage/unit/lcov-report/index.html
-  ```
-
-### Integration tests (Docker Compose)
-
-Open a terminal and change to the project's directory:
-  ```
-  cd /path/to/nostream
-  ```
-
-Run integration tests with:
-
-  ```
-  pnpm run docker:test:integration
-  ```
-
-And to get integration test coverage run:
-
-  ```
-  pnpm run docker:cover:integration
-  ```
-
-### Integration tests (Standalone)
-
-Open a terminal and change to the project's directory:
-  ```
-  cd /path/to/nostream
-  ```
-
-Set the following environment variables:
-
-  ```
-  DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
-
-  or
-
-  DB_HOST=localhost
-  DB_PORT=5432
-  DB_NAME=nostr_ts_relay_test
-  DB_USER=postgres
-  DB_PASSWORD=postgres
-  DB_MIN_POOL_SIZE=1
-  DB_MAX_POOL_SIZE=2
-  ```
-
-Then run the integration tests:
-
-  ```
-  pnpm run test:integration
-  ```
-
-To see the integration tests report open `.test-reports/integration/report.html` with a browser:
-  ```
-  open .test-reports/integration/report.html
-  ```
-
-To get the integration test coverage run:
-
-  ```
-  pnpm run cover:integration
-  ```
-
-To see the integration test coverage report open `.coverage/integration/lcov-report/index.html` with a browser.
-
-  ```
-  open .coverage/integration/lcov-report/index.html
-  ```
-
-
-## Security & Load Testing
-
-Nostream includes a specialized security tester to simulate Slowloris-style connection holding and event flood (spam) attacks. This is used to verify relay resilience and prevent memory leaks.
-
-### Running the Tester
-  ```bash
-  # Simulates 5,000 idle "zombie" connections + 100 events/sec spam
-  pnpm run test:load --zombies 5000 --spam-rate 100
-  ```
-
-### Analyzing Memory (Heap Snapshots)
-To verify that connections are being correctly evicted and memory reclaimed:
-1. Ensure the relay is running with `--inspect` enabled (see `docker-compose.yml`).
-2. Open **Chrome DevTools** (`chrome://inspect`) and connect to the relay process.
-3. In the **Memory** tab, take a **Heap Snapshot** (Baseline).
-4. Run the load tester.
-5. Wait for the eviction cycle (default: 120s) and take a second **Heap Snapshot**.
-6. Switch the view to **Comparison** and select the Baseline snapshot.
-7. Verify that object counts (e.g., `WebSocketAdapter`, `SocketAddress`) return to baseline levels.
-
-### Server-Side Monitoring
-To observe client and subscription counts in real-time during a test, you can instrument `src/adapters/web-socket-server-adapter.ts`:
-
-1. Locate the `onHeartbeat()` method.
-2. Add the following logging logic:
-   ```typescript
-   private onHeartbeat() {
-     let totalSubs = 0;
-     let totalClients = 0;
-     this.webSocketServer.clients.forEach((webSocket) => {
-       totalClients++;
-       const webSocketAdapter = this.webSocketsAdapters.get(webSocket) as IWebSocketAdapter;
-       if (webSocketAdapter) {
-         webSocketAdapter.emit(WebSocketAdapterEvent.Heartbeat);
-         totalSubs += webSocketAdapter.getSubscriptions().size;
-       }
-     });
-     console.log(`[HEARTBEAT] Clients: ${totalClients} | Total subscriptions: ${totalSubs} | Heap Used: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB`);
-   }
-   ```
-3. View the live output via Docker logs:
-   ```bash
-   docker compose logs -f nostream
-   ```
 ## Export Events
 
 Export all stored events to a [JSON Lines](https://jsonlines.org/) (`.jsonl`) file. Each line is a valid NIP-01 Nostr event JSON object. The export streams rows from the database using cursors, so it works safely on relays with millions of events without loading them into memory.
@@ -753,6 +584,7 @@ Any changes made to the settings file will be read on the next start.
 Default settings can be found under `resources/default-settings.yaml`. Feel free to copy it to `nostream/.nostr/settings.yaml` if you would like to have a settings file before running the relay first.
 
 See [CONFIGURATION.md](CONFIGURATION.md) for a detailed explanation of each environment variable and setting.
+
 ## Dev Channel
 
 For development discussions, please use the [Nostr Typescript Relay Dev Group](https://t.me/nostream_dev).
