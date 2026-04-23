@@ -21,7 +21,7 @@ COPY ["package.json", "pnpm-lock.yaml","knexfile.js","./"]
 
 ADD migrations /build/migrations
 
-RUN corepack enable && pnpm install --frozen-lockfile --silent
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --frozen-lockfile --silent
 
 COPY . .
 
@@ -79,7 +79,7 @@ COPY --from=build /build/knexfile.js ./
 COPY --from=build /build/migrations ./migrations
 COPY --from=build /build/seeds ./seeds
 
-RUN corepack enable && pnpm install --prod --frozen-lockfile --silent
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --prod --frozen-lockfile --silent
 
 USER 1000:1000
 

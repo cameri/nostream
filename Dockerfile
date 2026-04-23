@@ -4,7 +4,7 @@ WORKDIR /build
 
 COPY ["package.json", "pnpm-lock.yaml", "./"]
 
-RUN corepack enable && pnpm install --frozen-lockfile --silent
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --frozen-lockfile --silent
 
 COPY . .
 
@@ -26,7 +26,7 @@ ADD resources /app/resources
 COPY --from=build /build/dist .
 COPY --from=build /build/package.json /build/pnpm-lock.yaml ./
 
-RUN corepack enable && pnpm install --prod --frozen-lockfile --silent
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --prod --frozen-lockfile --silent
 
 USER node:node
 
