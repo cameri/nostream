@@ -102,10 +102,10 @@ const getOptionValue = (option: string, args: string[], index: number): [string,
 }
 
 const printUsage = (): void => {
-  console.log('Usage: npm run export -- [output-file] [--compress|-z] [--format gzip|gz|xz]')
-  console.log('Example: npm run export -- ./events.jsonl')
-  console.log('Example: npm run export -- ./events.jsonl.gz --compress --format gzip')
-  console.log('Example: npm run export -- ./events.jsonl.xz -z --format xz')
+  console.log('Usage: pnpm run export [output-file] [--compress|-z] [--format gzip|gz|xz]')
+  console.log('Example: pnpm run export ./events.jsonl')
+  console.log('Example: pnpm run export ./events.jsonl.gz --compress --format gzip')
+  console.log('Example: pnpm run export ./events.jsonl.xz -z --format xz')
 }
 
 const getCompressionLabel = (format: CompressionFormat): string => {
