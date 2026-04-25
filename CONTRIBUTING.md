@@ -47,6 +47,13 @@ corepack enable
 pnpm install
 ```
 
+Use the unified CLI for relay lifecycle and supported development operations from this source
+checkout:
+
+```
+pnpm run cli -- --help
+```
+
 > **Important:** Pre-commit hooks installed by Husky run linting and formatting checks on every
 > commit. Do **not** bypass them with `git commit --no-verify`. If a hook fails, fix the reported
 > issues before committing.
@@ -56,7 +63,7 @@ pnpm install
 Start the relay (runs in the foreground until stopped with Ctrl+C):
 
 ```
-./scripts/start
+pnpm run cli -- start
 ```
 
 ### Development Quick Start (Standalone)
@@ -149,7 +156,7 @@ cd /path/to/nostream
 Run unit tests:
 
 ```
-pnpm test:unit
+pnpm run cli -- dev test:unit
 ```
 
 Run unit tests in watch mode:
@@ -223,7 +230,7 @@ DB_MAX_POOL_SIZE=2
 Run the integration tests:
 
 ```
-pnpm test:integration
+pnpm run cli -- dev test:integration
 ```
 
 Open the integration test report:
