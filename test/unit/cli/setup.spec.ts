@@ -2,12 +2,14 @@ import { expect } from 'chai'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import sinon from 'sinon'
 
 const setupCommand = await import('../../../dist/src/cli/commands/setup.js')
 
 describe('runSetup', () => {
   const originalCwd = process.cwd()
   const originalSecret = process.env.SECRET
+  const originalStdinIsTTY = process.stdin.isTTY
 
   let tempDir: string
 
@@ -28,7 +30,9 @@ describe('runSetup', () => {
   })
 
   afterEach(() => {
+    sinon.restore()
     process.chdir(originalCwd)
+    process.stdin.isTTY = originalStdinIsTTY
     if (originalSecret === undefined) {
       delete process.env.SECRET
     } else {
@@ -86,5 +90,28 @@ describe('runSetup', () => {
     expect(generatedSecret).to.not.equal(undefined)
     expect(generatedSecret).to.not.equal('change_me_to_something_long_and_random')
     expect(generatedSecret).to.have.length(128)
+  })
+
+  it('returns 1 when setup is cancelled while entering the secret and does not continue', async () => {
+    const cancelToken = Symbol('cancel')
+
+    process.stdin.isTTY = true
+    fs.writeFileSync(path.join(tempDir, '.env.example'), 'SECRET=change_me_to_something_long_and_random\n', 'utf-8')
+
+    const textStub = sinon.stub(setupCommand.setupPrompts, 'text').resolves(cancelToken as any)
+    const isCancelStub = sinon.stub(setupCommand.setupPrompts, 'isCancel').callsFake((value) => value === cancelToken)
+    const cancelStub = sinon.stub(setupCommand.setupPrompts, 'cancel')
+    const confirmStub = sinon.stub(setupCommand.setupPrompts, 'confirm')
+    const outroStub = sinon.stub(setupCommand.setupPrompts, 'outro')
+
+    const code = await setupCommand.runSetup({ yes: false })
+
+    expect(code).to.equal(1)
+    expect(textStub.calledOnce).to.equal(true)
+    expect(isCancelStub.calledOnceWithExactly(cancelToken)).to.equal(true)
+    expect(cancelStub.calledOnceWithExactly('Setup cancelled')).to.equal(true)
+    expect(confirmStub.notCalled).to.equal(true)
+    expect(outroStub.notCalled).to.equal(true)
+    expect(readEnv()).to.equal('SECRET=change_me_to_something_long_and_random\n')
   })
 })

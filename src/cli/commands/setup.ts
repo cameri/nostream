@@ -13,6 +13,22 @@ type SetupOptions = {
 
 const SECRET_PLACEHOLDER = 'change_me_to_something_long_and_random'
 
+export const setupPrompts = {
+  intro,
+  outro,
+  confirm,
+  text,
+  isCancel,
+  cancel,
+}
+
+class SetupCancelledError extends Error {
+  constructor() {
+    super('Setup cancelled')
+    this.name = 'SetupCancelledError'
+  }
+}
+
 const readEnvSecret = (content: string): string | undefined => {
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim()
@@ -37,15 +53,15 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
   }
 
   if (!assumeYes && process.stdin.isTTY) {
-    const value = await text({
+    const value = await setupPrompts.text({
       message: 'SECRET env var value (hex recommended)',
       placeholder: 'openssl rand -hex 128',
       validate: (input) => (input.trim() ? undefined : 'SECRET is required'),
     })
 
-    if (isCancel(value)) {
-      cancel('Setup cancelled')
-      throw new Error('SETUP_CANCELLED')
+    if (setupPrompts.isCancel(value)) {
+      setupPrompts.cancel('Setup cancelled')
+      throw new SetupCancelledError()
     }
 
     return value.trim()
@@ -89,7 +105,7 @@ const upsertSecret = (content: string, secret: string): string => {
   return nextLines.join('\n')
 }
 
-const ensureEnvFile = async (assumeYes: boolean): Promise<void> => {
+const ensureEnvFile = async (assumeYes: boolean): Promise<boolean> => {
   const envPath = getProjectPath('.env')
   const envExamplePath = getProjectPath('.env.example')
 
@@ -104,35 +120,38 @@ const ensureEnvFile = async (assumeYes: boolean): Promise<void> => {
   const current = fs.readFileSync(envPath, 'utf-8')
 
   if (!needsSecretReplacement(readEnvSecret(current))) {
-    return
+    return true
   }
 
   let secret: string
   try {
     secret = await resolveSecret(assumeYes)
   } catch (error) {
-    if (error instanceof Error && error.message === 'SETUP_CANCELLED') {
-      process.exitCode = 1
-      return
+    if (error instanceof SetupCancelledError) {
+      return false
     }
     throw error
   }
 
   fs.writeFileSync(envPath, upsertSecret(current, secret), 'utf-8')
+  return true
 }
 
 export const runSetup = async (options: SetupOptions): Promise<number> => {
-  intro('Nostream setup')
+  setupPrompts.intro('Nostream setup')
 
   ensureConfigBootstrap()
-  await ensureEnvFile(Boolean(options.yes))
+  const shouldContinue = await ensureEnvFile(Boolean(options.yes))
+  if (!shouldContinue) {
+    return 1
+  }
 
   let shouldStart = Boolean(options.start)
 
   if (!options.yes && !options.start && process.stdin.isTTY) {
-    const answer = await confirm({ message: 'Start relay now?', initialValue: true })
-    if (isCancel(answer)) {
-      cancel('Setup cancelled')
+    const answer = await setupPrompts.confirm({ message: 'Start relay now?', initialValue: true })
+    if (setupPrompts.isCancel(answer)) {
+      setupPrompts.cancel('Setup cancelled')
       return 1
     }
 
@@ -141,10 +160,10 @@ export const runSetup = async (options: SetupOptions): Promise<number> => {
 
   if (shouldStart) {
     const code = await runStart({}, [])
-    outro(code === 0 ? 'Setup complete' : 'Setup finished with errors')
+    setupPrompts.outro(code === 0 ? 'Setup complete' : 'Setup finished with errors')
     return code
   }
 
-  outro('Setup complete')
+  setupPrompts.outro('Setup complete')
   return 0
 }
