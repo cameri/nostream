@@ -4,7 +4,7 @@ Nostream ships a unified command-line interface:
 
 ```bash
 nostream --help
-npm run cli -- --help
+pnpm run cli -- --help
 ```
 
 When run with no arguments in an interactive terminal, `nostream` launches an interactive TUI.

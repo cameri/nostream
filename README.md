@@ -194,7 +194,7 @@ Non-interactive CLI usage conventions:
 
 Optional global installation from a source checkout:
   ```
-  npm i -g .
+  pnpm add -g .
   nostream --help
   ```
 
@@ -525,10 +525,10 @@ Start:
 Run code quality checks with Biome:
 
   ```
-  npm run lint
-  npm run lint:fix
-  npm run format
-  npm run format:check
+  pnpm lint
+  pnpm lint:fix
+  pnpm format
+  pnpm check:format
   ```
 
 ### Unit tests
@@ -541,19 +541,19 @@ Open a terminal and change to the project's directory:
 Run unit tests with:
 
   ```
-  npm run test:unit
+  pnpm test:unit
   ```
 
 Or, run unit tests in watch mode:
 
   ```
-  npm run test:unit:watch
+  pnpm test:unit:watch
   ```
 
 To get unit test coverage run:
 
   ```
-  npm run cover:unit
+  pnpm cover:unit
   ```
 
 To see the unit tests report open `.test-reports/unit/index.html` with a browser:
