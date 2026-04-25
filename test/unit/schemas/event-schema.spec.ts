@@ -108,3 +108,22 @@ describe('NIP-01', () => {
     }
   })
 })
+
+describe('NIP-14', () => {
+  it('accepts subject tag on text note events', () => {
+    const event: Event = {
+      id: 'fa4dd948576fe182f5d0e3120b9df42c83dffa1c884754d5e4d3b0a2f98a01c5',
+      pubkey: 'edfa27d49d2af37ee331e1225bb6ed1912c6d999281b36d8018ad99bc3573c29',
+      created_at: 1660306803,
+      kind: 1,
+      tags: [[EventTags.Subject, 'SoB weekly update']],
+      content: 'testing subject tag',
+      sig: '313a9b8cd68267a51da84e292c0937d1f3686c6757c4584f50fcedad2b13fad755e6226924f79880fb5aa9de95c04231a4823981513ac9e7092bad7488282a96',
+    }
+
+    const result = validateSchema(eventSchema)(event)
+
+    expect(result.error).to.be.undefined
+    expect(result.value).to.deep.equal(event)
+  })
+})
