@@ -12,6 +12,7 @@ import { createLogger } from '../factories/logger-factory'
 import { delayMs } from '../utils/misc'
 import { INip05VerificationRepository } from '../@types/repositories'
 import { InvoiceStatus } from '../@types/invoice'
+import { isExpiredInvoice } from '../utils/invoice'
 import { Nip05Verification } from '../@types/nip05'
 import { Settings } from '../@types/settings'
 
@@ -21,10 +22,8 @@ const CLEAR_OLD_EVENTS_TIMEOUT_MS = 5000
 
 const logger = createLogger('maintenance-worker')
 
-const isNotFoundError = (error: unknown): boolean => (error as any)?.response?.status === 404
-
-const isExpiredInvoice = (invoice: { expiresAt?: Date | null }): boolean =>
-  invoice.expiresAt instanceof Date && invoice.expiresAt.getTime() <= Date.now()
+const isNotFoundError = (error: unknown): boolean =>
+  (error as any)?.response?.status === 404
 
 /**
  * Merge a re-verification outcome onto an existing verification row.

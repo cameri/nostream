@@ -5,6 +5,7 @@ import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 import { AxiosInstance } from 'axios'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
+import { isExpiredInvoice } from '../utils/invoice'
 import { Pubkey } from '../@types/base'
 import { Settings } from '../@types/settings'
 
@@ -53,7 +54,6 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
       })
       const invoice = new LNbitsInvoice()
       const data = response.data
-      const expiresAt = new Date(data.details.expiry * 1000)
       invoice.id = data.details.payment_hash
       invoice.pubkey = data.details.extra.internalId
       invoice.bolt11 = data.details.bolt11
@@ -62,16 +62,16 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
         invoice.amountPaid = BigInt(Math.floor(data.details.amount / 1000))
       }
       invoice.unit = InvoiceUnit.SATS
+      invoice.expiresAt = new Date(data.details.expiry * 1000)
       if (data.paid) {
         invoice.status = InvoiceStatus.COMPLETED
-      } else if (expiresAt.getTime() <= Date.now()) {
+      } else if (isExpiredInvoice(invoice)) {
         invoice.status = InvoiceStatus.EXPIRED
       } else {
         invoice.status = InvoiceStatus.PENDING
       }
       invoice.description = data.details.memo
       invoice.confirmedAt = data.paid ? new Date(data.details.time * 1000) : null
-      invoice.expiresAt = expiresAt
       invoice.createdAt = new Date(data.details.time * 1000)
       invoice.updatedAt = new Date()
       return invoice
