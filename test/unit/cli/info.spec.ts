@@ -1,13 +1,11 @@
-import { expect } from 'chai'
-import fs from 'fs'
-import { createRequire } from 'module'
-import path from 'path'
-import sinon from 'sinon'
+const { expect } = require('chai')
+const fs = require('fs')
+const path = require('path')
+const sinon = require('sinon')
 
-const require = createRequire(import.meta.url)
-const infoCommand = require('../../../dist/src/cli/commands/info.js') as typeof import('../../../dist/src/cli/commands/info.js')
-const configUtils = require('../../../dist/src/cli/utils/config.js') as typeof import('../../../dist/src/cli/utils/config.js')
-const processUtils = require('../../../dist/src/cli/utils/process.js') as typeof import('../../../dist/src/cli/utils/process.js')
+const infoCommand = require('../../../dist/src/cli/commands/info.js')
+const configUtils = require('../../../dist/src/cli/utils/config.js')
+const processUtils = require('../../../dist/src/cli/utils/process.js')
 
 describe('runInfo', () => {
   const keysFile = path.join(process.cwd(), '.nostr', 'i2p', 'data', 'nostream.dat')

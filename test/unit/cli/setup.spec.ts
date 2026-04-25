@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import sinon from 'sinon'
 
-const setupCommand = await import('../../../dist/src/cli/commands/setup.js')
+const setupCommand: typeof import('../../../dist/src/cli/commands/setup.js') = require('../../../dist/src/cli/commands/setup.js')
 
 describe('runSetup', () => {
   const originalCwd = process.cwd()

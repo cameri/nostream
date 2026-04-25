@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const { cac } = require('cac')
 
+import packageJson from '../../package.json'
 import { runStart } from './commands/start'
 import { runStop } from './commands/stop'
 import { runInfo } from './commands/info'
@@ -419,7 +420,7 @@ cli
   )
 
 cli.help()
-cli.version('2.1.1')
+cli.version(packageJson.version)
 
 withErrorBoundary(async () => {
   const userArgs = process.argv.slice(2)
