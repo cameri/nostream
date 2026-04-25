@@ -12,7 +12,7 @@
  *
  * Usage:
  *   node -r ts-node/register scripts/verify-index-impact.ts [--events N] [--pubkeys N] [--runs N]
- *   pnpm run db:verify-index-impact
+ *   npm run db:verify-index-impact
  */
 
 import { randomBytes } from 'node:crypto'

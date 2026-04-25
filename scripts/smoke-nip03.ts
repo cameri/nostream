@@ -33,7 +33,7 @@
  *   - test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts
  *
  * Usage:
- *   pnpm exec ts-node scripts/smoke-nip03.ts \
+ *   npx ts-node scripts/smoke-nip03.ts \
  *     [--local-relay ws://127.0.0.1:8008] \
  *     [--source-relay wss://nos.lol,wss://relay.damus.io,...] \
  *     [--event-id <hex>] \

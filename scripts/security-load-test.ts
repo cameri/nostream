@@ -10,10 +10,10 @@
  * 2. Active Spammer: Generates and publishes valid NOSTR events (signed via secp256k1).
  *
  * Usage:
- *   pnpm exec ts-node scripts/security-load-test.ts [--url ws://localhost:8008] [--zombies 5000] [--spam-rate 100]
+ *   npx ts-node scripts/security-load-test.ts [--url ws://localhost:8008] [--zombies 5000] [--spam-rate 100]
  *
- * Alternate (via pnpm):
- *   pnpm run test:load --zombies 5000
+ * Alternate (via npm):
+ *   npm run test:load -- --zombies 5000
  */
 
 import WebSocket from 'ws'
