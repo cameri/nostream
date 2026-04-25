@@ -1,4 +1,5 @@
 import fs from 'fs'
+import { randomBytes } from 'crypto'
 import { intro, outro, confirm, text, isCancel, cancel } from '@clack/prompts'
 
 import { ensureConfigBootstrap } from '../utils/bootstrap'
@@ -10,49 +11,114 @@ type SetupOptions = {
   start?: boolean
 }
 
-const ensureEnvFile = async (assumeYes: boolean): Promise<void> => {
-  const envPath = getProjectPath('.env')
-  const envExamplePath = getProjectPath('.env.example')
+const SECRET_PLACEHOLDER = 'change_me_to_something_long_and_random'
 
-  if (fs.existsSync(envPath)) {
-    return
+const readEnvSecret = (content: string): string | undefined => {
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#') || !trimmed.startsWith('SECRET=')) {
+      continue
+    }
+
+    const [rawValue] = trimmed.slice('SECRET='.length).split('#', 1)
+    return rawValue.trim()
   }
 
-  if (fs.existsSync(envExamplePath)) {
-    fs.copyFileSync(envExamplePath, envPath)
-  } else {
-    fs.writeFileSync(envPath, '', 'utf-8')
-  }
+  return undefined
+}
 
-  const current = fs.readFileSync(envPath, 'utf-8')
-  if (current.includes('SECRET=')) {
-    return
-  }
+const needsSecretReplacement = (secret: string | undefined): boolean => {
+  return !secret || secret === SECRET_PLACEHOLDER
+}
 
-  let secret = process.env.SECRET
+const resolveSecret = async (assumeYes: boolean): Promise<string> => {
+  if (process.env.SECRET?.trim()) {
+    return process.env.SECRET.trim()
+  }
 
   if (!assumeYes && process.stdin.isTTY) {
     const value = await text({
       message: 'SECRET env var value (hex recommended)',
       placeholder: 'openssl rand -hex 128',
-      defaultValue: secret,
       validate: (input) => (input.trim() ? undefined : 'SECRET is required'),
     })
 
     if (isCancel(value)) {
       cancel('Setup cancelled')
+      throw new Error('SETUP_CANCELLED')
+    }
+
+    return value.trim()
+  }
+
+  return randomBytes(64).toString('hex')
+}
+
+const upsertSecret = (content: string, secret: string): string => {
+  const normalized = content.length > 0 ? content : ''
+  const lines = normalized.split(/\r?\n/)
+  let replaced = false
+
+  const nextLines = lines.map((line) => {
+    if (replaced) {
+      return line
+    }
+
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('SECRET=') || trimmed.startsWith('#')) {
+      return line
+    }
+
+    replaced = true
+    const commentIndex = line.indexOf('#')
+    const commentSuffix = commentIndex >= 0 ? line.slice(commentIndex).trimEnd() : ''
+    return commentSuffix ? `SECRET=${secret} ${commentSuffix}` : `SECRET=${secret}`
+  })
+
+  if (!replaced) {
+    if (nextLines.length > 0 && nextLines[nextLines.length - 1] !== '') {
+      nextLines.push(`SECRET=${secret}`)
+    } else if (nextLines.length === 0) {
+      nextLines.push(`SECRET=${secret}`)
+    } else {
+      nextLines[nextLines.length - 1] = `SECRET=${secret}`
+      nextLines.push('')
+    }
+  }
+
+  return nextLines.join('\n')
+}
+
+const ensureEnvFile = async (assumeYes: boolean): Promise<void> => {
+  const envPath = getProjectPath('.env')
+  const envExamplePath = getProjectPath('.env.example')
+
+  if (!fs.existsSync(envPath)) {
+    if (fs.existsSync(envExamplePath)) {
+      fs.copyFileSync(envExamplePath, envPath)
+    } else {
+      fs.writeFileSync(envPath, '', 'utf-8')
+    }
+  }
+
+  const current = fs.readFileSync(envPath, 'utf-8')
+
+  if (!needsSecretReplacement(readEnvSecret(current))) {
+    return
+  }
+
+  let secret: string
+  try {
+    secret = await resolveSecret(assumeYes)
+  } catch (error) {
+    if (error instanceof Error && error.message === 'SETUP_CANCELLED') {
       process.exitCode = 1
       return
     }
-
-    secret = value
+    throw error
   }
 
-  if (!secret) {
-    throw new Error('SECRET is required. Set SECRET env var or run setup interactively.')
-  }
-
-  fs.appendFileSync(envPath, `\nSECRET=${secret}\n`, 'utf-8')
+  fs.writeFileSync(envPath, upsertSecret(current, secret), 'utf-8')
 }
 
 export const runSetup = async (options: SetupOptions): Promise<number> => {

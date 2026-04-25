@@ -14,6 +14,15 @@ type InfoOptions = {
   json?: boolean
 }
 
+type I2PGuidancePayload = {
+  i2pHostnames: string[]
+  keysFile: string
+  guidance?: {
+    webConsoleUrl: string
+    consoleQueryCommand: string
+  }
+}
+
 const getEventCount = async (): Promise<number | null> => {
   const db = knex({
     client: 'pg',
@@ -102,6 +111,10 @@ const writeJson = (value: unknown): void => {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
 }
 
+const writeJsonError = (message: string, code = 1): void => {
+  process.stderr.write(`${JSON.stringify({ error: { message, code } })}\n`)
+}
+
 export const getInfoPayload = async () => {
   const settings = loadMergedSettings()
   const torHostnamePath = getTorHostnamePath()
@@ -155,8 +168,22 @@ export const runInfo = async (options: InfoOptions): Promise<number> => {
 
   if (options.i2pHostname) {
     const keysFile = getProjectPath('.nostr', 'i2p', 'data', 'nostream.dat')
+    const i2pGuidance: I2PGuidancePayload = {
+      i2pHostnames: [],
+      keysFile,
+      guidance: {
+        webConsoleUrl: 'http://127.0.0.1:7070/?page=i2p_tunnels',
+        consoleQueryCommand:
+          "docker exec i2pd wget -qO- 'http://127.0.0.1:7070/?page=i2p_tunnels' | grep -oE '[a-z2-7]{52}\\\\.b32\\\\.i2p' | sort -u",
+      },
+    }
 
     if (!fs.existsSync(keysFile)) {
+      if (options.json) {
+        writeJsonError(`I2P destination keys not found. Is the i2pd container running? Expected: ${keysFile}`)
+        return 1
+      }
+
       logError('I2P destination keys not found. Is the i2pd container running?')
       logError(`Expected: ${keysFile}`)
       return 1
@@ -172,9 +199,21 @@ export const runInfo = async (options: InfoOptions): Promise<number> => {
 
     const matches = new Set((`${result.stdout}\n${result.stderr}`).match(/[a-z2-7]{52}\.b32\.i2p/g) ?? [])
     if (matches.size > 0) {
+      if (options.json) {
+        writeJson({
+          i2pHostnames: [...matches],
+        })
+        return 0
+      }
+
       for (const hostname of matches) {
         logInfo(hostname)
       }
+      return 0
+    }
+
+    if (options.json) {
+      writeJson(i2pGuidance)
       return 0
     }
 

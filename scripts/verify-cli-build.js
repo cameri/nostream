@@ -18,6 +18,24 @@ if (!fs.existsSync(binPath)) {
   process.exit(1)
 }
 
+const requiredPackedFiles = [
+  'package.json',
+  relBin.replace(/^\.\//, ''),
+  'resources/default-settings.yaml',
+  'docker-compose.yml',
+]
+
+const parseNpmJsonOutput = (output) => {
+  const start = output.indexOf('[')
+  const end = output.lastIndexOf(']')
+
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error('No JSON payload found in npm output')
+  }
+
+  return JSON.parse(output.slice(start, end + 1))
+}
+
 const result = spawnSync('node', [binPath, '--help'], {
   cwd: path.resolve(__dirname, '..'),
   env: process.env,
@@ -40,4 +58,38 @@ if (!result.stdout.includes('Usage:')) {
   process.exit(1)
 }
 
-console.log(`Verified CLI build entrypoint: ${relBin}`)
+const packResult = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+  cwd: path.resolve(__dirname, '..'),
+  env: process.env,
+  encoding: 'utf-8',
+})
+
+if (packResult.status !== 0) {
+  console.error(`npm pack dry-run failed (exit ${packResult.status ?? 1})`)
+  if (packResult.stdout) {
+    process.stderr.write(packResult.stdout)
+  }
+  if (packResult.stderr) {
+    process.stderr.write(packResult.stderr)
+  }
+  process.exit(packResult.status ?? 1)
+}
+
+let packed
+try {
+  packed = parseNpmJsonOutput(packResult.stdout)
+} catch (error) {
+  console.error('Failed to parse npm pack --json output')
+  process.stderr.write(String(error))
+  process.exit(1)
+}
+
+const files = new Set((packed[0]?.files ?? []).map((file) => file.path))
+for (const requiredFile of requiredPackedFiles) {
+  if (!files.has(requiredFile)) {
+    console.error(`Packed npm artifact is missing required file: ${requiredFile}`)
+    process.exit(1)
+  }
+}
+
+console.log(`Verified CLI build entrypoint and package contents: ${relBin}`)

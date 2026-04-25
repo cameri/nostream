@@ -88,6 +88,47 @@ const createShimCommand = (dir: string, name: string, scriptBody: string) => {
   fs.chmodSync(target, 0o755)
 }
 
+const parseNpmJsonOutput = <T>(output: string): T => {
+  const start = output.indexOf('[')
+  const end = output.lastIndexOf(']')
+
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error(`No JSON payload found in npm output: ${output}`)
+  }
+
+  return JSON.parse(output.slice(start, end + 1)) as T
+}
+
+const runCommand = (command: string, args: string[]): Promise<CliResult> => {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: projectRoot,
+      env: process.env,
+      stdio: 'pipe',
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString()
+    })
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString()
+    })
+
+    child.on('error', reject)
+    child.on('close', (code) => {
+      resolve({
+        code: code ?? 1,
+        stdout,
+        stderr,
+      })
+    })
+  })
+}
+
 describe('cli integration (spawn)', function () {
   this.timeout(30000)
 
@@ -111,10 +152,27 @@ describe('cli integration (spawn)', function () {
 
   it('keeps package bin mapping aligned with TypeScript build output path', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')) as {
+      files?: string[]
       bin?: string | { nostream?: string }
     }
     const binPath = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.nostream
     expect(binPath).to.equal('./dist/src/cli/index.js')
+    expect(pkg.files).to.include('dist')
+  })
+
+  it('packs the built CLI and runtime assets required for installation', async () => {
+    const result = await runCommand('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'])
+
+    expect(result.code).to.equal(0)
+    const packSummary = parseNpmJsonOutput<Array<{
+      files: Array<{ path: string }>
+    }>>(result.stdout)
+    const packedFiles = new Set(packSummary[0].files.map((file) => file.path))
+
+    expect(packedFiles.has('package.json')).to.equal(true)
+    expect(packedFiles.has('dist/src/cli/index.js')).to.equal(true)
+    expect(packedFiles.has('resources/default-settings.yaml')).to.equal(true)
+    expect(packedFiles.has('docker-compose.yml')).to.equal(true)
   })
 
   it('shows nested subcommand help', async () => {
