@@ -14,7 +14,7 @@ export const filterSchema = z
     until: createdAtSchema.optional(),
     limit: z.number().int().min(0).optional(),
   })
-  .catchall(z.array(z.string().min(1).max(1024)))
+  .catchall(z.array(z.string().max(1024)))
   .superRefine((data, ctx) => {
     for (const key of Object.keys(data)) {
       if (!knownFilterKeys.has(key) && !isGenericTagQuery(key)) {
