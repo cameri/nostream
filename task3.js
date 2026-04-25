@@ -1,83 +1,112 @@
-const WebSocket = require('ws');
-const secp256k1 = require('@noble/secp256k1');
-const crypto = require('crypto');
+const dgram = require('node:dgram')
+const crypto = require('node:crypto')
 
-/**
- * Task 3: Standalone Node.js script that connects to a relay,
- * receives an AUTH challenge, constructs a valid kind 22242 event,
- * and sends it back.
- */
-async function solveTask3() {
-    const relayUrl = 'ws://localhost:8008';
-    const ws = new WebSocket(relayUrl);
+const MULTICAST_GROUP = process.env.MULTICAST_GROUP || '239.255.0.1'
+const MULTICAST_PORT = Number(process.env.MULTICAST_PORT || 29999)
+const RECEIVE_TIMEOUT_MS = Number(process.env.RECEIVE_TIMEOUT_MS || 5000)
 
-    // Generate a temporary keypair for the demo
-    const privKey = secp256k1.utils.randomPrivateKey();
-    const pubKey = secp256k1.utils.bytesToHex(secp256k1.getPublicKey(privKey, true).subarray(1));
+const randomHex = (bytes) => crypto.randomBytes(bytes).toString('hex')
 
-    console.log('Connecting to', relayUrl, '...');
+const createDummyNostrEvent = () => {
+  const createdAt = Math.floor(Date.now() / 1000)
+  const nonce = randomHex(8)
 
-    ws.on('open', () => {
-        console.log('Connected to relay');
-    });
-
-    ws.on('message', async (data) => {
-        const message = JSON.parse(data.toString());
-        console.log('Received from relay:', message);
-
-        if (message[0] === 'AUTH' && typeof message[1] === 'string') {
-            const challenge = message[1];
-            console.log('>>> Received AUTH challenge:', challenge);
-
-            // Construct kind 22242 event (NIP-42)
-            const event = {
-                pubkey: pubKey,
-                created_at: Math.floor(Date.now() / 1000),
-                kind: 22242,
-                tags: [
-                    ['relay', relayUrl],
-                    ['challenge', challenge]
-                ],
-                content: ''
-            };
-
-            // Calculate ID (Hash)
-            const serialized = JSON.stringify([
-                0,
-                event.pubkey,
-                event.created_at,
-                event.kind,
-                event.tags,
-                event.content
-            ]);
-            const id = crypto.createHash('sha256').update(serialized).digest('hex');
-            event.id = id;
-
-            // Sign event
-            console.log('Signing event...');
-            const sig = await secp256k1.schnorr.sign(event.id, privKey);
-            event.sig = secp256k1.utils.bytesToHex(sig);
-
-            // Send back
-            const authResponse = JSON.stringify(['AUTH', event]);
-            console.log('>>> Sending AUTH response:', authResponse);
-            ws.send(authResponse);
-            
-            // Wait a bit to see if we get a response (though NIP-42 doesn't mandate one)
-            setTimeout(() => {
-                console.log('Closing connection...');
-                ws.close();
-            }, 2000);
-        }
-    });
-
-    ws.on('error', (err) => {
-        console.error('WebSocket error:', err);
-    });
-
-    ws.on('close', () => {
-        console.log('Connection closed');
-    });
+  return {
+    id: randomHex(32),
+    pubkey: randomHex(32),
+    created_at: createdAt,
+    kind: 1,
+    tags: [['nonce', nonce], ['client', 'nostream-competency-test']],
+    content: `UDP multicast competency test @ ${createdAt}`,
+    sig: randomHex(64),
+  }
 }
 
-solveTask3().catch(console.error);
+const isNostrEvent = (value) => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  return typeof value.id === 'string'
+    && typeof value.pubkey === 'string'
+    && typeof value.created_at === 'number'
+    && typeof value.kind === 'number'
+    && Array.isArray(value.tags)
+    && typeof value.content === 'string'
+    && typeof value.sig === 'string'
+}
+
+function solveTask3() {
+  return new Promise((resolve, reject) => {
+    const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+    const event = createDummyNostrEvent()
+    const payload = Buffer.from(JSON.stringify(event), 'utf8')
+
+    const timeout = setTimeout(() => {
+      socket.close()
+      reject(new Error(`timed out after ${RECEIVE_TIMEOUT_MS}ms without receiving multicast payload`))
+    }, RECEIVE_TIMEOUT_MS)
+
+    socket.on('error', (error) => {
+      clearTimeout(timeout)
+      socket.close()
+      reject(error)
+    })
+
+    socket.on('message', (message, remoteInfo) => {
+      let parsed
+      try {
+        parsed = JSON.parse(message.toString('utf8'))
+      } catch (error) {
+        clearTimeout(timeout)
+        socket.close()
+        reject(new Error(`received invalid JSON payload: ${error.message}`))
+        return
+      }
+
+      if (!isNostrEvent(parsed)) {
+        clearTimeout(timeout)
+        socket.close()
+        reject(new Error('received JSON but payload is not a valid Nostr event shape'))
+        return
+      }
+
+      if (parsed.id !== event.id) {
+        return
+      }
+
+      clearTimeout(timeout)
+      console.log('SUCCESS: Received and parsed own multicast payload')
+      console.log(`From ${remoteInfo.address}:${remoteInfo.port}`)
+      console.log(parsed)
+      socket.close()
+      resolve()
+    })
+
+    socket.bind(MULTICAST_PORT, () => {
+      socket.setMulticastTTL(1)
+      socket.setMulticastLoopback(true)
+      socket.addMembership(MULTICAST_GROUP)
+
+      socket.send(payload, MULTICAST_PORT, MULTICAST_GROUP, (error) => {
+        if (error) {
+          clearTimeout(timeout)
+          socket.close()
+          reject(error)
+          return
+        }
+
+        console.log(`Sent dummy Nostr event to ${MULTICAST_GROUP}:${MULTICAST_PORT}`)
+      })
+    })
+  })
+}
+
+solveTask3()
+  .then(() => {
+    process.exitCode = 0
+  })
+  .catch((error) => {
+    console.error('Task 3 failed:', error.message)
+    process.exitCode = 1
+  })
