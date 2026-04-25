@@ -27,6 +27,20 @@ import { runStop } from './stop'
 
 type ValueType = 'inferred' | 'json'
 
+const toJson = (value: unknown): string => {
+  return JSON.stringify(
+    value,
+    (_key, entry) => {
+      if (typeof entry === 'bigint') {
+        return entry.toString()
+      }
+
+      return entry
+    },
+    2,
+  )
+}
+
 const serialize = (value: unknown): string => {
   if (typeof value === 'bigint') {
     return value.toString()
@@ -70,19 +84,35 @@ const restartRelay = async (): Promise<number> => {
   return 0
 }
 
-export const runConfigList = async (): Promise<number> => {
+export const runConfigList = async (options: { json?: boolean } = {}): Promise<number> => {
   const settings = loadMergedSettings()
+
+  if (options.json) {
+    logInfo(toJson(settings))
+    return 0
+  }
+
   logInfo(yaml.dump(settings, { lineWidth: 120 }))
   return 0
 }
 
-export const runConfigGet = async (path: string): Promise<number> => {
+export const runConfigGet = async (path: string, options: { json?: boolean } = {}): Promise<number> => {
   const settings = loadMergedSettings() as unknown as Record<string, unknown>
   const value = getByPath(settings, path)
 
   if (value === undefined) {
+    if (options.json) {
+      process.stderr.write(`${JSON.stringify({ error: { message: `Path not found: ${path}`, code: 1 } })}\n`)
+      return 1
+    }
+
     logError(`Path not found: ${path}`)
     return 1
+  }
+
+  if (options.json) {
+    logInfo(toJson(value))
+    return 0
   }
 
   logInfo(serialize(value))

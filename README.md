@@ -246,7 +246,8 @@ Print I2P hostname(s):
   nostream info --i2p-hostname
   ```
 
-Legacy script replacements:
+The old shell wrapper scripts are no longer shipped in `scripts/`.
+Use the unified `nostream` CLI directly instead:
 
 ```
 scripts/start                -> nostream start

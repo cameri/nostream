@@ -4,6 +4,7 @@ export type RunOptions = {
   cwd?: string
   env?: NodeJS.ProcessEnv
   stdio?: 'inherit' | 'pipe'
+  timeoutMs?: number
 }
 
 export const runCommand = (command: string, args: string[], options: RunOptions = {}): Promise<number> => {
@@ -15,8 +16,21 @@ export const runCommand = (command: string, args: string[], options: RunOptions 
       shell: false,
     })
 
+    const timer =
+      typeof options.timeoutMs === 'number'
+        ? setTimeout(() => {
+            child.kill('SIGTERM')
+          }, options.timeoutMs)
+        : undefined
+
     child.on('error', reject)
-    child.on('close', (code) => resolve(code ?? 1))
+    child.on('close', (code) => {
+      if (timer) {
+        clearTimeout(timer)
+      }
+
+      resolve(code ?? 1)
+    })
   })
 }
 
@@ -36,6 +50,13 @@ export const runCommandWithOutput = (
       shell: false,
     })
 
+    const timer =
+      typeof options.timeoutMs === 'number'
+        ? setTimeout(() => {
+            child.kill('SIGTERM')
+          }, options.timeoutMs)
+        : undefined
+
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString()
     })
@@ -46,6 +67,10 @@ export const runCommandWithOutput = (
 
     child.on('error', reject)
     child.on('close', (code) => {
+      if (timer) {
+        clearTimeout(timer)
+      }
+
       resolve({
         code: code ?? 1,
         stdout,

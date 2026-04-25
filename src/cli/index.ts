@@ -109,7 +109,18 @@ const withErrorBoundary =
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const usageError = error instanceof CliUsageError
-      printHandledError(message)
+      const lastArg = args[args.length - 1]
+      const jsonMode =
+        Boolean(lastArg) &&
+        typeof lastArg === 'object' &&
+        !Array.isArray(lastArg) &&
+        (lastArg as Record<string, unknown>).json === true
+
+      if (jsonMode) {
+        process.stderr.write(`${JSON.stringify({ error: { message, code: usageError ? 2 : 1 } })}\n`)
+      } else {
+        printHandledError(message)
+      }
       process.exitCode = usageError ? 2 : 1
     }
   }
@@ -147,6 +158,7 @@ cli
   .command('info', 'Show relay/runtime info')
   .option('--tor-hostname', 'Print Tor hostname only')
   .option('--i2p-hostname', 'Print I2P hostname(s) when available')
+  .option('--json', 'Print machine-readable JSON')
   .action(
     withErrorBoundary(async (options: unknown) => {
       return runInfo(options as any)
@@ -286,11 +298,13 @@ cli
   .option('--no-validate', 'Skip validation before write')
   .option('--type <type>', 'Value parser: inferred|json')
   .option('--show-secrets', 'Show secret values for env commands')
+  .option('--json', 'Print machine-readable JSON for read commands')
   .action(
     withErrorBoundary(async (args: unknown, options: unknown) => {
       const positional = (args as string[]) ?? []
       const command = positional[0]
       const resolved = options as Record<string, unknown>
+      const json = Boolean(resolved.json)
 
       if (resolved.help && command === 'env') {
         const envCommand = positional[1]
@@ -335,12 +349,12 @@ cli
 
       switch (command) {
         case 'list':
-          return runConfigList()
+          return runConfigList({ json })
         case 'get':
           if (!positional[1]) {
             throw new CliUsageError(configSubHelp.get)
           }
-          return runConfigGet(positional[1])
+          return runConfigGet(positional[1], { json })
         case 'set': {
           if (!positional[1] || positional[2] === undefined) {
             throw new CliUsageError(configSubHelp.set)

@@ -21,7 +21,7 @@ In non-interactive environments, it prints help and exits successfully.
 ```bash
 nostream start [--tor] [--i2p] [--nginx] [--debug] [--port 8008]
 nostream stop [--all|--tor|--i2p|--nginx|--local]
-nostream info [--tor-hostname] [--i2p-hostname]
+nostream info [--tor-hostname] [--i2p-hostname] [--json]
 nostream update
 nostream clean
 nostream setup [--yes] [--start]
@@ -30,7 +30,10 @@ nostream import [file.jsonl|file.json] [--file file.jsonl|file.json] [--batch-si
 nostream export [output] [--output output] [--format jsonl|json]
 ```
 
-## Legacy Script Replacements
+## Removed Legacy Wrappers
+
+The old shell wrapper scripts are no longer shipped in `scripts/`.
+Use the unified `nostream` CLI directly instead:
 
 ```bash
 scripts/start                -> nostream start
@@ -48,7 +51,9 @@ scripts/clean                -> nostream clean
 
 ```bash
 nostream config list
+nostream config list --json
 nostream config get <path>
+nostream config get <path> --json
 nostream config set <path> <value> [--type inferred|json] [--validate|--no-validate] [--restart]
 nostream config validate
 
@@ -98,7 +103,8 @@ Main menu includes:
 TUI behavior highlights:
 - Each submenu includes an explicit `Back` option, so you can return without using signal keys.
 - Start menu prompts for Tor/I2P/Debug, optional custom port, and final confirmation.
-- Configure menu reads categories from the active settings schema.
+- Configure menu offers guided editing for common categories such as payments, network, and limits.
+- Advanced dot-path get/set remains available for full settings access.
 - Manage menu asks for import/export format and file paths.
 - Dev menu displays explicit destructive warnings before DB reset/clean and Docker clean.
 
@@ -110,6 +116,11 @@ nostream start --tor --i2p
 
 # Print Tor hostname
 nostream info --tor-hostname
+
+# Machine-readable output for automation
+nostream info --json
+nostream config list --json
+nostream config get payments.enabled --json
 
 # Import and export events
 nostream import --file ./events.jsonl --batch-size 500

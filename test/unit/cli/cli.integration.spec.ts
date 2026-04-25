@@ -45,6 +45,39 @@ const runCli = (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliResult>
   })
 }
 
+const runNpmCli = (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliResult> => {
+  return new Promise((resolve, reject) => {
+    const child = spawn('npm', ['run', 'cli', '--', ...args], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        ...env,
+      },
+      stdio: 'pipe',
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString()
+    })
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString()
+    })
+
+    child.on('error', reject)
+    child.on('close', (code) => {
+      resolve({
+        code: code ?? 1,
+        stdout,
+        stderr,
+      })
+    })
+  })
+}
+
 const createShimCommand = (dir: string, name: string, scriptBody: string) => {
   const target = path.join(dir, name)
   fs.writeFileSync(
@@ -66,6 +99,14 @@ describe('cli integration (spawn)', function () {
     expect(result.stdout).to.include('config [...args]')
     expect(result.stdout).to.include('update [...args]')
     expect(result.stdout).to.include('clean')
+  })
+
+  it('supports npm run cli as the documented entry point', async () => {
+    const result = await runNpmCli(['--help'])
+
+    expect(result.code).to.equal(0)
+    expect(result.stdout).to.include('Usage:')
+    expect(result.stdout).to.include('start [...args]')
   })
 
   it('keeps package bin mapping aligned with TypeScript build output path', () => {
@@ -184,6 +225,42 @@ describe('cli integration (spawn)', function () {
 
     expect(infoHelp.code).to.equal(0)
     expect(infoHelp.stdout).to.include('--i2p-hostname')
+    expect(infoHelp.stdout).to.include('--json')
+  })
+
+  it('supports json output for info and config reads', async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-json-read-'))
+
+    const infoResult = await runCli(['info', '--json'], { NOSTR_CONFIG_DIR: configDir })
+    expect(infoResult.code).to.equal(0)
+    expect(() => JSON.parse(infoResult.stdout)).to.not.throw()
+    expect(JSON.parse(infoResult.stdout)).to.have.property('relay')
+
+    const configListResult = await runCli(['config', 'list', '--json'], { NOSTR_CONFIG_DIR: configDir })
+    expect(configListResult.code).to.equal(0)
+    expect(() => JSON.parse(configListResult.stdout)).to.not.throw()
+    expect(JSON.parse(configListResult.stdout)).to.have.property('payments')
+
+    const configGetResult = await runCli(['config', 'get', 'payments.enabled', '--json'], {
+      NOSTR_CONFIG_DIR: configDir,
+    })
+    expect(configGetResult.code).to.equal(0)
+    expect(JSON.parse(configGetResult.stdout)).to.equal(false)
+  })
+
+  it('prints json errors for read failures in json mode', async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-json-error-'))
+
+    const configGetResult = await runCli(['config', 'get', 'payments.fakeField', '--json'], {
+      NOSTR_CONFIG_DIR: configDir,
+    })
+    expect(configGetResult.code).to.equal(1)
+    expect(JSON.parse(configGetResult.stderr)).to.deep.equal({
+      error: {
+        message: 'Path not found: payments.fakeField',
+        code: 1,
+      },
+    })
   })
 
   it('validates nginx start requirements', async () => {

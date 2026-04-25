@@ -45,6 +45,91 @@ describe('cli tui menus', () => {
     expect(code).to.equal(0)
   })
 
+  it('routes guided configure values into config set', async () => {
+    sinon
+      .stub(tuiPrompts, 'select')
+      .onFirstCall()
+      .resolves('guided' as any)
+      .onSecondCall()
+      .resolves('payments' as any)
+      .onThirdCall()
+      .resolves('payments.processor' as any)
+      .onCall(3)
+      .resolves('lnbits' as any)
+    sinon
+      .stub(tuiPrompts, 'confirm')
+      .onFirstCall()
+      .resolves(true as any)
+      .onSecondCall()
+      .resolves(false as any)
+    sinon.stub(tuiPrompts, 'isCancel').returns(false)
+    sinon.stub(configCommands, 'getConfigTopLevelCategories').returns(['payments', 'limits', 'network'])
+    const runConfigSet = sinon.stub(configCommands, 'runConfigSet').resolves(0)
+
+    const code = await configureMenu.runConfigureMenu()
+
+    expect(code).to.equal(0)
+    expect(runConfigSet.calledOnceWithExactly('payments.processor', 'lnbits', {
+      restart: false,
+      validate: true,
+      valueType: 'inferred',
+    })).to.equal(true)
+  })
+
+  it('rejects invalid guided numeric input before writing', async () => {
+    sinon
+      .stub(tuiPrompts, 'select')
+      .onFirstCall()
+      .resolves('guided' as any)
+      .onSecondCall()
+      .resolves('limits' as any)
+      .onThirdCall()
+      .resolves('limits.event.content[0].maxLength' as any)
+    const textStub = sinon.stub(tuiPrompts, 'text').callsFake(async (options: any) => {
+      expect(options.validate('bad')).to.equal('Value must be a non-negative integer')
+      expect(options.validate('2048')).to.equal(undefined)
+      return '2048'
+    })
+    sinon
+      .stub(tuiPrompts, 'confirm')
+      .onFirstCall()
+      .resolves(true as any)
+      .onSecondCall()
+      .resolves(false as any)
+    sinon.stub(tuiPrompts, 'isCancel').returns(false)
+    const runConfigSet = sinon.stub(configCommands, 'runConfigSet').resolves(0)
+
+    const code = await configureMenu.runConfigureMenu()
+
+    expect(code).to.equal(0)
+    expect(textStub.calledOnce).to.equal(true)
+    expect(runConfigSet.calledOnceWithExactly('limits.event.content[0].maxLength', '2048', {
+      restart: false,
+      validate: true,
+      valueType: 'inferred',
+    })).to.equal(true)
+  })
+
+  it('keeps advanced configure get action available', async () => {
+    sinon
+      .stub(tuiPrompts, 'select')
+      .onFirstCall()
+      .resolves('get' as any)
+      .onSecondCall()
+      .resolves('other' as any)
+    sinon
+      .stub(tuiPrompts, 'text')
+      .resolves('payments.enabled' as any)
+    sinon.stub(tuiPrompts, 'confirm').resolves(true as any)
+    sinon.stub(tuiPrompts, 'isCancel').returns(false)
+    const runGet = sinon.stub(configCommands, 'runConfigGet').resolves(0)
+
+    const code = await configureMenu.runConfigureMenu()
+
+    expect(code).to.equal(0)
+    expect(runGet.calledOnceWithExactly('payments.enabled')).to.equal(true)
+  })
+
   it('routes start menu prompt values into start command', async () => {
     sinon.stub(tuiPrompts, 'select').resolves('continue' as any)
     sinon

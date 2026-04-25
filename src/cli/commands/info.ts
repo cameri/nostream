@@ -1,7 +1,7 @@
 import fs from 'fs'
+import knex from 'knex'
 
 import packageJson from '../../../package.json'
-import { getMasterDbClient } from '../../database/client'
 import { loadMergedSettings } from '../utils/config'
 import { logError, logInfo } from '../utils/output'
 import { getOnionKeyPath, getTorHostnamePath } from '../utils/bootstrap'
@@ -11,10 +11,31 @@ import { runCommandWithOutput } from '../utils/process'
 type InfoOptions = {
   torHostname?: boolean
   i2pHostname?: boolean
+  json?: boolean
 }
 
 const getEventCount = async (): Promise<number | null> => {
-  const db = getMasterDbClient()
+  const db = knex({
+    client: 'pg',
+    connection: process.env.DB_URI
+      ? process.env.DB_URI
+      : {
+          host: process.env.DB_HOST,
+          port: Number(process.env.DB_PORT),
+          user: process.env.DB_USER,
+          password: process.env.DB_PASSWORD,
+          database: process.env.DB_NAME,
+        },
+    pool: {
+      min: 0,
+      max: 1,
+      idleTimeoutMillis: 1000,
+      acquireTimeoutMillis: 1000,
+      propagateCreateError: false,
+    },
+    acquireConnectionTimeout: 1000,
+  } as any)
+
   try {
     const result = await db('events').whereNull('deleted_at').count<{ count: string | number }>('* as count').first()
     return Number(result?.count ?? 0)
@@ -26,7 +47,7 @@ const getEventCount = async (): Promise<number | null> => {
 }
 
 const getRelayUptimeSeconds = async (): Promise<number | null> => {
-  const idResult = await runCommandWithOutput('docker', ['compose', 'ps', '-q', 'nostream'])
+  const idResult = await runCommandWithOutput('docker', ['compose', 'ps', '-q', 'nostream'], { timeoutMs: 1000 })
   if (idResult.code !== 0) {
     return null
   }
@@ -36,7 +57,9 @@ const getRelayUptimeSeconds = async (): Promise<number | null> => {
     return null
   }
 
-  const startedAtResult = await runCommandWithOutput('docker', ['inspect', '--format', '{{.State.StartedAt}}', containerId])
+  const startedAtResult = await runCommandWithOutput('docker', ['inspect', '--format', '{{.State.StartedAt}}', containerId], {
+    timeoutMs: 1000,
+  })
   if (startedAtResult.code !== 0) {
     return null
   }
@@ -75,7 +98,11 @@ const formatUptime = (uptimeSeconds: number | null): string => {
   return segments.join(' ')
 }
 
-const getInfoPayload = async () => {
+const writeJson = (value: unknown): void => {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
+}
+
+export const getInfoPayload = async () => {
   const settings = loadMergedSettings()
   const torHostnamePath = getTorHostnamePath()
   const torHostname = fs.existsSync(torHostnamePath) ? fs.readFileSync(torHostnamePath, 'utf-8').trim() : null
@@ -106,8 +133,20 @@ export const runInfo = async (options: InfoOptions): Promise<number> => {
 
   if (options.torHostname) {
     if (payload.tor.hostname) {
+      if (options.json) {
+        writeJson({ torHostname: payload.tor.hostname })
+        return 0
+      }
+
       logInfo(payload.tor.hostname)
       return 0
+    }
+
+    if (options.json) {
+      process.stderr.write(
+        `${JSON.stringify({ error: { message: 'Tor hostname not found. Start with `nostream start --tor` first.', code: 1 } })}\n`,
+      )
+      return 1
     }
 
     logError('Tor hostname not found. Start with `nostream start --tor` first.')
@@ -147,6 +186,11 @@ export const runInfo = async (options: InfoOptions): Promise<number> => {
     logInfo('  2. Query the console from inside the container:')
     logInfo("     docker exec i2pd wget -qO- 'http://127.0.0.1:7070/?page=i2p_tunnels' \\")
     logInfo("       | grep -oE '[a-z2-7]{52}\\\\.b32\\\\.i2p' | sort -u")
+    return 0
+  }
+
+  if (options.json) {
+    writeJson(payload)
     return 0
   }
 
