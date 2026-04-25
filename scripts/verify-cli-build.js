@@ -25,15 +25,12 @@ const requiredPackedFiles = [
   'docker-compose.yml',
 ]
 
-const parseNpmJsonOutput = (output) => {
-  const start = output.indexOf('[')
-  const end = output.lastIndexOf(']')
-
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error('No JSON payload found in npm output')
+const parsePackJsonOutput = (output) => {
+  const start = output.search(/^\s*[\[{]/m)
+  if (start === -1) {
+    throw new Error('No JSON payload found in pack output')
   }
-
-  return JSON.parse(output.slice(start, end + 1))
+  return JSON.parse(output.slice(start).trim())
 }
 
 const result = spawnSync('node', [binPath, '--help'], {
@@ -58,14 +55,14 @@ if (!result.stdout.includes('Usage:')) {
   process.exit(1)
 }
 
-const packResult = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+const packResult = spawnSync('pnpm', ['pack', '--dry-run', '--json'], {
   cwd: path.resolve(__dirname, '..'),
   env: process.env,
   encoding: 'utf-8',
 })
 
 if (packResult.status !== 0) {
-  console.error(`npm pack dry-run failed (exit ${packResult.status ?? 1})`)
+  console.error(`pnpm pack dry-run failed (exit ${packResult.status ?? 1})`)
   if (packResult.stdout) {
     process.stderr.write(packResult.stdout)
   }
@@ -77,17 +74,17 @@ if (packResult.status !== 0) {
 
 let packed
 try {
-  packed = parseNpmJsonOutput(packResult.stdout)
+  packed = parsePackJsonOutput(packResult.stdout)
 } catch (error) {
-  console.error('Failed to parse npm pack --json output')
+  console.error('Failed to parse pnpm pack --json output')
   process.stderr.write(String(error))
   process.exit(1)
 }
 
-const files = new Set((packed[0]?.files ?? []).map((file) => file.path))
+const files = new Set((packed?.files ?? []).map((file) => file.path))
 for (const requiredFile of requiredPackedFiles) {
   if (!files.has(requiredFile)) {
-    console.error(`Packed npm artifact is missing required file: ${requiredFile}`)
+    console.error(`Packed artifact is missing required file: ${requiredFile}`)
     process.exit(1)
   }
 }

@@ -75,14 +75,14 @@ export const runDevDbReset = async (options: DevOptions): Promise<number> => {
 
   const spinner = ora('Resetting database (rollback)...').start()
 
-  let code = await runCommand('npm', ['run', 'db:migrate:rollback', '--', '--all'])
+  let code = await runCommand('pnpm', ['run', 'db:migrate:rollback', '--', '--all'])
   if (code !== 0) {
     spinner.fail('Database reset failed during rollback')
     return code
   }
 
   spinner.text = 'Resetting database (migrate)...'
-  code = await runCommand('npm', ['run', 'db:migrate'])
+  code = await runCommand('pnpm', ['run', 'db:migrate'])
   if (code === 0) {
     spinner.succeed('Database reset completed')
   } else {
@@ -94,7 +94,7 @@ export const runDevDbReset = async (options: DevOptions): Promise<number> => {
 
 export const runDevSeedRelay = async (): Promise<number> => {
   return runWithSpinner('Seeding relay data...', 'Relay seed completed', 'Relay seed failed', () =>
-    runCommand('npm', ['run', 'db:seed']),
+    runCommand('pnpm', ['run', 'db:seed']),
   )
 }
 
@@ -119,13 +119,13 @@ export const runDevDockerClean = async (options: DevOptions): Promise<number> =>
 
 export const runDevTestUnit = async (): Promise<number> => {
   return runWithSpinner('Running unit tests...', 'Unit tests completed', 'Unit tests failed', () =>
-    runCommand('npm', ['run', 'test:unit']),
+    runCommand('pnpm', ['run', 'test:unit']),
   )
 }
 
 export const runDevTestCli = async (): Promise<number> => {
   return runWithSpinner('Running CLI tests...', 'CLI tests completed', 'CLI tests failed', () =>
-    runCommand('npm', ['run', 'test:cli']),
+    runCommand('pnpm', ['run', 'test:cli']),
   )
 }
 
@@ -134,6 +134,6 @@ export const runDevTestIntegration = async (): Promise<number> => {
     'Running integration tests...',
     'Integration tests completed',
     'Integration tests failed',
-    () => runCommand('npm', ['run', 'test:integration']),
+    () => runCommand('pnpm', ['run', 'test:integration']),
   )
 }

@@ -15,7 +15,7 @@ export const runSeed = async (options: SeedOptions): Promise<number> => {
 
   const spinner = ora('Seeding relay data...').start()
 
-  const code = await runCommand('npm', ['run', 'db:seed'], {
+  const code = await runCommand('pnpm', ['run', 'db:seed'], {
     env: options.count ? { NOSTREAM_SEED_COUNT: String(options.count) } : undefined,
   })
 

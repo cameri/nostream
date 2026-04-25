@@ -45,9 +45,9 @@ const runCli = (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliResult>
   })
 }
 
-const runNpmCli = (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliResult> => {
+const runPnpmCli = (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliResult> => {
   return new Promise((resolve, reject) => {
-    const child = spawn('npm', ['run', 'cli', '--', ...args], {
+    const child = spawn('pnpm', ['run', 'cli', ...args], {
       cwd: projectRoot,
       env: {
         ...process.env,
@@ -88,15 +88,12 @@ const createShimCommand = (dir: string, name: string, scriptBody: string) => {
   fs.chmodSync(target, 0o755)
 }
 
-const parseNpmJsonOutput = <T>(output: string): T => {
-  const start = output.indexOf('[')
-  const end = output.lastIndexOf(']')
-
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error(`No JSON payload found in npm output: ${output}`)
+const parsePackJsonOutput = <T>(output: string): T => {
+  const start = output.search(/^\s*[\[{]/m)
+  if (start === -1) {
+    throw new Error(`No JSON payload found in pack output: ${output}`)
   }
-
-  return JSON.parse(output.slice(start, end + 1)) as T
+  return JSON.parse(output.slice(start).trim()) as T
 }
 
 const runCommand = (command: string, args: string[]): Promise<CliResult> => {
@@ -142,8 +139,8 @@ describe('cli integration (spawn)', function () {
     expect(result.stdout).to.include('clean')
   })
 
-  it('supports npm run cli as the documented entry point', async () => {
-    const result = await runNpmCli(['--help'])
+  it('supports pnpm run cli as the documented entry point', async () => {
+    const result = await runPnpmCli(['--help'])
 
     expect(result.code).to.equal(0)
     expect(result.stdout).to.include('Usage:')
@@ -161,13 +158,13 @@ describe('cli integration (spawn)', function () {
   })
 
   it('packs the built CLI and runtime assets required for installation', async () => {
-    const result = await runCommand('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'])
+    const result = await runCommand('pnpm', ['pack', '--dry-run', '--json'])
 
     expect(result.code).to.equal(0)
-    const packSummary = parseNpmJsonOutput<Array<{
+    const packSummary = parsePackJsonOutput<{
       files: Array<{ path: string }>
-    }>>(result.stdout)
-    const packedFiles = new Set(packSummary[0].files.map((file) => file.path))
+    }>(result.stdout)
+    const packedFiles = new Set(packSummary.files.map((file) => file.path))
 
     expect(packedFiles.has('package.json')).to.equal(true)
     expect(packedFiles.has('dist/src/cli/index.js')).to.equal(true)
