@@ -21,6 +21,11 @@ const CLEAR_OLD_EVENTS_TIMEOUT_MS = 5000
 
 const logger = createLogger('maintenance-worker')
 
+const isNotFoundError = (error: unknown): boolean => (error as any)?.response?.status === 404
+
+const isExpiredInvoice = (invoice: { expiresAt?: Date | null }): boolean =>
+  invoice.expiresAt instanceof Date && invoice.expiresAt.getTime() <= Date.now()
+
 /**
  * Merge a re-verification outcome onto an existing verification row.
  *
@@ -168,6 +173,16 @@ export class MaintenanceWorker implements IRunnable {
         }
         successful++
       } catch (error) {
+        if (isNotFoundError(error) && isExpiredInvoice(invoice)) {
+          logger('marking expired invoice %s after payment processor returned 404', invoice.id)
+          await this.paymentsService.updateInvoiceStatus({
+            id: invoice.id,
+            status: InvoiceStatus.EXPIRED,
+          })
+          successful++
+          continue
+        }
+
         logger.error('Unable to update invoice from payment processor. Reason:', error)
       }
 
