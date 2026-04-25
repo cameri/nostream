@@ -46,6 +46,8 @@ export enum EventTags {
   Event = 'e',
   Pubkey = 'p',
   Relay = 'r',
+  // NIP-14: Subject for text notes
+  Subject = 'subject',
   //  Multicast = 'm',
   Deduplication = 'd',
   Expiration = 'expiration',
