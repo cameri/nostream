@@ -12,7 +12,7 @@ RUN corepack enable && corepack prepare pnpm@$PNPM_VERSION --activate && pnpm in
 
 COPY . .
 
-RUN pnpm run build
+RUN pnpm build
 
 FROM node:24-alpine
 

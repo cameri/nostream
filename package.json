@@ -40,7 +40,7 @@
     "lint:report": "mkdir -p .lint-reports && biome lint --reporter=json --reporter-file=.lint-reports/biome.json ./src ./test",
     "lint:fix": "pnpm run lint --write",
     "format": "biome format --write ./src ./test",
-    "format:check": "biome format ./src ./test",
+    "check:format": "biome format ./src ./test",
     "import": "node --env-file-if-exists=.env -r ts-node/register src/import-events.ts",
     "db:migrate": "knex migrate:latest",
     "db:migrate:rollback": "knex migrate:rollback",

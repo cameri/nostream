@@ -135,7 +135,7 @@ Run code quality checks with Biome:
 pnpm lint
 pnpm lint:fix
 pnpm format
-pnpm format:check
+pnpm check:format
 ```
 
 ### Unit tests
@@ -364,5 +364,5 @@ Run Biome checks before opening a pull request:
 
 ```
 pnpm lint
-pnpm format:check
+pnpm check:format
 ```
