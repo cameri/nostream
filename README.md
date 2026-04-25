@@ -51,6 +51,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-11: Relay information document
 - [x] NIP-12: Generic tag queries
 - [x] NIP-13: Proof of Work
+- [x] NIP-14: Subject tag in text events
 - [x] NIP-15: End of Stored Events Notice
 - [x] NIP-16: Event Treatment
 - [x] NIP-20: Command Results
