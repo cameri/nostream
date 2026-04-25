@@ -8,8 +8,8 @@
  * before and after applying the hot-path-indexes migration.
  *
  * Usage:
- *     npm run db:benchmark
- *     npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+ *     pnpm run db:benchmark
+ *     pnpm run db:benchmark --runs 5 --kind 1 --limit 500
  *
  * The script is read-only: it only issues EXPLAIN and SELECT statements.
  */
@@ -111,7 +111,7 @@ function parseArgs(argv: string[]): CliOptions {
 function printUsage(): void {
   console.log(
     [
-      'Usage: npm run db:benchmark -- [options]',
+      'Usage: pnpm run db:benchmark [options]',
       '',
       'Options:',
       '  --runs <n>           Execute each query N times (default 3).',

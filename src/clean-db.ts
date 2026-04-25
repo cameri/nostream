@@ -13,7 +13,7 @@ type CleanDbOptions = {
 }
 
 const HELP_TEXT = [
-  'Usage: npm run clean-db -- [options]',
+  'Usage: pnpm run clean-db [options]',
   '',
   'Options:',
   '  --all                  Delete all events.',
@@ -24,10 +24,10 @@ const HELP_TEXT = [
   '  --help                 Show this help message.',
   '',
   'Examples:',
-  '  npm run clean-db -- --all --dry-run',
-  '  npm run clean-db -- --all --force',
-  '  npm run clean-db -- --older-than=30 --force',
-  '  npm run clean-db -- --older-than=30 --kinds=1,7,4 --dry-run',
+  '  pnpm run clean-db --all --dry-run',
+  '  pnpm run clean-db --all --force',
+  '  pnpm run clean-db --older-than=30 --force',
+  '  pnpm run clean-db --older-than=30 --kinds=1,7,4 --dry-run',
 ].join('\n')
 
 const getOptionValue = (arg: string, args: string[], index: number): [string, number] => {
