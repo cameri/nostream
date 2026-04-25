@@ -110,19 +110,19 @@ cp resources/default-settings.yaml .nostr/settings.yaml
 Start in development mode:
 
 ```
-pnpm run dev
+pnpm dev
 ```
 
 Or start in production mode:
 
 ```
-pnpm run start
+pnpm start
 ```
 
 To clean up build, coverage, and test reports:
 
 ```
-pnpm run clean
+pnpm clean
 ```
 
 ## Tests
@@ -132,10 +132,10 @@ pnpm run clean
 Run code quality checks with Biome:
 
 ```
-pnpm run lint
-pnpm run lint:fix
-pnpm run format
-pnpm run format:check
+pnpm lint
+pnpm lint:fix
+pnpm format
+pnpm format:check
 ```
 
 ### Unit tests
@@ -149,19 +149,19 @@ cd /path/to/nostream
 Run unit tests:
 
 ```
-pnpm run test:unit
+pnpm test:unit
 ```
 
 Run unit tests in watch mode:
 
 ```
-pnpm run test:unit:watch
+pnpm test:unit:watch
 ```
 
 Get unit test coverage:
 
 ```
-pnpm run cover:unit
+pnpm cover:unit
 ```
 
 Open the unit test report:
@@ -187,13 +187,13 @@ cd /path/to/nostream
 Run integration tests:
 
 ```
-pnpm run docker:test:integration
+pnpm docker:test:integration
 ```
 
 Get integration test coverage:
 
 ```
-pnpm run docker:cover:integration
+pnpm docker:cover:integration
 ```
 
 ### Integration tests (Standalone)
@@ -223,7 +223,7 @@ DB_MAX_POOL_SIZE=2
 Run the integration tests:
 
 ```
-pnpm run test:integration
+pnpm test:integration
 ```
 
 Open the integration test report:
@@ -235,7 +235,7 @@ open .test-reports/integration/report.html
 Get integration test coverage:
 
 ```
-pnpm run cover:integration
+pnpm cover:integration
 ```
 
 Open the integration test coverage report:
@@ -253,7 +253,7 @@ event flood (spam) attacks. This is used to verify relay resilience and prevent 
 
 ```bash
 # Simulates 5,000 idle "zombie" connections + 100 events/sec spam
-pnpm run test:load --zombies 5000 --spam-rate 100
+pnpm test:load --zombies 5000 --spam-rate 100
 ```
 
 ### Analyzing Memory (Heap Snapshots)
@@ -300,10 +300,10 @@ To observe client and subscription counts in real-time during a test, you can in
 Run dead code and dependency analysis before opening a pull request:
 
 ```
-pnpm run knip
+pnpm check:deps
 ```
 
-`pnpm run lint` now runs Biome.
+`pnpm lint` now runs Biome.
 
 ## Pull Request Process
 
@@ -363,6 +363,6 @@ This applies to PRs that exclusively contain:
 Run Biome checks before opening a pull request:
 
 ```
-pnpm run lint
-pnpm run format:check
+pnpm lint
+pnpm format:check
 ```

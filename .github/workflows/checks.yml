@@ -45,7 +45,7 @@ jobs:
       - name: Run Biome
         run: pnpm run lint
       - name: Run Knip
-        run: pnpm run knip
+        run: pnpm run check:deps
   build-check:
     name: Build check
     runs-on: ubuntu-latest
