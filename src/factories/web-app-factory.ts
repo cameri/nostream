@@ -1,10 +1,10 @@
-import express from 'express'
+import express, { Express } from 'express'
 import { randomBytes } from 'crypto'
 
 import { createSettings } from './settings-factory'
 import router from '../routes'
 
-export const createWebApp = () => {
+export const createWebApp = (): Express => {
   const app = express()
   app
     .disable('x-powered-by')

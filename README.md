@@ -288,8 +288,8 @@ Import from a JSON array file (compatible with `nostream export --format json`):
 
 Import a compressed backup:
   ```
-  npm run import -- ./events.jsonl.gz
-  npm run import -- ./events.jsonl.xz
+  nostream import ./events.jsonl.gz
+  nostream import ./events.jsonl.xz
   ```
 
 Set a custom batch size (default: `1000`):
@@ -466,14 +466,14 @@ Clone repository and enter directory:
 Install dependencies:
 
   ```
-  npm install -g knex
-  npm install
+  corepack enable
+  pnpm install
   ```
 
 Run migrations (at least once and after pulling new changes):
 
   ```
-  NODE_OPTIONS="-r dotenv/config" npm run db:migrate
+  pnpm db:migrate
   ```
 
 Create .nostr folder inside nostream project folder and copy over the settings file:
@@ -486,19 +486,19 @@ Create .nostr folder inside nostream project folder and copy over the settings f
 To start in development mode:
 
   ```
-  npm run dev
+  pnpm dev
   ```
 
 Or, start in production mode:
 
   ```
-  npm run start
+  pnpm start
   ```
 
 To clean up the build, coverage and test reports run:
 
   ```
-  npm run clean
+  pnpm clean
   ```
 ## Development Quick Start (Docker Compose)
 
@@ -589,10 +589,10 @@ Optional compression is supported for lower storage and transfer costs:
 - XZ via `lzma-native`
 
 ```
-npm run export                            # writes to events.jsonl
-npm run export -- backup-2024-01-01.jsonl # custom filename
-npm run export -- backup.jsonl.gz --compress --format=gzip
-npm run export -- backup.jsonl.xz --compress --format=xz
+nostream export                              # writes to events.jsonl
+nostream export --output backup-2024-01-01.jsonl # custom filename
+nostream export --output backup.jsonl.gz --compress --format=gzip
+nostream export --output backup.jsonl.xz --compress --format=xz
 nostream export --output backup-2024-01-01.jsonl # alias form
 nostream export --output backup-2024-01-01.json --format json # JSON array output
 ```
@@ -624,8 +624,8 @@ The script reads the same `DB_*` environment variables used by the relay (see [C
 Run the read-only query benchmark to record the planner's choices and timings for the relay's hot-path queries (REQ subscriptions, vanish checks, purge scans, pending-invoice polls):
 
 ```
-npm run db:benchmark
-npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+pnpm db:benchmark
+pnpm db:benchmark --runs 5 --kind 1 --limit 500
 ```
 
 The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements against your configured database — it never writes. It loads `DB_*` variables from `.env` automatically (via `node --env-file-if-exists=.env`), so no extra setup is required beyond the one you already need to run the relay. Use it to confirm the `events_active_pubkey_kind_created_at_idx`, `events_deleted_at_partial_idx`, and `invoices_pending_created_at_idx` indexes are being picked up.
@@ -633,7 +633,7 @@ The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements a
 For a reproducible before/after proof on a throwaway dataset, run:
 
 ```
-npm run db:verify-index-impact
+pnpm db:verify-index-impact
 ```
 
 It seeds ~200k synthetic events, drops the hot-path indexes, runs EXPLAIN (ANALYZE, BUFFERS) for each hot query, recreates the indexes, and prints a BEFORE/AFTER table. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](CONFIGURATION.md).
