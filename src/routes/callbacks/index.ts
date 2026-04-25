@@ -6,7 +6,7 @@ import { createOpenNodeCallbackController } from '../../factories/controllers/op
 import { createZebedeeCallbackController } from '../../factories/controllers/zebedee-callback-controller-factory'
 import { withController } from '../../handlers/request-handlers/with-controller-request-handler'
 
-const router = Router()
+const router: Router = Router()
 
 router
   .post('/zebedee', json(), withController(createZebedeeCallbackController))
