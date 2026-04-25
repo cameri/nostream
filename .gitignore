@@ -13,12 +13,15 @@ npm-debug.log*
 
 # Dependency directories
 node_modules/
+package-lock.json
 
 # TypeScript cache
 *.tsbuildinfo
 
-# Optional npm cache directory
+# Optional package manager cache directories
 .npm
+.pnpm-store
+pnpm-debug.log*
 
 # Caches
 .eslintcache

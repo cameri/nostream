@@ -51,6 +51,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-11: Relay information document
 - [x] NIP-12: Generic tag queries
 - [x] NIP-13: Proof of Work
+- [x] NIP-14: Subject tag in text events
 - [x] NIP-15: End of Stored Events Notice
 - [x] NIP-16: Event Treatment
 - [x] NIP-20: Command Results
@@ -255,18 +256,18 @@ Compressed files are also supported and decompressed on-the-fly:
 
 Basic import:
   ```
-  npm run import -- ./events.jsonl
+  pnpm import ./events.jsonl
   ```
 
 Import a compressed backup:
   ```
-  npm run import -- ./events.jsonl.gz
-  npm run import -- ./events.jsonl.xz
+  pnpm import ./events.jsonl.gz
+  pnpm import ./events.jsonl.xz
   ```
 
 Set a custom batch size (default: `1000`):
   ```
-  npm run import -- ./events.jsonl --batch-size 500
+  pnpm import ./events.jsonl --batch-size 500
   ```
 
 The importer:
@@ -437,14 +438,14 @@ Clone repository and enter directory:
 Install dependencies:
 
   ```
-  npm install -g knex
-  npm install
+  corepack enable
+  pnpm install
   ```
 
 Run migrations (at least once and after pulling new changes):
 
   ```
-  NODE_OPTIONS="-r dotenv/config" npm run db:migrate
+  pnpm db:migrate
   ```
 
 Create .nostr folder inside nostream project folder and copy over the settings file:
@@ -457,19 +458,19 @@ Create .nostr folder inside nostream project folder and copy over the settings f
 To start in development mode:
 
   ```
-  npm run dev
+  pnpm dev
   ```
 
 Or, start in production mode:
 
   ```
-  npm run start
+  pnpm start
   ```
 
 To clean up the build, coverage and test reports run:
 
   ```
-  npm run clean
+  pnpm clean
   ```
 
 ## Development & Contributing
@@ -488,10 +489,10 @@ Optional compression is supported for lower storage and transfer costs:
 - XZ via `lzma-native`
 
 ```
-npm run export                            # writes to events.jsonl
-npm run export -- backup-2024-01-01.jsonl # custom filename
-npm run export -- backup.jsonl.gz --compress --format=gzip
-npm run export -- backup.jsonl.xz --compress --format=xz
+pnpm export                            # writes to events.jsonl
+pnpm export backup-2024-01-01.jsonl # custom filename
+pnpm export backup.jsonl.gz --compress --format=gzip
+pnpm export backup.jsonl.xz --compress --format=xz
 ```
 
 Flags:
@@ -521,8 +522,8 @@ The script reads the same `DB_*` environment variables used by the relay (see [C
 Run the read-only query benchmark to record the planner's choices and timings for the relay's hot-path queries (REQ subscriptions, vanish checks, purge scans, pending-invoice polls):
 
 ```
-npm run db:benchmark
-npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+pnpm db:benchmark
+pnpm db:benchmark --runs 5 --kind 1 --limit 500
 ```
 
 The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements against your configured database — it never writes. It loads `DB_*` variables from `.env` automatically (via `node --env-file-if-exists=.env`), so no extra setup is required beyond the one you already need to run the relay. Use it to confirm the `events_active_pubkey_kind_created_at_idx`, `events_deleted_at_partial_idx`, and `invoices_pending_created_at_idx` indexes are being picked up.
@@ -530,7 +531,7 @@ The benchmark only issues `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements a
 For a reproducible before/after proof on a throwaway dataset, run:
 
 ```
-npm run db:verify-index-impact
+pnpm db:verify-index-impact
 ```
 
 It seeds ~200k synthetic events, drops the hot-path indexes, runs EXPLAIN (ANALYZE, BUFFERS) for each hot query, recreates the indexes, and prints a BEFORE/AFTER table. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](CONFIGURATION.md).
@@ -543,31 +544,31 @@ corresponding data from the derived `event_tags` table when present.
 Dry run (no deletion):
 
   ```
-  npm run clean-db -- --all --dry-run
+  pnpm clean-db --all --dry-run
   ```
 
 Full wipe:
 
   ```
-  npm run clean-db -- --all --force
+  pnpm clean-db --all --force
   ```
 
 Delete events older than N days:
 
   ```
-  npm run clean-db -- --older-than=30 --force
+  pnpm clean-db --older-than=30 --force
   ```
 
 Delete only selected kinds:
 
   ```
-  npm run clean-db -- --kinds=1,7,4 --force
+  pnpm clean-db --kinds=1,7,4 --force
   ```
 
 Delete only selected kinds older than N days:
 
   ```
-  npm run clean-db -- --older-than=30 --kinds=1,7,4 --force
+  pnpm clean-db --older-than=30 --kinds=1,7,4 --force
   ```
 
 By default, the script asks for explicit confirmation (`Type 'DELETE' to confirm`).
