@@ -1,5 +1,5 @@
 ---
-"nostream": patch
+"nostream": major
 ---
 
-Fix CI stability by including the CLI entrypoint in Knip analysis and removing an unused dependency.
+Add a brand-new unified `nostream` CLI/TUI that replaces the legacy `scripts/*` shell wrappers for lifecycle, setup, info, config, data, and development workflows.
