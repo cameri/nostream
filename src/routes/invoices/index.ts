@@ -5,7 +5,7 @@ import { createGetInvoiceStatusController } from '../../factories/controllers/ge
 import { createPostInvoiceController } from '../../factories/controllers/post-invoice-controller-factory'
 import { withController } from '../../handlers/request-handlers/with-controller-request-handler'
 
-const invoiceRouter = Router()
+const invoiceRouter: Router = Router()
 
 invoiceRouter
   .get('/', withController(createGetInvoiceController))

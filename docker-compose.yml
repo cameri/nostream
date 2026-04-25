@@ -123,6 +123,8 @@ services:
       DB_USER: nostr_ts_relay
       DB_PASSWORD: nostr_ts_relay
       DB_NAME: nostr_ts_relay
+    # Using npm intentionally: this is an isolated, ephemeral container that
+    # only needs knex+pg for migrations. Avoids corepack/pnpm cold-install overhead.
     entrypoint:
       - sh
       - -c
