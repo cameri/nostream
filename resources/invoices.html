@@ -14,7 +14,7 @@
   </head>
   <body lang="en">
     <main class="container">
-      <form method="post" action="/invoices">
+      <form method="post" action="{{path_prefix}}/invoices">
         <div class="row">
           <div class="col">
             <h1 class="mt-4 mb-4 text-center text-nowrap">{{name}}</h1>
@@ -106,6 +106,7 @@
       var reference = "{{reference}}"
       var relayUrl = "{{relay_url}}"
       var relayPubkey = "{{relay_pubkey}}"
+      var pathPrefix = {{path_prefix_json}};
       var invoice = "{{invoice}}";
       var pubkey = "{{pubkey}}"
       var expiresAt = "{{expires_at}}"
@@ -124,7 +125,7 @@
       }
 
       async function getInvoiceStatus() {
-        fetch(`/invoices/${reference}/status`).then(async (response) => {
+        fetch(`${pathPrefix}/invoices/${reference}/status`).then(async (response) => {
           const data = await response.json()
           console.log('data', data)
           const { status } = data;

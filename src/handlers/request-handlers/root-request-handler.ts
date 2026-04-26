@@ -5,6 +5,7 @@ import { escapeHtml } from '../../utils/html'
 import { FeeSchedule } from '../../@types/settings'
 import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
+import { getPublicPathPrefix, joinPathPrefix } from '../../utils/http'
 import packageJson from '../../../package.json'
 
 export const hasExplicitNostrJsonAcceptHeader = (request: Request): boolean => {
@@ -39,6 +40,7 @@ export const hasExplicitNostrJsonAcceptHeader = (request: Request): boolean => {
 
 export const rootRequestHandler = (request: Request, response: Response, next: NextFunction) => {
   const settings = createSettings()
+  const pathPrefix = getPublicPathPrefix(request, settings)
 
   if (hasExplicitNostrJsonAcceptHeader(request)) {
     const {
@@ -47,7 +49,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
 
     const paymentsUrl = new URL(relay_url)
     paymentsUrl.protocol = paymentsUrl.protocol === 'wss:' ? 'https:' : 'http:'
-    paymentsUrl.pathname = '/invoices'
+    paymentsUrl.pathname = joinPathPrefix(pathPrefix, '/invoices')
 
     const content = settings.limits?.event?.content
 
@@ -116,6 +118,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       .replaceAll('{{description}}', escapeHtml(settings.info.description ?? ''))
       .replaceAll('{{relay_url}}', escapeHtml(settings.info.relay_url))
       .replaceAll('{{amount}}', amount)
+      .replaceAll('{{path_prefix}}', escapeHtml(pathPrefix))
       .replaceAll('{{payments_section_class}}', admissionFeeEnabled ? '' : 'd-none')
       .replaceAll('{{no_payments_section_class}}', admissionFeeEnabled ? 'd-none' : '')
       .replaceAll('{{nonce}}', response.locals.nonce)

@@ -115,6 +115,18 @@ describe('rootRequestHandler', () => {
 
       expect(getTemplateStub).to.not.have.been.called
     })
+
+    it('includes relay_url path prefix in payments_url', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        info: { ...baseSettings.info, relay_url: 'wss://relay.example.com/nostream' },
+      })
+
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.payments_url).to.equal('https://relay.example.com/nostream/invoices')
+    })
   })
 
   describe('when serving HTML', () => {
@@ -180,6 +192,44 @@ describe('rootRequestHandler', () => {
       rootRequestHandler(req, res, next)
 
       expect(res.send.firstCall.args[0]).to.equal('test-nonce')
+    })
+
+    it('injects relay_url path prefix into links', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        info: { ...baseSettings.info, relay_url: 'wss://relay.example.com/nostream' },
+      })
+      getTemplateStub.returns('{{path_prefix}}/invoices|{{path_prefix}}/terms')
+
+      rootRequestHandler(req, res, next)
+
+      expect(res.send.firstCall.args[0]).to.equal('/nostream/invoices|/nostream/terms')
+    })
+
+    it('uses trusted forwarded path prefix over relay_url path', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        info: { ...baseSettings.info, relay_url: 'wss://relay.example.com/nostream' },
+        network: { ...baseSettings.network, trustedProxies: ['127.0.0.1'] },
+      })
+      getTemplateStub.returns('{{path_prefix}}/invoices')
+      req.headers['x-forwarded-prefix'] = '/proxy'
+      req.socket = { remoteAddress: '127.0.0.1' }
+
+      rootRequestHandler(req, res, next)
+
+      expect(res.send.firstCall.args[0]).to.equal('/proxy/invoices')
+    })
+
+    it('ignores forwarded path prefix when proxy is not trusted', () => {
+      createSettingsStub.returns(baseSettings)
+      getTemplateStub.returns('{{path_prefix}}/invoices')
+      req.headers['x-forwarded-prefix'] = '/nostream'
+      req.socket = { remoteAddress: '127.0.0.1' }
+
+      rootRequestHandler(req, res, next)
+
+      expect(res.send.firstCall.args[0]).to.equal('/invoices')
     })
 
     it('shows amount in sats when admission fee is enabled', () => {
