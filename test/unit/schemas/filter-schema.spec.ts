@@ -140,4 +140,49 @@ describe('NIP-01', () => {
       })
     }
   })
+
+  describe('NIP-50: search filter', () => {
+    it('accepts filter with valid search string', () => {
+      const filter = { search: 'bitcoin lightning' }
+      const result = validateSchema(filterSchema)(filter)
+      expect(result.error).to.be.undefined
+      expect(result.value).to.deep.equal(filter)
+    })
+
+    it('accepts search combined with kinds and limit', () => {
+      const filter = { search: 'nostr relay', kinds: [1], limit: 20 }
+      const result = validateSchema(filterSchema)(filter)
+      expect(result.error).to.be.undefined
+      expect(result.value).to.deep.equal(filter)
+    })
+
+    it('accepts search combined with authors and tags', () => {
+      const filter = {
+        search: 'bitcoin',
+        authors: ['22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793'],
+        '#e': ['aaaaaa'],
+      }
+      const result = validateSchema(filterSchema)(filter)
+      expect(result.error).to.be.undefined
+      expect(result.value).to.deep.equal(filter)
+    })
+
+    it('rejects empty search string', () => {
+      const filter = { search: '' }
+      const result = validateSchema(filterSchema)(filter)
+      expect(result).to.have.property('error').that.is.not.undefined
+    })
+
+    it('rejects search string longer than 1024 characters', () => {
+      const filter = { search: 'a'.repeat(1025) }
+      const result = validateSchema(filterSchema)(filter)
+      expect(result).to.have.property('error').that.is.not.undefined
+    })
+
+    it('accepts search string at maximum length of 1024 characters', () => {
+      const filter = { search: 'a'.repeat(1024) }
+      const result = validateSchema(filterSchema)(filter)
+      expect(result.error).to.be.undefined
+    })
+  })
 })

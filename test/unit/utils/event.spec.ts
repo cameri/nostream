@@ -204,6 +204,59 @@ describe('NIP-01', () => {
     })
   })
 
+  describe('NIP-50: search filter', () => {
+    let event: Event
+
+    beforeEach(() => {
+      event = {
+        id: '6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407',
+        pubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+        created_at: 1648351380,
+        kind: 1,
+        tags: [],
+        content: 'Bitcoin and Lightning Network are revolutionizing payments',
+        sig: 'b37adfed0e6398546d623536f9ddc92b95b7dc71927e1123266332659253ecd0ffa91ddf2c0a82a8426c5b363139d28534d6cac893b8a810149557a3f6d36768',
+      }
+    })
+
+    it('returns true if search matches single term in content', () => {
+      expect(isEventMatchingFilter({ search: 'bitcoin' })(event)).to.be.true
+    })
+
+    it('returns true if search matches multiple terms in content', () => {
+      expect(isEventMatchingFilter({ search: 'bitcoin lightning' })(event)).to.be.true
+    })
+
+    it('returns false if search term is not in content', () => {
+      expect(isEventMatchingFilter({ search: 'ethereum' })(event)).to.be.false
+    })
+
+    it('returns false if one of multiple search terms is missing', () => {
+      expect(isEventMatchingFilter({ search: 'bitcoin ethereum' })(event)).to.be.false
+    })
+
+    it('is case-insensitive', () => {
+      expect(isEventMatchingFilter({ search: 'BITCOIN' })(event)).to.be.true
+    })
+
+    it('returns true if search is undefined', () => {
+      expect(isEventMatchingFilter({})(event)).to.be.true
+    })
+
+    it('returns true if search is an empty string', () => {
+      expect(isEventMatchingFilter({ search: '' })(event)).to.be.true
+    })
+
+    it('returns false if search is whitespace-only', () => {
+      expect(isEventMatchingFilter({ search: '   ' })(event)).to.be.false
+    })
+
+    it('combines with other filters', () => {
+      expect(isEventMatchingFilter({ search: 'bitcoin', kinds: [1] })(event)).to.be.true
+      expect(isEventMatchingFilter({ search: 'bitcoin', kinds: [2] })(event)).to.be.false
+    })
+  })
+
   describe('isEventSignatureValid', () => {
     let event: Event
 

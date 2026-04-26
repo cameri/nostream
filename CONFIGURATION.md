@@ -179,6 +179,9 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
 | nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
+| nip50.enabled                               | Enable or disable NIP-50 full-text search. Defaults to false. When enabled, clients can include a `search` field in REQ filters to perform text queries against event content. Requires the GIN full-text index migration. |
+| nip50.language                              | PostgreSQL text-search configuration name. Defaults to `simple` (language-agnostic tokenization). Set to `english`, `spanish`, etc. for stemming support. See [PostgreSQL text search configurations](https://www.postgresql.org/docs/current/textsearch-configuration.html). |
+| nip50.maxQueryLength                        | Maximum length of the search query string. Queries exceeding this are truncated. Defaults to 256. |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |

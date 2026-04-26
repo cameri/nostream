@@ -90,6 +90,15 @@ export const isEventMatchingFilter =
       return false
     }
 
+    // NIP-50
+    if (typeof filter.search === 'string' && filter.search.length > 0) {
+      const contentLower = event.content.toLowerCase()
+      const terms = filter.search.toLowerCase().split(/\s+/).filter(Boolean)
+      if (terms.length === 0 || !terms.every((term) => contentLower.includes(term))) {
+        return false
+      }
+    }
+
     return true
   }
 

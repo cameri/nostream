@@ -427,6 +427,104 @@ describe('EventRepository', () => {
         )
       })
     })
+
+    describe('NIP-50: search', () => {
+      let searchEnabledRepository: IEventRepository
+
+      beforeEach(() => {
+        searchEnabledRepository = new EventRepository(dbClient, rrDbClient, () => ({
+          nip50: { enabled: true, language: 'simple', maxQueryLength: 256 },
+        }))
+      })
+
+      it('adds tsvector/tsquery WHERE clause when search is provided and enabled', () => {
+        const filters = [{ search: 'bitcoin lightning' }]
+
+        const query = searchEnabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.include("to_tsvector('simple', event_content) @@ plainto_tsquery('simple', 'bitcoin lightning')")
+      })
+
+      it('orders results by search_rank DESC when search is active', () => {
+        const filters = [{ search: 'nostr relay' }]
+
+        const query = searchEnabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.include('search_rank')
+        expect(query).to.include('"search_rank" DESC')
+      })
+
+      it('applies default limit of 500 when search has no explicit limit', () => {
+        const filters = [{ search: 'test query' }]
+
+        const query = searchEnabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.include('limit 500')
+      })
+
+      it('applies custom limit when search has explicit limit', () => {
+        const filters = [{ search: 'test query', limit: 20 }]
+
+        const query = searchEnabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.include('limit 20')
+      })
+
+      it('combines search with kinds filter', () => {
+        const filters = [{ search: 'bitcoin', kinds: [1] }]
+
+        const query = searchEnabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.include("plainto_tsquery('simple', 'bitcoin')")
+        expect(query).to.include('"event_kind" in (1)')
+      })
+
+      it('ignores search filter when NIP-50 is disabled', () => {
+        const disabledRepository = new EventRepository(dbClient, rrDbClient, () => ({
+          nip50: { enabled: false },
+        }))
+        const filters = [{ search: 'bitcoin' }]
+
+        const query = disabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.not.include('tsvector')
+        expect(query).to.not.include('tsquery')
+        expect(query).to.not.include('search_rank')
+      })
+
+      it('ignores search filter when no settings are provided', () => {
+        const noSettingsRepository = new EventRepository(dbClient, rrDbClient)
+        const filters = [{ search: 'bitcoin' }]
+
+        const query = noSettingsRepository.findByFilters(filters).toString()
+
+        expect(query).to.not.include('tsvector')
+        expect(query).to.not.include('tsquery')
+      })
+
+      it('uses configured language for text search', () => {
+        const englishRepository = new EventRepository(dbClient, rrDbClient, () => ({
+          nip50: { enabled: true, language: 'english' },
+        }))
+        const filters = [{ search: 'running' }]
+
+        const query = englishRepository.findByFilters(filters).toString()
+
+        expect(query).to.include("to_tsvector('english', event_content)")
+        expect(query).to.include("plainto_tsquery('english', 'running')")
+      })
+
+      it('truncates search query to maxQueryLength', () => {
+        const shortMaxRepository = new EventRepository(dbClient, rrDbClient, () => ({
+          nip50: { enabled: true, language: 'simple', maxQueryLength: 5 },
+        }))
+        const filters = [{ search: 'bitcoinlightning' }]
+
+        const query = shortMaxRepository.findByFilters(filters).toString()
+
+        expect(query).to.include("plainto_tsquery('simple', 'bitco')")
+      })
+    })
   })
 
   describe('.countByFilters', () => {

@@ -19,7 +19,7 @@ const logger = createLogger('worker-factory')
 export const workerFactory = (): AppWorker => {
   const dbClient = getMasterDbClient()
   const readReplicaDbClient = getReadReplicaDbClient()
-  const eventRepository = new EventRepository(dbClient, readReplicaDbClient)
+  const eventRepository = new EventRepository(dbClient, readReplicaDbClient, createSettings)
   const userRepository = new UserRepository(dbClient, eventRepository)
   const nip05VerificationRepository = new Nip05VerificationRepository(dbClient)
 

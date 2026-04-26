@@ -22,7 +22,8 @@
     33,
     40,
     44,
-    45
+    45,
+    50
   ],
   "supportedNipExtensions": [],
   "main": "src/index.ts",

@@ -62,6 +62,11 @@ nip05:
   domainBlacklist: []
 nip45:
   enabled: true
+nip50:
+  enabled: false
+  # 'simple' (no stemming) or a language name like 'english', 'spanish'
+  language: simple
+  maxQueryLength: 256
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.

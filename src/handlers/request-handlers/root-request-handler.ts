@@ -70,6 +70,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         created_at_upper_limit: createdAtLimits?.maxPositiveDelta,
         default_limit: DEFAULT_FILTER_LIMIT,
         restricted_writes: hasWriteRestriction,
+        search_supported: settings.nip50?.enabled ?? false,
       },
       payments_url: paymentsUrl.toString(),
       fees: Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(

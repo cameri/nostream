@@ -1,4 +1,4 @@
-import { anyPass, equals, isNil, map, propSatisfies, uniqWith } from 'ramda'
+import { anyPass, equals, isNil, map, omit, propSatisfies, uniqWith } from 'ramda'
 // import { addAbortSignal } from 'stream'
 import { pipeline } from 'stream/promises'
 
@@ -38,7 +38,11 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   public async handleMessage(message: SubscribeMessage): Promise<void> {
     const subscriptionId = message[1]
-    const filters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
+    const rawFilters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
+
+    // NIP-50: strip search from filters when disabled so isEventMatchingFilter ignores it
+    const nip50Enabled = this.settings()?.nip50?.enabled ?? false
+    const filters = nip50Enabled ? rawFilters : rawFilters.map(omit(['search'])) as SubscriptionFilter[]
 
     const reason = this.canSubscribe(subscriptionId, filters)
     if (reason) {
