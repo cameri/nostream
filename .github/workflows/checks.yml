@@ -16,11 +16,14 @@ jobs:
     name: Detect changed paths
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: read
     outputs:
       src: ${{ steps.filter.outputs.src }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: filter
         uses: dorny/paths-filter@v3
         with:
@@ -100,10 +103,9 @@ jobs:
       - lint
       - build-check
     if: |
-      always() &&
       needs.changes.outputs.src == 'true' &&
-      needs.lint.result != 'failure' &&
-      needs.build-check.result != 'failure'
+      needs.lint.result == 'success' &&
+      needs.build-check.result == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -125,7 +127,7 @@ jobs:
           name: unit-coverage-lcov
           path: .coverage/unit/lcov.info
       - name: Coveralls
-        uses: coverallsapp/github-action@master
+        uses: coverallsapp/github-action@v2.3.6
         if: ${{ always() }}
         with:
           path-to-lcov: ./.coverage/unit/lcov.info
@@ -141,10 +143,9 @@ jobs:
       - lint
       - build-check
     if: |
-      always() &&
       needs.changes.outputs.src == 'true' &&
-      needs.lint.result != 'failure' &&
-      needs.build-check.result != 'failure'
+      needs.lint.result == 'success' &&
+      needs.build-check.result == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -163,7 +164,7 @@ jobs:
       - name: Run coverage for integration tests
         run: npm run docker:cover:integration
       - name: Coveralls
-        uses: coverallsapp/github-action@master
+        uses: coverallsapp/github-action@v2.3.6
         if: ${{ always() }}
         with:
           path-to-lcov: .coverage/integration/lcov.info
@@ -187,7 +188,7 @@ jobs:
     if: ${{ always() }}
     steps:
       - name: Coveralls Finished
-        uses: coverallsapp/github-action@master
+        uses: coverallsapp/github-action@v2.3.6
         if: |
           needs.test-units-and-cover.result != 'skipped' ||
           needs.test-integrations-and-cover.result != 'skipped'
