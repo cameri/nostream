@@ -130,6 +130,47 @@ describe('NodelessCallbackController', () => {
       expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
     })
 
+    it('returns 403 when callback signature has wrong length', async () => {
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(makeReq({ signature: '0'.repeat(63) }), res)
+
+      expect(res.status).to.have.been.calledWith(403)
+      expect(res.send).to.have.been.calledWith('Forbidden')
+      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
+    })
+
+    it('returns 403 when callback signature is a valid-length hex string but does not match', async () => {
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(makeReq({ signature: '0'.repeat(64) }), res)
+
+      expect(res.status).to.have.been.calledWith(403)
+      expect(res.send).to.have.been.calledWith('Forbidden')
+      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
+    })
+
+    it('returns 500 when NODELESS_WEBHOOK_SECRET is not configured', async () => {
+      delete process.env.NODELESS_WEBHOOK_SECRET
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+      const rawBody = Buffer.from(JSON.stringify(validBody))
+      const req = {
+        headers: { 'nodeless-signature': 'does-not-matter' },
+        body: validBody,
+        rawBody,
+      }
+
+      await controller.handleRequest(req as any, res)
+
+      expect(res.status).to.have.been.calledWith(500)
+      expect(res.setHeader).to.have.been.calledWith('content-type', 'application/json; charset=utf8')
+      expect(res.send).to.have.been.calledWith('{"status":"error","message":"Internal Server Error"}')
+      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
+    })
+
     it('returns 403 when nodeless is not the configured processor', async () => {
       createSettingsStub.returns({ payments: { processor: 'zebedee' } })
       const { controller, paymentsService } = makeController()

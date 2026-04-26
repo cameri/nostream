@@ -1,3 +1,5 @@
+import { timingSafeEqual } from 'crypto'
+
 import { always, applySpec, ifElse, is, path, prop, propEq, propSatisfies } from 'ramda'
 import { Request, Response } from 'express'
 
@@ -20,6 +22,15 @@ export class NodelessCallbackController implements IController {
     logger('callback request headers: %o', request.headers)
     logger('callback request body: %O', request.body)
 
+    const settings = createSettings()
+    const paymentProcessor = settings.payments?.processor
+
+    if (paymentProcessor !== 'nodeless') {
+      logger('denied request to /callbacks/nodeless which is not the current payment processor')
+      response.status(403).send('Forbidden')
+      return
+    }
+
     const bodyValidation = validateSchema(nodelessCallbackBodySchema)(request.body)
     if (bodyValidation.error) {
       logger('nodeless callback request rejected: invalid body %o', bodyValidation.error)
@@ -30,20 +41,32 @@ export class NodelessCallbackController implements IController {
       return
     }
 
-    const settings = createSettings()
-    const paymentProcessor = settings.payments?.processor
+    const webhookSecret = process.env.NODELESS_WEBHOOK_SECRET
+    if (!webhookSecret) {
+      logger.error('NODELESS_WEBHOOK_SECRET is not configured; unable to verify Nodeless callback')
+      response
+        .status(500)
+        .setHeader('content-type', 'application/json; charset=utf8')
+        .send('{"status":"error","message":"Internal Server Error"}')
+      return
+    }
 
-    const expected = hmacSha256(process.env.NODELESS_WEBHOOK_SECRET, (request as any).rawBody).toString('hex')
-    const actual = request.headers['nodeless-signature']
+    const expectedBuf = hmacSha256(webhookSecret, (request as any).rawBody)
+    const actualHex = request.headers['nodeless-signature']
+    const expectedHexLength = expectedBuf.length * 2
 
-    if (expected !== actual) {
-      logger.error('nodeless callback request rejected: signature mismatch:', { expected, actual })
+    if (
+      typeof actualHex !== 'string' ||
+      actualHex.length !== expectedHexLength ||
+      !/^[0-9a-f]+$/i.test(actualHex)
+    ) {
+      logger('nodeless callback request rejected: invalid signature format')
       response.status(403).send('Forbidden')
       return
     }
 
-    if (paymentProcessor !== 'nodeless') {
-      logger('denied request from %s to /callbacks/nodeless which is not the current payment processor')
+    if (!timingSafeEqual(expectedBuf, Buffer.from(actualHex, 'hex'))) {
+      logger('nodeless callback request rejected: signature mismatch')
       response.status(403).send('Forbidden')
       return
     }
