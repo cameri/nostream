@@ -258,6 +258,25 @@ describe('NIP-01', () => {
 
 describe('NIP-12', () => {
   let event: Event
+
+  describe('#d filter', () => {
+    beforeEach(() => {
+      event = {
+        id: 'cf8de9db67a1d7203512d1d81e6190f5e53abfdc0ac90275f67172b65a5b09a0',
+        pubkey: 'e8b487c079b0f67c695ae6c4c2552a47f38adfa2533cc5926bd2c102942fdcb7',
+        created_at: 1645030752,
+        kind: EventKinds.PARAMETERIZED_REPLACEABLE_FIRST,
+        tags: [['d', '']],
+        content: 'empty d tag',
+        sig: '53d12018d036092794366283eca36df4e0cabd014b6e91bbf684c8bb9bbbe9dedafa77b6b928587e11e05e036227598dded8713e8da17d55076e12242b361542',
+      }
+    })
+
+    it('returns true if #d filter contains an empty tag value in the event', () => {
+      expect(isEventMatchingFilter({ '#d': [''] })(event)).to.be.true
+    })
+  })
+
   describe('#r filter', () => {
     beforeEach(() => {
       event = {

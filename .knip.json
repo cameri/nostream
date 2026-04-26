@@ -1,17 +1,21 @@
 {
   "$schema": "https://unpkg.com/knip@2/schema.json",
   "entry": [
-    "src/index.ts",
-    "src/import-events.ts",
-    "knexfile.js"
+    "src/index.ts!",
+    "src/import-events.ts!",
+    "src/cli/index.ts!",
+    "src/scripts/benchmark-queries.ts!",
+    "knexfile.js!"
   ],
   "project": [
-    "src/**/*.ts"
+    "src/**/*.ts!"
   ],
   "ignoreDependencies": [
     "lzma-native"
   ],
-  "ignoreFiles": [],
+  "ignore": [
+    ".nostr/**"
+  ],
   "commitlint": false,
   "eslint": false,
   "github-actions": false,
