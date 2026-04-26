@@ -1,7 +1,7 @@
 import 'pg-query-stream'
 
 import fs from 'fs'
-import path from 'path'
+import path, { extname } from 'path'
 import { pipeline } from 'stream/promises'
 import { Transform } from 'stream'
 
@@ -18,6 +18,11 @@ type ExportCliOptions = {
   format?: CompressionFormat
   outputFilePath: string
   showHelp: boolean
+}
+
+type ExportOptions = {
+  json?: boolean
+  format?: 'jsonl' | 'json'
 }
 
 const DEFAULT_OUTPUT_FILE_PATH = 'events.jsonl'
@@ -76,9 +81,9 @@ const formatCount = (value: number): string => {
   return Number.isInteger(rounded)
     ? rounded.toLocaleString('en-US')
     : rounded.toLocaleString('en-US', {
-      maximumFractionDigits: 2,
-      minimumFractionDigits: 2,
-    })
+        maximumFractionDigits: 2,
+        minimumFractionDigits: 2,
+      })
 }
 
 const getOptionValue = (option: string, args: string[], index: number): [string, number] => {
@@ -187,14 +192,83 @@ type EventRow = {
   event_signature: Buffer
 }
 
-async function exportEvents(): Promise<void> {
-  const options = parseCliArgs(process.argv.slice(2))
-  if (options.showHelp) {
-    printUsage()
-    return
+const resolveExportFormat = (format?: string): 'jsonl' | 'json' => {
+  if (!format) {
+    return 'jsonl'
   }
 
-  const outputPath = path.resolve(options.outputFilePath)
+  if (format === 'jsonl' || format === 'json') {
+    return format
+  }
+
+  throw new Error(`Unsupported format: ${format}. Supported values: json, jsonl`)
+}
+
+const resolveOutputPath = (filename: string | undefined, format: 'jsonl' | 'json'): string => {
+  const fallback = format === 'json' ? 'events.json' : 'events.jsonl'
+  const outputPath = path.resolve(filename || fallback)
+  const expectedExtension = format === 'json' ? '.json' : '.jsonl'
+
+  if (extname(outputPath).toLowerCase() !== expectedExtension) {
+    throw new Error(`Output file extension must be ${expectedExtension} when using --format ${format}`)
+  }
+
+  return outputPath
+}
+
+const toEvent = (row: EventRow) => ({
+  id: row.event_id.toString('hex'),
+  pubkey: row.event_pubkey.toString('hex'),
+  created_at: row.event_created_at,
+  kind: row.event_kind,
+  tags: Array.isArray(row.event_tags) ? row.event_tags : [],
+  content: row.event_content,
+  sig: row.event_signature.toString('hex'),
+})
+
+const createFormatterTransform = (
+  format: 'jsonl' | 'json',
+  onExported: () => void,
+): Transform => {
+  if (format === 'jsonl') {
+    return new Transform({
+      objectMode: true,
+      transform(row: EventRow, _encoding, callback) {
+        onExported()
+        callback(null, JSON.stringify(toEvent(row)) + '\n')
+      },
+    })
+  }
+
+  let hasRows = false
+  return new Transform({
+    objectMode: true,
+    transform(row: EventRow, _encoding, callback) {
+      const prefix = hasRows ? ',\n' : '[\n'
+      hasRows = true
+      onExported()
+      callback(null, prefix + JSON.stringify(toEvent(row)))
+    },
+    flush(callback) {
+      callback(null, hasRows ? '\n]\n' : '[]\n')
+    },
+  })
+}
+
+export async function runExportEvents(args: string[] = process.argv.slice(2), options: ExportOptions = {}): Promise<number> {
+  const useStructuredFormat = Boolean(options.format)
+  const structuredFormat = resolveExportFormat(options.format)
+  const cliOptions = useStructuredFormat ? undefined : parseCliArgs(args)
+
+  if (!useStructuredFormat && cliOptions?.showHelp) {
+    printUsage()
+    return 0
+  }
+
+  const outputPath = useStructuredFormat
+    ? resolveOutputPath(args[0], structuredFormat)
+    : path.resolve(cliOptions?.outputFilePath ?? DEFAULT_OUTPUT_FILE_PATH)
+
   const db = getMasterDbClient()
   const abortController = new AbortController()
   let interruptedBySignal: NodeJS.Signals | undefined
@@ -216,25 +290,28 @@ async function exportEvents(): Promise<void> {
     const firstEvent = await db('events').select('event_id').whereNull('deleted_at').first()
 
     if (abortController.signal.aborted) {
-      return
+      return 130
     }
 
     if (!firstEvent) {
-      console.log('No events to export.')
-      return
+      if (options.json) {
+        console.log(JSON.stringify({ exported: 0, outputPath, empty: true }, null, 2))
+      } else {
+        console.log('No events to export.')
+      }
+      return 0
     }
 
-    if (options.format) {
-      console.log(`Exporting events to ${outputPath} using ${getCompressionLabel(options.format)} compression`)
+    if (useStructuredFormat) {
+      console.log(`Exporting events to ${outputPath}`)
+    } else if (cliOptions?.format) {
+      console.log(`Exporting events to ${outputPath} using ${getCompressionLabel(cliOptions.format)} compression`)
     } else {
       console.log(`Exporting events to ${outputPath}`)
     }
 
     const startedAt = Date.now()
     const output = fs.createWriteStream(outputPath)
-    const compressionStream = createCompressionStream(options.format)
-    let exported = 0
-    let rawBytes = 0
 
     const dbStream = db('events')
       .select(
@@ -251,25 +328,52 @@ async function exportEvents(): Promise<void> {
       .orderBy('event_id', 'asc')
       .stream()
 
+    let exported = 0
+
+    if (useStructuredFormat) {
+      const formatter = createFormatterTransform(structuredFormat, () => {
+        exported += 1
+        if (exported % 10000 === 0) {
+          console.log(`Exported ${exported} events...`)
+        }
+      })
+
+      await pipeline(dbStream, formatter, output, {
+        signal: abortController.signal,
+      })
+
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            {
+              exported,
+              outputPath,
+              format: structuredFormat,
+            },
+            null,
+            2,
+          ),
+        )
+      } else {
+        console.log(`Export complete: ${exported} events written to ${outputPath} (${structuredFormat})`)
+      }
+
+      return 0
+    }
+
+    const compressionFormat = cliOptions?.format
+    const compressionStream = createCompressionStream(compressionFormat)
+    let rawBytes = 0
+
     const toJsonLine = new Transform({
       objectMode: true,
       transform(row: EventRow, _encoding, callback) {
-        const event = {
-          id: row.event_id.toString('hex'),
-          pubkey: row.event_pubkey.toString('hex'),
-          created_at: row.event_created_at,
-          kind: row.event_kind,
-          tags: Array.isArray(row.event_tags) ? row.event_tags : [],
-          content: row.event_content,
-          sig: row.event_signature.toString('hex'),
-        }
-
-        exported++
+        exported += 1
         if (exported % 10000 === 0) {
           console.log(`Exported ${exported} events...`)
         }
 
-        const line = JSON.stringify(event) + '\n'
+        const line = JSON.stringify(toEvent(row)) + '\n'
         rawBytes += Buffer.byteLength(line)
         callback(null, line)
       },
@@ -296,11 +400,13 @@ async function exportEvents(): Promise<void> {
     console.log(
       `Throughput: ${formatCount(eventRate)} events/s | ${formatBytes(rawRate)}/s raw | ${formatBytes(outputRate)}/s output`,
     )
+
+    return 0
   } catch (error) {
     if (abortController.signal.aborted) {
       console.log(`Export interrupted by ${interruptedBySignal ?? 'signal'}.`)
       process.exitCode = 130
-      return
+      return 130
     }
 
     throw error
@@ -312,7 +418,7 @@ async function exportEvents(): Promise<void> {
 }
 
 if (require.main === module) {
-  exportEvents().catch((error) => {
+  runExportEvents().catch((error) => {
     console.error('Export failed:', error.message)
     process.exit(1)
   })

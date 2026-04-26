@@ -57,6 +57,7 @@ The following environment variables can be set:
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
+| NWC_URL                          | NWC connection URL (`nostr+walletconnect://...`) | |
 
 ## I2P
 
@@ -73,8 +74,7 @@ Tunnel keys are persisted at `.nostr/i2p/data/` so the `.b32.i2p` address surviv
 
 The i2pd web console (tunnel status, `.b32.i2p` destinations) is published to the host on **`127.0.0.1:7070`** only. Remove the `ports:` mapping in `docker-compose.i2p.yml` to disable host-side access.
 
-- Start with I2P: `./scripts/start_with_i2p`
-- Print hostname hints: `./scripts/print_i2p_hostname`
+- Start with I2P: `nostream start --i2p`
 
 If you've set READ_REPLICAS to 4, you should configure RR0_ through RR3_.
 
@@ -223,5 +223,5 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
-| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `nwc`. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |

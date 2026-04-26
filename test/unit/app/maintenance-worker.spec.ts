@@ -440,6 +440,53 @@ describe('MaintenanceWorker', () => {
       expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
       expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnce
     })
+
+    it('marks an expired pending invoice as expired when the payment processor returns 404', async () => {
+      const expiredInvoice = {
+        ...pendingInvoice,
+        expiresAt: new Date(Date.now() - 60000),
+      }
+      const notFoundError = {
+        response: { status: 404 },
+      }
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getPendingInvoices.resolves([expiredInvoice])
+      paymentsService.getInvoiceFromPaymentsProcessor.rejects(notFoundError)
+
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnceWithExactly({
+        id: expiredInvoice.id,
+        status: InvoiceStatus.EXPIRED,
+      })
+    })
+
+    it('keeps an expired pending invoice pending when the processor lookup fails without 404', async () => {
+      const expiredInvoice = {
+        ...pendingInvoice,
+        expiresAt: new Date(Date.now() - 60000),
+      }
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getPendingInvoices.resolves([expiredInvoice])
+      paymentsService.getInvoiceFromPaymentsProcessor.rejects(new Error('network error'))
+
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.updateInvoiceStatus).not.to.have.been.called
+    })
+
+    it('keeps a non-expired pending invoice pending when the processor returns 404', async () => {
+      const notFoundError = {
+        response: { status: 404 },
+      }
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getPendingInvoices.resolves([pendingInvoice])
+      paymentsService.getInvoiceFromPaymentsProcessor.rejects(notFoundError)
+
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.updateInvoiceStatus).not.to.have.been.called
+    })
   })
 
   describe('onError', () => {
