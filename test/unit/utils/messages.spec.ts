@@ -36,8 +36,16 @@ describe('createEndOfStoredEventsNoticeMessage', () => {
   })
 })
 
-// NIP-20: Command Results
 describe('createCommandResult', () => {
+  it('returns a command result message', () => {
+    expect(createCommandResult('event-id', true, 'accepted')).to.deep.equal([
+      MessageType.OK,
+      'event-id',
+      true,
+      'accepted',
+    ])
+  })
+
   it('returns an OK message with success=true and a reason', () => {
     const eventId = 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef'
     expect(createCommandResult(eventId, true, '')).to.deep.equal([MessageType.OK, eventId, true, ''])
@@ -54,7 +62,6 @@ describe('createCommandResult', () => {
   })
 })
 
-// NIP-01: Subscription messages (REQ)
 describe('createSubscriptionMessage', () => {
   it('returns a REQ message with a single filter', () => {
     const result = createSubscriptionMessage('sub1', [{ kinds: [1] }])
@@ -71,9 +78,18 @@ describe('createSubscriptionMessage', () => {
     expect(result[2]).to.deep.equal(filters[0])
     expect(result[3]).to.deep.equal(filters[1])
   })
+
+  it('returns a subscription message with filters', () => {
+    const filters = [{ authors: ['author-1'], kinds: [1], '#p': ['recipient-1'] }]
+
+    expect(createSubscriptionMessage('subscriptionId', filters)).to.deep.equal([
+      MessageType.REQ,
+      'subscriptionId',
+      ...filters,
+    ])
+  })
 })
 
-// Relayed event messages (used for event mirroring between relays)
 describe('createRelayedEventMessage', () => {
   let event: RelayedEvent
 
@@ -89,11 +105,15 @@ describe('createRelayedEventMessage', () => {
     } as any
   })
 
-  it('returns an EVENT message without secret when no secret is provided', () => {
+  it('returns an EVENT message without secret when secret is missing', () => {
     expect(createRelayedEventMessage(event)).to.deep.equal([MessageType.EVENT, event])
   })
 
-  it('returns an EVENT message with secret appended when a secret is provided', () => {
-    expect(createRelayedEventMessage(event, 'my-secret')).to.deep.equal([MessageType.EVENT, event, 'my-secret'])
+  it('returns an EVENT message with secret when provided', () => {
+    expect(createRelayedEventMessage(event, 'shared-secret')).to.deep.equal([
+      MessageType.EVENT,
+      event,
+      'shared-secret',
+    ])
   })
 })
