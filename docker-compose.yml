@@ -90,6 +90,7 @@ services:
       - ${PWD}/postgresql.conf:/postgresql.conf
     networks:
       default:
+        ipv4_address: 10.10.10.3
     command: postgres -c 'config_file=/postgresql.conf'
     restart: always
     healthcheck:
@@ -107,6 +108,7 @@ services:
     command: redis-server --loglevel warning --requirepass nostr_ts_relay
     networks:
       default:
+        ipv4_address: 10.10.10.4
     restart: always
     healthcheck:
       test: [ "CMD", "redis-cli", "ping", "|", "grep", "PONG" ]
@@ -123,6 +125,8 @@ services:
       DB_USER: nostr_ts_relay
       DB_PASSWORD: nostr_ts_relay
       DB_NAME: nostr_ts_relay
+    # Using npm intentionally: this is an isolated, ephemeral container that
+    # only needs knex+pg for migrations. Avoids corepack/pnpm cold-install overhead.
     entrypoint:
       - sh
       - -c

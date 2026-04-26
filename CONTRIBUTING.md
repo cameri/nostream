@@ -43,7 +43,15 @@ cd nostream
 Install dependencies (this also sets up Husky pre-commit hooks automatically):
 
 ```
-npm install
+corepack enable
+pnpm install
+```
+
+Use the unified CLI for relay lifecycle and supported development operations from this source
+checkout:
+
+```
+pnpm run cli -- --help
 ```
 
 > **Important:** Pre-commit hooks installed by Husky run linting and formatting checks on every
@@ -55,7 +63,7 @@ npm install
 Start the relay (runs in the foreground until stopped with Ctrl+C):
 
 ```
-./scripts/start
+pnpm run cli -- start
 ```
 
 ### Development Quick Start (Standalone)
@@ -96,7 +104,7 @@ SECRET=aaabbbccc...dddeeefff
 Run migrations (at least once and after pulling new changes):
 
 ```
-NODE_OPTIONS="-r dotenv/config" npm run db:migrate
+pnpm db:migrate
 ```
 
 Create the `.nostr` folder and copy the default settings file:
@@ -109,19 +117,19 @@ cp resources/default-settings.yaml .nostr/settings.yaml
 Start in development mode:
 
 ```
-npm run dev
+pnpm dev
 ```
 
 Or start in production mode:
 
 ```
-npm run start
+pnpm start
 ```
 
 To clean up build, coverage, and test reports:
 
 ```
-npm run clean
+pnpm clean
 ```
 
 ## Tests
@@ -131,10 +139,10 @@ npm run clean
 Run code quality checks with Biome:
 
 ```
-npm run lint
-npm run lint:fix
-npm run format
-npm run format:check
+pnpm lint
+pnpm lint:fix
+pnpm format
+pnpm check:format
 ```
 
 ### Unit tests
@@ -148,19 +156,19 @@ cd /path/to/nostream
 Run unit tests:
 
 ```
-npm run test:unit
+pnpm run cli -- dev test:unit
 ```
 
 Run unit tests in watch mode:
 
 ```
-npm run test:unit:watch
+pnpm test:unit:watch
 ```
 
 Get unit test coverage:
 
 ```
-npm run cover:unit
+pnpm cover:unit
 ```
 
 Open the unit test report:
@@ -186,13 +194,13 @@ cd /path/to/nostream
 Run integration tests:
 
 ```
-npm run docker:test:integration
+pnpm docker:test:integration
 ```
 
 Get integration test coverage:
 
 ```
-npm run docker:cover:integration
+pnpm docker:cover:integration
 ```
 
 ### Integration tests (Standalone)
@@ -222,7 +230,7 @@ DB_MAX_POOL_SIZE=2
 Run the integration tests:
 
 ```
-npm run test:integration
+pnpm run cli -- dev test:integration
 ```
 
 Open the integration test report:
@@ -234,7 +242,7 @@ open .test-reports/integration/report.html
 Get integration test coverage:
 
 ```
-npm run cover:integration
+pnpm cover:integration
 ```
 
 Open the integration test coverage report:
@@ -252,7 +260,7 @@ event flood (spam) attacks. This is used to verify relay resilience and prevent 
 
 ```bash
 # Simulates 5,000 idle "zombie" connections + 100 events/sec spam
-npm run test:load -- --zombies 5000 --spam-rate 100
+pnpm test:load --zombies 5000 --spam-rate 100
 ```
 
 ### Analyzing Memory (Heap Snapshots)
@@ -299,10 +307,10 @@ To observe client and subscription counts in real-time during a test, you can in
 Run dead code and dependency analysis before opening a pull request:
 
 ```
-npm run knip
+pnpm check:deps
 ```
 
-`npm run lint` now runs Biome.
+`pnpm lint` now runs Biome.
 
 ## Pull Request Process
 
@@ -323,7 +331,7 @@ Every pull request that changes behavior, adds a feature, or fixes a bug **must 
 To add a changeset:
 
 ```bash
-npx changeset
+pnpm exec changeset
 ```
 
 This interactive prompt will ask you to:
@@ -338,7 +346,7 @@ If your PR **only** updates documentation, CI/CD configuration, or test coverage
 production source code untouched — an empty changeset is acceptable:
 
 ```bash
-npx changeset --empty
+pnpm exec changeset --empty
 ```
 
 Commit the generated `.changeset/*.md` file with your PR. This satisfies CI without producing a
@@ -362,6 +370,6 @@ This applies to PRs that exclusively contain:
 Run Biome checks before opening a pull request:
 
 ```
-npm run lint
-npm run format:check
+pnpm lint
+pnpm check:format
 ```
