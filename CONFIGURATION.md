@@ -57,7 +57,7 @@ The following environment variables can be set:
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
-| ALBY_NWC_URL                     | Alby NWC connection URL (`nostr+walletconnect://...`) | |
+| NWC_URL                          | NWC connection URL (`nostr+walletconnect://...`) | |
 
 ## I2P
 
@@ -208,5 +208,5 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
-| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `alby`. |
+| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `nwc`. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |

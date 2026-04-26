@@ -96,7 +96,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
      - Set `payments.enabled` to `true`
      - Set `payments.feeSchedules.admission.enabled` to `true`
      - Set `limits.event.pubkey.minBalance` to the minimum balance in msats required to accept events (i.e. `1000000` to require a balance of `1000` sats)
-   - Choose one of the following payment processors: `zebedee`, `nodeless`, `opennode`, `lnbits`, `lnurl`, `alby`
+   - Choose one of the following payment processors: `zebedee`, `nodeless`, `opennode`, `lnbits`, `lnurl`, `nwc`
 
 2. [ZEBEDEE](https://zebedee.io)
    - Complete the step "Before you begin"
@@ -171,17 +171,17 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
       - Set `lnurl.invoiceURL` to your LNURL (e.g. `https://getalby.com/lnurlp/your-username`)
     - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
 
-7. [Alby Wallet API (NIP-47 / NWC)](https://getalby.com/)
+7. Nostr Wallet Connect (NIP-47 / NWC)
     - Complete the step "Before you begin"
-    - Create an app connection in your wallet and copy the generated NWC URL
-    - Set `ALBY_NWC_URL` environment variable on your `.env` file
+    - Create an app connection in your NWC-compatible wallet and copy the generated NWC URL
+    - Set `NWC_URL` environment variable on your `.env` file
 
       ```
-      ALBY_NWC_URL={NOSTR_WALLET_CONNECT_URL}
+      NWC_URL={NOSTR_WALLET_CONNECT_URL}
       ```
 
     - On your `.nostr/settings.yaml` file make the following changes:
-      - Set `payments.processor` to `alby`
+      - Set `payments.processor` to `nwc`
     - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
 
 8. Ensure payments are required for your public key

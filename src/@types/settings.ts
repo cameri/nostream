@@ -199,7 +199,7 @@ export interface OpenNodePaymentsProcessor {
   callbackBaseURL: string
 }
 
-export interface AlbyPaymentsProcessor {
+export interface NwcPaymentsProcessor {
   invoiceExpirySeconds: number
   replyTimeoutMs: number
 }
@@ -210,7 +210,7 @@ export interface PaymentsProcessors {
   lnbits?: LNbitsPaymentsProcessor
   nodeless?: NodelessPaymentsProcessor
   opennode?: OpenNodePaymentsProcessor
-  alby?: AlbyPaymentsProcessor
+  nwc?: NwcPaymentsProcessor
 }
 
 export interface Local {

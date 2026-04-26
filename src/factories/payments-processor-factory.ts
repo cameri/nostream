@@ -1,8 +1,8 @@
-import { createAlbyNwcPaymentsProcessor } from './payments-processors/alby-nwc-payments-processor-factory'
 import { createLNbitsPaymentProcessor } from './payments-processors/lnbits-payments-processor-factory'
 import { createLnurlPaymentsProcessor } from './payments-processors/lnurl-payments-processor-factory'
 import { createLogger } from './logger-factory'
 import { createNodelessPaymentsProcessor } from './payments-processors/nodeless-payments-processor-factory'
+import { createNwcPaymentsProcessor } from './payments-processors/nwc-payments-processor-factory'
 import { createOpenNodePaymentsProcessor } from './payments-processors/opennode-payments-processor-factory'
 import { createSettings } from './settings-factory'
 import { createZebedeePaymentsProcessor } from './payments-processors/zebedee-payments-processor-factory'
@@ -30,8 +30,8 @@ export const createPaymentsProcessor = (): IPaymentsProcessor => {
       return createNodelessPaymentsProcessor(settings)
     case 'opennode':
       return createOpenNodePaymentsProcessor(settings)
-    case 'alby':
-      return createAlbyNwcPaymentsProcessor(settings)
+    case 'nwc':
+      return createNwcPaymentsProcessor(settings)
     default:
       return new NullPaymentsProcessor()
   }

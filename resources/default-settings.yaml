@@ -35,7 +35,7 @@ paymentsProcessors:
   opennode:
     baseURL: api.opennode.com
     callbackBaseURL: https://nostream.your-domain.com/callbacks/opennode
-  alby:
+  nwc:
     invoiceExpirySeconds: 900
     replyTimeoutMs: 10000
 nip05:

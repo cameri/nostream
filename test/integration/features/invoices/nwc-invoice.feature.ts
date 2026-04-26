@@ -1,4 +1,5 @@
 import WebSocket from 'ws'
+import { setTimeout as sleep } from 'node:timers/promises'
 
 import { After, Given, Then, When, World } from '@cucumber/cucumber'
 import axios, { AxiosResponse } from 'axios'
@@ -21,25 +22,25 @@ const buildNwcUrl = (scheme: string, walletPubkey: string, clientSecret: string)
   return `${scheme}://${walletPubkey}?relay=${encodedRelay}&secret=${clientSecret}`
 }
 
-Given('Alby NWC payments are enabled with URI scheme {string}', async function (this: World<Record<string, any>>, scheme: string) {
+Given('NWC payments are enabled with URI scheme {string}', async function (this: World<Record<string, any>>, scheme: string) {
   const settings = SettingsStatic._settings as any
 
-  this.parameters.previousAlbyNwcSettings = settings
-  this.parameters.previousAlbyNwcUrl = process.env.ALBY_NWC_URL
-  this.parameters.albyNwcUriScheme = scheme
+  this.parameters.previousNwcSettings = settings
+  this.parameters.previousNwcUrl = process.env.NWC_URL
+  this.parameters.nwcUriScheme = scheme
 
   const walletSecret = randomHex()
   const clientSecret = randomHex()
   const clientPubkey = secp256k1.utils.bytesToHex(secp256k1.getPublicKey(clientSecret, true).subarray(1))
   const walletPubkey = secp256k1.utils.bytesToHex(secp256k1.getPublicKey(walletSecret, true).subarray(1))
 
-  this.parameters.albyWalletSecret = walletSecret
-  this.parameters.albyClientSecret = clientSecret
-  this.parameters.albyClientPubkey = clientPubkey
-  this.parameters.albyWalletPubkey = walletPubkey
+  this.parameters.nwcWalletSecret = walletSecret
+  this.parameters.nwcClientSecret = clientSecret
+  this.parameters.nwcClientPubkey = clientPubkey
+  this.parameters.nwcWalletPubkey = walletPubkey
 
   const nwcUrl = buildNwcUrl(scheme, walletPubkey, clientSecret)
-  process.env.ALBY_NWC_URL = nwcUrl
+  process.env.NWC_URL = nwcUrl
 
   const admission = Array.isArray(settings?.payments?.feeSchedules?.admission)
     ? settings.payments.feeSchedules.admission
@@ -50,7 +51,7 @@ Given('Alby NWC payments are enabled with URI scheme {string}', async function (
     payments: {
       ...(settings?.payments ?? {}),
       enabled: true,
-      processor: 'alby',
+      processor: 'nwc',
       feeSchedules: {
         ...(settings?.payments?.feeSchedules ?? {}),
         admission: [
@@ -65,10 +66,10 @@ Given('Alby NWC payments are enabled with URI scheme {string}', async function (
     },
     paymentsProcessors: {
       ...(settings?.paymentsProcessors ?? {}),
-      alby: {
+      nwc: {
         invoiceExpirySeconds: 900,
         replyTimeoutMs: 10000,
-        ...(settings?.paymentsProcessors?.alby ?? {}),
+        ...(settings?.paymentsProcessors?.nwc ?? {}),
       },
     },
   }
@@ -93,33 +94,33 @@ Given('Alby NWC payments are enabled with URI scheme {string}', async function (
 
   await walletService.publishWalletServiceInfoEvent(walletSecret, ['make_invoice', 'lookup_invoice', 'get_info'], [])
 
-  this.parameters.albyWalletService = walletService
-  this.parameters.albyWalletKeypair = keypair
-  this.parameters.albyWalletInvoices = new Map<string, any>()
-  this.parameters.albyInsertedInvoiceIds = []
-  this.parameters.albyTestPubkeys = [walletPubkey, clientPubkey]
+  this.parameters.nwcWalletService = walletService
+  this.parameters.nwcWalletKeypair = keypair
+  this.parameters.nwcWalletInvoices = new Map<string, any>()
+  this.parameters.nwcInsertedInvoiceIds = []
+  this.parameters.nwcTestPubkeys = [walletPubkey, clientPubkey]
 })
 
-Given('Alby NWC reply timeout is set to {int} milliseconds', function (this: World<Record<string, any>>, timeoutMs: number) {
+Given('NWC reply timeout is set to {int} milliseconds', function (this: World<Record<string, any>>, timeoutMs: number) {
   const settings = SettingsStatic._settings as any
   SettingsStatic._settings = {
     ...settings,
     paymentsProcessors: {
       ...(settings?.paymentsProcessors ?? {}),
-      alby: {
-        ...(settings?.paymentsProcessors?.alby ?? {}),
+      nwc: {
+        ...(settings?.paymentsProcessors?.nwc ?? {}),
         replyTimeoutMs: timeoutMs,
       },
     },
   }
 })
 
-Given('Alby NWC wallet service make_invoice responds with a pending invoice', async function (this: World<Record<string, any>>) {
-  const walletService = this.parameters.albyWalletService as nwc.NWCWalletService
-  const keypair = this.parameters.albyWalletKeypair as nwc.NWCWalletServiceKeyPair
-  const invoices = this.parameters.albyWalletInvoices as Map<string, any>
+Given('NWC wallet service make_invoice responds with a pending invoice', async function (this: World<Record<string, any>>) {
+  const walletService = this.parameters.nwcWalletService as nwc.NWCWalletService
+  const keypair = this.parameters.nwcWalletKeypair as nwc.NWCWalletServiceKeyPair
+  const invoices = this.parameters.nwcWalletInvoices as Map<string, any>
 
-  this.parameters.albyWalletUnsubscribe = await walletService.subscribe(keypair, {
+  this.parameters.nwcWalletUnsubscribe = await walletService.subscribe(keypair, {
     async makeInvoice(request) {
       const now = Math.floor(Date.now() / 1000)
       const paymentHash = `ph-${request.amount}-${now}`
@@ -151,9 +152,9 @@ Given('Alby NWC wallet service make_invoice responds with a pending invoice', as
     async getInfo() {
       return {
         result: {
-          alias: 'alby-test-wallet',
+          alias: 'nwc-test-wallet',
           color: '#000000',
-          pubkey: this.parameters.albyWalletPubkey,
+          pubkey: this.parameters.nwcWalletPubkey,
           network: 'regtest',
           block_height: 0,
           block_hash: '00',
@@ -165,13 +166,13 @@ Given('Alby NWC wallet service make_invoice responds with a pending invoice', as
   })
 })
 
-Given('Alby NWC wallet service make_invoice never responds', async function (this: World<Record<string, any>>) {
-  const walletService = this.parameters.albyWalletService as nwc.NWCWalletService
-  const keypair = this.parameters.albyWalletKeypair as nwc.NWCWalletServiceKeyPair
+Given('NWC wallet service make_invoice never responds', async function (this: World<Record<string, any>>) {
+  const walletService = this.parameters.nwcWalletService as nwc.NWCWalletService
+  const keypair = this.parameters.nwcWalletKeypair as nwc.NWCWalletServiceKeyPair
 
-  this.parameters.albyWalletUnsubscribe = await walletService.subscribe(keypair, {
+  this.parameters.nwcWalletUnsubscribe = await walletService.subscribe(keypair, {
     async makeInvoice(request) {
-      await new Promise((resolve) => setTimeout(resolve, 120))
+      await sleep(120, undefined, { ref: false })
       const now = Math.floor(Date.now() / 1000)
       return {
         result: {
@@ -212,8 +213,8 @@ When('I request an admission invoice for pubkey {string}', async function (this:
     },
   )
 
-  this.parameters.albyInvoiceHttpResponse = response
-  this.parameters.albyTestPubkeys = [...(this.parameters.albyTestPubkeys ?? []), pubkey]
+  this.parameters.nwcInvoiceHttpResponse = response
+  this.parameters.nwcTestPubkeys = [...(this.parameters.nwcTestPubkeys ?? []), pubkey]
 
   if (response.status === 400) {
     throw new Error(`Unexpected 400 response body: ${String(response.data)}`)
@@ -221,11 +222,11 @@ When('I request an admission invoice for pubkey {string}', async function (this:
 })
 
 Then('the invoice request response status is {int}', function (this: World<Record<string, any>>, statusCode: number) {
-  const response = this.parameters.albyInvoiceHttpResponse as AxiosResponse
+  const response = this.parameters.nwcInvoiceHttpResponse as AxiosResponse
   expect(response.status).to.equal(statusCode)
 })
 
-Then('an Alby invoice is stored as pending for pubkey {string}', async function (this: World<Record<string, any>>, pubkey: string) {
+Then('an NWC invoice is stored as pending for pubkey {string}', async function (this: World<Record<string, any>>, pubkey: string) {
   const dbClient = getMasterDbClient()
   const row = await dbClient('invoices')
     .where('pubkey', Buffer.from(pubkey, 'hex'))
@@ -237,8 +238,8 @@ Then('an Alby invoice is stored as pending for pubkey {string}', async function 
   expect(row.unit).to.equal('msats')
   expect(row.amount_requested).to.equal(ADMISSION_FEE_MSATS.toString())
 
-  this.parameters.albyInsertedInvoiceIds = [
-    ...(this.parameters.albyInsertedInvoiceIds ?? []),
+  this.parameters.nwcInsertedInvoiceIds = [
+    ...(this.parameters.nwcInsertedInvoiceIds ?? []),
     row.id,
   ]
 })
@@ -250,41 +251,41 @@ Then('no invoice is stored for pubkey {string}', async function (this: World<Rec
     .orderBy('created_at', 'desc')
     .first('id')
 
-  const response = this.parameters.albyInvoiceHttpResponse as AxiosResponse
+  const response = this.parameters.nwcInvoiceHttpResponse as AxiosResponse
   expect(response.status).to.equal(500)
   expect(row).to.equal(undefined)
 
-  await new Promise((resolve) => setTimeout(resolve, 250))
+  await sleep(250, undefined, { ref: false })
 })
 
-After({ tags: '@alby-nwc-invoice' }, async function (this: World<Record<string, any>>) {
-  const unsubscribe = this.parameters.albyWalletUnsubscribe as (() => Promise<void>) | (() => void) | undefined
+After({ tags: '@nwc-invoice' }, async function (this: World<Record<string, any>>) {
+  const unsubscribe = this.parameters.nwcWalletUnsubscribe as (() => Promise<void>) | (() => void) | undefined
   if (typeof unsubscribe === 'function') {
     await unsubscribe()
   }
 
-  const walletService = this.parameters.albyWalletService as nwc.NWCWalletService | undefined
+  const walletService = this.parameters.nwcWalletService as nwc.NWCWalletService | undefined
   if (walletService) {
     walletService.close()
   }
 
-  if (typeof this.parameters.previousAlbyNwcUrl === 'undefined') {
-    delete process.env.ALBY_NWC_URL
+  if (typeof this.parameters.previousNwcUrl === 'undefined') {
+    delete process.env.NWC_URL
   } else {
-    process.env.ALBY_NWC_URL = this.parameters.previousAlbyNwcUrl
+    process.env.NWC_URL = this.parameters.previousNwcUrl
   }
 
-  if (this.parameters.previousAlbyNwcSettings) {
-    SettingsStatic._settings = this.parameters.previousAlbyNwcSettings
+  if (this.parameters.previousNwcSettings) {
+    SettingsStatic._settings = this.parameters.previousNwcSettings
   }
 
   const dbClient = getMasterDbClient()
-  const insertedInvoiceIds = this.parameters.albyInsertedInvoiceIds ?? []
+  const insertedInvoiceIds = this.parameters.nwcInsertedInvoiceIds ?? []
   if (insertedInvoiceIds.length > 0) {
     await dbClient('invoices').whereIn('id', insertedInvoiceIds).delete()
   }
 
-  const testPubkeys = this.parameters.albyTestPubkeys ?? []
+  const testPubkeys = this.parameters.nwcTestPubkeys ?? []
   if (testPubkeys.length > 0) {
     await dbClient('users')
       .whereIn(
@@ -294,18 +295,18 @@ After({ tags: '@alby-nwc-invoice' }, async function (this: World<Record<string, 
       .delete()
   }
 
-  this.parameters.albyWalletUnsubscribe = undefined
-  this.parameters.albyWalletService = undefined
-  this.parameters.albyWalletKeypair = undefined
-  this.parameters.albyWalletInvoices = undefined
-  this.parameters.albyInvoiceHttpResponse = undefined
-  this.parameters.albyInsertedInvoiceIds = []
-  this.parameters.albyTestPubkeys = []
-  this.parameters.previousAlbyNwcUrl = undefined
-  this.parameters.previousAlbyNwcSettings = undefined
-  this.parameters.albyWalletPubkey = undefined
-  this.parameters.albyClientPubkey = undefined
-  this.parameters.albyWalletSecret = undefined
-  this.parameters.albyClientSecret = undefined
-  this.parameters.albyNwcUriScheme = undefined
+  this.parameters.nwcWalletUnsubscribe = undefined
+  this.parameters.nwcWalletService = undefined
+  this.parameters.nwcWalletKeypair = undefined
+  this.parameters.nwcWalletInvoices = undefined
+  this.parameters.nwcInvoiceHttpResponse = undefined
+  this.parameters.nwcInsertedInvoiceIds = []
+  this.parameters.nwcTestPubkeys = []
+  this.parameters.previousNwcUrl = undefined
+  this.parameters.previousNwcSettings = undefined
+  this.parameters.nwcWalletPubkey = undefined
+  this.parameters.nwcClientPubkey = undefined
+  this.parameters.nwcWalletSecret = undefined
+  this.parameters.nwcClientSecret = undefined
+  this.parameters.nwcUriScheme = undefined
 })

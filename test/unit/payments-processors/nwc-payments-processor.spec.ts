@@ -8,19 +8,18 @@ chai.use(chaiAsPromised)
 const { expect } = chai
 
 import { nwc } from '@getalby/sdk'
-import { AlbyNwcPaymentsProcessor } from '../../../src/payments-processors/alby-nwc-payments-processor'
+import { NwcPaymentsProcessor } from '../../../src/payments-processors/nwc-payments-processor'
 import { InvoiceStatus } from '../../../src/@types/invoice'
 
-describe('AlbyNwcPaymentsProcessor', () => {
+describe('NwcPaymentsProcessor', () => {
   let sandbox: sinon.SinonSandbox
   let makeInvoiceStub: sinon.SinonStub
   let lookupInvoiceStub: sinon.SinonStub
   let closeStub: sinon.SinonStub
-  let clock: sinon.SinonFakeTimers
 
   const settings = () => ({
     paymentsProcessors: {
-      alby: {
+      nwc: {
         invoiceExpirySeconds: 900,
         replyTimeoutMs: 10_000,
       },
@@ -29,7 +28,6 @@ describe('AlbyNwcPaymentsProcessor', () => {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox()
-    clock = sinon.useFakeTimers()
     makeInvoiceStub = sandbox.stub()
     lookupInvoiceStub = sandbox.stub()
     closeStub = sandbox.stub()
@@ -44,7 +42,6 @@ describe('AlbyNwcPaymentsProcessor', () => {
   })
 
   afterEach(() => {
-    clock.restore()
     sandbox.restore()
   })
 
@@ -59,7 +56,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
       expires_at: 1710000900,
     })
 
-    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
 
     const result = await processor.createInvoice({
       amount: 21000n,
@@ -87,7 +84,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
       expires_at: 1710000900,
     })
 
-    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
 
     const result = await processor.getInvoice('payment-hash-2')
 
@@ -105,7 +102,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
       expires_at: 1710000900,
     })
 
-    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
 
     const result = await processor.getInvoice('payment-hash-3')
 
@@ -120,7 +117,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
       expires_at: 1710000900,
     })
 
-    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
 
     const result = await processor.getInvoice('payment-hash-4')
 
@@ -130,7 +127,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
   it('rethrows SDK errors and still closes client', async () => {
     makeInvoiceStub.rejects(new Error('wallet unavailable'))
 
-    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
 
     await expect(
       processor.createInvoice({ amount: 1n, description: 'x', requestId: 'p' })
@@ -142,7 +139,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
   it('applies configured replyTimeoutMs to makeInvoice requests', async () => {
     makeInvoiceStub.returns(new Promise(() => {}))
 
-    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 50, settings)
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 5, settings)
 
     const pending = processor.createInvoice({
       amount: 1000n,
@@ -150,10 +147,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
       requestId: 'pubkey-timeout',
     })
 
-    await clock.tickAsync(51)
-    await clock.tickAsync(151)
-
-    await expect(pending).to.be.rejectedWith('reply timeout after 50ms')
+    await expect(pending).to.be.rejectedWith('reply timeout after 5ms')
     expect(closeStub).to.have.been.calledOnce
   })
 
@@ -168,7 +162,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
       expires_at: 1710000300,
     })
 
-    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
 
     const result = await processor.createInvoice({
       amount: 1000n,
@@ -184,9 +178,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
     expect(result.expiresAt?.toISOString()).to.equal('2024-03-09T16:05:00.000Z')
   })
 
-  it('clears timeout timer when operation succeeds before timeout', async () => {
-    const clearTimeoutSpy = sandbox.spy(global, 'clearTimeout')
-
+  it('does not wait for the reply timeout when operation succeeds first', async () => {
     makeInvoiceStub.resolves({
       payment_hash: 'payment-hash-fast',
       invoice: 'lnbc1fast',
@@ -197,7 +189,7 @@ describe('AlbyNwcPaymentsProcessor', () => {
       expires_at: 1710000300,
     })
 
-    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
 
     await processor.createInvoice({
       amount: 1000n,
@@ -205,11 +197,11 @@ describe('AlbyNwcPaymentsProcessor', () => {
       requestId: 'pubkey-fast',
     })
 
-    expect(clearTimeoutSpy.called).to.equal(true)
+    expect(closeStub).to.have.been.calledOnce
   })
 
   it('throws when createInvoice amount exceeds Number.MAX_SAFE_INTEGER', async () => {
-    const processor = new AlbyNwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
 
     await expect(
       processor.createInvoice({

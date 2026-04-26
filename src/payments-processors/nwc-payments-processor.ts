@@ -1,4 +1,5 @@
 import { nwc } from '@getalby/sdk'
+import { setTimeout as sleep } from 'node:timers/promises'
 
 import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
 import { Factory } from '../@types/base'
@@ -6,7 +7,7 @@ import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 
-const debug = createLogger('alby-nwc-payments-processor')
+const logger = createLogger('nwc-payments-processor')
 
 type NwcTransaction = {
   state?: 'settled' | 'pending' | 'expired' | 'failed' | 'accepted'
@@ -58,7 +59,7 @@ const toSafeNumber = (value: bigint, fieldName: string): number => {
   return asNumber
 }
 
-export class AlbyNwcInvoice implements Invoice {
+export class NwcInvoice implements Invoice {
   id: string
   pubkey: string
   bolt11: string
@@ -73,7 +74,7 @@ export class AlbyNwcInvoice implements Invoice {
   createdAt: Date
 }
 
-export class AlbyNwcCreateInvoiceResponse implements CreateInvoiceResponse {
+export class NwcCreateInvoiceResponse implements CreateInvoiceResponse {
   id: string
   pubkey: string
   bolt11: string
@@ -87,7 +88,7 @@ export class AlbyNwcCreateInvoiceResponse implements CreateInvoiceResponse {
   rawResponse?: string
 }
 
-export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
+export class NwcPaymentsProcessor implements IPaymentsProcessor {
   public constructor(
     private nwcUrl: string,
     private replyTimeoutMs: number,
@@ -95,21 +96,26 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
   ) {}
 
   private withReplyTimeout = async <T>(operation: Promise<T>): Promise<T> => {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const controller = new AbortController()
+    const timeout = sleep(this.replyTimeoutMs, undefined, {
+      ref: false,
+      signal: controller.signal,
+    })
+      .then(() => {
+        throw new nwc.Nip47ReplyTimeoutError(`reply timeout after ${this.replyTimeoutMs}ms`, 'INTERNAL')
+      })
+      .catch((error) => {
+        if ((error as Error).name === 'AbortError') {
+          return undefined as never
+        }
+
+        throw error
+      })
 
     try {
-      return await Promise.race([
-        operation,
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => {
-            reject(new nwc.Nip47ReplyTimeoutError(`reply timeout after ${this.replyTimeoutMs}ms`, 'INTERNAL'))
-          }, this.replyTimeoutMs)
-        }),
-      ])
+      return await Promise.race([operation, timeout])
     } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-      }
+      controller.abort()
     }
   }
 
@@ -124,7 +130,8 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
       throw error
     } finally {
       if (caughtError instanceof nwc.Nip47ReplyTimeoutError) {
-        await new Promise((resolve) => setTimeout(resolve, this.replyTimeoutMs + 100))
+        // The SDK can still emit a late response; this wait must not keep the process alive.
+        await sleep(this.replyTimeoutMs + 100, undefined, { ref: false })
       }
       client.close()
     }
@@ -132,7 +139,7 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
 
   public async getInvoice(invoiceOrId: string | Invoice): Promise<GetInvoiceResponse> {
     const invoiceId = typeof invoiceOrId === 'string' ? invoiceOrId : invoiceOrId.id
-    debug('get invoice: %s', invoiceId)
+    logger('get invoice: %s', invoiceId)
 
     try {
       return await this.withClient(async (client) => {
@@ -182,21 +189,21 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
       })
     } catch (error) {
       if (error instanceof nwc.Nip47WalletError || error instanceof nwc.Nip47ReplyTimeoutError) {
-        debug('Unable to get Alby NWC invoice %s. Reason: %s', invoiceId, error.message)
+        logger('Unable to get NWC invoice %s. Reason: %s', invoiceId, error.message)
       } else {
-        debug('Unable to get Alby NWC invoice %s. Reason: %o', invoiceId, error)
+        logger('Unable to get NWC invoice %s. Reason: %o', invoiceId, error)
       }
       throw error
     }
   }
 
   public async createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse> {
-    debug('create invoice: %o', request)
+    logger('create invoice: %o', request)
     const { amount: amountMsats, description, requestId: pubkey } = request
 
     try {
       return await this.withClient(async (client) => {
-        const expirySeconds = this.settings().paymentsProcessors?.alby?.invoiceExpirySeconds
+        const expirySeconds = this.settings().paymentsProcessors?.nwc?.invoiceExpirySeconds
         const amount = toSafeNumber(amountMsats, 'CreateInvoiceRequest.amount')
         const transaction = (await this.withReplyTimeout(
           client.makeInvoice({
@@ -206,7 +213,7 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
           }),
         )) as NwcTransaction
 
-        const invoice = new AlbyNwcCreateInvoiceResponse()
+        const invoice = new NwcCreateInvoiceResponse()
         invoice.id = transaction.payment_hash || ''
         invoice.pubkey = pubkey
         invoice.bolt11 = transaction.invoice || ''
@@ -226,9 +233,9 @@ export class AlbyNwcPaymentsProcessor implements IPaymentsProcessor {
       })
     } catch (error) {
       if (error instanceof nwc.Nip47WalletError || error instanceof nwc.Nip47ReplyTimeoutError) {
-        debug('Unable to request Alby NWC invoice. Reason: %s', error.message)
+        logger('Unable to request NWC invoice. Reason: %s', error.message)
       } else {
-        debug('Unable to request Alby NWC invoice. Reason: %o', error)
+        logger('Unable to request NWC invoice. Reason: %o', error)
       }
       throw error
     }
