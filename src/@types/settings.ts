@@ -8,7 +8,11 @@ export interface Info {
   name: string
   description: string
   pubkey: string
+  banner?: string
+  icon?: string
+  self?: string
   contact: string
+  terms_of_service?: string
 }
 
 export interface Network {
@@ -237,6 +241,10 @@ export interface Mirroring {
 
 export type Nip05Mode = 'enabled' | 'passive' | 'disabled'
 
+export interface Nip45Settings {
+  enabled?: boolean
+}
+
 export interface Nip05Settings {
   mode: Nip05Mode
   /**
@@ -267,4 +275,5 @@ export interface Settings {
   limits?: Limits
   mirroring?: Mirroring
   nip05?: Nip05Settings
+  nip45?: Nip45Settings
 }

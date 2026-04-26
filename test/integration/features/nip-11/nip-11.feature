@@ -9,6 +9,14 @@ Feature: NIP-11
     When a client requests the relay information document
     Then the supported_nips field matches the NIPs declared in package.json
 
+  Scenario: Relay information response includes required CORS headers
+    When a client requests the relay information document
+    Then the relay information response includes required NIP-11 CORS headers
+
+  Scenario: Relay information document includes NIP-11 limitation parity fields
+    When a client requests the relay information document
+    Then the limitation object contains NIP-11 parity fields and values
+
   Scenario: Relay does not return information document for a non-NIP-11 Accept header
     When a client requests the root path with Accept header "text/html"
     Then the response Content-Type does not include "application/nostr+json"
