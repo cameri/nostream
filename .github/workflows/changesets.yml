@@ -21,20 +21,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v3
         with:
           node-version-file: .nvmrc
-          cache: npm
+          cache: pnpm
 
       - name: Install package dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Create Release Pull Request or Publish
+      - run: git config user.name "github-actions[bot]"
+      - run: git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create Release Pull Request
         uses: changesets/action@v1
         with:
-          version: npm run changeset:version
-          publish: npm run changeset:tag
+          version: pnpm run changeset:version
           createGithubReleases: true
-          title: "chore(release): version packages"
+          title: "chore: release new version 🚀"
+          commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}

@@ -44,7 +44,7 @@ describe('parseCliArgs (import-events)', () => {
   })
 
   it('throws when input file path is missing', () => {
-    expect(() => parseCliArgs([])).to.throw('Missing input file path')
+    expect(() => parseCliArgs([])).to.throw('Missing path to .jsonl or .json file')
   })
 
   it('throws on unknown options including short options', () => {

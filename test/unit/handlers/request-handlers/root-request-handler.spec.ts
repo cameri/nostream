@@ -11,6 +11,7 @@ import {
   hasExplicitNostrJsonAcceptHeader,
   rootRequestHandler,
 } from '../../../../src/handlers/request-handlers/root-request-handler'
+import { DEFAULT_FILTER_LIMIT } from '../../../../src/constants/base'
 
 const baseSettings = {
   info: {
@@ -103,6 +104,14 @@ describe('rootRequestHandler', () => {
       expect(res.status).to.have.been.calledWith(200)
     })
 
+    it('sets required NIP-11 CORS headers', () => {
+      rootRequestHandler(req, res, next)
+
+      expect(res.setHeader).to.have.been.calledWith('access-control-allow-origin', '*')
+      expect(res.setHeader).to.have.been.calledWith('access-control-allow-headers', '*')
+      expect(res.setHeader).to.have.been.calledWith('access-control-allow-methods', 'GET, OPTIONS')
+    })
+
     it('includes the relay name in the response', () => {
       rootRequestHandler(req, res, next)
 
@@ -126,6 +135,75 @@ describe('rootRequestHandler', () => {
 
       const doc = res.send.firstCall.args[0]
       expect(doc.payments_url).to.equal('https://relay.example.com/nostream/invoices')
+    })
+
+    
+    it('includes optional NIP-11 fields when configured', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        info: {
+          ...baseSettings.info,
+          banner: 'https://relay.example.com/banner.png',
+          icon: 'https://relay.example.com/icon.png',
+          self: 'f'.repeat(64),
+          terms_of_service: 'https://relay.example.com/terms',
+        },
+      })
+
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.banner).to.equal('https://relay.example.com/banner.png')
+      expect(doc.icon).to.equal('https://relay.example.com/icon.png')
+      expect(doc.self).to.equal('f'.repeat(64))
+      expect(doc.terms_of_service).to.equal('https://relay.example.com/terms')
+    })
+
+    it('does not include optional NIP-11 fields when not configured', () => {
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc).to.not.have.property('banner')
+      expect(doc).to.not.have.property('icon')
+      expect(doc).to.not.have.property('self')
+      expect(doc).to.not.have.property('terms_of_service')
+    })
+
+    it('includes NIP-11 limitation created_at and default_limit fields', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: {
+            ...baseSettings.limits.event,
+            createdAt: {
+              maxNegativeDelta: 86400,
+              maxPositiveDelta: 300,
+            },
+          },
+        },
+      })
+
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.limitation.created_at_lower_limit).to.equal(86400)
+      expect(doc.limitation.created_at_upper_limit).to.equal(300)
+      expect(doc.limitation.default_limit).to.equal(DEFAULT_FILTER_LIMIT)
+    })
+
+    it('sets limitation.restricted_writes based on active write restrictions', () => {
+      rootRequestHandler(req, res, next)
+      const defaultDoc = res.send.firstCall.args[0]
+      expect(defaultDoc.limitation.restricted_writes).to.equal(false)
+
+      res.send.resetHistory()
+      createSettingsStub.returns(settingsWithFee)
+
+      rootRequestHandler(req, res, next)
+
+      const restrictedDoc = res.send.firstCall.args[0]
+      expect(restrictedDoc.limitation.restricted_writes).to.equal(true)
     })
   })
 

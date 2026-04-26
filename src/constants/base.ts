@@ -46,6 +46,8 @@ export enum EventTags {
   Event = 'e',
   Pubkey = 'p',
   Relay = 'r',
+  // NIP-14: Subject for text notes
+  Subject = 'subject',
   //  Multicast = 'm',
   Deduplication = 'd',
   Expiration = 'expiration',
@@ -55,6 +57,7 @@ export enum EventTags {
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'
+export const DEFAULT_FILTER_LIMIT = 500
 
 export enum PaymentsProcessors {
   LNURL = 'lnurl',

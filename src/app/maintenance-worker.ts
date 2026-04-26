@@ -12,6 +12,7 @@ import { createLogger } from '../factories/logger-factory'
 import { delayMs } from '../utils/misc'
 import { INip05VerificationRepository } from '../@types/repositories'
 import { InvoiceStatus } from '../@types/invoice'
+import { isExpiredInvoice } from '../utils/invoice'
 import { Nip05Verification } from '../@types/nip05'
 import { Settings } from '../@types/settings'
 
@@ -20,6 +21,9 @@ const NIP05_REVERIFICATION_BATCH_SIZE = 50
 const CLEAR_OLD_EVENTS_TIMEOUT_MS = 5000
 
 const logger = createLogger('maintenance-worker')
+
+const isNotFoundError = (error: unknown): boolean =>
+  (error as any)?.response?.status === 404
 
 /**
  * Merge a re-verification outcome onto an existing verification row.
@@ -168,6 +172,16 @@ export class MaintenanceWorker implements IRunnable {
         }
         successful++
       } catch (error) {
+        if (isNotFoundError(error) && isExpiredInvoice(invoice)) {
+          logger('marking expired invoice %s after payment processor returned 404', invoice.id)
+          await this.paymentsService.updateInvoiceStatus({
+            id: invoice.id,
+            status: InvoiceStatus.EXPIRED,
+          })
+          successful++
+          continue
+        }
+
         logger.error('Unable to update invoice from payment processor. Reason:', error)
       }
 

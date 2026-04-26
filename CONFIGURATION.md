@@ -57,6 +57,7 @@ The following environment variables can be set:
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
+| NWC_URL                          | NWC connection URL (`nostr+walletconnect://...`) | |
 
 ## I2P
 
@@ -73,8 +74,7 @@ Tunnel keys are persisted at `.nostr/i2p/data/` so the `.b32.i2p` address surviv
 
 The i2pd web console (tunnel status, `.b32.i2p` destinations) is published to the host on **`127.0.0.1:7070`** only. Remove the `ports:` mapping in `docker-compose.i2p.yml` to disable host-side access.
 
-- Start with I2P: `./scripts/start_with_i2p`
-- Print hostname hints: `./scripts/print_i2p_hostname`
+- Start with I2P: `nostream start --i2p`
 
 If you've set READ_REPLICAS to 4, you should configure RR0_ through RR3_.
 
@@ -87,15 +87,15 @@ The schema ships with a small, query-driven set of indexes. The most important o
 | `events_active_pubkey_kind_created_at_idx`   | `REQ` with `authors`+`kinds` ordered by `created_at DESC, event_id ASC`; `hasActiveRequestToVanish`; by-pubkey deletes. Composite key `(event_pubkey, event_kind, event_created_at DESC, event_id)` so the ORDER BY tie-breaker is satisfied from the index without a sort step. |
 | `events_deleted_at_partial_idx`              | Retention purge over soft-deleted rows. Partial on `deleted_at IS NOT NULL`.                             |
 | `invoices_pending_created_at_idx`            | `findPendingInvoices` poll (`ORDER BY created_at ASC`). Partial on `status = 'pending'`.                  |
-| `event_tags (tag_name, tag_value)`           | NIP-01 generic tag filters (`#e`, `#p`, …) via the normalized `event_tags` table.                         |
+| `event_tags (tag_name, tag_value)`           | NIP-01 generic tag filters (`#e`, `#p`, `#K`, `#I`, …) via the normalized `event_tags` table. Both lowercase and uppercase single-letter tag filters are supported. |
 | `events_event_created_at_index`              | Time-range scans (`since` / `until`).                                                                    |
 | `events_event_kind_index`                    | Kind-only filters and purge kind-whitelist logic.                                                        |
 
 Run the read-only benchmark against your own database to confirm the planner is using the expected indexes and to record baseline latencies:
 
 ```sh
-npm run db:benchmark
-npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+pnpm db:benchmark
+pnpm db:benchmark --runs 5 --kind 1 --limit 500
 ```
 
 The `db:benchmark` script loads the local `.env` file automatically (via `node --env-file-if-exists=.env`), using the same `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` variables as the relay. The benchmark issues only `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements — it never writes. Flags: `--runs <n>` (default 3), `--kind <n>` (default 1 / `TEXT_NOTE`; pass `0` for SET_METADATA), `--limit <n>` (default 500), `--horizon-days <n>` (default 7), `--help`.
@@ -103,10 +103,21 @@ The `db:benchmark` script loads the local `.env` file automatically (via `node -
 For a full before/after proof of the index impact (seeds a throwaway dataset, drops and recreates the indexes, and prints a BEFORE/AFTER table), use:
 
 ```sh
-npm run db:verify-index-impact
+pnpm db:verify-index-impact
 ```
 
 The hot-path index migration (`20260420_120000_add_hot_path_indexes.js`) uses `CREATE INDEX CONCURRENTLY`, so it can be applied to a running relay without taking `ACCESS EXCLUSIVE` locks on the `events` or `invoices` tables.
+
+## Tag filter scope
+
+Subscription filters support single-letter tag filters using the `#<letter>` key syntax (NIP-01). Both lowercase (`#a`–`#z`) and uppercase (`#A`–`#Z`) variants are accepted.
+
+| Scope | Examples | Usage |
+|-------|---------|-------|
+| Lowercase (`#a`–`#z`) | `#e`, `#p`, `#a`, `#k` | Standard NIP-01 tag queries; parent-level references in NIP-22 comment threading |
+| Uppercase (`#A`–`#Z`) | `#E`, `#P`, `#A`, `#K`, `#I` | Root-level references in NIP-22 comment threading and other NIPs that use uppercase to distinguish root vs. parent scope |
+
+**NIP-22 comment threading (kind 1111):** NIP-22 comment events use lowercase tags (`#e`, `#a`, `#i`, `#k`) to reference the immediate parent and uppercase tags (`#E`, `#A`, `#I`, `#K`) to reference the root item. Filters must therefore accept both cases to allow clients to query the full comment thread hierarchy. For example, to find all comments on a root event: `{"kinds":[1111],"#E":["<root-event-id>"]}`, or to find comments of a specific root kind: `{"kinds":[1111],"#K":["1"]}`.
 
 # Settings
 
@@ -116,11 +127,15 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 
 | Name                                        | Description                                                                   |
 |---------------------------------------------|-------------------------------------------------------------------------------|
+| info.banner                                 | Public banner image URL for the relay information document. |
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
 | info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
+| info.icon                                   | Public icon image URL for the relay information document. |
 | info.name                                   | Public name of your relay. (e.g. TBG's Public Relay) |
 | info.pubkey                                 | Relay operator's Nostr pubkey in hex format. |
 | info.relay_url                              | Public-facing URL of your relay. (e.g. wss://relay.your-domain.com) |
+| info.self                                   | Relay pubkey in hex format for the relay information document `self` field. |
+| info.terms_of_service                       | Public URL to relay terms of service. |
 | limits.admissionCheck.ipWhitelist           | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.admissionCheck.rateLimits[].period   | Rate limit period in milliseconds. |
 | limits.admissionCheck.rateLimits[].rate     | Maximum number of admission checks during period. |
@@ -163,6 +178,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
+| nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
@@ -207,5 +223,5 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
-| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `nwc`. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |

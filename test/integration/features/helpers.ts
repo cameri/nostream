@@ -99,19 +99,14 @@ export async function waitForEOSE(ws: WebSocket, subscription: string): Promise<
   })
 }
 
-export async function sendEvent(ws: WebSocket, event: Event, successful = true) {
-  return new Promise<OutgoingMessage>((resolve, reject) => {
+export async function publishEvent(ws: WebSocket, event: Event): Promise<CommandResult> {
+  return new Promise<CommandResult>((resolve, reject) => {
     const observable = streams.get(ws) as Observable<OutgoingMessage>
 
     const sub = observable.subscribe((message: OutgoingMessage) => {
       if (message[0] === MessageType.OK && message[1] === event.id) {
-        if (message[2] === successful) {
-          sub.unsubscribe()
-          resolve(message)
-        } else {
-          sub.unsubscribe()
-          reject(new Error(message[3]))
-        }
+        sub.unsubscribe()
+        resolve(message)
       } else if (message[0] === MessageType.NOTICE) {
         sub.unsubscribe()
         reject(new Error(message[1]))
@@ -125,6 +120,16 @@ export async function sendEvent(ws: WebSocket, event: Event, successful = true) 
       }
     })
   })
+}
+
+export async function sendEvent(ws: WebSocket, event: Event, successful = true) {
+  const result = await publishEvent(ws, event)
+
+  if (result[2] !== successful) {
+    throw new Error(result[3])
+  }
+
+  return result
 }
 
 export async function waitForNextEvent(ws: WebSocket, subscription: string, content?: string): Promise<Event> {

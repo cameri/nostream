@@ -1,4 +1,4 @@
-import express from 'express'
+import express, { Router } from 'express'
 
 import { nodeinfo21Handler, nodeinfoHandler } from '../handlers/request-handlers/nodeinfo-handler'
 import admissionRouter from './admissions'
@@ -10,7 +10,7 @@ import invoiceRouter from './invoices'
 import { rateLimiterMiddleware } from '../handlers/request-handlers/rate-limiter-middleware'
 import { hasExplicitNostrJsonAcceptHeader, rootRequestHandler } from '../handlers/request-handlers/root-request-handler'
 
-const router = express.Router()
+const router: Router = express.Router()
 
 router.use((req, res, next) => {
   if (req.method === 'GET' && req.path === '/' && hasExplicitNostrJsonAcceptHeader(req)) {
