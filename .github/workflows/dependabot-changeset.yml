@@ -21,8 +21,8 @@ jobs:
       - name: Check for existing changeset
         id: check
         run: |
-          count=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' 2>/dev/null | wc -l)
-          if [ "$count" -gt 0 ]; then
+          filename=".changeset/dependabot-pr-${{ github.event.pull_request.number }}.md"
+          if [ -f "$filename" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
