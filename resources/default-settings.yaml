@@ -39,6 +39,9 @@ paymentsProcessors:
   opennode:
     baseURL: api.opennode.com
     callbackBaseURL: https://nostream.your-domain.com/callbacks/opennode
+  nwc:
+    invoiceExpirySeconds: 900
+    replyTimeoutMs: 10000
 nip05:
   # NIP-05 verification of event authors as a spam reduction measure.
   # mode: 'enabled' requires NIP-05 for publishing (except kind 0),
