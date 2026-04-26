@@ -1,9 +1,14 @@
+ARG PNPM_VERSION=10.33.0
+
 FROM node:24-alpine
+
+ARG PNPM_VERSION
 
 WORKDIR /code
 
-COPY ["package.json", "package-lock.json", "./"]
+COPY ["package.json", "pnpm-lock.yaml", "./"]
 
-RUN npm install --quiet
+RUN corepack enable && corepack prepare pnpm@$PNPM_VERSION --activate && pnpm install --frozen-lockfile --silent
 
 CMD ["true"]
+
