@@ -383,6 +383,18 @@ describe('EventRepository', () => {
           )
         })
       })
+
+      describe('#d', () => {
+        it('selects events by empty #d tag value', () => {
+          const filters = [{ '#d': [''] }]
+
+          const query = repository.findByFilters(filters).toString()
+
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'d\' AND event_tags.tag_value = \'\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
+        })
+      })
     })
 
     describe('2 filters', () => {
