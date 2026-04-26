@@ -22,24 +22,25 @@ const redactRedisUrlCredentials = (url: string): string => {
 }
 
 export const getCacheConfig = (): RedisClientOptions => {
+  const password = process.env.REDIS_PASSWORD
+
   if (process.env.REDIS_URI) {
     return {
       url: process.env.REDIS_URI,
-      ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
+      ...(password ? { password } : {}),
     }
   }
 
-  const hasPassword = Boolean(process.env.REDIS_PASSWORD)
   const host = process.env.REDIS_HOST
   const port = process.env.REDIS_PORT
 
-  if (hasPassword) {
+  if (password) {
     const username = process.env.REDIS_USER ?? 'default'
 
     return {
       url: `redis://${host}:${port}`,
       username,
-      password: process.env.REDIS_PASSWORD,
+      password,
     }
   }
 
