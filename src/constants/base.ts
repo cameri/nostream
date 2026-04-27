@@ -30,10 +30,10 @@ export enum EventKinds {
   // Lightning zaps
   ZAP_REQUEST = 9734,
   ZAP_RECEIPT = 9735,
-  // NIP-65: Relay List Metadata
-  RELAY_LIST = 10002,
   // Replaceable events
   REPLACEABLE_FIRST = 10000,
+  // NIP-65: Relay List Metadata
+  RELAY_LIST = 10002,
   REPLACEABLE_LAST = 19999,
   // Ephemeral events
   EPHEMERAL_FIRST = 20000,

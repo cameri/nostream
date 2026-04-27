@@ -1,10 +1,5 @@
-import { Event } from '../@types/event'
+import { Event, RelayListEntry } from '../@types/event'
 import { EventKinds, EventTags } from '../constants/base'
-
-export type RelayListEntry = {
-  url: string
-  marker?: 'read' | 'write'
-}
 
 export const isRelayListEvent = (event: Event): boolean => event.kind === EventKinds.RELAY_LIST
 
