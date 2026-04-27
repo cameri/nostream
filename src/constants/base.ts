@@ -11,6 +11,8 @@ export enum EventKinds {
   SEAL = 13,
   DIRECT_MESSAGE = 14,
   FILE_MESSAGE = 15,
+  // NIP-25: External content reaction
+  EXTERNAL_CONTENT_REACTION = 17,
   REQUEST_TO_VANISH = 62,
   // Channels
   CHANNEL_CREATION = 40,
@@ -56,6 +58,10 @@ export enum EventTags {
   Invoice = 'bolt11',
   // NIP-03: target event kind on an OpenTimestamps attestation
   Kind = 'k',
+  // NIP-25: Reactions
+  Address = 'a',
+  Index = 'i',
+  Emoji = 'emoji',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'

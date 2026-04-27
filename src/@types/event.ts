@@ -54,6 +54,14 @@ export type RelayListEntry = {
   marker?: 'read' | 'write'
 }
 
+export type ReactionEntry = {
+  targetEventId?: string
+  targetPubkey?: string
+  targetAddress?: string
+  targetKind?: number
+  content: string
+}
+
 export interface CanonicalEvent {
   0: 0
   1: string
