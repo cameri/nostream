@@ -58,6 +58,11 @@ const groupByLengthSpec = groupBy<string, 'exact' | 'even' | 'odd'>(
 
 const logger = createLogger('event-repository')
 
+const isGeohashPrefixCriterion = (filterName: string, criterion: string): boolean =>
+  filterName === '#g' && criterion.endsWith('*')
+
+const stripGeohashPrefixWildcard = (criterion: string): string => criterion.slice(0, -1)
+
 export class EventRepository implements IEventRepository {
   public constructor(
     private readonly masterDbClient: DatabaseClient,
@@ -193,8 +198,21 @@ export class EventRepository implements IEventRepository {
             isEmpty,
             () => andWhereRaw('1 = 0', bd),
             forEach(
-              (criterion: string) =>
-                void orWhereRaw('event_tags.tag_name = ? AND event_tags.tag_value = ?', [filterName[1], criterion], bd),
+              (criterion: string) => {
+                if (isGeohashPrefixCriterion(filterName, criterion)) {
+                  return void orWhereRaw(
+                    'event_tags.tag_name = ? AND event_tags.tag_value LIKE ?',
+                    [filterName[1], `${stripGeohashPrefixWildcard(criterion)}%`],
+                    bd,
+                  )
+                }
+
+                return void orWhereRaw(
+                  'event_tags.tag_name = ? AND event_tags.tag_value = ?',
+                  [filterName[1], criterion],
+                  bd,
+                )
+              },
             ),
           )(criteria)
         })

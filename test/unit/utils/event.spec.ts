@@ -302,6 +302,33 @@ describe('NIP-12', () => {
       expect(isEventMatchingFilter({ '#r': ['something else'] })(event)).to.be.false
     })
   })
+
+  describe('#g filter', () => {
+    beforeEach(() => {
+      event = {
+        id: 'cf8de9db67a1d7203512d1d81e6190f5e53abfdc0ac90275f67172b65a5b09a0',
+        pubkey: 'e8b487c079b0f67c695ae6c4c2552a47f38adfa2533cc5926bd2c102942fdcb7',
+        created_at: 1645030752,
+        kind: 1,
+        tags: [['g', 'u4pruydqqvj']],
+        content: 'g',
+        sig: '53d12018d036092794366283eca36df4e0cabd014b6e91bbf684c8bb9bbbe9dedafa77b6b928587e11e05e036227598dded8713e8da17d55076e12242b361542',
+      }
+    })
+
+    it('returns true if #g filter contains a matching geohash prefix wildcard', () => {
+      expect(isEventMatchingFilter({ '#g': ['u4pruyd*'] })(event)).to.be.true
+    })
+
+    it('returns false if #g filter contains a non-matching geohash prefix wildcard', () => {
+      expect(isEventMatchingFilter({ '#g': ['u4pruz*'] })(event)).to.be.false
+    })
+
+    it('keeps #g filter exact when criterion has no wildcard', () => {
+      expect(isEventMatchingFilter({ '#g': ['u4pruyd'] })(event)).to.be.false
+      expect(isEventMatchingFilter({ '#g': ['u4pruydqqvj'] })(event)).to.be.true
+    })
+  })
 })
 
 describe('NIP-16', () => {
