@@ -42,4 +42,34 @@ export const eventSchema = z
         }
       })
     }
+
+    if (event.kind === EventKinds.REACTION) {
+      const hasETag = event.tags.some((tag) => tag[0] === EventTags.Event)
+      if (!hasETag) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Reaction event must have at least one e tag',
+          path: ['tags'],
+        })
+      }
+    }
+
+    if (event.kind === EventKinds.EXTERNAL_CONTENT_REACTION) {
+      const hasKTag = event.tags.some((tag) => tag[0] === EventTags.Kind)
+      const hasITag = event.tags.some((tag) => tag[0] === EventTags.Index)
+      if (!hasKTag) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'External content reaction must have a k tag',
+          path: ['tags'],
+        })
+      }
+      if (!hasITag) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'External content reaction must have an i tag',
+          path: ['tags'],
+        })
+      }
+    }
   })
