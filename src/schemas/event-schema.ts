@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { createdAtSchema, idSchema, kindSchema, pubkeySchema, signatureSchema, tagSchema } from './base-schema'
+import { EventKinds, EventTags } from '../constants/base'
 
 /**
  * {
@@ -29,3 +30,24 @@ export const eventSchema = z
     sig: signatureSchema,
   })
   .strict()
+  .superRefine((event, ctx) => {
+    if (event.kind === EventKinds.REACTION) {
+      if (!event.tags.some((tag) => tag[0] === EventTags.Event)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Reaction event (kind 7) must have at least one e tag',
+          path: ['tags'],
+        })
+      }
+    } else if (event.kind === EventKinds.EXTERNAL_CONTENT_REACTION) {
+      const hasKTag = event.tags.some((tag) => tag[0] === EventTags.Kind)
+      const hasITag = event.tags.some((tag) => tag[0] === EventTags.Index)
+      if (!hasKTag || !hasITag) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'External content reaction event (kind 17) must have k and i tags',
+          path: ['tags'],
+        })
+      }
+    }
+  })
