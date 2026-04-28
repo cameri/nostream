@@ -3,7 +3,7 @@ import { expect } from 'chai'
 
 import { Event } from '../../../src/@types/event'
 import { eventSchema } from '../../../src/schemas/event-schema'
-import { EventTags } from '../../../src/constants/base'
+import { EventKinds, EventTags } from '../../../src/constants/base'
 import { validateSchema } from '../../../src/utils/validation'
 
 describe('NIP-01', () => {
@@ -106,6 +106,60 @@ describe('NIP-01', () => {
         })
       })
     }
+  })
+})
+
+describe('NIP-65', () => {
+  const relayListBase: Event = {
+    id: 'fa4dd948576fe182f5d0e3120b9df42c83dffa1c884754d5e4d3b0a2f98a01c5',
+    pubkey: 'edfa27d49d2af37ee331e1225bb6ed1912c6d999281b36d8018ad99bc3573c29',
+    created_at: 1660306803,
+    kind: EventKinds.RELAY_LIST,
+    tags: [],
+    content: '',
+    sig: '313a9b8cd68267a51da84e292c0937d1f3686c6757c4584f50fcedad2b13fad755e6226924f79880fb5aa9de95c04231a4823981513ac9e7092bad7488282a96',
+  }
+
+  it('accepts relay_list event with valid wss relay URL', () => {
+    const event = { ...relayListBase, tags: [[EventTags.Relay, 'wss://relay.example.com']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.be.undefined
+  })
+
+  it('accepts relay_list event with valid wss relay URL and read marker', () => {
+    const event = { ...relayListBase, tags: [[EventTags.Relay, 'wss://relay.example.com', 'read']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.be.undefined
+  })
+
+  it('accepts relay_list event with valid wss relay URL and write marker', () => {
+    const event = { ...relayListBase, tags: [[EventTags.Relay, 'wss://relay.example.com', 'write']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.be.undefined
+  })
+
+  it('accepts relay_list event with no relay tags', () => {
+    const event = { ...relayListBase, tags: [] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.be.undefined
+  })
+
+  it('rejects relay_list event with invalid relay URL', () => {
+    const event = { ...relayListBase, tags: [[EventTags.Relay, 'not-a-url']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.not.be.undefined
+  })
+
+  it('rejects relay_list event with empty relay URL', () => {
+    const event = { ...relayListBase, tags: [[EventTags.Relay, '']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.not.be.undefined
+  })
+
+  it('does not validate relay URL on non-relay_list events with r tags', () => {
+    const event = { ...relayListBase, kind: EventKinds.TEXT_NOTE, tags: [[EventTags.Relay, 'not-a-url']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.be.undefined
   })
 })
 

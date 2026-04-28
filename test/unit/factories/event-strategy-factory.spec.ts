@@ -47,6 +47,11 @@ describe('eventStrategyFactory', () => {
     expect(factory([event, adapter])).to.be.an.instanceOf(ReplaceableEventStrategy)
   })
 
+  it('returns ReplaceableEventStrategy given a relay_list event (NIP-65)', () => {
+    event.kind = EventKinds.RELAY_LIST
+    expect(factory([event, adapter])).to.be.an.instanceOf(ReplaceableEventStrategy)
+  })
+
   it('returns EphemeralEventStrategy given an ephemeral event', () => {
     event.kind = EventKinds.EPHEMERAL_FIRST
     expect(factory([event, adapter])).to.be.an.instanceOf(EphemeralEventStrategy)
