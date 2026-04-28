@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
-import { createdAtSchema, idSchema, kindSchema, pubkeySchema, signatureSchema, tagSchema } from './base-schema'
 import { EventKinds, EventTags } from '../constants/base'
+import { createdAtSchema, idSchema, kindSchema, pubkeySchema, signatureSchema, tagSchema } from './base-schema'
 
 /**
  * {
@@ -51,5 +51,15 @@ export const eventSchema = z
           path: ['tags'],
         })
       }
+    } else if (event.kind === EventKinds.RELAY_LIST) {
+      event.tags.forEach((tag, index) => {
+        if (tag[0] === EventTags.Relay && !z.string().url().safeParse(tag[1]).success) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Invalid relay URL`,
+            path: ['tags', index, 1],
+          })
+        }
+      })
     }
   })
