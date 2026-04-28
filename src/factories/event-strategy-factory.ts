@@ -8,6 +8,7 @@ import {
   isReplaceableEvent,
   isRequestToVanishEvent,
 } from '../utils/event'
+import { isRelayListEvent } from '../utils/nip65'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
 import { EphemeralEventStrategy } from '../handlers/event-strategies/ephemeral-event-strategy'
@@ -33,7 +34,7 @@ export const eventStrategyFactory =
       return new GiftWrapEventStrategy(adapter, eventRepository)
     } else if (isOpenTimestampsEvent(event)) {
       return new TimestampEventStrategy(adapter, eventRepository)
-    } else if (isReplaceableEvent(event)) {
+    } else if (isRelayListEvent(event) || isReplaceableEvent(event)) {
       return new ReplaceableEventStrategy(adapter, eventRepository)
     } else if (isEphemeralEvent(event)) {
       return new EphemeralEventStrategy(adapter)
