@@ -18,11 +18,13 @@ export const parseReaction = (event: Event): ReactionEntry => {
     const aTags = event.tags.filter((tag) => tag[0] === EventTags.Address)
     const kTag = event.tags.find((tag) => tag[0] === EventTags.Kind)
 
+    const kTagValue = kTag && kTag.length > 1 ? kTag[1] : undefined
+    const parsedKind = kTagValue !== undefined ? Number(kTagValue) : undefined
     return {
         targetEventId: eTags.length > 0 ? eTags[eTags.length - 1][1] : undefined,
         targetPubkey: pTags.length > 0 ? pTags[pTags.length - 1][1] : undefined,
         targetAddress: aTags.length > 0 ? aTags[aTags.length - 1][1] : undefined,
-        targetKind: kTag ? Number(kTag[1]) : undefined,
+        targetKind: parsedKind !== undefined && Number.isFinite(parsedKind) ? parsedKind : undefined,
         content: event.content,
     }
 }

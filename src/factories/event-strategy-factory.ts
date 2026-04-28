@@ -8,7 +8,6 @@ import {
   isReplaceableEvent,
   isRequestToVanishEvent,
 } from '../utils/event'
-import { isExternalContentReactionEvent, isReactionEvent } from '../utils/nip25'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
 import { EphemeralEventStrategy } from '../handlers/event-strategies/ephemeral-event-strategy'
@@ -42,9 +41,6 @@ export const eventStrategyFactory =
       return new DeleteEventStrategy(adapter, eventRepository)
     } else if (isParameterizedReplaceableEvent(event)) {
       return new ParameterizedReplaceableEventStrategy(adapter, eventRepository)
-    } 
-    if (isReactionEvent(event) || isExternalContentReactionEvent(event)) {
-      return new DefaultEventStrategy(adapter, eventRepository)
     }
 
     return new DefaultEventStrategy(adapter, eventRepository)

@@ -32,16 +32,18 @@ export const eventSchema = z
   .strict()
   .superRefine((event, ctx) => {
     if (event.kind === EventKinds.REACTION) {
-      if (!event.tags.some((tag) => tag[0] === EventTags.Event)) {
+      const hasEventTag = event.tags.some((tag) => tag[0] === EventTags.Event && typeof tag[1] === 'string' && tag[1].length > 0)
+      const hasAddressTag = event.tags.some((tag) => tag[0] === EventTags.Address && typeof tag[1] === 'string' && tag[1].length > 0)
+      if (!hasEventTag && !hasAddressTag) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Reaction event (kind 7) must have at least one e tag',
+          message: 'Reaction event (kind 7) must have at least one e or a tag',
           path: ['tags'],
         })
       }
     } else if (event.kind === EventKinds.EXTERNAL_CONTENT_REACTION) {
-      const hasKTag = event.tags.some((tag) => tag[0] === EventTags.Kind)
-      const hasITag = event.tags.some((tag) => tag[0] === EventTags.Index)
+      const hasKTag = event.tags.some((tag) => tag[0] === EventTags.Kind && tag.length >= 2 && typeof tag[1] === 'string' && tag[1].length > 0)
+      const hasITag = event.tags.some((tag) => tag[0] === EventTags.Index && tag.length >= 2 && typeof tag[1] === 'string' && tag[1].length > 0)
       if (!hasKTag || !hasITag) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
