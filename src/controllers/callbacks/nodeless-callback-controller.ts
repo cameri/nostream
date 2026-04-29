@@ -5,12 +5,11 @@ import { Request, Response } from 'express'
 
 import { Invoice, InvoiceStatus } from '../../@types/invoice'
 import { createLogger } from '../../factories/logger-factory'
-import { createSettings } from '../../factories/settings-factory'
 import { fromNodelessInvoice } from '../../utils/transform'
 import { hmacSha256 } from '../../utils/secret'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
-import { nodelessCallbackBodySchema } from '../../schemas/nodeless-callback-schema'
+import { nodelessCallbackBodySchema, nodelessSignatureSchema } from '../../schemas/nodeless-callback-schema'
 import { validateSchema } from '../../utils/validation'
 
 const logger = createLogger('nodeless-callback-controller')
@@ -21,15 +20,6 @@ export class NodelessCallbackController implements IController {
   public async handleRequest(request: Request, response: Response) {
     logger('callback request headers: %o', request.headers)
     logger('callback request body: %O', request.body)
-
-    const settings = createSettings()
-    const paymentProcessor = settings.payments?.processor
-
-    if (paymentProcessor !== 'nodeless') {
-      logger('denied request to /callbacks/nodeless which is not the current payment processor')
-      response.status(403).send('Forbidden')
-      return
-    }
 
     const bodyValidation = validateSchema(nodelessCallbackBodySchema)(request.body)
     if (bodyValidation.error) {
@@ -51,21 +41,20 @@ export class NodelessCallbackController implements IController {
       return
     }
 
-    const expectedBuf = hmacSha256(webhookSecret, (request as any).rawBody)
-    const actualHex = request.headers['nodeless-signature']
-    const expectedHexLength = expectedBuf.length * 2
-
-    if (
-      typeof actualHex !== 'string' ||
-      actualHex.length !== expectedHexLength ||
-      !/^[0-9a-f]+$/i.test(actualHex)
-    ) {
+    const signatureValidation = validateSchema(nodelessSignatureSchema)(request.headers['nodeless-signature'])
+    if (signatureValidation.error) {
       logger('nodeless callback request rejected: invalid signature format')
-      response.status(403).send('Forbidden')
+      response
+        .status(400)
+        .setHeader('content-type', 'application/json; charset=utf8')
+        .send('{"status":"error","message":"Invalid signature"}')
       return
     }
 
-    if (!timingSafeEqual(expectedBuf, Buffer.from(actualHex, 'hex'))) {
+    const expectedBuf = hmacSha256(webhookSecret, (request as any).rawBody)
+    const actualBuf = Buffer.from(signatureValidation.value, 'hex')
+
+    if (!timingSafeEqual(expectedBuf, actualBuf)) {
       logger('nodeless callback request rejected: signature mismatch')
       response.status(403).send('Forbidden')
       return

@@ -7,16 +7,11 @@ chai.use(sinonChai)
 chai.use(chaiAsPromised)
 const { expect } = chai
 
-import * as settingsFactory from '../../../../src/factories/settings-factory'
 import { InvoiceStatus, InvoiceUnit } from '../../../../src/@types/invoice'
 import { hmacSha256 } from '../../../../src/utils/secret'
 import { NodelessCallbackController } from '../../../../src/controllers/callbacks/nodeless-callback-controller'
 
 const PUBKEY = 'a'.repeat(64)
-
-const baseSettings: any = {
-  payments: { processor: 'nodeless' },
-}
 
 const validBody = {
   uuid: 'nodeless-invoice-id',
@@ -84,7 +79,6 @@ const makeReq = (overrides: any = {}): any => {
 }
 
 describe('NodelessCallbackController', () => {
-  let createSettingsStub: sinon.SinonStub
   let consoleErrorStub: sinon.SinonStub
   let previousWebhookSecret: string | undefined
 
@@ -92,7 +86,6 @@ describe('NodelessCallbackController', () => {
     previousWebhookSecret = process.env.NODELESS_WEBHOOK_SECRET
     process.env.NODELESS_WEBHOOK_SECRET = 'nodeless-test-secret'
 
-    createSettingsStub = sinon.stub(settingsFactory, 'createSettings').returns(baseSettings)
     consoleErrorStub = sinon.stub(console, 'error')
   })
 
@@ -103,7 +96,6 @@ describe('NodelessCallbackController', () => {
       process.env.NODELESS_WEBHOOK_SECRET = previousWebhookSecret
     }
 
-    createSettingsStub.restore()
     consoleErrorStub.restore()
   })
 
@@ -119,25 +111,25 @@ describe('NodelessCallbackController', () => {
       expect(res.send).to.have.been.calledWith('{"status":"error","message":"Malformed body"}')
     })
 
-    it('returns 403 when callback signature is invalid', async () => {
+    it('returns 400 when callback signature has invalid format', async () => {
       const { controller, paymentsService } = makeController()
       const res = makeRes()
 
       await controller.handleRequest(makeReq({ signature: 'invalid-signature' }), res)
 
-      expect(res.status).to.have.been.calledWith(403)
-      expect(res.send).to.have.been.calledWith('Forbidden')
+      expect(res.status).to.have.been.calledWith(400)
+      expect(res.send).to.have.been.calledWith('{"status":"error","message":"Invalid signature"}')
       expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
     })
 
-    it('returns 403 when callback signature has wrong length', async () => {
+    it('returns 400 when callback signature has wrong length', async () => {
       const { controller, paymentsService } = makeController()
       const res = makeRes()
 
       await controller.handleRequest(makeReq({ signature: '0'.repeat(63) }), res)
 
-      expect(res.status).to.have.been.calledWith(403)
-      expect(res.send).to.have.been.calledWith('Forbidden')
+      expect(res.status).to.have.been.calledWith(400)
+      expect(res.send).to.have.been.calledWith('{"status":"error","message":"Invalid signature"}')
       expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
     })
 
@@ -171,17 +163,6 @@ describe('NodelessCallbackController', () => {
       expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
     })
 
-    it('returns 403 when nodeless is not the configured processor', async () => {
-      createSettingsStub.returns({ payments: { processor: 'zebedee' } })
-      const { controller, paymentsService } = makeController()
-      const res = makeRes()
-
-      await controller.handleRequest(makeReq(), res)
-
-      expect(res.status).to.have.been.calledWith(403)
-      expect(res.send).to.have.been.calledWith('Forbidden')
-      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
-    })
   })
 
   describe('invoice state handling', () => {
