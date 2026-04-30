@@ -1,4 +1,3 @@
-import accepts from 'accepts'
 import express, { Router } from 'express'
 
 import { nodeinfo21Handler, nodeinfoHandler } from '../handlers/request-handlers/nodeinfo-handler'
@@ -9,12 +8,12 @@ import { getPrivacyRequestHandler } from '../handlers/request-handlers/get-priva
 import { getTermsRequestHandler } from '../handlers/request-handlers/get-terms-request-handler'
 import invoiceRouter from './invoices'
 import { rateLimiterMiddleware } from '../handlers/request-handlers/rate-limiter-middleware'
-import { rootRequestHandler } from '../handlers/request-handlers/root-request-handler'
+import { hasExplicitNostrJsonAcceptHeader, rootRequestHandler } from '../handlers/request-handlers/root-request-handler'
 
 const router: Router = express.Router()
 
 router.use((req, res, next) => {
-  if (req.method === 'GET' && accepts(req).type(['application/nostr+json'])) {
+  if (req.method === 'GET' && req.path === '/' && hasExplicitNostrJsonAcceptHeader(req)) {
     return rootRequestHandler(req, res, next)
   }
   next()

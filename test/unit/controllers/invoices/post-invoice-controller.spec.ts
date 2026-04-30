@@ -307,9 +307,9 @@ describe('PostInvoiceController', () => {
 
     it('leaves no unreplaced template variables in the output', async () => {
       getTemplateStub.returns(
-        '{{name}}{{relay_url_html}}{{invoice_html}}{{pubkey_html}}{{amount}}' +
+        '{{name}}{{relay_url_html}}{{invoice_html}}{{pubkey_html}}{{path_prefix}}{{amount}}' +
           '{{reference_json}}{{relay_url_json}}{{relay_pubkey_json}}' +
-          '{{invoice_json}}{{pubkey_json}}{{expires_at_json}}{{processor_json}}{{nonce}}',
+          '{{invoice_json}}{{pubkey_json}}{{expires_at_json}}{{path_prefix_json}}{{processor_json}}{{nonce}}',
       )
       const controller = makeController()
       const res = makeRes()
@@ -318,6 +318,27 @@ describe('PostInvoiceController', () => {
 
       const sent = res.send.firstCall.args[0] as string
       expect(sent).to.not.match(/\{\{[^}]+\}\}/)
+    })
+
+    it('injects relay_url path prefix into form actions and status polling', async () => {
+      getTemplateStub.returns('{{path_prefix}}/invoices|{{path_prefix_json}}')
+      const settings = () => ({
+        ...baseSettings,
+        info: { ...baseSettings.info, relay_url: 'wss://relay.example.com/nostream' },
+      })
+      const controller = makeController({ settings })
+      const res = makeRes()
+
+      await controller.handleRequest(
+        {
+          body: validBody,
+          headers: {},
+        } as any,
+        res,
+      )
+
+      const sent = res.send.firstCall.args[0] as string
+      expect(sent).to.equal('/nostream/invoices|"/nostream"')
     })
   })
 })

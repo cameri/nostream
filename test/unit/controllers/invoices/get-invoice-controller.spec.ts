@@ -21,7 +21,7 @@ const disabledPaymentsSettings = {
 }
 
 const enabledPaymentsSettings = {
-  info: { name: 'Test Relay' },
+  info: { name: 'Test Relay', relay_url: 'wss://relay.example.com' },
   payments: {
     enabled: true,
     feeSchedules: {
@@ -29,6 +29,7 @@ const enabledPaymentsSettings = {
     },
     processor: 'lnbits',
   },
+  network: {},
 }
 
 describe('GetInvoiceController', () => {
@@ -97,7 +98,7 @@ describe('GetInvoiceController', () => {
   describe('when payments and admission fee are enabled', () => {
     beforeEach(() => {
       createSettingsStub.returns(enabledPaymentsSettings)
-      getTemplateStub.returns('{{name}}|{{processor_json}}|{{amount}}|{{nonce}}')
+      getTemplateStub.returns('{{name}}|{{path_prefix}}|{{processor_json}}|{{amount}}|{{nonce}}')
     })
 
     it('loads the get-invoice template', async () => {
@@ -118,6 +119,7 @@ describe('GetInvoiceController', () => {
 
       const sent = res.send.firstCall.args[0] as string
       expect(sent).to.not.include('{{name}}')
+      expect(sent).to.not.include('{{path_prefix}}')
       expect(sent).to.not.include('{{processor_json}}')
       expect(sent).to.not.include('{{amount}}')
       expect(sent).to.not.include('{{nonce}}')
@@ -163,6 +165,18 @@ describe('GetInvoiceController', () => {
       await controller.handleRequest({} as any, res)
 
       expect(res.send.firstCall.args[0]).to.equal('invoice-nonce')
+    })
+
+    it('injects relay_url path prefix into form actions', async () => {
+      getTemplateStub.returns('{{path_prefix}}/invoices')
+      createSettingsStub.returns({
+        ...enabledPaymentsSettings,
+        info: { ...enabledPaymentsSettings.info, relay_url: 'wss://relay.example.com/nostream' },
+      })
+
+      await controller.handleRequest({ headers: {} } as any, res)
+
+      expect(res.send.firstCall.args[0]).to.equal('/nostream/invoices')
     })
   })
 })

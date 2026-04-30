@@ -8,9 +8,10 @@ import { FeeSchedule } from '../../@types/settings'
 import { IController } from '../../@types/controllers'
 
 import { getTemplate } from '../../utils/template-cache'
+import { getPublicPathPrefix } from '../../utils/http'
 
 export class GetInvoiceController implements IController {
-  public async handleRequest(_req: Request, res: Response): Promise<void> {
+  public async handleRequest(req: Request, res: Response): Promise<void> {
     const settings = createSettings()
 
     if (
@@ -21,6 +22,7 @@ export class GetInvoiceController implements IController {
       const feeSchedule = path<FeeSchedule>(['payments', 'feeSchedules', 'admission', '0'], settings)
       const page = getTemplate('./resources/get-invoice.html')
         .replaceAll('{{name}}', escapeHtml(name))
+        .replaceAll('{{path_prefix}}', escapeHtml(getPublicPathPrefix(req, settings)))
         .replaceAll('{{processor_json}}', safeJsonForScript(settings.payments.processor))
         .replaceAll('{{amount}}', (BigInt(feeSchedule.amount) / 1000n).toString())
         .replaceAll('{{nonce}}', res.locals.nonce)
