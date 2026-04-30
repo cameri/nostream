@@ -56,6 +56,8 @@ export enum EventTags {
   Invoice = 'bolt11',
   // NIP-03: target event kind on an OpenTimestamps attestation
   Kind = 'k',
+  // NIP-12: geohash tag for location-based queries
+  Geohash = 'g',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'

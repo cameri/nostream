@@ -1,6 +1,12 @@
 import { z } from 'zod'
 
+import { GEOHASH_FILTER_PATTERN, GEOHASH_PATTERN } from '../utils/geohash'
+
 const lowerHexRegex = /^[0-9a-f]+$/
+
+// NIP-12 geohash schemas
+export const geohashSchema = z.string().regex(GEOHASH_PATTERN, 'Invalid geohash')
+export const geohashFilterValueSchema = z.string().regex(GEOHASH_FILTER_PATTERN, 'Invalid geohash filter')
 
 export const prefixSchema = z.string().regex(lowerHexRegex).min(4).max(64)
 

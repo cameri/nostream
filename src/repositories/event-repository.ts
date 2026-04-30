@@ -40,7 +40,7 @@ import { DBEvent, Event } from '../@types/event'
 import { EventPurgeCounts, EventRetentionOptions, IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
-import { isGenericTagQuery } from '../utils/filter'
+import { isGenericTagQuery, isGeohashPrefixCriterion, stripGeohashPrefixWildcard } from '../utils/filter'
 import { SubscriptionFilter } from '../@types/subscription'
 
 const even = pipe(modulo(__, 2), equals(0))
@@ -57,11 +57,6 @@ const groupByLengthSpec = groupBy<string, 'exact' | 'even' | 'odd'>(
 )
 
 const logger = createLogger('event-repository')
-
-const isGeohashPrefixCriterion = (filterName: string, criterion: string): boolean =>
-  filterName === '#g' && criterion.endsWith('*')
-
-const stripGeohashPrefixWildcard = (criterion: string): string => criterion.slice(0, -1)
 
 export class EventRepository implements IEventRepository {
   public constructor(

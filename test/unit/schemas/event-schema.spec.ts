@@ -163,6 +163,42 @@ describe('NIP-65', () => {
   })
 })
 
+describe('NIP-12', () => {
+  const geohashBase: Event = {
+    id: 'fa4dd948576fe182f5d0e3120b9df42c83dffa1c884754d5e4d3b0a2f98a01c5',
+    pubkey: 'edfa27d49d2af37ee331e1225bb6ed1912c6d999281b36d8018ad99bc3573c29',
+    created_at: 1660306803,
+    kind: EventKinds.TEXT_NOTE,
+    tags: [],
+    content: '',
+    sig: '313a9b8cd68267a51da84e292c0937d1f3686c6757c4584f50fcedad2b13fad755e6226924f79880fb5aa9de95c04231a4823981513ac9e7092bad7488282a96',
+  }
+
+  it('accepts event with valid base32 geohash tag', () => {
+    const event = { ...geohashBase, tags: [[EventTags.Geohash, 'u4pruydqqvj']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.be.undefined
+  })
+
+  it('rejects event with non-base32 geohash characters', () => {
+    const event = { ...geohashBase, tags: [[EventTags.Geohash, 'u4pruyda']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.not.be.undefined
+  })
+
+  it('rejects event with empty geohash', () => {
+    const event = { ...geohashBase, tags: [[EventTags.Geohash, '']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.not.be.undefined
+  })
+
+  it('rejects event with uppercase geohash', () => {
+    const event = { ...geohashBase, tags: [[EventTags.Geohash, 'U4PRUYDQQVJ']] }
+    const result = validateSchema(eventSchema)(event)
+    expect(result.error).to.not.be.undefined
+  })
+})
+
 describe('NIP-14', () => {
   it('accepts subject tag on text note events', () => {
     const event: Event = {

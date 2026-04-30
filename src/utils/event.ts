@@ -8,7 +8,7 @@ import { deriveFromSecret } from './secret'
 import { EventKindsRange } from '../@types/settings'
 import { fromBuffer } from './transform'
 import { getLeadingZeroBits } from './proof-of-work'
-import { isGenericTagQuery } from './filter'
+import { isGenericTagQuery, isGeohashPrefixCriterion, stripGeohashPrefixWildcard } from './filter'
 import { SubscriptionFilter } from '../@types/subscription'
 import { WebSocketServerAdapterEvent } from '../constants/adapter'
 
@@ -46,8 +46,8 @@ export const isEventMatchingFilter =
         return false
       }
 
-      if (key === '#g' && criterion.endsWith('*')) {
-        return tag[1].startsWith(criterion.slice(0, -1))
+      if (isGeohashPrefixCriterion(key, criterion)) {
+        return tag[1].startsWith(stripGeohashPrefixWildcard(criterion))
       }
 
       return tag[1] === criterion

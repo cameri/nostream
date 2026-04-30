@@ -1,7 +1,15 @@
 import { z } from 'zod'
 
 import { EventKinds, EventTags } from '../constants/base'
-import { createdAtSchema, idSchema, kindSchema, pubkeySchema, signatureSchema, tagSchema } from './base-schema'
+import {
+  createdAtSchema,
+  geohashSchema,
+  idSchema,
+  kindSchema,
+  pubkeySchema,
+  signatureSchema,
+  tagSchema,
+} from './base-schema'
 
 /**
  * {
@@ -42,4 +50,15 @@ export const eventSchema = z
         }
       })
     }
+
+    // Validate geohash tag values (NIP-12 #g)
+    event.tags.forEach((tag, index) => {
+      if (tag[0] === EventTags.Geohash && typeof tag[1] === 'string' && !geohashSchema.safeParse(tag[1]).success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Invalid geohash',
+          path: ['tags', index, 1],
+        })
+      }
+    })
   })
