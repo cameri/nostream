@@ -109,6 +109,54 @@ describe('NIP-01', () => {
   })
 })
 
+describe('NIP-25', () => {
+  const base: Event = {
+    id: 'fa4dd948576fe182f5d0e3120b9df42c83dffa1c884754d5e4d3b0a2f98a01c5',
+    pubkey: 'edfa27d49d2af37ee331e1225bb6ed1912c6d999281b36d8018ad99bc3573c29',
+    created_at: 1660306803,
+    kind: EventKinds.REACTION,
+    tags: [],
+    content: '+',
+    sig: '313a9b8cd68267a51da84e292c0937d1f3686c6757c4584f50fcedad2b13fad755e6226924f79880fb5aa9de95c04231a4823981513ac9e7092bad7488282a96',
+  }
+
+  it('accepts reaction with e tag', () => {
+    const event = { ...base, tags: [[EventTags.Event, 'a'.repeat(64)]] }
+    expect(validateSchema(eventSchema)(event).error).to.be.undefined
+  })
+
+  it('rejects reaction missing e tag', () => {
+    expect(validateSchema(eventSchema)({ ...base, tags: [] }).error).to.not.be.undefined
+  })
+
+  it('accepts external content reaction with k and i tags', () => {
+    const event = {
+      ...base,
+      kind: EventKinds.EXTERNAL_CONTENT_REACTION,
+      tags: [[EventTags.Kind, 'web'], [EventTags.Index, 'https://example.com']],
+    }
+    expect(validateSchema(eventSchema)(event).error).to.be.undefined
+  })
+
+  it('rejects external content reaction missing k tag', () => {
+    const event = {
+      ...base,
+      kind: EventKinds.EXTERNAL_CONTENT_REACTION,
+      tags: [[EventTags.Index, 'https://example.com']],
+    }
+    expect(validateSchema(eventSchema)(event).error).to.not.be.undefined
+  })
+
+  it('rejects external content reaction missing i tag', () => {
+    const event = {
+      ...base,
+      kind: EventKinds.EXTERNAL_CONTENT_REACTION,
+      tags: [[EventTags.Kind, 'web']],
+    }
+    expect(validateSchema(eventSchema)(event).error).to.not.be.undefined
+  })
+})
+
 describe('NIP-65', () => {
   const relayListBase: Event = {
     id: 'fa4dd948576fe182f5d0e3120b9df42c83dffa1c884754d5e4d3b0a2f98a01c5',
