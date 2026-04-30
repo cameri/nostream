@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { EventKinds, EventTags } from '../constants/base'
 import { createdAtSchema, idSchema, kindSchema, pubkeySchema, signatureSchema, tagSchema } from './base-schema'
 
 /**
@@ -29,3 +30,16 @@ export const eventSchema = z
     sig: signatureSchema,
   })
   .strict()
+  .superRefine((event, ctx) => {
+    if (event.kind === EventKinds.RELAY_LIST) {
+      event.tags.forEach((tag, index) => {
+        if (tag[0] === EventTags.Relay && !z.string().url().safeParse(tag[1]).success) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Invalid relay URL`,
+            path: ['tags', index, 1],
+          })
+        }
+      })
+    }
+  })

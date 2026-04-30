@@ -56,7 +56,12 @@ const getEventCount = async (): Promise<number | null> => {
 }
 
 const getRelayUptimeSeconds = async (): Promise<number | null> => {
-  const idResult = await runCommandWithOutput('docker', ['compose', 'ps', '-q', 'nostream'], { timeoutMs: 1000 })
+  let idResult: { code: number; stdout: string; stderr: string }
+  try {
+    idResult = await runCommandWithOutput('docker', ['compose', 'ps', '-q', 'nostream'], { timeoutMs: 1000 })
+  } catch {
+    return null
+  }
   if (idResult.code !== 0) {
     return null
   }

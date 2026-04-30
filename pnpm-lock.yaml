@@ -17,9 +17,6 @@ importers:
       '@noble/secp256k1':
         specifier: 1.7.1
         version: 1.7.1
-      accepts:
-        specifier: ^1.3.8
-        version: 1.3.8
       axios:
         specifier: ^1.15.0
         version: 1.15.1

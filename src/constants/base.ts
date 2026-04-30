@@ -32,6 +32,8 @@ export enum EventKinds {
   ZAP_RECEIPT = 9735,
   // Replaceable events
   REPLACEABLE_FIRST = 10000,
+  // NIP-65: Relay List Metadata
+  RELAY_LIST = 10002,
   REPLACEABLE_LAST = 19999,
   // Ephemeral events
   EPHEMERAL_FIRST = 20000,
