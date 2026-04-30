@@ -40,6 +40,18 @@ export const isEventMatchingFilter =
   (filter: SubscriptionFilter) =>
   (event: Event): boolean => {
     const startsWith = (input: string) => (prefix: string) => input.startsWith(prefix)
+    const isMatchingGenericTagCriterion = (key: string, criterion: string) => (tag: Tag): boolean => {
+      const [, tagName] = key
+      if (tag[0] !== tagName) {
+        return false
+      }
+
+      if (key === '#g' && criterion.endsWith('*')) {
+        return tag[1].startsWith(criterion.slice(0, -1))
+      }
+
+      return tag[1] === criterion
+    }
 
     // NIP-01: Basic protocol flow description
 
@@ -84,7 +96,7 @@ export const isEventMatchingFilter =
       Object.entries(filter)
         .filter(([key, criteria]) => isGenericTagQuery(key) && Array.isArray(criteria))
         .some(([key, criteria]) => {
-          return !event.tags.some((tag) => tag[0] === key[1] && criteria.includes(tag[1]))
+          return !event.tags.some((tag) => criteria.some((criterion) => isMatchingGenericTagCriterion(key, criterion)(tag)))
         })
     ) {
       return false
