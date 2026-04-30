@@ -1,15 +1,15 @@
 import { Event, ReactionEntry } from '../@types/event'
 import { EventKinds, EventTags } from '../constants/base'
 
-export const isReactionEvent = (event: Event): boolean => event.kind === EventKinds.REACTION
+export const isReactionEvent = (event: { kind?: number }): boolean => event.kind === EventKinds.REACTION
 
-export const isExternalContentReactionEvent = (event: Event): boolean =>
+export const isExternalContentReactionEvent = (event: { kind?: number }): boolean =>
     event.kind === EventKinds.EXTERNAL_CONTENT_REACTION
 
-export const isLikeReaction = (event: Event): boolean =>
+export const isLikeReaction = (event: { kind?: number; content?: string }): boolean =>
     isReactionEvent(event) && (event.content === '+' || event.content === '')
 
-export const isDislikeReaction = (event: Event): boolean =>
+export const isDislikeReaction = (event: { kind?: number; content?: string }): boolean =>
     isReactionEvent(event) && event.content === '-'
 
 export const parseReaction = (event: Event): ReactionEntry => {
