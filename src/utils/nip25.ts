@@ -13,17 +13,26 @@ export const isDislikeReaction = (event: { kind?: number; content?: string }): b
     isReactionEvent(event) && event.content === '-'
 
 export const parseReaction = (event: Event): ReactionEntry => {
-    const eTags = event.tags.filter((tag) => tag[0] === EventTags.Event)
-    const pTags = event.tags.filter((tag) => tag[0] === EventTags.Pubkey)
-    const aTags = event.tags.filter((tag) => tag[0] === EventTags.Address)
-    const kTag = event.tags.find((tag) => tag[0] === EventTags.Kind)
+    let lastETag: string[] | undefined
+    let lastPTag: string[] | undefined
+    let lastATag: string[] | undefined
+    let firstKTag: string[] | undefined
 
-    const kTagValue = kTag && kTag.length > 1 ? kTag[1] : undefined
+    for (const tag of event.tags) {
+        switch (tag[0]) {
+            case EventTags.Event: lastETag = tag; break
+            case EventTags.Pubkey: lastPTag = tag; break
+            case EventTags.Address: lastATag = tag; break
+            case EventTags.Kind: if (!firstKTag) { firstKTag = tag } break
+        }
+    }
+
+    const kTagValue = firstKTag && firstKTag.length > 1 ? firstKTag[1] : undefined
     const parsedKind = kTagValue !== undefined ? Number(kTagValue) : undefined
     return {
-        targetEventId: eTags.length > 0 ? eTags[eTags.length - 1][1] : undefined,
-        targetPubkey: pTags.length > 0 ? pTags[pTags.length - 1][1] : undefined,
-        targetAddress: aTags.length > 0 ? aTags[aTags.length - 1][1] : undefined,
+        targetEventId: lastETag?.[1],
+        targetPubkey: lastPTag?.[1],
+        targetAddress: lastATag?.[1],
         targetKind: parsedKind !== undefined && Number.isFinite(parsedKind) ? parsedKind : undefined,
         content: event.content,
     }

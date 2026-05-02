@@ -33,8 +33,13 @@ export const eventSchema = z
   .strict()
   .superRefine((event, ctx) => {
     if (isReactionEvent(event)) {
-      const hasEventTag = event.tags.some((tag) => tag[0] === EventTags.Event && typeof tag[1] === 'string' && tag[1].length > 0)
-      const hasAddressTag = event.tags.some((tag) => tag[0] === EventTags.Address && typeof tag[1] === 'string' && tag[1].length > 0)
+      let hasEventTag = false
+      let hasAddressTag = false
+      for (const tag of event.tags) {
+        if (tag[0] === EventTags.Event && typeof tag[1] === 'string' && tag[1].length > 0) { hasEventTag = true }
+        else if (tag[0] === EventTags.Address && typeof tag[1] === 'string' && tag[1].length > 0) { hasAddressTag = true }
+        if (hasEventTag && hasAddressTag) { break }
+      }
       if (!hasEventTag && !hasAddressTag) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -43,8 +48,13 @@ export const eventSchema = z
         })
       }
     } else if (isExternalContentReactionEvent(event)) {
-      const hasKTag = event.tags.some((tag) => tag[0] === EventTags.Kind && tag.length >= 2 && typeof tag[1] === 'string' && tag[1].length > 0)
-      const hasITag = event.tags.some((tag) => tag[0] === EventTags.Index && tag.length >= 2 && typeof tag[1] === 'string' && tag[1].length > 0)
+      let hasKTag = false
+      let hasITag = false
+      for (const tag of event.tags) {
+        if (tag[0] === EventTags.Kind && tag.length >= 2 && typeof tag[1] === 'string' && tag[1].length > 0) { hasKTag = true }
+        else if (tag[0] === EventTags.Index && tag.length >= 2 && typeof tag[1] === 'string' && tag[1].length > 0) { hasITag = true }
+        if (hasKTag && hasITag) { break }
+      }
       if (!hasKTag || !hasITag) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
