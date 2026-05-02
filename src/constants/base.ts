@@ -62,6 +62,8 @@ export enum EventTags {
   Address = 'a',
   Index = 'i',
   Emoji = 'emoji',
+  // NIP-12: geohash tag for location-based queries
+  Geohash = 'g',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'

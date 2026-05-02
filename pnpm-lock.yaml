@@ -17,9 +17,6 @@ importers:
       '@noble/secp256k1':
         specifier: 1.7.1
         version: 1.7.1
-      accepts:
-        specifier: ^1.3.8
-        version: 1.3.8
       axios:
         specifier: ^1.15.0
         version: 1.15.1
@@ -99,6 +96,9 @@ importers:
       '@types/js-yaml':
         specifier: 4.0.5
         version: 4.0.5
+      '@types/k6':
+        specifier: ^1.7.0
+        version: 1.7.0
       '@types/mocha':
         specifier: ^9.1.1
         version: 9.1.1
@@ -765,6 +765,9 @@ packages:
 
   '@types/js-yaml@4.0.5':
     resolution: {integrity: sha512-FhpRzf927MNQdRZP0J5DLIdTXhjLYzeUTmLAu69mnVksLH9CJY3IuSeEgbKUki7GQZm0WqDkGzyxju2EZGD2wA==}
+
+  '@types/k6@1.7.0':
+    resolution: {integrity: sha512-oL4mckVcOPIA2HUrCVj3aQXCJgCqsQe35Uc4fRTffmrQuR24v92GJImnagqUaRnC1TQVJFx85o3aHQPP+0bxpg==}
 
   '@types/minimist@1.2.5':
     resolution: {integrity: sha512-hov8bUuiLiyFPGyFPE1lwWhmzYbirOXQNNo40+y3zow8aFVTeyn3VWL0VFFfdNddA8S4Vf0Tc062rzyNr7Paag==}
@@ -4291,6 +4294,8 @@ snapshots:
   '@types/http-errors@2.0.5': {}
 
   '@types/js-yaml@4.0.5': {}
+
+  '@types/k6@1.7.0': {}
 
   '@types/minimist@1.2.5': {}
 

@@ -71,6 +71,15 @@ describe('getPrivacyRequestHandler', () => {
     expect(res.send.firstCall.args[0]).to.equal('privacy-nonce')
   })
 
+  it('injects relay_url path prefix into links', () => {
+    createSettingsStub.returns({ info: { name: 'Test Relay', relay_url: 'wss://relay.example.com/nostream' } })
+    getTemplateStub.returns('{{path_prefix}}/terms')
+
+    getPrivacyRequestHandler({ headers: {} } as any, res, next)
+
+    expect(res.send.firstCall.args[0]).to.equal('/nostream/terms')
+  })
+
   it('calls next with error when template read fails', () => {
     const err = new Error('template missing')
     getTemplateStub.throws(err)

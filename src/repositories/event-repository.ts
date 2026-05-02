@@ -40,7 +40,7 @@ import { DBEvent, Event } from '../@types/event'
 import { EventPurgeCounts, EventRetentionOptions, IEventRepository, IQueryResult } from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
-import { isGenericTagQuery } from '../utils/filter'
+import { isGenericTagQuery, isGeohashPrefixCriterion, stripGeohashPrefixWildcard } from '../utils/filter'
 import { SubscriptionFilter } from '../@types/subscription'
 
 const even = pipe(modulo(__, 2), equals(0))
@@ -193,8 +193,21 @@ export class EventRepository implements IEventRepository {
             isEmpty,
             () => andWhereRaw('1 = 0', bd),
             forEach(
-              (criterion: string) =>
-                void orWhereRaw('event_tags.tag_name = ? AND event_tags.tag_value = ?', [filterName[1], criterion], bd),
+              (criterion: string) => {
+                if (isGeohashPrefixCriterion(filterName, criterion)) {
+                  return void orWhereRaw(
+                    'event_tags.tag_name = ? AND event_tags.tag_value LIKE ?',
+                    [filterName[1], `${stripGeohashPrefixWildcard(criterion)}%`],
+                    bd,
+                  )
+                }
+
+                return void orWhereRaw(
+                  'event_tags.tag_name = ? AND event_tags.tag_value = ?',
+                  [filterName[1], criterion],
+                  bd,
+                )
+              },
             ),
           )(criteria)
         })

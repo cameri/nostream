@@ -141,3 +141,47 @@ describe('NIP-01', () => {
     }
   })
 })
+
+describe('NIP-12', () => {
+  describe('#g filter validation', () => {
+    it('accepts a valid base32 geohash', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4pruydqqvj'] })
+      expect(result.error).to.be.undefined
+    })
+
+    it('accepts a valid geohash prefix with trailing wildcard', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4pruyd*'] })
+      expect(result.error).to.be.undefined
+    })
+
+    it('rejects an empty criterion', () => {
+      const result = validateSchema(filterSchema)({ '#g': [''] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects a bare wildcard', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['*'] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects non-base32 characters', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4pruyda'] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects uppercase characters', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['U4PRUYDQQVJ'] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects wildcard not at the end', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4*pruyd'] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects multiple wildcards', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4pruyd**'] })
+      expect(result.error).to.not.be.undefined
+    })
+  })
+})

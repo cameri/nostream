@@ -302,6 +302,41 @@ To observe client and subscription counts in real-time during a test, you can in
    docker compose logs -f nostream
    ```
 
+## Performance Testing (k6)
+
+Nostream includes k6-based load tests to validate rate limiter behavior under concurrent WebSocket
+connections. These tests verify that connection and message rate limits are correctly enforced.
+
+### Prerequisites
+
+Install [k6](https://grafana.com/docs/k6/latest/set-up/install-k6/) before running performance
+tests. k6 is a standalone Go binary and is not included as an npm dependency.
+
+### Running the Tests
+
+Ensure the relay is running first (`pnpm run cli -- start`), then:
+
+```bash
+# Test connection rate limiting
+pnpm run cli -- dev test:perf:connection
+
+# Test message rate limiting
+pnpm run cli -- dev test:perf:message
+```
+
+To test against a different relay instance:
+
+```bash
+k6 run -e RELAY_URL=ws://your-host:8008 test/performance/connection-limiting-k6.ts
+```
+
+### What the Tests Validate
+
+- **Connection rate limiter** — Ramps concurrent connections through multiple stages and verifies
+  the relay rejects excess connections beyond the configured limit (default: 12 conn/sec).
+- **Message rate limiter** — Opens WebSocket connections and sends continuous REQ messages,
+  verifying the relay returns NOTICE rejections when the message rate limit is exceeded.
+
 ## Local Quality Checks
 
 Run dead code and dependency analysis before opening a pull request:

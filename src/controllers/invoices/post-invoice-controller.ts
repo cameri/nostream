@@ -14,7 +14,7 @@ import { createLogger } from '../../factories/logger-factory'
 import { escapeHtml, safeJsonForScript } from '../../utils/html'
 import { fromBech32, toBech32 } from '../../utils/transform'
 import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
-import { getRemoteAddress } from '../../utils/http'
+import { getPublicPathPrefix, getRemoteAddress } from '../../utils/http'
 import { getTemplate } from '../../utils/template-cache'
 
 const logger = createLogger('post-invoice-controller')
@@ -125,6 +125,7 @@ export class PostInvoiceController implements IController {
     const relayPubkey = getPublicKey(relayPrivkey)
 
     const expiresAt = invoice.expiresAt?.toISOString() ?? ''
+    const pathPrefix = getPublicPathPrefix(request, currentSettings)
 
     const pageContent = getTemplate('./resources/post-invoice.html')
     const body = pageContent
@@ -133,6 +134,7 @@ export class PostInvoiceController implements IController {
       .replaceAll('{{relay_url_html}}', escapeHtml(relayUrl))
       .replaceAll('{{invoice_html}}', escapeHtml(invoice.bolt11))
       .replaceAll('{{pubkey_html}}', escapeHtml(pubkey))
+      .replaceAll('{{path_prefix}}', escapeHtml(pathPrefix))
       .replaceAll('{{amount}}', (amount / 1000n).toString())
       // JS contexts — safeJsonForScript serializes and escapes < to prevent </script> injection
       .replaceAll('{{reference_json}}', safeJsonForScript(invoice.id))
@@ -141,6 +143,7 @@ export class PostInvoiceController implements IController {
       .replaceAll('{{invoice_json}}', safeJsonForScript(invoice.bolt11))
       .replaceAll('{{pubkey_json}}', safeJsonForScript(pubkey))
       .replaceAll('{{expires_at_json}}', safeJsonForScript(expiresAt))
+      .replaceAll('{{path_prefix_json}}', safeJsonForScript(pathPrefix))
       .replaceAll('{{processor_json}}', safeJsonForScript(currentSettings.payments.processor))
       // nonce is crypto-random base64 — safe in both attribute and script contexts
       .replaceAll('{{nonce}}', response.locals.nonce)
