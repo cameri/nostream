@@ -80,7 +80,7 @@ export const runCommandWithOutput = (
     })
 
     child.on('error', (err: NodeJS.ErrnoException) => {
-      if (timer) clearTimeout(timer)
+      if (timer) { clearTimeout(timer) }
       if (err.code === 'ENOENT') {
         settle({ ok: false, reason: 'not-found', stdout, stderr })
       } else if (err.code === 'EACCES') {
@@ -91,7 +91,7 @@ export const runCommandWithOutput = (
     })
 
     child.on('close', (code, signal) => {
-      if (timer) clearTimeout(timer)
+      if (timer) { clearTimeout(timer) }
 
       if (timedOut) {
         settle({ ok: false, reason: 'timeout', stdout, stderr })
