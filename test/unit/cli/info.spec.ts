@@ -31,14 +31,27 @@ describe('runInfo', () => {
     sinon.restore()
   })
 
+  it('outputs valid JSON when docker is not installed (ENOENT)', async () => {
+    sinon.stub(fs, 'existsSync').returns(false)
+    sinon.stub(processUtils, 'runCommandWithOutput').resolves({ ok: false, reason: 'not-found', stdout: '', stderr: '' })
+
+    const code = await infoCommand.runInfo({ json: true })
+
+    expect(code).to.equal(0)
+    const parsed = JSON.parse(stdout)
+    expect(parsed).to.have.nested.property('runtime.uptimeSeconds', null)
+    expect(stderr).to.equal('')
+  })
+
   it('prints detected I2P hostnames as JSON', async () => {
     sinon.stub(fs, 'existsSync').callsFake((target) => String(target).endsWith('nostream.dat'))
     sinon
       .stub(processUtils, 'runCommandWithOutput')
       .onFirstCall()
-      .resolves({ code: 1, stdout: '', stderr: '' })
+      .resolves({ ok: true, code: 1, stdout: '', stderr: '' })
       .onSecondCall()
       .resolves({
+        ok: true,
         code: 0,
         stdout: 'alphaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b32.i2p\n',
         stderr: 'betabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.b32.i2p\n',
@@ -58,7 +71,7 @@ describe('runInfo', () => {
 
   it('prints a JSON error when I2P keys are missing', async () => {
     sinon.stub(fs, 'existsSync').returns(false)
-    sinon.stub(processUtils, 'runCommandWithOutput').resolves({ code: 1, stdout: '', stderr: '' })
+    sinon.stub(processUtils, 'runCommandWithOutput').resolves({ ok: true, code: 1, stdout: '', stderr: '' })
 
     const code = await infoCommand.runInfo({ i2pHostname: true, json: true })
 
@@ -77,9 +90,9 @@ describe('runInfo', () => {
     sinon
       .stub(processUtils, 'runCommandWithOutput')
       .onFirstCall()
-      .resolves({ code: 1, stdout: '', stderr: '' })
+      .resolves({ ok: true, code: 1, stdout: '', stderr: '' })
       .onSecondCall()
-      .resolves({ code: 0, stdout: '', stderr: '' })
+      .resolves({ ok: true, code: 0, stdout: '', stderr: '' })
 
     const code = await infoCommand.runInfo({ i2pHostname: true, json: true })
 
@@ -101,9 +114,9 @@ describe('runInfo', () => {
     sinon
       .stub(processUtils, 'runCommandWithOutput')
       .onFirstCall()
-      .resolves({ code: 1, stdout: '', stderr: '' })
+      .resolves({ ok: true, code: 1, stdout: '', stderr: '' })
       .onSecondCall()
-      .resolves({ code: 0, stdout: '', stderr: '' })
+      .resolves({ ok: true, code: 0, stdout: '', stderr: '' })
 
     const code = await infoCommand.runInfo({ i2pHostname: true })
 
