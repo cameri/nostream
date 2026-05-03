@@ -9,6 +9,7 @@ import { EventKinds } from '../../../src/constants/base'
 import { eventStrategyFactory } from '../../../src/factories/event-strategy-factory'
 import { Factory } from '../../../src/@types/base'
 import { GiftWrapEventStrategy } from '../../../src/handlers/event-strategies/gift-wrap-event-strategy'
+import { GroupEventStrategy } from '../../../src/handlers/event-strategies/group-event-strategy'
 import { IEventStrategy } from '../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
@@ -70,6 +71,26 @@ describe('eventStrategyFactory', () => {
   it('returns GiftWrapEventStrategy given a gift wrap event', () => {
     event.kind = EventKinds.GIFT_WRAP
     expect(factory([event, adapter])).to.be.an.instanceOf(GiftWrapEventStrategy)
+  })
+
+  it('returns GroupEventStrategy given a Marmot group event (kind 445)', () => {
+    event.kind = EventKinds.MARMOT_GROUP_EVENT
+    expect(factory([event, adapter])).to.be.an.instanceOf(GroupEventStrategy)
+  })
+
+  it('returns ParameterizedReplaceableEventStrategy given a Marmot KeyPackage event (kind 30443)', () => {
+    event.kind = EventKinds.MARMOT_KEY_PACKAGE
+    expect(factory([event, adapter])).to.be.an.instanceOf(ParameterizedReplaceableEventStrategy)
+  })
+
+  it('returns ReplaceableEventStrategy given a Marmot KeyPackage relay list (kind 10051)', () => {
+    event.kind = EventKinds.MARMOT_KEY_PACKAGE_RELAY_LIST
+    expect(factory([event, adapter])).to.be.an.instanceOf(ReplaceableEventStrategy)
+  })
+
+  it('returns DefaultEventStrategy given a legacy Marmot KeyPackage (kind 443)', () => {
+    event.kind = EventKinds.MARMOT_KEY_PACKAGE_LEGACY
+    expect(factory([event, adapter])).to.be.an.instanceOf(DefaultEventStrategy)
   })
 
   it('returns TimestampEventStrategy given an opentimestamps (NIP-03) event', () => {
