@@ -367,6 +367,23 @@ describe('SubscribeMessageHandler', () => {
       )
     })
 
+    it('returns reason if filter limit exceeds max limit', () => {
+      settingsFactory.returns({
+        limits: {
+          client: {
+            subscription: {
+              maxLimit: 50,
+            },
+          },
+        },
+      })
+      filters = [{ limit: 100 }]
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
+        'Limit too high: Filter limit must be less than or equal to 50',
+      )
+    })
+
     it('returns reason if subscription id is too long', () => {
       settingsFactory.returns({
         limits: {

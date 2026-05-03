@@ -107,4 +107,14 @@ describe('eventStrategyFactory', () => {
     event.kind = EventKinds.TEXT_NOTE
     expect(factory([event, adapter])).to.be.an.instanceOf(DefaultEventStrategy)
   })
+
+  it('returns DefaultEventStrategy given a reaction event (NIP-25)', () => {
+    event.kind = EventKinds.REACTION
+    expect(factory([event, adapter])).to.be.an.instanceOf(DefaultEventStrategy)
+  })
+
+  it('returns DefaultEventStrategy given an external content reaction event (NIP-25)', () => {
+    event.kind = EventKinds.EXTERNAL_CONTENT_REACTION
+    expect(factory([event, adapter])).to.be.an.instanceOf(DefaultEventStrategy)
+  })
 })
