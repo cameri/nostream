@@ -80,6 +80,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       contact,
       supported_nips: packageJson.supportedNips,
       supported_nip_extensions: packageJson.supportedNipExtensions,
+      supported_mips: packageJson.supportedMips,
       software: packageJson.repository.url,
       version: packageJson.version,
       ...(terms_of_service !== undefined ? { terms_of_service } : {}),

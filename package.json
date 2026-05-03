@@ -26,6 +26,7 @@
     65
   ],
   "supportedNipExtensions": [],
+  "supportedMips": [0, 1, 2, 3],
   "main": "src/index.ts",
   "bin": {
     "nostream": "./dist/src/cli/index.js"

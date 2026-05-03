@@ -721,6 +721,19 @@ describe('EventMessageHandler', () => {
         const reason = await (handler as any).isEventValid(giftWrap)
         expect(reason).to.be.undefined
       })
+
+      it('blocks kind 444 (Marmot Welcome rumor) with a clear rejection message', async () => {
+        const welcomeRumor = await makeValidEvent(EventKinds.MARMOT_WELCOME_RUMOR)
+        const reason = await (handler as any).isEventValid(welcomeRumor)
+        expect(reason).to.include('blocked')
+        expect(reason).to.include('444')
+      })
+
+      it('does not block a kind 445 (Marmot Group Event)', async () => {
+        const groupEvent = await makeValidEvent(EventKinds.MARMOT_GROUP_EVENT)
+        const reason = await (handler as any).isEventValid(groupEvent)
+        expect(reason).to.be.undefined
+      })
     })
   })
 
