@@ -279,3 +279,13 @@ export const isFileMessageEvent = (event: Event): boolean => {
 export const isOpenTimestampsEvent = (event: Event): boolean => {
   return event.kind === EventKinds.OPEN_TIMESTAMPS
 }
+
+// Marmot Protocol helpers
+
+export const isWelcomeRumorEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.MARMOT_WELCOME_RUMOR
+}
+
+export const isMarmotGroupEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.MARMOT_GROUP_EVENT
+}

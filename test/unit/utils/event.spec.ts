@@ -11,10 +11,12 @@ import {
   isExpiredEvent,
   isFileMessageEvent,
   isGiftWrapEvent,
+  isMarmotGroupEvent,
   isParameterizedReplaceableEvent,
   isReplaceableEvent,
   isRequestToVanishEvent,
   isSealEvent,
+  isWelcomeRumorEvent,
   serializeEvent,
 } from '../../../src/utils/event'
 import { expect } from 'chai'
@@ -411,6 +413,45 @@ describe('NIP-17', () => {
       expect(isFileMessageEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
       expect(isFileMessageEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.false
       expect(isFileMessageEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
+    })
+  })
+})
+
+describe('Marmot Protocol', () => {
+  describe('isWelcomeRumorEvent', () => {
+    it('returns true for kind 444', () => {
+      expect(isWelcomeRumorEvent({ kind: EventKinds.MARMOT_WELCOME_RUMOR } as any)).to.be.true
+    })
+
+    it('returns false for kind 445 (group event)', () => {
+      expect(isWelcomeRumorEvent({ kind: EventKinds.MARMOT_GROUP_EVENT } as any)).to.be.false
+    })
+
+    it('returns false for kind 1059 (gift wrap)', () => {
+      expect(isWelcomeRumorEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
+    })
+
+    it('returns false for any unrelated kind', () => {
+      expect(isWelcomeRumorEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+    })
+  })
+
+  describe('isMarmotGroupEvent', () => {
+    it('returns true for kind 445', () => {
+      expect(isMarmotGroupEvent({ kind: EventKinds.MARMOT_GROUP_EVENT } as any)).to.be.true
+    })
+
+    it('returns false for kind 444 (welcome rumor)', () => {
+      expect(isMarmotGroupEvent({ kind: EventKinds.MARMOT_WELCOME_RUMOR } as any)).to.be.false
+    })
+
+    it('returns false for kind 443 (legacy key package)', () => {
+      expect(isMarmotGroupEvent({ kind: EventKinds.MARMOT_KEY_PACKAGE_LEGACY } as any)).to.be.false
+    })
+
+    it('returns false for any unrelated kind', () => {
+      expect(isMarmotGroupEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isMarmotGroupEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
     })
   })
 })
