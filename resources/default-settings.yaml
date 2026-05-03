@@ -181,6 +181,11 @@ limits:
             - 39999
         period: 60000
         rate: 24
+      - description: 60 events/min for Marmot group events (kind 445)
+        kinds:
+          - 445
+        period: 60000
+        rate: 60
       - description: 60 events/min for ephemeral events
         kinds:
           - - 20000

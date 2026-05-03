@@ -20,6 +20,10 @@ export enum EventKinds {
   CHANNEL_MUTE_USER = 44,
   CHANNEL_RESERVED_FIRST = 45,
   CHANNEL_RESERVED_LAST = 49,
+  // Marmot Protocol: E2EE Group Messaging (MIPs)
+  MARMOT_KEY_PACKAGE_LEGACY = 443, // MIP-00: legacy KeyPackage (regular event, superseded by 30443)
+  MARMOT_WELCOME_RUMOR = 444, // MIP-02: Welcome rumor (must not be published directly; wraps inside gift wrap)
+  MARMOT_GROUP_EVENT = 445, // MIP-03: Group Event (proposals, commits, application messages)
   // NIP-17: Gift Wrap
   GIFT_WRAP = 1059,
   // NIP-03: OpenTimestamps attestation
@@ -34,12 +38,16 @@ export enum EventKinds {
   REPLACEABLE_FIRST = 10000,
   // NIP-65: Relay List Metadata
   RELAY_LIST = 10002,
+  // Marmot Protocol MIP-00: KeyPackage Relay List
+  MARMOT_KEY_PACKAGE_RELAY_LIST = 10051,
   REPLACEABLE_LAST = 19999,
   // Ephemeral events
   EPHEMERAL_FIRST = 20000,
   EPHEMERAL_LAST = 29999,
   // Parameterized replaceable events
   PARAMETERIZED_REPLACEABLE_FIRST = 30000,
+  // Marmot Protocol MIP-00: KeyPackage (addressable, replaces legacy 443)
+  MARMOT_KEY_PACKAGE = 30443,
   PARAMETERIZED_REPLACEABLE_LAST = 39999,
   USER_APPLICATION_FIRST = 40000,
 }
@@ -58,6 +66,8 @@ export enum EventTags {
   Kind = 'k',
   // NIP-12: geohash tag for location-based queries
   Geohash = 'g',
+  // Marmot Protocol MIP-03: group ID for filtering kind:445 Group Events
+  Group = 'h',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'
