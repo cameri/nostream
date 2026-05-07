@@ -25,8 +25,11 @@ export interface ICacheAdapter {
   removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number>
   getRangeFromSortedSet(key: string, start: number, stop: number): Promise<string[]>
   setKeyExpiry(key: string, expiry: number): Promise<void>
+
   deleteKey(key: string): Promise<number>
   getHKey(key: string, field: string): Promise<string>
   setHKey(key: string, fields: Record<string, string>): Promise<boolean>
+
+
   eval(script: string, keys: string[], args: string[]): Promise<unknown>
 }
