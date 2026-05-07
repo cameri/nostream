@@ -18,6 +18,10 @@ export const runUpdate = async (passthrough: string[]): Promise<number> => {
   }
 
   const stashResult = await runCommandWithOutput('git', ['stash', 'push', '-u', '-m', 'nostream-cli-update'])
+  if (!stashResult.ok) {
+    spinner.fail(stashResult.ok === false && stashResult.reason === 'not-found' ? 'Update failed: git is not installed' : 'Update failed while stashing local changes')
+    return 1
+  }
   if (stashResult.code !== 0) {
     spinner.fail('Update failed while stashing local changes')
     return stashResult.code
