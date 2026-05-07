@@ -116,6 +116,14 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       }
     }
 
+    const maxLimit = subscriptionLimits?.maxLimit ?? 0
+    if (maxLimit > 0) {
+      const hasExcessiveLimit = filters.some((filter) => filter.limit !== undefined && filter.limit > maxLimit)
+      if (hasExcessiveLimit) {
+        return `Limit too high: Filter limit must be less than or equal to ${maxLimit}`
+      }
+    }
+
     if (
       typeof subscriptionLimits?.maxSubscriptionIdLength === 'number' &&
       subscriptionId.length > subscriptionLimits.maxSubscriptionIdLength

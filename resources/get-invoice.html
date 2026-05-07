@@ -9,7 +9,7 @@
   </head>
   <body lang="en">
     <main class="container">
-      <form method="post" action="/invoices">
+      <form method="post" action="{{path_prefix}}/invoices">
         <div class="row">
           <div class="col">
             <h1 class="mt-4 mb-4 text-center text-nowrap">{{name}}</h1>
@@ -46,7 +46,7 @@
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="tosAccepted" name="tosAccepted" value="yes" required>
                 <label class="form-check-label" for="tosAccepted">
-                  I have read and agree to the <a href="/terms" class="card-link" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+                  I have read and agree to the <a href="{{path_prefix}}/terms" class="card-link" target="_blank" rel="noopener noreferrer">Terms of Service</a>
                 </label>
               </div>
             </div>

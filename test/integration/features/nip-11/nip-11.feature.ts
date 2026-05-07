@@ -30,6 +30,16 @@ When('a client requests the root path with Accept header {string}', async functi
   this.parameters.httpResponse = response
 })
 
+When('a browser requests the root path', async function(this: World<Record<string, any>>) {
+  const response: AxiosResponse = await axios.get(BASE_URL, {
+    headers: {
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    },
+    validateStatus: () => true,
+  })
+  this.parameters.httpResponse = response
+})
+
 Then('the response status is {int}', function(this: World<Record<string, any>>, status: number) {
   expect(this.parameters.httpResponse.status).to.equal(status)
 })

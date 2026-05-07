@@ -7,8 +7,11 @@ const { expect } = chai
 
 import * as settingsFactory from '../../../../src/factories/settings-factory'
 import * as templateCache from '../../../../src/utils/template-cache'
+import {
+  hasExplicitNostrJsonAcceptHeader,
+  rootRequestHandler,
+} from '../../../../src/handlers/request-handlers/root-request-handler'
 import { DEFAULT_FILTER_LIMIT } from '../../../../src/constants/base'
-import { rootRequestHandler } from '../../../../src/handlers/request-handlers/root-request-handler'
 
 const baseSettings = {
   info: {
@@ -40,6 +43,23 @@ const settingsWithFee = {
     },
   },
 }
+
+describe('hasExplicitNostrJsonAcceptHeader', () => {
+  it('returns true for explicit application/nostr+json', () => {
+    expect(hasExplicitNostrJsonAcceptHeader({ headers: { accept: 'application/nostr+json' } } as any)).to.equal(true)
+  })
+
+  it('returns false for typical browser Accept header', () => {
+    const browserAcceptHeader =
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+
+    expect(hasExplicitNostrJsonAcceptHeader({ headers: { accept: browserAcceptHeader } } as any)).to.equal(false)
+  })
+
+  it('returns false when q=0 for application/nostr+json', () => {
+    expect(hasExplicitNostrJsonAcceptHeader({ headers: { accept: 'application/nostr+json;q=0' } } as any)).to.equal(false)
+  })
+})
 
 describe('rootRequestHandler', () => {
   let createSettingsStub: sinon.SinonStub
@@ -105,6 +125,19 @@ describe('rootRequestHandler', () => {
       expect(getTemplateStub).to.not.have.been.called
     })
 
+    it('includes relay_url path prefix in payments_url', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        info: { ...baseSettings.info, relay_url: 'wss://relay.example.com/nostream' },
+      })
+
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.payments_url).to.equal('https://relay.example.com/nostream/invoices')
+    })
+
+    
     it('includes optional NIP-11 fields when configured', () => {
       createSettingsStub.returns({
         ...baseSettings,
@@ -237,6 +270,44 @@ describe('rootRequestHandler', () => {
       rootRequestHandler(req, res, next)
 
       expect(res.send.firstCall.args[0]).to.equal('test-nonce')
+    })
+
+    it('injects relay_url path prefix into links', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        info: { ...baseSettings.info, relay_url: 'wss://relay.example.com/nostream' },
+      })
+      getTemplateStub.returns('{{path_prefix}}/invoices|{{path_prefix}}/terms')
+
+      rootRequestHandler(req, res, next)
+
+      expect(res.send.firstCall.args[0]).to.equal('/nostream/invoices|/nostream/terms')
+    })
+
+    it('uses trusted forwarded path prefix over relay_url path', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        info: { ...baseSettings.info, relay_url: 'wss://relay.example.com/nostream' },
+        network: { ...baseSettings.network, trustedProxies: ['127.0.0.1'] },
+      })
+      getTemplateStub.returns('{{path_prefix}}/invoices')
+      req.headers['x-forwarded-prefix'] = '/proxy'
+      req.socket = { remoteAddress: '127.0.0.1' }
+
+      rootRequestHandler(req, res, next)
+
+      expect(res.send.firstCall.args[0]).to.equal('/proxy/invoices')
+    })
+
+    it('ignores forwarded path prefix when proxy is not trusted', () => {
+      createSettingsStub.returns(baseSettings)
+      getTemplateStub.returns('{{path_prefix}}/invoices')
+      req.headers['x-forwarded-prefix'] = '/nostream'
+      req.socket = { remoteAddress: '127.0.0.1' }
+
+      rootRequestHandler(req, res, next)
+
+      expect(res.send.firstCall.args[0]).to.equal('/invoices')
     })
 
     it('shows amount in sats when admission fee is enabled', () => {

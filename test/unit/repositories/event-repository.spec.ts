@@ -320,6 +320,28 @@ describe('EventRepository', () => {
         })
       })
 
+      describe('#g', () => {
+        it('selects geohash tags by prefix when criterion ends with wildcard', () => {
+          const filters = [{ '#g': ['u4pruyd*'] }]
+
+          const query = repository.findByFilters(filters).toString()
+
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'g\' AND event_tags.tag_value LIKE \'u4pruyd%\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
+        })
+
+        it('keeps geohash tags exact when criterion has no wildcard', () => {
+          const filters = [{ '#g': ['u4pruyd'] }]
+
+          const query = repository.findByFilters(filters).toString()
+
+          expect(query).to.equal(
+            'select "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'g\' AND event_tags.tag_value = \'u4pruyd\') order by "event_created_at" asc, "event_id" asc limit 500',
+          )
+        })
+      })
+
       describe('#p', () => {
         it('selects no events given empty list of #p tags', () => {
           const filters = [{ '#p': [] }]

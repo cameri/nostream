@@ -3,17 +3,20 @@ import {
   isDeleteEvent,
   isEphemeralEvent,
   isGiftWrapEvent,
+  isMarmotGroupEvent,
   isOpenTimestampsEvent,
   isParameterizedReplaceableEvent,
   isReplaceableEvent,
   isRequestToVanishEvent,
 } from '../utils/event'
+import { isRelayListEvent } from '../utils/nip65'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
 import { EphemeralEventStrategy } from '../handlers/event-strategies/ephemeral-event-strategy'
 import { Event } from '../@types/event'
 import { Factory } from '../@types/base'
 import { GiftWrapEventStrategy } from '../handlers/event-strategies/gift-wrap-event-strategy'
+import { GroupEventStrategy } from '../handlers/event-strategies/group-event-strategy'
 import { IEventStrategy } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strategies/parameterized-replaceable-event-strategy'
@@ -31,9 +34,11 @@ export const eventStrategyFactory =
       return new VanishEventStrategy(adapter, eventRepository, userRepository)
     } else if (isGiftWrapEvent(event)) {
       return new GiftWrapEventStrategy(adapter, eventRepository)
+    } else if (isMarmotGroupEvent(event)) {
+      return new GroupEventStrategy(adapter, eventRepository)
     } else if (isOpenTimestampsEvent(event)) {
       return new TimestampEventStrategy(adapter, eventRepository)
-    } else if (isReplaceableEvent(event)) {
+    } else if (isRelayListEvent(event) || isReplaceableEvent(event)) {
       return new ReplaceableEventStrategy(adapter, eventRepository)
     } else if (isEphemeralEvent(event)) {
       return new EphemeralEventStrategy(adapter)

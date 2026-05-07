@@ -1,7 +1,7 @@
 import { expect } from 'chai'
 import { IncomingMessage } from 'http'
 
-import { getRemoteAddress } from '../../../src/utils/http'
+import { getPublicPathPrefix, getRemoteAddress, joinPathPrefix } from '../../../src/utils/http'
 
 describe('getRemoteAddress', () => {
   const header = 'x-forwarded-for'
@@ -84,5 +84,97 @@ describe('getRemoteAddress', () => {
         { network: { remoteIpHeader: header, trustedProxies: [socketAddress] } } as any,
       )
     ).to.equal(address)
+  })
+})
+
+describe('getPublicPathPrefix', () => {
+  it('returns the relay_url path prefix by default', () => {
+    expect(
+      getPublicPathPrefix({ headers: {}, socket: { remoteAddress: 'client' } } as any, {
+        info: { relay_url: 'wss://relay.example.com/nostream/' },
+        network: {},
+      } as any),
+    ).to.equal('/nostream')
+  })
+
+  it('uses trusted x-forwarded-prefix over relay_url', () => {
+    expect(
+      getPublicPathPrefix(
+        {
+          headers: { 'x-forwarded-prefix': '/relay, /other' },
+          socket: { remoteAddress: '127.0.0.1' },
+        } as any,
+        {
+          info: { relay_url: 'wss://relay.example.com/nostream' },
+          network: { trustedProxies: ['127.0.0.1'] },
+        } as any,
+      ),
+    ).to.equal('/relay')
+  })
+
+  it('ignores untrusted x-forwarded-prefix', () => {
+    expect(
+      getPublicPathPrefix(
+        {
+          headers: { 'x-forwarded-prefix': '/evil' },
+          socket: { remoteAddress: 'client' },
+        } as any,
+        {
+          info: { relay_url: 'wss://relay.example.com/nostream' },
+          network: { trustedProxies: ['127.0.0.1'] },
+        } as any,
+      ),
+    ).to.equal('/nostream')
+  })
+
+  it('ignores x-forwarded-prefix when trustedProxies is unset', () => {
+    expect(
+      getPublicPathPrefix(
+        {
+          headers: { 'x-forwarded-prefix': '/nostream' },
+          socket: { remoteAddress: '127.0.0.1' },
+        } as any,
+        {
+          info: { relay_url: 'wss://relay.example.com' },
+          network: {},
+        } as any,
+      ),
+    ).to.equal('')
+  })
+
+  it('rejects absolute or protocol-relative trusted prefixes', () => {
+    const settings = {
+      info: { relay_url: 'wss://relay.example.com/nostream' },
+      network: { trustedProxies: ['127.0.0.1'] },
+    } as any
+
+    expect(
+      getPublicPathPrefix(
+        {
+          headers: { 'x-forwarded-prefix': 'https://example.com/other' },
+          socket: { remoteAddress: '127.0.0.1' },
+        } as any,
+        settings,
+      ),
+    ).to.equal('/nostream')
+    expect(
+      getPublicPathPrefix(
+        {
+          headers: { 'x-forwarded-prefix': '//example.com/other' },
+          socket: { remoteAddress: '127.0.0.1' },
+        } as any,
+        settings,
+      ),
+    ).to.equal('/nostream')
+  })
+})
+
+describe('joinPathPrefix', () => {
+  it('joins an empty prefix with an absolute path', () => {
+    expect(joinPathPrefix('', '/invoices')).to.equal('/invoices')
+  })
+
+  it('joins a forwarded prefix with an absolute path', () => {
+    expect(joinPathPrefix('/nostream', '/invoices')).to.equal('/nostream/invoices')
   })
 })
