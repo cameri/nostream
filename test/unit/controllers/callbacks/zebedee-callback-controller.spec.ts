@@ -136,21 +136,6 @@ describe('ZebedeeCallbackController', () => {
       expect(res.send).to.have.been.calledWith('Forbidden')
       expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
     })
-
-    it('returns 403 when zebedee is not the configured processor', async () => {
-      createSettingsStub.returns({
-        ...baseSettings,
-        payments: { processor: 'lnbits' },
-      })
-      const { controller, paymentsService } = makeController()
-      const res = makeRes()
-
-      await controller.handleRequest(makeReq(), res)
-
-      expect(res.status).to.have.been.calledWith(403)
-      expect(res.send).to.have.been.calledWith('Forbidden')
-      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
-    })
   })
 
   describe('invoice state handling', () => {

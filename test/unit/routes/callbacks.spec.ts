@@ -4,14 +4,20 @@ import express from 'express'
 import Sinon from 'sinon'
 
 import * as openNodeControllerFactory from '../../../src/factories/controllers/opennode-callback-controller-factory'
+import * as settingsFactory from '../../../src/factories/settings-factory'
 
 describe('callbacks router', () => {
   let createOpenNodeCallbackControllerStub: Sinon.SinonStub
+  let createSettingsStub: Sinon.SinonStub
   let receivedBody: unknown
   let server: any
 
   beforeEach(async () => {
     receivedBody = undefined
+
+    createSettingsStub = Sinon.stub(settingsFactory, 'createSettings').returns({
+      payments: { processor: 'opennode' },
+    } as any)
 
     createOpenNodeCallbackControllerStub = Sinon.stub(openNodeControllerFactory, 'createOpenNodeCallbackController').returns({
       handleRequest: async (request: any, response: any) => {
@@ -35,6 +41,7 @@ describe('callbacks router', () => {
 
   afterEach(async () => {
     createOpenNodeCallbackControllerStub.restore()
+    createSettingsStub.restore()
     delete require.cache[require.resolve('../../../src/routes/callbacks')]
 
     if (server) {
