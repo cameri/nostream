@@ -23,6 +23,7 @@ import {
   isFileMessageEvent,
   isRequestToVanishEvent,
   isSealEvent,
+  isWelcomeRumorEvent,
 } from '../utils/event'
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
@@ -238,7 +239,9 @@ export class EventMessageHandler implements IMessageHandler {
     // NIP-17: kind 13 (Seal) and kind 14 (Direct Message) are inner events that
     // must never be published directly to a relay. They are encrypted inside a
     // kind 1059 Gift Wrap (NIP-59) before being sent here.
-    if (isSealEvent(event) || isDirectMessageEvent(event) || isFileMessageEvent(event)) {
+    // Marmot MIP-02: kind 444 (Welcome rumor) is similarly an inner event that
+    // must only be delivered inside a kind 1059 gift wrap.
+    if (isSealEvent(event) || isDirectMessageEvent(event) || isFileMessageEvent(event) || isWelcomeRumorEvent(event)) {
       return `blocked: kind ${event.kind} events must not be published directly; wrap them in a kind 1059 gift wrap`
     }
   }

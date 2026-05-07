@@ -216,15 +216,15 @@ describe('WebSocketAdapter', () => {
       expect(client.close).to.have.been.calledOnce
     })
 
-    it('does not close when client is not alive but has subscriptions', () => {
+    it('closes when client is not alive even if it has active subscriptions', () => {
       adapter.onSubscribed('sub-1', [{ kinds: [1] }])
 
       // First heartbeat: sets alive to false, pings
       adapter.emit(WebSocketAdapterEvent.Heartbeat)
-      // Second heartbeat: alive is false, but has subs -> keep alive
+      // Second heartbeat: alive is still false, has subs -> still close
       adapter.emit(WebSocketAdapterEvent.Heartbeat)
 
-      expect(client.close).not.to.have.been.called
+      expect(client.close).to.have.been.called
     })
   })
 

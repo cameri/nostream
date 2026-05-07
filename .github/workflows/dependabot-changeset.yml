@@ -1,0 +1,46 @@
+name: Dependabot Changeset
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+jobs:
+  add-changeset:
+    name: Add Changeset
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Check for existing changeset
+        id: check
+        run: |
+          filename=".changeset/dependabot-pr-${{ github.event.pull_request.number }}.md"
+          if [ -f "$filename" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create changeset
+        if: steps.check.outputs.exists == 'false'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          filename=".changeset/dependabot-pr-${{ github.event.pull_request.number }}.md"
+          printf -- '---\n"nostream": patch\n---\n\n%s\n' "$PR_TITLE" > "$filename"
+
+      - name: Commit and push changeset
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .changeset/dependabot-pr-${{ github.event.pull_request.number }}.md
+          git commit -m "chore: add changeset for dependabot PR #${{ github.event.pull_request.number }}"
+          git push

@@ -126,7 +126,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public onHeartbeat(): void {
-    if (!this.alive && !this.subscriptions.size) {
+    if (!this.alive) {
       logger.error(`web-socket-adapter: pong timeout for client ${this.clientId} (${this.getClientAddress()})`)
       this.client.close()
       return

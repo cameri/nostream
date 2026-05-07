@@ -57,6 +57,7 @@ The following environment variables can be set:
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
+| NWC_URL                          | NWC connection URL (`nostr+walletconnect://...`) | |
 
 ## I2P
 
@@ -73,8 +74,7 @@ Tunnel keys are persisted at `.nostr/i2p/data/` so the `.b32.i2p` address surviv
 
 The i2pd web console (tunnel status, `.b32.i2p` destinations) is published to the host on **`127.0.0.1:7070`** only. Remove the `ports:` mapping in `docker-compose.i2p.yml` to disable host-side access.
 
-- Start with I2P: `./scripts/start_with_i2p`
-- Print hostname hints: `./scripts/print_i2p_hostname`
+- Start with I2P: `nostream start --i2p`
 
 If you've set READ_REPLICAS to 4, you should configure RR0_ through RR3_.
 
@@ -94,8 +94,8 @@ The schema ships with a small, query-driven set of indexes. The most important o
 Run the read-only benchmark against your own database to confirm the planner is using the expected indexes and to record baseline latencies:
 
 ```sh
-npm run db:benchmark
-npm run db:benchmark -- --runs 5 --kind 1 --limit 500
+pnpm db:benchmark
+pnpm db:benchmark --runs 5 --kind 1 --limit 500
 ```
 
 The `db:benchmark` script loads the local `.env` file automatically (via `node --env-file-if-exists=.env`), using the same `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` variables as the relay. The benchmark issues only `EXPLAIN (ANALYZE, BUFFERS)` and `SELECT` statements — it never writes. Flags: `--runs <n>` (default 3), `--kind <n>` (default 1 / `TEXT_NOTE`; pass `0` for SET_METADATA), `--limit <n>` (default 500), `--horizon-days <n>` (default 7), `--help`.
@@ -103,7 +103,7 @@ The `db:benchmark` script loads the local `.env` file automatically (via `node -
 For a full before/after proof of the index impact (seeds a throwaway dataset, drops and recreates the indexes, and prints a BEFORE/AFTER table), use:
 
 ```sh
-npm run db:verify-index-impact
+pnpm db:verify-index-impact
 ```
 
 The hot-path index migration (`20260420_120000_add_hot_path_indexes.js`) uses `CREATE INDEX CONCURRENTLY`, so it can be applied to a running relay without taking `ACCESS EXCLUSIVE` locks on the `events` or `invoices` tables.
@@ -223,5 +223,5 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].enabled   | Enables admission fee. Defaults to false. |
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
-| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `nwc`. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |

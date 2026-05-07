@@ -172,7 +172,7 @@ export class StaticMirroringWorker implements IRunnable {
 
     const eventLimits = this.settings().limits?.event ?? {}
 
-    const eventLimitOverrides = this.config.limits.event ?? {}
+    const eventLimitOverrides = this.config.limits?.event ?? {}
 
     const limits = mergeDeepRight(eventLimits, eventLimitOverrides) as EventLimits
 

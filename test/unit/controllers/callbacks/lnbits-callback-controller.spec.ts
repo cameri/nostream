@@ -108,35 +108,6 @@ describe('LNbitsCallbackController', () => {
   })
 
   describe('authorization and validation', () => {
-    it('returns 403 when payment processor settings are missing', async () => {
-      createSettingsStub.returns({
-        network: { remoteIpHeader: 'x-forwarded-for' },
-      })
-      const { controller, paymentsService } = makeController()
-      const res = makeRes()
-
-      await controller.handleRequest(makeReq(), res)
-
-      expect(res.status).to.have.been.calledWith(403)
-      expect(res.send).to.have.been.calledWith('Forbidden')
-      expect(paymentsService.getInvoiceFromPaymentsProcessor).to.not.have.been.called
-    })
-
-    it('returns 403 when lnbits is not the configured processor', async () => {
-      createSettingsStub.returns({
-        ...baseSettings,
-        payments: { processor: 'opennode' },
-      })
-      const { controller, paymentsService } = makeController()
-      const res = makeRes()
-
-      await controller.handleRequest(makeReq(), res)
-
-      expect(res.status).to.have.been.calledWith(403)
-      expect(res.send).to.have.been.calledWith('Forbidden')
-      expect(paymentsService.getInvoiceFromPaymentsProcessor).to.not.have.been.called
-    })
-
     it('returns 403 for invalid query parameters', async () => {
       const { controller } = makeController()
       const res = makeRes()

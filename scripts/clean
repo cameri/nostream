@@ -1,8 +1,0 @@
-#!/bin/bash
-PROJECT_ROOT="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))/.."
-
-$PROJECT_ROOT/scripts/stop_docker
-
-docker system prune -a
-
-docker volume prune

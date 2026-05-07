@@ -74,6 +74,9 @@ services:
       DB_USER: postgres
       DB_PASSWORD: postgres
       DB_NAME: nostr_ts_relay_test
+    # Using npm intentionally: this is an isolated, ephemeral container that
+    # only needs knex+pg for migrations. Avoids corepack/pnpm cold-install
+    # overhead (~15min) with no caching benefit in CI.
     entrypoint:
       - sh
       - -c

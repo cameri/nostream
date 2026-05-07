@@ -30,16 +30,9 @@ export class ZebedeeCallbackController implements IController {
 
     const { ipWhitelist = [] } = settings.paymentsProcessors?.zebedee ?? {}
     const remoteAddress = getRemoteAddress(request, settings)
-    const paymentProcessor = settings.payments?.processor
 
     if (ipWhitelist.length && !ipWhitelist.includes(remoteAddress)) {
       logger('unauthorized request from %s to /callbacks/zebedee', remoteAddress)
-      response.status(403).send('Forbidden')
-      return
-    }
-
-    if (paymentProcessor !== 'zebedee') {
-      logger('denied request from %s to /callbacks/zebedee which is not the current payment processor', remoteAddress)
       response.status(403).send('Forbidden')
       return
     }

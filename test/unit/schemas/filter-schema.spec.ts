@@ -55,6 +55,17 @@ describe('NIP-01', () => {
       expect(result.value).to.deep.equal(filter)
     })
 
+    it('accepts empty strings in generic tag filters', () => {
+      const filterWithEmptyTagValue = {
+        '#d': [''],
+      }
+
+      const result = validateSchema(filterSchema)(filterWithEmptyTagValue)
+
+      expect(result.error).to.be.undefined
+      expect(result.value).to.deep.equal(filterWithEmptyTagValue)
+    })
+
     const cases = {
       ids: [{ message: 'must be an array', transform: assocPath(['ids'], null) }],
       prefixOrId: [
@@ -103,7 +114,6 @@ describe('NIP-01', () => {
           message: 'length must be less than or equal to 1024 characters long',
           transform: assocPath(['#e', 0], 'f'.repeat(1024 + 1)),
         },
-        { message: 'is not allowed to be empty', transform: assocPath(['#e', 0], '') },
       ],
       '#p': [{ message: 'must be an array', transform: assocPath(['#p'], null) }],
       '#p[0]': [
@@ -111,7 +121,6 @@ describe('NIP-01', () => {
           message: 'length must be less than or equal to 1024 characters long',
           transform: assocPath(['#p', 0], 'f'.repeat(1024 + 1)),
         },
-        { message: 'is not allowed to be empty', transform: assocPath(['#p', 0], '') },
       ],
       '#r': [{ message: 'must be an array', transform: assocPath(['#r'], null) }],
       '#r[0]': [
@@ -119,7 +128,6 @@ describe('NIP-01', () => {
           message: 'length must be less than or equal to 1024 characters long',
           transform: assocPath(['#r', 0], 'f'.repeat(1024 + 1)),
         },
-        { message: 'is not allowed to be empty', transform: assocPath(['#r', 0], '') },
       ],
     }
 
@@ -131,5 +139,49 @@ describe('NIP-01', () => {
         })
       })
     }
+  })
+})
+
+describe('NIP-12', () => {
+  describe('#g filter validation', () => {
+    it('accepts a valid base32 geohash', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4pruydqqvj'] })
+      expect(result.error).to.be.undefined
+    })
+
+    it('accepts a valid geohash prefix with trailing wildcard', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4pruyd*'] })
+      expect(result.error).to.be.undefined
+    })
+
+    it('rejects an empty criterion', () => {
+      const result = validateSchema(filterSchema)({ '#g': [''] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects a bare wildcard', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['*'] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects non-base32 characters', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4pruyda'] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects uppercase characters', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['U4PRUYDQQVJ'] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects wildcard not at the end', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4*pruyd'] })
+      expect(result.error).to.not.be.undefined
+    })
+
+    it('rejects multiple wildcards', () => {
+      const result = validateSchema(filterSchema)({ '#g': ['u4pruyd**'] })
+      expect(result.error).to.not.be.undefined
+    })
   })
 })
