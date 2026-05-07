@@ -1,4 +1,4 @@
-import { json, Router, urlencoded } from 'express'
+import { json, NextFunction, Request, Response, Router, urlencoded } from 'express'
 
 import { createLNbitsCallbackController } from '../../factories/controllers/lnbits-callback-controller-factory'
 import { createNodelessCallbackController } from '../../factories/controllers/nodeless-callback-controller-factory'
@@ -9,17 +9,23 @@ import { withController } from '../../handlers/request-handlers/with-controller-
 
 const router: Router = Router()
 
-const settings = createSettings()
-const processor = settings.payments?.processor
+const requireProcessor = (name: string) =>
+  (_req: Request, res: Response, next: NextFunction) => {
+    const settings = createSettings()
+    if (settings.payments?.processor !== name) {
+      res.status(403).send('Forbidden')
+      return
+    }
+    next()
+  }
 
 router
-  .post('/zebedee', json(), withController(createZebedeeCallbackController))
-  .post('/lnbits', json(), withController(createLNbitsCallbackController))
-  .post('/opennode', urlencoded({ extended: false }), json(), withController(createOpenNodeCallbackController))
-
-if (processor === 'nodeless') {
-  router.post(
+  .post('/zebedee', requireProcessor('zebedee'), json(), withController(createZebedeeCallbackController))
+  .post('/lnbits', requireProcessor('lnbits'), json(), withController(createLNbitsCallbackController))
+  .post('/opennode', requireProcessor('opennode'), urlencoded({ extended: false }), json(), withController(createOpenNodeCallbackController))
+  .post(
     '/nodeless',
+    requireProcessor('nodeless'),
     json({
       verify(req, _res, buf) {
         ;(req as any).rawBody = buf
@@ -27,6 +33,6 @@ if (processor === 'nodeless') {
     }),
     withController(createNodelessCallbackController),
   )
-}
 
 export default router
+
