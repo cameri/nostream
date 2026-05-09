@@ -16,7 +16,7 @@ describe('callbacks router', () => {
     receivedBody = undefined
 
     createSettingsStub = Sinon.stub(settingsFactory, 'createSettings').returns({
-      payments: { processor: 'opennode' },
+      payments: { enabled: true, processor: 'opennode' },
     } as any)
 
     createOpenNodeCallbackControllerStub = Sinon.stub(openNodeControllerFactory, 'createOpenNodeCallbackController').returns({
