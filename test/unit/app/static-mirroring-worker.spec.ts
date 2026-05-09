@@ -56,6 +56,7 @@ describe('StaticMirroringWorker', () => {
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
+    process.env.SECRET = 'test-secret-for-unit-tests'
 
     fakeProcess = Object.assign(new EventEmitter(), {
       exit: sandbox.stub(),
@@ -83,6 +84,7 @@ describe('StaticMirroringWorker', () => {
   })
 
   afterEach(() => {
+    delete process.env.SECRET
     sandbox.restore()
   })
 

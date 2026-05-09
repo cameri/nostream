@@ -292,6 +292,8 @@ describe('App', () => {
     let deadWorker: any
 
     beforeEach(() => {
+      sandbox.useFakeTimers()
+
       worker = createFakeWorker()
       deadWorker = createFakeWorker()
 

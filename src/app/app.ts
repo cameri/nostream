@@ -72,8 +72,8 @@ export class App implements IRunnable {
       this.process.exit(1)
     }
 
-    const workerCount = process.env.WORKER_COUNT
-      ? Number(process.env.WORKER_COUNT)
+    const workerCount = this.process.env.WORKER_COUNT
+      ? Number(this.process.env.WORKER_COUNT)
       : this.settings().workers?.count || cpus().length
 
     const createWorker = (env: Record<string, string>) => {
