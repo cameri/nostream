@@ -8,6 +8,8 @@ import { StaticMirroringWorker } from '../../../src/app/static-mirroring-worker'
 import { Event } from '../../../src/@types/event'
 import { Settings } from '../../../src/@types/settings'
 import { IEventRepository, IUserRepository } from '../../../src/@types/repositories'
+import { getPublicKey, getRelayPrivateKey } from '../../../src/utils/event'
+import { WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 
 chai.use(sinonChai)
 
@@ -54,8 +56,11 @@ describe('StaticMirroringWorker', () => {
     ...overrides,
   })
 
+  let savedSecret: string | undefined
+
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
+    savedSecret = process.env.SECRET
     process.env.SECRET = 'test-secret-for-unit-tests'
 
     fakeProcess = Object.assign(new EventEmitter(), {
@@ -84,7 +89,8 @@ describe('StaticMirroringWorker', () => {
   })
 
   afterEach(() => {
-    delete process.env.SECRET
+    if (savedSecret === undefined) delete process.env.SECRET
+    else process.env.SECRET = savedSecret
     sandbox.restore()
   })
 
@@ -124,15 +130,20 @@ describe('StaticMirroringWorker', () => {
 
   describe('canAcceptEvent', () => {
     it('rejects events from the relay itself', () => {
-      // This tests the private canAcceptEvent method indirectly through the worker behavior
-      // For now, we focus on testing the public interface
+      const relayPrivkey = getRelayPrivateKey(settingsState.info!.relay_url)
+      const relayPubkey = getPublicKey(relayPrivkey)
+
+      const event = createEvent({ pubkey: relayPubkey })
+      const result = (worker as any).canAcceptEvent(event)
+
+      expect(result).to.equal(false)
     })
 
     it('accepts valid events within limits', () => {
       const event = createEvent({ pubkey: 'd'.repeat(64) })
       const result = (worker as any).canAcceptEvent(event)
 
-      expect(result).to.be.a('boolean')
+      expect(result).to.equal(true)
     })
 
     it('rejects events with content exceeding limits', () => {
@@ -357,29 +368,42 @@ describe('StaticMirroringWorker', () => {
   })
 
   describe('onMessage', () => {
-    it('relays broadcast messages to connected mirror', () => {
-      const testMessage = {
-        eventName: 'Broadcast',
-        event: createEvent(),
-        source: 'local',
-      }
+    let mockClient: { send: Sinon.SinonStub; readyState: number }
 
-      // Simulate message reception
-      fakeProcess.emit('message', testMessage)
-
-      // The message handler should attempt to forward if client is open
+    beforeEach(() => {
+      mockClient = { send: sandbox.stub(), readyState: 1 /* WebSocket.OPEN */ }
+      ;(worker as any).config = settingsState.mirroring!.static![0]
+      ;(worker as any).client = mockClient
     })
 
-    it('ignores messages from the same source', () => {
-      const testMessage = {
-        eventName: 'Broadcast',
+    it('relays broadcast messages to connected mirror', () => {
+      fakeProcess.emit('message', {
+        eventName: WebSocketServerAdapterEvent.Broadcast,
+        event: createEvent(),
+        source: 'local',
+      })
+
+      expect(mockClient.send).to.have.been.called
+    })
+
+    it('ignores messages from the same source as the mirror', () => {
+      fakeProcess.emit('message', {
+        eventName: WebSocketServerAdapterEvent.Broadcast,
         event: createEvent(),
         source: 'ws://source-relay.com',
-      }
+      })
 
-      fakeProcess.emit('message', testMessage)
+      expect(mockClient.send).not.to.have.been.called
+    })
 
-      // Should not forward to same source
+    it('ignores non-broadcast messages', () => {
+      fakeProcess.emit('message', {
+        eventName: 'other-event',
+        event: createEvent(),
+        source: 'local',
+      })
+
+      expect(mockClient.send).not.to.have.been.called
     })
   })
 
@@ -415,9 +439,12 @@ describe('StaticMirroringWorker', () => {
 
   describe('close', () => {
     it('terminates the WebSocket client', () => {
+      const mockClient = { terminate: sandbox.stub() }
+      ;(worker as any).client = mockClient
+
       worker.close()
 
-      // Verify close completes without error
+      expect(mockClient.terminate).to.have.been.called
     })
 
     it('invokes the callback when provided', () => {

@@ -37,14 +37,20 @@ describe('App', () => {
     } as any,
   })
 
-  const createFakeWorker = (): any => ({
-    id: Math.floor(Math.random() * 10000),
-    process: { pid: Math.floor(Math.random() * 100000) },
-    send: sandbox.stub(),
-  })
+  let workerIdCounter = 0
+
+  const createFakeWorker = (): any => {
+    const id = ++workerIdCounter
+    return {
+      id,
+      process: { pid: id + 100000 },
+      send: sandbox.stub(),
+    }
+  }
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
+    workerIdCounter = 0
 
     fakeProcess = Object.assign(new EventEmitter(), {
       exit: sandbox.stub(),
@@ -290,9 +296,10 @@ describe('App', () => {
   describe('onClusterExit', () => {
     let worker: any
     let deadWorker: any
+    let clock: Sinon.SinonFakeTimers
 
     beforeEach(() => {
-      sandbox.useFakeTimers()
+      clock = sandbox.useFakeTimers()
 
       worker = createFakeWorker()
       deadWorker = createFakeWorker()
@@ -319,11 +326,18 @@ describe('App', () => {
     })
 
     it('schedules worker restart on unexpected exit', () => {
-      // When a worker exits unexpectedly, the app schedules a restart
-      // We verify that exit handling doesn't throw
-      expect(() => {
-        fakeCluster.emit('exit', deadWorker, 1, '')
-      }).not.to.throw()
+      settingsState.workers = { count: 1 }
+      settingsState.mirroring = { static: [] }
+
+      app.run()
+
+      const registeredWorker = (fakeCluster.fork as Sinon.SinonStub).firstCall.returnValue
+      fakeCluster.fork.resetHistory()
+
+      fakeCluster.emit('exit', registeredWorker, 1, '')
+      clock.tick(10001)
+
+      expect(fakeCluster.fork).to.have.been.called
     })
   })
 

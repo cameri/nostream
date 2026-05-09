@@ -18,8 +18,12 @@ describe('AppWorker', () => {
   let fakeAdapter: any
   let watchSettingsStub: Sinon.SinonStub
 
+  let savedEnv: { PORT: string | undefined; RELAY_PORT: string | undefined }
+
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
+
+    savedEnv = { PORT: process.env.PORT, RELAY_PORT: process.env.RELAY_PORT }
 
     fakeProcess = Object.assign(new EventEmitter(), {
       exit: sandbox.stub(),
@@ -46,9 +50,10 @@ describe('AppWorker', () => {
   })
 
   afterEach(() => {
-    // Clean up env vars
-    delete process.env.PORT
-    delete process.env.RELAY_PORT
+    if (savedEnv.PORT === undefined) delete process.env.PORT
+    else process.env.PORT = savedEnv.PORT
+    if (savedEnv.RELAY_PORT === undefined) delete process.env.RELAY_PORT
+    else process.env.RELAY_PORT = savedEnv.RELAY_PORT
     sandbox.restore()
   })
 
@@ -147,21 +152,13 @@ describe('AppWorker', () => {
     it('handles TypeError about database connection without throwing', () => {
       const error = new TypeError("Cannot read properties of undefined (reading '__knexUid')")
 
-      // This should not throw because onError logs and returns for this specific error
-      fakeProcess.emit('uncaughtException', error)
-
-      // Verify error was handled gracefully
-      expect(true).to.be.true
+      expect(() => fakeProcess.emit('uncaughtException', error)).not.to.throw()
     })
 
-    it('logs other errors', () => {
+    it('logs other errors without throwing', () => {
       const error = new Error('test error')
 
-      // onError logs the error
-      fakeProcess.emit('uncaughtException', error)
-
-      // Verify the handler was called
-      expect(true).to.be.true
+      expect(() => fakeProcess.emit('uncaughtException', error)).not.to.throw()
     })
   })
 
@@ -233,6 +230,8 @@ describe('AppWorker', () => {
       worker.close()
 
       expect(fakeAdapter.close).to.have.been.called
+      expect(fakeWatcher1.close).to.have.been.called
+      expect(fakeWatcher2.close).to.have.been.called
     })
 
     it('handles no watchers gracefully', () => {

@@ -56,6 +56,9 @@ export class StaticMirroringWorker implements IRunnable {
     logger.info('mirroring', currentSettings.mirroring)
 
     this.config = path(['mirroring', 'static', this.process.env.MIRROR_INDEX], currentSettings) as Mirror
+    if (!this.config) {
+      throw new Error(`Mirror configuration not found for index ${this.process.env.MIRROR_INDEX}`)
+    }
 
     let since = Math.floor(Date.now() / 1000) - 60 * 10
 

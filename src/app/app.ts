@@ -47,8 +47,8 @@ export class App implements IRunnable {
    ░   ░ ░ ░ ░ ░ ▒  ░  ░  ░    ░        ░░   ░    ░    ░   ▒   ░      ░
          ░     ░ ░        ░              ░        ░  ░     ░  ░       ░`)
     const width = 74
-    const torHiddenServicePort = process.env.HIDDEN_SERVICE_PORT ? Number(process.env.HIDDEN_SERVICE_PORT) : 80
-    const port = process.env.RELAY_PORT ? Number(process.env.RELAY_PORT) : 8008
+    const torHiddenServicePort = this.process.env.HIDDEN_SERVICE_PORT ? Number(this.process.env.HIDDEN_SERVICE_PORT) : 80
+    const port = this.process.env.RELAY_PORT ? Number(this.process.env.RELAY_PORT) : 8008
 
     const logCentered = (input: string, width: number) => {
       const start = (width - input.length) >> 1
