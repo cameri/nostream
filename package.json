@@ -161,7 +161,7 @@
     "@clack/prompts": "^1.2.0",
     "@getalby/sdk": "^5.0.0",
     "@noble/secp256k1": "1.7.1",
-    "axios": "^1.15.0",
+    "axios": "^1.15.2",
     "cac": "^7.0.0",
     "colorette": "^2.0.20",
     "express": "4.22.1",
