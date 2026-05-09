@@ -12,7 +12,7 @@ const router: Router = Router()
 const requireProcessor = (name: string) =>
   (_req: Request, res: Response, next: NextFunction) => {
     const settings = createSettings()
-    if (settings.payments?.processor !== name) {
+    if (!settings.payments?.enabled || settings.payments.processor !== name) {
       res.status(403).send('Forbidden')
       return
     }
