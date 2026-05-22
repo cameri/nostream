@@ -2,6 +2,8 @@ import { expect } from 'chai'
 import fs from 'fs'
 import { join } from 'path'
 import Sinon from 'sinon'
+import { mergeDeepRight } from 'ramda'
+import { Settings } from '../../../src/@types/settings'
 
 import { SettingsFileTypes, SettingsStatic } from '../../../src/utils/settings'
 
@@ -256,6 +258,41 @@ describe('SettingsStatic', () => {
         Sinon.match.string,
         { encoding: 'utf-8' },
       )
+    })
+  })
+
+  describe('WoT settings defaults', () => {
+    it('default-settings.yaml contains a wot block with enabled: false', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(
+        SettingsStatic.getDefaultSettingsFilePath()
+      )
+      expect(defaults).to.have.nested.property('wot.enabled', false)
+      expect(defaults).to.have.nested.property('wot.seedPubkey', '')
+      expect(defaults).to.have.nested.property('wot.minimumFollowers', 1)
+      expect(defaults).to.have.nested.property('wot.refreshIntervalHours', 24)
+    })
+
+    it('merging an empty user config preserves wot defaults', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(
+        SettingsStatic.getDefaultSettingsFilePath()
+      )
+      const merged = mergeDeepRight(defaults, {}) as Settings
+      expect(merged.wot?.enabled).to.equal(false)
+      expect(merged.wot?.minimumFollowers).to.equal(1)
+      expect(merged.wot?.refreshIntervalHours).to.equal(24)
+    })
+
+    it('user config wot block overrides defaults', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(
+        SettingsStatic.getDefaultSettingsFilePath()
+      )
+      const userConfig = { wot: { enabled: true, seedPubkey: 'abc123', minimumFollowers: 3 } }
+      const merged = mergeDeepRight(defaults, userConfig) as Settings
+      expect(merged.wot?.enabled).to.equal(true)
+      expect(merged.wot?.seedPubkey).to.equal('abc123')
+      expect(merged.wot?.minimumFollowers).to.equal(3)
+      // non-overridden fields stay as defaults
+      expect(merged.wot?.refreshIntervalHours).to.equal(24)
     })
   })
 })
