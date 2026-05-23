@@ -244,6 +244,11 @@ export class EventMessageHandler implements IMessageHandler {
     if (isSealEvent(event) || isDirectMessageEvent(event) || isFileMessageEvent(event) || isWelcomeRumorEvent(event)) {
       return `blocked: kind ${event.kind} events must not be published directly; wrap them in a kind 1059 gift wrap`
     }
+
+    // NIP-42: auth events must use the AUTH message type
+    if (event.kind === EventKinds.AUTH) {
+      return 'invalid: auth events must be sent using the AUTH message type'
+    }
   }
 
   protected async isBlockedByRequestToVanish(event: Event): Promise<string | undefined> {
