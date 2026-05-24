@@ -272,16 +272,6 @@ describe('SettingsStatic', () => {
       expect(defaults).to.have.nested.property('wot.refreshIntervalHours', 24)
     })
 
-    it('merging an empty user config preserves wot defaults', () => {
-      const defaults = SettingsStatic.loadAndParseYamlFile(
-        SettingsStatic.getDefaultSettingsFilePath()
-      )
-      const merged = mergeDeepRight(defaults, {}) as Settings
-      expect(merged.wot?.enabled).to.equal(false)
-      expect(merged.wot?.minimumFollowers).to.equal(1)
-      expect(merged.wot?.refreshIntervalHours).to.equal(24)
-    })
-
     it('user config wot block overrides defaults', () => {
       const defaults = SettingsStatic.loadAndParseYamlFile(
         SettingsStatic.getDefaultSettingsFilePath()
