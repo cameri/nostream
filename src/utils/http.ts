@@ -27,16 +27,21 @@ const isTrustedProxy = (ipAddress: string, settings: Settings): boolean => {
   })
 }
 
-export const getRemoteAddress = (request: IncomingMessage, settings: Settings): string => {
-  let header: string | undefined
-  // TODO: Remove deprecation warning
-  if ('network' in settings && 'remote_ip_header' in settings.network) {
-    logger.warn(`WARNING: Setting network.remote_ip_header is deprecated and will be removed in a future version.
-        Use network.remoteIpHeader instead.`)
-    header = settings.network['remote_ip_header'] as string
-  } else {
-    header = settings.network.remoteIpHeader as string
+const warnIfDeprecatedRemoteIpHeaderIsConfigured = (settings: Settings): void => {
+  const networkSettings = settings.network as Record<string, unknown> | undefined
+  const deprecatedHeader = networkSettings?.remote_ip_header
+
+  if (typeof deprecatedHeader === 'string' && deprecatedHeader.trim() !== '') {
+    logger.warn(
+      'WARNING: network.remote_ip_header is deprecated and no longer used. Rename it to network.remoteIpHeader to restore forwarded header handling.',
+    )
   }
+}
+
+export const getRemoteAddress = (request: IncomingMessage, settings: Settings): string => {
+  warnIfDeprecatedRemoteIpHeaderIsConfigured(settings)
+
+  const header = settings.network?.remoteIpHeader as string
 
   const trustedProxies = settings.network?.trustedProxies
   if (header && (!Array.isArray(trustedProxies) || trustedProxies.length === 0)) {
