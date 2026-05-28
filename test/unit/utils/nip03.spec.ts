@@ -150,6 +150,42 @@ function buildOts(digest: Buffer, subItems: Buffer[]): Buffer {
 const EVENT_ID = 'e71c6ea722987debdb60f81f9ea4f604b5ac0664120dd64fb9d23abc4ec7c323'
 const DIGEST = Buffer.from(EVENT_ID, 'hex')
 
+const BITCOIN_ATTESTATION_810391 = bitcoinAttestation(810391)
+const BITCOIN_ATTESTATION_1 = bitcoinAttestation(1)
+const BITCOIN_ATTESTATION_42 = bitcoinAttestation(42)
+const PENDING_ATTESTATION_DEFAULT = pendingAttestation('https://a.pool.opentimestamps.org')
+
+const MINIMAL_BITCOIN_OTS = buildOts(DIGEST, [BITCOIN_ATTESTATION_810391])
+
+const OTS_WITH_APPEND_OP = (() => {
+  const opAppend = Buffer.concat([Buffer.from([OP_APPEND]), writeVarBytes(Buffer.from([0xde, 0xad, 0xbe, 0xef]))])
+  const tree = Buffer.concat([opAppend, BITCOIN_ATTESTATION_1])
+  return buildOts(DIGEST, [tree])
+})()
+
+const OTS_PENDING_AND_BITCOIN = buildOts(DIGEST, [PENDING_ATTESTATION_DEFAULT, BITCOIN_ATTESTATION_42])
+
+const OTS_LITECOIN_AND_UNKNOWN = buildOts(DIGEST, [litecoinAttestation(2500000), unknownAttestation(Buffer.from([1, 2, 3]))])
+
+const OTS_ETHEREUM = buildOts(DIGEST, [ethereumAttestation(18_000_000)])
+
+const OTS_PREPEND = (() => {
+  const prepend = Buffer.concat([Buffer.from([OP_PREPEND]), writeVarBytes(Buffer.from([0x01]))])
+  return buildOts(DIGEST, [Buffer.concat([prepend, bitcoinAttestation(4)])])
+})()
+
+const OTS_REVERSE_HEXLIFY = (() => {
+  const revThenHex = Buffer.concat([Buffer.from([OP_REVERSE]), Buffer.from([OP_HEXLIFY]), bitcoinAttestation(5)])
+  return buildOts(DIGEST, [revThenHex])
+})()
+
+const OTS_TRUNCATED_ATTESTATION = (() => {
+  const broken = Buffer.concat([Buffer.from([TAG_ATTESTATION]), BITCOIN_TAG, writeVarUint(0)])
+  return buildOts(DIGEST, [broken])
+})()
+
+const VALID_PROOF_BASE64 = MINIMAL_BITCOIN_OTS.toString('base64')
+
 describe('OtsReader', () => {
   it('readBytes rejects a negative length', () => {
     const r = new OtsReader(Buffer.from([1, 2, 3]))
@@ -166,9 +202,7 @@ describe('OtsReader', () => {
 describe('NIP-03 — OpenTimestamps', () => {
   describe('parseOtsFile', () => {
     it('parses a minimal proof with a single bitcoin attestation', () => {
-      const buf = buildOts(DIGEST, [bitcoinAttestation(810391)])
-
-      const result = expectSuccess(parseOtsFile(buf))
+      const result = expectSuccess(parseOtsFile(MINIMAL_BITCOIN_OTS))
 
       expect(result.summary.version).to.equal(1)
       expect(result.summary.fileHashOp).to.equal('sha256')
@@ -178,27 +212,19 @@ describe('NIP-03 — OpenTimestamps', () => {
     })
 
     it('parses a proof with ops that wrap an attestation', () => {
-      const opAppend = Buffer.concat([Buffer.from([OP_APPEND]), writeVarBytes(Buffer.from([0xde, 0xad, 0xbe, 0xef]))])
-      const tree = Buffer.concat([opAppend, bitcoinAttestation(1)])
-      const buf = buildOts(DIGEST, [tree])
-
-      const result = expectSuccess(parseOtsFile(buf))
+      const result = expectSuccess(parseOtsFile(OTS_WITH_APPEND_OP))
 
       expect(result.summary.attestations.map((a) => a.kind)).to.deep.equal(['bitcoin'])
     })
 
     it('parses a proof with multiple attestations (pending + bitcoin)', () => {
-      const buf = buildOts(DIGEST, [pendingAttestation('https://a.pool.opentimestamps.org'), bitcoinAttestation(42)])
-
-      const result = expectSuccess(parseOtsFile(buf))
+      const result = expectSuccess(parseOtsFile(OTS_PENDING_AND_BITCOIN))
       const kinds = result.summary.attestations.map((a) => a.kind).sort()
       expect(kinds).to.deep.equal(['bitcoin', 'pending'])
     })
 
     it('classifies litecoin and unknown attestations correctly', () => {
-      const buf = buildOts(DIGEST, [litecoinAttestation(2500000), unknownAttestation(Buffer.from([1, 2, 3]))])
-
-      const result = expectSuccess(parseOtsFile(buf))
+      const result = expectSuccess(parseOtsFile(OTS_LITECOIN_AND_UNKNOWN))
       const kinds = result.summary.attestations.map((a) => a.kind).sort()
       expect(kinds).to.deep.equal(['litecoin', 'unknown'])
     })
@@ -210,28 +236,26 @@ describe('NIP-03 — OpenTimestamps', () => {
     })
 
     it('rejects an unsupported file hash op', () => {
-      const parts = [MAGIC, writeVarUint(1), Buffer.from([0x55]), Buffer.alloc(32), bitcoinAttestation(1)]
+      const parts = [MAGIC, writeVarUint(1), Buffer.from([0x55]), Buffer.alloc(32), BITCOIN_ATTESTATION_1]
       const buf = Buffer.concat(parts)
       const result = expectFailure(parseOtsFile(buf))
       expect(result.reason).to.match(/unsupported file hash op/)
     })
 
     it('rejects an unsupported ots file version', () => {
-      const parts = [MAGIC, writeVarUint(2), Buffer.from([OP_SHA256]), DIGEST, bitcoinAttestation(1)]
+      const parts = [MAGIC, writeVarUint(2), Buffer.from([OP_SHA256]), DIGEST, BITCOIN_ATTESTATION_1]
       const buf = Buffer.concat(parts)
       const result = expectFailure(parseOtsFile(buf))
       expect(result.reason).to.match(/unsupported ots version/)
     })
 
     it('rejects truncated proofs without crashing', () => {
-      const good = buildOts(DIGEST, [bitcoinAttestation(1)])
-      const truncated = good.subarray(0, good.length - 3)
+      const truncated = MINIMAL_BITCOIN_OTS.subarray(0, MINIMAL_BITCOIN_OTS.length - 3)
       expectFailure(parseOtsFile(truncated))
     })
 
     it('rejects proofs with trailing garbage', () => {
-      const good = buildOts(DIGEST, [bitcoinAttestation(1)])
-      const withGarbage = Buffer.concat([good, Buffer.from([0x00, 0x11, 0x22])])
+      const withGarbage = Buffer.concat([MINIMAL_BITCOIN_OTS, Buffer.from([0x00, 0x11, 0x22])])
       const result = expectFailure(parseOtsFile(withGarbage))
       expect(result.reason).to.match(/trailing bytes/)
     })
@@ -252,7 +276,7 @@ describe('NIP-03 — OpenTimestamps', () => {
 
     it('parses sha1 file digest (20-byte) proofs', () => {
       const digest = Buffer.alloc(20, 0xab)
-      const buf = buildOtsWithFileHashOp(OP_SHA1, digest, [bitcoinAttestation(1)])
+      const buf = buildOtsWithFileHashOp(OP_SHA1, digest, [BITCOIN_ATTESTATION_1])
       const result = expectSuccess(parseOtsFile(buf))
       expect(result.summary.fileHashOp).to.equal('sha1')
       expect(result.summary.digest).to.equal(digest.toString('hex'))
@@ -273,31 +297,24 @@ describe('NIP-03 — OpenTimestamps', () => {
     })
 
     it('parses prepend binary op in the commitment tree', () => {
-      const prepend = Buffer.concat([Buffer.from([OP_PREPEND]), writeVarBytes(Buffer.from([0x01]))])
-      const buf = buildOts(DIGEST, [Buffer.concat([prepend, bitcoinAttestation(4)])])
-      const result = expectSuccess(parseOtsFile(buf))
+      const result = expectSuccess(parseOtsFile(OTS_PREPEND))
       expect(result.summary.attestations.some((a) => a.kind === 'bitcoin')).to.equal(true)
     })
 
     it('parses reverse and hexlify unary ops wrapping an attestation', () => {
-      const revThenHex = Buffer.concat([Buffer.from([OP_REVERSE]), Buffer.from([OP_HEXLIFY]), bitcoinAttestation(5)])
-      const buf = buildOts(DIGEST, [revThenHex])
-      const result = expectSuccess(parseOtsFile(buf))
+      const result = expectSuccess(parseOtsFile(OTS_REVERSE_HEXLIFY))
       expect(result.summary.attestations[0].kind).to.equal('bitcoin')
     })
 
     it('classifies ethereum block header attestations', () => {
-      const buf = buildOts(DIGEST, [ethereumAttestation(18_000_000)])
-      const result = expectSuccess(parseOtsFile(buf))
+      const result = expectSuccess(parseOtsFile(OTS_ETHEREUM))
       const eth = result.summary.attestations.find((a) => a.kind === 'ethereum')
       expect(eth).to.exist
       expect(eth?.height).to.equal(18_000_000)
     })
 
     it('treats a truncated bitcoin attestation payload as height-less', () => {
-      const broken = Buffer.concat([Buffer.from([TAG_ATTESTATION]), BITCOIN_TAG, writeVarUint(0)])
-      const buf = buildOts(DIGEST, [broken])
-      const result = expectSuccess(parseOtsFile(buf))
+      const result = expectSuccess(parseOtsFile(OTS_TRUNCATED_ATTESTATION))
       expect(result.summary.attestations[0]).to.include({ kind: 'bitcoin' })
       expect(result.summary.attestations[0].height).to.equal(undefined)
     })
@@ -343,14 +360,12 @@ describe('NIP-03 — OpenTimestamps', () => {
   })
 
   describe('validateOtsProof', () => {
-    const validProof = buildOts(DIGEST, [bitcoinAttestation(810391)]).toString('base64')
-
     it('accepts a well-formed bitcoin-anchored proof whose digest matches', () => {
-      expect(validateOtsProof(validProof, EVENT_ID)).to.equal(undefined)
+      expect(validateOtsProof(VALID_PROOF_BASE64, EVENT_ID)).to.equal(undefined)
     })
 
     it('accepts uppercase hex target ids and normalizes them', () => {
-      expect(validateOtsProof(validProof, EVENT_ID.toUpperCase())).to.equal(undefined)
+      expect(validateOtsProof(VALID_PROOF_BASE64, EVENT_ID.toUpperCase())).to.equal(undefined)
     })
 
     it('rejects empty content', () => {
@@ -363,26 +378,26 @@ describe('NIP-03 — OpenTimestamps', () => {
 
     it('rejects proofs whose digest does not match the event id', () => {
       const other = '0'.repeat(64)
-      expect(validateOtsProof(validProof, other)).to.match(/digest does not match/)
+      expect(validateOtsProof(VALID_PROOF_BASE64, other)).to.match(/digest does not match/)
     })
 
     it('rejects target ids that are not 32-byte hex', () => {
-      expect(validateOtsProof(validProof, 'not-an-id')).to.match(/not a 32-byte hex/)
+      expect(validateOtsProof(VALID_PROOF_BASE64, 'not-an-id')).to.match(/not a 32-byte hex/)
     })
 
     it('rejects a non-string target event id', () => {
-      expect(validateOtsProof(validProof, null as unknown as string)).to.match(/not a 32-byte hex/)
+      expect(validateOtsProof(VALID_PROOF_BASE64, null as unknown as string)).to.match(/not a 32-byte hex/)
     })
 
     it('rejects proofs without any bitcoin attestation', () => {
-      const onlyPending = buildOts(DIGEST, [pendingAttestation('https://a.pool.opentimestamps.org')]).toString('base64')
+      const onlyPending = buildOts(DIGEST, [PENDING_ATTESTATION_DEFAULT]).toString('base64')
       expect(validateOtsProof(onlyPending, EVENT_ID)).to.match(/bitcoin attestation/)
     })
 
     it('rejects a proof digested with a non-sha256 hash op', () => {
       // Construct a manual RIPEMD160 file (20-byte digest) — this should fail
       // the sha256 requirement even though the parser would otherwise accept it.
-      const parts = [MAGIC, writeVarUint(1), Buffer.from([0x03]), Buffer.alloc(20, 0xaa), bitcoinAttestation(1)]
+      const parts = [MAGIC, writeVarUint(1), Buffer.from([0x03]), Buffer.alloc(20, 0xaa), BITCOIN_ATTESTATION_1]
       const ripemd = Buffer.concat(parts).toString('base64')
       expect(validateOtsProof(ripemd, 'aa'.repeat(32))).to.match(/sha256 file hash op/)
     })
