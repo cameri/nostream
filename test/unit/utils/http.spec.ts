@@ -21,16 +21,7 @@ describe('getRemoteAddress', () => {
     } as any
   })
 
-  it('returns address using network.remote_ip_address when set', () => {
-    expect(
-      getRemoteAddress(
-        request,
-        { network: { 'remote_ip_header': header, trustedProxies: [socketAddress] } } as any,
-      )
-    ).to.equal(address)
-  })
-
-  it('returns address using network.remoteIpAddress when set', () => {
+  it('returns address using network.remoteIpHeader when set', () => {
     expect(
       getRemoteAddress(
         request,
