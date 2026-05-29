@@ -638,6 +638,53 @@ describe('EventRepository', () => {
     })
   })
 
+  describe('deleteExpiredAndRetained', () => {
+    it('returns zero counts when retention is disabled', async () => {
+      const result = await repository.deleteExpiredAndRetained({ maxDays: 0 })
+
+      expect(result).to.deep.equal({
+        deleted: 0,
+        expired: 0,
+        retained: 0,
+      })
+    })
+
+    it('builds a purge query with deduplicated kind and pubkey whitelists', () => {
+      sandbox.useFakeTimers(new Date('2023-11-14T22:13:20.000Z'))
+
+      const query = repository
+        .deleteExpiredAndRetained({
+          maxDays: 7,
+          kindWhitelist: [1, [10000, 19999], 1],
+          pubkeyWhitelist: ['001122'],
+        })
+        .toString()
+
+      expect(query).to.equal(
+        'delete from "events" where "event_id" in (select "event_id" from "events" where ("expires_at" < 1700000000 or "deleted_at" is not null or "event_created_at" < 1699395200) and not ("event_kind" = 1 or "event_kind" between 10000 and 19999 or "event_kind" = 62) and "event_pubkey" not in (X\'001122\') limit 1000) returning "deleted_at", "expires_at", "event_created_at"',
+      )
+    })
+
+    it('maps purged rows to deleted, expired, and retained counts', () => {
+      const result = (repository as any).mapToPurgeCounts(
+        [
+          { deleted_at: new Date(), expires_at: null, event_created_at: 90 },
+          { deleted_at: null, expires_at: 95, event_created_at: 90 },
+          { deleted_at: null, expires_at: null, event_created_at: 40 },
+          { deleted_at: null, expires_at: null, event_created_at: 80 },
+        ],
+        100,
+        50,
+      )
+
+      expect(result).to.deep.equal({
+        deleted: 1,
+        expired: 1,
+        retained: 1,
+      })
+    })
+  })
+
   describe('upsert', () => {
     it('replaces event based on event_pubkey and event_kind', () => {
       const event: Event = {
