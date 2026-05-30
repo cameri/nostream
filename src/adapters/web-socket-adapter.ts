@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto'
 import cluster from 'cluster'
 import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
@@ -5,7 +6,7 @@ import { WebSocket } from 'ws'
 import { ZodError } from 'zod'
 
 import { ContextMetadata, Factory } from '../@types/base'
-import { createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import { createAuthChallengeMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, OutgoingMessage } from '../@types/messages'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
@@ -32,6 +33,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private clientAddress: SocketAddress
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
+  private readonly challenge: string
+  private readonly authenticatedPubkeys: Set<string>
 
   public constructor(
     private readonly client: WebSocket,
@@ -79,6 +82,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on(WebSocketAdapterEvent.Message, this.sendMessage.bind(this))
 
     logger('client %s connected from %s', this.clientId, this.clientAddress.address)
+
+    // NIP-42
+    this.challenge = randomBytes(32).toString('base64url')
+    this.authenticatedPubkeys = new Set()
+    this.sendMessage(createAuthChallengeMessage(this.challenge))
   }
 
   public getClientId(): string {
@@ -139,6 +147,19 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public getSubscriptions(): Map<string, SubscriptionFilter[]> {
     return new Map(this.subscriptions)
+  }
+
+  // NIP-42
+  public getChallenge(): string {
+    return this.challenge
+  }
+
+  public getAuthenticatedPubkeys(): ReadonlySet<string> {
+    return new Set(this.authenticatedPubkeys)
+  }
+
+  public addAuthenticatedPubkey(pubkey: string): void {
+    this.authenticatedPubkeys.add(pubkey)
   }
 
   private async onClientMessage(raw: Buffer) {
@@ -241,6 +262,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private onClientClose() {
     this.alive = false
     this.subscriptions.clear()
+    this.authenticatedPubkeys.clear()
 
     const handlers = abortableMessageHandlers.get(this.client)
     if (Array.isArray(handlers) && handlers.length) {
