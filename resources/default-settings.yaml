@@ -62,6 +62,17 @@ nip05:
   domainBlacklist: []
 nip45:
   enabled: true
+wot:
+  # Web of Trust filtering. When enabled, only events from pubkeys within
+  # the relay owner's 2-hop follow graph are accepted.
+  enabled: false
+  # The relay owner's pubkey in hex. This is the root of the trust graph.
+  # Required when enabled is true.
+  seedPubkey: ""
+  # A pubkey must be followed by at least this many 1-hop accounts to be trusted.
+  minimumFollowers: 1
+  # Hours between full trust graph rebuilds.
+  refreshIntervalHours: 24
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.

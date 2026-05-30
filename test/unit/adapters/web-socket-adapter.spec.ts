@@ -77,6 +77,9 @@ describe('WebSocketAdapter', () => {
       slidingWindowRateLimiter,
       settingsFactory,
     )
+
+    // Reset send history so existing tests see a clean slate
+    client.send.resetHistory()
   })
 
   afterEach(() => {
@@ -601,6 +604,96 @@ describe('WebSocketAdapter', () => {
 
       expect(ipv6Adapter.getClientAddress()).to.equal('::1')
       ipv6Adapter.removeAllListeners()
+    })
+  })
+
+  describe('NIP-42 authentication', () => {
+    it('sends AUTH challenge message on construction', () => {
+      const freshClient = {
+        on: sandbox.stub().returnsThis(),
+        send: sandbox.stub(),
+        close: sandbox.stub(),
+        ping: sandbox.stub(),
+        pong: sandbox.stub(),
+        readyState: WebSocket.OPEN,
+        removeAllListeners: sandbox.stub(),
+      }
+      const freshAdapter = new WebSocketAdapter(
+        freshClient as any,
+        request,
+        webSocketServer as any,
+        createMessageHandler,
+        slidingWindowRateLimiter,
+        settingsFactory,
+      )
+
+      expect(freshClient.send).to.have.been.calledOnce
+      const sent = JSON.parse(freshClient.send.firstCall.args[0])
+      expect(sent[0]).to.equal('AUTH')
+      expect(sent[1]).to.be.a('string')
+      expect(sent[1].length).to.be.greaterThan(0)
+      freshAdapter.removeAllListeners()
+    })
+
+    it('getChallenge returns a non-empty string', () => {
+      const challenge = adapter.getChallenge()
+      expect(challenge).to.be.a('string')
+      expect(challenge.length).to.be.greaterThan(0)
+    })
+
+    it('getChallenge returns consistent value for the same adapter', () => {
+      const c1 = adapter.getChallenge()
+      const c2 = adapter.getChallenge()
+      expect(c1).to.equal(c2)
+    })
+
+    it('getAuthenticatedPubkeys returns empty set initially', () => {
+      const pubkeys = adapter.getAuthenticatedPubkeys()
+      expect(pubkeys.size).to.equal(0)
+    })
+
+    it('addAuthenticatedPubkey adds a pubkey', () => {
+      const pubkey = 'a'.repeat(64)
+      adapter.addAuthenticatedPubkey(pubkey)
+
+      const pubkeys = adapter.getAuthenticatedPubkeys()
+      expect(pubkeys.size).to.equal(1)
+      expect(pubkeys.has(pubkey)).to.be.true
+    })
+
+    it('addAuthenticatedPubkey supports multiple pubkeys', () => {
+      const pk1 = 'a'.repeat(64)
+      const pk2 = 'b'.repeat(64)
+      adapter.addAuthenticatedPubkey(pk1)
+      adapter.addAuthenticatedPubkey(pk2)
+
+      const pubkeys = adapter.getAuthenticatedPubkeys()
+      expect(pubkeys.size).to.equal(2)
+      expect(pubkeys.has(pk1)).to.be.true
+      expect(pubkeys.has(pk2)).to.be.true
+    })
+
+    it('addAuthenticatedPubkey deduplicates same pubkey', () => {
+      const pubkey = 'a'.repeat(64)
+      adapter.addAuthenticatedPubkey(pubkey)
+      adapter.addAuthenticatedPubkey(pubkey)
+
+      const pubkeys = adapter.getAuthenticatedPubkeys()
+      expect(pubkeys.size).to.equal(1)
+    })
+
+    it('generates different challenges for different adapters', () => {
+      const adapter2 = new WebSocketAdapter(
+        client,
+        request,
+        webSocketServer as any,
+        createMessageHandler,
+        slidingWindowRateLimiter,
+        settingsFactory,
+      )
+
+      expect(adapter.getChallenge()).not.to.equal(adapter2.getChallenge())
+      adapter2.removeAllListeners()
     })
   })
 })
