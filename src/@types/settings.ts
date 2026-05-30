@@ -266,6 +266,25 @@ export interface Nip05Settings {
   domainBlacklist?: string[]
 }
 
+export interface WoTSettings {
+  enabled: boolean
+  /**
+   * The relay owner's pubkey (hex). The trust graph is rooted here.
+   * Required when enabled is true.
+   */
+  seedPubkey: Pubkey
+  /**
+   * Minimum number of 1-hop follows a pubkey must have to enter the trust filter.
+   * Defaults to 1.
+   */
+  minimumFollowers: number
+  /**
+   * How many hours between full trust graph rebuilds.
+   * Defaults to 24.
+   */
+  refreshIntervalHours: number
+}
+
 export interface Settings {
   info: Info
   payments?: Payments
@@ -276,4 +295,5 @@ export interface Settings {
   mirroring?: Mirroring
   nip05?: Nip05Settings
   nip45?: Nip45Settings
+  wot?: WoTSettings
 }

@@ -167,5 +167,42 @@ describe('NIP-01', () => {
         expect(result).to.have.property('error').that.is.not.undefined
       })
     })
+
+    describe('AUTH', () => {
+      let events: Event[]
+      beforeEach(() => {
+        events = getEvents()
+      })
+
+      it('returns same message if valid', () => {
+        const event = events[0]
+        message = ['AUTH', event] as any
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result.error).to.be.undefined
+        expect(result).to.have.deep.property('value', message)
+      })
+
+      it('returns error if event is missing', () => {
+        message = ['AUTH'] as any
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+
+      it('returns error if event is not an object', () => {
+        message = ['AUTH', 'not-an-event'] as any
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+
+      it('returns error if event is null', () => {
+        message = ['AUTH', null] as any
+
+        const result = validateSchema(messageSchema)(message)
+        expect(result).to.have.property('error').that.is.not.undefined
+      })
+    })
   })
 })

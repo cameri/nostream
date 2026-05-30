@@ -2,6 +2,7 @@ import { expect } from 'chai'
 
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../../../src/@types/repositories'
 import { IncomingMessage, MessageType } from '../../../src/@types/messages'
+import { AuthMessageHandler } from '../../../src/handlers/auth-message-handler'
 import { Event } from '../../../src/@types/event'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
@@ -74,9 +75,16 @@ describe('messageHandlerFactory', () => {
     expect(factory([message, adapter])).to.be.an.instanceOf(CountMessageHandler)
   })
 
+  it('returns AuthMessageHandler when given an AUTH message', () => {
+    message = [MessageType.AUTH, event] as any
+
+    expect(factory([message, adapter])).to.be.an.instanceOf(AuthMessageHandler)
+  })
+
   it('throws when given an invalid message', () => {
     message = [] as any
 
     expect(() => factory([message, adapter])).to.throw(Error, 'Unknown message type: undefined')
   })
 })
+
