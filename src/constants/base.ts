@@ -45,6 +45,8 @@ export enum EventKinds {
   REPLACEABLE_LAST = 19999,
   // Ephemeral events
   EPHEMERAL_FIRST = 20000,
+  // NIP-42: Client Authentication
+  AUTH = 22242,
   EPHEMERAL_LAST = 29999,
   // Parameterized replaceable events
   PARAMETERIZED_REPLACEABLE_FIRST = 30000,
@@ -72,6 +74,9 @@ export enum EventTags {
   Emoji = 'emoji',
   // NIP-12: geohash tag for location-based queries
   Geohash = 'g',
+  // NIP-42: Authentication tags
+  Challenge = 'challenge',
+  AuthRelay = 'relay',
   // Marmot Protocol MIP-03: group ID for filtering kind:445 Group Events
   Group = 'h',
 }
