@@ -1,4 +1,5 @@
 import {
+  AuthChallengeMessage,
   ClosedMessage,
   CountResultMessage,
   CountResultPayload,
@@ -39,6 +40,11 @@ export const createCountResultMessage = (queryId: SubscriptionId, payload: Count
 
 export const createClosedMessage = (queryId: SubscriptionId, reason: string): ClosedMessage => {
   return [MessageType.CLOSED, queryId, reason]
+}
+
+// NIP-42
+export const createAuthChallengeMessage = (challenge: string): AuthChallengeMessage => {
+  return [MessageType.AUTH, challenge]
 }
 
 export const createSubscriptionMessage = (
