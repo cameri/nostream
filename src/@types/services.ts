@@ -1,5 +1,6 @@
 import { Invoice } from './invoice'
 import { Pubkey } from './base'
+import { WoTSettings } from './settings'
 
 export interface IMaintenanceService {
   clearOldEvents(): Promise<void>
@@ -13,4 +14,11 @@ export interface IPaymentsService {
   confirmInvoice(invoice: Pick<Invoice, 'id' | 'amountPaid' | 'confirmedAt' | 'status' | 'pubkey'>): Promise<void>
   sendInvoiceUpdateNotification(invoice: Invoice): Promise<void>
   getPendingInvoices(): Promise<Invoice[]>
+}
+
+export interface IWotService {
+  buildGraph(settings: WoTSettings): Promise<void>
+  isTrusted(pubkey: string): boolean
+  isReady(): boolean
+  reset(): void
 }
