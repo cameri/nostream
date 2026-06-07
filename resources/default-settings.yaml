@@ -73,6 +73,10 @@ wot:
   minimumFollowers: 1
   # Hours between full trust graph rebuilds.
   refreshIntervalHours: 24
+    # Relay URLs to fetch follow lists from when building the trust graph.
+  seedRelays:
+    - "wss://relay.damus.io"
+    - "wss://relay.nostr.band"
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
