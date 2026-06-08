@@ -161,7 +161,7 @@
     "@clack/prompts": "^1.2.0",
     "@getalby/sdk": "^5.0.0",
     "@noble/secp256k1": "1.7.1",
-    "axios": "^1.15.2",
+    "axios": "^1.16.0",
     "cac": "^7.0.0",
     "colorette": "^2.0.20",
     "express": "4.22.1",
@@ -174,7 +174,7 @@
     "ramda": "0.28.0",
     "redis": "4.5.1",
     "stream-json": "^2.1.0",
-    "ws": "^8.18.0",
+    "ws": "^8.20.1",
     "zod": "^3.22.4"
   },
   "optionalDependencies": {
