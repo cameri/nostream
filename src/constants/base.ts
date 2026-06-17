@@ -79,6 +79,8 @@ export enum EventTags {
   AuthRelay = 'relay',
   // Marmot Protocol MIP-03: group ID for filtering kind:445 Group Events
   Group = 'h',
+  // NIP-70: Protected Events
+  Protected = '-',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'
