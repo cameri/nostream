@@ -25,8 +25,13 @@ const requireAdminEnabled = (_request: Request, response: Response, next: NextFu
 }
 
 const requireAdminAuth = (request: Request, response: Response, next: NextFunction) => {
-  if (!createAdminAuthProvider().isRequestAuthenticated(request)) {
-    response.status(401).setHeader('content-type', 'application/json').send({ error: 'Unauthorized' })
+  try {
+    if (!createAdminAuthProvider().isRequestAuthenticated(request)) {
+      response.status(401).setHeader('content-type', 'application/json').send({ error: 'Unauthorized' })
+      return
+    }
+  } catch {
+    response.status(500).setHeader('content-type', 'application/json').send({ error: 'Internal Server Error' })
     return
   }
 

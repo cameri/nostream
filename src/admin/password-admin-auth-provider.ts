@@ -32,13 +32,18 @@ export class PasswordAdminAuthProvider implements IAdminAuthProvider {
     const currentSettings = this.settings()
     const sessionTtlSeconds = resolveAdminSessionTtlSeconds(currentSettings.admin?.sessionTtlSeconds)
     const expiresAt = Math.floor(Date.now() / 1000) + sessionTtlSeconds
-    const token = createAdminSessionToken(expiresAt)
 
-    response
-      .status(200)
-      .setHeader('content-type', 'application/json')
-      .setHeader('Set-Cookie', buildAdminSessionCookieHeader(request, currentSettings, token, sessionTtlSeconds))
-      .send({ authenticated: true, expiresAt })
+    try {
+      const token = createAdminSessionToken(expiresAt)
+
+      response
+        .status(200)
+        .setHeader('content-type', 'application/json')
+        .setHeader('Set-Cookie', buildAdminSessionCookieHeader(request, currentSettings, token, sessionTtlSeconds))
+        .send({ authenticated: true, expiresAt })
+    } catch {
+      response.status(500).setHeader('content-type', 'application/json').send({ error: 'Internal Server Error' })
+    }
   }
 
   public isRequestAuthenticated(request: Request): boolean {

@@ -24,7 +24,7 @@ export async function isAdminRateLimited(
   const remoteAddress = getRemoteAddress(request, settings)
 
   let limited = false
-  if (Array.isArray(ipWhitelist) && !ipWhitelist.includes(remoteAddress)) {
+  if (!Array.isArray(ipWhitelist) || !ipWhitelist.includes(remoteAddress)) {
     const rateLimiter = rateLimiterFactory()
     for (const { rate, period } of rateLimits) {
       if (await rateLimiter.hit(`${remoteAddress}:admin-${scope}:${period}`, 1, { period, rate })) {

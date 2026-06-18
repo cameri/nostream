@@ -145,6 +145,41 @@ describe('admin router', () => {
     expect(response.status).to.equal(401)
   })
 
+  it('returns 500 when SECRET is missing during login', async () => {
+    delete process.env.SECRET
+    process.env.ADMIN_PASSWORD = 'correct-password'
+    const baseUrl = await startServer({ admin: { enabled: true } })
+
+    const response = await axios.post(
+      `${baseUrl}/login`,
+      { password: 'correct-password' },
+      {
+        headers: { 'content-type': 'application/json' },
+        validateStatus: () => true,
+      },
+    )
+
+    expect(response.status).to.equal(500)
+    expect(response.data).to.deep.equal({ error: 'Internal Server Error' })
+
+    process.env.SECRET = 'test-admin-secret-value'
+  })
+
+  it('returns 500 when SECRET is missing during session validation', async () => {
+    delete process.env.SECRET
+    const baseUrl = await startServer({ admin: { enabled: true } })
+
+    const response = await axios.get(`${baseUrl}/session`, {
+      headers: { cookie: 'admin_session=9999999999.deadbeef' },
+      validateStatus: () => true,
+    })
+
+    expect(response.status).to.equal(500)
+    expect(response.data).to.deep.equal({ error: 'Internal Server Error' })
+
+    process.env.SECRET = 'test-admin-secret-value'
+  })
+
   it('authenticates with ADMIN_PASSWORD and exposes session and health', async () => {
     process.env.ADMIN_PASSWORD = 'correct-password'
     const baseUrl = await startServer({ admin: { enabled: true, sessionTtlSeconds: 3600 } })
