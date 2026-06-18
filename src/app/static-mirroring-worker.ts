@@ -55,7 +55,10 @@ export class StaticMirroringWorker implements IRunnable {
 
     logger.info('mirroring', currentSettings.mirroring)
 
-    this.config = path(['mirroring', 'static', process.env.MIRROR_INDEX], currentSettings) as Mirror
+    this.config = path(['mirroring', 'static', this.process.env.MIRROR_INDEX], currentSettings) as Mirror
+    if (!this.config) {
+      throw new Error(`Mirror configuration not found for index ${this.process.env.MIRROR_INDEX}`)
+    }
 
     let since = Math.floor(Date.now() / 1000) - 60 * 10
 
@@ -172,7 +175,7 @@ export class StaticMirroringWorker implements IRunnable {
 
     const eventLimits = this.settings().limits?.event ?? {}
 
-    const eventLimitOverrides = this.config.limits?.event ?? {}
+    const eventLimitOverrides = this.config?.limits?.event ?? {}
 
     const limits = mergeDeepRight(eventLimits, eventLimitOverrides) as EventLimits
 
@@ -278,7 +281,7 @@ export class StaticMirroringWorker implements IRunnable {
   protected async isUserAdmitted(event: Event): Promise<boolean> {
     const currentSettings = this.settings()
 
-    if (this.config.skipAdmissionCheck === true) {
+    if (this.config?.skipAdmissionCheck === true) {
       return true
     }
 
