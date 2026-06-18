@@ -1,6 +1,7 @@
 import express, { Router } from 'express'
 
 import { nodeinfo21Handler, nodeinfoHandler } from '../handlers/request-handlers/nodeinfo-handler'
+import adminRouter from './admin'
 import admissionRouter from './admissions'
 import callbacksRouter from './callbacks'
 import { getHealthRequestHandler } from '../handlers/request-handlers/get-health-request-handler'
@@ -28,6 +29,7 @@ router.get('/.well-known/nodeinfo', nodeinfoHandler)
 router.get('/nodeinfo/2.1', nodeinfo21Handler)
 router.get('/nodeinfo/2.0', nodeinfo21Handler)
 
+router.use('/admin', adminRouter)
 router.use('/invoices', rateLimiterMiddleware, invoiceRouter)
 router.use('/admissions', rateLimiterMiddleware, admissionRouter)
 router.use('/callbacks', rateLimiterMiddleware, callbacksRouter)
