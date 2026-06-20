@@ -2139,7 +2139,7 @@ describe('EventMessageHandler', () => {
     })
 
     it('returns reason if event has a protected tag', () => {
-      event.tags = [['-']]
+      event.tags = [['-']] as any
       expect((handler as any).isProtectedEventBlocked(event)).to.equal(
         'auth-required: this event may only be published by its author',
       )
@@ -2219,7 +2219,7 @@ describe('EventMessageHandler', () => {
         sig: 'c'.repeat(128),
         created_at: 1000,
       })
-      event.tags = [['-']]
+      event.tags = [['-']] as any
       expect((handler as any).isProtectedEventBlocked(event)).to.equal(
         'auth-required: this event may only be published by its author',
       )

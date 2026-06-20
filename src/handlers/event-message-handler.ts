@@ -247,6 +247,7 @@ export class EventMessageHandler implements IMessageHandler {
           return 'blocked: reposts must not embed protected events'
         }
       } catch (_e) {
+        // Ignore invalid JSON: repost content is not a valid embedded event
       }
     }
   }
