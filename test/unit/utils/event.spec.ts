@@ -11,10 +11,13 @@ import {
   isExpiredEvent,
   isFileMessageEvent,
   isGiftWrapEvent,
+  isMarmotGroupEvent,
   isParameterizedReplaceableEvent,
+  isProtectedEvent,
   isReplaceableEvent,
   isRequestToVanishEvent,
   isSealEvent,
+  isWelcomeRumorEvent,
   serializeEvent,
 } from '../../../src/utils/event'
 import { expect } from 'chai'
@@ -355,6 +358,33 @@ describe('NIP-12', () => {
       expect(isEventMatchingFilter({ '#r': ['something else'] })(event)).to.be.false
     })
   })
+
+  describe('#g filter', () => {
+    beforeEach(() => {
+      event = {
+        id: 'cf8de9db67a1d7203512d1d81e6190f5e53abfdc0ac90275f67172b65a5b09a0',
+        pubkey: 'e8b487c079b0f67c695ae6c4c2552a47f38adfa2533cc5926bd2c102942fdcb7',
+        created_at: 1645030752,
+        kind: 1,
+        tags: [['g', 'u4pruydqqvj']],
+        content: 'g',
+        sig: '53d12018d036092794366283eca36df4e0cabd014b6e91bbf684c8bb9bbbe9dedafa77b6b928587e11e05e036227598dded8713e8da17d55076e12242b361542',
+      }
+    })
+
+    it('returns true if #g filter contains a matching geohash prefix wildcard', () => {
+      expect(isEventMatchingFilter({ '#g': ['u4pruyd*'] })(event)).to.be.true
+    })
+
+    it('returns false if #g filter contains a non-matching geohash prefix wildcard', () => {
+      expect(isEventMatchingFilter({ '#g': ['u4pruz*'] })(event)).to.be.false
+    })
+
+    it('keeps #g filter exact when criterion has no wildcard', () => {
+      expect(isEventMatchingFilter({ '#g': ['u4pruyd'] })(event)).to.be.false
+      expect(isEventMatchingFilter({ '#g': ['u4pruydqqvj'] })(event)).to.be.true
+    })
+  })
 })
 
 describe('NIP-16', () => {
@@ -437,6 +467,45 @@ describe('NIP-17', () => {
       expect(isFileMessageEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
       expect(isFileMessageEvent({ kind: EventKinds.DIRECT_MESSAGE } as any)).to.be.false
       expect(isFileMessageEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
+    })
+  })
+})
+
+describe('Marmot Protocol', () => {
+  describe('isWelcomeRumorEvent', () => {
+    it('returns true for kind 444', () => {
+      expect(isWelcomeRumorEvent({ kind: EventKinds.MARMOT_WELCOME_RUMOR } as any)).to.be.true
+    })
+
+    it('returns false for kind 445 (group event)', () => {
+      expect(isWelcomeRumorEvent({ kind: EventKinds.MARMOT_GROUP_EVENT } as any)).to.be.false
+    })
+
+    it('returns false for kind 1059 (gift wrap)', () => {
+      expect(isWelcomeRumorEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
+    })
+
+    it('returns false for any unrelated kind', () => {
+      expect(isWelcomeRumorEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+    })
+  })
+
+  describe('isMarmotGroupEvent', () => {
+    it('returns true for kind 445', () => {
+      expect(isMarmotGroupEvent({ kind: EventKinds.MARMOT_GROUP_EVENT } as any)).to.be.true
+    })
+
+    it('returns false for kind 444 (welcome rumor)', () => {
+      expect(isMarmotGroupEvent({ kind: EventKinds.MARMOT_WELCOME_RUMOR } as any)).to.be.false
+    })
+
+    it('returns false for kind 443 (legacy key package)', () => {
+      expect(isMarmotGroupEvent({ kind: EventKinds.MARMOT_KEY_PACKAGE_LEGACY } as any)).to.be.false
+    })
+
+    it('returns false for any unrelated kind', () => {
+      expect(isMarmotGroupEvent({ kind: EventKinds.TEXT_NOTE } as any)).to.be.false
+      expect(isMarmotGroupEvent({ kind: EventKinds.GIFT_WRAP } as any)).to.be.false
     })
   })
 })
@@ -637,6 +706,59 @@ describe('NIP-40', () => {
     it('returns true if event is expired', () => {
       event.tags = [['expiration', '100000']]
       expect(isExpiredEvent(event)).to.equal(true)
+    })
+  })
+})
+
+describe('NIP-70', () => {
+  describe('isProtectedEvent', () => {
+    it('returns true if event has a ["-"] tag', () => {
+      const event: Event = {
+        tags: [['-']],
+      } as any
+      expect(isProtectedEvent(event)).to.be.true
+    })
+
+    it('returns true if protected tag has extra values', () => {
+      const event: Event = {
+        tags: [['-', 'some-reason']],
+      } as any
+      expect(isProtectedEvent(event)).to.be.true
+    })
+
+    it('returns false if event has no tags', () => {
+      const event: Event = {
+        tags: [],
+      } as any
+      expect(isProtectedEvent(event)).to.be.false
+    })
+
+    it('returns false if event has unrelated tags', () => {
+      const event: Event = {
+        tags: [
+          ['e', '7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96'],
+          ['p', '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793'],
+        ],
+      } as any
+      expect(isProtectedEvent(event)).to.be.false
+    })
+
+    it('returns false if "-" appears as a tag value, not a tag name', () => {
+      const event: Event = {
+        tags: [['e', '-']],
+      } as any
+      expect(isProtectedEvent(event)).to.be.false
+    })
+
+    it('returns true when protected tag is among other tags', () => {
+      const event: Event = {
+        tags: [
+          ['e', '7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96'],
+          ['-'],
+          ['p', '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793'],
+        ],
+      } as any
+      expect(isProtectedEvent(event)).to.be.true
     })
   })
 })
