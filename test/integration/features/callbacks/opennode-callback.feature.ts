@@ -36,7 +36,16 @@ Given('OpenNode callback processing is enabled', function () {
     ...settings,
     payments: {
       ...(settings?.payments ?? {}),
+      enabled: true,
       processor: 'opennode',
+    },
+    paymentsProcessors: {
+      ...(settings?.paymentsProcessors ?? {}),
+      opennode: {
+        ...(settings?.paymentsProcessors?.opennode ?? {}),
+        baseURL: 'api.opennode.com',
+        callbackBaseURL: 'http://localhost:18808/callbacks/opennode',
+      },
     },
   }
 

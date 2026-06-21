@@ -15,6 +15,7 @@ describe('runUpdate', () => {
     sinon.stub(stopCommand, 'runStop').resolves(0)
     const runStartStub = sinon.stub(startCommand, 'runStart').resolves(0)
     sinon.stub(processUtils, 'runCommandWithOutput').resolves({
+      ok: true,
       code: 0,
       stdout: 'Saved working directory and index state WIP on main: abc123',
       stderr: '',
@@ -38,6 +39,7 @@ describe('runUpdate', () => {
     sinon.stub(stopCommand, 'runStop').resolves(0)
     const runStartStub = sinon.stub(startCommand, 'runStart').resolves(0)
     sinon.stub(processUtils, 'runCommandWithOutput').resolves({
+      ok: true,
       code: 0,
       stdout: 'Saved working directory and index state WIP on main: abc123',
       stderr: '',

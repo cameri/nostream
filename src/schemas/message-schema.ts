@@ -55,4 +55,7 @@ export const countMessageSchema = z
 
 export const closeMessageSchema = z.tuple([z.literal(MessageType.CLOSE), subscriptionSchema])
 
-export const messageSchema = z.union([eventMessageSchema, reqMessageSchema, closeMessageSchema, countMessageSchema])
+// NIP-42
+export const authMessageSchema = z.tuple([z.literal(MessageType.AUTH), eventSchema])
+
+export const messageSchema = z.union([eventMessageSchema, reqMessageSchema, closeMessageSchema, countMessageSchema, authMessageSchema])

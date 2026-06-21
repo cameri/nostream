@@ -28,6 +28,8 @@ import {
   runDevTestCli,
   runDevTestIntegration,
   runDevTestUnit,
+  runDevTestPerfConnection,
+  runDevTestPerfMessage
 } from './commands/dev'
 import { runTui } from './tui/main'
 import { logError, logInfo } from './utils/output'
@@ -97,6 +99,8 @@ const devSubHelp: Record<string, string> = {
   'test:unit': 'Usage: nostream dev test:unit',
   'test:cli': 'Usage: nostream dev test:cli',
   'test:integration': 'Usage: nostream dev test:integration',
+  'test:perf:connection': 'Usage: nostream dev test:perf:connection',
+  'test:perf:message': 'Usage: nostream dev test:perf:message',
 }
 
 const withErrorBoundary =
@@ -410,6 +414,10 @@ cli
           return runDevTestCli()
         case 'test:integration':
           return runDevTestIntegration()
+        case 'test:perf:connection':
+          return runDevTestPerfConnection()
+        case 'test:perf:message':
+          return runDevTestPerfMessage()
         default:
           logInfo(
             'Usage: nostream dev <db:clean|db:reset|seed:relay|docker:clean|test:unit|test:cli|test:integration> [args]',

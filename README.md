@@ -56,6 +56,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-16: Event Treatment
 - [x] NIP-20: Command Results
 - [x] NIP-22: Event `created_at` Limits
+- [x] NIP-25: Reactions
 - [ ] NIP-26: Delegated Event Signing (REMOVED)
 - [x] NIP-28: Public Chat
 - [x] NIP-33: Parameterized Replaceable Events
@@ -63,6 +64,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-44: Encrypted Payloads (Versioned)
 - [x] NIP-45: Event Counts
 - [x] NIP-62: Request to Vanish
+- [x] NIP-65: Relay List Metadata
 
 ## Requirements
 

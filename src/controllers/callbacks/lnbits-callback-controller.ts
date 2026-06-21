@@ -25,13 +25,6 @@ export class LNbitsCallbackController implements IController {
 
     const settings = createSettings()
     const remoteAddress = getRemoteAddress(request, settings)
-    const paymentProcessor = settings.payments?.processor ?? 'null'
-
-    if (paymentProcessor !== 'lnbits') {
-      logger('denied request from %s to /callbacks/lnbits which is not the current payment processor', remoteAddress)
-      response.status(403).send('Forbidden')
-      return
-    }
 
     const queryValidation = validateSchema(lnbitsCallbackQuerySchema)(request.query)
     if (queryValidation.error) {

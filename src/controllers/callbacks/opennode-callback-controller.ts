@@ -22,15 +22,6 @@ export class OpenNodeCallbackController implements IController {
 
     const settings = createSettings()
     const remoteAddress = getRemoteAddress(request, settings)
-    const paymentProcessor = settings.payments?.processor
-
-    if (paymentProcessor !== 'opennode') {
-      logger('denied request from %s to /callbacks/opennode which is not the current payment processor', remoteAddress)
-      response
-        .status(403)
-        .send('Forbidden')
-      return
-    }
 
     const bodyValidation = validateSchema(opennodeWebhookCallbackBodySchema)(request.body)
     if (bodyValidation.error) {

@@ -99,20 +99,6 @@ describe('OpenNodeCallbackController', () => {
   })
 
   describe('authorization and validation', () => {
-    it('returns 403 when opennode is not the configured processor', async () => {
-      createSettingsStub.returns({
-        payments: { processor: 'lnbits' },
-      })
-      const { controller, paymentsService } = makeController()
-      const res = makeRes()
-
-      await controller.handleRequest(makeReq(), res)
-
-      expect(res.status).to.have.been.calledWith(403)
-      expect(res.send).to.have.been.calledWith('Forbidden')
-      expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
-    })
-
     it('returns 400 for malformed request body', async () => {
       const { controller, paymentsService } = makeController()
       const res = makeRes()

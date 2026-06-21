@@ -137,3 +137,21 @@ export const runDevTestIntegration = async (): Promise<number> => {
     () => runCommand('pnpm', ['run', 'test:integration']),
   )
 }
+
+export const runDevTestPerfConnection = async (): Promise<number> => {
+  return runWithSpinner(
+    'Running connection rate limit performance test...',
+    'Connection rate limit test completed',
+    'Connection rate limit test failed',
+    () => runCommand('k6', ['run', 'test/performance/connection-limiting-k6.ts']),
+  )
+}
+
+export const runDevTestPerfMessage = async (): Promise<number> => {
+  return runWithSpinner(
+    'Running message rate limit performance test...',
+    'Message rate limit test completed',
+    'Message rate limit test failed',
+    () => runCommand('k6', ['run', 'test/performance/message-limiting-k6.ts']),
+  )
+}
