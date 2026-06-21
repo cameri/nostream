@@ -31,9 +31,9 @@ export class NodelessCallbackController implements IController {
       return
     }
 
-    const nodelessWebhookSecret = process.env.NODELESS_WEBHOOK_SECRET
-    if (!nodelessWebhookSecret) {
-      logger.error('NODELESS_WEBHOOK_SECRET is not configured')
+    const webhookSecret = process.env.NODELESS_WEBHOOK_SECRET
+    if (!webhookSecret) {
+      logger.error('NODELESS_WEBHOOK_SECRET is not configured; unable to verify Nodeless callback')
       response
         .status(500)
         .setHeader('content-type', 'application/json; charset=utf8')
@@ -43,7 +43,7 @@ export class NodelessCallbackController implements IController {
 
     const signatureValidation = validateSchema(nodelessSignatureSchema)(request.headers['nodeless-signature'])
     if (signatureValidation.error) {
-      logger('nodeless callback request rejected: invalid signature format')
+      logger.error('nodeless callback request rejected: invalid signature format')
       response
         .status(400)
         .setHeader('content-type', 'application/json; charset=utf8')
@@ -51,7 +51,7 @@ export class NodelessCallbackController implements IController {
       return
     }
 
-    const expectedBuf = hmacSha256(nodelessWebhookSecret, (request as any).rawBody)
+    const expectedBuf = hmacSha256(webhookSecret, (request as any).rawBody)
     const actualBuf = Buffer.from(signatureValidation.value, 'hex')
 
     if (!timingSafeEqual(expectedBuf, actualBuf)) {
