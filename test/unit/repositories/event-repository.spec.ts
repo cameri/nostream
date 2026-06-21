@@ -456,7 +456,7 @@ describe('EventRepository', () => {
       beforeEach(() => {
         searchEnabledRepository = new EventRepository(dbClient, rrDbClient, () => ({
           nip50: { enabled: true, language: 'simple', maxQueryLength: 256 },
-        }))
+        }) as any)
       })
 
       it('adds tsvector/tsquery WHERE clause when search is provided and enabled', () => {
@@ -464,7 +464,7 @@ describe('EventRepository', () => {
 
         const query = searchEnabledRepository.findByFilters(filters).toString()
 
-        expect(query).to.include("to_tsvector('simple', event_content) @@ plainto_tsquery('simple', 'bitcoin lightning')")
+        expect(query).to.include("to_tsvector('simple'::regconfig, event_content) @@ plainto_tsquery('simple'::regconfig, 'bitcoin lightning')")
       })
 
       it('orders results by search_rank DESC when search is active', () => {
@@ -497,14 +497,14 @@ describe('EventRepository', () => {
 
         const query = searchEnabledRepository.findByFilters(filters).toString()
 
-        expect(query).to.include("plainto_tsquery('simple', 'bitcoin')")
+        expect(query).to.include("plainto_tsquery('simple'::regconfig, 'bitcoin')")
         expect(query).to.include('"event_kind" in (1)')
       })
 
       it('ignores search filter when NIP-50 is disabled', () => {
         const disabledRepository = new EventRepository(dbClient, rrDbClient, () => ({
           nip50: { enabled: false },
-        }))
+        }) as any)
         const filters = [{ search: 'bitcoin' }]
 
         const query = disabledRepository.findByFilters(filters).toString()
@@ -527,24 +527,24 @@ describe('EventRepository', () => {
       it('uses configured language for text search', () => {
         const englishRepository = new EventRepository(dbClient, rrDbClient, () => ({
           nip50: { enabled: true, language: 'english' },
-        }))
+        }) as any)
         const filters = [{ search: 'running' }]
 
         const query = englishRepository.findByFilters(filters).toString()
 
-        expect(query).to.include("to_tsvector('english', event_content)")
-        expect(query).to.include("plainto_tsquery('english', 'running')")
+        expect(query).to.include("to_tsvector('english'::regconfig, event_content)")
+        expect(query).to.include("plainto_tsquery('english'::regconfig, 'running')")
       })
 
       it('truncates search query to maxQueryLength', () => {
         const shortMaxRepository = new EventRepository(dbClient, rrDbClient, () => ({
           nip50: { enabled: true, language: 'simple', maxQueryLength: 5 },
-        }))
+        }) as any)
         const filters = [{ search: 'bitcoinlightning' }]
 
         const query = shortMaxRepository.findByFilters(filters).toString()
 
-        expect(query).to.include("plainto_tsquery('simple', 'bitco')")
+        expect(query).to.include("plainto_tsquery('simple'::regconfig, 'bitco')")
       })
     })
   })
