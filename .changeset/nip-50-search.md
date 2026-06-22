@@ -1,5 +1,5 @@
 ---
-"nostream": major
+"nostream": minor
 ---
 
 Add NIP-50 full-text search support with PostgreSQL `tsvector`/`GIN` indexing.

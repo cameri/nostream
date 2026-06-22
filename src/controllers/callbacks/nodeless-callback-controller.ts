@@ -43,7 +43,7 @@ export class NodelessCallbackController implements IController {
 
     const signatureValidation = validateSchema(nodelessSignatureSchema)(request.headers['nodeless-signature'])
     if (signatureValidation.error) {
-      logger.error('nodeless callback request rejected: invalid signature format')
+      logger('nodeless callback request rejected: invalid signature format')
       response
         .status(400)
         .setHeader('content-type', 'application/json; charset=utf8')
@@ -55,7 +55,7 @@ export class NodelessCallbackController implements IController {
     const actualBuf = Buffer.from(signatureValidation.value, 'hex')
 
     if (!timingSafeEqual(expectedBuf, actualBuf)) {
-      logger.error('nodeless callback request rejected: signature mismatch')
+      logger('nodeless callback request rejected: signature mismatch')
       response.status(403).send('Forbidden')
       return
     }

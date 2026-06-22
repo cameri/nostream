@@ -144,7 +144,6 @@ describe('NodelessCallbackController', () => {
       expect(paymentsService.updateInvoiceStatus).to.not.have.been.called
     })
 
-
     it('returns 500 when NODELESS_WEBHOOK_SECRET is not configured', async () => {
       delete process.env.NODELESS_WEBHOOK_SECRET
       const { controller, paymentsService } = makeController()
