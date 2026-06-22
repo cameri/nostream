@@ -12,6 +12,7 @@ import {
   prop,
   propSatisfies,
 } from 'ramda'
+import { Settings } from '../@types/settings'
 
 import {
   ContextMetadataKey,
@@ -38,10 +39,21 @@ type HexCriterionGroups = {
   odd: string[]
 }
 
+/** Default text-search configuration when nip50.language is unset. */
+const DEFAULT_TS_CONFIG = 'simple'
+/** Maximum search query length when nip50.maxQueryLength is unset. */
+const DEFAULT_MAX_SEARCH_QUERY_LENGTH = 256
+
+interface FilterConditionFlags {
+  isTagQuery: boolean
+  isSearchQuery: boolean
+}
+
 export class EventRepository implements IEventRepository {
   public constructor(
     private readonly masterDbClient: DatabaseClient,
     private readonly readReplicaDbClient: DatabaseClient,
+    private readonly settings?: () => Settings,
   ) {}
 
   public findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]> {
@@ -52,15 +64,32 @@ export class EventRepository implements IEventRepository {
     const queries = filters.map((currentFilter) => {
       const builder = this.readReplicaDbClient<DBEvent>('events')
 
-      const isTagQuery = this.applyFilterConditions(builder, currentFilter)
+      const { isTagQuery, isSearchQuery } = this.applyFilterConditions(builder, currentFilter)
 
-      if (typeof currentFilter.limit === 'number') {
+      if (isSearchQuery) {
+        // NIP-50: sort by relevance (ts_rank) descending, then by event_id for stability
+        const tsConfig = this.getNip50Language()
+        const nip50Settings = this.settings?.()
+        const maxLen = nip50Settings?.nip50?.maxQueryLength ?? DEFAULT_MAX_SEARCH_QUERY_LENGTH
+        const searchQuery = currentFilter.search.trim().slice(0, maxLen)
+        const limit = typeof currentFilter.limit === 'number' ? currentFilter.limit : DEFAULT_FILTER_LIMIT
+        builder
+          .select(
+            this.readReplicaDbClient.raw(
+              'events.*, ts_rank(to_tsvector(?::regconfig, event_content), plainto_tsquery(?::regconfig, ?)) AS search_rank',
+              [tsConfig, tsConfig, searchQuery],
+            ),
+          )
+          .limit(limit)
+          .orderBy('search_rank', 'DESC')
+          .orderBy('event_id', 'asc')
+      } else if (typeof currentFilter.limit === 'number') {
         builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
       } else {
         builder.limit(DEFAULT_FILTER_LIMIT).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
       }
 
-      if (isTagQuery) {
+      if (isTagQuery && !isSearchQuery) {
         builder.select('events.*')
       }
 
@@ -87,7 +116,7 @@ export class EventRepository implements IEventRepository {
     const queries = filters.map((currentFilter) => {
       const builder = this.readReplicaDbClient<DBEvent>('events').select('events.event_id')
 
-      const isTagQuery = this.applyFilterConditions(builder, currentFilter)
+      const { isTagQuery } = this.applyFilterConditions(builder, currentFilter)
 
       if (typeof currentFilter.limit === 'number') {
         builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
@@ -114,7 +143,7 @@ export class EventRepository implements IEventRepository {
     return Number(result?.count ?? 0)
   }
 
-  private applyFilterConditions(builder: any, currentFilter: SubscriptionFilter): boolean {
+  private applyFilterConditions(builder: any, currentFilter: SubscriptionFilter): FilterConditionFlags {
     this.applyHexFilterConditions(builder, currentFilter)
 
     if (Array.isArray(currentFilter.kinds)) {
@@ -129,13 +158,34 @@ export class EventRepository implements IEventRepository {
       builder.where('event_created_at', '<=', currentFilter.until)
     }
 
+    // NIP-50: full-text search condition
+    let isSearchQuery = false
+    if (typeof currentFilter.search === 'string' && currentFilter.search.trim().length > 0) {
+      const nip50Settings = this.settings?.()
+      if (nip50Settings?.nip50?.enabled) {
+        const tsConfig = this.getNip50Language()
+        const maxLen = nip50Settings.nip50.maxQueryLength ?? DEFAULT_MAX_SEARCH_QUERY_LENGTH
+        const searchQuery = currentFilter.search.trim().slice(0, maxLen)
+        builder.andWhereRaw(
+          'to_tsvector(?::regconfig, event_content) @@ plainto_tsquery(?::regconfig, ?)',
+          [tsConfig, tsConfig, searchQuery],
+        )
+        isSearchQuery = true
+      }
+    }
+
     const isTagQuery = this.applyGenericTagFilterConditions(builder, currentFilter)
 
     if (isTagQuery) {
       builder.leftJoin('event_tags', 'events.event_id', 'event_tags.event_id')
     }
 
-    return isTagQuery
+    return { isTagQuery, isSearchQuery }
+  }
+
+  /** Resolve the PostgreSQL text-search configuration name from settings. */
+  private getNip50Language(): string {
+    return this.settings?.()?.nip50?.language ?? DEFAULT_TS_CONFIG
   }
 
   private applyHexFilterConditions(builder: any, currentFilter: SubscriptionFilter): void {

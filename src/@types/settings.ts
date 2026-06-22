@@ -245,6 +245,12 @@ export interface Nip45Settings {
   enabled?: boolean
 }
 
+export interface Nip50Settings {
+  enabled?: boolean
+  language?: string
+  maxQueryLength?: number
+}
+
 export interface Nip05Settings {
   mode: Nip05Mode
   /**
@@ -295,5 +301,6 @@ export interface Settings {
   mirroring?: Mirroring
   nip05?: Nip05Settings
   nip45?: Nip45Settings
+  nip50?: Nip50Settings
   wot?: WoTSettings
 }
