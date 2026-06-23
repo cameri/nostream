@@ -33,6 +33,9 @@ export enum EventKinds {
   // Relay-only
   RELAY_INVITE = 50,
   INVOICE_UPDATE = 402,
+  // NIP-43: Relay Access Metadata and Requests
+  NIP43_ADD_USER = 8000,
+  NIP43_REMOVE_USER = 8001,
   // Lightning zaps
   ZAP_REQUEST = 9734,
   ZAP_RECEIPT = 9735,
@@ -42,11 +45,17 @@ export enum EventKinds {
   RELAY_LIST = 10002,
   // Marmot Protocol MIP-00: KeyPackage Relay List
   MARMOT_KEY_PACKAGE_RELAY_LIST = 10051,
+  // NIP-43: Membership List
+  NIP43_MEMBERSHIP_LIST = 13534,
   REPLACEABLE_LAST = 19999,
   // Ephemeral events
   EPHEMERAL_FIRST = 20000,
   // NIP-42: Client Authentication
   AUTH = 22242,
+  // NIP-43: Ephemeral access request kinds
+  NIP43_JOIN_REQUEST = 28934,
+  NIP43_INVITE_REQUEST = 28935,
+  NIP43_LEAVE_REQUEST = 28936,
   EPHEMERAL_LAST = 29999,
   // Parameterized replaceable events
   PARAMETERIZED_REPLACEABLE_FIRST = 30000,
@@ -81,6 +90,9 @@ export enum EventTags {
   Group = 'h',
   // NIP-70: Protected Events
   Protected = '-',
+  // NIP-43: Relay Access Metadata
+  Member = 'member',
+  Claim = 'claim',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'

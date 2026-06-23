@@ -285,6 +285,14 @@ export interface WoTSettings {
   refreshIntervalHours: number
 }
 
+export interface Nip43Settings {
+  enabled: boolean
+  inviteCodeExpiry?: number
+  defaultMaxUses?: number
+  allowInviteRequests?: boolean
+  inviteRequestWhitelist?: Pubkey[]
+}
+
 export interface Settings {
   info: Info
   payments?: Payments
@@ -294,6 +302,7 @@ export interface Settings {
   limits?: Limits
   mirroring?: Mirroring
   nip05?: Nip05Settings
+  nip43?: Nip43Settings
   nip45?: Nip45Settings
   wot?: WoTSettings
 }
