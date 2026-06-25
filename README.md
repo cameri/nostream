@@ -641,6 +641,7 @@ I'm Cameri on most social networks. You can find me on Nostr by npub1qqqqqqyz0la
 
 # Contributors (A-Z)
 
+- Abhay
 - Abhinav Rathee
 - André Neves
 - Anshuman
@@ -658,6 +659,7 @@ I'm Cameri on most social networks. You can find me on Nostr by npub1qqqqqqyz0la
 - Kushagra Kinra
 - Mahmoud Khedr
 - Mohit Davar
+- Priyanshu Bharti
 - Radosvet Petrov
 - Sagar
 - Saniddhya Dubey
