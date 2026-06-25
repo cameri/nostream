@@ -111,6 +111,23 @@ export const getPublicPathPrefix = (request: IncomingMessage, settings: Settings
   return getTrustedForwardedPathPrefix(request, settings) || getRelayUrlPathPrefix(settings.info?.relay_url)
 }
 
+export const isSecureRequest = (request: IncomingMessage, settings: Settings): boolean => {
+  if ('secure' in request && (request as { secure?: boolean }).secure === true) {
+    return true
+  }
+
+  const socketAddress = request.socket?.remoteAddress
+  if (typeof socketAddress !== 'string' || !isTrustedProxy(socketAddress, settings)) {
+    return false
+  }
+
+  const rawHeader = request.headers?.['x-forwarded-proto']
+  const rawProto = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader
+  const proto = typeof rawProto === 'string' ? rawProto.split(',')[0].trim().toLowerCase() : ''
+
+  return proto === 'https'
+}
+
 export const joinPathPrefix = (prefix: string, path: string): string => {
   const normalizedPrefix = prefix.replace(/\/+$/, '')
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
