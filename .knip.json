@@ -14,7 +14,8 @@
     "lzma-native"
   ],
   "ignore": [
-    ".nostr/**"
+    ".nostr/**",
+    "src/services/wot-service.ts"
   ],
   "commitlint": false,
   "eslint": false,
