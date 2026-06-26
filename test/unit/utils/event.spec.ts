@@ -13,6 +13,7 @@ import {
   isGiftWrapEvent,
   isMarmotGroupEvent,
   isParameterizedReplaceableEvent,
+  isProtectedEvent,
   isReplaceableEvent,
   isRequestToVanishEvent,
   isSealEvent,
@@ -652,6 +653,59 @@ describe('NIP-40', () => {
     it('returns true if event is expired', () => {
       event.tags = [['expiration', '100000']]
       expect(isExpiredEvent(event)).to.equal(true)
+    })
+  })
+})
+
+describe('NIP-70', () => {
+  describe('isProtectedEvent', () => {
+    it('returns true if event has a ["-"] tag', () => {
+      const event: Event = {
+        tags: [['-']],
+      } as any
+      expect(isProtectedEvent(event)).to.be.true
+    })
+
+    it('returns true if protected tag has extra values', () => {
+      const event: Event = {
+        tags: [['-', 'some-reason']],
+      } as any
+      expect(isProtectedEvent(event)).to.be.true
+    })
+
+    it('returns false if event has no tags', () => {
+      const event: Event = {
+        tags: [],
+      } as any
+      expect(isProtectedEvent(event)).to.be.false
+    })
+
+    it('returns false if event has unrelated tags', () => {
+      const event: Event = {
+        tags: [
+          ['e', '7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96'],
+          ['p', '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793'],
+        ],
+      } as any
+      expect(isProtectedEvent(event)).to.be.false
+    })
+
+    it('returns false if "-" appears as a tag value, not a tag name', () => {
+      const event: Event = {
+        tags: [['e', '-']],
+      } as any
+      expect(isProtectedEvent(event)).to.be.false
+    })
+
+    it('returns true when protected tag is among other tags', () => {
+      const event: Event = {
+        tags: [
+          ['e', '7377fa81fc6c7ae7f7f4ef8938d4a603f7bf98183b35ab128235cc92d4bebf96'],
+          ['-'],
+          ['p', '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793'],
+        ],
+      } as any
+      expect(isProtectedEvent(event)).to.be.true
     })
   })
 })

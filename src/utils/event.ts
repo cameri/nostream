@@ -289,3 +289,9 @@ export const isWelcomeRumorEvent = (event: Event): boolean => {
 export const isMarmotGroupEvent = (event: Event): boolean => {
   return event.kind === EventKinds.MARMOT_GROUP_EVENT
 }
+
+// NIP-70: Protected Events
+
+export const isProtectedEvent = (event: Event): boolean => {
+  return event.tags.some((tag) => tag[0] === EventTags.Protected)
+}
