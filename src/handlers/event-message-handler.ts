@@ -1,4 +1,4 @@
-import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
+import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds, EventTags } from '../constants/base'
 import {
   DEFAULT_NIP05_VERIFY_EXPIRATION_MS,
   extractNip05FromEvent,
@@ -21,6 +21,7 @@ import {
   isEventSignatureValid,
   isExpiredEvent,
   isFileMessageEvent,
+  isProtectedEvent,
   isRequestToVanishEvent,
   isSealEvent,
   isWelcomeRumorEvent,
@@ -82,6 +83,13 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     reason = this.canAcceptEvent(event)
+    if (reason) {
+      logger('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      return
+    }
+
+    reason = this.isProtectedEventBlocked(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
@@ -221,6 +229,26 @@ export class EventMessageHandler implements IMessageHandler {
       limits.kind.blacklist.some(isEventKindOrRangeMatch(event))
     ) {
       return `blocked: event kind ${event.kind} not allowed`
+    }
+  }
+
+  protected isProtectedEventBlocked(event: Event): string | undefined {
+    if (isProtectedEvent(event)) {
+      return 'auth-required: this event may only be published by its author'
+    }
+
+    if (event.kind === EventKinds.REPOST && event.content.length > 0) {
+      try {
+        const embedded = JSON.parse(event.content)
+        if (
+          Array.isArray(embedded?.tags) &&
+          embedded.tags.some((tag: string[]) => Array.isArray(tag) && tag[0] === EventTags.Protected)
+        ) {
+          return 'blocked: reposts must not embed protected events'
+        }
+      } catch (_e) {
+        // Ignore invalid JSON: repost content is not a valid embedded event
+      }
     }
   }
 

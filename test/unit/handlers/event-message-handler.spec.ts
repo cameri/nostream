@@ -2120,4 +2120,116 @@ describe('EventMessageHandler', () => {
       expect(nip05VerificationRepository.upsert).to.have.been.calledOnce
     })
   })
+
+  describe('isProtectedEventBlocked', () => {
+    beforeEach(() => {
+      handler = new EventMessageHandler(
+        {} as any,
+        () => null,
+        {} as any,
+        userRepository,
+        () =>
+          ({
+            info: { relay_url: 'relay_url' },
+          }) as any,
+        {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: async () => false }),
+      )
+    })
+
+    it('returns reason if event has a protected tag', () => {
+      event.tags = [['-']] as any
+      expect((handler as any).isProtectedEventBlocked(event)).to.equal(
+        'auth-required: this event may only be published by its author',
+      )
+    })
+
+    it('returns undefined if event has no protected tag', () => {
+      event.tags = [['e', 'abc']]
+      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+    })
+
+    it('returns undefined if event has no tags', () => {
+      event.tags = []
+      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+    })
+
+    it('returns reason if kind 6 repost embeds a protected event', () => {
+      event.kind = EventKinds.REPOST
+      event.content = JSON.stringify({
+        id: 'a'.repeat(64),
+        pubkey: 'b'.repeat(64),
+        kind: 1,
+        tags: [['-']],
+        content: 'secret',
+        sig: 'c'.repeat(128),
+        created_at: 1000,
+      })
+      event.tags = []
+      expect((handler as any).isProtectedEventBlocked(event)).to.equal(
+        'blocked: reposts must not embed protected events',
+      )
+    })
+
+    it('returns undefined if kind 6 repost embeds a non-protected event', () => {
+      event.kind = EventKinds.REPOST
+      event.content = JSON.stringify({
+        id: 'a'.repeat(64),
+        pubkey: 'b'.repeat(64),
+        kind: 1,
+        tags: [],
+        content: 'public',
+        sig: 'c'.repeat(128),
+        created_at: 1000,
+      })
+      event.tags = []
+      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+    })
+
+    it('returns undefined if kind 6 repost has empty content', () => {
+      event.kind = EventKinds.REPOST
+      event.content = ''
+      event.tags = []
+      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+    })
+
+    it('returns undefined if kind 6 repost has invalid JSON content', () => {
+      event.kind = EventKinds.REPOST
+      event.content = 'not json'
+      event.tags = []
+      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+    })
+
+    it('returns undefined for non-repost event kinds with JSON content', () => {
+      event.kind = EventKinds.TEXT_NOTE
+      event.content = JSON.stringify({ tags: [['-']] })
+      event.tags = []
+      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+    })
+
+    it('rejects on the protected tag before checking embedded repost content', () => {
+      event.kind = EventKinds.REPOST
+      event.content = JSON.stringify({
+        id: 'a'.repeat(64),
+        pubkey: 'b'.repeat(64),
+        kind: 1,
+        tags: [['-']],
+        content: 'secret',
+        sig: 'c'.repeat(128),
+        created_at: 1000,
+      })
+      event.tags = [['-']] as any
+      expect((handler as any).isProtectedEventBlocked(event)).to.equal(
+        'auth-required: this event may only be published by its author',
+      )
+    })
+
+    it('returns undefined if kind 6 repost has non-array embedded tags', () => {
+      event.kind = EventKinds.REPOST
+      event.content = JSON.stringify({ tags: 'not-an-array' })
+      event.tags = []
+      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+    })
+  })
 })
