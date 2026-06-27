@@ -5,6 +5,7 @@ import { WebSocketServer } from 'ws'
 
 import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
 import { AppWorker } from '../app/worker'
+import { getAdminMetricsCollector } from './admin-metrics-collector-factory'
 import { createLogger } from './logger-factory'
 import { createSettings } from '../factories/settings-factory'
 import { createWebApp } from './web-app-factory'
@@ -17,6 +18,8 @@ import { WebSocketServerAdapter } from '../adapters/web-socket-server-adapter'
 const logger = createLogger('worker-factory')
 
 export const workerFactory = (): AppWorker => {
+  getAdminMetricsCollector()
+
   const dbClient = getMasterDbClient()
   const readReplicaDbClient = getReadReplicaDbClient()
   const eventRepository = new EventRepository(dbClient, readReplicaDbClient)
