@@ -2193,6 +2193,25 @@ describe('EventMessageHandler', () => {
       )
     })
 
+    it('returns reason if kind 6 repost embeds a repost that embeds a valid protected event (nested)', async () => {
+      const protectedEvent = await createValidEmbeddedEvent([['-']])
+      const middleRepost = await identifyEvent({
+        pubkey: '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'.slice(2),
+        created_at: 1000,
+        kind: EventKinds.GENERIC_REPOST,
+        tags: [],
+        content: JSON.stringify(protectedEvent),
+      })
+      const signedMiddleRepost = await signEvent(PRIVKEY)(middleRepost)
+      
+      event.kind = EventKinds.REPOST
+      event.content = JSON.stringify(signedMiddleRepost)
+      event.tags = []
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.equal(
+        'blocked: reposts must not embed protected events',
+      )
+    })
+
     it('returns undefined if kind 6 repost embeds a valid non-protected event', async () => {
       const embedded = await createValidEmbeddedEvent([])
       event.kind = EventKinds.REPOST

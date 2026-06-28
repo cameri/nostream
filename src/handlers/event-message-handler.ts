@@ -241,18 +241,28 @@ export class EventMessageHandler implements IMessageHandler {
       }
     }
 
-    if ((event.kind === EventKinds.REPOST || event.kind === EventKinds.GENERIC_REPOST) && event.content.length > 0) {
-      try {
-        const embedded = attemptValidation(eventSchema)(JSON.parse(event.content)) as Event
-        if (!(await isEventIdValid(embedded)) || !(await isEventSignatureValid(embedded))) {
-          return
+    const checkEmbedded = async (evt: Event, depth = 0): Promise<boolean> => {
+      if (depth > 10) return false // Prevent infinite loops or excessive recursion
+      if ((evt.kind === EventKinds.REPOST || evt.kind === EventKinds.GENERIC_REPOST) && evt.content.length > 0) {
+        try {
+          const embedded = attemptValidation(eventSchema)(JSON.parse(evt.content)) as Event
+          if (!(await isEventIdValid(embedded)) || !(await isEventSignatureValid(embedded))) {
+            return false
+          }
+          if (isProtectedEvent(embedded)) {
+            return true
+          }
+          return await checkEmbedded(embedded, depth + 1)
+        } catch (error) {
+          logger.warn('event %s repost embedded event validation failed: %o', evt.id, error)
+          return false
         }
-        if (isProtectedEvent(embedded)) {
-          return 'blocked: reposts must not embed protected events'
-        }
-      } catch (error) {
-        logger.warn('event %s repost embedded event validation failed: %o', event.id, error)
       }
+      return false
+    }
+
+    if (await checkEmbedded(event)) {
+      return 'blocked: reposts must not embed protected events'
     }
   }
 
