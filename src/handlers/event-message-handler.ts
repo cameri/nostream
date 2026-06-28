@@ -1,4 +1,6 @@
-import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds, EventTags } from '../constants/base'
+import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
+import { attemptValidation } from '../utils/validation'
+import { eventSchema } from '../schemas/event-schema'
 import {
   DEFAULT_NIP05_VERIFY_EXPIRATION_MS,
   extractNip05FromEvent,
@@ -89,7 +91,7 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
-    reason = this.isProtectedEventBlocked(event)
+    reason = await this.isProtectedEventBlocked(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
@@ -232,22 +234,22 @@ export class EventMessageHandler implements IMessageHandler {
     }
   }
 
-  protected isProtectedEventBlocked(event: Event): string | undefined {
+  protected async isProtectedEventBlocked(event: Event): Promise<string | undefined> {
     if (isProtectedEvent(event)) {
       return 'auth-required: this event may only be published by its author'
     }
 
     if (event.kind === EventKinds.REPOST && event.content.length > 0) {
       try {
-        const embedded = JSON.parse(event.content)
-        if (
-          Array.isArray(embedded?.tags) &&
-          embedded.tags.some((tag: string[]) => Array.isArray(tag) && tag[0] === EventTags.Protected)
-        ) {
+        const embedded = attemptValidation(eventSchema)(JSON.parse(event.content)) as Event
+        if (!(await isEventIdValid(embedded)) || !(await isEventSignatureValid(embedded))) {
+          return
+        }
+        if (isProtectedEvent(embedded)) {
           return 'blocked: reposts must not embed protected events'
         }
-      } catch (_e) {
-        // Ignore invalid JSON: repost content is not a valid embedded event
+      } catch (error) {
+        logger('event %s repost embedded event validation failed: %o', event.id, error)
       }
     }
   }

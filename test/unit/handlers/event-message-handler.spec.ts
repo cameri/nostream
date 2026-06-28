@@ -2122,6 +2122,8 @@ describe('EventMessageHandler', () => {
   })
 
   describe('isProtectedEventBlocked', () => {
+    const PRIVKEY = '0000000000000000000000000000000000000000000000000000000000000001'
+
     beforeEach(() => {
       handler = new EventMessageHandler(
         {} as any,
@@ -2138,77 +2140,89 @@ describe('EventMessageHandler', () => {
       )
     })
 
-    it('returns reason if event has a protected tag', () => {
+    const createValidEmbeddedEvent = async (tags: string[][]): Promise<Event> => {
+      const unsigned = await identifyEvent({
+        pubkey: '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'.slice(2),
+        created_at: 1000,
+        kind: 1,
+        tags,
+        content: 'test content',
+      })
+      return signEvent(PRIVKEY)(unsigned)
+    }
+
+    it('returns reason if event has a protected tag', async () => {
       event.tags = [['-']] as any
-      expect((handler as any).isProtectedEventBlocked(event)).to.equal(
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.equal(
         'auth-required: this event may only be published by its author',
       )
     })
 
-    it('returns undefined if event has no protected tag', () => {
+    it('returns undefined if event has no protected tag', async () => {
       event.tags = [['e', 'abc']]
-      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
     })
 
-    it('returns undefined if event has no tags', () => {
+    it('returns undefined if event has no tags', async () => {
       event.tags = []
-      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
     })
 
-    it('returns reason if kind 6 repost embeds a protected event', () => {
+    it('returns reason if kind 6 repost embeds a valid protected event', async () => {
+      const embedded = await createValidEmbeddedEvent([['-']])
       event.kind = EventKinds.REPOST
-      event.content = JSON.stringify({
-        id: 'a'.repeat(64),
-        pubkey: 'b'.repeat(64),
-        kind: 1,
-        tags: [['-']],
-        content: 'secret',
-        sig: 'c'.repeat(128),
-        created_at: 1000,
-      })
+      event.content = JSON.stringify(embedded)
       event.tags = []
-      expect((handler as any).isProtectedEventBlocked(event)).to.equal(
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.equal(
         'blocked: reposts must not embed protected events',
       )
     })
 
-    it('returns undefined if kind 6 repost embeds a non-protected event', () => {
+    it('returns undefined if kind 6 repost embeds a valid non-protected event', async () => {
+      const embedded = await createValidEmbeddedEvent([])
+      event.kind = EventKinds.REPOST
+      event.content = JSON.stringify(embedded)
+      event.tags = []
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
+    })
+
+    it('returns undefined if embedded event has invalid id/sig (forged protected tag)', async () => {
       event.kind = EventKinds.REPOST
       event.content = JSON.stringify({
         id: 'a'.repeat(64),
         pubkey: 'b'.repeat(64),
         kind: 1,
-        tags: [],
-        content: 'public',
+        tags: [['-']],
+        content: 'secret',
         sig: 'c'.repeat(128),
         created_at: 1000,
       })
       event.tags = []
-      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
     })
 
-    it('returns undefined if kind 6 repost has empty content', () => {
+    it('returns undefined if kind 6 repost has empty content', async () => {
       event.kind = EventKinds.REPOST
       event.content = ''
       event.tags = []
-      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
     })
 
-    it('returns undefined if kind 6 repost has invalid JSON content', () => {
+    it('returns undefined if kind 6 repost has invalid JSON content', async () => {
       event.kind = EventKinds.REPOST
       event.content = 'not json'
       event.tags = []
-      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
     })
 
-    it('returns undefined for non-repost event kinds with JSON content', () => {
+    it('returns undefined for non-repost event kinds with JSON content', async () => {
       event.kind = EventKinds.TEXT_NOTE
       event.content = JSON.stringify({ tags: [['-']] })
       event.tags = []
-      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
     })
 
-    it('rejects on the protected tag before checking embedded repost content', () => {
+    it('rejects on the outer protected tag before checking embedded repost content', async () => {
       event.kind = EventKinds.REPOST
       event.content = JSON.stringify({
         id: 'a'.repeat(64),
@@ -2220,16 +2234,16 @@ describe('EventMessageHandler', () => {
         created_at: 1000,
       })
       event.tags = [['-']] as any
-      expect((handler as any).isProtectedEventBlocked(event)).to.equal(
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.equal(
         'auth-required: this event may only be published by its author',
       )
     })
 
-    it('returns undefined if kind 6 repost has non-array embedded tags', () => {
+    it('returns undefined if kind 6 repost has non-array embedded tags', async () => {
       event.kind = EventKinds.REPOST
       event.content = JSON.stringify({ tags: 'not-an-array' })
       event.tags = []
-      expect((handler as any).isProtectedEventBlocked(event)).to.be.undefined
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
     })
   })
 })
