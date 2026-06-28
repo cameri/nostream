@@ -7,6 +7,8 @@ export enum EventKinds {
   DELETE = 5,
   REPOST = 6,
   REACTION = 7,
+  // NIP-18: Reposts
+  GENERIC_REPOST = 16,
   // NIP-17: Private Direct Messages
   SEAL = 13,
   DIRECT_MESSAGE = 14,
