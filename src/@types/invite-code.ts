@@ -3,8 +3,7 @@ export interface InviteCode {
   createdBy: string | null
   claimedBy: string | null
   expiresAt: Date | null
-  maxUses: number
-  useCount: number
+  remainingUses: number | null
   createdAt: Date
   updatedAt: Date
 }
@@ -14,8 +13,7 @@ export interface DBInviteCode {
   created_by: Buffer | null
   claimed_by: Buffer | null
   expires_at: Date | null
-  max_uses: number
-  use_count: number
+  remaining_uses: number | null
   created_at: Date
   updated_at: Date
 }

@@ -66,7 +66,7 @@ export interface INip05VerificationRepository {
 }
 
 export interface IInviteCodeRepository {
-  create(code: string, expiresAt?: Date, maxUses?: number): Promise<InviteCode>
+  create(code: string, expiresAt?: Date, remainingUses?: number | null): Promise<InviteCode>
   findByCode(code: string): Promise<InviteCode | undefined>
   claimCode(code: string, pubkey: Pubkey): Promise<boolean>
   findActiveCodes(limit?: number): Promise<InviteCode[]>

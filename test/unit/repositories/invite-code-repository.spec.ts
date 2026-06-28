@@ -26,8 +26,7 @@ describe('InviteCodeRepository', () => {
     created_by: null as Buffer | null,
     claimed_by: null as Buffer | null,
     expires_at: null as Date | null,
-    max_uses: 1,
-    use_count: 0,
+    remaining_uses: 1,
     created_at: fixedDate,
     updated_at: fixedDate,
   }
@@ -40,9 +39,8 @@ describe('InviteCodeRepository', () => {
     repository = new InviteCodeRepository(dbClient)
   })
 
-  afterEach(() => {
-    dbClient.destroy()
-    sandbox.restore()
+  afterEach(async () => {
+    try { await dbClient.destroy() } finally { sandbox.restore() }
   })
 
   describe('generateInviteCode', () => {
@@ -84,8 +82,7 @@ describe('InviteCodeRepository', () => {
         createdBy: null,
         claimedBy: null,
         expiresAt: null,
-        maxUses: 1,
-        useCount: 0,
+        remainingUses: 1,
       })
       expect(result.createdAt).to.be.instanceOf(Date)
       expect(result.updatedAt).to.be.instanceOf(Date)
@@ -101,11 +98,11 @@ describe('InviteCodeRepository', () => {
       const result = await repository.create(testCode, expiresAt, 5, client)
 
       expect(result.expiresAt).to.deep.equal(expiresAt)
-      expect(result.maxUses).to.equal(5)
+      expect(result.remainingUses).to.equal(5)
 
       const insertedRow = insertStub.firstCall.args[0]
       expect(insertedRow.expires_at).to.deep.equal(expiresAt)
-      expect(insertedRow.max_uses).to.equal(5)
+      expect(insertedRow.remaining_uses).to.equal(5)
     })
 
     it('sets expiresAt to null when omitted', async () => {
@@ -121,7 +118,7 @@ describe('InviteCodeRepository', () => {
       expect(insertedRow.expires_at).to.be.null
     })
 
-    it('defaults maxUses to 1', async () => {
+    it('defaults remainingUses to 1', async () => {
       const insertStub = sandbox.stub().resolves()
       const client = sandbox.stub().returns({
         insert: insertStub,
@@ -129,7 +126,7 @@ describe('InviteCodeRepository', () => {
 
       const result = await repository.create(testCode, undefined, undefined, client)
 
-      expect(result.maxUses).to.equal(1)
+      expect(result.remainingUses).to.equal(1)
     })
   })
 
@@ -155,8 +152,7 @@ describe('InviteCodeRepository', () => {
       expect(result!.code).to.equal(testCode)
       expect(result!.createdBy).to.be.null
       expect(result!.claimedBy).to.be.null
-      expect(result!.maxUses).to.equal(1)
-      expect(result!.useCount).to.equal(0)
+      expect(result!.remainingUses).to.equal(1)
     })
 
     it('decodes created_by Buffer to hex string', async () => {
