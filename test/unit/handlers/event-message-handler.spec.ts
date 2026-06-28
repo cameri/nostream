@@ -2145,7 +2145,7 @@ describe('EventMessageHandler', () => {
         pubkey: '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'.slice(2),
         created_at: 1000,
         kind: 1,
-        tags,
+        tags: tags as any,
         content: 'test content',
       })
       return signEvent(PRIVKEY)(unsigned)
