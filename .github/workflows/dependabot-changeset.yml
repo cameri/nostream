@@ -4,24 +4,6 @@ on:
   pull_request:
     types: [opened, reopened]
   workflow_dispatch:
-    inputs:
-      pr_number:
-        description: 'Pull request number'
-        required: true
-        type: string
-      pr_title:
-        description: 'Pull request title'
-        required: true
-        type: string
-      head_ref:
-        description: 'Head branch ref (e.g. dependabot/npm_and_yarn/...)'
-        required: true
-        type: string
-
-env:
-  PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
-  PR_TITLE: ${{ github.event.pull_request.title || inputs.pr_title }}
-  HEAD_REF: ${{ github.head_ref || inputs.head_ref }}
 
 jobs:
   add-changeset:
@@ -30,12 +12,21 @@ jobs:
     if: github.actor == 'dependabot[bot]' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          ref: ${{ env.HEAD_REF }}
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
+
+      - name: Get PR info
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "number=$(gh pr view --json number --jq '.number')" >> "$GITHUB_OUTPUT"
+          echo "title=$(gh pr view --json title --jq '.title')" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -54,7 +45,7 @@ jobs:
       - name: Check for existing changeset
         id: check
         run: |
-          filename=".changeset/dependabot-pr-${{ env.PR_NUMBER }}.md"
+          filename=".changeset/dependabot-pr-${{ steps.pr.outputs.number }}.md"
           if [ -f "$filename" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
@@ -63,9 +54,11 @@ jobs:
 
       - name: Create changeset
         if: steps.check.outputs.exists == 'false'
+        env:
+          PR_TITLE: ${{ steps.pr.outputs.title }}
         run: |
-          filename=".changeset/dependabot-pr-${{ env.PR_NUMBER }}.md"
-          printf -- '---\n"nostream": patch\n---\n\n%s\n' "${{ env.PR_TITLE }}" > "$filename"
+          filename=".changeset/dependabot-pr-${{ steps.pr.outputs.number }}.md"
+          printf -- '---\n"nostream": patch\n---\n\n%s\n' "$PR_TITLE" > "$filename"
 
       - name: Commit and push
         run: |
@@ -77,10 +70,10 @@ jobs:
             CHANGED=true
           fi
           if [ "${{ steps.check.outputs.exists }}" == 'false' ]; then
-            git add ".changeset/dependabot-pr-${{ env.PR_NUMBER }}.md"
+            git add ".changeset/dependabot-pr-${{ steps.pr.outputs.number }}.md"
             CHANGED=true
           fi
           if [ "$CHANGED" = true ]; then
-            git commit -m "chore: add changeset and update lockfile for dependabot PR #${{ env.PR_NUMBER }}"
+            git commit -m "chore: add changeset and update lockfile for dependabot PR #${{ steps.pr.outputs.number }}"
             git push
           fi
