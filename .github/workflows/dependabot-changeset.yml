@@ -3,25 +3,58 @@ name: Dependabot Changeset
 on:
   pull_request:
     types: [opened, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number'
+        required: true
+        type: string
+      pr_title:
+        description: 'Pull request title'
+        required: true
+        type: string
+      head_ref:
+        description: 'Head branch ref (e.g. dependabot/npm_and_yarn/...)'
+        required: true
+        type: string
+
+env:
+  PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+  PR_TITLE: ${{ github.event.pull_request.title || inputs.pr_title }}
+  HEAD_REF: ${{ github.head_ref || inputs.head_ref }}
 
 jobs:
   add-changeset:
     name: Add Changeset
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
+    if: github.actor == 'dependabot[bot]' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ env.HEAD_REF }}
           fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
 
       - name: Check for existing changeset
         id: check
         run: |
-          filename=".changeset/dependabot-pr-${{ github.event.pull_request.number }}.md"
+          filename=".changeset/dependabot-pr-${{ env.PR_NUMBER }}.md"
           if [ -f "$filename" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
@@ -30,17 +63,24 @@ jobs:
 
       - name: Create changeset
         if: steps.check.outputs.exists == 'false'
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          filename=".changeset/dependabot-pr-${{ github.event.pull_request.number }}.md"
-          printf -- '---\n"nostream": patch\n---\n\n%s\n' "$PR_TITLE" > "$filename"
+          filename=".changeset/dependabot-pr-${{ env.PR_NUMBER }}.md"
+          printf -- '---\n"nostream": patch\n---\n\n%s\n' "${{ env.PR_TITLE }}" > "$filename"
 
-      - name: Commit and push changeset
-        if: steps.check.outputs.exists == 'false'
+      - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .changeset/dependabot-pr-${{ github.event.pull_request.number }}.md
-          git commit -m "chore: add changeset for dependabot PR #${{ github.event.pull_request.number }}"
-          git push
+          CHANGED=false
+          if [ -n "$(git status --porcelain pnpm-lock.yaml)" ]; then
+            git add pnpm-lock.yaml
+            CHANGED=true
+          fi
+          if [ "${{ steps.check.outputs.exists }}" == 'false' ]; then
+            git add ".changeset/dependabot-pr-${{ env.PR_NUMBER }}.md"
+            CHANGED=true
+          fi
+          if [ "$CHANGED" = true ]; then
+            git commit -m "chore: add changeset and update lockfile for dependabot PR #${{ env.PR_NUMBER }}"
+            git push
+          fi
