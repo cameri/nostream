@@ -239,7 +239,7 @@ export class EventMessageHandler implements IMessageHandler {
       return 'auth-required: this event may only be published by its author'
     }
 
-    if (event.kind === EventKinds.REPOST && event.content.length > 0) {
+    if ((event.kind === EventKinds.REPOST || event.kind === EventKinds.GENERIC_REPOST) && event.content.length > 0) {
       try {
         const embedded = attemptValidation(eventSchema)(JSON.parse(event.content)) as Event
         if (!(await isEventIdValid(embedded)) || !(await isEventSignatureValid(embedded))) {
@@ -249,7 +249,7 @@ export class EventMessageHandler implements IMessageHandler {
           return 'blocked: reposts must not embed protected events'
         }
       } catch (error) {
-        logger('event %s repost embedded event validation failed: %o', event.id, error)
+        logger.warn('event %s repost embedded event validation failed: %o', event.id, error)
       }
     }
   }
