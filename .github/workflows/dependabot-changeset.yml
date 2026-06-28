@@ -64,16 +64,24 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          CHANGED=false
-          if [ -n "$(git status --porcelain pnpm-lock.yaml)" ]; then
-            git add pnpm-lock.yaml
-            CHANGED=true
-          fi
+          ADDED_CHANGESET=false
+          ADDED_LOCKFILE=false
           if [ "${{ steps.check.outputs.exists }}" == 'false' ]; then
             git add ".changeset/dependabot-pr-${{ steps.pr.outputs.number }}.md"
-            CHANGED=true
+            ADDED_CHANGESET=true
           fi
-          if [ "$CHANGED" = true ]; then
-            git commit -m "chore: add changeset and update lockfile for dependabot PR #${{ steps.pr.outputs.number }}"
+          if [ -n "$(git status --porcelain pnpm-lock.yaml)" ]; then
+            git add pnpm-lock.yaml
+            ADDED_LOCKFILE=true
+          fi
+          if [ "$ADDED_CHANGESET" = true ] || [ "$ADDED_LOCKFILE" = true ]; then
+            if [ "$ADDED_CHANGESET" = true ] && [ "$ADDED_LOCKFILE" = true ]; then
+              MSG="chore: add changeset and update lockfile for dependabot PR #${{ steps.pr.outputs.number }}"
+            elif [ "$ADDED_CHANGESET" = true ]; then
+              MSG="chore: add changeset for dependabot PR #${{ steps.pr.outputs.number }}"
+            else
+              MSG="chore: update lockfile for dependabot PR #${{ steps.pr.outputs.number }}"
+            fi
+            git commit -m "$MSG"
             git push
           fi
