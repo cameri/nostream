@@ -14,7 +14,8 @@
     "lzma-native"
   ],
   "ignore": [
-    ".nostr/**"
+    ".nostr/**",
+    "src/repositories/invite-code-repository.ts"
   ],
   "commitlint": false,
   "eslint": false,
