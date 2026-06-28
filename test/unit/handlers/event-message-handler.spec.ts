@@ -2126,7 +2126,7 @@ describe('EventMessageHandler', () => {
 
     beforeEach(() => {
       handler = new EventMessageHandler(
-        {} as any,
+        { getAuthenticatedPubkeys: () => new Set() } as any,
         () => null,
         {} as any,
         userRepository,
@@ -2151,11 +2151,26 @@ describe('EventMessageHandler', () => {
       return signEvent(PRIVKEY)(unsigned)
     }
 
-    it('returns reason if event has a protected tag', async () => {
+    it('returns reason if event has a protected tag and user is not authenticated', async () => {
       event.tags = [['-']] as any
       expect(await (handler as any).isProtectedEventBlocked(event)).to.equal(
         'auth-required: this event may only be published by its author',
       )
+    })
+
+    it('returns undefined if event has a protected tag and user is authenticated', async () => {
+      event.tags = [['-']] as any
+      handler = new EventMessageHandler(
+        { getAuthenticatedPubkeys: () => new Set([event.pubkey]) } as any,
+        () => null,
+        {} as any,
+        userRepository,
+        () => ({ info: { relay_url: 'relay_url' } }) as any,
+        {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: async () => false }),
+      )
+      expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
     })
 
     it('returns undefined if event has no protected tag', async () => {

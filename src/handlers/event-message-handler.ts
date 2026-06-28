@@ -236,7 +236,9 @@ export class EventMessageHandler implements IMessageHandler {
 
   protected async isProtectedEventBlocked(event: Event): Promise<string | undefined> {
     if (isProtectedEvent(event)) {
-      return 'auth-required: this event may only be published by its author'
+      if (!this.webSocket.getAuthenticatedPubkeys().has(event.pubkey)) {
+        return 'auth-required: this event may only be published by its author'
+      }
     }
 
     if ((event.kind === EventKinds.REPOST || event.kind === EventKinds.GENERIC_REPOST) && event.content.length > 0) {
