@@ -1,4 +1,6 @@
 import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
+import { attemptValidation } from '../utils/validation'
+import { eventSchema } from '../schemas/event-schema'
 import {
   DEFAULT_NIP05_VERIFY_EXPIRATION_MS,
   extractNip05FromEvent,
@@ -21,6 +23,7 @@ import {
   isEventSignatureValid,
   isExpiredEvent,
   isFileMessageEvent,
+  isProtectedEvent,
   isRequestToVanishEvent,
   isSealEvent,
   isWelcomeRumorEvent,
@@ -82,6 +85,13 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     reason = this.canAcceptEvent(event)
+    if (reason) {
+      logger('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      return
+    }
+
+    reason = await this.isProtectedEventBlocked(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
@@ -221,6 +231,38 @@ export class EventMessageHandler implements IMessageHandler {
       limits.kind.blacklist.some(isEventKindOrRangeMatch(event))
     ) {
       return `blocked: event kind ${event.kind} not allowed`
+    }
+  }
+
+  protected async isProtectedEventBlocked(event: Event): Promise<string | undefined> {
+    if (isProtectedEvent(event)) {
+      if (!this.webSocket.getAuthenticatedPubkeys().has(event.pubkey)) {
+        return 'auth-required: this event may only be published by its author'
+      }
+    }
+
+    const checkEmbedded = async (evt: Event, depth = 0): Promise<boolean> => {
+      if (depth > 10) return false // Prevent infinite loops or excessive recursion
+      if ((evt.kind === EventKinds.REPOST || evt.kind === EventKinds.GENERIC_REPOST) && evt.content.length > 0) {
+        try {
+          const embedded = attemptValidation(eventSchema)(JSON.parse(evt.content)) as Event
+          if (!(await isEventIdValid(embedded)) || !(await isEventSignatureValid(embedded))) {
+            return false
+          }
+          if (isProtectedEvent(embedded)) {
+            return true
+          }
+          return await checkEmbedded(embedded, depth + 1)
+        } catch (error) {
+          logger.warn('event %s repost embedded event validation failed: %o', evt.id, error)
+          return false
+        }
+      }
+      return false
+    }
+
+    if (await checkEmbedded(event)) {
+      return 'blocked: reposts must not embed protected events'
     }
   }
 
