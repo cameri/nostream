@@ -9,6 +9,7 @@ import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk
 import { createLogger } from '../factories/logger-factory'
 
 const logger = createLogger('telemetry-metrics')
+const DEFAULT_EXPORT_INTERVAL_MS = 10000
 
 export interface RelayMetricInstruments {
   eventsAcceptedTotal: Counter
@@ -46,11 +47,27 @@ const ensureExporterEndpoint = (): string | undefined => {
     return undefined
   }
 
-  if (endpoint.endsWith('/v1/metrics')) {
-    return endpoint
+  const normalized = endpoint.replace(/\/+$/, '')
+  if (normalized.endsWith('/v1/metrics')) {
+    return normalized
   }
 
-  return `${endpoint.replace(/\/$/, '')}/v1/metrics`
+  return `${normalized}/v1/metrics`
+}
+
+const getExportIntervalMillis = (): number => {
+  const intervalCandidate = Number(process.env.OTEL_METRIC_EXPORT_INTERVAL_MS || DEFAULT_EXPORT_INTERVAL_MS)
+
+  if (!Number.isFinite(intervalCandidate) || intervalCandidate <= 0) {
+    logger.warn(
+      'invalid OTEL_METRIC_EXPORT_INTERVAL_MS=%o, falling back to %d',
+      process.env.OTEL_METRIC_EXPORT_INTERVAL_MS,
+      DEFAULT_EXPORT_INTERVAL_MS,
+    )
+    return DEFAULT_EXPORT_INTERVAL_MS
+  }
+
+  return intervalCandidate
 }
 
 const createRelayMetricInstruments = (): RelayMetricInstruments => {
@@ -106,7 +123,7 @@ export const initializeMetricsTelemetry = (): RelayMetricInstruments => {
     readers: [
       new PeriodicExportingMetricReader({
         exporter: new OTLPMetricExporter({ url: endpoint }),
-        exportIntervalMillis: Number(process.env.OTEL_METRIC_EXPORT_INTERVAL_MS || 10000),
+        exportIntervalMillis: getExportIntervalMillis(),
       }),
     ],
   })

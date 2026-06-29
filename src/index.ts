@@ -3,7 +3,7 @@ import cluster from 'cluster'
 import { appFactory } from './factories/app-factory'
 import { maintenanceWorkerFactory } from './factories/maintenance-worker-factory'
 import { staticMirroringWorkerFactory } from './factories/static-mirroring.worker-factory'
-import { initializeMetricsTelemetry, shutdownMetricsTelemetry } from './telemetry/metrics'
+import { initializeMetricsTelemetry } from './telemetry/metrics'
 import { workerFactory } from './factories/worker-factory'
 
 export const getRunner = () => {
@@ -25,12 +25,6 @@ export const getRunner = () => {
 
 if (require.main === module) {
   initializeMetricsTelemetry()
-
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, () => {
-      void shutdownMetricsTelemetry()
-    })
-  }
 
   getRunner().run()
 }
