@@ -3,6 +3,7 @@ import cluster from 'cluster'
 import { appFactory } from './factories/app-factory'
 import { maintenanceWorkerFactory } from './factories/maintenance-worker-factory'
 import { staticMirroringWorkerFactory } from './factories/static-mirroring.worker-factory'
+import { initializeMetricsTelemetry } from './telemetry/metrics'
 import { workerFactory } from './factories/worker-factory'
 
 export const getRunner = () => {
@@ -23,5 +24,7 @@ export const getRunner = () => {
 }
 
 if (require.main === module) {
+  initializeMetricsTelemetry()
+
   getRunner().run()
 }

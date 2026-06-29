@@ -5,6 +5,7 @@ import { closeCacheClient } from '../cache/client'
 import { createLogger } from '../factories/logger-factory'
 import { FSWatcher } from 'fs'
 import { SettingsStatic } from '../utils/settings'
+import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 
 const logger = createLogger('app-worker')
 export class AppWorker implements IRunnable {
@@ -46,8 +47,10 @@ export class AppWorker implements IRunnable {
 
   private onExit() {
     logger('exiting')
-    this.close(() => {
-      this.process.exit(0)
+    void shutdownMetricsTelemetry().finally(() => {
+      this.close(() => {
+        this.process.exit(0)
+      })
     })
   }
 
