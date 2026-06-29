@@ -649,7 +649,6 @@ I'm Cameri on most social networks. You can find me on Nostr by npub1qqqqqqyz0la
 - archief2910
 - Chetan Reddy Kodidela
 - Divyanshu Kumar
-- Ferryx
 - Juan Angel
 - Kanishka
 - Kartik

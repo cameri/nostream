@@ -4,6 +4,7 @@ import { DatabaseClient, EventId, Pubkey } from './base'
 import { DBEvent, Event } from './event'
 import { EventKinds } from '../constants/base'
 import { EventKindsRange } from './settings'
+import { InviteCode } from './invite-code'
 import { Invoice } from './invoice'
 import { Nip05Verification } from './nip05'
 import { SubscriptionFilter } from './subscription'
@@ -63,3 +64,12 @@ export interface INip05VerificationRepository {
   findPendingVerifications(updateFrequencyMs: number, maxFailures: number, limit: number): Promise<Nip05Verification[]>
   deleteByPubkey(pubkey: Pubkey): Promise<number>
 }
+
+export interface IInviteCodeRepository {
+  create(code: string, expiresAt?: Date, remainingUses?: number | null): Promise<InviteCode>
+  findByCode(code: string): Promise<InviteCode | undefined>
+  claimCode(code: string, pubkey: Pubkey): Promise<boolean>
+  findActiveCodes(limit?: number): Promise<InviteCode[]>
+  deleteExpiredCodes(): Promise<number>
+}
+
