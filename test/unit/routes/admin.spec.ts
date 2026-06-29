@@ -29,7 +29,10 @@ describe('admin router', () => {
   }
 
   const startServer = async (settings: Record<string, unknown>) => {
-    createGetAdminHealthControllerStub = Sinon.stub(getAdminHealthControllerFactory, 'createGetAdminHealthController').returns({
+    createGetAdminHealthControllerStub = Sinon.stub(
+      getAdminHealthControllerFactory,
+      'createGetAdminHealthController',
+    ).returns({
       handleRequest: async (_request: any, response: any) => {
         response
           .status(200)
@@ -50,8 +53,12 @@ describe('admin router', () => {
       next()
     }
     rateLimiterMiddlewareStub = Sinon.stub(rateLimiterMiddleware, 'rateLimiterMiddleware').callsFake(passthrough)
-    adminRateLimitMiddlewareStub = Sinon.stub(adminRateLimitMiddleware, 'adminRateLimitMiddleware').callsFake(passthrough)
-    adminLoginRateLimitMiddlewareStub = Sinon.stub(adminRateLimitMiddleware, 'adminLoginRateLimitMiddleware').callsFake(passthrough)
+    adminRateLimitMiddlewareStub = Sinon.stub(adminRateLimitMiddleware, 'adminRateLimitMiddleware').callsFake(
+      passthrough,
+    )
+    adminLoginRateLimitMiddlewareStub = Sinon.stub(adminRateLimitMiddleware, 'adminLoginRateLimitMiddleware').callsFake(
+      passthrough,
+    )
     const router = loadAdminRouter()
     const app = express()
     app.use('/admin', router)
@@ -117,6 +124,7 @@ describe('admin router', () => {
 
     expect(response.status).to.equal(404)
     expect(response.data).to.equal('Not Found')
+    expect(rateLimiterMiddlewareStub.calledOnce).to.be.true
   })
 
   it('returns 401 for protected routes without a session', async () => {
@@ -127,6 +135,7 @@ describe('admin router', () => {
 
     expect(sessionResponse.status).to.equal(401)
     expect(healthResponse.status).to.equal(401)
+    expect(rateLimiterMiddlewareStub.calledTwice).to.be.true
   })
 
   it('rejects invalid login credentials', async () => {
@@ -143,6 +152,8 @@ describe('admin router', () => {
     )
 
     expect(response.status).to.equal(401)
+    expect(rateLimiterMiddlewareStub.calledOnce).to.be.true
+    expect(adminLoginRateLimitMiddlewareStub.calledOnce).to.be.true
   })
 
   it('returns 500 when SECRET is missing during login', async () => {
@@ -163,6 +174,8 @@ describe('admin router', () => {
     expect(response.data).to.deep.equal({ error: 'Internal Server Error' })
 
     process.env.SECRET = 'test-admin-secret-value'
+    expect(rateLimiterMiddlewareStub.calledOnce).to.be.true
+    expect(adminLoginRateLimitMiddlewareStub.calledOnce).to.be.true
   })
 
   it('returns 500 when SECRET is missing during session validation', async () => {
@@ -178,6 +191,8 @@ describe('admin router', () => {
     expect(response.data).to.deep.equal({ error: 'Internal Server Error' })
 
     process.env.SECRET = 'test-admin-secret-value'
+    expect(rateLimiterMiddlewareStub.calledOnce).to.be.true
+    expect(adminRateLimitMiddlewareStub.calledOnce).to.be.true
   })
 
   it('authenticates with ADMIN_PASSWORD and exposes session and health', async () => {
@@ -213,6 +228,10 @@ describe('admin router', () => {
     })
     expect(healthResponse.status).to.equal(200)
     expect(healthResponse.data).to.include.keys('status', 'uptimeSeconds', 'worker', 'database', 'redis')
+
+    expect(rateLimiterMiddlewareStub.callCount).to.equal(3)
+    expect(adminLoginRateLimitMiddlewareStub.calledOnce).to.be.true
+    expect(adminRateLimitMiddlewareStub.calledTwice).to.be.true
   })
 
   it('authenticates with passwordHash from settings', async () => {
@@ -239,5 +258,9 @@ describe('admin router', () => {
     })
 
     expect(sessionResponse.status).to.equal(200)
+
+    expect(rateLimiterMiddlewareStub.calledTwice).to.be.true
+    expect(adminLoginRateLimitMiddlewareStub.calledOnce).to.be.true
+    expect(adminRateLimitMiddlewareStub.calledOnce).to.be.true
   })
 })

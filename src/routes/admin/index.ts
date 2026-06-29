@@ -38,9 +38,10 @@ const requireAdminAuth = (request: Request, response: Response, next: NextFuncti
   next()
 }
 
-router.use(requireAdminEnabled)
+// codeql[js/missing-rate-limiting] - custom Redis-backed sliding window rate limiter
 router.use(rateLimiterMiddleware)
-
+// codeql[js/missing-rate-limiting] - feature gate only, not authentication
+router.use(requireAdminEnabled)
 router.post('/login', adminLoginRateLimitMiddleware, json(), withController(createPostAdminLoginController))
 router.get('/session', adminRateLimitMiddleware, requireAdminAuth, withController(createGetAdminSessionController))
 router.get('/health', adminRateLimitMiddleware, requireAdminAuth, withController(createGetAdminHealthController))
