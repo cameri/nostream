@@ -1,5 +1,19 @@
 # nostream
 
+## 3.1.0
+
+### Minor Changes
+
+- [#653](https://github.com/cameri/nostream/pull/653) [`8ab4825`](https://github.com/cameri/nostream/commit/8ab482559fad7b50518984f4159af5b4071de547) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add OpenTelemetry metrics bootstrap with OTLP export for Prometheus
+
+- [#650](https://github.com/cameri/nostream/pull/650) [`3461dfe`](https://github.com/cameri/nostream/commit/3461dfee95d6759a8a2a88ee2f3fbe88d1b3b002) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - Add NIP-43 invite code foundation: InviteCodeRepository with atomic claimCode, invite_codes migration, and event kind/tag constants.
+
+- [#644](https://github.com/cameri/nostream/pull/644) [`2f6d773`](https://github.com/cameri/nostream/commit/2f6d77354cd150110c850e8d0a2601558742d3a6) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat: reject NIP-70 protected events and reposts embedding them
+
+### Patch Changes
+
+- [#646](https://github.com/cameri/nostream/pull/646) [`eb64d8a`](https://github.com/cameri/nostream/commit/eb64d8a937a5a55f5bbd39ecabee84c3402c7101) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore(deps): bump js-yaml from 4.1.1 to 4.2.0
+
 ## 3.0.0
 
 ### Major Changes
