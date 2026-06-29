@@ -641,13 +641,35 @@ I'm Cameri on most social networks. You can find me on Nostr by npub1qqqqqqyz0la
 
 # Contributors (A-Z)
 
-- Anton Livaja
-- Juan Angel
-- Kevin Smith
-- Saransh Sharma
-- swissrouting
+- Abhay
+- Abhinav Rathee
 - André Neves
+- Anshuman
+- Anton Livaja
+- archief2910
+- Chetan Reddy Kodidela
+- Divyanshu Kumar
+- Ferryx
+- Juan Angel
+- Kanishka
+- Kartik
+- Kevin Smith
+- Khadar Vali
+- Khushal
+- Kushagra Kinra
+- Mahmoud Khedr
+- Mohit Davar
+- Priyanshu Bharti
+- Radosvet Petrov
+- Sagar
+- Saniddhya Dubey
+- Saransh Sharma
 - Semisol
+- swissrouting
+- Tharupahan Jayawardana
+- Vikash Siwach
+- XD22
+- Yash Agarwal
 
 ## License
 
