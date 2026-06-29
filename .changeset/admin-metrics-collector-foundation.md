@@ -2,4 +2,4 @@
 "nostream": minor
 ---
 
-feat: add in-memory admin metrics collector foundation
+feat: add OpenTelemetry metrics bootstrap with OTLP export for Prometheus
