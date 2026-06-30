@@ -17,8 +17,6 @@ export interface IPaymentsService {
 }
 
 export interface IWotService {
-  buildGraph(settings: WoTSettings): Promise<void>
-  isTrusted(pubkey: string): boolean
+  buildGraph(settings: WoTSettings): Promise<string[]>
   isReady(): boolean
-  reset(): void
 }
