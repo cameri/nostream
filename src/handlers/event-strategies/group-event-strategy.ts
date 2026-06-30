@@ -1,4 +1,4 @@
-import { createCommandResult } from '../../utils/messages'
+import { createEventCommandResult } from '../../telemetry/event-metrics'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { EventTags } from '../../constants/base'
@@ -20,12 +20,12 @@ export class GroupEventStrategy implements IEventStrategy<Event, Promise<void>> 
 
     const reason = this.validateGroupEvent(event)
     if (reason) {
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, `invalid: ${reason}`))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, `invalid: ${reason}`))
       return
     }
 
     const count = await this.eventRepository.create(event)
-    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, true, count ? '' : 'duplicate:'))
 
     if (count) {
       this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)

@@ -31,7 +31,7 @@ import {
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
 import { CacheAdmissionState } from '../constants/caching'
-import { createCommandResult } from '../utils/messages'
+import { createEventCommandResult } from '../telemetry/event-metrics'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
 import { ICacheAdapter } from '../@types/adapters'
@@ -63,13 +63,13 @@ export class EventMessageHandler implements IMessageHandler {
     let reason = await this.isEventValid(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     if (isExpiredEvent(event)) {
       logger('event %s rejected: expired')
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'event is expired'))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, 'event is expired'))
       return
     }
 
@@ -79,7 +79,7 @@ export class EventMessageHandler implements IMessageHandler {
       logger('event %s rejected: rate-limited')
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
-        createCommandResult(event.id, false, 'rate-limited: slow down'),
+        createEventCommandResult(event.id, false, 'rate-limited: slow down'),
       )
       return
     }
@@ -87,35 +87,35 @@ export class EventMessageHandler implements IMessageHandler {
     reason = this.canAcceptEvent(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.isProtectedEventBlocked(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.isBlockedByRequestToVanish(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.isUserAdmitted(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.checkNip05Verification(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
@@ -124,7 +124,7 @@ export class EventMessageHandler implements IMessageHandler {
     if (typeof strategy?.execute !== 'function') {
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
-        createCommandResult(event.id, false, 'error: event not supported'),
+        createEventCommandResult(event.id, false, 'error: event not supported'),
       )
       return
     }
@@ -134,7 +134,7 @@ export class EventMessageHandler implements IMessageHandler {
       this.processNip05Metadata(event)
     } catch (error) {
       logger.error('error handling message', message, error)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: unable to process event'))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, 'error: unable to process event'))
     }
   }
 
@@ -242,7 +242,9 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     const checkEmbedded = async (evt: Event, depth = 0): Promise<boolean> => {
-      if (depth > 10) return false // Prevent infinite loops or excessive recursion
+      if (depth > 10) {
+        return false // Prevent infinite loops or excessive recursion
+      }
       if ((evt.kind === EventKinds.REPOST || evt.kind === EventKinds.GENERIC_REPOST) && evt.content.length > 0) {
         try {
           const embedded = attemptValidation(eventSchema)(JSON.parse(evt.content)) as Event

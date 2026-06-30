@@ -1,4 +1,4 @@
-import { createCommandResult } from '../../utils/messages'
+import { createEventCommandResult } from '../../telemetry/event-metrics'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { EventTags } from '../../constants/base'
@@ -31,7 +31,7 @@ export class DeleteEventStrategy implements IEventStrategy<Event, Promise<void>>
     }
 
     const count = await this.eventRepository.create(event)
-    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, true, count ? '' : 'duplicate:'))
 
     if (count) {
       this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
