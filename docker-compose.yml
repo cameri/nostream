@@ -60,6 +60,8 @@ services:
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-nostream}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
       OTEL_METRIC_EXPORT_INTERVAL_MS: ${OTEL_METRIC_EXPORT_INTERVAL_MS:-10000}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://prometheus:9090}
+      ADMIN_METRICS_SSE_INTERVAL_MS: ${ADMIN_METRICS_SSE_INTERVAL_MS:-5000}
       # Enable DEBUG for troubleshooting. Examples:
       # DEBUG: "primary:*"
       # DEBUG: "worker:*"
