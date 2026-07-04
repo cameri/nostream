@@ -141,10 +141,17 @@ export interface AdmissionCheckLimits {
   ipWhitelist?: string[]
 }
 
+export interface AdminLimits {
+  rateLimits?: RateLimit[]
+  loginRateLimits?: RateLimit[]
+  ipWhitelist?: string[]
+}
+
 export interface Limits {
   rateLimiter?: RateLimiterSettings
   invoice?: InvoiceLimits
   admissionCheck?: AdmissionCheckLimits
+  admin?: AdminLimits
   connection?: ConnectionLimits
   client?: ClientLimits
   event?: EventLimits
@@ -266,6 +273,11 @@ export interface Nip05Settings {
   domainBlacklist?: string[]
 }
 
+export interface AdminSettings {
+  enabled: boolean
+  passwordHash?: string
+  sessionTtlSeconds?: number
+}
 export interface WoTSettings {
   enabled: boolean
   /**
@@ -295,6 +307,7 @@ export interface Nip43Settings {
 
 export interface Settings {
   info: Info
+  admin?: AdminSettings
   payments?: Payments
   paymentsProcessors?: PaymentsProcessors
   network: Network
