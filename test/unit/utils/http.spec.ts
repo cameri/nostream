@@ -1,7 +1,7 @@
 import { expect } from 'chai'
 import { IncomingMessage } from 'http'
 
-import { getPublicPathPrefix, getRemoteAddress, joinPathPrefix } from '../../../src/utils/http'
+import { getPublicPathPrefix, getRemoteAddress, isSecureRequest, joinPathPrefix } from '../../../src/utils/http'
 
 describe('getRemoteAddress', () => {
   const header = 'x-forwarded-for'
@@ -167,5 +167,52 @@ describe('joinPathPrefix', () => {
 
   it('joins a forwarded prefix with an absolute path', () => {
     expect(joinPathPrefix('/nostream', '/invoices')).to.equal('/nostream/invoices')
+  })
+})
+
+describe('isSecureRequest', () => {
+  const settings = {
+    info: { relay_url: 'wss://relay.example.com' },
+    network: { trustedProxies: ['127.0.0.1'] },
+  } as any
+
+  it('returns true when express marks the request secure', () => {
+    expect(isSecureRequest({ secure: true, socket: { remoteAddress: 'client' } } as any, settings)).to.equal(true)
+  })
+
+  it('returns true for trusted x-forwarded-proto https', () => {
+    expect(
+      isSecureRequest(
+        {
+          headers: { 'x-forwarded-proto': 'https' },
+          socket: { remoteAddress: '127.0.0.1' },
+        } as any,
+        settings,
+      ),
+    ).to.equal(true)
+  })
+
+  it('returns false for untrusted x-forwarded-proto https', () => {
+    expect(
+      isSecureRequest(
+        {
+          headers: { 'x-forwarded-proto': 'https' },
+          socket: { remoteAddress: 'client' },
+        } as any,
+        settings,
+      ),
+    ).to.equal(false)
+  })
+
+  it('returns false for trusted http x-forwarded-proto', () => {
+    expect(
+      isSecureRequest(
+        {
+          headers: { 'x-forwarded-proto': 'http' },
+          socket: { remoteAddress: '127.0.0.1' },
+        } as any,
+        settings,
+      ),
+    ).to.equal(false)
   })
 })
