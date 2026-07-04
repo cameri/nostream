@@ -15,11 +15,14 @@ export class GetAdminMetricsController implements IController {
     response.flushHeaders()
 
     let closed = false
+    let inFlight = false
 
     const sendSnapshot = async () => {
-      if (closed || response.writableEnded) {
+      if (closed || response.writableEnded || inFlight) {
         return
       }
+
+      inFlight = true
 
       try {
         const snapshot = await collectAdminMetricsSnapshot()
@@ -29,6 +32,8 @@ export class GetAdminMetricsController implements IController {
         if (!closed && !response.writableEnded) {
           response.write(`event: error\ndata: ${JSON.stringify({ error: 'failed to collect metrics' })}\n\n`)
         }
+      } finally {
+        inFlight = false
       }
     }
 

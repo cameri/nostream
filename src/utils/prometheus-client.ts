@@ -45,9 +45,12 @@ export const queryPrometheusInstant = async (query: string): Promise<number | un
   const baseUrl = getPrometheusBaseUrl()
 
   try {
+    const timeoutCandidate = Number(process.env.PROMETHEUS_QUERY_TIMEOUT_MS)
+    const timeoutMs = Number.isFinite(timeoutCandidate) && timeoutCandidate > 0 ? timeoutCandidate : 5000
+
     const response = await axios.get<PrometheusInstantQueryResponse>(`${baseUrl}/api/v1/query`, {
       params: { query },
-      timeout: Number(process.env.PROMETHEUS_QUERY_TIMEOUT_MS || 5000),
+      timeout: timeoutMs,
       validateStatus: () => true,
     })
 

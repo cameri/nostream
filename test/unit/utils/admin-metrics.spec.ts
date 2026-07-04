@@ -1,5 +1,9 @@
-import { expect } from 'chai'
+import chai from 'chai'
 import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
+
+chai.use(sinonChai)
+const { expect } = chai
 
 import * as adminHealth from '../../../src/utils/admin-health'
 import * as adminMetrics from '../../../src/utils/admin-metrics'

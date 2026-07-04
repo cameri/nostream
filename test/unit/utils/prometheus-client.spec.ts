@@ -1,6 +1,10 @@
 import axios from 'axios'
-import { expect } from 'chai'
+import chai from 'chai'
 import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
+
+chai.use(sinonChai)
+const { expect } = chai
 
 import * as prometheusClient from '../../../src/utils/prometheus-client'
 
