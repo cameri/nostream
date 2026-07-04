@@ -498,8 +498,9 @@ describe('MaintenanceWorker', () => {
   })
 
   describe('onExit', () => {
-    it('calls close and then exits the process with code 0', () => {
+    it('calls close and then exits the process with code 0', async () => {
       fakeProcess.emit('SIGTERM')
+      await new Promise((resolve) => setImmediate(resolve))
 
       expect(fakeProcess.exit).to.have.been.calledOnceWithExactly(0)
     })

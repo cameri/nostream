@@ -28,6 +28,7 @@ import { IRunnable } from '../@types/base'
 import { OutgoingEventMessage } from '../@types/messages'
 import { RelayedEvent } from '../@types/event'
 import { WebSocketServerAdapterEvent } from '../constants/adapter'
+import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 
 const logger = createLogger('static-mirror-worker')
 
@@ -337,8 +338,10 @@ export class StaticMirroringWorker implements IRunnable {
 
   private onExit() {
     logger('exiting')
-    this.close(() => {
-      this.process.exit(0)
+    void shutdownMetricsTelemetry().finally(() => {
+      this.close(() => {
+        this.process.exit(0)
+      })
     })
   }
 
