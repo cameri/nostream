@@ -27,6 +27,7 @@ services:
       - ../../.nycrc.json:/code/.nycrc.json
       - ../../.coverage:/code/.coverage
       - ../../.test-reports:/code/.test-reports
+      - ../../test/integration/settings.yaml:/code/settings.yaml
       - ../../tsconfig.json:/code/tsconfig.json
     working_dir: /code
     depends_on:
