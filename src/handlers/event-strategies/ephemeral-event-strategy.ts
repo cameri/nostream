@@ -1,4 +1,4 @@
-import { createCommandResult } from '../../utils/messages'
+import { createEventCommandResult } from '../../telemetry/event-metrics'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { IEventStrategy } from '../../@types/message-handlers'
@@ -12,7 +12,7 @@ export class EphemeralEventStrategy implements IEventStrategy<Event, Promise<voi
 
   public async execute(event: Event): Promise<void> {
     logger('received ephemeral event: %o', event)
-    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, ''))
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, true, ''))
     this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
   }
 }
