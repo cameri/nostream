@@ -15,6 +15,7 @@ import { InvoiceStatus } from '../@types/invoice'
 import { isExpiredInvoice } from '../utils/invoice'
 import { Nip05Verification } from '../@types/nip05'
 import { Settings } from '../@types/settings'
+import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 
 const UPDATE_INVOICE_INTERVAL = 60000
 const NIP05_REVERIFICATION_BATCH_SIZE = 50
@@ -235,8 +236,10 @@ export class MaintenanceWorker implements IRunnable {
 
   private onExit() {
     logger('exiting')
-    this.close(() => {
-      this.process.exit(0)
+    void shutdownMetricsTelemetry().finally(() => {
+      this.close(() => {
+        this.process.exit(0)
+      })
     })
   }
 

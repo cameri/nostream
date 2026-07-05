@@ -112,6 +112,19 @@ limits:
       - "::1"
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
+  admin:
+    rateLimits:
+      - description: 30 admin requests/min
+        period: 60000
+        rate: 30
+    loginRateLimits:
+      - description: 10 login attempts per 15 minutes
+        period: 900000
+        rate: 10
+    ipWhitelist:
+      - "::1"
+      - "10.10.10.1"
+      - "::ffff:10.10.10.1"
   connection:
     rateLimits:
       - period: 1000
@@ -229,3 +242,6 @@ limits:
       - "::1"
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
+admin:
+  enabled: false
+  sessionTtlSeconds: 86400
