@@ -15,6 +15,7 @@ describe('admin-metrics', () => {
   let collectAdminHealthSnapshotStub: Sinon.SinonStub
 
   beforeEach(() => {
+    adminMetrics.resetAdminMetricsSnapshotCache()
     sandbox = Sinon.createSandbox()
     queryPrometheusInstantStub = sandbox.stub(prometheusClient, 'queryPrometheusInstant')
     collectAdminHealthSnapshotStub = sandbox.stub(adminHealth, 'collectAdminHealthSnapshot').resolves({
@@ -27,6 +28,7 @@ describe('admin-metrics', () => {
   })
 
   afterEach(() => {
+    adminMetrics.resetAdminMetricsSnapshotCache()
     sandbox.restore()
   })
 
@@ -81,6 +83,15 @@ describe('admin-metrics', () => {
 
     expect(snapshot.status).to.equal('degraded')
     expect(snapshot.health.database.ok).to.equal(false)
+  })
+
+  it('reuses cached snapshots within the SSE interval', async () => {
+    queryPrometheusInstantStub.resolves(1)
+
+    await adminMetrics.collectAdminMetricsSnapshot()
+    await adminMetrics.collectAdminMetricsSnapshot()
+
+    expect(queryPrometheusInstantStub.callCount).to.equal(7)
   })
 
   describe('getAdminMetricsSseIntervalMs', () => {

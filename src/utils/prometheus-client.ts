@@ -9,10 +9,12 @@ const DEFAULT_PROMETHEUS_URL = 'http://127.0.0.1:9090'
 interface PrometheusInstantQueryResponse {
   status: 'success' | 'error'
   data?: {
-    resultType: string
-    result: Array<{
-      value?: [number, string]
-    }>
+    resultType: 'vector' | 'scalar' | string
+    result:
+      | Array<{
+          value?: [number, string]
+        }>
+      | [number, string]
   }
   error?: string
   errorType?: string
@@ -32,7 +34,16 @@ export const parsePrometheusInstantQueryScalar = (response: PrometheusInstantQue
     return undefined
   }
 
-  const rawValue = response.data?.result?.[0]?.value?.[1]
+  const data = response.data
+  let rawValue: string | undefined
+
+  if (data?.resultType === 'scalar' && Array.isArray(data.result) && data.result.length >= 2) {
+    rawValue = String(data.result[1])
+  } else if (Array.isArray(data?.result)) {
+    const vectorResult = data.result as Array<{ value?: [number, string] }>
+    rawValue = vectorResult[0]?.value?.[1]
+  }
+
   if (rawValue === undefined) {
     return undefined
   }

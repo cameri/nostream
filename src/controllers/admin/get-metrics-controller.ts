@@ -16,6 +16,17 @@ export class GetAdminMetricsController implements IController {
 
     let closed = false
     let inFlight = false
+    let timer: ReturnType<typeof setInterval> | undefined
+
+    const cleanup = () => {
+      closed = true
+      if (timer) {
+        clearInterval(timer)
+        timer = undefined
+      }
+    }
+
+    request.on('close', cleanup)
 
     const sendSnapshot = async () => {
       if (closed || response.writableEnded || inFlight) {
@@ -26,6 +37,10 @@ export class GetAdminMetricsController implements IController {
 
       try {
         const snapshot = await collectAdminMetricsSnapshot()
+        if (closed || response.writableEnded) {
+          return
+        }
+
         response.write(`data: ${JSON.stringify(snapshot)}\n\n`)
       } catch (error) {
         logger.warn('failed to collect admin metrics snapshot: %o', error)
@@ -39,14 +54,13 @@ export class GetAdminMetricsController implements IController {
 
     await sendSnapshot()
 
+    if (closed || response.writableEnded) {
+      return
+    }
+
     const intervalMs = getAdminMetricsSseIntervalMs()
-    const timer = setInterval(() => {
+    timer = setInterval(() => {
       void sendSnapshot()
     }, intervalMs)
-
-    request.on('close', () => {
-      closed = true
-      clearInterval(timer)
-    })
   }
 }

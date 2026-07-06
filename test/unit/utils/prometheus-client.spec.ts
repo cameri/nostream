@@ -53,6 +53,18 @@ describe('prometheus-client', () => {
       expect(value).to.equal(12.5)
     })
 
+    it('returns parsed scalar from successful scalar response', () => {
+      const value = prometheusClient.parsePrometheusInstantQueryScalar({
+        status: 'success',
+        data: {
+          resultType: 'scalar',
+          result: [1710000000, '9'],
+        },
+      })
+
+      expect(value).to.equal(9)
+    })
+
     it('returns undefined for unsuccessful responses', () => {
       expect(
         prometheusClient.parsePrometheusInstantQueryScalar({

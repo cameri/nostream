@@ -39,7 +39,17 @@ const toMetricValue = (value: number | undefined): number => {
   return value ?? 0
 }
 
-export const collectAdminMetricsSnapshot = async (): Promise<AdminMetricsSnapshot> => {
+let cachedSnapshot: AdminMetricsSnapshot | undefined
+let cachedAt = 0
+let snapshotInFlight: Promise<AdminMetricsSnapshot> | undefined
+
+export const resetAdminMetricsSnapshotCache = (): void => {
+  cachedSnapshot = undefined
+  cachedAt = 0
+  snapshotInFlight = undefined
+}
+
+const collectAdminMetricsSnapshotUncached = async (): Promise<AdminMetricsSnapshot> => {
   const [
     health,
     eventsAcceptedRate,
@@ -99,6 +109,31 @@ export const collectAdminMetricsSnapshot = async (): Promise<AdminMetricsSnapsho
       ...(prometheusAvailable ? {} : { error: 'Prometheus query returned no data' }),
     },
   }
+}
+
+export const collectAdminMetricsSnapshot = async (): Promise<AdminMetricsSnapshot> => {
+  const cacheTtlMs = getAdminMetricsSseIntervalMs()
+  const now = Date.now()
+
+  if (cachedSnapshot && now - cachedAt < cacheTtlMs) {
+    return cachedSnapshot
+  }
+
+  if (snapshotInFlight) {
+    return snapshotInFlight
+  }
+
+  snapshotInFlight = collectAdminMetricsSnapshotUncached()
+    .then((snapshot) => {
+      cachedSnapshot = snapshot
+      cachedAt = Date.now()
+      return snapshot
+    })
+    .finally(() => {
+      snapshotInFlight = undefined
+    })
+
+  return snapshotInFlight
 }
 
 export const getAdminMetricsSseIntervalMs = (): number => {
