@@ -1022,6 +1022,21 @@ describe('EventMessageHandler', () => {
       )
       expect(actualResult).to.be.true
     })
+
+    it('fails open when the rate limiter backend is unavailable', async () => {
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+      ]
+      rateLimiterHitStub.rejects(new Error('redis unavailable'))
+
+      const actualResult = await (handler as any).isRateLimited(event)
+
+      expect(actualResult).to.be.false
+      expect(rateLimiterHitStub).to.have.been.calledOnce
+    })
   })
 
   describe('isUserAdmitted', () => {
