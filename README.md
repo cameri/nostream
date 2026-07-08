@@ -65,6 +65,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-45: Event Counts
 - [x] NIP-62: Request to Vanish
 - [x] NIP-65: Relay List Metadata
+- [x] NIP-98: HTTP Auth (admin console login)
 
 ## Requirements
 

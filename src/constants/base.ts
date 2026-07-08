@@ -54,6 +54,8 @@ export enum EventKinds {
   EPHEMERAL_FIRST = 20000,
   // NIP-42: Client Authentication
   AUTH = 22242,
+  // NIP-98: HTTP Auth
+  HTTP_AUTH = 27235,
   // NIP-43: Ephemeral access request kinds
   NIP43_JOIN_REQUEST = 28934,
   NIP43_INVITE_REQUEST = 28935,
@@ -95,6 +97,10 @@ export enum EventTags {
   // NIP-43: Relay Access Metadata
   Member = 'member',
   Claim = 'claim',
+  // NIP-98: HTTP Auth tags
+  Url = 'u',
+  Method = 'method',
+  Payload = 'payload',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'

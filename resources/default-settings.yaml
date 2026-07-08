@@ -250,3 +250,4 @@ limits:
 admin:
   enabled: false
   sessionTtlSeconds: 86400
+  pubkeys: []

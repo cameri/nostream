@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Login - {{name}}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{path_prefix}}/css/style.css">
+  </head>
+  <body lang="en" data-path-prefix="{{path_prefix}}">
+    <main class="container">
+      <div class="row">
+        <div class="col">
+          <h1 class="mt-4 mb-2 text-center text-nowrap">{{name}}</h1>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col text-center mb-4">
+          <p class="text-muted">Relay Administration</p>
+        </div>
+      </div>
+
+      <div class="row justify-content-center">
+        <div class="col col-md-8 col-lg-5">
+
+          <div class="card mb-4">
+            <div class="card-body text-center">
+              <h5 class="card-title">Admin Login</h5>
+              <p class="card-text">
+                Sign in with your Nostr identity. Your signer extension or connected
+                wallet (NIP-07) will be asked to sign a NIP-98 authentication event.
+              </p>
+              <button id="sign-in" type="button" class="btn btn-warning w-100">Sign in with Nostr</button>
+              <p id="status" class="mt-3 mb-0" role="status"></p>
+              <p id="no-extension" class="text-muted small mt-3 mb-0 hidden">
+                No NIP-07 signer detected. Install a Nostr signer extension such as
+                Alby or nos2x, or open this page from a wallet with a built-in signer,
+                then reload this page.
+              </p>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-center gap-3 mt-2 mb-5">
+            <a href="{{path_prefix}}/" class="text-muted small">Back to relay</a>
+          </div>
+
+        </div>
+      </div>
+    </main>
+    <script nonce="{{nonce}}">
+      // Check for system preference on load
+      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark-theme');
+      }
+
+      (() => {
+        const pathPrefix = document.body.dataset.pathPrefix || ''
+        const loginUrl = `${location.origin}${pathPrefix}/admin/login`
+        const signInButton = document.getElementById('sign-in')
+        const status = document.getElementById('status')
+
+        const setStatus = (message, isError) => {
+          status.textContent = message
+          status.className = isError ? 'mt-3 mb-0 text-danger' : 'mt-3 mb-0'
+        }
+
+        if (!window.nostr || typeof window.nostr.signEvent !== 'function') {
+          signInButton.disabled = true
+          document.getElementById('no-extension').classList.remove('hidden')
+          return
+        }
+
+        signInButton.addEventListener('click', async () => {
+          signInButton.disabled = true
+          setStatus('Waiting for your signer to approve…', false)
+
+          try {
+            const signedEvent = await window.nostr.signEvent({
+              kind: 27235,
+              created_at: Math.floor(Date.now() / 1000),
+              tags: [
+                ['u', loginUrl],
+                ['method', 'POST'],
+              ],
+              content: '',
+            })
+
+            const response = await fetch(loginUrl, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                Authorization: `Nostr ${btoa(JSON.stringify(signedEvent))}`,
+              },
+            })
+
+            if (response.ok) {
+              setStatus('Signed in. Redirecting…', false)
+              location.assign(`${pathPrefix}/admin`)
+              return
+            }
+
+            setStatus(
+              response.status === 401
+                ? 'Login rejected. Your pubkey isn\'t allowed.'
+                : 'Login failed. Please try again.',
+              true,
+            )
+          } catch (error) {
+            setStatus('Signing was cancelled or failed.', true)
+          }
+
+          signInButton.disabled = false
+        })
+      })()
+    </script>
+  </body>
+</html>
