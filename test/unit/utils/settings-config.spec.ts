@@ -70,6 +70,13 @@ describe('settings-config', () => {
     expect(() => setByPath({} as any, 'payments[]', true)).to.throw('Invalid path segment')
   })
 
+  it('rejects reserved prototype-pollution path keys', () => {
+    for (const path of ['__proto__.enabled', 'constructor.enabled', 'prototype.enabled']) {
+      expect(() => setByPath({ payments: { enabled: false } } as any, path, true)).to.throw('Invalid path segment')
+      expect(() => getByPath({ payments: { enabled: false } }, path)).to.throw('Invalid path segment')
+    }
+  })
+
   it('validates known paths against defaults', () => {
     expect(validatePathAgainstDefaults('payments.enabled')).to.deep.equal([])
     expect(validatePathAgainstDefaults('limits.event.content[0].maxLength')).to.deep.equal([])

@@ -38,6 +38,18 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+const RESERVED_PATH_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
+
+const assertSafePathKey = (key: string, segment: string): void => {
+  if (RESERVED_PATH_KEYS.has(key)) {
+    throw new Error(`Invalid path segment: ${segment}`)
+  }
+}
+
+const hasOwn = (object: Record<string, unknown>, key: string): boolean => {
+  return Object.prototype.hasOwnProperty.call(object, key)
+}
+
 const parsePath = (path: string): PathToken[] => {
   const input = path.trim()
 
@@ -58,7 +70,10 @@ const parsePath = (path: string): PathToken[] => {
       throw new Error(`Invalid path segment: ${segment}`)
     }
 
-    tokens.push({ type: 'key', key: match[1] })
+    const key = match[1]
+    assertSafePathKey(key, segment)
+
+    tokens.push({ type: 'key', key })
 
     const indexes = [...segment.matchAll(/\[(\d+)\]/g)]
     for (const entry of indexes) {
@@ -200,7 +215,7 @@ const validateShape = (schema: unknown, candidate: unknown, path: PathToken[], i
     }
 
     for (const key of Object.keys(candidate)) {
-      if (!(key in schema)) {
+      if (!hasOwn(schema, key)) {
         issues.push({
           path: formatPathTokens([...path, { type: 'key', key }]),
           message: 'Unknown setting key',
@@ -209,7 +224,7 @@ const validateShape = (schema: unknown, candidate: unknown, path: PathToken[], i
     }
 
     for (const key of Object.keys(schema)) {
-      validateShape((schema as Record<string, unknown>)[key], (candidate as Record<string, unknown>)[key], [...path, { type: 'key', key }], issues)
+      validateShape(schema[key], (candidate as Record<string, unknown>)[key], [...path, { type: 'key', key }], issues)
     }
 
     return
@@ -236,10 +251,10 @@ const pathExistsInSchema = (schema: unknown, tokens: PathToken[]): boolean => {
 
   for (const token of tokens) {
     if (token.type === 'key') {
-      if (!isPlainObject(current) || !(token.key in current)) {
+      if (!isPlainObject(current) || !hasOwn(current, token.key)) {
         return false
       }
-      current = (current as Record<string, unknown>)[token.key]
+      current = current[token.key]
       continue
     }
 
