@@ -2,8 +2,9 @@ import ora from 'ora'
 import yaml from 'js-yaml'
 
 import {
+  formatSettingCategoryLabel,
   getByPath,
-  loadDefaults,
+  getTopLevelSettingCategories,
   loadMergedSettings,
   loadUserSettings,
   parseTypedValue,
@@ -11,7 +12,7 @@ import {
   setByPath,
   validatePathAgainstDefaults,
   validateSettings,
-} from '../utils/config'
+} from '../../utils/settings-config'
 import {
   isSecretEnvKey,
   isSupportedEnvKey,
@@ -57,13 +58,7 @@ const serialize = (value: unknown): string => {
   return yaml.dump(value, { lineWidth: 120 }).trimEnd()
 }
 
-const formatLabel = (key: string): string => {
-  return key
-    .split(/[_\-.]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
+const formatLabel = formatSettingCategoryLabel
 
 const restartRelay = async (): Promise<number> => {
   const spinner = ora('Restarting relay...').start()
@@ -257,6 +252,5 @@ export const runConfigEnvValidate = async (): Promise<number> => {
 }
 
 export const getConfigTopLevelCategories = (): string[] => {
-  const defaults = loadDefaults() as unknown as Record<string, unknown>
-  return Object.keys(defaults)
+  return getTopLevelSettingCategories()
 }

@@ -5,16 +5,14 @@ import {
   runConfigSet,
   runConfigValidate,
 } from '../../commands/config'
-import { getByPath, loadMergedSettings } from '../../utils/config'
+import { formatSettingCategoryLabel, getByPath, loadMergedSettings } from '../../../utils/settings-config'
+import {
+  type GuidedSettingField,
+  guidedSettingCategories,
+} from '../../../utils/settings-guided-schema'
 import { tuiPrompts } from '../prompts'
 
-const toCategoryLabel = (key: string): string => {
-  return key
-    .split(/[_\-.]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
+const toCategoryLabel = formatSettingCategoryLabel
 
 const getCategoryOptions = () => {
   const categories = getConfigTopLevelCategories().sort((a, b) => a.localeCompare(b))
@@ -27,116 +25,6 @@ const getCategoryOptions = () => {
     { value: 'other', label: 'Other / full path' },
   ]
 }
-
-type GuidedSetting = {
-  label: string
-  path: string
-  type: 'boolean' | 'number' | 'string' | 'select' | 'stringArray'
-  options?: string[]
-  placeholder?: string
-  validate?: (value: string) => string | undefined
-}
-
-type GuidedCategory = {
-  value: string
-  label: string
-  settings: GuidedSetting[]
-}
-
-const requireNonEmpty = (value: string): string | undefined => {
-  return value.trim() ? undefined : 'Value is required'
-}
-
-const requireSafeNonNegativeInteger = (value: string): string | undefined => {
-  const trimmed = value.trim()
-  if (!/^\d+$/.test(trimmed)) {
-    return 'Value must be a non-negative integer'
-  }
-
-  const parsed = Number(trimmed)
-  if (!Number.isSafeInteger(parsed)) {
-    return 'Value must be a safe integer'
-  }
-
-  return undefined
-}
-
-const guidedCategories: GuidedCategory[] = [
-  {
-    value: 'payments',
-    label: 'Payments',
-    settings: [
-      { label: 'Enable payments', path: 'payments.enabled', type: 'boolean' },
-      {
-        label: 'Payment processor',
-        path: 'payments.processor',
-        type: 'select',
-        options: ['zebedee', 'lnbits', 'lnurl', 'nodeless', 'opennode'],
-      },
-      {
-        label: 'Admission fee enabled',
-        path: 'payments.feeSchedules.admission[0].enabled',
-        type: 'boolean',
-      },
-      {
-        label: 'Admission fee amount (msats)',
-        path: 'payments.feeSchedules.admission[0].amount',
-        type: 'number',
-        validate: requireSafeNonNegativeInteger,
-      },
-    ],
-  },
-  {
-    value: 'network',
-    label: 'Network',
-    settings: [
-      {
-        label: 'Relay URL',
-        path: 'info.relay_url',
-        type: 'string',
-        placeholder: 'wss://relay.example.com',
-        validate: requireNonEmpty,
-      },
-      {
-        label: 'Relay name',
-        path: 'info.name',
-        type: 'string',
-        placeholder: 'relay.example.com',
-        validate: requireNonEmpty,
-      },
-      {
-        label: 'Max payload size',
-        path: 'network.maxPayloadSize',
-        type: 'number',
-        validate: requireSafeNonNegativeInteger,
-      },
-    ],
-  },
-  {
-    value: 'limits',
-    label: 'Limits',
-    settings: [
-      {
-        label: 'Rate limiter strategy',
-        path: 'limits.rateLimiter.strategy',
-        type: 'select',
-        options: ['ewma', 'sliding_window'],
-      },
-      {
-        label: 'Primary event content max length',
-        path: 'limits.event.content[0].maxLength',
-        type: 'number',
-        validate: requireSafeNonNegativeInteger,
-      },
-      {
-        label: 'Minimum pubkey balance',
-        path: 'limits.event.pubkey.minBalance',
-        type: 'number',
-        validate: requireSafeNonNegativeInteger,
-      },
-    ],
-  },
-]
 
 const formatCurrentValue = (value: unknown): string => {
   if (Array.isArray(value)) {
@@ -162,7 +50,7 @@ const formatCurrentValue = (value: unknown): string => {
   return String(value)
 }
 
-const getGuidedSettingValue = async (setting: GuidedSetting, currentValue: unknown) => {
+const getGuidedSettingValue = async (setting: GuidedSettingField, currentValue: unknown) => {
   switch (setting.type) {
     case 'boolean': {
       const answer = await tuiPrompts.confirm({
@@ -248,7 +136,7 @@ const getGuidedSettingValue = async (setting: GuidedSetting, currentValue: unkno
 const runGuidedConfigureMenu = async (): Promise<number> => {
   const category = await tuiPrompts.select({
     message: 'Configuration category',
-    options: [...guidedCategories.map(({ value, label }) => ({ value, label })), { value: 'back', label: 'Back' }],
+    options: [...guidedSettingCategories.map(({ value, label }) => ({ value, label })), { value: 'back', label: 'Back' }],
   })
 
   if (tuiPrompts.isCancel(category)) {
@@ -259,7 +147,7 @@ const runGuidedConfigureMenu = async (): Promise<number> => {
     return 0
   }
 
-  const selectedCategory = guidedCategories.find((entry) => entry.value === category)
+  const selectedCategory = guidedSettingCategories.find((entry) => entry.value === category)
   if (!selectedCategory) {
     tuiPrompts.cancel('Unknown category')
     return 1
