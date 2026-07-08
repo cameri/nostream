@@ -120,6 +120,10 @@ export class InvoiceRepository implements IInvoiceRepository {
           'created_at',
           'verify_url',
           'fee_schedule',
+          'plan_id',
+          'subscription_id',
+          'period_start',
+          'period_end',
         ])(row),
       )
 

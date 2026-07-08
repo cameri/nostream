@@ -15,7 +15,8 @@
   ],
   "ignore": [
     ".nostr/**",
-    "src/repositories/invite-code-repository.ts"
+    "src/repositories/invite-code-repository.ts",
+    "src/repositories/user-subscription-repository.ts"
   ],
   "commitlint": false,
   "eslint": false,

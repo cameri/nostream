@@ -245,3 +245,4 @@ limits:
       - "::ffff:10.10.10.1"
 admin:
   enabled: false
+  sessionTtlSeconds: 86400
