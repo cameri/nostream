@@ -1,6 +1,6 @@
 import { always, applySpec, head, ifElse, is, map, omit, pipe, prop, propSatisfies, toString } from 'ramda'
 
-import { DBInvoice, Invoice, InvoiceStatus } from '../@types/invoice'
+import { DBInvoice, Invoice, InvoiceFeeSchedule, InvoiceStatus } from '../@types/invoice'
 import { fromDBInvoice, toBuffer } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
 import { DatabaseClient } from '../@types/base'
@@ -92,6 +92,15 @@ export class InvoiceRepository implements IInvoiceRepository {
       updated_at: always(new Date()),
       created_at: prop('createdAt'),
       verify_url: prop('verifyURL'),
+      fee_schedule: ifElse(
+        propSatisfies(is(String), 'feeSchedule'),
+        prop('feeSchedule'),
+        always(InvoiceFeeSchedule.ADMISSION),
+      ),
+      plan_id: prop('planId'),
+      subscription_id: prop('subscriptionId'),
+      period_start: prop('periodStart'),
+      period_end: prop('periodEnd'),
     })(invoice)
 
     logger('row: %o', row)
@@ -110,6 +119,7 @@ export class InvoiceRepository implements IInvoiceRepository {
           'expires_at',
           'created_at',
           'verify_url',
+          'fee_schedule',
         ])(row),
       )
 

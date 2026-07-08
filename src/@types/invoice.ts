@@ -12,6 +12,12 @@ export enum InvoiceStatus {
   EXPIRED = 'expired',
 }
 
+export enum InvoiceFeeSchedule {
+  ADMISSION = 'admission',
+  SUBSCRIPTION = 'subscription',
+  PUBLICATION = 'publication',
+}
+
 export interface Invoice {
   id: string
   pubkey: Pubkey
@@ -26,6 +32,11 @@ export interface Invoice {
   updatedAt: Date
   createdAt: Date
   verifyURL?: string
+  feeSchedule?: InvoiceFeeSchedule
+  planId?: string | null
+  subscriptionId?: string | null
+  periodStart?: Date | null
+  periodEnd?: Date | null
 }
 
 export interface LnurlInvoice extends Invoice {
@@ -46,4 +57,9 @@ export interface DBInvoice {
   updated_at: Date
   created_at: Date
   verify_url: string
+  fee_schedule?: InvoiceFeeSchedule
+  plan_id?: string | null
+  subscription_id?: string | null
+  period_start?: Date | null
+  period_end?: Date | null
 }

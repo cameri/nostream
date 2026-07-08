@@ -179,10 +179,30 @@ export interface FeeSchedules {
   publication: FeeSchedule[]
 }
 
+export type SubscriptionPlanInterval = 'weekly' | 'monthly' | 'yearly'
+
+export interface SubscriptionPlanBenefits {
+  retentionDays?: number
+  eventRateLimitMultiplier?: number
+  connectionLimit?: number
+}
+
+export interface SubscriptionPlan {
+  id: string
+  name: string
+  enabled: boolean
+  amount: bigint
+  interval: SubscriptionPlanInterval
+  gracePeriodDays?: number
+  renewalReminderDays?: number[]
+  benefits?: SubscriptionPlanBenefits
+}
+
 export interface Payments {
   enabled: boolean
   processor: keyof PaymentsProcessors
   feeSchedules: FeeSchedules
+  subscriptionPlans?: SubscriptionPlan[]
 }
 
 export interface LnurlPaymentsProcessor {

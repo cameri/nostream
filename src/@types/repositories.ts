@@ -9,6 +9,7 @@ import { Invoice } from './invoice'
 import { Nip05Verification } from './nip05'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
+import { UserSubscription } from './user-subscription'
 
 export interface EventRetentionOptions {
   maxDays?: number
@@ -71,5 +72,12 @@ export interface IInviteCodeRepository {
   claimCode(code: string, pubkey: Pubkey): Promise<boolean>
   findActiveCodes(limit?: number): Promise<InviteCode[]>
   deleteExpiredCodes(): Promise<number>
+}
+
+export interface IUserSubscriptionRepository {
+  findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<UserSubscription | undefined>
+  upsert(subscription: UserSubscription, client?: DatabaseClient): Promise<UserSubscription>
+  findDueForRenewal(before: Date, limit?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  findExpired(asOf: Date, limit?: number, client?: DatabaseClient): Promise<UserSubscription[]>
 }
 

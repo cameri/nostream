@@ -132,6 +132,11 @@ export const fromDBInvoice = applySpec<Invoice>({
   updatedAt: prop('updated_at'),
   createdAt: prop('created_at'),
   verifyURL: prop('verify_url'),
+  feeSchedule: prop('fee_schedule'),
+  planId: prop('plan_id'),
+  subscriptionId: prop('subscription_id'),
+  periodStart: prop('period_start'),
+  periodEnd: prop('period_end'),
 })
 
 export const fromDBUser = applySpec<User>({

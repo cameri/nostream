@@ -5,7 +5,7 @@ import sinonChai from 'sinon-chai'
 import chaiAsPromised from 'chai-as-promised'
 
 import { DatabaseClient } from '../../../src/@types/base'
-import { Invoice, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
+import { Invoice, InvoiceFeeSchedule, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
 import { IInvoiceRepository } from '../../../src/@types/repositories'
 import { InvoiceRepository } from '../../../src/repositories/invoice-repository'
 
@@ -263,6 +263,60 @@ describe('InvoiceRepository', () => {
       expect(sql).to.include('"status"')
       expect(sql).to.include('"unit"')
       expect(sql).to.include('"description"')
+    })
+
+    it('includes subscription billing fields when provided', () => {
+      const sql = repository
+        .upsert({
+          ...testInvoice,
+          feeSchedule: InvoiceFeeSchedule.SUBSCRIPTION,
+          planId: 'pro',
+          subscriptionId: '11111111-1111-4111-8111-111111111111',
+          periodStart: fixedDate,
+          periodEnd: new Date('2026-02-01T00:00:00.000Z'),
+        })
+        .toString()
+
+      expect(sql).to.include('"fee_schedule"')
+      expect(sql).to.include('"plan_id"')
+      expect(sql).to.include('"subscription_id"')
+      expect(sql).to.include('"period_start"')
+      expect(sql).to.include('"period_end"')
+      expect(sql).to.include('subscription')
+      expect(sql).to.include('pro')
+    })
+
+    it('defaults fee_schedule to admission when omitted', () => {
+      const sql = repository.upsert(testInvoice).toString()
+
+      expect(sql).to.include('"fee_schedule"')
+      expect(sql).to.include('admission')
+    })
+  })
+
+  describe('fromDBInvoice subscription fields', () => {
+    it('maps nullable subscription billing columns', async () => {
+      const selectStub = sandbox.stub().resolves([
+        {
+          ...dbInvoiceRow,
+          fee_schedule: 'subscription',
+          plan_id: 'basic',
+          subscription_id: '11111111-1111-4111-8111-111111111111',
+          period_start: fixedDate,
+          period_end: new Date('2026-02-01T00:00:00.000Z'),
+        },
+      ])
+      const client = sandbox.stub().returns({
+        where: sandbox.stub().returns({ select: selectStub }),
+      }) as unknown as DatabaseClient
+
+      const result = await repository.findById('test-invoice-id', client)
+
+      expect(result!.feeSchedule).to.equal('subscription')
+      expect(result!.planId).to.equal('basic')
+      expect(result!.subscriptionId).to.equal('11111111-1111-4111-8111-111111111111')
+      expect(result!.periodStart).to.deep.equal(fixedDate)
+      expect(result!.periodEnd).to.deep.equal(new Date('2026-02-01T00:00:00.000Z'))
     })
   })
 })

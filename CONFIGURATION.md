@@ -224,4 +224,9 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `nwc`. |
+| payments.subscriptionPlans[]                | Optional subscription plan definitions for recurring relay billing. Disabled when empty. Plans live in settings, not the database. |
+| payments.subscriptionPlans[].id             | Stable plan identifier referenced by `user_subscriptions.plan_id`. |
+| payments.subscriptionPlans[].amount         | Recurring price in msats for the configured interval. |
+| payments.subscriptionPlans[].interval       | Billing cadence: `weekly`, `monthly`, or `yearly`. |
+| payments.subscriptionPlans[].benefits.retentionDays | Optional per-plan retention override (enforcement lands in a later PR). |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |

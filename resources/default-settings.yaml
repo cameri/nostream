@@ -11,6 +11,7 @@ info:
 payments:
   enabled: false
   processor: zebedee
+  subscriptionPlans: []
   feeSchedules:
     admission:
       - enabled: false
@@ -244,4 +245,3 @@ limits:
       - "::ffff:10.10.10.1"
 admin:
   enabled: false
-  sessionTtlSeconds: 86400
