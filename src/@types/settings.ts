@@ -281,8 +281,17 @@ export interface Nip05Settings {
 
 export interface AdminSettings {
   enabled: boolean
-  passwordHash?: string
+  /**
+   * NIP-98 admin allowlist: 64-char hex pubkeys or npub1... entries.
+   * Empty or unset means no one can authenticate.
+   */
+  pubkeys?: string[]
   sessionTtlSeconds?: number
+  /**
+   * Maximum allowed |now - created_at| for NIP-98 auth events, in seconds.
+   * Defaults to 60 when unset.
+   */
+  authTimestampToleranceSeconds?: number
 }
 export interface WoTSettings {
   enabled: boolean

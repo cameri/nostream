@@ -134,3 +134,37 @@ export const joinPathPrefix = (prefix: string, path: string): string => {
 
   return `${normalizedPrefix}${normalizedPath}`
 }
+
+const getTrustedForwardedHost = (request: IncomingMessage, settings: Settings): string | undefined => {
+  const socketAddress = request.socket?.remoteAddress
+  if (typeof socketAddress !== 'string' || !isTrustedProxy(socketAddress, settings)) {
+    return undefined
+  }
+
+  const rawHeader = request.headers?.['x-forwarded-host']
+  const rawHost = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader
+  const host = typeof rawHost === 'string' ? rawHost.split(',')[0].trim() : ''
+
+  return host.length > 0 ? host : undefined
+}
+
+/**
+ * Reconstructs the absolute URL the client used to reach this request,
+ * honoring trusted-proxy forwarded headers and any public path prefix.
+ * NIP-98 clients must sign this exact URL (including the query string).
+ */
+export const getPublicRequestUrl = (
+  request: IncomingMessage & { originalUrl?: string },
+  settings: Settings,
+): string | undefined => {
+  const host = getTrustedForwardedHost(request, settings) ?? request.headers?.host
+  if (typeof host !== 'string' || host.length === 0) {
+    return undefined
+  }
+
+  const proto = isSecureRequest(request, settings) ? 'https' : 'http'
+  const prefix = getPublicPathPrefix(request, settings)
+  const path = request.originalUrl ?? request.url ?? '/'
+
+  return `${proto}://${host}${joinPathPrefix(prefix, path)}`
+}
