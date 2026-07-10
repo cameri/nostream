@@ -9,8 +9,8 @@ const MAX_REDIRECTS = 1
 
 const nip11DocumentSchema = z
   .object({
-    name: z.string(),
-    pubkey: pubkeySchema,
+    name: z.string().optional(),
+    pubkey: pubkeySchema.optional(),
   })
   .passthrough()
 

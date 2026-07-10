@@ -5,6 +5,7 @@ export {
   runProbe,
 } from './run-probe'
 export type { ProbeClients } from './run-probe'
+export { resolveDnsRecords } from './dns-probe'
 export { isNip11FetchTargetSafe } from './nip11-probe'
 export { detectNetworkType, shouldSkipDnsProbe } from './target'
 export {

@@ -1,35 +1,46 @@
 import { DnsRecord, ProbeTarget } from './types'
 
 export interface DnsResolver {
-  resolve4(hostname: string): Promise<string[]>
-  resolve6(hostname: string): Promise<string[]>
-  resolveCname(hostname: string): Promise<string[]>
+  resolve4(hostname: string): Promise<DnsRecord[]>
+  resolve6(hostname: string): Promise<DnsRecord[]>
+  resolveCname(hostname: string): Promise<DnsRecord[]>
+}
+
+type RecordWithTtl = {
+  address: string
+  ttl: number
 }
 
 export const createNodeDnsResolver = (): DnsResolver => {
   // Lazy import keeps unit tests on stubbed resolvers without touching the network.
   const dns = require('dns').promises as {
-    resolve4: (hostname: string) => Promise<string[]>
-    resolve6: (hostname: string) => Promise<string[]>
+    resolve4: (hostname: string, options: { ttl: true }) => Promise<RecordWithTtl[]>
+    resolve6: (hostname: string, options: { ttl: true }) => Promise<RecordWithTtl[]>
     resolveCname: (hostname: string) => Promise<string[]>
   }
 
   return {
-    resolve4: (hostname) => dns.resolve4(hostname),
-    resolve6: (hostname) => dns.resolve6(hostname),
-    resolveCname: (hostname) => dns.resolveCname(hostname),
+    resolve4: async (hostname) => {
+      const entries = await dns.resolve4(hostname, { ttl: true })
+      return entries.map(({ address, ttl }) => ({ type: 'A' as const, value: address, ttl }))
+    },
+    resolve6: async (hostname) => {
+      const entries = await dns.resolve6(hostname, { ttl: true })
+      return entries.map(({ address, ttl }) => ({ type: 'AAAA' as const, value: address, ttl }))
+    },
+    resolveCname: async (hostname) => {
+      const values = await dns.resolveCname(hostname)
+      return values.map((value) => ({ type: 'CNAME' as const, value }))
+    },
   }
 }
 
 const collectRecords = async (resolver: DnsResolver, target: ProbeTarget): Promise<DnsRecord[]> => {
   const records: DnsRecord[] = []
 
-  const append = async (type: DnsRecord['type'], lookup: () => Promise<string[]>) => {
+  const append = async (lookup: () => Promise<DnsRecord[]>) => {
     try {
-      const values = await lookup()
-      for (const value of values) {
-        records.push({ type, value })
-      }
+      records.push(...(await lookup()))
     } catch (error: unknown) {
       const code = (error as NodeJS.ErrnoException)?.code
       if (code === 'ENOTFOUND' || code === 'ENODATA') {
@@ -40,9 +51,9 @@ const collectRecords = async (resolver: DnsResolver, target: ProbeTarget): Promi
     }
   }
 
-  await append('CNAME', () => resolver.resolveCname(target.hostname))
-  await append('A', () => resolver.resolve4(target.hostname))
-  await append('AAAA', () => resolver.resolve6(target.hostname))
+  await append(() => resolver.resolveCname(target.hostname))
+  await append(() => resolver.resolve4(target.hostname))
+  await append(() => resolver.resolve6(target.hostname))
 
   return records
 }

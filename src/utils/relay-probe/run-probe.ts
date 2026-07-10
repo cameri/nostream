@@ -121,8 +121,20 @@ export const runProbe = async (
   const dnsCacheTtlSeconds = options.dnsCacheTtlSeconds ?? DEFAULT_DNS_CACHE_TTL_SECONDS
   const skipDnsCache = options.skipDnsCache ?? false
 
+  const dnsStartedAt = Date.now()
+  const dnsPromise = runDnsProbe(clients, target, { dnsCacheTtlSeconds, skipDnsCache })
+  const dnsTimeout = new Promise<ProbeCheckResult<DnsResult>>((resolve) => {
+    setTimeout(() => {
+      resolve({
+        status: 'error',
+        durationMs: Date.now() - dnsStartedAt,
+        error: `DNS probe timed out after ${timeouts.dnsMs}ms`,
+      })
+    }, timeouts.dnsMs).unref()
+  })
+
   const [dns, tls, wsRtt, nip11] = await Promise.all([
-    runDnsProbe(clients, target, { dnsCacheTtlSeconds, skipDnsCache }),
+    Promise.race([dnsPromise, dnsTimeout]),
     runTimedProbe(() => probeTls(clients.tls, target, timeouts.tlsMs)),
     runTimedProbe(() => probeWebSocketRtt(clients.ws, target, timeouts.wsRttMs)),
     runTimedProbe(() => probeNip11(clients.nip11, target.nip11Url, timeouts.nip11Ms)),

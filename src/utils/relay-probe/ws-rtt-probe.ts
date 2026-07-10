@@ -11,7 +11,7 @@ export const createNodeWebSocketConnector = (): WebSocketConnector => {
     measureOpenRtt: (address, timeoutMs) =>
       new Promise<number>((resolve, reject) => {
         const startedAt = Date.now()
-        const socket = new WebSocket(address, { timeout: timeoutMs })
+        const socket = new WebSocket(address, { handshakeTimeout: timeoutMs })
         let settled = false
 
         const finish = (error?: Error, rttOpenMs?: number) => {
