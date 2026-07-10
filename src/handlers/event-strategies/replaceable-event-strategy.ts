@@ -1,4 +1,4 @@
-import { createCommandResult } from '../../utils/messages'
+import { createEventCommandResult } from '../../telemetry/event-metrics'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { IEventRepository } from '../../@types/repositories'
@@ -18,7 +18,7 @@ export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<v
     logger('received replaceable event: %o', event)
     try {
       const count = await this.eventRepository.upsert(event)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, true, count ? '' : 'duplicate:'))
       if (count) {
         this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
       }
@@ -27,12 +27,12 @@ export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<v
         if (error.message.endsWith('duplicate key value violates unique constraint "events_event_id_unique"')) {
           this.webSocket.emit(
             WebSocketAdapterEvent.Message,
-            createCommandResult(event.id, false, 'rejected: event already exists'),
+            createEventCommandResult(event.id, false, 'rejected: event already exists'),
           )
           return
         }
 
-        this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: '))
+        this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, 'error: '))
       }
     }
   }

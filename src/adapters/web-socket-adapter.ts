@@ -15,6 +15,7 @@ import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants
 import { attemptValidation } from '../utils/validation'
 import { ContextMetadataKey } from '../constants/base'
 import { createLogger } from '../factories/logger-factory'
+import { recordWebsocketConnectionClosed, recordWebsocketConnectionOpened } from '../telemetry/event-metrics'
 import { Event } from '../@types/event'
 import { getRemoteAddress } from '../utils/http'
 import { IRateLimiter } from '../@types/utils'
@@ -82,6 +83,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       .on(WebSocketAdapterEvent.Message, this.sendMessage.bind(this))
 
     logger('client %s connected from %s', this.clientId, this.clientAddress.address)
+    recordWebsocketConnectionOpened()
 
     // NIP-42
     this.challenge = randomBytes(32).toString('base64url')
@@ -260,6 +262,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   private onClientClose() {
+    recordWebsocketConnectionClosed()
     this.alive = false
     this.subscriptions.clear()
     this.authenticatedPubkeys.clear()

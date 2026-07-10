@@ -38,6 +38,7 @@ BeforeAll({ timeout: 1000 }, async function () {
     assocPath(['limits', 'event', 'rateLimits'], []),
     assocPath(['limits', 'invoice', 'rateLimits'], []),
     assocPath(['limits', 'connection', 'rateLimits'], []),
+    assocPath(['nip50', 'enabled'], true),
   )(settings) as any
 
   worker = workerFactory()
