@@ -10,5 +10,6 @@ export interface SubscriptionFilter {
   until?: number
   authors?: Pubkey[]
   limit?: number
+  search?: string
   [key: `#${string}`]: string[]
 }
