@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 
-import { IEventRepository, IUserRepository } from '../../../src/@types/repositories'
+import { IEventRepository, IInviteCodeRepository, IUserRepository } from '../../../src/@types/repositories'
 import { DefaultEventStrategy } from '../../../src/handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../../../src/handlers/event-strategies/delete-event-strategy'
 import { EphemeralEventStrategy } from '../../../src/handlers/event-strategies/ephemeral-event-strategy'
@@ -12,14 +12,19 @@ import { GiftWrapEventStrategy } from '../../../src/handlers/event-strategies/gi
 import { GroupEventStrategy } from '../../../src/handlers/event-strategies/group-event-strategy'
 import { IEventStrategy } from '../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
+import { JoinRequestEventStrategy } from '../../../src/handlers/event-strategies/join-request-event-strategy'
+import { LeaveRequestEventStrategy } from '../../../src/handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
 import { ReplaceableEventStrategy } from '../../../src/handlers/event-strategies/replaceable-event-strategy'
+import { Settings } from '../../../src/@types/settings'
 import { TimestampEventStrategy } from '../../../src/handlers/event-strategies/timestamp-event-strategy'
 import { VanishEventStrategy } from '../../../src/handlers/event-strategies/vanish-event-strategy'
 
 describe('eventStrategyFactory', () => {
   let eventRepository: IEventRepository
   let userRepository: IUserRepository
+  let inviteCodeRepository: IInviteCodeRepository
+  let settings: () => Settings
   let event: Event
   let adapter: IWebSocketAdapter
   let factory: Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]>
@@ -27,10 +32,12 @@ describe('eventStrategyFactory', () => {
   beforeEach(() => {
     eventRepository = {} as any
     userRepository = {} as any
+    inviteCodeRepository = {} as any
+    settings = () => ({ info: { relay_url: 'wss://test.relay' } } as any)
     event = {} as any
     adapter = {} as any
 
-    factory = eventStrategyFactory(eventRepository, userRepository)
+    factory = eventStrategyFactory(eventRepository, userRepository, inviteCodeRepository, settings)
   })
 
   it('returns ReplaceableEvent given a set_metadata event', () => {
@@ -116,5 +123,15 @@ describe('eventStrategyFactory', () => {
   it('returns DefaultEventStrategy given an external content reaction event (NIP-25)', () => {
     event.kind = EventKinds.EXTERNAL_CONTENT_REACTION
     expect(factory([event, adapter])).to.be.an.instanceOf(DefaultEventStrategy)
+  })
+
+  it('returns JoinRequestEventStrategy given a NIP-43 join request (kind 28934)', () => {
+    event.kind = EventKinds.NIP43_JOIN_REQUEST
+    expect(factory([event, adapter])).to.be.an.instanceOf(JoinRequestEventStrategy)
+  })
+
+  it('returns LeaveRequestEventStrategy given a NIP-43 leave request (kind 28936)', () => {
+    event.kind = EventKinds.NIP43_LEAVE_REQUEST
+    expect(factory([event, adapter])).to.be.an.instanceOf(LeaveRequestEventStrategy)
   })
 })

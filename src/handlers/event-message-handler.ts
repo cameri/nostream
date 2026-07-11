@@ -380,6 +380,11 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
+    // NIP-43: join/leave requests must bypass admission — they ARE the admission flow
+    if (event.kind === EventKinds.NIP43_JOIN_REQUEST || event.kind === EventKinds.NIP43_LEAVE_REQUEST) {
+      return
+    }
+
     const isApplicableFee = (feeSchedule: FeeSchedule) =>
       feeSchedule.enabled &&
       !feeSchedule.whitelists?.pubkeys?.includes(event.pubkey) &&
@@ -450,6 +455,12 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (this.getRelayPublicKey() === event.pubkey) {
+      return
+    }
+
+    // NIP-43: join/leave requests bypass NIP-05 — a new user won't have a
+    // verification record yet, and requiring one would block the join flow.
+    if (event.kind === EventKinds.NIP43_JOIN_REQUEST || event.kind === EventKinds.NIP43_LEAVE_REQUEST) {
       return
     }
 

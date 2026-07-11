@@ -1,4 +1,4 @@
-import { IEventRepository, IUserRepository } from '../@types/repositories'
+import { IEventRepository, IInviteCodeRepository, IUserRepository } from '../@types/repositories'
 import {
   isDeleteEvent,
   isEphemeralEvent,
@@ -9,6 +9,7 @@ import {
   isReplaceableEvent,
   isRequestToVanishEvent,
 } from '../utils/event'
+import { isNip43JoinRequest, isNip43LeaveRequest } from '../utils/nip43'
 import { isRelayListEvent } from '../utils/nip65'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
@@ -19,8 +20,11 @@ import { GiftWrapEventStrategy } from '../handlers/event-strategies/gift-wrap-ev
 import { GroupEventStrategy } from '../handlers/event-strategies/group-event-strategy'
 import { IEventStrategy } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
+import { JoinRequestEventStrategy } from '../handlers/event-strategies/join-request-event-strategy'
+import { LeaveRequestEventStrategy } from '../handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strategies/parameterized-replaceable-event-strategy'
 import { ReplaceableEventStrategy } from '../handlers/event-strategies/replaceable-event-strategy'
+import { Settings } from '../@types/settings'
 import { TimestampEventStrategy } from '../handlers/event-strategies/timestamp-event-strategy'
 import { VanishEventStrategy } from '../handlers/event-strategies/vanish-event-strategy'
 
@@ -28,6 +32,8 @@ export const eventStrategyFactory =
   (
     eventRepository: IEventRepository,
     userRepository: IUserRepository,
+    inviteCodeRepository: IInviteCodeRepository,
+    settings: () => Settings,
   ): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
   ([event, adapter]: [Event, IWebSocketAdapter]) => {
     if (isRequestToVanishEvent(event)) {
@@ -40,6 +46,12 @@ export const eventStrategyFactory =
       return new TimestampEventStrategy(adapter, eventRepository)
     } else if (isRelayListEvent(event) || isReplaceableEvent(event)) {
       return new ReplaceableEventStrategy(adapter, eventRepository)
+    // NIP-43: Join/Leave requests MUST be checked before the generic ephemeral
+    // handler, because kinds 28934/28936 fall in the ephemeral range (20000-29999).
+    } else if (isNip43JoinRequest(event)) {
+      return new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, settings)
+    } else if (isNip43LeaveRequest(event)) {
+      return new LeaveRequestEventStrategy(adapter, userRepository, settings)
     } else if (isEphemeralEvent(event)) {
       return new EphemeralEventStrategy(adapter)
     } else if (isDeleteEvent(event)) {
