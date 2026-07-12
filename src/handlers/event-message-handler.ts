@@ -30,7 +30,7 @@ import {
 } from '../utils/event'
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
-import { CacheAdmissionState } from '../constants/caching'
+import { admissionCacheKey, CacheAdmissionState } from '../constants/caching'
 import { createEventCommandResult } from '../telemetry/event-metrics'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
@@ -372,7 +372,10 @@ export class EventMessageHandler implements IMessageHandler {
 
   protected async isUserAdmitted(event: Event): Promise<string | undefined> {
     const currentSettings = this.settings()
-    if (!currentSettings.payments?.enabled) {
+    const paymentsEnabled = currentSettings.payments?.enabled === true
+    // NIP-43: membership mode gates writes on admission even without payments
+    const nip43Enabled = currentSettings.nip43?.enabled === true
+    if (!paymentsEnabled && !nip43Enabled) {
       return
     }
 
@@ -390,12 +393,19 @@ export class EventMessageHandler implements IMessageHandler {
       !feeSchedule.whitelists?.pubkeys?.includes(event.pubkey) &&
       !feeSchedule.whitelists?.event_kinds?.some(isEventKindOrRangeMatch(event))
 
-    const feeSchedules = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
-    if (!Array.isArray(feeSchedules) || !feeSchedules.length) {
+    const feeSchedules = paymentsEnabled
+      ? currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
+      : undefined
+    const admissionFeeRequired = Array.isArray(feeSchedules) && feeSchedules.length > 0
+    if (!admissionFeeRequired && !nip43Enabled) {
       return
     }
 
-    const cacheKey = `${event.pubkey}:is-admitted`
+    const notAdmittedReason = nip43Enabled
+      ? 'restricted: pubkey not admitted; send a join request (kind 28934) with a valid invite code'
+      : 'blocked: pubkey not admitted'
+
+    const cacheKey = admissionCacheKey(event.pubkey)
 
     try {
       const cachedValue = await this.cache.getKey(cacheKey)
@@ -405,7 +415,7 @@ export class EventMessageHandler implements IMessageHandler {
       }
       if (cachedValue === CacheAdmissionState.BLOCKED_NOT_ADMITTED) {
         logger('cache hit for %s admission: blocked', event.pubkey)
-        return 'blocked: pubkey not admitted'
+        return notAdmittedReason
       }
       if (cachedValue === CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE) {
         logger('cache hit for %s admission: insufficient balance', event.pubkey)
@@ -418,10 +428,10 @@ export class EventMessageHandler implements IMessageHandler {
     const user = await this.userRepository.findByPubkey(event.pubkey)
     if (!user || !user.isAdmitted) {
       this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_NOT_ADMITTED, 60)
-      return 'blocked: pubkey not admitted'
+      return notAdmittedReason
     }
 
-    const minBalance = currentSettings.limits?.event?.pubkey?.minBalance ?? 0n
+    const minBalance = paymentsEnabled ? currentSettings.limits?.event?.pubkey?.minBalance ?? 0n : 0n
     if (minBalance > 0n && user.balance < minBalance) {
       this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE, 60)
       return 'blocked: insufficient balance'

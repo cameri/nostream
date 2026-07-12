@@ -11,7 +11,7 @@ import { Factory } from '../../../src/@types/base'
 import { GiftWrapEventStrategy } from '../../../src/handlers/event-strategies/gift-wrap-event-strategy'
 import { GroupEventStrategy } from '../../../src/handlers/event-strategies/group-event-strategy'
 import { IEventStrategy } from '../../../src/@types/message-handlers'
-import { IWebSocketAdapter } from '../../../src/@types/adapters'
+import { ICacheAdapter, IWebSocketAdapter } from '../../../src/@types/adapters'
 import { JoinRequestEventStrategy } from '../../../src/handlers/event-strategies/join-request-event-strategy'
 import { LeaveRequestEventStrategy } from '../../../src/handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
@@ -24,6 +24,7 @@ describe('eventStrategyFactory', () => {
   let eventRepository: IEventRepository
   let userRepository: IUserRepository
   let inviteCodeRepository: IInviteCodeRepository
+  let cache: ICacheAdapter
   let settings: () => Settings
   let event: Event
   let adapter: IWebSocketAdapter
@@ -33,11 +34,12 @@ describe('eventStrategyFactory', () => {
     eventRepository = {} as any
     userRepository = {} as any
     inviteCodeRepository = {} as any
+    cache = {} as any
     settings = () => ({ info: { relay_url: 'wss://test.relay' } } as any)
     event = {} as any
     adapter = {} as any
 
-    factory = eventStrategyFactory(eventRepository, userRepository, inviteCodeRepository, settings)
+    factory = eventStrategyFactory(eventRepository, userRepository, inviteCodeRepository, cache, settings)
   })
 
   it('returns ReplaceableEvent given a set_metadata event', () => {

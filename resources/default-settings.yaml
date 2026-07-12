@@ -60,6 +60,11 @@ nip05:
   domainWhitelist: []
   # Block authors with NIP-05 at these domains
   domainBlacklist: []
+nip43:
+  # NIP-43: invite-based relay membership. When enabled, only admitted members
+  # (users who claimed an invite code via a kind 28934 join request) may
+  # publish events. Enabling this on an open relay blocks all non-members.
+  enabled: false
 nip45:
   enabled: true
 nip50:

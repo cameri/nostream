@@ -1,10 +1,11 @@
 import { expect } from 'chai'
 import sinon from 'sinon'
 
-import { Event } from '../../../../src/@types/event'
 import { EventKinds, EventTags } from '../../../../src/constants/base'
+import { ICacheAdapter, IWebSocketAdapter } from '../../../../src/@types/adapters'
 import { IInviteCodeRepository, IUserRepository } from '../../../../src/@types/repositories'
-import { IWebSocketAdapter } from '../../../../src/@types/adapters'
+import { admissionCacheKey } from '../../../../src/constants/caching'
+import { Event } from '../../../../src/@types/event'
 import { JoinRequestEventStrategy } from '../../../../src/handlers/event-strategies/join-request-event-strategy'
 import { Settings } from '../../../../src/@types/settings'
 import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
@@ -13,6 +14,7 @@ describe('JoinRequestEventStrategy', () => {
   let adapter: IWebSocketAdapter
   let inviteCodeRepository: IInviteCodeRepository
   let userRepository: IUserRepository
+  let cache: ICacheAdapter
   let settings: () => Settings
   let strategy: JoinRequestEventStrategy
   let emitStub: sinon.SinonStub
@@ -34,12 +36,16 @@ describe('JoinRequestEventStrategy', () => {
       admitUser: sinon.stub(),
     } as any
 
+    cache = {
+      deleteKey: sinon.stub().resolves(1),
+    } as any
+
     settings = () => ({
       info: { relay_url: 'wss://test.relay' },
       nip43: { enabled: true },
     } as any)
 
-    strategy = new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, settings)
+    strategy = new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, cache, settings)
 
     event = {
       id: 'eventid123',
@@ -54,7 +60,7 @@ describe('JoinRequestEventStrategy', () => {
 
   it('rejects when NIP-43 is disabled', async () => {
     settings = () => ({ info: { relay_url: 'wss://test.relay' }, nip43: { enabled: false } } as any)
-    strategy = new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, settings)
+    strategy = new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, cache, settings)
 
     await strategy.execute(event)
 
@@ -66,7 +72,18 @@ describe('JoinRequestEventStrategy', () => {
     expect(result[3]).to.contain('NIP-43 is not enabled')
   })
 
-  it('rejects unauthenticated requests', async () => {
+  it('rejects requests with stale created_at', async () => {
+    event.created_at = Math.floor(Date.now() / 1000) - 3600
+
+    await strategy.execute(event)
+
+    expect(emitStub.calledOnce).to.be.true
+    const result = emitStub.firstCall.args[1]
+    expect(result[2]).to.be.false
+    expect(result[3]).to.contain('created_at is too far from the current time')
+  })
+
+  it('rejects unauthenticated requests with auth-required prefix', async () => {
     ;(adapter.getAuthenticatedPubkeys as sinon.SinonStub).returns(new Set())
 
     await strategy.execute(event)
@@ -74,6 +91,7 @@ describe('JoinRequestEventStrategy', () => {
     expect(emitStub.calledOnce).to.be.true
     const result = emitStub.firstCall.args[1]
     expect(result[2]).to.be.false
+    expect(result[3]).to.contain('auth-required:')
     expect(result[3]).to.contain('authentication required')
   })
 
@@ -85,7 +103,7 @@ describe('JoinRequestEventStrategy', () => {
     expect(emitStub.calledOnce).to.be.true
     const result = emitStub.firstCall.args[1]
     expect(result[2]).to.be.false
-    expect(result[3]).to.contain('missing claim tag')
+    expect(result[3]).to.contain('claim tag')
   })
 
   it('returns duplicate when user is already admitted', async () => {
@@ -112,7 +130,7 @@ describe('JoinRequestEventStrategy', () => {
     expect(result[3]).to.contain('invalid or expired')
   })
 
-  it('admits user on valid claim', async () => {
+  it('admits user and invalidates admission cache on valid claim', async () => {
     ;(userRepository.findByPubkey as sinon.SinonStub).resolves(undefined)
     ;(inviteCodeRepository.claimCode as sinon.SinonStub).resolves(true)
     ;(userRepository.admitUser as sinon.SinonStub).resolves()
@@ -121,6 +139,21 @@ describe('JoinRequestEventStrategy', () => {
 
     expect((inviteCodeRepository.claimCode as sinon.SinonStub).calledOnceWith('valid-code', 'aabbccdd')).to.be.true
     expect((userRepository.admitUser as sinon.SinonStub).calledOnce).to.be.true
+    expect((cache.deleteKey as sinon.SinonStub).calledOnceWith(admissionCacheKey('aabbccdd'))).to.be.true
+
+    expect(emitStub.calledOnce).to.be.true
+    const result = emitStub.firstCall.args[1]
+    expect(result[2]).to.be.true
+    expect(result[3]).to.contain('welcome to')
+  })
+
+  it('still admits user when cache invalidation fails', async () => {
+    ;(userRepository.findByPubkey as sinon.SinonStub).resolves(undefined)
+    ;(inviteCodeRepository.claimCode as sinon.SinonStub).resolves(true)
+    ;(userRepository.admitUser as sinon.SinonStub).resolves()
+    ;(cache.deleteKey as sinon.SinonStub).rejects(new Error('cache down'))
+
+    await strategy.execute(event)
 
     expect(emitStub.calledOnce).to.be.true
     const result = emitStub.firstCall.args[1]

@@ -1196,6 +1196,52 @@ describe('EventMessageHandler', () => {
       return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
     })
 
+    describe('NIP-43 membership', () => {
+      beforeEach(() => {
+        settings.payments.enabled = false
+        ;(settings as any).nip43 = { enabled: true }
+      })
+
+      it('fulfills with restricted reason if user is not admitted and payments are disabled', async () => {
+        userRepositoryFindByPubkeyStub.resolves(undefined)
+
+        return expect((handler as any).isUserAdmitted(event)).to.eventually.contain('restricted:')
+      })
+
+      it('fulfills with restricted reason if user exists but is not admitted', async () => {
+        userRepositoryFindByPubkeyStub.resolves({ isAdmitted: false, isVanished: false })
+
+        return expect((handler as any).isUserAdmitted(event)).to.eventually.contain('restricted:')
+      })
+
+      it('fulfills with undefined if user is admitted', async () => {
+        userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, isVanished: false })
+
+        return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
+      it('fulfills with undefined for a join request from a non-member', async () => {
+        event.kind = EventKinds.NIP43_JOIN_REQUEST
+        userRepositoryFindByPubkeyStub.resolves(undefined)
+
+        return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
+      it('fulfills with undefined for a leave request from a non-member', async () => {
+        event.kind = EventKinds.NIP43_LEAVE_REQUEST
+        userRepositoryFindByPubkeyStub.resolves(undefined)
+
+        return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
+      it('skips the minimum balance check when payments are disabled', async () => {
+        settings.limits.event.pubkey.minBalance = 1000n
+        userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, isVanished: false, balance: 0n })
+
+        return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+    })
+
     describe('caching', () => {
       it('falls back to repository lookup when cache read fails', async () => {
         cacheStub.getKey.rejects(new Error('cache unavailable'))

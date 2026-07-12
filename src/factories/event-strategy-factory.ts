@@ -1,3 +1,4 @@
+import { ICacheAdapter, IWebSocketAdapter } from '../@types/adapters'
 import { IEventRepository, IInviteCodeRepository, IUserRepository } from '../@types/repositories'
 import {
   isDeleteEvent,
@@ -19,7 +20,6 @@ import { Factory } from '../@types/base'
 import { GiftWrapEventStrategy } from '../handlers/event-strategies/gift-wrap-event-strategy'
 import { GroupEventStrategy } from '../handlers/event-strategies/group-event-strategy'
 import { IEventStrategy } from '../@types/message-handlers'
-import { IWebSocketAdapter } from '../@types/adapters'
 import { JoinRequestEventStrategy } from '../handlers/event-strategies/join-request-event-strategy'
 import { LeaveRequestEventStrategy } from '../handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strategies/parameterized-replaceable-event-strategy'
@@ -33,6 +33,7 @@ export const eventStrategyFactory =
     eventRepository: IEventRepository,
     userRepository: IUserRepository,
     inviteCodeRepository: IInviteCodeRepository,
+    cache: ICacheAdapter,
     settings: () => Settings,
   ): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
   ([event, adapter]: [Event, IWebSocketAdapter]) => {
@@ -49,9 +50,9 @@ export const eventStrategyFactory =
     // NIP-43: Join/Leave requests MUST be checked before the generic ephemeral
     // handler, because kinds 28934/28936 fall in the ephemeral range (20000-29999).
     } else if (isNip43JoinRequest(event)) {
-      return new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, settings)
+      return new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, cache, settings)
     } else if (isNip43LeaveRequest(event)) {
-      return new LeaveRequestEventStrategy(adapter, userRepository, settings)
+      return new LeaveRequestEventStrategy(adapter, userRepository, cache, settings)
     } else if (isEphemeralEvent(event)) {
       return new EphemeralEventStrategy(adapter)
     } else if (isDeleteEvent(event)) {

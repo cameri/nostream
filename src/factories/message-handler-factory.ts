@@ -32,7 +32,7 @@ export const messageHandlerFactory =
       case MessageType.EVENT: {
         return new EventMessageHandler(
           adapter,
-          eventStrategyFactory(eventRepository, userRepository, inviteCodeRepository, createSettings),
+          eventStrategyFactory(eventRepository, userRepository, inviteCodeRepository, getCache(), createSettings),
           eventRepository,
           userRepository,
           createSettings,
