@@ -52,7 +52,7 @@ export class RedisAdapter implements ICacheAdapter {
   public async hasKey(key: string): Promise<boolean> {
     await this.connection
     logger('has %s key', key)
-    return Boolean(this.client.exists(key))
+    return (await this.client.exists(key)) > 0
   }
 
   public async getKey(key: string): Promise<string> {
