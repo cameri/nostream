@@ -105,20 +105,22 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         search_supported: settings.nip50?.enabled ?? false,
       },
       payments_url: paymentsUrl.toString(),
-      fees: Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(
-        (prev, feeName) => {
-          const feeSchedules = settings.payments.feeSchedules[feeName] as FeeSchedule[]
+      fees: settings.payments
+        ? Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(
+            (prev, feeName) => {
+              const feeSchedules = settings.payments.feeSchedules[feeName] as FeeSchedule[]
 
-          return {
-            ...prev,
-            [feeName]: feeSchedules.reduce(
-              (fees, fee) => (fee.enabled ? [...fees, { amount: fee.amount, unit: 'msats' }] : fees),
-              [],
-            ),
-          }
-        },
-        {} as Record<string, { amount: number; unit: string }>,
-      ),
+              return {
+                ...prev,
+                [feeName]: feeSchedules.reduce(
+                  (fees, fee) => (fee.enabled ? [...fees, { amount: fee.amount, unit: 'msats' }] : fees),
+                  [],
+                ),
+              }
+            },
+            {} as Record<string, { amount: number; unit: string }>,
+          )
+        : {},
     }
 
     response
