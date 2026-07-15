@@ -270,6 +270,8 @@ describe('SettingsStatic', () => {
       expect(defaults).to.have.nested.property('wot.seedPubkey', '')
       expect(defaults).to.have.nested.property('wot.minimumFollowers', 1)
       expect(defaults).to.have.nested.property('wot.refreshIntervalHours', 24)
+      expect(defaults).to.have.nested.property('wot.seedRelays')
+      expect((defaults as any).wot.seedRelays).to.be.an('array').with.length.greaterThan(0)
     })
 
     it('user config wot block overrides defaults', () => {
@@ -283,6 +285,16 @@ describe('SettingsStatic', () => {
       expect(merged.wot?.minimumFollowers).to.equal(3)
       // non-overridden fields stay as defaults
       expect(merged.wot?.refreshIntervalHours).to.equal(24)
+      expect(merged.wot?.seedRelays).to.be.an('array').with.length.greaterThan(0)
+    })
+
+    it('user config seedRelays overrides default relay list', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(
+        SettingsStatic.getDefaultSettingsFilePath()
+      )
+      const userConfig = { wot: { seedRelays: ['wss://my-relay.com'] } }
+      const merged = mergeDeepRight(defaults, userConfig) as Settings
+      expect(merged.wot?.seedRelays).to.deep.equal(['wss://my-relay.com'])
     })
   })
 })

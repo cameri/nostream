@@ -301,6 +301,11 @@ export interface WoTSettings {
    * Defaults to 24.
    */
   refreshIntervalHours: number
+  /**
+   * Relay URLs to fetch follow lists from when building the trust graph.
+   * Falls back to the relay's own URL if empty.
+   */
+  seedRelays: string[]
 }
 
 export interface Nip43Settings {
