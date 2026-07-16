@@ -69,10 +69,10 @@ nip50:
   maxQueryLength: 256
 nip66:
   # NIP-66 relay liveness monitoring. Disabled by default.
-  # When enabled, a dedicated worker probes public relay URLs and can publish
-  # kind 30166/10166 events using the configured monitor identity.
+  # Settings only in this release (no monitor worker yet); enabling is currently a no-op.
+  # Future versions may probe public relay URLs and publish kind 30166/10166 events.
   enabled: false
-  # Seconds between scheduled probe runs.
+  # Seconds between scheduled probe runs (reserved for a future monitor worker).
   probeIntervalSeconds: 3600
   timeouts:
     dnsMs: 10000
@@ -81,7 +81,7 @@ nip66:
     nip11Ms: 10000
   # Public WebSocket URLs to probe. Empty list defaults to info.relay_url.
   targets: []
-  # Optional monitor identity for signing NIP-66 events. Prefer MONITOR_PRIVATE_KEY env.
+  # Optional monitor identity (reserved for a future monitor worker).
   # monitorPrivateKey: replace-with-monitor-private-key-in-hex
   # monitorPubkey: replace-with-monitor-pubkey-in-hex
   dnsCacheTtlSeconds: 300

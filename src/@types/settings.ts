@@ -267,36 +267,40 @@ export interface Nip66ProbeTimeouts {
 
 export interface Nip66Settings {
   /**
-   * Enable the relay monitor worker and NIP-66 event publishing.
+   * Enable NIP-66 relay monitoring configuration.
+   * Note: this release only defines settings (no monitor worker yet), so
+   * enabling is currently a no-op.
    * Defaults to false.
    */
   enabled: boolean
   /**
    * Interval in seconds between probe runs.
-   * Defaults to 3600.
+   * Reserved for a future monitor worker. Defaults to 3600.
    */
   probeIntervalSeconds: number
   /**
    * Per-check probe timeouts in milliseconds.
+   * Reserved for a future monitor worker.
    */
   timeouts: Nip66ProbeTimeouts
   /**
    * Public relay WebSocket URLs to probe (for example wss://relay.example.com).
-   * When empty, the worker uses info.relay_url.
+   * When empty, a future worker will use info.relay_url.
    */
   targets: string[]
   /**
-   * Hex-encoded private key for the monitor identity that signs kind 30166/10166 events.
-   * Prefer MONITOR_PRIVATE_KEY env when set; settings value is a fallback.
+   * Hex-encoded private key for the monitor identity that will sign kind 30166/10166 events.
+   * Reserved for a future monitor worker.
    */
   monitorPrivateKey?: Secret
   /**
-   * Hex-encoded public key for the monitor identity. Optional when monitorPrivateKey is set.
+   * Hex-encoded public key for the monitor identity.
+   * Optional when monitorPrivateKey is set. Reserved for a future monitor worker.
    */
   monitorPubkey?: Pubkey
   /**
    * DNS cache TTL in seconds for repeated probes of the same hostname.
-   * Defaults to 300.
+   * Reserved for a future monitor worker. Defaults to 300.
    */
   dnsCacheTtlSeconds: number
 }
