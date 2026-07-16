@@ -148,8 +148,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
 | limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
+| limits.event.createdAt.maxNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.createdAt.minNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
