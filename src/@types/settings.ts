@@ -252,6 +252,12 @@ export interface Nip45Settings {
   enabled?: boolean
 }
 
+export interface Nip50Settings {
+  enabled?: boolean
+  language?: string
+  maxQueryLength?: number
+}
+
 export interface Nip66ProbeTimeouts {
   dnsMs: number
   tlsMs: number
@@ -360,6 +366,7 @@ export interface Settings {
   nip05?: Nip05Settings
   nip43?: Nip43Settings
   nip45?: Nip45Settings
+  nip50?: Nip50Settings
   nip66?: Nip66Settings
   wot?: WoTSettings
 }

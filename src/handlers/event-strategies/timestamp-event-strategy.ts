@@ -5,7 +5,7 @@ import { IEventRepository } from '../../@types/repositories'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 import { EventTags } from '../../constants/base'
 import { createLogger } from '../../factories/logger-factory'
-import { createCommandResult } from '../../utils/messages'
+import { createEventCommandResult } from '../../telemetry/event-metrics'
 import { validateOtsProof } from '../../utils/nip03'
 
 const debug = createLogger('timestamp-event-strategy')
@@ -36,12 +36,12 @@ export class TimestampEventStrategy implements IEventStrategy<Event, Promise<voi
 
     const reason = this.validate(event)
     if (reason) {
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, `invalid: ${reason}`))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, `invalid: ${reason}`))
       return
     }
 
     const count = await this.eventRepository.create(event)
-    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, true, count ? '' : 'duplicate:'))
 
     if (count) {
       this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)

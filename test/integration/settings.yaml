@@ -1,0 +1,7 @@
+# Integration test settings override.
+# Enables features that are disabled by default so integration tests can
+# exercise them.
+nip50:
+  enabled: true
+  language: simple
+  maxQueryLength: 256
