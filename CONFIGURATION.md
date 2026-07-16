@@ -179,6 +179,16 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
 | nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
+| nip66.dnsCacheTtlSeconds                    | DNS cache TTL in seconds for repeated probe lookups of the same hostname. Defaults to 300. |
+| nip66.enabled                               | Enable NIP-66 relay monitoring worker and event publishing. Defaults to false. |
+| nip66.monitorPrivateKey                     | Hex-encoded private key for the monitor identity that signs kind 30166/10166 events. Prefer `MONITOR_PRIVATE_KEY` env when set. |
+| nip66.monitorPubkey                         | Hex-encoded public key for the monitor identity. Optional when `monitorPrivateKey` is configured. |
+| nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Defaults to 3600. |
+| nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. |
+| nip66.timeouts.dnsMs                        | DNS probe timeout in milliseconds. Defaults to 10000. |
+| nip66.timeouts.nip11Ms                      | NIP-11 fetch timeout in milliseconds. Defaults to 10000. |
+| nip66.timeouts.tlsMs                        | TLS probe timeout in milliseconds. Defaults to 10000. |
+| nip66.timeouts.wsRttMs                      | WebSocket open RTT probe timeout in milliseconds. Defaults to 10000. |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
@@ -212,6 +222,16 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
+| nip66.dnsCacheTtlSeconds                    | DNS cache TTL in seconds for repeated probe lookups of the same hostname. Defaults to 300. |
+| nip66.enabled                               | Enable NIP-66 relay monitoring worker and event publishing. Defaults to false. |
+| nip66.monitorPrivateKey                     | Hex-encoded private key for the monitor identity that signs kind 30166/10166 events. Prefer `MONITOR_PRIVATE_KEY` env when set. |
+| nip66.monitorPubkey                         | Hex-encoded public key for the monitor identity. Optional when `monitorPrivateKey` is configured. |
+| nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Defaults to 3600. |
+| nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. |
+| nip66.timeouts.dnsMs                        | DNS probe timeout in milliseconds. Defaults to 10000. |
+| nip66.timeouts.nip11Ms                      | NIP-11 fetch timeout in milliseconds. Defaults to 10000. |
+| nip66.timeouts.tlsMs                        | TLS probe timeout in milliseconds. Defaults to 10000. |
+| nip66.timeouts.wsRttMs                      | WebSocket open RTT probe timeout in milliseconds. Defaults to 10000. |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |

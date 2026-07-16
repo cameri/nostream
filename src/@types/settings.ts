@@ -252,6 +252,49 @@ export interface Nip45Settings {
   enabled?: boolean
 }
 
+export interface Nip66ProbeTimeouts {
+  dnsMs: number
+  tlsMs: number
+  wsRttMs: number
+  nip11Ms: number
+}
+
+export interface Nip66Settings {
+  /**
+   * Enable the relay monitor worker and NIP-66 event publishing.
+   * Defaults to false.
+   */
+  enabled: boolean
+  /**
+   * Interval in seconds between probe runs.
+   * Defaults to 3600.
+   */
+  probeIntervalSeconds: number
+  /**
+   * Per-check probe timeouts in milliseconds.
+   */
+  timeouts: Nip66ProbeTimeouts
+  /**
+   * Public relay WebSocket URLs to probe (for example wss://relay.example.com).
+   * When empty, the worker uses info.relay_url.
+   */
+  targets: string[]
+  /**
+   * Hex-encoded private key for the monitor identity that signs kind 30166/10166 events.
+   * Prefer MONITOR_PRIVATE_KEY env when set; settings value is a fallback.
+   */
+  monitorPrivateKey?: Secret
+  /**
+   * Hex-encoded public key for the monitor identity. Optional when monitorPrivateKey is set.
+   */
+  monitorPubkey?: Pubkey
+  /**
+   * DNS cache TTL in seconds for repeated probes of the same hostname.
+   * Defaults to 300.
+   */
+  dnsCacheTtlSeconds: number
+}
+
 export interface Nip05Settings {
   mode: Nip05Mode
   /**
@@ -317,5 +360,6 @@ export interface Settings {
   nip05?: Nip05Settings
   nip43?: Nip43Settings
   nip45?: Nip45Settings
+  nip66?: Nip66Settings
   wot?: WoTSettings
 }

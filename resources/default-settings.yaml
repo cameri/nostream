@@ -62,6 +62,24 @@ nip05:
   domainBlacklist: []
 nip45:
   enabled: true
+nip66:
+  # NIP-66 relay liveness monitoring. Disabled by default.
+  # When enabled, a dedicated worker probes public relay URLs and can publish
+  # kind 30166/10166 events using the configured monitor identity.
+  enabled: false
+  # Seconds between scheduled probe runs.
+  probeIntervalSeconds: 3600
+  timeouts:
+    dnsMs: 10000
+    tlsMs: 10000
+    wsRttMs: 10000
+    nip11Ms: 10000
+  # Public WebSocket URLs to probe. Empty list defaults to info.relay_url.
+  targets: []
+  # Optional monitor identity for signing NIP-66 events. Prefer MONITOR_PRIVATE_KEY env.
+  # monitorPrivateKey: replace-with-monitor-private-key-in-hex
+  # monitorPubkey: replace-with-monitor-pubkey-in-hex
+  dnsCacheTtlSeconds: 300
 wot:
   # Web of Trust filtering. When enabled, only events from pubkeys within
   # the relay owner's 2-hop follow graph are accepted.

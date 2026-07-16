@@ -261,6 +261,43 @@ describe('SettingsStatic', () => {
     })
   })
 
+  describe('NIP-66 settings defaults', () => {
+    it('default-settings.yaml contains a nip66 block with safe defaults', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
+
+      expect(defaults).to.have.nested.property('nip66.enabled', false)
+      expect(defaults).to.have.nested.property('nip66.probeIntervalSeconds', 3600)
+      expect(defaults).to.have.nested.property('nip66.timeouts.dnsMs', 10_000)
+      expect(defaults).to.have.nested.property('nip66.timeouts.tlsMs', 10_000)
+      expect(defaults).to.have.nested.property('nip66.timeouts.wsRttMs', 10_000)
+      expect(defaults).to.have.nested.property('nip66.timeouts.nip11Ms', 10_000)
+      expect(defaults).to.have.nested.property('nip66.targets').that.deep.equals([])
+      expect(defaults).to.have.nested.property('nip66.dnsCacheTtlSeconds', 300)
+    })
+
+    it('user config nip66 block overrides defaults', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
+      const userConfig = {
+        nip66: {
+          enabled: true,
+          probeIntervalSeconds: 900,
+          targets: ['wss://relay.example.com'],
+          monitorPubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+        },
+      }
+      const merged = mergeDeepRight(defaults, userConfig) as Settings
+
+      expect(merged.nip66?.enabled).to.equal(true)
+      expect(merged.nip66?.probeIntervalSeconds).to.equal(900)
+      expect(merged.nip66?.targets).to.deep.equal(['wss://relay.example.com'])
+      expect(merged.nip66?.monitorPubkey).to.equal(
+        '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+      )
+      expect(merged.nip66?.timeouts?.dnsMs).to.equal(10_000)
+      expect(merged.nip66?.dnsCacheTtlSeconds).to.equal(300)
+    })
+  })
+
   describe('WoT settings defaults', () => {
     it('default-settings.yaml contains a wot block with enabled: false', () => {
       const defaults = SettingsStatic.loadAndParseYamlFile(
