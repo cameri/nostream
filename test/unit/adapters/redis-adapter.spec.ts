@@ -76,7 +76,7 @@ describe('RedisAdapter', () => {
 
   describe('hasKey', () => {
     it('awaits connection and calls client.exists with the key', async () => {
-      client.exists.returns(1)
+      client.exists.resolves(1)
 
       const result = await adapter.hasKey('test-key')
 
@@ -85,7 +85,7 @@ describe('RedisAdapter', () => {
     })
 
     it('returns false when key does not exist', async () => {
-      client.exists.returns(0)
+      client.exists.resolves(0)
 
       const result = await adapter.hasKey('missing-key')
 
