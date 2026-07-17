@@ -18,6 +18,23 @@ import { EventKinds } from '../../../src/constants/base'
 
 const { expect } = chai
 
+const PUBKEY_A = 'a'.repeat(64)
+const PUBKEY_B = 'b'.repeat(64)
+const SIG_C = 'c'.repeat(128)
+const ID_A = PUBKEY_A
+
+function makeEvent(kind: number, content: string): Event {
+  return {
+    id: ID_A,
+    pubkey: PUBKEY_B,
+    created_at: 1234567890,
+    kind,
+    tags: [],
+    content,
+    sig: SIG_C,
+  }
+}
+
 describe('NIP-05 utils', () => {
   describe('parseNip05Identifier', () => {
     it('returns parsed identifier for valid input', () => {
@@ -75,81 +92,39 @@ describe('NIP-05 utils', () => {
 
   describe('extractNip05FromEvent', () => {
     it('extracts nip05 from kind 0 event', () => {
-      const event: Event = {
-        id: 'a'.repeat(64),
-        pubkey: 'b'.repeat(64),
-        created_at: 1234567890,
-        kind: EventKinds.SET_METADATA,
-        tags: [],
-        content: JSON.stringify({ name: 'alice', nip05: 'alice@example.com' }),
-        sig: 'c'.repeat(128),
-      }
-      expect(extractNip05FromEvent(event)).to.equal('alice@example.com')
+      expect(extractNip05FromEvent(
+        makeEvent(EventKinds.SET_METADATA, JSON.stringify({ name: 'alice', nip05: 'alice@example.com' })),
+      )).to.equal('alice@example.com')
     })
 
     it('returns undefined for non-kind-0 event', () => {
-      const event: Event = {
-        id: 'a'.repeat(64),
-        pubkey: 'b'.repeat(64),
-        created_at: 1234567890,
-        kind: EventKinds.TEXT_NOTE,
-        tags: [],
-        content: JSON.stringify({ nip05: 'alice@example.com' }),
-        sig: 'c'.repeat(128),
-      }
-      expect(extractNip05FromEvent(event)).to.be.undefined
+      expect(extractNip05FromEvent(
+        makeEvent(EventKinds.TEXT_NOTE, JSON.stringify({ nip05: 'alice@example.com' })),
+      )).to.be.undefined
     })
 
     it('returns undefined when nip05 is not in content', () => {
-      const event: Event = {
-        id: 'a'.repeat(64),
-        pubkey: 'b'.repeat(64),
-        created_at: 1234567890,
-        kind: EventKinds.SET_METADATA,
-        tags: [],
-        content: JSON.stringify({ name: 'alice' }),
-        sig: 'c'.repeat(128),
-      }
-      expect(extractNip05FromEvent(event)).to.be.undefined
+      expect(extractNip05FromEvent(
+        makeEvent(EventKinds.SET_METADATA, JSON.stringify({ name: 'alice' })),
+      )).to.be.undefined
     })
 
     it('returns undefined for invalid JSON content', () => {
-      const event: Event = {
-        id: 'a'.repeat(64),
-        pubkey: 'b'.repeat(64),
-        created_at: 1234567890,
-        kind: EventKinds.SET_METADATA,
-        tags: [],
-        content: 'not json',
-        sig: 'c'.repeat(128),
-      }
-      expect(extractNip05FromEvent(event)).to.be.undefined
+      expect(extractNip05FromEvent(
+        makeEvent(EventKinds.SET_METADATA, 'not json'),
+      )).to.be.undefined
     })
 
     it('returns undefined when nip05 is empty string', () => {
-      const event: Event = {
-        id: 'a'.repeat(64),
-        pubkey: 'b'.repeat(64),
-        created_at: 1234567890,
-        kind: EventKinds.SET_METADATA,
-        tags: [],
-        content: JSON.stringify({ nip05: '' }),
-        sig: 'c'.repeat(128),
-      }
-      expect(extractNip05FromEvent(event)).to.be.undefined
+      expect(extractNip05FromEvent(
+        makeEvent(EventKinds.SET_METADATA, JSON.stringify({ nip05: '' })),
+      )).to.be.undefined
     })
 
     it('returns undefined when nip05 is not a string', () => {
-      const event: Event = {
-        id: 'a'.repeat(64),
-        pubkey: 'b'.repeat(64),
-        created_at: 1234567890,
-        kind: EventKinds.SET_METADATA,
-        tags: [],
-        content: JSON.stringify({ nip05: 42 }),
-        sig: 'c'.repeat(128),
-      }
-      expect(extractNip05FromEvent(event)).to.be.undefined
+      expect(extractNip05FromEvent(
+        makeEvent(EventKinds.SET_METADATA, JSON.stringify({ nip05: 42 })),
+      )).to.be.undefined
     })
   })
 
@@ -190,13 +165,17 @@ describe('NIP-05 utils', () => {
 
   describe('verifyNip05Identifier', () => {
     let axiosGetStub: Sinon.SinonStub
-    const pubkey = 'a'.repeat(64)
+    const pubkey = PUBKEY_A
 
-    beforeEach(() => {
+    before(() => {
       axiosGetStub = Sinon.stub(axios, 'get')
     })
 
     afterEach(() => {
+      axiosGetStub.reset()
+    })
+
+    after(() => {
       axiosGetStub.restore()
     })
 
@@ -241,7 +220,7 @@ describe('NIP-05 utils', () => {
     })
 
     it('returns mismatch when pubkey does not match', async () => {
-      axiosGetStub.resolves({ data: { names: { alice: 'b'.repeat(64) } } })
+      axiosGetStub.resolves({ data: { names: { alice: PUBKEY_B } } })
 
       const outcome = await verifyNip05Identifier('alice@example.com', pubkey)
 
@@ -286,7 +265,8 @@ describe('NIP-05 utils', () => {
     describe('beforeRedirect SSRF guard', () => {
       let guard: (options: { href?: string; protocol?: string; hostname?: string }) => void
 
-      beforeEach(async () => {
+      before(async () => {
+        axiosGetStub.reset()
         axiosGetStub.resolves({ data: { names: { alice: pubkey } } })
         await verifyNip05Identifier('alice@example.com', pubkey)
         guard = axiosGetStub.firstCall.args[1].beforeRedirect

@@ -10,6 +10,7 @@ import packageJson from '../../package.json'
 import { Serializable } from 'child_process'
 import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
+import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 
 const logger = createLogger('app-primary')
 
@@ -153,8 +154,10 @@ export class App implements IRunnable {
 
   private onExit() {
     logger.info('exiting')
-    this.close(() => {
-      this.process.exit(0)
+    void shutdownMetricsTelemetry().finally(() => {
+      this.close(() => {
+        this.process.exit(0)
+      })
     })
   }
 

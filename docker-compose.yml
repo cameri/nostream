@@ -56,6 +56,12 @@ services:
       OPENNODE_API_KEY: ${OPENNODE_API_KEY}
       # Lnbits
       LNBITS_API_KEY: ${LNBITS_API_KEY}
+      # OpenTelemetry metrics
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-nostream}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      OTEL_METRIC_EXPORT_INTERVAL_MS: ${OTEL_METRIC_EXPORT_INTERVAL_MS:-10000}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://prometheus:9090}
+      ADMIN_METRICS_SSE_INTERVAL_MS: ${ADMIN_METRICS_SSE_INTERVAL_MS:-5000}
       # Enable DEBUG for troubleshooting. Examples:
       # DEBUG: "primary:*"
       # DEBUG: "worker:*"
@@ -72,6 +78,8 @@ services:
         condition: service_healthy
       nostream-migrate:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
     restart: on-failure
     networks:
       default:
@@ -140,6 +148,37 @@ services:
     networks:
       default:
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.105.0
+    container_name: otel-collector
+    command: ['--config=/etc/otelcol-contrib/collector-config.yaml']
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/collector-config.yaml:ro
+    ports:
+      - 127.0.0.1:4318:4318
+      - 127.0.0.1:8889:8889
+    restart: always
+    networks:
+      default:
+
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yaml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - 127.0.0.1:9090:9090
+    depends_on:
+      otel-collector:
+        condition: service_started
+    restart: always
+    networks:
+      default:
+
 networks:
   default:
     name: nostream
@@ -150,3 +189,4 @@ networks:
 
 volumes:
   cache:
+  prometheus-data:
