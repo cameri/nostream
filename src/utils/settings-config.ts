@@ -26,6 +26,10 @@ export const getSettingsFilePath = (): string => join(getConfigBaseDir(), 'setti
 
 export const getDefaultSettingsFilePath = (): string => join(process.cwd(), 'resources', 'default-settings.yaml')
 
+export const getSettingsBackupDir = (): string => join(getConfigBaseDir(), 'backups')
+
+export const getSettingsAuditLogPath = (): string => join(getConfigBaseDir(), 'settings-audit.jsonl')
+
 export const formatSettingCategoryLabel = (key: string): string => {
   return key
     .split(/[_\-.]/)
@@ -215,6 +219,10 @@ const validateShape = (schema: unknown, candidate: unknown, path: PathToken[], i
     }
 
     for (const key of Object.keys(candidate)) {
+      if (renderedPath === 'admin' && key === 'passwordHash') {
+        continue
+      }
+
       if (!hasOwn(schema, key)) {
         issues.push({
           path: formatPathTokens([...path, { type: 'key', key }]),
@@ -300,7 +308,83 @@ export const loadMergedSettings = (): Settings => {
 export const saveSettings = (settings: Settings): void => {
   ensureSettingsExists()
   const serialized = yaml.dump(toSerializable(settings), { lineWidth: 120 })
-  fs.writeFileSync(getSettingsFilePath(), serialized, 'utf-8')
+  const settingsPath = getSettingsFilePath()
+  const backupDirectory = getSettingsBackupDir()
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+
+  fs.mkdirSync(backupDirectory, { recursive: true })
+  if (fs.existsSync(settingsPath)) {
+    fs.copyFileSync(settingsPath, join(backupDirectory, `settings.${timestamp}.yaml`))
+  }
+
+  const temporaryPath = join(getConfigBaseDir(), `.settings.${process.pid}.${Date.now()}.tmp`)
+  try {
+    fs.writeFileSync(temporaryPath, serialized, { encoding: 'utf-8', mode: 0o600 })
+    fs.renameSync(temporaryPath, settingsPath)
+  } finally {
+    if (fs.existsSync(temporaryPath)) {
+      fs.rmSync(temporaryPath, { force: true })
+    }
+  }
+}
+
+export const appendSettingsAuditLog = (entry: Record<string, unknown>): void => {
+  ensureSettingsExists()
+  fs.appendFileSync(
+    getSettingsAuditLogPath(),
+    `${JSON.stringify({ timestamp: new Date().toISOString(), ...entry })}\n`,
+    { encoding: 'utf-8', mode: 0o600 },
+  )
+}
+
+export type SettingsBackupInfo = {
+  filename: string
+  createdAt: string
+  sizeBytes: number
+}
+
+const isSafeBackupFilename = (filename: string): boolean => {
+  return /^settings\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.yaml$/.test(filename)
+}
+
+export const listSettingsBackups = (): SettingsBackupInfo[] => {
+  const backupDirectory = getSettingsBackupDir()
+  if (!fs.existsSync(backupDirectory)) {
+    return []
+  }
+
+  return fs
+    .readdirSync(backupDirectory)
+    .filter((filename) => isSafeBackupFilename(filename))
+    .map((filename) => {
+      const stats = fs.statSync(join(backupDirectory, filename))
+      return {
+        filename,
+        createdAt: stats.mtime.toISOString(),
+        sizeBytes: stats.size,
+      }
+    })
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+}
+
+export const restoreSettingsBackup = (filename: string): Settings => {
+  if (!isSafeBackupFilename(filename)) {
+    throw new Error('Invalid backup filename')
+  }
+
+  const backupPath = join(getSettingsBackupDir(), filename)
+  if (!fs.existsSync(backupPath)) {
+    throw new Error('Backup not found')
+  }
+
+  const restored = yaml.load(fs.readFileSync(backupPath, 'utf-8')) as Settings
+  const issues = validateSettings(mergeDeepRight(loadDefaults(), restored) as Settings)
+  if (issues.length > 0) {
+    throw new Error(`Backup failed validation: ${issues.map((issue) => issue.path).join(', ')}`)
+  }
+
+  saveSettings(restored)
+  return restored
 }
 
 export const getTopLevelSettingCategories = (): string[] => {

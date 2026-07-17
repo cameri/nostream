@@ -10,7 +10,13 @@ import { hashAdminPassword } from '../../../src/utils/admin-password'
 import * as adminRateLimitMiddleware from '../../../src/handlers/request-handlers/admin-rate-limit-middleware'
 import * as rateLimiterMiddleware from '../../../src/handlers/request-handlers/rate-limiter-middleware'
 import * as settingsFactory from '../../../src/factories/settings-factory'
-import { getSettingsFilePath, loadDefaults, saveSettings } from '../../../src/utils/settings-config'
+import {
+  getSettingsAuditLogPath,
+  getSettingsBackupDir,
+  getSettingsFilePath,
+  loadDefaults,
+  saveSettings,
+} from '../../../src/utils/settings-config'
 
 describe('admin settings API', () => {
   const originalSecret = process.env.SECRET
@@ -196,11 +202,89 @@ describe('admin settings API', () => {
     )
 
     expect(patchResponse.status).to.equal(200)
-    expect(patchResponse.data).to.deep.equal({ ok: true, path: 'payments.enabled', value: true })
+    expect(patchResponse.data).to.deep.equal({
+      ok: true,
+      path: 'payments.enabled',
+      value: true,
+      reload: 'restart-required',
+    })
 
     const settingsRaw = fs.readFileSync(getSettingsFilePath(), 'utf-8')
     expect(settingsRaw).to.include('payments:')
     expect(settingsRaw).to.include('enabled: true')
+  })
+
+  it('atomically applies staged changes with a backup and audit entry', async () => {
+    const passwordHash = hashAdminPassword('settings-password')
+    saveSettings({
+      ...loadDefaults(),
+      admin: { enabled: true, passwordHash, sessionTtlSeconds: 3600 },
+    })
+    const baseUrl = await startServer({
+      admin: { enabled: true, passwordHash, sessionTtlSeconds: 3600 },
+    })
+    const cookie = await login(baseUrl)
+
+    const patchResponse = await axios.patch(
+      `${baseUrl}/settings`,
+      {
+        changes: [
+          { path: 'payments.enabled', value: true },
+          { path: 'nip50.enabled', value: true },
+        ],
+      },
+      {
+        headers: { cookie, 'content-type': 'application/json' },
+        validateStatus: () => true,
+      },
+    )
+
+    expect(patchResponse.status, JSON.stringify(patchResponse.data)).to.equal(200)
+    expect(patchResponse.data.changes).to.have.length(2)
+    expect(fs.readdirSync(getSettingsBackupDir()).some((name) => name.startsWith('settings.'))).to.equal(true)
+    expect(fs.readFileSync(getSettingsAuditLogPath(), 'utf-8')).to.include('settings.updated')
+  })
+
+  it('lists and restores the latest settings backup', async () => {
+    const passwordHash = hashAdminPassword('settings-password')
+    saveSettings({
+      ...loadDefaults(),
+      admin: { enabled: true, passwordHash, sessionTtlSeconds: 3600 },
+      payments: { ...loadDefaults().payments, enabled: false },
+    })
+    const baseUrl = await startServer({
+      admin: { enabled: true, passwordHash, sessionTtlSeconds: 3600 },
+    })
+    const cookie = await login(baseUrl)
+
+    await axios.patch(
+      `${baseUrl}/settings`,
+      { path: 'payments.enabled', value: true },
+      {
+        headers: { cookie, 'content-type': 'application/json' },
+        validateStatus: () => true,
+      },
+    )
+
+    const backupsResponse = await axios.get(`${baseUrl}/settings/backups`, {
+      headers: { cookie },
+      validateStatus: () => true,
+    })
+
+    expect(backupsResponse.status).to.equal(200)
+    expect(backupsResponse.data.backups.length).to.be.greaterThan(0)
+
+    const restoreResponse = await axios.post(
+      `${baseUrl}/settings/restore`,
+      { filename: backupsResponse.data.backups[0].filename },
+      {
+        headers: { cookie, 'content-type': 'application/json' },
+        validateStatus: () => true,
+      },
+    )
+
+    expect(restoreResponse.status).to.equal(200)
+    expect(fs.readFileSync(getSettingsAuditLogPath(), 'utf-8')).to.include('settings.restored')
   })
 
   it('rejects invalid paths and write-protected settings', async () => {
