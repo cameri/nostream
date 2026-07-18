@@ -118,7 +118,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
                 ),
               }
             },
-            {} as Record<string, { amount: number; unit: string }>,
+            {} as Record<string, { amount: number | bigint; unit: string }[]>,
           )
         : {},
     }

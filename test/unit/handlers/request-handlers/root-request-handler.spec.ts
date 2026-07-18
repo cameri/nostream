@@ -226,7 +226,7 @@ describe('rootRequestHandler', () => {
     })
 
     it('returns empty fees instead of crashing when the payments block is absent', () => {
-      const { payments, ...settingsWithoutPayments } = baseSettings
+      const { payments: _payments, ...settingsWithoutPayments } = baseSettings
       createSettingsStub.returns(settingsWithoutPayments)
 
       expect(() => rootRequestHandler(req, res, next)).to.not.throw()
