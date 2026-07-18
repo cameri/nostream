@@ -351,7 +351,6 @@ export class EventMessageHandler implements IMessageHandler {
       return rateLimiter.hit(key, 1, { period, rate })
     }
 
-    let limited = false
     for (const { rate, period, kinds } of rateLimits) {
       // skip if event kind does not apply
       if (Array.isArray(kinds) && !kinds.some(isEventKindOrRangeMatch(event))) {
@@ -370,11 +369,11 @@ export class EventMessageHandler implements IMessageHandler {
       if (isRateLimited) {
         logger('rate limited %s: %d events / %d ms exceeded', event.pubkey, rate, period)
 
-        limited = true
+        return true
       }
     }
 
-    return limited
+    return false
   }
 
   protected async isUserAdmitted(event: Event): Promise<string | undefined> {

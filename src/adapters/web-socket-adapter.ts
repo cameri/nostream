@@ -236,18 +236,17 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     const hit = (period: number, rate: number) => rateLimiter.hit(`${client}:message:${period}`, 1, { period, rate })
 
-    let limited = false
     for (const { rate, period } of rateLimits) {
       const isRateLimited = await hit(period, rate)
 
       if (isRateLimited) {
         logger('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
 
-        limited = true
+        return true
       }
     }
 
-    return limited
+    return false
   }
 
   private onClientPong() {

@@ -1023,6 +1023,26 @@ describe('EventMessageHandler', () => {
       expect(actualResult).to.be.true
     })
 
+    it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
+      eventLimits.rateLimits = [
+        {
+          period: 60000,
+          rate: 1,
+        },
+        {
+          period: 180,
+          rate: 3,
+        },
+      ]
+
+      rateLimiterHitStub.onFirstCall().resolves(true)
+
+      const actualResult = await (handler as any).isRateLimited(event)
+
+      expect(rateLimiterHitStub).to.have.been.calledOnce
+      expect(actualResult).to.be.true
+    })
+
     it('fails open when the rate limiter backend is unavailable', async () => {
       eventLimits.rateLimits = [
         {
