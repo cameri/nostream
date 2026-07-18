@@ -90,7 +90,7 @@ export class EventRepository implements IEventRepository {
       }
 
       if (isTagQuery && !isSearchQuery) {
-        builder.select('events.*')
+        builder.distinct('events.*')
       }
 
       return builder
