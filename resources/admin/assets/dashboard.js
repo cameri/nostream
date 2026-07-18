@@ -297,7 +297,7 @@
     document.querySelectorAll('.grafana-frame').forEach((frame) => {
       if (!frame.src && frame.dataset.panelId) {
         const theme = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-        const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:3000').replace(/\/+$/, '')
+        const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:7777').replace(/\/+$/, '')
         const dashboardUid = config.grafanaDashboardUid || 'nostream-overview'
         const params = new URLSearchParams({
           orgId: '1',
@@ -319,7 +319,7 @@
 
   const refreshGrafanaFrames = () => {
     const currentTheme = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-    const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:3000').replace(/\/+$/, '')
+    const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:7777').replace(/\/+$/, '')
     const dashboardUid = config.grafanaDashboardUid || 'nostream-overview'
 
     document.querySelectorAll('.grafana-frame').forEach((frame) => {

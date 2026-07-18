@@ -361,9 +361,9 @@ export class EventMessageHandler implements IMessageHandler {
       try {
         isRateLimited = await hit({ period, rate, kinds })
       } catch (error) {
-        // Redis outages should not make the relay reject/abort incoming events.
+        // Fail closed when the rate limiter backend is unavailable.
         logger('rate limiter unavailable for %s (%d/%d): %o', event.pubkey, rate, period, error)
-        continue
+        return true
       }
 
       if (isRateLimited) {

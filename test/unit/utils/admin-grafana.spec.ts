@@ -31,9 +31,9 @@ describe('admin-grafana', () => {
     delete process.env.GRAFANA_URL
     delete process.env.GRAFANA_DASHBOARD_UID
 
-    expect(getGrafanaBaseUrl()).to.equal('http://127.0.0.1:3000')
+    expect(getGrafanaBaseUrl()).to.equal('http://127.0.0.1:7777')
     expect(getGrafanaDashboardUid()).to.equal('nostream-overview')
-    expect(getGrafanaFrameOrigin()).to.equal('http://127.0.0.1:3000')
+    expect(getGrafanaFrameOrigin()).to.equal('http://127.0.0.1:7777')
   })
 
   it('normalizes configured grafana url', () => {
@@ -44,17 +44,17 @@ describe('admin-grafana', () => {
   })
 
   it('builds dashboard and embed urls', () => {
-    process.env.GRAFANA_URL = 'http://127.0.0.1:3000'
+    process.env.GRAFANA_URL = 'http://127.0.0.1:7777'
     process.env.GRAFANA_DASHBOARD_UID = 'custom-dashboard'
 
     expect(getGrafanaDashboardUrl()).to.equal(
-      'http://127.0.0.1:3000/d/custom-dashboard/nostream-overview?orgId=1&refresh=5s&theme=light',
+      'http://127.0.0.1:7777/d/custom-dashboard/nostream-overview?orgId=1&refresh=5s&theme=light',
     )
     expect(getGrafanaEmbedUrl()).to.equal(
-      'http://127.0.0.1:3000/d/custom-dashboard/nostream-overview?orgId=1&refresh=5s&theme=light&kiosk',
+      'http://127.0.0.1:7777/d/custom-dashboard/nostream-overview?orgId=1&refresh=5s&theme=light&kiosk',
     )
     expect(getGrafanaSoloPanelUrl(7, 'dark')).to.equal(
-      'http://127.0.0.1:3000/d-solo/custom-dashboard?orgId=1&panelId=7&refresh=5s&theme=dark',
+      'http://127.0.0.1:7777/d-solo/custom-dashboard?orgId=1&panelId=7&refresh=5s&theme=dark',
     )
   })
 })

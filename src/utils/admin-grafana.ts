@@ -1,4 +1,4 @@
-const DEFAULT_GRAFANA_URL = 'http://127.0.0.1:3000'
+const DEFAULT_GRAFANA_URL = 'http://127.0.0.1:7777'
 const DEFAULT_DASHBOARD_UID = 'nostream-overview'
 
 export const getGrafanaBaseUrl = (): string => {

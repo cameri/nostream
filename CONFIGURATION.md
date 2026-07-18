@@ -59,6 +59,7 @@ The following environment variables can be set:
 | ADMIN_METRICS_SSE_INTERVAL_MS    | Interval between `/admin/metrics` SSE snapshots (ms) | 5000 |
 | ADMIN_METRICS_SNAPSHOT_TIMEOUT_MS| Timeout for collecting one `/admin/metrics` snapshot (ms) | 10000 |
 | ADMIN_DEPENDENCY_PING_TIMEOUT_MS | Timeout for admin DB/Redis dependency pings (ms) | 3000 |
+| GRAFANA_URL                      | Grafana base URL for admin dashboard embeds      | http://127.0.0.1:7777 |
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |

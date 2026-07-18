@@ -188,13 +188,13 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: 'true'
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_SECURITY_ALLOW_EMBEDDING: 'true'
-      GF_SERVER_ROOT_URL: ${GRAFANA_URL:-http://127.0.0.1:3000}
+      GF_SERVER_ROOT_URL: ${GRAFANA_URL:-http://127.0.0.1:7777}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - 127.0.0.1:3000:3000
+      - 127.0.0.1:7777:3000
     depends_on:
       prometheus:
         condition: service_started

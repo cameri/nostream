@@ -1043,7 +1043,7 @@ describe('EventMessageHandler', () => {
       expect(actualResult).to.be.true
     })
 
-    it('fails open when the rate limiter backend is unavailable', async () => {
+    it('fails closed when the rate limiter backend is unavailable', async () => {
       eventLimits.rateLimits = [
         {
           period: 60000,
@@ -1054,7 +1054,7 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(actualResult).to.be.false
+      expect(actualResult).to.be.true
       expect(rateLimiterHitStub).to.have.been.calledOnce
     })
   })

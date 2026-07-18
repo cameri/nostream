@@ -1,6 +1,12 @@
 import { getCacheClient } from '../cache/client'
 import { getMasterDbClient } from '../database/client'
+import { createLogger } from '../factories/logger-factory'
 import { delayMs } from './misc'
+
+const logger = createLogger('admin-health')
+
+const DEFAULT_ADMIN_DEPENDENCY_PING_TIMEOUT_MS = 3000
+const MIN_ADMIN_DEPENDENCY_PING_TIMEOUT_MS = 100
 
 export interface AdminDependencyHealth {
   ok: boolean
@@ -18,9 +24,19 @@ export interface AdminHealthSnapshot {
 }
 
 export const getAdminDependencyPingTimeoutMs = (): number => {
-  const timeoutCandidate = Number(process.env.ADMIN_DEPENDENCY_PING_TIMEOUT_MS)
-  if (!Number.isFinite(timeoutCandidate) || timeoutCandidate < 100) {
-    return 3000
+  const configuredValue = process.env.ADMIN_DEPENDENCY_PING_TIMEOUT_MS
+  if (configuredValue === undefined || configuredValue.trim() === '') {
+    return DEFAULT_ADMIN_DEPENDENCY_PING_TIMEOUT_MS
+  }
+
+  const timeoutCandidate = Number(configuredValue)
+  if (!Number.isFinite(timeoutCandidate) || timeoutCandidate < MIN_ADMIN_DEPENDENCY_PING_TIMEOUT_MS) {
+    logger.warn(
+      'invalid ADMIN_DEPENDENCY_PING_TIMEOUT_MS=%o, falling back to %d',
+      configuredValue,
+      DEFAULT_ADMIN_DEPENDENCY_PING_TIMEOUT_MS,
+    )
+    return DEFAULT_ADMIN_DEPENDENCY_PING_TIMEOUT_MS
   }
 
   return timeoutCandidate
