@@ -1,0 +1,8 @@
+name: nostream-codeql
+
+packs:
+  javascript-typescript:
+    - cameri/nostream-javascript-models
+
+queries:
+  - uses: security-and-quality
