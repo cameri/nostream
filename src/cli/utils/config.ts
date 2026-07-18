@@ -1,6 +1,5 @@
 export {
   ensureSettingsExists,
-  formatSettingCategoryLabel,
   getByPath,
   getConfigBaseDir,
   getDefaultSettingsFilePath,
@@ -13,6 +12,7 @@ export {
   parseValue,
   saveSettings,
   setByPath,
+  toCategoryLabel,
   validatePathAgainstDefaults,
   validateSettings,
 } from '../../utils/settings-config'

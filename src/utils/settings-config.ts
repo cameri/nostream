@@ -26,7 +26,7 @@ export const getSettingsFilePath = (): string => join(getConfigBaseDir(), 'setti
 
 export const getDefaultSettingsFilePath = (): string => join(process.cwd(), 'resources', 'default-settings.yaml')
 
-export const formatSettingCategoryLabel = (key: string): string => {
+export const toCategoryLabel = (key: string): string => {
   return key
     .split(/[_\-.]/)
     .filter(Boolean)
