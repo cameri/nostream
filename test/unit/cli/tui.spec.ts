@@ -63,7 +63,6 @@ describe('cli tui menus', () => {
       .onSecondCall()
       .resolves(false as any)
     sinon.stub(tuiPrompts, 'isCancel').returns(false)
-    sinon.stub(configCommands, 'getConfigTopLevelCategories').returns(['payments', 'limits', 'network'])
     const runConfigSet = sinon.stub(configCommands, 'runConfigSet').resolves(0)
 
     const code = await configureMenu.runConfigureMenu()

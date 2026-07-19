@@ -54,6 +54,12 @@ The following environment variables can be set:
 | REDIS_PORT                       | Redis Port                       | 6379                   |
 | REDIS_USER                       | Redis User                       | default                |
 | REDIS_PASSWORD                   | Redis Password                   | nostr_ts_relay         |
+| PROMETHEUS_URL                   | Prometheus base URL for admin metrics queries | http://127.0.0.1:9090 |
+| PROMETHEUS_QUERY_TIMEOUT_MS      | Timeout for each Prometheus admin metrics query (ms) | 5000 |
+| ADMIN_METRICS_SSE_INTERVAL_MS    | Interval between `/admin/metrics` SSE snapshots (ms) | 5000 |
+| ADMIN_METRICS_SNAPSHOT_TIMEOUT_MS| Timeout for collecting one `/admin/metrics` snapshot (ms) | 10000 |
+| ADMIN_DEPENDENCY_PING_TIMEOUT_MS | Timeout for admin DB/Redis dependency pings (ms) | 3000 |
+| GRAFANA_URL                      | Grafana base URL for admin dashboard embeds      | http://127.0.0.1:7777 |
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
@@ -143,8 +149,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
 | limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
+| limits.event.createdAt.maxNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.createdAt.minNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |

@@ -423,6 +423,34 @@ describe('WebSocketAdapter', () => {
       expect(client.send).to.have.been.called
     })
 
+    it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
+      client.readyState = WebSocket.OPEN
+
+      const hitStub = sandbox.stub().resolves(true)
+
+      settingsFactory.returns({
+        network: { remoteIpHeader: '' },
+        limits: {
+          message: {
+            rateLimits: [
+              { period: 60000, rate: 1 },
+              { period: 180, rate: 3 },
+            ],
+            ipWhitelist: [],
+          },
+        },
+      })
+
+      slidingWindowRateLimiter.returns({ hit: hitStub })
+
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
+      const onMessage = messageCall.args[1]
+
+      await onMessage(Buffer.from(JSON.stringify(['EVENT', {}])))
+
+      expect(hitStub).to.have.been.calledOnce
+    })
+
     it('does not rate limit when no rateLimits are configured', async () => {
       client.readyState = WebSocket.OPEN
 

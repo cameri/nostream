@@ -75,6 +75,10 @@ describe('admin router', () => {
     )
     const router = loadAdminRouter()
     const app = express()
+    app.use((request, response, next) => {
+      response.locals.nonce = 'test-admin-nonce'
+      next()
+    })
     app.use('/admin', router)
 
     server = await new Promise((resolve) => {
@@ -135,10 +139,26 @@ describe('admin router', () => {
   it('returns 404 when admin is disabled', async () => {
     const baseUrl = await startServer({ admin: { enabled: false } })
 
-    const response = await axios.get(`${baseUrl}/health`, { validateStatus: () => true })
+    const healthResponse = await axios.get(`${baseUrl}/health`, { validateStatus: () => true })
+    const dashboardResponse = await axios.get(`${baseUrl}/`, { validateStatus: () => true })
 
-    expect(response.status).to.equal(404)
-    expect(response.data).to.equal('Not Found')
+    expect(healthResponse.status).to.equal(404)
+    expect(dashboardResponse.status).to.equal(404)
+    expect(healthResponse.data).to.equal('Not Found')
+    expect(rateLimiterMiddlewareStub.calledTwice).to.be.true
+  })
+
+  it('serves the dashboard shell when admin is enabled', async () => {
+    const baseUrl = await startServer({ admin: { enabled: true }, info: { name: 'Test Relay' } })
+
+    const response = await axios.get(`${baseUrl}/`, { validateStatus: () => true })
+
+    expect(response.status).to.equal(200)
+    expect(response.headers['content-type']).to.include('text/html')
+    expect(response.data).to.include('Test Relay')
+    expect(response.data).to.include('admin/assets/dashboard.js')
+    expect(response.data).to.include('grafana-frame')
+    expect(response.data).to.include('nostream-overview')
     expect(rateLimiterMiddlewareStub.calledOnce).to.be.true
   })
 
