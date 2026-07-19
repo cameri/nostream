@@ -179,6 +179,29 @@ services:
     networks:
       default:
 
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ALLOW_EMBEDDING: 'true'
+      GF_SERVER_ROOT_URL: ${GRAFANA_URL:-http://127.0.0.1:7777}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - 127.0.0.1:7777:3000
+    depends_on:
+      prometheus:
+        condition: service_started
+    restart: always
+    networks:
+      default:
+
 networks:
   default:
     name: nostream
@@ -190,3 +213,4 @@ networks:
 volumes:
   cache:
   prometheus-data:
+  grafana-data:

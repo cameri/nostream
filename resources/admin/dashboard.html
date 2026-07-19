@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{name}} Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{path_prefix}}/admin/assets/dashboard.css">
+  </head>
+  <body class="admin-dashboard console-theme" data-theme="light">
+    <main class="container-fluid py-4 px-3 px-lg-4">
+      <header class="admin-header d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+        <div class="d-flex align-items-center gap-2">
+          <button id="menu-toggle" type="button" class="btn btn-console btn-sm menu-toggle d-none" aria-label="Open navigation" aria-controls="dashboard-nav" aria-expanded="false">Menu</button>
+          <div>
+            <p class="admin-kicker mb-1"><span class="prompt-char">&gt;</span> Admin Console</p>
+            <h1 class="admin-title h4 mb-0">{{name}}</h1>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <button id="theme-toggle" type="button" class="btn btn-console btn-sm" aria-label="Toggle theme (T)">Light</button>
+          <div class="clock-wrap">
+            <p id="live-clock" class="clock-value mb-0">--:--:--</p>
+            <p class="clock-label mb-0">UTC</p>
+          </div>
+        </div>
+        <div id="dashboard-actions" class="d-none align-items-center gap-2 flex-wrap">
+          <span id="stream-status" class="status-badge"><span class="status-led" aria-hidden="true"></span>Connecting</span>
+          <button id="copy-snapshot-button" type="button" class="btn btn-console btn-sm" title="Copy latest metrics JSON">Copy JSON</button>
+          <a id="grafana-link" class="btn btn-console btn-sm" href="{{grafana_url}}" target="_blank" rel="noopener noreferrer">Grafana</a>
+          <button id="logout-button" type="button" class="btn btn-console btn-sm" title="Sign out (L)">Sign out</button>
+        </div>
+      </header>
+
+      <section id="login-panel" class="row justify-content-center">
+        <div class="col col-md-8 col-lg-5">
+          <div class="panel-card login-box">
+            <p class="terminal-line mb-2"><span class="prompt-char">$</span> auth --session init</p>
+            <h2 class="panel-title h6 mb-2">Sign in</h2>
+            <p class="admin-muted small mb-4">Enter the admin password to access the dashboard.</p>
+            <form id="login-form">
+              <div class="mb-3">
+                <label for="password" class="form-label field-label">Password</label>
+                <input id="password" name="password" type="password" class="form-control console-input" autocomplete="current-password" required>
+              </div>
+              <div id="login-error" class="alert alert-danger d-none small" role="alert"></div>
+              <button id="login-button" type="submit" class="btn btn-console w-100">Execute</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section id="dashboard-panel" class="d-none">
+        <div id="nav-overlay" class="nav-overlay"></div>
+        <aside id="dashboard-nav" class="dashboard-nav" aria-hidden="true">
+          <p class="admin-kicker mb-2"><span class="prompt-char">&gt;</span> Navigation</p>
+          <button type="button" class="nav-item active" data-view="metrics-view">Metrics</button>
+        </aside>
+
+        <div id="system-alert" class="system-alert d-none" role="status"></div>
+
+        <div id="metrics-view" class="dashboard-view">
+          <section class="dashboard-section">
+            <h2 class="section-title">Health</h2>
+            <div class="row g-2">
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100" data-metric="sys">
+                  <p class="metric-label"><span class="module-code">SYS</span> System</p>
+                  <p id="metric-status" class="metric-value status-no-data mb-0"><span class="status-led" aria-hidden="true"></span>Pending</p>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100" data-metric="prom">
+                  <p class="metric-label"><span class="module-code">PROM</span> Prometheus</p>
+                  <p id="metric-prometheus" class="metric-value status-no-data mb-0"><span class="status-led" aria-hidden="true"></span>Pending</p>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100" data-metric="db">
+                  <p class="metric-label"><span class="module-code">DB</span> Database</p>
+                  <p id="metric-database" class="metric-value status-no-data mb-0"><span class="status-led" aria-hidden="true"></span>Pending</p>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100" data-metric="redis">
+                  <p class="metric-label"><span class="module-code">RDS</span> Redis</p>
+                  <p id="metric-redis" class="metric-value status-no-data mb-0"><span class="status-led" aria-hidden="true"></span>Pending</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">Throughput</h2>
+            <div class="row g-2">
+              <div class="col-6 col-md-4">
+                <div class="metric-card h-100" data-metric="evt-rate">
+                  <p class="metric-label"><span class="module-code">IN</span> Events / sec</p>
+                  <p id="metric-events-per-second" class="metric-value mb-0"><span class="metric-number">0</span><span class="metric-unit"> /s</span></p>
+                </div>
+              </div>
+              <div class="col-6 col-md-4">
+                <div class="metric-card h-100" data-metric="rej-rate">
+                  <p class="metric-label"><span class="module-code">RJ</span> Rejected / sec</p>
+                  <p id="metric-events-rejected-per-second" class="metric-value mb-0"><span class="metric-number">0</span><span class="metric-unit"> /s</span></p>
+                </div>
+              </div>
+              <div class="col-6 col-md-4">
+                <div class="metric-card h-100" data-metric="ws">
+                  <p class="metric-label"><span class="module-code">WS</span> Connections</p>
+                  <p id="metric-active-connections" class="metric-value mb-0"><span class="metric-number">0</span></p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">Events</h2>
+            <div class="row g-2">
+              <div class="col-6 col-md-4">
+                <div class="metric-card h-100" data-metric="evt-total">
+                  <p class="metric-label"><span class="module-code">SUM</span> Total</p>
+                  <p id="metric-events-total" class="metric-value mb-0"><span class="metric-number">0</span></p>
+                </div>
+              </div>
+              <div class="col-6 col-md-4">
+                <div class="metric-card h-100" data-metric="evt-ok">
+                  <p class="metric-label"><span class="module-code">OK</span> Accepted</p>
+                  <p id="metric-accepted-total" class="metric-value mb-0"><span class="metric-number">0</span></p>
+                </div>
+              </div>
+              <div class="col-6 col-md-4">
+                <div class="metric-card h-100" data-metric="evt-bad">
+                  <p class="metric-label"><span class="module-code">ERR</span> Rejected</p>
+                  <p id="metric-rejected-total" class="metric-value mb-0"><span class="metric-number">0</span></p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">Resources</h2>
+            <div class="row g-2">
+              <div class="col-6 col-md-6">
+                <div class="metric-card h-100" data-metric="cpu">
+                  <p class="metric-label"><span class="module-code">CPU</span> Load</p>
+                  <p id="metric-cpu-load" class="metric-value mb-0"><span class="metric-number">0</span><span class="metric-unit"> %</span></p>
+                </div>
+              </div>
+              <div class="col-6 col-md-6">
+                <div class="metric-card h-100" data-metric="mem">
+                  <p class="metric-label"><span class="module-code">MEM</span> Used</p>
+                  <p id="metric-memory-used" class="metric-value mb-0"><span class="metric-number">0</span><span class="metric-unit"> MB</span></p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <p id="metric-updated-at" class="sync-line mb-4"><span class="prompt-char">&gt;</span> sync: waiting for metrics…<span class="sync-cursor" aria-hidden="true"></span></p>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">Charts</h2>
+            <div class="row g-3">
+              <div class="col-12 col-xl-6">
+                <div class="panel-card chart-panel overflow-hidden">
+                  <div class="panel-header"><span class="module-code">CHT</span> Events per second (15m)</div>
+                  <iframe class="grafana-frame" data-panel-id="7" title="Events per sec" loading="lazy" referrerpolicy="no-referrer"></iframe>
+                </div>
+              </div>
+              <div class="col-12 col-xl-6">
+                <div class="panel-card chart-panel overflow-hidden">
+                  <div class="panel-header"><span class="module-code">CHT</span> WebSocket connections (15m)</div>
+                  <iframe class="grafana-frame" data-panel-id="8" title="Connections" loading="lazy" referrerpolicy="no-referrer"></iframe>
+                </div>
+              </div>
+              <div class="col-12 col-xl-6">
+                <div class="panel-card chart-panel overflow-hidden">
+                  <div class="panel-header"><span class="module-code">CHT</span> Memory by worker</div>
+                  <iframe class="grafana-frame" data-panel-id="9" title="Memory" loading="lazy" referrerpolicy="no-referrer"></iframe>
+                </div>
+              </div>
+              <div class="col-12 col-xl-6">
+                <div class="panel-card chart-panel overflow-hidden">
+                  <div class="panel-header"><span class="module-code">CHT</span> CPU by worker</div>
+                  <iframe class="grafana-frame" data-panel-id="10" title="CPU" loading="lazy" referrerpolicy="no-referrer"></iframe>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script nonce="{{nonce}}">
+      window.__ADMIN_DASHBOARD__ = {
+        pathPrefix: '{{path_prefix}}',
+        grafanaUrl: '{{grafana_url}}',
+        grafanaBaseUrl: '{{grafana_base_url}}',
+        grafanaDashboardUid: '{{grafana_dashboard_uid}}',
+      }
+    </script>
+    <script src="{{path_prefix}}/admin/assets/dashboard.js" nonce="{{nonce}}"></script>
+  </body>
+</html>

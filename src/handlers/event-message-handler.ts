@@ -357,7 +357,14 @@ export class EventMessageHandler implements IMessageHandler {
         continue
       }
 
-      const isRateLimited = await hit({ period, rate, kinds })
+      let isRateLimited = false
+      try {
+        isRateLimited = await hit({ period, rate, kinds })
+      } catch (error) {
+        // Fail closed when the rate limiter backend is unavailable.
+        logger('rate limiter unavailable for %s (%d/%d): %o', event.pubkey, rate, period, error)
+        return true
+      }
 
       if (isRateLimited) {
         logger('rate limited %s: %d events / %d ms exceeded', event.pubkey, rate, period)
