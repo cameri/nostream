@@ -30,7 +30,7 @@ export const getSettingsBackupDir = (): string => join(getConfigBaseDir(), 'back
 
 export const getSettingsAuditLogPath = (): string => join(getConfigBaseDir(), 'settings-audit.jsonl')
 
-export const formatSettingCategoryLabel = (key: string): string => {
+export const toCategoryLabel = (key: string): string => {
   return key
     .split(/[_\-.]/)
     .filter(Boolean)

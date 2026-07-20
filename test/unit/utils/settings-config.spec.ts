@@ -1,7 +1,7 @@
 import { expect } from 'chai'
 
 import {
-  formatSettingCategoryLabel,
+  toCategoryLabel,
   getByPath,
   getTopLevelSettingCategories,
   parseTypedValue,
@@ -93,8 +93,8 @@ describe('settings-config', () => {
   })
 
   it('formats setting category labels', () => {
-    expect(formatSettingCategoryLabel('payments_processors')).to.equal('Payments Processors')
-    expect(formatSettingCategoryLabel('rate_limiter')).to.equal('Rate Limiter')
+    expect(toCategoryLabel('payments_processors')).to.equal('Payments Processors')
+    expect(toCategoryLabel('rate_limiter')).to.equal('Rate Limiter')
   })
 
   it('lists top-level categories from defaults', () => {

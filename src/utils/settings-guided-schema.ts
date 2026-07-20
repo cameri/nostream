@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 export type GuidedSettingFieldType = 'boolean' | 'number' | 'string' | 'select' | 'stringArray'
 
 export type GuidedSettingFieldValidator = (value: string) => string | undefined
@@ -21,18 +23,16 @@ export const requireNonEmptySettingValue = (value: string): string | undefined =
   return value.trim() ? undefined : 'Value is required'
 }
 
+const nonNegativeSafeIntegerSettingValueSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+$/, 'Value must be a non-negative integer')
+  .transform(Number)
+  .pipe(z.number().int().min(0).max(Number.MAX_SAFE_INTEGER, 'Value must be a safe integer'))
+
 export const requireSafeNonNegativeIntegerSettingValue = (value: string): string | undefined => {
-  const trimmed = value.trim()
-  if (!/^\d+$/.test(trimmed)) {
-    return 'Value must be a non-negative integer'
-  }
-
-  const parsed = Number(trimmed)
-  if (!Number.isSafeInteger(parsed)) {
-    return 'Value must be a safe integer'
-  }
-
-  return undefined
+  const result = nonNegativeSafeIntegerSettingValueSchema.safeParse(value)
+  return result.success ? undefined : result.error.issues[0].message
 }
 
 export const guidedSettingCategories: GuidedSettingCategory[] = [

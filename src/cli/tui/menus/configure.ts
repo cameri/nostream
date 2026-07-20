@@ -1,21 +1,18 @@
 import {
-  getConfigTopLevelCategories,
   runConfigGet,
   runConfigList,
   runConfigSet,
   runConfigValidate,
 } from '../../commands/config'
-import { formatSettingCategoryLabel, getByPath, loadMergedSettings } from '../../../utils/settings-config'
+import { getByPath, getTopLevelSettingCategories, loadMergedSettings, toCategoryLabel } from '../../../utils/settings-config'
 import {
   type GuidedSettingField,
   guidedSettingCategories,
 } from '../../../utils/settings-guided-schema'
 import { tuiPrompts } from '../prompts'
 
-const toCategoryLabel = formatSettingCategoryLabel
-
 const getCategoryOptions = () => {
-  const categories = getConfigTopLevelCategories().sort((a, b) => a.localeCompare(b))
+  const categories = getTopLevelSettingCategories().sort((a, b) => a.localeCompare(b))
 
   return [
     ...categories.map((category) => ({
