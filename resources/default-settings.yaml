@@ -67,6 +67,24 @@ nip50:
   # 'simple' (no stemming) or a language name like 'english', 'spanish'
   language: simple
   maxQueryLength: 256
+nip66:
+  # NIP-66 relay liveness monitoring. Disabled by default.
+  # Settings only in this release (no monitor worker yet); enabling is currently a no-op.
+  # Future versions may probe public relay URLs and publish kind 30166/10166 events.
+  enabled: false
+  # Seconds between scheduled probe runs (reserved for a future monitor worker).
+  probeIntervalSeconds: 3600
+  timeouts:
+    dnsMs: 10000
+    tlsMs: 10000
+    wsRttMs: 10000
+    nip11Ms: 10000
+  # Public WebSocket URLs to probe. Empty list defaults to info.relay_url.
+  targets: []
+  # Optional monitor identity (reserved for a future monitor worker).
+  # monitorPrivateKey: replace-with-monitor-private-key-in-hex
+  # monitorPubkey: replace-with-monitor-pubkey-in-hex
+  dnsCacheTtlSeconds: 300
 wot:
   # Web of Trust filtering. When enabled, only events from pubkeys within
   # the relay owner's 2-hop follow graph are accepted.
