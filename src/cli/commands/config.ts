@@ -2,14 +2,13 @@ import ora from 'ora'
 import yaml from 'js-yaml'
 
 import {
-  formatSettingCategoryLabel,
   getByPath,
-  getTopLevelSettingCategories,
   loadMergedSettings,
   loadUserSettings,
   parseTypedValue,
   saveSettings,
   setByPath,
+  toCategoryLabel,
   validatePathAgainstDefaults,
   validateSettings,
 } from '../../utils/settings-config'
@@ -57,8 +56,6 @@ const serialize = (value: unknown): string => {
 
   return yaml.dump(value, { lineWidth: 120 }).trimEnd()
 }
-
-const formatLabel = formatSettingCategoryLabel
 
 const restartRelay = async (): Promise<number> => {
   const spinner = ora('Restarting relay...').start()
@@ -176,7 +173,6 @@ export const runConfigValidate = async (): Promise<number> => {
 
   return 1
 }
-
 export const runConfigEnvList = async (options: { showSecrets?: boolean } = {}): Promise<number> => {
   const values = readEnvValues()
   const entries = Object.entries(values).sort(([a], [b]) => a.localeCompare(b))
@@ -245,12 +241,8 @@ export const runConfigEnvValidate = async (): Promise<number> => {
 
   logError('Environment validation failed:')
   for (const issue of issues) {
-    logError(`- ${formatLabel(issue.path)} (${issue.path}): ${issue.message}`)
+    logError(`- ${toCategoryLabel(issue.path)} (${issue.path}): ${issue.message}`)
   }
 
   return 1
-}
-
-export const getConfigTopLevelCategories = (): string[] => {
-  return getTopLevelSettingCategories()
 }

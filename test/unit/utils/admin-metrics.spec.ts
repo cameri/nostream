@@ -59,6 +59,15 @@ describe('admin-metrics', () => {
     expect(queryPrometheusInstantStub.callCount).to.equal(7)
   })
 
+  it('builds an unavailable fallback snapshot for SSE error handling', () => {
+    const snapshot = adminMetrics.createUnavailableAdminMetricsSnapshot('failed to collect metrics')
+
+    expect(snapshot.status).to.equal('unavailable')
+    expect(snapshot.prometheus.available).to.equal(false)
+    expect(snapshot.prometheus.error).to.equal('failed to collect metrics')
+    expect(snapshot.metrics.eventsPerSecond).to.equal(0)
+  })
+
   it('marks snapshot unavailable when prometheus returns no data', async () => {
     queryPrometheusInstantStub.resolves(undefined)
 
