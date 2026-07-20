@@ -172,7 +172,7 @@
     "@opentelemetry/exporter-metrics-otlp-http": "^0.219.0",
     "@opentelemetry/resources": "^2.8.0",
     "@opentelemetry/sdk-metrics": "^2.8.0",
-    "axios": "^1.16.0",
+    "axios": "^1.18.0",
     "cac": "^7.0.0",
     "colorette": "^2.0.20",
     "express": "4.22.1",
