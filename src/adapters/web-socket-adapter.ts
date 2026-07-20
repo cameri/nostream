@@ -18,6 +18,7 @@ import { createLogger } from '../factories/logger-factory'
 import { recordWebsocketConnectionClosed, recordWebsocketConnectionOpened } from '../telemetry/event-metrics'
 import { Event } from '../@types/event'
 import { getRemoteAddress } from '../utils/http'
+import { createReadAuthorizationGuard } from '../utils/nip42'
 import { IRateLimiter } from '../@types/utils'
 import { isEventMatchingFilter } from '../utils/event'
 import { messageSchema } from '../schemas/message-schema'
@@ -120,6 +121,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public onSendEvent(event: Event): void {
+    // NIP-42: don't broadcast restricted-kind events to unauthorized clients.
+    const isReadAuthorized = createReadAuthorizationGuard(this.settings(), () => this.authenticatedPubkeys)
+    if (!isReadAuthorized(event)) {
+      return
+    }
+
     this.subscriptions.forEach((filters, subscriptionId) => {
       if (filters.map(isEventMatchingFilter).some((isMatch) => isMatch(event))) {
         logger('sending event to client %s: %o', this.clientId, event)
