@@ -4,7 +4,7 @@ import {
   createReadAuthorizationGuard,
   DEFAULT_RESTRICTED_READ_KINDS,
   getRestrictedReadKinds,
-  isClientAuthorizedToReadEvent,
+  isClientAuthorizedToReadMention,
   isCountAuthorized,
   isSubscriptionAuthRequired,
 } from '../../../src/utils/nip42'
@@ -60,21 +60,21 @@ describe('nip42', () => {
     })
   })
 
-  describe('isClientAuthorizedToReadEvent', () => {
+  describe('isClientAuthorizedToReadMention', () => {
     it('returns false when no pubkeys are authenticated', () => {
-      expect(isClientAuthorizedToReadEvent(makeEvent(4, [['p', recipient]]), new Set())).to.be.false
+      expect(isClientAuthorizedToReadMention(makeEvent(4, [['p', recipient]]), new Set())).to.be.false
     })
 
     it('returns true for the event author', () => {
-      expect(isClientAuthorizedToReadEvent(makeEvent(4, [['p', recipient]]), new Set([author]))).to.be.true
+      expect(isClientAuthorizedToReadMention(makeEvent(4, [['p', recipient]]), new Set([author]))).to.be.true
     })
 
     it('returns true for a p-tagged recipient', () => {
-      expect(isClientAuthorizedToReadEvent(makeEvent(4, [['p', recipient]]), new Set([recipient]))).to.be.true
+      expect(isClientAuthorizedToReadMention(makeEvent(4, [['p', recipient]]), new Set([recipient]))).to.be.true
     })
 
     it('returns false for an unrelated authenticated pubkey', () => {
-      expect(isClientAuthorizedToReadEvent(makeEvent(4, [['p', recipient]]), new Set([stranger]))).to.be.false
+      expect(isClientAuthorizedToReadMention(makeEvent(4, [['p', recipient]]), new Set([stranger]))).to.be.false
     })
   })
 

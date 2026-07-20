@@ -24,7 +24,7 @@ export const getRestrictedReadKinds = (settings: Settings | undefined): (EventKi
 const isKindRestricted = (restrictedKinds: (EventKinds | EventKindsRange)[], kind: number): boolean =>
   restrictedKinds.some(isEventKindOrRangeMatch({ kind } as Event))
 
-export const isClientAuthorizedToReadEvent = (event: Event, authenticatedPubkeys: ReadonlySet<Pubkey>): boolean => {
+export const isClientAuthorizedToReadMention = (event: Event, authenticatedPubkeys: ReadonlySet<Pubkey>): boolean => {
   if (!authenticatedPubkeys.size) {
     return false
   }
@@ -53,7 +53,7 @@ export const createReadAuthorizationGuard = (
       return true
     }
 
-    return isClientAuthorizedToReadEvent(event, getAuthenticatedPubkeys())
+    return isClientAuthorizedToReadMention(event, getAuthenticatedPubkeys())
   }
 }
 
@@ -80,6 +80,10 @@ export const isSubscriptionAuthRequired = (
     return false
   }
 
+  // An authenticated client is allowed through: createReadAuthorizationGuard
+  // filters restricted events per-event, so they still only receive the ones
+  // they authored or are p-tagged in. Only an unauthenticated client, whose
+  // stream would always be empty, needs to be closed with auth-required.
   return getAuthenticatedPubkeys().size === 0
 }
 
