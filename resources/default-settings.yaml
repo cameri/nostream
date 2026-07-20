@@ -68,6 +68,11 @@ nip42:
     kinds:
       - 4 # NIP-04 encrypted direct messages
       - 1059 # NIP-59 gift wraps (NIP-17 private DMs, Marmot welcomes)
+nip43:
+  # NIP-43: invite-based relay membership. When enabled, only admitted members
+  # (users who claimed an invite code via a kind 28934 join request) may
+  # publish events. Enabling this on an open relay blocks all non-members.
+  enabled: false
 nip45:
   enabled: true
 nip50:
