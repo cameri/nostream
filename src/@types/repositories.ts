@@ -56,6 +56,7 @@ export interface IUserRepository {
   isVanished(pubkey: Pubkey, client?: DatabaseClient): Promise<boolean>
   setVanished(pubkey: Pubkey, vanished: boolean, client?: DatabaseClient): Promise<number>
   admitUser(pubkey: Pubkey, admittedAt: Date, client?: DatabaseClient): Promise<void>
+  revokeAdmission(pubkey: Pubkey, client?: DatabaseClient): Promise<number>
 }
 
 export interface INip05VerificationRepository {
@@ -72,4 +73,3 @@ export interface IInviteCodeRepository {
   findActiveCodes(limit?: number): Promise<InviteCode[]>
   deleteExpiredCodes(): Promise<number>
 }
-
