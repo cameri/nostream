@@ -30,6 +30,13 @@ export const buildAdminSessionCookieHeader = (
   return `admin_session=${token}; Path=${cookiePath}; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}${secure}`
 }
 
+export const buildAdminSessionClearCookieHeader = (request: IncomingMessage, settings: Settings): string => {
+  const cookiePath = joinPathPrefix(getPublicPathPrefix(request, settings), '/admin')
+  const secure = isSecureRequest(request, settings) ? '; Secure' : ''
+
+  return `admin_session=; Path=${cookiePath}; HttpOnly; SameSite=Strict; Max-Age=0${secure}`
+}
+
 export const createAdminSessionToken = (expiresAt: number): string => {
   const signature = hmacSha256(deriveFromSecret('admin-session'), `${expiresAt}`).toString('hex')
   return `${expiresAt}.${signature}`
