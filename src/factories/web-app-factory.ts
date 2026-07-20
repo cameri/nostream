@@ -15,7 +15,7 @@ export const createWebApp = (): Express => {
 
       const relayUrl = new URL(settings.info.relay_url)
       const webRelayUrl = new URL(relayUrl.toString())
-      webRelayUrl.protocol = relayUrl.protocol === 'wss:' ? 'https:' : ':'
+      webRelayUrl.protocol = relayUrl.protocol === 'wss:' ? 'https:' : 'http:'
 
       const directives = {
         'img-src': ["'self'", 'data:', 'https://cdn.zebedee.io/an/nostr/'],
