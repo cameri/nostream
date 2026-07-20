@@ -60,6 +60,14 @@ nip05:
   domainWhitelist: []
   # Block authors with NIP-05 at these domains
   domainBlacklist: []
+nip42:
+  # Only deliver these kinds to clients authenticated (NIP-42) as the event's
+  # author or a p-tagged recipient. Applies to REQ, live events and COUNT.
+  restrictedReads:
+    enabled: false
+    kinds:
+      - 4 # NIP-04 encrypted direct messages
+      - 1059 # NIP-59 gift wraps (NIP-17 private DMs, Marmot welcomes)
 nip45:
   enabled: true
 nip50:
