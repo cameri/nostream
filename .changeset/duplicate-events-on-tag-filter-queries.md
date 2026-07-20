@@ -9,4 +9,7 @@ fix: de-duplicate events returned by generic tag-filter subscriptions
 tag row for the same filter (e.g. `{"#p": ["a", "b"]}` matching an event tagged with
 both) was returned once per matching `event_tags` row, so subscribers received the
 same `EVENT` message multiple times. The query now selects `DISTINCT events.*` for
-tag-filtered queries so each stored event is returned at most once.
+tag-filtered queries so each stored event is returned at most once. This also covers
+generic tag filters combined with a NIP-50 `search` term (e.g.
+`{"search": "...", "#p": ["a", "b"]}`), which take the search branch and are now
+de-duplicated as well.

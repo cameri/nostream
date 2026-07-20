@@ -73,16 +73,17 @@ export class EventRepository implements IEventRepository {
         const maxLen = nip50Settings?.nip50?.maxQueryLength ?? DEFAULT_MAX_SEARCH_QUERY_LENGTH
         const searchQuery = currentFilter.search.trim().slice(0, maxLen)
         const limit = typeof currentFilter.limit === 'number' ? currentFilter.limit : DEFAULT_FILTER_LIMIT
-        builder
-          .select(
-            this.readReplicaDbClient.raw(
-              'events.*, ts_rank(to_tsvector(?::regconfig, event_content), plainto_tsquery(?::regconfig, ?)) AS search_rank',
-              [tsConfig, tsConfig, searchQuery],
-            ),
-          )
-          .limit(limit)
-          .orderBy('search_rank', 'DESC')
-          .orderBy('event_id', 'asc')
+        const searchSelection = this.readReplicaDbClient.raw(
+          'events.*, ts_rank(to_tsvector(?::regconfig, event_content), plainto_tsquery(?::regconfig, ?)) AS search_rank',
+          [tsConfig, tsConfig, searchQuery],
+        )
+        // De-duplicate rows multiplied by the event_tags left join when search is combined with a generic tag filter
+        if (isTagQuery) {
+          builder.distinct(searchSelection)
+        } else {
+          builder.select(searchSelection)
+        }
+        builder.limit(limit).orderBy('search_rank', 'DESC').orderBy('event_id', 'asc')
       } else if (typeof currentFilter.limit === 'number') {
         builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
       } else {

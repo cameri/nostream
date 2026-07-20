@@ -501,6 +501,18 @@ describe('EventRepository', () => {
         expect(query).to.include('"event_kind" in (1)')
       })
 
+      it('de-duplicates results when search is combined with a generic tag filter', () => {
+        const filters = [{ search: 'bitcoin', '#p': ['a', 'b'] }]
+
+        const query = searchEnabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.include('select distinct events.*')
+        expect(query).to.include('ts_rank(')
+        expect(query).to.include('left join "event_tags" on "events"."event_id" = "event_tags"."event_id"')
+        expect(query).to.include("plainto_tsquery('simple'::regconfig, 'bitcoin')")
+        expect(query).to.include("event_tags.tag_name = 'p'")
+      })
+
       it('ignores search filter when NIP-50 is disabled', () => {
         const disabledRepository = new EventRepository(dbClient, rrDbClient, () => ({
           nip50: { enabled: false },
