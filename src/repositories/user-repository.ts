@@ -113,6 +113,21 @@ export class UserRepository implements IUserRepository {
     return BigInt(user.balance)
   }
 
+  // Targeted update instead of upsert so admission revocation cannot clobber
+  // unrelated columns (is_vanished, tos_accepted_at) on the existing row.
+  public async revokeAdmission(pubkey: Pubkey, client: DatabaseClient = this.dbClient): Promise<number> {
+    logger('revoke admission: %s', pubkey)
+
+    const result = await client<DBUser>('users')
+      .where('pubkey', toBuffer(pubkey))
+      .update({
+        is_admitted: false,
+        updated_at: new Date(),
+      })
+
+    return typeof result === 'number' ? result : 0
+  }
+
   public async admitUser(pubkey: Pubkey, admittedAt: Date, client: DatabaseClient = this.dbClient): Promise<void> {
     logger('admit user: %s at %s', pubkey, admittedAt)
 

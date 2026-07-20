@@ -303,6 +303,16 @@ export interface WoTSettings {
   refreshIntervalHours: number
 }
 
+export interface Nip42RestrictedReads {
+  enabled: boolean
+  // Restricted kinds/ranges. Defaults to [4, 1059] when unset.
+  kinds?: (EventKinds | EventKindsRange)[]
+}
+
+export interface Nip42Settings {
+  restrictedReads?: Nip42RestrictedReads
+}
+
 export interface Nip43Settings {
   enabled: boolean
   inviteCodeExpiry?: number
@@ -321,6 +331,7 @@ export interface Settings {
   limits?: Limits
   mirroring?: Mirroring
   nip05?: Nip05Settings
+  nip42?: Nip42Settings
   nip43?: Nip43Settings
   nip45?: Nip45Settings
   nip50?: Nip50Settings

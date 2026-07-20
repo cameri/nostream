@@ -9,6 +9,7 @@ import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 import { createLogger } from '../factories/logger-factory'
 import { createClosedMessage, createCountResultMessage } from '../utils/messages'
+import { isCountAuthorized } from '../utils/nip42'
 
 const debug = createLogger('count-message-handler')
 
@@ -62,6 +63,11 @@ export class CountMessageHandler implements IMessageHandler {
       queryId.length > subscriptionLimits.maxSubscriptionIdLength
     ) {
       return `Query ID too long: Query ID must be less than or equal to ${subscriptionLimits.maxSubscriptionIdLength}`
+    }
+
+    // NIP-42: restricted-kind counts must be scoped to the client's own pubkeys.
+    if (!isCountAuthorized(this.settings(), filters, () => this.webSocket.getAuthenticatedPubkeys())) {
+      return 'auth-required: authentication is required to count these event kinds'
     }
   }
 }

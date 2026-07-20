@@ -293,6 +293,94 @@ describe('WebSocketAdapter', () => {
 
       expect(client.send).not.to.have.been.called
     })
+
+    it('does not send restricted-kind event to unauthenticated client', () => {
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      client.readyState = WebSocket.OPEN
+      adapter.onSubscribed('sub-1', [{ kinds: [1059] }])
+
+      const event = {
+        id: 'a'.repeat(64),
+        pubkey: 'b'.repeat(64),
+        kind: 1059,
+        content: 'sealed',
+        created_at: 1000000,
+        sig: 'c'.repeat(128),
+        tags: [['p', 'd'.repeat(64)]],
+      }
+
+      adapter.emit(WebSocketAdapterEvent.Event, event)
+
+      expect(client.send).not.to.have.been.called
+    })
+
+    it('does not send restricted-kind event to a client authenticated as somebody else', () => {
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      client.readyState = WebSocket.OPEN
+      adapter.addAuthenticatedPubkey('e'.repeat(64))
+      adapter.onSubscribed('sub-1', [{ kinds: [1059] }])
+
+      const event = {
+        id: 'a'.repeat(64),
+        pubkey: 'b'.repeat(64),
+        kind: 1059,
+        content: 'sealed',
+        created_at: 1000000,
+        sig: 'c'.repeat(128),
+        tags: [['p', 'd'.repeat(64)]],
+      }
+
+      adapter.emit(WebSocketAdapterEvent.Event, event)
+
+      expect(client.send).not.to.have.been.called
+    })
+
+    it('sends restricted-kind event to the authenticated recipient', () => {
+      const recipient = 'd'.repeat(64)
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      client.readyState = WebSocket.OPEN
+      adapter.addAuthenticatedPubkey(recipient)
+      adapter.onSubscribed('sub-1', [{ kinds: [1059] }])
+
+      const event = {
+        id: 'a'.repeat(64),
+        pubkey: 'b'.repeat(64),
+        kind: 1059,
+        content: 'sealed',
+        created_at: 1000000,
+        sig: 'c'.repeat(128),
+        tags: [['p', recipient]],
+      }
+
+      adapter.emit(WebSocketAdapterEvent.Event, event)
+
+      expect(client.send).to.have.been.calledOnce
+      const sent = JSON.parse(client.send.firstCall.args[0])
+      expect(sent[0]).to.equal('EVENT')
+      expect(sent[2]).to.deep.equal(event)
+    })
+
+    it('sends restricted-kind event to the authenticated author', () => {
+      const author = 'b'.repeat(64)
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      client.readyState = WebSocket.OPEN
+      adapter.addAuthenticatedPubkey(author)
+      adapter.onSubscribed('sub-1', [{ kinds: [4] }])
+
+      const event = {
+        id: 'a'.repeat(64),
+        pubkey: author,
+        kind: 4,
+        content: 'ciphertext',
+        created_at: 1000000,
+        sig: 'c'.repeat(128),
+        tags: [['p', 'd'.repeat(64)]],
+      }
+
+      adapter.emit(WebSocketAdapterEvent.Event, event)
+
+      expect(client.send).to.have.been.calledOnce
+    })
   })
 
   describe('onClientClose', () => {
@@ -421,6 +509,34 @@ describe('WebSocketAdapter', () => {
       await onMessage(Buffer.from(JSON.stringify(['EVENT', {}])))
 
       expect(client.send).to.have.been.called
+    })
+
+    it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
+      client.readyState = WebSocket.OPEN
+
+      const hitStub = sandbox.stub().resolves(true)
+
+      settingsFactory.returns({
+        network: { remoteIpHeader: '' },
+        limits: {
+          message: {
+            rateLimits: [
+              { period: 60000, rate: 1 },
+              { period: 180, rate: 3 },
+            ],
+            ipWhitelist: [],
+          },
+        },
+      })
+
+      slidingWindowRateLimiter.returns({ hit: hitStub })
+
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
+      const onMessage = messageCall.args[1]
+
+      await onMessage(Buffer.from(JSON.stringify(['EVENT', {}])))
+
+      expect(hitStub).to.have.been.calledOnce
     })
 
     it('does not rate limit when no rateLimits are configured', async () => {
