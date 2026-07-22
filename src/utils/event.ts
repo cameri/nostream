@@ -253,7 +253,7 @@ export const getEventExpiration = (event: Event): number | undefined => {
 
   const expirationTime = Number(rawExpirationTime)
 
-  if (Number.isSafeInteger(expirationTime) && Math.log10(expirationTime) < 10) {
+  if (Number.isSafeInteger(expirationTime) && expirationTime > 0) {
     return expirationTime
   }
 }

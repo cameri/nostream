@@ -691,6 +691,16 @@ describe('NIP-40', () => {
       event.tags = [['expiration', 'a']]
       expect(getEventExpiration(event)).to.be.undefined
     })
+
+    it('returns false if expiration is 0', () => {
+      event.tags = [['expiration', '0']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns true if expiration is a safe integer beyond year 2287', () => {
+      event.tags = [['expiration', '10000000000']]
+      expect(getEventExpiration(event)).to.equal(10000000000)
+    })
   })
 
   describe('isExpiredEvent', () => {
