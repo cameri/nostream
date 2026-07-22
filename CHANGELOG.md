@@ -1,5 +1,78 @@
 # nostream
 
+## 3.1.0
+
+### Minor Changes
+
+- [#641](https://github.com/cameri/nostream/pull/641) [`837540b`](https://github.com/cameri/nostream/commit/837540b1c5e557fd987fdb10af8a99bab953bdc6) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add disabled-by-default admin API with password auth, session, and health endpoints
+
+- [#666](https://github.com/cameri/nostream/pull/666) [`44f3bb4`](https://github.com/cameri/nostream/commit/44f3bb4a48d917ca3302ef464f32c52d17b1897e) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add admin observability dashboard with Grafana embed and provisioned metrics panels
+
+- [#653](https://github.com/cameri/nostream/pull/653) [`8ab4825`](https://github.com/cameri/nostream/commit/8ab482559fad7b50518984f4159af5b4071de547) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add OpenTelemetry metrics bootstrap with OTLP export for Prometheus
+
+- [#661](https://github.com/cameri/nostream/pull/661) [`237b1a4`](https://github.com/cameri/nostream/commit/237b1a4275fde23f842f6a2841218351f3964b60) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: instrument event and websocket handlers with OpenTelemetry metrics
+
+- [#662](https://github.com/cameri/nostream/pull/662) [`36d95cc`](https://github.com/cameri/nostream/commit/36d95ccd0ec21c1c33e4c75a72c4367756c1ce74) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add Prometheus-backed admin metrics SSE endpoint
+
+- [#587](https://github.com/cameri/nostream/pull/587) [`30fa252`](https://github.com/cameri/nostream/commit/30fa252afffa1e79ac704fb616a2833484b0177f) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - Add NIP-50 full-text search support with PostgreSQL `tsvector`/`GIN` indexing.
+
+  Clients can now include a `search` field in REQ filter objects to perform full-text
+  queries against event content. Results are ranked by relevance (`ts_rank`) instead
+  of the usual `created_at` ordering, per the NIP-50 specification.
+
+  Features:
+
+  - New `search` filter field accepted in REQ messages
+  - PostgreSQL GIN index on `to_tsvector('simple', event_content)` for fast full-text lookups
+  - Configurable text-search language (defaults to `simple`, supports `english`, `spanish`, etc.)
+  - Configurable max search query length for abuse prevention
+  - NIP-50 listed in NIP-11 relay information document
+  - Search can be combined with all existing filter fields (kinds, authors, tags, etc.)
+
+- [#702](https://github.com/cameri/nostream/pull/702) [`e172cce`](https://github.com/cameri/nostream/commit/e172cce3d7a4d025b3ecbc8a199f6ed8c1b0673c) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat(nip42): enforce authentication on reads for restricted event kinds (encrypted DMs, gift wraps) across REQ, live broadcasts and COUNT
+
+- [#650](https://github.com/cameri/nostream/pull/650) [`3461dfe`](https://github.com/cameri/nostream/commit/3461dfee95d6759a8a2a88ee2f3fbe88d1b3b002) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - Add NIP-43 invite code foundation: InviteCodeRepository with atomic claimCode, invite_codes migration, and event kind/tag constants.
+
+- [#676](https://github.com/cameri/nostream/pull/676) [`0bfa0b5`](https://github.com/cameri/nostream/commit/0bfa0b59b627e5a07c286f769d2ca3d83355bc57) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - Add NIP-43 join/leave request event strategies (kinds 28934/28936) with NIP-42 auth enforcement, created_at freshness validation, invite code claiming, and admission management. When `nip43.enabled` is set, publishing is restricted to admitted members even without payments enabled, and NIP-43 is advertised in the NIP-11 document (hidden when disabled). Join/leave update the admission cache so membership changes take effect immediately.
+
+- [#644](https://github.com/cameri/nostream/pull/644) [`2f6d773`](https://github.com/cameri/nostream/commit/2f6d77354cd150110c850e8d0a2601558742d3a6) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat: reject NIP-70 protected events and reposts embedding them
+
+- [#672](https://github.com/cameri/nostream/pull/672) [`595c0a6`](https://github.com/cameri/nostream/commit/595c0a625b53f854bbf020a82ec56d986b43bd9d) Thanks [@Ferryx349](https://github.com/Ferryx349)! - refactor: extract shared settings-config module and guided schema for admin settings editor foundation
+
+### Patch Changes
+
+- [#646](https://github.com/cameri/nostream/pull/646) [`eb64d8a`](https://github.com/cameri/nostream/commit/eb64d8a937a5a55f5bbd39ecabee84c3402c7101) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore(deps): bump js-yaml from 4.1.1 to 4.2.0
+
+- [#694](https://github.com/cameri/nostream/pull/694) [`7c4b728`](https://github.com/cameri/nostream/commit/7c4b728c99a9a56bfb3b31f18dff3aff2c5551df) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: de-duplicate events returned by generic tag-filter subscriptions
+
+  `EventRepository.findByFilters()` left-joins `event_tags` for generic tag filters
+  (`#e`, `#p`, etc.) without deduplicating the result. An event matching more than one
+  tag row for the same filter (e.g. `{"#p": ["a", "b"]}` matching an event tagged with
+  both) was returned once per matching `event_tags` row, so subscribers received the
+  same `EVENT` message multiple times. The query now selects `DISTINCT events.*` for
+  tag-filtered queries so each stored event is returned at most once. This also covers
+  generic tag filters combined with a NIP-50 `search` term (e.g.
+  `{"search": "...", "#p": ["a", "b"]}`), which take the search branch and are now
+  de-duplicated as well.
+
+- [#640](https://github.com/cameri/nostream/pull/640) [`ca23be1`](https://github.com/cameri/nostream/commit/ca23be1dcdd71becfb735f8a832b01176bf5bcc1) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - test: optimize nip05.spec.ts & nip03.spec.ts resource management
+
+  - Lift sinon stub to `before`/`after` in verifyNip05Identifier tests (create once, reset between tests)
+  - Extract SSRF guard callback once in `before` instead of per-test `beforeEach`
+  - Pre-build shared OTS buffers and attestations at module scope to eliminate redundant Buffer.concat calls
+  - Add shared event factory for extractNip05FromEvent tests
+
+- [#686](https://github.com/cameri/nostream/pull/686) [`cb7daf6`](https://github.com/cameri/nostream/commit/cb7daf61b2e4de33b84ec937ebdd739bce45d8cf) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: stop checking additional rate limit windows once a client is already rate-limited
+
+  `isRateLimited()` in `EventMessageHandler` and `WebSocketAdapter` looped through every
+  configured rate limit window even after one had already tripped, calling `rateLimiter.hit()`
+  (a Redis write) for each remaining window. Both now return as soon as the first exceeded
+  window is found, avoiding redundant Redis writes for clients that are already being limited.
+
+- [#684](https://github.com/cameri/nostream/pull/684) [`3648954`](https://github.com/cameri/nostream/commit/3648954659e206cc656e6be69d370bee72faa761) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: await Redis EXISTS call in RedisAdapter.hasKey() so it reflects actual key presence instead of always returning true
+
+- [#682](https://github.com/cameri/nostream/pull/682) [`dc78df5`](https://github.com/cameri/nostream/commit/dc78df5352603842de6692b04cec4f8d3441dace) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: prevent crash in NIP-11 relay information document when payments settings are absent
+
 ## 3.0.0
 
 ### Major Changes
