@@ -58,11 +58,12 @@
         <aside id="dashboard-nav" class="dashboard-nav" aria-hidden="true">
           <p class="admin-kicker mb-2"><span class="prompt-char">&gt;</span> Navigation</p>
           <button type="button" class="nav-item active" data-view="metrics-view">Metrics</button>
+          <button type="button" class="nav-item" data-view="settings-view">Settings</button>
         </aside>
 
         <div id="system-alert" class="system-alert d-none" role="status"></div>
 
-        <div id="metrics-view" class="dashboard-view">
+        <div id="metrics-view" class="dashboard-view active-view">
           <section class="dashboard-section">
             <h2 class="section-title">Health</h2>
             <div class="row g-2">
@@ -186,6 +187,39 @@
                 <div class="panel-card chart-panel overflow-hidden">
                   <div class="panel-header"><span class="module-code">CHT</span> CPU by worker</div>
                   <iframe class="grafana-frame" data-panel-id="10" title="CPU" loading="lazy" referrerpolicy="no-referrer"></iframe>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div id="settings-view" class="dashboard-view d-none">
+          <section class="dashboard-section">
+            <h2 class="section-title">Configuration<span class="sync-cursor" aria-hidden="true"></span></h2>
+            <div class="settings-toolbar d-flex flex-wrap gap-2 mb-3">
+              <button id="settings-validate-button" type="button" class="btn btn-console btn-sm btn-settings-validate">Validate all</button>
+              <button id="settings-preview-button" type="button" class="btn btn-console btn-sm btn-settings-preview">Refresh diff</button>
+              <button id="settings-apply-button" type="button" class="btn btn-console btn-sm btn-settings-apply" disabled>Apply staged changes</button>
+              <button id="settings-discard-button" type="button" class="btn btn-console btn-sm btn-settings-discard" disabled>Discard changes</button>
+              <button id="settings-restore-button" type="button" class="btn btn-console btn-sm btn-settings-restore">Restore backup</button>
+              <button id="settings-reload-button" type="button" class="btn btn-console btn-sm btn-settings-reload">Reload</button>
+            </div>
+            <div id="settings-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div id="settings-success" class="alert settings-success d-none small" role="status"></div>
+            <div id="settings-validation" class="settings-validation d-none small" role="status"></div>
+            <div class="settings-layout">
+              <div id="settings-category-list" class="settings-category-list panel-card" aria-label="Setting categories"></div>
+              <div id="settings-fields" class="settings-fields panel-card">
+                <p class="admin-muted small mb-0">Select a category to edit guided settings.</p>
+              </div>
+              <div id="settings-diff" class="settings-diff-header panel-card" aria-live="polite">
+                <div class="settings-diff-heading-row">
+                  <h3 class="settings-diff-heading">Preview diff</h3>
+                  <p id="settings-diff-summary" class="settings-diff-summary mb-0"></p>
+                </div>
+                <p class="settings-diff-note">Secrets redacted in API responses.</p>
+                <div id="settings-diff-content" class="settings-diff-content">
+                  <p class="settings-diff-empty admin-muted small mb-0">Edit a setting to preview changes here.</p>
                 </div>
               </div>
             </div>
