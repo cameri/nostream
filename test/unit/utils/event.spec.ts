@@ -701,6 +701,16 @@ describe('NIP-40', () => {
       event.tags = [['expiration', '10000000000']]
       expect(getEventExpiration(event)).to.equal(10000000000)
     })
+
+    it('returns true if expiration is the maximum representable Unix seconds timestamp', () => {
+      event.tags = [['expiration', '253402300799']]
+      expect(getEventExpiration(event)).to.equal(253402300799)
+    })
+
+    it('returns false if expiration looks like a millisecond-scale timestamp', () => {
+      event.tags = [['expiration', '1700000000000']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
   })
 
   describe('isExpiredEvent', () => {

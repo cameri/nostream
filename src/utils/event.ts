@@ -245,6 +245,11 @@ export const isExpiredEvent = (event: Event): boolean => {
   return expirationTime <= now
 }
 
+// 9999-12-31T23:59:59Z as Unix seconds. Millisecond-scale timestamps for any date
+// from 2001 onward are at least 13 digits, well past this ceiling, so this rejects
+// accidental millisecond values without capping legitimate far-future expirations.
+const MAX_EXPIRATION_TIME = 253402300799
+
 export const getEventExpiration = (event: Event): number | undefined => {
   const [, rawExpirationTime] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Expiration) ?? []
   if (!rawExpirationTime) {
@@ -253,7 +258,7 @@ export const getEventExpiration = (event: Event): number | undefined => {
 
   const expirationTime = Number(rawExpirationTime)
 
-  if (Number.isSafeInteger(expirationTime) && expirationTime > 0) {
+  if (Number.isSafeInteger(expirationTime) && expirationTime > 0 && expirationTime <= MAX_EXPIRATION_TIME) {
     return expirationTime
   }
 }
