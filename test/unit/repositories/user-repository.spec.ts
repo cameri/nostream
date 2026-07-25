@@ -327,4 +327,30 @@ describe('UserRepository', () => {
       ).to.be.rejectedWith(dbError)
     })
   })
+
+  describe('.revokeAdmission', () => {
+    it('updates only is_admitted and updated_at for the given pubkey', async () => {
+      const updateStub = sandbox.stub().resolves(1)
+      const whereStub = sandbox.stub().returns({ update: updateStub })
+      const client = sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient
+
+      const result = await repository.revokeAdmission(pubkeyHex, client)
+
+      expect(client).to.have.been.calledWith('users')
+      expect(whereStub).to.have.been.calledWith('pubkey', Buffer.from(pubkeyHex, 'hex'))
+      expect(updateStub.firstCall.args[0]).to.have.keys(['is_admitted', 'updated_at'])
+      expect(updateStub.firstCall.args[0].is_admitted).to.equal(false)
+      expect(result).to.equal(1)
+    })
+
+    it('returns 0 when the driver does not report affected rows', async () => {
+      const updateStub = sandbox.stub().resolves(undefined)
+      const whereStub = sandbox.stub().returns({ update: updateStub })
+      const client = sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient
+
+      const result = await repository.revokeAdmission(pubkeyHex, client)
+
+      expect(result).to.equal(0)
+    })
+  })
 })
