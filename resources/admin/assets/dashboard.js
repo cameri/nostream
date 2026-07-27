@@ -660,11 +660,9 @@
       }
     }
 
-    if (field.type === 'string' || field.type === 'select') {
-      if (!String(rawValue).trim()) {
-        return 'Value is required'
-      }
-    }
+    // Note: We remove the client-side required check for strings/selects
+    // because many metadata fields are optional and can be legitimately cleared.
+    // Server validation will enforce required constraints where necessary.
 
     return undefined
   }
