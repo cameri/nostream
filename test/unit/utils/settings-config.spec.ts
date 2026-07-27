@@ -1,12 +1,12 @@
 import { expect } from 'chai'
 
 import {
+  toCategoryLabel,
   getByPath,
   getTopLevelSettingCategories,
   parseTypedValue,
   parseValue,
   setByPath,
-  toCategoryLabel,
   validatePathAgainstDefaults,
   validateSettings,
 } from '../../../src/utils/settings-config'

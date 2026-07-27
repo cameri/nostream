@@ -4,6 +4,7 @@ import { Settings } from '../../@types/settings'
 import { IController } from '../../@types/controllers'
 import { adminSettingsPatchBodySchema } from '../../schemas/admin-settings-schema'
 import {
+  appendSettingsAuditLog,
   getByPath,
   loadMergedSettings,
   loadUserSettings,
@@ -26,33 +27,30 @@ export class PatchAdminSettingsController implements IController {
       return
     }
 
-    const { path, value } = validation.value
+    const changes = 'changes' in validation.value ? validation.value.changes : [validation.value]
+    const issues = changes.flatMap(({ path }) => {
+      if (isWriteProtectedSettingsPath(path)) {
+        return [{ path, message: 'Path is write-protected' }]
+      }
 
-    if (isWriteProtectedSettingsPath(path)) {
-      response
-        .status(400)
-        .setHeader('content-type', 'application/json')
-        .send({
-          error: 'Validation failed',
-          issues: [{ path, message: 'Path is write-protected' }],
-        })
-      return
-    }
+      return validatePathAgainstDefaults(path)
+    })
 
-    const pathIssues = validatePathAgainstDefaults(path)
-    if (pathIssues.length > 0) {
-      response
-        .status(400)
-        .setHeader('content-type', 'application/json')
-        .send({ error: 'Validation failed', issues: pathIssues })
+    if (issues.length > 0) {
+      response.status(400).setHeader('content-type', 'application/json').send({ error: 'Validation failed', issues })
       return
     }
 
     const userSettings = loadUserSettings() as unknown as Record<string, unknown>
-    const nextUserSettings = setByPath(userSettings, path, value)
-
+    const nextUserSettings = changes.reduce(
+      (settings, change) => setByPath(settings, change.path, change.value),
+      userSettings,
+    )
     const merged = loadMergedSettings() as unknown as Record<string, unknown>
-    const mergedNext = setByPath(merged, path, getByPath(nextUserSettings, path))
+    const mergedNext = changes.reduce(
+      (settings, change) => setByPath(settings, change.path, getByPath(nextUserSettings, change.path)),
+      merged,
+    )
     const validationIssues = validateSettings(mergedNext as unknown as Settings)
 
     if (validationIssues.length > 0) {
@@ -64,13 +62,31 @@ export class PatchAdminSettingsController implements IController {
     }
 
     saveSettings(nextUserSettings as unknown as Settings)
-
-    const updatedValue = redactSettingsValue(path, getByPath(nextUserSettings, path))
-
-    response.status(200).setHeader('content-type', 'application/json').send({
-      ok: true,
+    const updatedChanges = changes.map(({ path }) => ({
       path,
-      value: updatedValue,
+      value: redactSettingsValue(path, getByPath(nextUserSettings, path)),
+      reload: getSettingsReloadBehavior(path),
+    }))
+    appendSettingsAuditLog({
+      action: 'settings.updated',
+      changes: updatedChanges.map(({ path, reload }) => ({ path, reload })),
+      remoteAddress: request.ip,
     })
+
+    if (changes.length === 1 && !('changes' in validation.value)) {
+      const [change] = updatedChanges
+      response.status(200).setHeader('content-type', 'application/json').send({ ok: true, ...change })
+      return
+    }
+
+    response.status(200).setHeader('content-type', 'application/json').send({ ok: true, changes: updatedChanges })
   }
+}
+
+const getSettingsReloadBehavior = (path: string): 'hot-reload' | 'restart-required' => {
+  if (path.startsWith('workers.') || path.startsWith('payments') || path.startsWith('network.')) {
+    return 'restart-required'
+  }
+
+  return 'hot-reload'
 }
