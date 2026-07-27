@@ -11,6 +11,8 @@ Nostream needs.
 
 Rate limiting is implemented using a sliding window strategy, which uses Redis sorted sets to track request timestamps. This allows Nostream to accurately enforce rate limits over a rolling time window rather than a fixed one, preventing clients from bursting requests at window boundaries.
 
+When Redis is temporarily unavailable, Nostream keeps serving the relay and admin HTTP endpoints and treats rate-limiter Redis failures as fail-closed (events are rejected as rate-limited when the backend cannot be consulted). Admin health degrades accordingly (`redis.ok=false`), so operators can detect and recover Redis without taking the relay offline.
+
 ## Requirements
 
 - Redis 6.0 or higher (for ACL support)

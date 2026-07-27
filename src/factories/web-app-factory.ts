@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto'
 
 import { createSettings } from './settings-factory'
 import router from '../routes'
+import { getGrafanaFrameOrigin } from '../utils/admin-grafana'
 
 export const createWebApp = (): Express => {
   const app = express()
@@ -21,6 +22,7 @@ export const createWebApp = (): Express => {
         'img-src': ["'self'", 'data:', 'https://cdn.zebedee.io/an/nostr/'],
         'connect-src': ["'self'", settings.info.relay_url as string, webRelayUrl.toString()],
         'default-src': ["'self'"],
+        'frame-src': ["'self'", getGrafanaFrameOrigin()],
         'script-src-attr': [`'nonce-${nonce}'`],
         'script-src': [
           "'self'",

@@ -10,6 +10,7 @@ import { Nip05Verification } from '../../../src/@types/nip05'
 import { IMaintenanceService, IPaymentsService } from '../../../src/@types/services'
 import { Settings } from '../../../src/@types/settings'
 import { applyReverificationOutcome, MaintenanceWorker } from '../../../src/app/maintenance-worker'
+import * as metricsTelemetry from '../../../src/telemetry/metrics'
 import * as misc from '../../../src/utils/misc'
 import * as nip05Utils from '../../../src/utils/nip05'
 
@@ -499,6 +500,8 @@ describe('MaintenanceWorker', () => {
 
   describe('onExit', () => {
     it('calls close and then exits the process with code 0', async () => {
+      sandbox.stub(metricsTelemetry, 'shutdownMetricsTelemetry').resolves()
+
       fakeProcess.emit('SIGTERM')
       await new Promise((resolve) => setImmediate(resolve))
 

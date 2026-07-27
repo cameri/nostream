@@ -39,6 +39,30 @@ const toMetricValue = (value: number | undefined): number => {
   return value ?? 0
 }
 
+const emptyMetrics: AdminMetricsValues = {
+  eventsPerSecond: 0,
+  eventsRejectedPerSecond: 0,
+  eventsAcceptedTotal: 0,
+  eventsRejectedTotal: 0,
+  activeConnections: 0,
+  cpuLoadPercent: 0,
+  memoryUsedMb: 0,
+}
+
+export const createUnavailableAdminMetricsSnapshot = (error: string): AdminMetricsSnapshot => ({
+  timestamp: Date.now(),
+  status: 'unavailable',
+  metrics: { ...emptyMetrics },
+  health: {
+    database: { ok: false },
+    redis: { ok: false },
+  },
+  prometheus: {
+    available: false,
+    error,
+  },
+})
+
 let cachedSnapshot: AdminMetricsSnapshot | undefined
 let cachedAt = 0
 let snapshotInFlight: Promise<AdminMetricsSnapshot> | undefined

@@ -60,6 +60,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       Boolean(settings.payments?.feeSchedules?.admission?.some((feeSchedule) => feeSchedule.enabled))
     const hasWriteRestriction =
       hasAdmissionRestriction ||
+      settings.nip43?.enabled === true ||
       (eventLimits?.eventId?.minLeadingZeroBits ?? 0) > 0 ||
       (eventLimits?.pubkey?.minLeadingZeroBits ?? 0) > 0 ||
       (eventLimits?.pubkey?.whitelist?.length ?? 0) > 0 ||
@@ -78,7 +79,11 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       pubkey,
       ...(self !== undefined ? { self } : {}),
       contact,
-      supported_nips: packageJson.supportedNips,
+      // NIP-43: clients MUST only send join requests to relays advertising 43,
+      // so only advertise it when the feature is actually enabled
+      supported_nips: settings.nip43?.enabled === true
+        ? packageJson.supportedNips
+        : packageJson.supportedNips.filter((nip: number) => nip !== 43),
       supported_nip_extensions: packageJson.supportedNipExtensions,
       supported_mips: packageJson.supportedMips,
       software: packageJson.repository.url,
@@ -105,20 +110,22 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         search_supported: settings.nip50?.enabled ?? false,
       },
       payments_url: paymentsUrl.toString(),
-      fees: Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(
-        (prev, feeName) => {
-          const feeSchedules = settings.payments.feeSchedules[feeName] as FeeSchedule[]
+      fees: settings.payments
+        ? Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(
+            (prev, feeName) => {
+              const feeSchedules = settings.payments.feeSchedules[feeName] as FeeSchedule[]
 
-          return {
-            ...prev,
-            [feeName]: feeSchedules.reduce(
-              (fees, fee) => (fee.enabled ? [...fees, { amount: fee.amount, unit: 'msats' }] : fees),
-              [],
-            ),
-          }
-        },
-        {} as Record<string, { amount: number; unit: string }>,
-      ),
+              return {
+                ...prev,
+                [feeName]: feeSchedules.reduce(
+                  (fees, fee) => (fee.enabled ? [...fees, { amount: fee.amount, unit: 'msats' }] : fees),
+                  [],
+                ),
+              }
+            },
+            {} as Record<string, { amount: number | bigint; unit: string }[]>,
+          )
+        : {},
     }
 
     response

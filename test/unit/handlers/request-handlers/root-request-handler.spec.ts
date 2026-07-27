@@ -224,6 +224,16 @@ describe('rootRequestHandler', () => {
       const restrictedDoc = res.send.firstCall.args[0]
       expect(restrictedDoc.limitation.restricted_writes).to.equal(true)
     })
+
+    it('returns empty fees instead of crashing when the payments block is absent', () => {
+      const { payments: _payments, ...settingsWithoutPayments } = baseSettings
+      createSettingsStub.returns(settingsWithoutPayments)
+
+      expect(() => rootRequestHandler(req, res, next)).to.not.throw()
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.fees).to.deep.equal({})
+    })
   })
 
   describe('when serving HTML', () => {
