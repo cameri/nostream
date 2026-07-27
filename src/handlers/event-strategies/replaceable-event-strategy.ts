@@ -32,7 +32,10 @@ export class ReplaceableEventStrategy implements IEventStrategy<Event, Promise<v
           return
         }
 
-        this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, 'error: '))
+        this.webSocket.emit(
+          WebSocketAdapterEvent.Message,
+          createEventCommandResult(event.id, false, `error: ${error.message}`),
+        )
       }
     }
   }
