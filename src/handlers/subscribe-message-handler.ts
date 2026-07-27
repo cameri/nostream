@@ -3,10 +3,12 @@ import { anyPass, equals, isNil, map, omit, propSatisfies, uniqWith } from 'ramd
 import { pipeline } from 'stream/promises'
 
 import {
+  createClosedMessage,
   createEndOfStoredEventsNoticeMessage,
   createNoticeMessage,
   createOutgoingEventMessage,
 } from '../utils/messages'
+import { createReadAuthorizationGuard, isSubscriptionAuthRequired } from '../utils/nip42'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { isEventMatchingFilter, isExpiredEvent, toNostrEvent } from '../utils/event'
 import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
@@ -51,6 +53,16 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       return
     }
 
+    // NIP-42: close restricted-only subs from unauthenticated clients.
+    if (isSubscriptionAuthRequired(this.settings(), filters, () => this.webSocket.getAuthenticatedPubkeys())) {
+      logger('subscription %s with %o rejected: auth required', subscriptionId, filters)
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createClosedMessage(subscriptionId, 'auth-required: authentication is required to request these event kinds'),
+      )
+      return
+    }
+
     this.webSocket.emit(WebSocketAdapterEvent.Subscribe, subscriptionId, filters)
 
     await this.fetchAndSend(subscriptionId, filters)
@@ -70,6 +82,12 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       return true
     }
 
+    // NIP-42: drop restricted-kind events the client isn't authorized to read.
+    const isReadAuthorized = createReadAuthorizationGuard(
+      this.settings(),
+      () => this.webSocket.getAuthenticatedPubkeys(),
+    )
+
     const findEvents = this.eventRepository.findByFilters(filters).stream()
 
     // const abortableFindEvents = addAbortSignal(this.abortController.signal, findEvents)
@@ -80,6 +98,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
         streamFilter(propSatisfies(isNil, 'deleted_at')),
         streamMap(toNostrEvent),
         streamFilter(isTagUnexpired),
+        streamFilter(isReadAuthorized),
         streamFilter(isSubscribedToEvent),
         streamEach(sendEvent),
         streamEnd(sendEOSE),
