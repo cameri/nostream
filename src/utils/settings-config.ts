@@ -262,6 +262,10 @@ const pathExistsInSchema = (schema: unknown, tokens: PathToken[]): boolean => {
       return false
     }
 
+    if (current.length === 0) {
+      return true
+    }
+
     current = current[0]
   }
 
@@ -297,10 +301,58 @@ export const loadMergedSettings = (): Settings => {
   return mergeDeepRight(loadDefaults(), loadUserSettings()) as Settings
 }
 
+export const filterSettingsAgainstDefaults = (settings: unknown, defaults: unknown): unknown => {
+  if (Array.isArray(settings)) {
+    if (!Array.isArray(defaults)) {
+      return []
+    }
+    if (defaults.length === 0) {
+      return [...settings]
+    }
+
+    const itemSchema = defaults[0]
+    return settings.map((item) => filterSettingsAgainstDefaults(item, itemSchema))
+  }
+
+  if (isPlainObject(settings)) {
+    if (!isPlainObject(defaults)) {
+      return {}
+    }
+
+    const filtered: Record<string, unknown> = {}
+    for (const key of Object.keys(settings)) {
+      if (hasOwn(defaults, key) || key === 'passwordHash') {
+        // If it's a known non-schema key like passwordHash, we don't have a default schema for its children.
+        // We can pass {} to allow it to be preserved.
+        const defaultSubSchema = hasOwn(defaults, key)
+          ? (defaults as Record<string, unknown>)[key]
+          : {}
+
+        filtered[key] = filterSettingsAgainstDefaults(
+          (settings as Record<string, unknown>)[key],
+          defaultSubSchema
+        )
+      }
+    }
+    return filtered
+  }
+
+  return settings
+}
+
 export const saveSettings = (settings: Settings): void => {
   ensureSettingsExists()
   const serialized = yaml.dump(toSerializable(settings), { lineWidth: 120 })
-  fs.writeFileSync(getSettingsFilePath(), serialized, 'utf-8')
+  const settingsPath = getSettingsFilePath()
+  const backupPath = `${settingsPath}.${Date.now()}.bak`
+
+  if (fs.existsSync(settingsPath)) {
+    fs.copyFileSync(settingsPath, backupPath)
+  }
+
+  const tempPath = `${settingsPath}.${Date.now()}.tmp`
+  fs.writeFileSync(tempPath, serialized, 'utf-8')
+  fs.renameSync(tempPath, settingsPath)
 }
 
 export const getTopLevelSettingCategories = (): string[] => {
