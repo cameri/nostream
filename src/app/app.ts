@@ -52,7 +52,7 @@ export class App implements IRunnable {
     const port = process.env.RELAY_PORT ? Number(process.env.RELAY_PORT) : 8008
 
     const logCentered = (input: string, width: number) => {
-      const start = (width - input.length) >> 1
+      const start = Math.max(0, (width - input.length) >> 1)
       logger.info(' '.repeat(start), input)
     }
     logCentered(`v${packageJson.version}`, width)
