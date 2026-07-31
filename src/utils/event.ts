@@ -245,10 +245,10 @@ export const isExpiredEvent = (event: Event): boolean => {
   return expirationTime <= now
 }
 
-// 9999-12-31T23:59:59Z as Unix seconds. Millisecond-scale timestamps for any date
-// from 2001 onward are at least 13 digits, well past this ceiling, so this rejects
-// accidental millisecond values without capping legitimate far-future expirations.
-const MAX_EXPIRATION_TIME = 253402300799
+// Postgres int4 max (2038-01-19T03:14:07Z). events.expires_at is a signed 32-bit
+// integer column — Knex's .unsigned() is a no-op on Postgres — so anything beyond
+// this would fail the INSERT and get silently dropped instead of stored.
+const MAX_EXPIRATION_TIME = 2147483647
 
 export const getEventExpiration = (event: Event): number | undefined => {
   const [, rawExpirationTime] = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Expiration) ?? []
