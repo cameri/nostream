@@ -88,7 +88,7 @@ describe('ReplaceableEventStrategy', () => {
     })
 
     it('rejects if unable to upsert event', async () => {
-      const error = new Error()
+      const error = new Error('connection lost')
       eventRepositoryUpsertStub.rejects(error)
 
       await strategy.execute(event)
@@ -98,7 +98,7 @@ describe('ReplaceableEventStrategy', () => {
         'OK',
         'id',
         false,
-        'error: ',
+        'error: connection lost',
       ])
     })
   })
