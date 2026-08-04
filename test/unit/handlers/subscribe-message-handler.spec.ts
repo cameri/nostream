@@ -252,6 +252,19 @@ describe('SubscribeMessageHandler', () => {
       await expect(promise).to.eventually.be.rejectedWith(error)
       expect(destroySpy).to.have.been.called
     })
+
+    it('aborts and destroys the event stream when abort() is called', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+
+      const destroySpy = sandbox.spy(stream, 'destroy')
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      handler.abort()
+
+      await expect(promise).to.eventually.be.rejected
+      expect(destroySpy).to.have.been.called
+    })
   })
 
   describe('.isClientSubscribedToEvent', () => {

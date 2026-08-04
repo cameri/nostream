@@ -1,5 +1,5 @@
 import { anyPass, equals, isNil, map, omit, propSatisfies, uniqWith } from 'ramda'
-// import { addAbortSignal } from 'stream'
+import { addAbortSignal } from 'stream'
 import { pipeline } from 'stream/promises'
 
 import {
@@ -22,18 +22,18 @@ import { WebSocketAdapterEvent } from '../constants/adapter'
 const logger = createLogger('subscribe-message-handler')
 
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
-  //private readonly abortController: AbortController
+  private readonly abortController: AbortController
 
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
   ) {
-    //this.abortController = new AbortController()
+    this.abortController = new AbortController()
   }
 
   public abort(): void {
-    //this.abortController.abort()
+    this.abortController.abort()
   }
 
   public async handleMessage(message: SubscribeMessage): Promise<void> {
@@ -72,11 +72,11 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
     const findEvents = this.eventRepository.findByFilters(filters).stream()
 
-    // const abortableFindEvents = addAbortSignal(this.abortController.signal, findEvents)
+    const abortableFindEvents = addAbortSignal(this.abortController.signal, findEvents)
 
     try {
       await pipeline(
-        findEvents,
+        abortableFindEvents,
         streamFilter(propSatisfies(isNil, 'deleted_at')),
         streamMap(toNostrEvent),
         streamFilter(isTagUnexpired),
