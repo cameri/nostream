@@ -16,8 +16,8 @@ The following environment variables can be set:
 | DB_USER                          | PostgreSQL Username            | nostr_ts_relay         |
 | DB_PASSWORD                      | PostgreSQL Password              | nostr_ts_relay         |
 | DB_NAME                          | PostgreSQL Database name         | nostr_ts_relay         |
-| DB_MIN_POOL_SIZE                 | Min. connections per worker      | 16                     |
-| DB_MAX_POOL_SIZE                 | Max. connections per worker      | 32                     |
+| DB_MIN_POOL_SIZE                 | Min. connections per worker      | 0                      |
+| DB_MAX_POOL_SIZE                 | Max. connections per worker      | 3                      |
 | DB_ACQUIRE_CONNECTION_TIMEOUT    | New connection timeout (ms)      | 60000                  |
 | READ_REPLICA_ENABLED             | Read Replica (RR) Toggle         | 'false'                |
 | READ_REPLICAS                    | Number of read replicas (RR0, RR1, ..., RRn) | 2          |
@@ -26,24 +26,24 @@ The following environment variables can be set:
 | RR0_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
 | RR0_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
 | RR0_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
-| RR0_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
-| RR0_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RR0_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 0                      |
+| RR0_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 3                      |
 | RR0_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
 | RR1_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
 | RR1_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
 | RR1_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
 | RR1_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
 | RR1_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
-| RR1_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
-| RR1_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RR1_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 0                      |
+| RR1_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 3                      |
 | RR1_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
 | RRn_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
 | RRn_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
 | RRn_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
 | RRn_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
 | RRn_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
-| RRn_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
-| RRn_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RRn_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 0                      |
+| RRn_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 3                      |
 | RRn_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
 | TOR_HOST                         | Tor Hostname                     |                        |
 | TOR_CONTROL_PORT                 | Tor control Port                 | 9051                   |
@@ -184,6 +184,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
+| nip42.restrictedReads.enabled               | Enable NIP-42 auth-based read filtering. When enabled, events of the restricted kinds are only delivered to clients that have authenticated as the event's author or as a pubkey listed in the event's `p` tags. Applies to stored events (REQ), live broadcasts and COUNT queries. Subscriptions that exclusively target restricted kinds from unauthenticated clients are closed with an `auth-required:` reason. Defaults to false. |
+| nip42.restrictedReads.kinds                 | List of event kinds (or `[min, max]` ranges) protected by auth-based read filtering. Defaults to `[4, 1059]` (NIP-04 encrypted direct messages and NIP-59 gift wraps). |
 | nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
 | nip50.enabled                               | Enable or disable NIP-50 full-text search. Defaults to false. When enabled, clients can include a `search` field in REQ filters to perform text queries against event content. Requires the GIN full-text index migration. |
 | nip50.language                              | PostgreSQL text-search configuration name. Defaults to `simple` (language-agnostic tokenization). Set to `english`, `spanish`, etc. for stemming support. See [PostgreSQL text search configurations](https://www.postgresql.org/docs/current/textsearch-configuration.html). **Note:** The GIN index migration is built with the `simple` configuration. If you change this value, you must manually rebuild the index: `DROP INDEX CONCURRENTLY events_content_fts_idx; CREATE INDEX CONCURRENTLY events_content_fts_idx ON events USING gin (to_tsvector('<your_language>', event_content));` — otherwise the planner cannot use the index and queries fall back to sequential scans. |
