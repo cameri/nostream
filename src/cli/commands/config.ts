@@ -3,15 +3,15 @@ import yaml from 'js-yaml'
 
 import {
   getByPath,
-  loadDefaults,
   loadMergedSettings,
   loadUserSettings,
   parseTypedValue,
   saveSettings,
   setByPath,
+  toCategoryLabel,
   validatePathAgainstDefaults,
   validateSettings,
-} from '../utils/config'
+} from '../../utils/settings-config'
 import {
   isSecretEnvKey,
   isSupportedEnvKey,
@@ -55,14 +55,6 @@ const serialize = (value: unknown): string => {
   }
 
   return yaml.dump(value, { lineWidth: 120 }).trimEnd()
-}
-
-const formatLabel = (key: string): string => {
-  return key
-    .split(/[_\-.]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
 }
 
 const restartRelay = async (): Promise<number> => {
@@ -181,7 +173,6 @@ export const runConfigValidate = async (): Promise<number> => {
 
   return 1
 }
-
 export const runConfigEnvList = async (options: { showSecrets?: boolean } = {}): Promise<number> => {
   const values = readEnvValues()
   const entries = Object.entries(values).sort(([a], [b]) => a.localeCompare(b))
@@ -250,13 +241,8 @@ export const runConfigEnvValidate = async (): Promise<number> => {
 
   logError('Environment validation failed:')
   for (const issue of issues) {
-    logError(`- ${formatLabel(issue.path)} (${issue.path}): ${issue.message}`)
+    logError(`- ${toCategoryLabel(issue.path)} (${issue.path}): ${issue.message}`)
   }
 
   return 1
-}
-
-export const getConfigTopLevelCategories = (): string[] => {
-  const defaults = loadDefaults() as unknown as Record<string, unknown>
-  return Object.keys(defaults)
 }

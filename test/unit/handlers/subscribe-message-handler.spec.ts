@@ -104,6 +104,47 @@ describe('SubscribeMessageHandler', () => {
       expect(webSocketOnSubscribeStub).to.have.been.calledOnceWith(subscriptionId)
       expect(fetchAndSendStub).to.have.been.calledOnceWithExactly(subscriptionId, filters)
     })
+
+    it('closes subscription with auth-required if unauthenticated client requests only restricted kinds', async () => {
+      canSubscribeStub.returns(undefined)
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set())
+      message = [MessageType.REQ, subscriptionId, { kinds: [4, 1059] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        'CLOSED',
+        subscriptionId,
+        'auth-required: authentication is required to request these event kinds',
+      ])
+      expect(webSocketOnSubscribeStub).not.to.have.been.called
+      expect(fetchAndSendStub).not.to.have.been.called
+    })
+
+    it('accepts restricted-kind subscription if client is authenticated', async () => {
+      canSubscribeStub.returns(undefined)
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set(['a'.repeat(64)]))
+      message = [MessageType.REQ, subscriptionId, { kinds: [1059] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(webSocketOnSubscribeStub).to.have.been.calledOnceWith(subscriptionId)
+      expect(fetchAndSendStub).to.have.been.calledOnce
+    })
+
+    it('accepts mixed-kind subscription from unauthenticated client', async () => {
+      canSubscribeStub.returns(undefined)
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set())
+      message = [MessageType.REQ, subscriptionId, { kinds: [1, 1059] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(webSocketOnSubscribeStub).to.have.been.calledOnceWith(subscriptionId)
+      expect(fetchAndSendStub).to.have.been.calledOnce
+    })
   })
 
   describe('#fetchAndSend', () => {
@@ -208,6 +249,70 @@ describe('SubscribeMessageHandler', () => {
         eventWithFutureExpiration,
       ])
       expect(webSocketOnMessageStub).to.have.been.calledWithExactly(['EOSE', subscriptionId])
+    })
+
+    it('does not send restricted-kind events to unauthenticated clients', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set())
+
+      const restrictedEvent: Event = {
+        ...event,
+        kind: 4,
+        tags: [['p', 'f'.repeat(64)] as any],
+      }
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      stream.write(toDbEvent(restrictedEvent))
+      stream.end()
+
+      await promise
+
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(['EOSE', subscriptionId])
+    })
+
+    it('sends restricted-kind events to the authenticated recipient', async () => {
+      const recipient = 'f'.repeat(64)
+      isClientSubscribedToEventStub.returns(always(true))
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set([recipient]))
+
+      const restrictedEvent: Event = {
+        ...event,
+        kind: 1059,
+        tags: [['p', recipient] as any],
+      }
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      stream.write(toDbEvent(restrictedEvent))
+      stream.end()
+
+      await promise
+
+      expect(webSocketOnMessageStub).to.have.been.calledWithExactly(['EVENT', subscriptionId, restrictedEvent])
+    })
+
+    it('sends restricted-kind events to the authenticated author', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+      settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
+      webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set([event.pubkey]))
+
+      const restrictedEvent: Event = {
+        ...event,
+        kind: 4,
+        tags: [['p', 'f'.repeat(64)] as any],
+      }
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      stream.write(toDbEvent(restrictedEvent))
+      stream.end()
+
+      await promise
+
+      expect(webSocketOnMessageStub).to.have.been.calledWithExactly(['EVENT', subscriptionId, restrictedEvent])
     })
 
     it('sends EOSE', async () => {

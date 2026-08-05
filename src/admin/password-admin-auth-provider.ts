@@ -5,6 +5,7 @@ import { Settings } from '../@types/settings'
 import { adminLoginBodySchema } from '../schemas/admin-login-schema'
 import { verifyAdminPasswordHash, verifyPlaintextPassword } from '../utils/admin-password'
 import {
+  buildAdminSessionClearCookieHeader,
   buildAdminSessionCookieHeader,
   createAdminSessionToken,
   getAdminSessionTokenFromRequest,
@@ -44,6 +45,16 @@ export class PasswordAdminAuthProvider implements IAdminAuthProvider {
     } catch {
       response.status(500).setHeader('content-type', 'application/json').send({ error: 'Internal Server Error' })
     }
+  }
+
+  public handleLogout(request: Request, response: Response): void {
+    const currentSettings = this.settings()
+
+    response
+      .status(200)
+      .setHeader('content-type', 'application/json')
+      .setHeader('Set-Cookie', buildAdminSessionClearCookieHeader(request, currentSettings))
+      .send({ authenticated: false })
   }
 
   public isRequestAuthenticated(request: Request): boolean {

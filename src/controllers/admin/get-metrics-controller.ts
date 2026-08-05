@@ -2,9 +2,23 @@ import { Request, Response } from 'express'
 
 import { IController } from '../../@types/controllers'
 import { createLogger } from '../../factories/logger-factory'
-import { collectAdminMetricsSnapshot, getAdminMetricsSseIntervalMs } from '../../utils/admin-metrics'
+import {
+  collectAdminMetricsSnapshot,
+  createUnavailableAdminMetricsSnapshot,
+  getAdminMetricsSseIntervalMs,
+} from '../../utils/admin-metrics'
+import { delayMs } from '../../utils/misc'
 
 const logger = createLogger('get-admin-metrics-controller')
+
+const getAdminMetricsSnapshotTimeoutMs = (): number => {
+  const timeoutCandidate = Number(process.env.ADMIN_METRICS_SNAPSHOT_TIMEOUT_MS)
+  if (!Number.isFinite(timeoutCandidate) || timeoutCandidate < 1000) {
+    return 10000
+  }
+
+  return timeoutCandidate
+}
 
 export class GetAdminMetricsController implements IController {
   public async handleRequest(request: Request, response: Response): Promise<void> {
@@ -36,7 +50,12 @@ export class GetAdminMetricsController implements IController {
       inFlight = true
 
       try {
-        const snapshot = await collectAdminMetricsSnapshot()
+        const snapshot = await Promise.race([
+          collectAdminMetricsSnapshot(),
+          delayMs(getAdminMetricsSnapshotTimeoutMs()).then(() => {
+            throw new Error('admin metrics snapshot timed out')
+          }),
+        ])
         if (closed || response.writableEnded) {
           return
         }
@@ -45,7 +64,8 @@ export class GetAdminMetricsController implements IController {
       } catch (error) {
         logger.warn('failed to collect admin metrics snapshot: %o', error)
         if (!closed && !response.writableEnded) {
-          response.write(`event: error\ndata: ${JSON.stringify({ error: 'failed to collect metrics' })}\n\n`)
+          const fallbackSnapshot = createUnavailableAdminMetricsSnapshot('failed to collect metrics')
+          response.write(`data: ${JSON.stringify(fallbackSnapshot)}\n\n`)
         }
       } finally {
         inFlight = false
