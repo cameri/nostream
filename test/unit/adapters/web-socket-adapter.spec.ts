@@ -768,13 +768,18 @@ describe('WebSocketAdapter', () => {
       expect(pubkeys.size).to.equal(0)
     })
 
-    it('addAuthenticatedPubkey adds a pubkey', () => {
+    it('addAuthenticatedPubkey adds a pubkey without rotating the challenge', () => {
       const pubkey = 'a'.repeat(64)
+      const previousChallenge = adapter.getChallenge()
+      const sendCallsBefore = (client.send as Sinon.SinonStub).callCount
+
       adapter.addAuthenticatedPubkey(pubkey)
 
       const pubkeys = adapter.getAuthenticatedPubkeys()
       expect(pubkeys.size).to.equal(1)
       expect(pubkeys.has(pubkey)).to.be.true
+      expect(adapter.getChallenge()).to.equal(previousChallenge)
+      expect((client.send as Sinon.SinonStub).callCount).to.equal(sendCallsBefore)
     })
 
     it('addAuthenticatedPubkey supports multiple pubkeys', () => {
@@ -787,6 +792,8 @@ describe('WebSocketAdapter', () => {
       expect(pubkeys.size).to.equal(2)
       expect(pubkeys.has(pk1)).to.be.true
       expect(pubkeys.has(pk2)).to.be.true
+      // Same challenge must remain valid for subsequent AUTH messages (NIP-42).
+      expect(adapter.getChallenge()).to.equal(adapter.getChallenge())
     })
 
     it('addAuthenticatedPubkey deduplicates same pubkey', () => {
@@ -796,6 +803,18 @@ describe('WebSocketAdapter', () => {
 
       const pubkeys = adapter.getAuthenticatedPubkeys()
       expect(pubkeys.size).to.equal(1)
+    })
+
+    it('expires authenticated pubkeys after sessionTtl', () => {
+      const clock = sandbox.useFakeTimers({ now: 1_700_000_000_000 })
+      settingsFactory.returns({ nip42: { sessionTtl: 60 } })
+
+      const pubkey = 'a'.repeat(64)
+      adapter.addAuthenticatedPubkey(pubkey)
+      expect(adapter.getAuthenticatedPubkeys().has(pubkey)).to.be.true
+
+      clock.tick(60_000)
+      expect(adapter.getAuthenticatedPubkeys().has(pubkey)).to.be.false
     })
 
     it('generates different challenges for different adapters', () => {

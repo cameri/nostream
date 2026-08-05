@@ -1,4 +1,3 @@
-import { randomBytes } from 'crypto'
 import cluster from 'cluster'
 import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
@@ -19,6 +18,7 @@ import { recordWebsocketConnectionClosed, recordWebsocketConnectionOpened } from
 import { Event } from '../@types/event'
 import { getRemoteAddress } from '../utils/http'
 import { createReadAuthorizationGuard } from '../utils/nip42'
+import { Nip42SessionManager } from '../utils/nip42-session'
 import { IRateLimiter } from '../@types/utils'
 import { isEventMatchingFilter } from '../utils/event'
 import { messageSchema } from '../schemas/message-schema'
@@ -35,8 +35,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private clientAddress: SocketAddress
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
-  private readonly challenge: string
-  private readonly authenticatedPubkeys: Set<string>
+  private readonly session: Nip42SessionManager
 
   public constructor(
     private readonly client: WebSocket,
@@ -86,10 +85,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     logger('client %s connected from %s', this.clientId, this.clientAddress.address)
     recordWebsocketConnectionOpened()
 
-    // NIP-42
-    this.challenge = randomBytes(32).toString('base64url')
-    this.authenticatedPubkeys = new Set()
-    this.sendMessage(createAuthChallengeMessage(this.challenge))
+    // NIP-42: challenge-response session for this socket
+    this.session = new Nip42SessionManager(() => this.settings().nip42?.sessionTtl)
+    this.sendMessage(createAuthChallengeMessage(this.session.getChallenge()))
   }
 
   public getClientId(): string {
@@ -122,7 +120,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public onSendEvent(event: Event): void {
     // NIP-42: don't broadcast restricted-kind events to unauthorized clients.
-    const isReadAuthorized = createReadAuthorizationGuard(this.settings(), () => this.authenticatedPubkeys)
+    const isReadAuthorized = createReadAuthorizationGuard(this.settings(), () => this.session.getAuthenticatedPubkeys())
     if (!isReadAuthorized(event)) {
       return
     }
@@ -160,15 +158,17 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   // NIP-42
   public getChallenge(): string {
-    return this.challenge
+    return this.session.getChallenge()
   }
 
   public getAuthenticatedPubkeys(): ReadonlySet<string> {
-    return new Set(this.authenticatedPubkeys)
+    return this.session.getAuthenticatedPubkeys()
   }
 
   public addAuthenticatedPubkey(pubkey: string): void {
-    this.authenticatedPubkeys.add(pubkey)
+    // Keep the existing challenge. NIP-42 allows multiple AUTH events on one
+    // socket to share it; rotating here would break pipelined multi-pubkey auth.
+    this.session.authenticate(pubkey)
   }
 
   private async onClientMessage(raw: Buffer) {
@@ -271,7 +271,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     recordWebsocketConnectionClosed()
     this.alive = false
     this.subscriptions.clear()
-    this.authenticatedPubkeys.clear()
+    this.session.clear()
 
     const handlers = abortableMessageHandlers.get(this.client)
     if (Array.isArray(handlers) && handlers.length) {

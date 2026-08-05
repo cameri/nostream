@@ -1,7 +1,7 @@
-const { expect } = require('chai')
-const fs = require('fs')
-const path = require('path')
-const sinon = require('sinon')
+import { expect } from 'chai'
+import fs from 'fs'
+import path from 'path'
+import sinon from 'sinon'
 
 const infoCommand = require('../../../dist/src/cli/commands/info.js')
 const configUtils = require('../../../dist/src/cli/utils/config.js')

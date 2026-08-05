@@ -310,6 +310,16 @@ export interface Nip42RestrictedReads {
 }
 
 export interface Nip42Settings {
+  /**
+   * When true, clients must NIP-42 AUTH as the event author before publishing.
+   * Also advertised via NIP-11 `limitation.auth_required`.
+   */
+  authRequired?: boolean
+  /**
+   * Seconds after which an authenticated pubkey must AUTH again on this socket.
+   * Omit, 0, or negative = session lasts for the connection lifetime (NIP-42 default).
+   */
+  sessionTtl?: number
   restrictedReads?: Nip42RestrictedReads
 }
 

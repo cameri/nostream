@@ -61,6 +61,12 @@ nip05:
   # Block authors with NIP-05 at these domains
   domainBlacklist: []
 nip42:
+  # When true, clients must AUTH (NIP-42) as the event author before publishing.
+  # Advertised in NIP-11 as limitation.auth_required.
+  authRequired: false
+  # Seconds after which an authenticated session on a socket expires and must
+  # AUTH again. 0 (default) keeps the session for the connection lifetime.
+  sessionTtl: 0
   # Only deliver these kinds to clients authenticated (NIP-42) as the event's
   # author or a p-tagged recipient. Applies to REQ, live events and COUNT.
   restrictedReads:

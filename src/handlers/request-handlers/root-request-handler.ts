@@ -8,6 +8,7 @@ import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
 import { getPublicPathPrefix, joinPathPrefix } from '../../utils/http'
 import packageJson from '../../../package.json'
+import { isAuthRequired } from '../../utils/nip42'
 
 export const hasExplicitNostrJsonAcceptHeader = (request: Request): boolean => {
   const acceptHeader = request.headers.accept
@@ -101,7 +102,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
           ? content[0].maxLength // best guess since we have per-kind limits
           : content?.maxLength,
         min_pow_difficulty: eventLimits?.eventId?.minLeadingZeroBits,
-        auth_required: false,
+        auth_required: isAuthRequired(settings),
         payment_required: settings.payments?.enabled,
         created_at_lower_limit: createdAtLimits?.maxNegativeDelta,
         created_at_upper_limit: createdAtLimits?.maxPositiveDelta,

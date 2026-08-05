@@ -211,6 +211,19 @@ describe('rootRequestHandler', () => {
       expect(doc.limitation.search_supported).to.equal(true)
     })
 
+    it('sets limitation.auth_required from nip42.authRequired', () => {
+      createSettingsStub.returns(baseSettings)
+      rootRequestHandler(req, res, next)
+      expect(res.send.firstCall.args[0].limitation.auth_required).to.equal(false)
+
+      createSettingsStub.returns({
+        ...baseSettings,
+        nip42: { authRequired: true },
+      })
+      rootRequestHandler(req, res, next)
+      expect(res.send.secondCall.args[0].limitation.auth_required).to.equal(true)
+    })
+
     it('sets limitation.restricted_writes based on active write restrictions', () => {
       rootRequestHandler(req, res, next)
       const defaultDoc = res.send.firstCall.args[0]
