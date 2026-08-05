@@ -1,12 +1,14 @@
-import { anyPass, equals, isNil, map, propSatisfies, uniqWith } from 'ramda'
-// import { addAbortSignal } from 'stream'
+import { anyPass, equals, isNil, map, omit, propSatisfies, uniqWith } from 'ramda'
+import { addAbortSignal } from 'stream'
 import { pipeline } from 'stream/promises'
 
 import {
+  createClosedMessage,
   createEndOfStoredEventsNoticeMessage,
   createNoticeMessage,
   createOutgoingEventMessage,
 } from '../utils/messages'
+import { createReadAuthorizationGuard, isSubscriptionAuthRequired } from '../utils/nip42'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { isEventMatchingFilter, isExpiredEvent, toNostrEvent } from '../utils/event'
 import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
@@ -22,28 +24,42 @@ import { WebSocketAdapterEvent } from '../constants/adapter'
 const logger = createLogger('subscribe-message-handler')
 
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
-  //private readonly abortController: AbortController
+  private readonly abortController: AbortController
 
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
   ) {
-    //this.abortController = new AbortController()
+    this.abortController = new AbortController()
   }
 
   public abort(): void {
-    //this.abortController.abort()
+    this.abortController.abort()
   }
 
   public async handleMessage(message: SubscribeMessage): Promise<void> {
     const subscriptionId = message[1]
-    const filters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
+    const rawFilters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
+
+    // NIP-50: strip search from filters when disabled so isEventMatchingFilter ignores it
+    const nip50Enabled = this.settings()?.nip50?.enabled ?? false
+    const filters = nip50Enabled ? rawFilters : rawFilters.map(omit(['search'])) as SubscriptionFilter[]
 
     const reason = this.canSubscribe(subscriptionId, filters)
     if (reason) {
       logger('subscription %s with %o rejected: %s', subscriptionId, filters, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Subscription rejected: ${reason}`))
+      return
+    }
+
+    // NIP-42: close restricted-only subs from unauthenticated clients.
+    if (isSubscriptionAuthRequired(this.settings(), filters, () => this.webSocket.getAuthenticatedPubkeys())) {
+      logger('subscription %s with %o rejected: auth required', subscriptionId, filters)
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createClosedMessage(subscriptionId, 'auth-required: authentication is required to request these event kinds'),
+      )
       return
     }
 
@@ -66,16 +82,23 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       return true
     }
 
+    // NIP-42: drop restricted-kind events the client isn't authorized to read.
+    const isReadAuthorized = createReadAuthorizationGuard(
+      this.settings(),
+      () => this.webSocket.getAuthenticatedPubkeys(),
+    )
+
     const findEvents = this.eventRepository.findByFilters(filters).stream()
 
-    // const abortableFindEvents = addAbortSignal(this.abortController.signal, findEvents)
+    const abortableFindEvents = addAbortSignal(this.abortController.signal, findEvents)
 
     try {
       await pipeline(
-        findEvents,
+        abortableFindEvents,
         streamFilter(propSatisfies(isNil, 'deleted_at')),
         streamMap(toNostrEvent),
         streamFilter(isTagUnexpired),
+        streamFilter(isReadAuthorized),
         streamFilter(isSubscribedToEvent),
         streamEach(sendEvent),
         streamEnd(sendEOSE),

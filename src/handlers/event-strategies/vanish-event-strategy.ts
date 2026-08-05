@@ -1,5 +1,5 @@
 import { IEventRepository, IUserRepository } from '../../@types/repositories'
-import { createCommandResult } from '../../utils/messages'
+import { createEventCommandResult } from '../../telemetry/event-metrics'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { EventKinds } from '../../constants/base'
@@ -25,6 +25,6 @@ export class VanishEventStrategy implements IEventStrategy<Event, Promise<void>>
 
     await this.userRepository.setVanished(event.pubkey, true)
 
-    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, true, count ? '' : 'duplicate:'))
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, true, count ? '' : 'duplicate:'))
   }
 }

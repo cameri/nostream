@@ -30,8 +30,8 @@ import {
 } from '../utils/event'
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
-import { CacheAdmissionState } from '../constants/caching'
-import { createCommandResult } from '../utils/messages'
+import { admissionCacheKey, CacheAdmissionState } from '../constants/caching'
+import { createEventCommandResult } from '../telemetry/event-metrics'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
 import { ICacheAdapter } from '../@types/adapters'
@@ -63,13 +63,13 @@ export class EventMessageHandler implements IMessageHandler {
     let reason = await this.isEventValid(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     if (isExpiredEvent(event)) {
       logger('event %s rejected: expired')
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'event is expired'))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, 'event is expired'))
       return
     }
 
@@ -79,7 +79,7 @@ export class EventMessageHandler implements IMessageHandler {
       logger('event %s rejected: rate-limited')
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
-        createCommandResult(event.id, false, 'rate-limited: slow down'),
+        createEventCommandResult(event.id, false, 'rate-limited: slow down'),
       )
       return
     }
@@ -87,35 +87,35 @@ export class EventMessageHandler implements IMessageHandler {
     reason = this.canAcceptEvent(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.isProtectedEventBlocked(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.isBlockedByRequestToVanish(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.isUserAdmitted(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
     reason = await this.checkNip05Verification(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, reason))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
       return
     }
 
@@ -124,7 +124,7 @@ export class EventMessageHandler implements IMessageHandler {
     if (typeof strategy?.execute !== 'function') {
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
-        createCommandResult(event.id, false, 'error: event not supported'),
+        createEventCommandResult(event.id, false, 'error: event not supported'),
       )
       return
     }
@@ -134,7 +134,7 @@ export class EventMessageHandler implements IMessageHandler {
       this.processNip05Metadata(event)
     } catch (error) {
       logger.error('error handling message', message, error)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(event.id, false, 'error: unable to process event'))
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, 'error: unable to process event'))
     }
   }
 
@@ -242,7 +242,9 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     const checkEmbedded = async (evt: Event, depth = 0): Promise<boolean> => {
-      if (depth > 10) return false // Prevent infinite loops or excessive recursion
+      if (depth > 10) {
+        return false // Prevent infinite loops or excessive recursion
+      }
       if ((evt.kind === EventKinds.REPOST || evt.kind === EventKinds.GENERIC_REPOST) && evt.content.length > 0) {
         try {
           const embedded = attemptValidation(eventSchema)(JSON.parse(evt.content)) as Event
@@ -349,32 +351,46 @@ export class EventMessageHandler implements IMessageHandler {
       return rateLimiter.hit(key, 1, { period, rate })
     }
 
-    let limited = false
     for (const { rate, period, kinds } of rateLimits) {
       // skip if event kind does not apply
       if (Array.isArray(kinds) && !kinds.some(isEventKindOrRangeMatch(event))) {
         continue
       }
 
-      const isRateLimited = await hit({ period, rate, kinds })
+      let isRateLimited = false
+      try {
+        isRateLimited = await hit({ period, rate, kinds })
+      } catch (error) {
+        // Fail closed when the rate limiter backend is unavailable.
+        logger('rate limiter unavailable for %s (%d/%d): %o', event.pubkey, rate, period, error)
+        return true
+      }
 
       if (isRateLimited) {
         logger('rate limited %s: %d events / %d ms exceeded', event.pubkey, rate, period)
 
-        limited = true
+        return true
       }
     }
 
-    return limited
+    return false
   }
 
   protected async isUserAdmitted(event: Event): Promise<string | undefined> {
     const currentSettings = this.settings()
-    if (!currentSettings.payments?.enabled) {
+    const paymentsEnabled = currentSettings.payments?.enabled === true
+    // NIP-43: membership mode gates writes on admission even without payments
+    const nip43Enabled = currentSettings.nip43?.enabled === true
+    if (!paymentsEnabled && !nip43Enabled) {
       return
     }
 
     if (this.getRelayPublicKey() === event.pubkey) {
+      return
+    }
+
+    // NIP-43: join/leave requests must bypass admission — they ARE the admission flow
+    if (event.kind === EventKinds.NIP43_JOIN_REQUEST || event.kind === EventKinds.NIP43_LEAVE_REQUEST) {
       return
     }
 
@@ -383,12 +399,19 @@ export class EventMessageHandler implements IMessageHandler {
       !feeSchedule.whitelists?.pubkeys?.includes(event.pubkey) &&
       !feeSchedule.whitelists?.event_kinds?.some(isEventKindOrRangeMatch(event))
 
-    const feeSchedules = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
-    if (!Array.isArray(feeSchedules) || !feeSchedules.length) {
+    const feeSchedules = paymentsEnabled
+      ? currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
+      : undefined
+    const admissionFeeRequired = Array.isArray(feeSchedules) && feeSchedules.length > 0
+    if (!admissionFeeRequired && !nip43Enabled) {
       return
     }
 
-    const cacheKey = `${event.pubkey}:is-admitted`
+    const notAdmittedReason = nip43Enabled
+      ? 'restricted: pubkey not admitted; send a join request (kind 28934) with a valid invite code'
+      : 'blocked: pubkey not admitted'
+
+    const cacheKey = admissionCacheKey(event.pubkey)
 
     try {
       const cachedValue = await this.cache.getKey(cacheKey)
@@ -398,7 +421,7 @@ export class EventMessageHandler implements IMessageHandler {
       }
       if (cachedValue === CacheAdmissionState.BLOCKED_NOT_ADMITTED) {
         logger('cache hit for %s admission: blocked', event.pubkey)
-        return 'blocked: pubkey not admitted'
+        return notAdmittedReason
       }
       if (cachedValue === CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE) {
         logger('cache hit for %s admission: insufficient balance', event.pubkey)
@@ -411,10 +434,10 @@ export class EventMessageHandler implements IMessageHandler {
     const user = await this.userRepository.findByPubkey(event.pubkey)
     if (!user || !user.isAdmitted) {
       this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_NOT_ADMITTED, 60)
-      return 'blocked: pubkey not admitted'
+      return notAdmittedReason
     }
 
-    const minBalance = currentSettings.limits?.event?.pubkey?.minBalance ?? 0n
+    const minBalance = paymentsEnabled ? currentSettings.limits?.event?.pubkey?.minBalance ?? 0n : 0n
     if (minBalance > 0n && user.balance < minBalance) {
       this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE, 60)
       return 'blocked: insufficient balance'
@@ -448,6 +471,12 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (this.getRelayPublicKey() === event.pubkey) {
+      return
+    }
+
+    // NIP-43: join/leave requests bypass NIP-05 — a new user won't have a
+    // verification record yet, and requiring one would block the join flow.
+    if (event.kind === EventKinds.NIP43_JOIN_REQUEST || event.kind === EventKinds.NIP43_LEAVE_REQUEST) {
       return
     }
 

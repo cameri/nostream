@@ -192,6 +192,25 @@ describe('rootRequestHandler', () => {
       expect(doc.limitation.default_limit).to.equal(DEFAULT_FILTER_LIMIT)
     })
 
+    it('sets limitation.search_supported to false when NIP-50 is disabled', () => {
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.limitation.search_supported).to.equal(false)
+    })
+
+    it('sets limitation.search_supported to true when NIP-50 is enabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        nip50: { enabled: true, language: 'simple', maxQueryLength: 256 },
+      })
+
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.limitation.search_supported).to.equal(true)
+    })
+
     it('sets limitation.restricted_writes based on active write restrictions', () => {
       rootRequestHandler(req, res, next)
       const defaultDoc = res.send.firstCall.args[0]
@@ -204,6 +223,16 @@ describe('rootRequestHandler', () => {
 
       const restrictedDoc = res.send.firstCall.args[0]
       expect(restrictedDoc.limitation.restricted_writes).to.equal(true)
+    })
+
+    it('returns empty fees instead of crashing when the payments block is absent', () => {
+      const { payments: _payments, ...settingsWithoutPayments } = baseSettings
+      createSettingsStub.returns(settingsWithoutPayments)
+
+      expect(() => rootRequestHandler(req, res, next)).to.not.throw()
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.fees).to.deep.equal({})
     })
   })
 

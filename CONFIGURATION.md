@@ -16,8 +16,8 @@ The following environment variables can be set:
 | DB_USER                          | PostgreSQL Username            | nostr_ts_relay         |
 | DB_PASSWORD                      | PostgreSQL Password              | nostr_ts_relay         |
 | DB_NAME                          | PostgreSQL Database name         | nostr_ts_relay         |
-| DB_MIN_POOL_SIZE                 | Min. connections per worker      | 16                     |
-| DB_MAX_POOL_SIZE                 | Max. connections per worker      | 32                     |
+| DB_MIN_POOL_SIZE                 | Min. connections per worker      | 0                      |
+| DB_MAX_POOL_SIZE                 | Max. connections per worker      | 3                      |
 | DB_ACQUIRE_CONNECTION_TIMEOUT    | New connection timeout (ms)      | 60000                  |
 | READ_REPLICA_ENABLED             | Read Replica (RR) Toggle         | 'false'                |
 | READ_REPLICAS                    | Number of read replicas (RR0, RR1, ..., RRn) | 2          |
@@ -26,24 +26,24 @@ The following environment variables can be set:
 | RR0_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
 | RR0_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
 | RR0_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
-| RR0_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
-| RR0_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RR0_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 0                      |
+| RR0_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 3                      |
 | RR0_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
 | RR1_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
 | RR1_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
 | RR1_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
 | RR1_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
 | RR1_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
-| RR1_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
-| RR1_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RR1_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 0                      |
+| RR1_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 3                      |
 | RR1_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
 | RRn_DB_HOST                      | PostgresSQL Hostname (RR)        |                        |
 | RRn_DB_PORT                      | PostgreSQL Port (RR)             | 5432                   |
 | RRn_DB_USER                      | PostgreSQL Username (RR)         | nostr_ts_relay         |
 | RRn_DB_PASSWORD                  | PostgreSQL Password (RR)         | nostr_ts_relay         |
 | RRn_DB_NAME                      | PostgreSQL Database name (RR)    | nostr_ts_relay         |
-| RRn_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 16                     |
-| RRn_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 32                     |
+| RRn_DB_MIN_POOL_SIZE             | Min. connections per worker (RR) | 0                      |
+| RRn_DB_MAX_POOL_SIZE             | Max. connections per worker (RR) | 3                      |
 | RRn_DB_ACQUIRE_CONNECTION_TIMEOUT| New connection timeout (ms) (RR) | 60000                  |
 | TOR_HOST                         | Tor Hostname                     |                        |
 | TOR_CONTROL_PORT                 | Tor control Port                 | 9051                   |
@@ -54,6 +54,12 @@ The following environment variables can be set:
 | REDIS_PORT                       | Redis Port                       | 6379                   |
 | REDIS_USER                       | Redis User                       | default                |
 | REDIS_PASSWORD                   | Redis Password                   | nostr_ts_relay         |
+| PROMETHEUS_URL                   | Prometheus base URL for admin metrics queries | http://127.0.0.1:9090 |
+| PROMETHEUS_QUERY_TIMEOUT_MS      | Timeout for each Prometheus admin metrics query (ms) | 5000 |
+| ADMIN_METRICS_SSE_INTERVAL_MS    | Interval between `/admin/metrics` SSE snapshots (ms) | 5000 |
+| ADMIN_METRICS_SNAPSHOT_TIMEOUT_MS| Timeout for collecting one `/admin/metrics` snapshot (ms) | 10000 |
+| ADMIN_DEPENDENCY_PING_TIMEOUT_MS | Timeout for admin DB/Redis dependency pings (ms) | 3000 |
+| GRAFANA_URL                      | Grafana base URL for admin dashboard embeds      | http://127.0.0.1:7777 |
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
@@ -143,8 +149,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
 | limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
+| limits.event.createdAt.maxNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.createdAt.minNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
@@ -178,7 +184,12 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
+| nip42.restrictedReads.enabled               | Enable NIP-42 auth-based read filtering. When enabled, events of the restricted kinds are only delivered to clients that have authenticated as the event's author or as a pubkey listed in the event's `p` tags. Applies to stored events (REQ), live broadcasts and COUNT queries. Subscriptions that exclusively target restricted kinds from unauthenticated clients are closed with an `auth-required:` reason. Defaults to false. |
+| nip42.restrictedReads.kinds                 | List of event kinds (or `[min, max]` ranges) protected by auth-based read filtering. Defaults to `[4, 1059]` (NIP-04 encrypted direct messages and NIP-59 gift wraps). |
 | nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
+| nip50.enabled                               | Enable or disable NIP-50 full-text search. Defaults to false. When enabled, clients can include a `search` field in REQ filters to perform text queries against event content. Requires the GIN full-text index migration. |
+| nip50.language                              | PostgreSQL text-search configuration name. Defaults to `simple` (language-agnostic tokenization). Set to `english`, `spanish`, etc. for stemming support. See [PostgreSQL text search configurations](https://www.postgresql.org/docs/current/textsearch-configuration.html). **Note:** The GIN index migration is built with the `simple` configuration. If you change this value, you must manually rebuild the index: `DROP INDEX CONCURRENTLY events_content_fts_idx; CREATE INDEX CONCURRENTLY events_content_fts_idx ON events USING gin (to_tsvector('<your_language>', event_content));` — otherwise the planner cannot use the index and queries fall back to sequential scans. |
+| nip50.maxQueryLength                        | Maximum length of the search query string. Queries exceeding this are truncated. Defaults to 256. |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |

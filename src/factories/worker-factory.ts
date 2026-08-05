@@ -9,6 +9,7 @@ import { createLogger } from './logger-factory'
 import { createSettings } from '../factories/settings-factory'
 import { createWebApp } from './web-app-factory'
 import { EventRepository } from '../repositories/event-repository'
+import { InviteCodeRepository } from '../repositories/invite-code-repository'
 import { Nip05VerificationRepository } from '../repositories/nip05-verification-repository'
 import { UserRepository } from '../repositories/user-repository'
 import { webSocketAdapterFactory } from './websocket-adapter-factory'
@@ -19,9 +20,10 @@ const logger = createLogger('worker-factory')
 export const workerFactory = (): AppWorker => {
   const dbClient = getMasterDbClient()
   const readReplicaDbClient = getReadReplicaDbClient()
-  const eventRepository = new EventRepository(dbClient, readReplicaDbClient)
+  const eventRepository = new EventRepository(dbClient, readReplicaDbClient, createSettings)
   const userRepository = new UserRepository(dbClient, eventRepository)
   const nip05VerificationRepository = new Nip05VerificationRepository(dbClient)
+  const inviteCodeRepository = new InviteCodeRepository(dbClient)
 
   const settings = createSettings()
 
@@ -63,7 +65,7 @@ export const workerFactory = (): AppWorker => {
   const adapter = new WebSocketServerAdapter(
     server,
     webSocketServer,
-    webSocketAdapterFactory(eventRepository, userRepository, nip05VerificationRepository),
+    webSocketAdapterFactory(eventRepository, userRepository, nip05VerificationRepository, inviteCodeRepository),
     createSettings,
   )
 

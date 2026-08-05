@@ -4,6 +4,7 @@ import express from 'express'
 import Sinon from 'sinon'
 
 import * as getAdminHealthControllerFactory from '../../../src/factories/controllers/get-admin-health-controller-factory'
+import * as getAdminMetricsControllerFactory from '../../../src/factories/controllers/get-admin-metrics-controller-factory'
 import { hashAdminPassword } from '../../../src/utils/admin-password'
 import * as adminRateLimitMiddleware from '../../../src/handlers/request-handlers/admin-rate-limit-middleware'
 import * as rateLimiterMiddleware from '../../../src/handlers/request-handlers/rate-limiter-middleware'
@@ -13,6 +14,7 @@ describe('admin router', () => {
   const originalSecret = process.env.SECRET
   const originalAdminPassword = process.env.ADMIN_PASSWORD
   let createGetAdminHealthControllerStub: Sinon.SinonStub
+  let createGetAdminMetricsControllerStub: Sinon.SinonStub
   let createSettingsStub: Sinon.SinonStub
   let rateLimiterMiddlewareStub: Sinon.SinonStub
   let adminRateLimitMiddlewareStub: Sinon.SinonStub
@@ -48,6 +50,18 @@ describe('admin router', () => {
           )
       },
     } as any)
+    createGetAdminMetricsControllerStub = Sinon.stub(
+      getAdminMetricsControllerFactory,
+      'createGetAdminMetricsController',
+    ).returns({
+      handleRequest: async (_request: any, response: any) => {
+        response
+          .status(200)
+          .setHeader('content-type', 'text/event-stream; charset=utf-8')
+          .write('data: {"timestamp":1,"status":"ok"}\n\n')
+        response.end()
+      },
+    } as any)
     createSettingsStub = Sinon.stub(settingsFactory, 'createSettings').returns(settings as any)
     const passthrough = async (_request: any, _response: any, next: any) => {
       next()
@@ -61,6 +75,10 @@ describe('admin router', () => {
     )
     const router = loadAdminRouter()
     const app = express()
+    app.use((request, response, next) => {
+      response.locals.nonce = 'test-admin-nonce'
+      next()
+    })
     app.use('/admin', router)
 
     server = await new Promise((resolve) => {
@@ -72,6 +90,7 @@ describe('admin router', () => {
 
   const stopServer = async () => {
     createGetAdminHealthControllerStub?.restore()
+    createGetAdminMetricsControllerStub?.restore()
     createSettingsStub?.restore()
     rateLimiterMiddlewareStub?.restore()
     adminRateLimitMiddlewareStub?.restore()
@@ -120,10 +139,26 @@ describe('admin router', () => {
   it('returns 404 when admin is disabled', async () => {
     const baseUrl = await startServer({ admin: { enabled: false } })
 
-    const response = await axios.get(`${baseUrl}/health`, { validateStatus: () => true })
+    const healthResponse = await axios.get(`${baseUrl}/health`, { validateStatus: () => true })
+    const dashboardResponse = await axios.get(`${baseUrl}/`, { validateStatus: () => true })
 
-    expect(response.status).to.equal(404)
-    expect(response.data).to.equal('Not Found')
+    expect(healthResponse.status).to.equal(404)
+    expect(dashboardResponse.status).to.equal(404)
+    expect(healthResponse.data).to.equal('Not Found')
+    expect(rateLimiterMiddlewareStub.calledTwice).to.be.true
+  })
+
+  it('serves the dashboard shell when admin is enabled', async () => {
+    const baseUrl = await startServer({ admin: { enabled: true }, info: { name: 'Test Relay' } })
+
+    const response = await axios.get(`${baseUrl}/`, { validateStatus: () => true })
+
+    expect(response.status).to.equal(200)
+    expect(response.headers['content-type']).to.include('text/html')
+    expect(response.data).to.include('Test Relay')
+    expect(response.data).to.include('admin/assets/dashboard.js')
+    expect(response.data).to.include('grafana-frame')
+    expect(response.data).to.include('nostream-overview')
     expect(rateLimiterMiddlewareStub.calledOnce).to.be.true
   })
 
@@ -132,10 +167,12 @@ describe('admin router', () => {
 
     const sessionResponse = await axios.get(`${baseUrl}/session`, { validateStatus: () => true })
     const healthResponse = await axios.get(`${baseUrl}/health`, { validateStatus: () => true })
+    const metricsResponse = await axios.get(`${baseUrl}/metrics`, { validateStatus: () => true })
 
     expect(sessionResponse.status).to.equal(401)
     expect(healthResponse.status).to.equal(401)
-    expect(rateLimiterMiddlewareStub.calledTwice).to.be.true
+    expect(metricsResponse.status).to.equal(401)
+    expect(rateLimiterMiddlewareStub.callCount).to.equal(3)
   })
 
   it('rejects invalid login credentials', async () => {
@@ -229,9 +266,18 @@ describe('admin router', () => {
     expect(healthResponse.status).to.equal(200)
     expect(healthResponse.data).to.include.keys('status', 'uptimeSeconds', 'worker', 'database', 'redis')
 
-    expect(rateLimiterMiddlewareStub.callCount).to.equal(3)
+    const metricsResponse = await axios.get(`${baseUrl}/metrics`, {
+      headers: { cookie },
+      validateStatus: () => true,
+      responseType: 'text',
+    })
+    expect(metricsResponse.status).to.equal(200)
+    expect(metricsResponse.headers['content-type']).to.include('text/event-stream')
+    expect(metricsResponse.data).to.include('"timestamp":1')
+
+    expect(rateLimiterMiddlewareStub.callCount).to.equal(4)
     expect(adminLoginRateLimitMiddlewareStub.calledOnce).to.be.true
-    expect(adminRateLimitMiddlewareStub.calledTwice).to.be.true
+    expect(adminRateLimitMiddlewareStub.callCount).to.equal(3)
   })
 
   it('authenticates with passwordHash from settings', async () => {
