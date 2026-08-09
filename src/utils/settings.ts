@@ -110,7 +110,6 @@ export class SettingsStatic {
     const basePath = SettingsStatic.getSettingsFileBasePath()
     const defaultsFilePath = SettingsStatic.getDefaultSettingsFilePath()
     const fileType = SettingsStatic.settingsFileType(basePath)
-    const settingsFilePath = join(basePath, `settings.${fileType}`)
 
     const reload = () => {
       logger('reloading settings')
@@ -118,6 +117,12 @@ export class SettingsStatic {
       SettingsStatic.createSettings()
     }
 
-    return [fs.watch(defaultsFilePath, 'utf8', reload), fs.watch(settingsFilePath, 'utf8', reload)]
+    const watchSettingsDirectory = (_eventType: string, filename: string | Buffer | null) => {
+      if (filename?.toString() === `settings.${fileType}`) {
+        reload()
+      }
+    }
+
+    return [fs.watch(defaultsFilePath, 'utf8', reload), fs.watch(basePath, 'utf8', watchSettingsDirectory)]
   }
 }
