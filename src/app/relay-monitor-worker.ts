@@ -4,7 +4,7 @@ import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 import { filterValidProbeTargets, resolveProbeTargets } from '../utils/relay-probe-targets'
-import { deriveRelayProbeRunStatus } from '../utils/relay-probe-snapshot'
+import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
 import { runProbe } from '../utils/relay-probe'
 import { ProbeOptions, ProbeResult } from '../utils/relay-probe/types'
 
@@ -124,7 +124,7 @@ export class RelayMonitorWorker implements IRunnable {
     const snapshot: RelayProbeRunSnapshot = {
       runAt: new Date().toISOString(),
       targets: valid,
-      results,
+      results: serializeProbeResults(results),
       status: deriveRelayProbeRunStatus(results),
     }
 

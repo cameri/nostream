@@ -1,5 +1,11 @@
 import { ICacheAdapter } from '../@types/adapters'
-import { IRelayProbeSnapshotStore, RelayProbeRunSnapshot } from '../@types/relay-probe-snapshot'
+import {
+  IRelayProbeSnapshotStore,
+  ProbeRunStatusInput,
+  RelayProbeRunSnapshot,
+  StoredProbeResult,
+} from '../@types/relay-probe-snapshot'
+import { ProbeResult } from './relay-probe/types'
 
 export const RELAY_PROBE_SNAPSHOT_KEY = 'nip66:snapshot:latest'
 
@@ -9,6 +15,10 @@ const jsonReplacer = (_key: string, value: unknown): unknown => {
   }
 
   return value
+}
+
+export const serializeProbeResults = (results: ProbeResult[]): StoredProbeResult[] => {
+  return JSON.parse(JSON.stringify(results, jsonReplacer)) as StoredProbeResult[]
 }
 
 export class RelayProbeSnapshotStore implements IRelayProbeSnapshotStore {
@@ -29,9 +39,7 @@ export class RelayProbeSnapshotStore implements IRelayProbeSnapshotStore {
   }
 }
 
-export const deriveRelayProbeRunStatus = (
-  results: RelayProbeRunSnapshot['results'],
-): RelayProbeRunSnapshot['status'] => {
+export const deriveRelayProbeRunStatus = (results: ProbeRunStatusInput[]): RelayProbeRunSnapshot['status'] => {
   if (results.length === 0) {
     return 'failed'
   }

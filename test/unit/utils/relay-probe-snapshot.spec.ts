@@ -7,6 +7,7 @@ import {
   deriveRelayProbeRunStatus,
   RelayProbeSnapshotStore,
   RELAY_PROBE_SNAPSHOT_KEY,
+  serializeProbeResults,
 } from '../../../src/utils/relay-probe-snapshot'
 import { ProbeResult } from '../../../src/utils/relay-probe/types'
 
@@ -47,7 +48,7 @@ describe('relay-probe-snapshot', () => {
     const snapshot: RelayProbeRunSnapshot = {
       runAt: '2026-01-01T00:00:00.000Z',
       targets: ['wss://relay.example.com'],
-      results: [sampleResult('ok')],
+      results: serializeProbeResults([sampleResult('ok')]),
       status: 'ok',
     }
 
@@ -60,13 +61,23 @@ describe('relay-probe-snapshot', () => {
     const loaded = await store.getLatest()
 
     expect(cache.setKey).to.have.been.calledOnceWith(RELAY_PROBE_SNAPSHOT_KEY, Sinon.match.string, 7200)
-    expect(loaded).to.deep.equal(JSON.parse(JSON.stringify(snapshot, (_key, value) => (value instanceof Date ? value.toISOString() : value))))
+    expect(loaded).to.deep.equal(snapshot)
+    expect(loaded?.results[0].checkedAt).to.equal('2026-01-01T00:00:00.000Z')
+  })
+
+  it('serializes probe result dates to ISO strings', () => {
+    const stored = serializeProbeResults([sampleResult('ok')])
+
+    expect(stored[0].checkedAt).to.equal('2026-01-01T00:00:00.000Z')
   })
 
   it('derives run status from ws RTT probe results', () => {
-    expect(deriveRelayProbeRunStatus([sampleResult('ok')])).to.equal('ok')
-    expect(deriveRelayProbeRunStatus([sampleResult('error')])).to.equal('failed')
-    expect(deriveRelayProbeRunStatus([sampleResult('ok'), sampleResult('error')])).to.equal('partial')
+    const storedOk = serializeProbeResults([sampleResult('ok')])
+    const storedError = serializeProbeResults([sampleResult('error')])
+
+    expect(deriveRelayProbeRunStatus(storedOk)).to.equal('ok')
+    expect(deriveRelayProbeRunStatus(storedError)).to.equal('failed')
+    expect(deriveRelayProbeRunStatus([...storedOk, ...storedError])).to.equal('partial')
     expect(deriveRelayProbeRunStatus([])).to.equal('failed')
   })
 })
