@@ -140,7 +140,7 @@ describe('nip98', () => {
         nowSeconds: now,
       })
 
-      expect(result).to.deep.equal({ ok: false, reason: 'invalid authorization scheme' })
+      expect(result).to.deep.equal({ ok: false, reason: 'invalid authorization header' })
     })
 
     it('rejects invalid base64 tokens', async () => {
@@ -151,7 +151,7 @@ describe('nip98', () => {
         nowSeconds: now,
       })
 
-      expect(result).to.deep.equal({ ok: false, reason: 'invalid authorization encoding' })
+      expect(result).to.deep.equal({ ok: false, reason: 'invalid authorization header' })
     })
 
     it('rejects tokens with internal whitespace instead of stripping it', async () => {
@@ -164,7 +164,7 @@ describe('nip98', () => {
         nowSeconds: now,
       })
 
-      expect(result).to.deep.equal({ ok: false, reason: 'invalid authorization encoding' })
+      expect(result).to.deep.equal({ ok: false, reason: 'invalid authorization header' })
     })
 
     it('rejects invalid event json', async () => {

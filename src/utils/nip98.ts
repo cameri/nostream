@@ -9,13 +9,12 @@ import { isEventIdValid, isEventSignatureValid } from './event'
 // NIP-98 suggests a ~60s window for kind 27235 auth events.
 export const DEFAULT_NIP98_MAX_SKEW_SECONDS = 60
 
-// A signed kind-27235 event is typically ~1–2KB encoded. Cap well above that to
-// reject pathological Authorization headers before JSON.parse / crypto work.
-export const DEFAULT_NIP98_MAX_AUTHORIZATION_HEADER_LENGTH = 8192
+// A signed kind-27235 event is typically ~1–2KB encoded. Cap at 2KB (strict)
+// so oversized Authorization headers are rejected before JSON.parse / crypto work.
+export const DEFAULT_NIP98_MAX_AUTHORIZATION_HEADER_LENGTH = 2048
 
-const NOSTR_AUTH_SCHEME = /^Nostr$/i
+const NOSTR_AUTHORIZATION_HEADER = /^Nostr [A-Za-z0-9+/]+={0,2}$/i
 const LOWER_HEX_64 = /^[0-9a-f]{64}$/
-const BASE64_TOKEN = /^[A-Za-z0-9+/]+={0,2}$/
 
 // Lean NIP-01 shape only — avoids eventSchema superRefine (reactions, geohash, etc.).
 const nip98EventSchema = z
@@ -136,18 +135,13 @@ const parseAuthorizationEventJson = (
   }
 
   const trimmed = authorizationHeader.trim()
-  const spaceIndex = trimmed.indexOf(' ')
-  if (spaceIndex <= 0) {
+  if (!NOSTR_AUTHORIZATION_HEADER.test(trimmed)) {
     return fail('invalid authorization header')
   }
 
-  const scheme = trimmed.slice(0, spaceIndex)
-  const token = trimmed.slice(spaceIndex + 1).trim()
-  if (!NOSTR_AUTH_SCHEME.test(scheme) || token.length === 0) {
-    return fail('invalid authorization scheme')
-  }
-
-  if (!BASE64_TOKEN.test(token) || token.length % 4 !== 0) {
+  // Safe after the regex match: scheme, single space, base64 token.
+  const token = trimmed.split(' ')[1]
+  if (token.length % 4 !== 0) {
     return fail('invalid authorization encoding')
   }
 
