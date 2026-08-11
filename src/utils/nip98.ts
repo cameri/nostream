@@ -42,6 +42,14 @@ export type Nip98AuthFailure = {
 
 export type Nip98AuthResult = Nip98AuthSuccess | Nip98AuthFailure
 
+type AuthorizationDecodeSuccess = {
+  ok: true
+  /** JSON value decoded from the Authorization token (not yet schema-validated). */
+  raw: unknown
+}
+
+type AuthorizationDecodeResult = AuthorizationDecodeSuccess | Nip98AuthFailure
+
 export type Nip98PayloadPolicy =
   // Secure default for mutating admin APIs: non-empty bodies must bind via payload.
   | 'require-when-body'
@@ -122,10 +130,15 @@ const extractAuthTags = (tags: Event['tags']): Nip98AuthTags => {
   return result
 }
 
-const parseAuthorizationEventJson = (
+/**
+ * Decode `Authorization: Nostr <base64>` into parsed JSON.
+ * Base64 shape is guaranteed by the header regex before decode; JSON.parse runs here
+ * so callers receive `unknown` rather than a string they must re-parse and cast.
+ */
+const decodeAuthorizationHeader = (
   authorizationHeader: string | undefined | null,
   maxAuthorizationHeaderLength: number,
-): Nip98AuthResult | string => {
+): AuthorizationDecodeResult => {
   if (typeof authorizationHeader !== 'string' || authorizationHeader.length === 0) {
     return fail('missing authorization header')
   }
@@ -145,19 +158,19 @@ const parseAuthorizationEventJson = (
     return fail('invalid authorization encoding')
   }
 
-  return Buffer.from(token, 'base64').toString('utf8')
+  try {
+    return { ok: true, raw: JSON.parse(Buffer.from(token, 'base64').toString('utf8')) }
+  } catch {
+    return fail('invalid authorization event json')
+  }
 }
 
-const isHexEqual = (left: string, right: string): boolean => {
-  if (left.length !== right.length || !LOWER_HEX_64.test(left) || !LOWER_HEX_64.test(right)) {
-    return false
-  }
-
-  try {
-    return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'))
-  } catch {
-    return false
-  }
+/**
+ * Constant-time compare of two lowercase 64-char hex digests.
+ * Callers must validate format first — tag values are not schema-checked as hex.
+ */
+const isHexDigestEqual = (left: string, right: string): boolean => {
+  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'))
 }
 
 const verifyPayloadBinding = (
@@ -179,7 +192,14 @@ const verifyPayloadBinding = (
     return undefined
   }
 
-  if (!isHexEqual(payloadTag.toLowerCase(), hashNip98Payload(body))) {
+  // Event tags are plain strings — payload is not guaranteed hex until we check.
+  const normalizedTag = payloadTag.toLowerCase()
+  if (!LOWER_HEX_64.test(normalizedTag)) {
+    return fail('invalid: payload tag does not match request body')
+  }
+
+  // hashNip98Payload always returns 64 lowercase hex, so both sides are equal-length digests.
+  if (!isHexDigestEqual(normalizedTag, hashNip98Payload(body))) {
     return fail('invalid: payload tag does not match request body')
   }
 
@@ -198,19 +218,12 @@ export const verifyNip98Auth = async (input: VerifyNip98AuthInput): Promise<Nip9
   const maxAuthorizationHeaderLength =
     input.maxAuthorizationHeaderLength ?? DEFAULT_NIP98_MAX_AUTHORIZATION_HEADER_LENGTH
 
-  const parsed = parseAuthorizationEventJson(input.authorizationHeader, maxAuthorizationHeaderLength)
-  if (typeof parsed !== 'string') {
-    return parsed
+  const decoded = decodeAuthorizationHeader(input.authorizationHeader, maxAuthorizationHeaderLength)
+  if (decoded.ok === false) {
+    return decoded
   }
 
-  let raw: unknown
-  try {
-    raw = JSON.parse(parsed)
-  } catch {
-    return fail('invalid authorization event json')
-  }
-
-  const schemaResult = nip98EventSchema.safeParse(raw)
+  const schemaResult = nip98EventSchema.safeParse(decoded.raw)
   if (!schemaResult.success) {
     return fail('invalid authorization event')
   }

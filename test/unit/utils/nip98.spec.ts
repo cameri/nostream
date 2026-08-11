@@ -291,6 +291,24 @@ describe('nip98', () => {
       })
     })
 
+    it('rejects non-hex payload tags without relying on digest compare fast-paths', async () => {
+      const body = '{"enabled":true}'
+      const result = await verifyNip98Auth({
+        authorizationHeader: toAuthorizationHeader(
+          await createAuthEvent({ method: 'PATCH', payload: 'not-a-sha256-digest' }),
+        ),
+        url,
+        method: 'PATCH',
+        body,
+        nowSeconds: now,
+      })
+
+      expect(result).to.deep.equal({
+        ok: false,
+        reason: 'invalid: payload tag does not match request body',
+      })
+    })
+
     it('can use verify-if-present payload policy for non-empty bodies', async () => {
       const body = '{"enabled":true}'
       const withoutPayload = await verifyNip98Auth({
