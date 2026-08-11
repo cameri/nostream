@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'crypto'
+import { createHash } from 'crypto'
 import { z } from 'zod'
 import { Pubkey } from '../@types/base'
 import { Event } from '../@types/event'
@@ -87,6 +87,9 @@ export const hashNip98Payload = (body: Buffer | Uint8Array | string): string => 
 
 const fail = (reason: string): Nip98AuthFailure => ({ ok: false, reason })
 
+const resolveNonNegativeSafeInteger = (value: number | undefined, fallback: number): number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fallback
+
 const bodyByteLength = (body: Buffer | Uint8Array | string): number =>
   typeof body === 'string' ? Buffer.byteLength(body, 'utf8') : body.byteLength
 
@@ -154,7 +157,9 @@ const decodeAuthorizationHeader = (
 
   // Safe after the regex match: scheme, single space, base64 token.
   const token = trimmed.split(' ')[1]
-  if (token.length % 4 !== 0) {
+  const remainder = token.length % 4
+  const hasPadding = token.endsWith('=')
+  if (remainder === 1 || (hasPadding && remainder !== 0)) {
     return fail('invalid authorization encoding')
   }
 
@@ -163,14 +168,6 @@ const decodeAuthorizationHeader = (
   } catch {
     return fail('invalid authorization event json')
   }
-}
-
-/**
- * Constant-time compare of two lowercase 64-char hex digests.
- * Callers must validate format first — tag values are not schema-checked as hex.
- */
-const isHexDigestEqual = (left: string, right: string): boolean => {
-  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'))
 }
 
 const verifyPayloadBinding = (
@@ -198,8 +195,8 @@ const verifyPayloadBinding = (
     return fail('invalid: payload tag does not match request body')
   }
 
-  // hashNip98Payload always returns 64 lowercase hex, so both sides are equal-length digests.
-  if (!isHexDigestEqual(normalizedTag, hashNip98Payload(body))) {
+  // The payload digest is public request metadata, not secret material.
+  if (normalizedTag !== hashNip98Payload(body)) {
     return fail('invalid: payload tag does not match request body')
   }
 
@@ -215,8 +212,10 @@ const verifyPayloadBinding = (
  * to this request).
  */
 export const verifyNip98Auth = async (input: VerifyNip98AuthInput): Promise<Nip98AuthResult> => {
-  const maxAuthorizationHeaderLength =
-    input.maxAuthorizationHeaderLength ?? DEFAULT_NIP98_MAX_AUTHORIZATION_HEADER_LENGTH
+  const maxAuthorizationHeaderLength = resolveNonNegativeSafeInteger(
+    input.maxAuthorizationHeaderLength,
+    DEFAULT_NIP98_MAX_AUTHORIZATION_HEADER_LENGTH,
+  )
 
   const decoded = decodeAuthorizationHeader(input.authorizationHeader, maxAuthorizationHeaderLength)
   if (decoded.ok === false) {
@@ -234,8 +233,8 @@ export const verifyNip98Auth = async (input: VerifyNip98AuthInput): Promise<Nip9
     return fail('invalid: auth event must be kind 27235')
   }
 
-  const maxSkewSeconds = input.maxSkewSeconds ?? DEFAULT_NIP98_MAX_SKEW_SECONDS
-  const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000)
+  const maxSkewSeconds = resolveNonNegativeSafeInteger(input.maxSkewSeconds, DEFAULT_NIP98_MAX_SKEW_SECONDS)
+  const nowSeconds = resolveNonNegativeSafeInteger(input.nowSeconds, Math.floor(Date.now() / 1000))
   if (Math.abs(nowSeconds - event.created_at) > maxSkewSeconds) {
     return fail('invalid: created_at is too far from the current time')
   }

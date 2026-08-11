@@ -109,6 +109,28 @@ describe('nip98', () => {
       expect(result.ok).to.equal(true)
     })
 
+    it('accepts unpadded base64 used by the NIP-98 example', async () => {
+      let authorizationHeader = ''
+
+      for (const content of ['', 'x', 'xx']) {
+        authorizationHeader = toAuthorizationHeader(await createAuthEvent({ content }))
+        if (authorizationHeader.endsWith('=')) {
+          break
+        }
+      }
+
+      expect(authorizationHeader).to.match(/=$/)
+
+      const result = await verifyNip98Auth({
+        authorizationHeader: authorizationHeader.replace(/=+$/, ''),
+        url,
+        method,
+        nowSeconds: now,
+      })
+
+      expect(result.ok).to.equal(true)
+    })
+
     it('rejects missing authorization header', async () => {
       const result = await verifyNip98Auth({
         authorizationHeader: undefined,
@@ -461,6 +483,30 @@ describe('nip98', () => {
 
       expect(rejected.ok).to.equal(false)
       expect(accepted.ok).to.equal(true)
+    })
+
+    it('falls back to safe defaults for non-finite limits', async () => {
+      const staleEvent = await createAuthEvent({ created_at: now - DEFAULT_NIP98_MAX_SKEW_SECONDS - 1 })
+      const staleResult = await verifyNip98Auth({
+        authorizationHeader: toAuthorizationHeader(staleEvent),
+        url,
+        method,
+        nowSeconds: now,
+        maxSkewSeconds: Number.POSITIVE_INFINITY,
+      })
+      const oversizedResult = await verifyNip98Auth({
+        authorizationHeader: `Nostr ${'A'.repeat(DEFAULT_NIP98_MAX_AUTHORIZATION_HEADER_LENGTH)}`,
+        url,
+        method,
+        nowSeconds: now,
+        maxAuthorizationHeaderLength: Number.NaN,
+      })
+
+      expect(staleResult).to.deep.equal({
+        ok: false,
+        reason: 'invalid: created_at is too far from the current time',
+      })
+      expect(oversizedResult).to.deep.equal({ ok: false, reason: 'invalid authorization header' })
     })
   })
 })
