@@ -16,7 +16,6 @@
   ],
   "ignore": [
     ".nostr/**",
-    "src/repositories/dvm-job-repository.ts",
     "src/utils/relay-probe/**"
   ],
   "commitlint": false,
