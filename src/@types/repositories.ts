@@ -1,12 +1,12 @@
 import { PassThrough } from 'stream'
-
-import { DatabaseClient, EventId, Pubkey } from './base'
-import { DBEvent, Event } from './event'
 import { EventKinds } from '../constants/base'
-import { EventKindsRange } from './settings'
+import { DatabaseClient, EventId, Pubkey } from './base'
+import { DvmJob } from './dvm'
+import { DBEvent, Event } from './event'
 import { InviteCode } from './invite-code'
 import { Invoice } from './invoice'
 import { Nip05Verification } from './nip05'
+import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
 
@@ -72,4 +72,14 @@ export interface IInviteCodeRepository {
   claimCode(code: string, pubkey: Pubkey): Promise<boolean>
   findActiveCodes(limit?: number): Promise<InviteCode[]>
   deleteExpiredCodes(): Promise<number>
+}
+
+export interface IDvmJobRepository {
+  create(id: string, requesterPubkey: Pubkey, kind: number): Promise<DvmJob>
+  findById(id: string): Promise<DvmJob | undefined>
+  assignWorker(id: string, workerIndex: number): Promise<boolean>
+  updateStatus(
+    job: Pick<DvmJob, 'id' | 'status'> & Partial<Pick<DvmJob, 'resultEventId' | 'error'>>,
+  ): Promise<DvmJob | undefined>
+  findPendingJobs(limit?: number): Promise<DvmJob[]>
 }
