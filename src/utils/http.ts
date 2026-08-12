@@ -135,14 +135,15 @@ export const joinPathPrefix = (prefix: string, path: string): string => {
 
 /**
  * Absolute URL for NIP-98 `u` matching (scheme + host + path + query).
- * Scheme and host come from `info.relay_url`.
+ * Scheme and host come only from `info.relay_url` (never request Host / forwarded proto).
+ * Returns undefined if relay_url is missing or not a usable http(s)/ws(s) URL.
  */
 export const getAbsoluteHttpRequestUrl = (
-  request: IncomingMessage & { originalUrl?: string; get?: (name: string) => string | undefined },
+  request: IncomingMessage & { originalUrl?: string },
   settings: Settings,
 ): string | undefined => {
-  const host = getPublicHttpHost(settings)
-  if (!host) {
+  const origin = getPublicHttpOrigin(settings)
+  if (!origin) {
     return undefined
   }
 
@@ -153,40 +154,30 @@ export const getAbsoluteHttpRequestUrl = (
       ? originalUrl
       : joinPathPrefix(prefix, originalUrl)
 
-  return `${getPublicHttpScheme(request, settings)}://${host}${pathAndQuery}`
+  return `${origin}${pathAndQuery}`
 }
 
-const getPublicHttpHost = (settings: Settings): string | undefined => {
+const getPublicHttpOrigin = (settings: Settings): string | undefined => {
   try {
     const relayUrl = settings.info?.relay_url
-    if (typeof relayUrl === 'string' && relayUrl.length > 0) {
-      const { host } = new URL(relayUrl)
-      if (host.length > 0) {
-        return host
-      }
+    if (typeof relayUrl !== 'string' || relayUrl.length === 0) {
+      return undefined
+    }
+
+    const parsed = new URL(relayUrl)
+    if (parsed.host.length === 0) {
+      return undefined
+    }
+
+    if (parsed.protocol === 'wss:' || parsed.protocol === 'https:') {
+      return `https://${parsed.host}`
+    }
+    if (parsed.protocol === 'ws:' || parsed.protocol === 'http:') {
+      return `http://${parsed.host}`
     }
   } catch {
     // fall through
   }
 
   return undefined
-}
-
-const getPublicHttpScheme = (request: IncomingMessage, settings: Settings): 'http' | 'https' => {
-  try {
-    const relayUrl = settings.info?.relay_url
-    if (typeof relayUrl === 'string' && relayUrl.length > 0) {
-      const protocol = new URL(relayUrl).protocol
-      if (protocol === 'wss:' || protocol === 'https:') {
-        return 'https'
-      }
-      if (protocol === 'ws:' || protocol === 'http:') {
-        return 'http'
-      }
-    }
-  } catch {
-    // fall through to request-derived scheme
-  }
-
-  return isSecureRequest(request, settings) ? 'https' : 'http'
 }

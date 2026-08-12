@@ -216,16 +216,37 @@ describe('getAbsoluteHttpRequestUrl', () => {
   const request = {
     originalUrl: '/admin/settings',
     get: (name: string) => (name.toLowerCase() === 'host' ? 'evil.example' : undefined),
-    socket: { remoteAddress: 'client' },
-    headers: {},
+    socket: { remoteAddress: '127.0.0.1' },
+    headers: { 'x-forwarded-proto': 'https', host: 'evil.example' },
   } as any
 
-  it('binds scheme and host from relay_url, ignoring request Host', () => {
+  it('binds scheme and host from relay_url, ignoring request Host and forwarded proto', () => {
     expect(
       getAbsoluteHttpRequestUrl(request, {
         info: { relay_url: 'wss://relay.example.com/nostream' },
+        network: { trustedProxies: ['127.0.0.1'] },
+      } as any),
+    ).to.equal('https://relay.example.com/nostream/admin/settings')
+  })
+
+  it('maps ws relay_url to http', () => {
+    expect(
+      getAbsoluteHttpRequestUrl(request, {
+        info: { relay_url: 'ws://relay.example.com:8080' },
         network: {},
       } as any),
+    ).to.equal('http://relay.example.com:8080/admin/settings')
+  })
+
+  it('does not double-apply prefix when originalUrl already includes it', () => {
+    expect(
+      getAbsoluteHttpRequestUrl(
+        { ...request, originalUrl: '/nostream/admin/settings' },
+        {
+          info: { relay_url: 'wss://relay.example.com/nostream' },
+          network: {},
+        } as any,
+      ),
     ).to.equal('https://relay.example.com/nostream/admin/settings')
   })
 
@@ -233,6 +254,15 @@ describe('getAbsoluteHttpRequestUrl', () => {
     expect(
       getAbsoluteHttpRequestUrl(request, {
         info: {},
+        network: {},
+      } as any),
+    ).to.equal(undefined)
+  })
+
+  it('returns undefined for non http(s)/ws(s) relay_url protocols', () => {
+    expect(
+      getAbsoluteHttpRequestUrl(request, {
+        info: { relay_url: 'ftp://relay.example.com' },
         network: {},
       } as any),
     ).to.equal(undefined)
