@@ -106,12 +106,15 @@ export class DvmJobRepository implements IDvmJobRepository {
       job.status === DvmJobStatus.FAILED ||
       job.status === DvmJobStatus.TIMED_OUT
 
+    // Check key presence, not truthiness: a caller passing `resultEventId: null`
+    // or `error: null` is explicitly clearing the field, which a truthy check
+    // would silently ignore and leave the stale DB value in place.
     const update: Partial<DBDvmJob> = {
       status: job.status,
       updated_at: now,
       ...(isTerminal ? { completed_at: now } : {}),
-      ...(job.resultEventId ? { result_event_id: toBuffer(job.resultEventId) } : {}),
-      ...(job.error ? { error: job.error } : {}),
+      ...('resultEventId' in job ? { result_event_id: job.resultEventId ? toBuffer(job.resultEventId) : null } : {}),
+      ...('error' in job ? { error: job.error ?? null } : {}),
     }
 
     const [row] = await client<DBDvmJob>('dvm_jobs').where('id', toBuffer(job.id)).update(update).returning(['*'])

@@ -248,6 +248,43 @@ describe('DvmJobRepository', () => {
       const update = updateStub.firstCall.args[0]
       expect(update.error).to.equal('worker crashed')
     })
+
+    it('does not touch resultEventId or error when the keys are omitted', async () => {
+      const returningStub = sandbox.stub().resolves([dbDvmJobRow])
+      const updateStub = sandbox.stub().returns({ returning: returningStub })
+      const whereStub = sandbox.stub().returns({ update: updateStub })
+      const client = sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient
+
+      await repository.updateStatus({ id: jobId, status: DvmJobStatus.PICKED_UP }, client)
+
+      const update = updateStub.firstCall.args[0]
+      expect(update).to.not.have.property('result_event_id')
+      expect(update).to.not.have.property('error')
+    })
+
+    it('clears resultEventId when explicitly set to null', async () => {
+      const returningStub = sandbox.stub().resolves([dbDvmJobRow])
+      const updateStub = sandbox.stub().returns({ returning: returningStub })
+      const whereStub = sandbox.stub().returns({ update: updateStub })
+      const client = sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient
+
+      await repository.updateStatus({ id: jobId, status: DvmJobStatus.PICKED_UP, resultEventId: null }, client)
+
+      const update = updateStub.firstCall.args[0]
+      expect(update.result_event_id).to.be.null
+    })
+
+    it('clears error when explicitly set to null', async () => {
+      const returningStub = sandbox.stub().resolves([dbDvmJobRow])
+      const updateStub = sandbox.stub().returns({ returning: returningStub })
+      const whereStub = sandbox.stub().returns({ update: updateStub })
+      const client = sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient
+
+      await repository.updateStatus({ id: jobId, status: DvmJobStatus.PICKED_UP, error: null }, client)
+
+      const update = updateStub.firstCall.args[0]
+      expect(update.error).to.be.null
+    })
   })
 
   describe('.findPendingJobs', () => {
