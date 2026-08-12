@@ -1,5 +1,5 @@
 import fs from 'fs'
-import knex from 'knex'
+import { Client } from 'pg'
 
 import packageJson from '../../../package.json'
 import { loadMergedSettings } from '../utils/config'
@@ -24,34 +24,36 @@ type I2PGuidancePayload = {
 }
 
 const getEventCount = async (): Promise<number | null> => {
-  const db = knex({
-    client: 'pg',
-    connection: process.env.DB_URI
-      ? process.env.DB_URI
+  // Uses a raw pg.Client (connect/query/end) rather than a knex pool: when the
+  // connection attempt itself times out, knex/tarn's pool can leave the
+  // underlying socket open (never disposed), which keeps this one-shot CLI
+  // process alive indefinitely. pg.Client.end() reliably closes the socket
+  // even on a failed/timed-out connect, so the process can exit normally.
+  const client = new Client(
+    process.env.DB_URI
+      ? { connectionString: process.env.DB_URI, connectionTimeoutMillis: 1000 }
       : {
           host: process.env.DB_HOST,
           port: Number(process.env.DB_PORT),
           user: process.env.DB_USER,
           password: process.env.DB_PASSWORD,
           database: process.env.DB_NAME,
+          connectionTimeoutMillis: 1000,
         },
-    pool: {
-      min: 0,
-      max: 1,
-      idleTimeoutMillis: 1000,
-      acquireTimeoutMillis: 1000,
-      propagateCreateError: false,
-    },
-    acquireConnectionTimeout: 1000,
-  } as any)
+  )
 
   try {
-    const result = await db('events').whereNull('deleted_at').count<{ count: string | number }>('* as count').first()
-    return Number(result?.count ?? 0)
+    await client.connect()
+    const result = await client.query('select count(*) as count from events where deleted_at is null')
+    return Number(result.rows[0]?.count ?? 0)
   } catch {
     return null
   } finally {
-    await db.destroy()
+    try {
+      await client.end()
+    } catch {
+      // already disconnected/never connected — nothing to clean up
+    }
   }
 }
 
@@ -66,9 +68,13 @@ const getRelayUptimeSeconds = async (): Promise<number | null> => {
     return null
   }
 
-  const startedAtResult = await runCommandWithOutput('docker', ['inspect', '--format', '{{.State.StartedAt}}', containerId], {
-    timeoutMs: 1000,
-  })
+  const startedAtResult = await runCommandWithOutput(
+    'docker',
+    ['inspect', '--format', '{{.State.StartedAt}}', containerId],
+    {
+      timeoutMs: 1000,
+    },
+  )
   if (!startedAtResult.ok || startedAtResult.code !== 0) {
     return null
   }
@@ -197,7 +203,7 @@ export const runInfo = async (options: InfoOptions): Promise<number> => {
       'http://127.0.0.1:7070/?page=i2p_tunnels',
     ])
 
-    const matches = new Set((`${result.stdout}\n${result.stderr}`).match(/[a-z2-7]{52}\.b32\.i2p/g) ?? [])
+    const matches = new Set(`${result.stdout}\n${result.stderr}`.match(/[a-z2-7]{52}\.b32\.i2p/g) ?? [])
     if (matches.size > 0) {
       if (options.json) {
         writeJson({
