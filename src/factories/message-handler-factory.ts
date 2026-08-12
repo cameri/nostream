@@ -1,5 +1,5 @@
 import { ICacheAdapter, IWebSocketAdapter } from '../@types/adapters'
-import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
+import { IEventRepository, IInviteCodeRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IncomingMessage, MessageType } from '../@types/messages'
 import { createSettings } from './settings-factory'
 import { AuthMessageHandler } from '../handlers/auth-message-handler'
@@ -25,13 +25,14 @@ export const messageHandlerFactory =
     eventRepository: IEventRepository,
     userRepository: IUserRepository,
     nip05VerificationRepository: INip05VerificationRepository,
+    inviteCodeRepository: IInviteCodeRepository,
   ) =>
   ([message, adapter]: [IncomingMessage, IWebSocketAdapter]) => {
     switch (message[0]) {
       case MessageType.EVENT: {
         return new EventMessageHandler(
           adapter,
-          eventStrategyFactory(eventRepository, userRepository),
+          eventStrategyFactory(eventRepository, userRepository, inviteCodeRepository, getCache(), createSettings),
           eventRepository,
           userRepository,
           createSettings,

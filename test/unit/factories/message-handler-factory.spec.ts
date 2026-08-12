@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 
-import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../../../src/@types/repositories'
+import { IEventRepository, IInviteCodeRepository, INip05VerificationRepository, IUserRepository } from '../../../src/@types/repositories'
 import { IncomingMessage, MessageType } from '../../../src/@types/messages'
 import { AuthMessageHandler } from '../../../src/handlers/auth-message-handler'
 import { Event } from '../../../src/@types/event'
@@ -18,6 +18,7 @@ describe('messageHandlerFactory', () => {
   let eventRepository: IEventRepository
   let userRepository: IUserRepository
   let nip05VerificationRepository: INip05VerificationRepository
+  let inviteCodeRepository: IInviteCodeRepository
   let message: IncomingMessage
   let adapter: IWebSocketAdapter
   let factory
@@ -40,11 +41,12 @@ describe('messageHandlerFactory', () => {
     eventRepository = {} as any
     userRepository = {} as any
     nip05VerificationRepository = {} as any
+    inviteCodeRepository = {} as any
     adapter = {} as any
     event = {
       tags: [],
     } as any
-    factory = messageHandlerFactory(eventRepository, userRepository, nip05VerificationRepository)
+    factory = messageHandlerFactory(eventRepository, userRepository, nip05VerificationRepository, inviteCodeRepository)
   })
 
   afterEach(() => {

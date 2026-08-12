@@ -52,7 +52,7 @@ export class App implements IRunnable {
     const port = process.env.RELAY_PORT ? Number(process.env.RELAY_PORT) : 8008
 
     const logCentered = (input: string, width: number) => {
-      const start = (width - input.length) >> 1
+      const start = Math.max(0, (width - input.length) >> 1)
       logger.info(' '.repeat(start), input)
     }
     logCentered(`v${packageJson.version}`, width)
@@ -106,6 +106,18 @@ export class App implements IRunnable {
         })
       }
       logCentered(`${mirrors.length} static-mirroring worker started`, width)
+    }
+
+    const dvmWorkers = settings?.dvm?.workers
+
+    if (Array.isArray(dvmWorkers) && dvmWorkers.length) {
+      for (let i = 0; i < dvmWorkers.length; i++) {
+        createWorker({
+          WORKER_TYPE: 'dvm-orchestrator',
+          DVM_WORKER_INDEX: i.toString(),
+        })
+      }
+      logCentered(`${dvmWorkers.length} dvm-orchestrator worker started`, width)
     }
 
     logger('settings: %O', settings)
