@@ -1,5 +1,5 @@
-import { Pubkey, Secret } from './base'
 import { EventKinds } from '../constants/base'
+import { Pubkey, Secret } from './base'
 import { MessageType } from './messages'
 import { SubscriptionFilter } from './subscription'
 
@@ -331,10 +331,20 @@ export interface Nip05Settings {
   domainBlacklist?: string[]
 }
 
+export interface AdminNip98Settings {
+  /** Accept NIP-98 Authorization headers on admin API routes. Defaults to false. */
+  enabled: boolean
+  /** Hex pubkeys allowed to authenticate via NIP-98. Fail-closed when empty. */
+  allowedPubkeys?: Pubkey[]
+  /** Max |now - created_at| in seconds. Defaults to 60. */
+  maxSkewSeconds?: number
+}
+
 export interface AdminSettings {
   enabled: boolean
   passwordHash?: string
   sessionTtlSeconds?: number
+  nip98?: AdminNip98Settings
 }
 export interface WoTSettings {
   enabled: boolean
