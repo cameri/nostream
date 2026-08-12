@@ -691,6 +691,31 @@ describe('NIP-40', () => {
       event.tags = [['expiration', 'a']]
       expect(getEventExpiration(event)).to.be.undefined
     })
+
+    it('returns false if expiration is 0', () => {
+      event.tags = [['expiration', '0']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns false if expiration exceeds the Postgres int4 column max', () => {
+      event.tags = [['expiration', '10000000000']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns false if expiration is the maximum representable Unix seconds timestamp', () => {
+      event.tags = [['expiration', '253402300799']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns true if expiration is the maximum value the expires_at column can store', () => {
+      event.tags = [['expiration', '2147483647']]
+      expect(getEventExpiration(event)).to.equal(2147483647)
+    })
+
+    it('returns false if expiration looks like a millisecond-scale timestamp', () => {
+      event.tags = [['expiration', '1700000000000']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
   })
 
   describe('isExpiredEvent', () => {
