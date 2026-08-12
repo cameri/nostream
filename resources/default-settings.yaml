@@ -107,6 +107,8 @@ workers:
   count: 0
 mirroring:
   static: []
+dvm:
+  workers: []
 limits:
   # strategy selection configuration for rate limiting:
   rateLimiter:
