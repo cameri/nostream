@@ -174,7 +174,7 @@
     "@opentelemetry/exporter-metrics-otlp-http": "^0.219.0",
     "@opentelemetry/resources": "^2.8.0",
     "@opentelemetry/sdk-metrics": "^2.8.0",
-    "axios": "^1.16.0",
+    "axios": "^1.18.0",
     "cac": "^7.0.0",
     "colorette": "^2.0.20",
     "express": "4.22.1",
@@ -187,7 +187,7 @@
     "ramda": "0.28.0",
     "redis": "4.5.1",
     "stream-json": "^2.1.0",
-    "ws": "^8.20.1",
+    "ws": "^8.21.0",
     "zod": "^3.22.4"
   },
   "optionalDependencies": {
