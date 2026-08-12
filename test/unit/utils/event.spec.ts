@@ -4,6 +4,7 @@ import {
   getEventExpiration,
   isDeleteEvent,
   isDirectMessageEvent,
+  isDvmJobRequestEvent,
   isEphemeralEvent,
   isEventIdValid,
   isEventMatchingFilter,
@@ -413,6 +414,24 @@ describe('NIP-16', () => {
 
     it('returns false if event is not replaceable', () => {
       expect(isEphemeralEvent({ kind: 30000 } as any)).to.be.false
+    })
+  })
+
+  describe('isDvmJobRequestEvent', () => {
+    it('returns true for the first kind in the DVM job request range (5000)', () => {
+      expect(isDvmJobRequestEvent({ kind: 5000 } as any)).to.be.true
+    })
+
+    it('returns true for the last kind in the DVM job request range (5999)', () => {
+      expect(isDvmJobRequestEvent({ kind: 5999 } as any)).to.be.true
+    })
+
+    it('returns false for a kind below the DVM job request range', () => {
+      expect(isDvmJobRequestEvent({ kind: 4999 } as any)).to.be.false
+    })
+
+    it('returns false for a kind above the DVM job request range', () => {
+      expect(isDvmJobRequestEvent({ kind: 6000 } as any)).to.be.false
     })
   })
 })
