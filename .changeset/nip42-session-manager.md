@@ -2,4 +2,4 @@
 "nostream": minor
 ---
 
-feat(nip42): add session tracking with optional TTL, write-time authRequired, and NIP-11 auth_required advertising
+feat(nip42): add session tracking with optional TTL and publish-time authRequired (NIP-11 restricted_writes)

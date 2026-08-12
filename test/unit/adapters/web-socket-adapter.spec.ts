@@ -317,7 +317,7 @@ describe('WebSocketAdapter', () => {
     it('does not send restricted-kind event to a client authenticated as somebody else', () => {
       settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
       client.readyState = WebSocket.OPEN
-      adapter.addAuthenticatedPubkey('e'.repeat(64))
+      adapter.addAuthenticatedPubkey('e'.repeat(64), '1'.repeat(64))
       adapter.onSubscribed('sub-1', [{ kinds: [1059] }])
 
       const event = {
@@ -339,7 +339,7 @@ describe('WebSocketAdapter', () => {
       const recipient = 'd'.repeat(64)
       settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
       client.readyState = WebSocket.OPEN
-      adapter.addAuthenticatedPubkey(recipient)
+      adapter.addAuthenticatedPubkey(recipient, '1'.repeat(64))
       adapter.onSubscribed('sub-1', [{ kinds: [1059] }])
 
       const event = {
@@ -364,7 +364,7 @@ describe('WebSocketAdapter', () => {
       const author = 'b'.repeat(64)
       settingsFactory.returns({ nip42: { restrictedReads: { enabled: true } } })
       client.readyState = WebSocket.OPEN
-      adapter.addAuthenticatedPubkey(author)
+      adapter.addAuthenticatedPubkey(author, '1'.repeat(64))
       adapter.onSubscribed('sub-1', [{ kinds: [4] }])
 
       const event = {
@@ -773,7 +773,7 @@ describe('WebSocketAdapter', () => {
       const previousChallenge = adapter.getChallenge()
       const sendCallsBefore = (client.send as Sinon.SinonStub).callCount
 
-      adapter.addAuthenticatedPubkey(pubkey)
+      expect(adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))).to.equal(true)
 
       const pubkeys = adapter.getAuthenticatedPubkeys()
       expect(pubkeys.size).to.equal(1)
@@ -785,24 +785,32 @@ describe('WebSocketAdapter', () => {
     it('addAuthenticatedPubkey supports multiple pubkeys', () => {
       const pk1 = 'a'.repeat(64)
       const pk2 = 'b'.repeat(64)
-      adapter.addAuthenticatedPubkey(pk1)
-      adapter.addAuthenticatedPubkey(pk2)
+      const challengeBefore = adapter.getChallenge()
+      expect(adapter.addAuthenticatedPubkey(pk1, '1'.repeat(64))).to.equal(true)
+      expect(adapter.addAuthenticatedPubkey(pk2, '2'.repeat(64))).to.equal(true)
 
       const pubkeys = adapter.getAuthenticatedPubkeys()
       expect(pubkeys.size).to.equal(2)
       expect(pubkeys.has(pk1)).to.be.true
       expect(pubkeys.has(pk2)).to.be.true
       // Same challenge must remain valid for subsequent AUTH messages (NIP-42).
-      expect(adapter.getChallenge()).to.equal(adapter.getChallenge())
+      expect(adapter.getChallenge()).to.equal(challengeBefore)
     })
 
     it('addAuthenticatedPubkey deduplicates same pubkey', () => {
       const pubkey = 'a'.repeat(64)
-      adapter.addAuthenticatedPubkey(pubkey)
-      adapter.addAuthenticatedPubkey(pubkey)
+      expect(adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))).to.equal(true)
+      expect(adapter.addAuthenticatedPubkey(pubkey, '2'.repeat(64))).to.equal(true)
 
       const pubkeys = adapter.getAuthenticatedPubkeys()
       expect(pubkeys.size).to.equal(1)
+    })
+
+    it('rejects replayed AUTH event ids', () => {
+      const pubkey = 'a'.repeat(64)
+      const eventId = '1'.repeat(64)
+      expect(adapter.addAuthenticatedPubkey(pubkey, eventId)).to.equal(true)
+      expect(adapter.addAuthenticatedPubkey(pubkey, eventId)).to.equal(false)
     })
 
     it('expires authenticated pubkeys after sessionTtl', () => {
@@ -810,7 +818,7 @@ describe('WebSocketAdapter', () => {
       settingsFactory.returns({ nip42: { sessionTtl: 60 } })
 
       const pubkey = 'a'.repeat(64)
-      adapter.addAuthenticatedPubkey(pubkey)
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
       expect(adapter.getAuthenticatedPubkeys().has(pubkey)).to.be.true
 
       clock.tick(60_000)

@@ -80,7 +80,7 @@ describe('AuthMessageHandler', () => {
       getSubscriptions: Sinon.stub().returns(new Map()),
       getChallenge: Sinon.stub().returns(challenge),
       getAuthenticatedPubkeys: Sinon.stub().returns(new Set()),
-      addAuthenticatedPubkey: Sinon.stub(),
+      addAuthenticatedPubkey: Sinon.stub().returns(true),
     } as any as IWebSocketAdapter
 
     settingsFactory = Sinon.stub().returns({
@@ -100,7 +100,7 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey)
+      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey, message[1].id)
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[0]).to.equal(WebSocketAdapterEvent.Message)
@@ -211,7 +211,7 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey)
+      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey, message[1].id)
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(true)
     })
@@ -224,10 +224,22 @@ describe('AuthMessageHandler', () => {
 
         await handler.handleMessage(message)
 
-        expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey)
+        expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey, message[1].id)
       } finally {
         clock.restore()
       }
+    })
+
+    it('rejects when the AUTH event id was already accepted on this socket', async () => {
+      const message = await createAuthEvent()
+      ;(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).returns(false)
+
+      await handler.handleMessage(message)
+
+      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey, message[1].id)
+      const args = emitStub.firstCall.args
+      expect(args[1][2]).to.equal(false)
+      expect(args[1][3]).to.include('auth event already used')
     })
   })
 })

@@ -211,7 +211,7 @@ describe('rootRequestHandler', () => {
       expect(doc.limitation.search_supported).to.equal(true)
     })
 
-    it('sets limitation.auth_required from nip42.authRequired', () => {
+    it('keeps limitation.auth_required false for publish-only nip42.authRequired', () => {
       createSettingsStub.returns(baseSettings)
       rootRequestHandler(req, res, next)
       expect(res.send.firstCall.args[0].limitation.auth_required).to.equal(false)
@@ -221,7 +221,9 @@ describe('rootRequestHandler', () => {
         nip42: { authRequired: true },
       })
       rootRequestHandler(req, res, next)
-      expect(res.send.secondCall.args[0].limitation.auth_required).to.equal(true)
+      // NIP-11 auth_required means AUTH before any action; publish-only stays false.
+      expect(res.send.secondCall.args[0].limitation.auth_required).to.equal(false)
+      expect(res.send.secondCall.args[0].limitation.restricted_writes).to.equal(true)
     })
 
     it('sets limitation.restricted_writes based on active write restrictions', () => {
@@ -236,6 +238,15 @@ describe('rootRequestHandler', () => {
 
       const restrictedDoc = res.send.firstCall.args[0]
       expect(restrictedDoc.limitation.restricted_writes).to.equal(true)
+    })
+
+    it('sets limitation.restricted_writes when nip42.authRequired is enabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        nip42: { authRequired: true },
+      })
+      rootRequestHandler(req, res, next)
+      expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(true)
     })
 
     it('returns empty fees instead of crashing when the payments block is absent', () => {

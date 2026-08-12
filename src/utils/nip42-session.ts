@@ -13,10 +13,14 @@ export interface Nip42Session {
  * Auth is connection-scoped (per the NIP): one challenge per socket, successful
  * AUTH messages add pubkeys, and the session ends when the socket closes.
  * Optional TTL can force re-AUTH after a configured lifetime (off by default).
+ *
+ * Accepted AUTH event IDs are remembered for the connection so the same signed
+ * AUTH event cannot be replayed to refresh sessionTtl.
  */
 export class Nip42SessionManager {
   private challenge: string
   private readonly sessions = new Map<string, Nip42Session>()
+  private readonly acceptedAuthEventIds = new Set<string>()
 
   public constructor(private readonly getSessionTtlSeconds: () => number | undefined = () => undefined) {
     this.challenge = Nip42SessionManager.createChallenge()
@@ -36,13 +40,24 @@ export class Nip42SessionManager {
     return this.challenge
   }
 
-  public authenticate(pubkey: Pubkey, now = Math.floor(Date.now() / 1000)): void {
+  /**
+   * Record a successful AUTH. Returns false if this AUTH event id was already
+   * accepted on this socket (replay).
+   */
+  public authenticate(pubkey: Pubkey, authEventId: string, now = Math.floor(Date.now() / 1000)): boolean {
+    if (this.acceptedAuthEventIds.has(authEventId)) {
+      return false
+    }
+
+    this.acceptedAuthEventIds.add(authEventId)
     this.sessions.set(pubkey, { pubkey, authenticatedAt: now })
+    return true
   }
 
   public clear(pubkey?: Pubkey): void {
     if (typeof pubkey === 'undefined') {
       this.sessions.clear()
+      this.acceptedAuthEventIds.clear()
       return
     }
     this.sessions.delete(pubkey)

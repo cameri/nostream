@@ -165,10 +165,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     return this.session.getAuthenticatedPubkeys()
   }
 
-  public addAuthenticatedPubkey(pubkey: string): void {
+  public addAuthenticatedPubkey(pubkey: string, authEventId: string): boolean {
     // Keep the existing challenge. NIP-42 allows multiple AUTH events on one
     // socket to share it; rotating here would break pipelined multi-pubkey auth.
-    this.session.authenticate(pubkey)
+    return this.session.authenticate(pubkey, authEventId)
   }
 
   private async onClientMessage(raw: Buffer) {

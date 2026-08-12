@@ -17,7 +17,8 @@ export type IWebSocketAdapter = EventEmitter & {
   getSubscriptions(): Map<string, SubscriptionFilter[]>
   getChallenge(): string
   getAuthenticatedPubkeys(): ReadonlySet<string>
-  addAuthenticatedPubkey(pubkey: string): void
+  /** Returns false if this AUTH event id was already accepted on this socket. */
+  addAuthenticatedPubkey(pubkey: string, authEventId: string): boolean
 }
 
 export interface ICacheAdapter {

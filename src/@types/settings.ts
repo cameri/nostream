@@ -327,7 +327,8 @@ export interface Nip42RestrictedReads {
 export interface Nip42Settings {
   /**
    * When true, clients must NIP-42 AUTH as the event author before publishing.
-   * Also advertised via NIP-11 `limitation.auth_required`.
+   * Advertised via NIP-11 `limitation.restricted_writes` (not `auth_required`,
+   * which means AUTH before any connection action).
    */
   authRequired?: boolean
   /**
