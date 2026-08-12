@@ -133,6 +133,10 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 
 | Name                                        | Description                                                                   |
 |---------------------------------------------|-------------------------------------------------------------------------------|
+| dvm.workers[].args                          | Arguments passed to the spawned command. Optional. |
+| dvm.workers[].command                       | Command to spawn for this DVM worker (e.g. an interpreter or executable path). |
+| dvm.workers[].kinds                         | NIP-90 job request kinds (5000-5999) this worker accepts. Optional. |
+| dvm.workers[].timeoutMs                     | Max time in ms to wait for a job result before considering it timed out. Optional. |
 | info.banner                                 | Public banner image URL for the relay information document. |
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
 | info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
