@@ -289,16 +289,6 @@ export interface Nip66Settings {
    */
   targets: string[]
   /**
-   * Hex-encoded private key for the monitor identity that will sign kind 30166/10166 events.
-   * Reserved for a future monitor worker.
-   */
-  monitorPrivateKey?: Secret
-  /**
-   * Hex-encoded public key for the monitor identity.
-   * Optional when monitorPrivateKey is set. Reserved for a future monitor worker.
-   */
-  monitorPubkey?: Pubkey
-  /**
    * DNS cache TTL in seconds for repeated probes of the same hostname.
    * Reserved for a future monitor worker. Defaults to 300.
    */

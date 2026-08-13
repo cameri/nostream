@@ -282,7 +282,6 @@ describe('SettingsStatic', () => {
           enabled: true,
           probeIntervalSeconds: 900,
           targets: ['wss://relay.example.com'],
-          monitorPubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
         },
       }
       const merged = mergeDeepRight(defaults, userConfig) as Settings
@@ -290,9 +289,6 @@ describe('SettingsStatic', () => {
       expect(merged.nip66?.enabled).to.equal(true)
       expect(merged.nip66?.probeIntervalSeconds).to.equal(900)
       expect(merged.nip66?.targets).to.deep.equal(['wss://relay.example.com'])
-      expect(merged.nip66?.monitorPubkey).to.equal(
-        '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
-      )
       expect(merged.nip66?.timeouts?.dnsMs).to.equal(10_000)
       expect(merged.nip66?.dnsCacheTtlSeconds).to.equal(300)
     })

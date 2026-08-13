@@ -55,6 +55,7 @@ The following environment variables can be set:
 | REDIS_USER                       | Redis User                       | default                |
 | REDIS_PASSWORD                   | Redis Password                   | nostr_ts_relay         |
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
+| MONITOR_PRIVATE_KEY              | Hex-encoded private key for the NIP-66 monitor identity that will sign kind 30166/10166 events. Configure via environment variable, not settings.yaml. | |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
 | NWC_URL                          | NWC connection URL (`nostr+walletconnect://...`) | |
@@ -184,8 +185,6 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip50.maxQueryLength                        | Maximum length of the search query string. Queries exceeding this are truncated. Defaults to 256. |
 | nip66.dnsCacheTtlSeconds                    | DNS cache TTL in seconds for repeated probe lookups of the same hostname. Reserved for a future monitor worker. Defaults to 300. |
 | nip66.enabled                               | Enable NIP-66 relay monitoring configuration. **Note:** this release only defines settings (no monitor worker yet); enabling is currently a no-op. Defaults to false. |
-| nip66.monitorPrivateKey                     | Hex-encoded private key for the monitor identity that will sign kind 30166/10166 events. Reserved for a future monitor worker. |
-| nip66.monitorPubkey                         | Hex-encoded public key for the monitor identity. Optional when `monitorPrivateKey` is configured. Reserved for a future monitor worker. |
 | nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Reserved for a future monitor worker. Defaults to 3600. |
 | nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. Reserved for a future monitor worker. |
 | nip66.timeouts.dnsMs                        | DNS probe timeout in milliseconds. Defaults to 10000. |

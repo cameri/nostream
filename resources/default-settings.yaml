@@ -81,9 +81,6 @@ nip66:
     nip11Ms: 10000
   # Public WebSocket URLs to probe. Empty list defaults to info.relay_url.
   targets: []
-  # Optional monitor identity (reserved for a future monitor worker).
-  # monitorPrivateKey: replace-with-monitor-private-key-in-hex
-  # monitorPubkey: replace-with-monitor-pubkey-in-hex
   dnsCacheTtlSeconds: 300
 wot:
   # Web of Trust filtering. When enabled, only events from pubkeys within
