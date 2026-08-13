@@ -246,6 +246,21 @@ export interface Mirroring {
   static?: Mirror[]
 }
 
+export interface DvmWorker {
+  /** Command to spawn for this worker (e.g. an interpreter or executable path). */
+  command: string
+  /** Arguments passed to the spawned command. */
+  args?: string[]
+  /** NIP-90 job request kinds (5000-5999) this worker accepts. */
+  kinds?: number[]
+  /** Max time in ms to wait for a job result before considering it timed out. */
+  timeoutMs?: number
+}
+
+export interface Dvm {
+  workers?: DvmWorker[]
+}
+
 export type Nip05Mode = 'enabled' | 'passive' | 'disabled'
 
 export interface Nip45Settings {
@@ -367,6 +382,7 @@ export interface Settings {
   workers?: Worker
   limits?: Limits
   mirroring?: Mirroring
+  dvm?: Dvm
   nip05?: Nip05Settings
   nip42?: Nip42Settings
   nip43?: Nip43Settings
