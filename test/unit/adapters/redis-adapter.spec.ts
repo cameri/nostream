@@ -131,6 +131,25 @@ describe('RedisAdapter', () => {
     })
   })
 
+  describe('setKeyIfNotExists', () => {
+    it('returns true when NX set creates the key', async () => {
+      client.set.resolves('OK')
+
+      const result = await adapter.setKeyIfNotExists('key', 'value', 60)
+
+      expect(client.set).to.have.been.calledOnceWithExactly('key', 'value', { EX: 60, NX: true })
+      expect(result).to.be.true
+    })
+
+    it('returns false when the key already exists', async () => {
+      client.set.resolves(null)
+
+      const result = await adapter.setKeyIfNotExists('key', 'value', 60)
+
+      expect(result).to.be.false
+    })
+  })
+
   describe('removeRangeByScoreFromSortedSet', () => {
     it('calls client.zRemRangeByScore with correct arguments', async () => {
       client.zRemRangeByScore.resolves(3)
