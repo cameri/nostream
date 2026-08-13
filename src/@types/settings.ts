@@ -273,6 +273,43 @@ export interface Nip50Settings {
   maxQueryLength?: number
 }
 
+export interface Nip66ProbeTimeouts {
+  dnsMs: number
+  tlsMs: number
+  wsRttMs: number
+  nip11Ms: number
+}
+
+export interface Nip66Settings {
+  /**
+   * Enable NIP-66 relay monitoring configuration.
+   * Note: this release only defines settings (no monitor worker yet), so
+   * enabling is currently a no-op.
+   * Defaults to false.
+   */
+  enabled: boolean
+  /**
+   * Interval in seconds between probe runs.
+   * Reserved for a future monitor worker. Defaults to 3600.
+   */
+  probeIntervalSeconds: number
+  /**
+   * Per-check probe timeouts in milliseconds.
+   * Reserved for a future monitor worker.
+   */
+  timeouts: Nip66ProbeTimeouts
+  /**
+   * Public relay WebSocket URLs to probe (for example wss://relay.example.com).
+   * When empty, a future worker will use info.relay_url.
+   */
+  targets: string[]
+  /**
+   * DNS cache TTL in seconds for repeated probes of the same hostname.
+   * Reserved for a future monitor worker. Defaults to 300.
+   */
+  dnsCacheTtlSeconds: number
+}
+
 export interface Nip05Settings {
   mode: Nip05Mode
   /**
@@ -351,5 +388,6 @@ export interface Settings {
   nip43?: Nip43Settings
   nip45?: Nip45Settings
   nip50?: Nip50Settings
+  nip66?: Nip66Settings
   wot?: WoTSettings
 }
