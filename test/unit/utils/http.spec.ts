@@ -1,7 +1,13 @@
 import { expect } from 'chai'
 import { IncomingMessage } from 'http'
 
-import { getPublicPathPrefix, getRemoteAddress, isSecureRequest, joinPathPrefix } from '../../../src/utils/http'
+import {
+  getAbsoluteHttpRequestUrl,
+  getPublicPathPrefix,
+  getRemoteAddress,
+  isSecureRequest,
+  joinPathPrefix,
+} from '../../../src/utils/http'
 
 describe('getRemoteAddress', () => {
   const header = 'x-forwarded-for'
@@ -23,19 +29,13 @@ describe('getRemoteAddress', () => {
 
   it('returns address using network.remoteIpHeader when set', () => {
     expect(
-      getRemoteAddress(
-        request,
-        { network: { remoteIpHeader: header, trustedProxies: [socketAddress] } } as any,
-      )
+      getRemoteAddress(request, { network: { remoteIpHeader: header, trustedProxies: [socketAddress] } } as any),
     ).to.equal(address)
   })
 
   it('returns socket address when proxy is not trusted', () => {
     expect(
-      getRemoteAddress(
-        request,
-        { network: { remoteIpHeader: header, trustedProxies: ['1.1.1.1'] } } as any,
-      )
+      getRemoteAddress(request, { network: { remoteIpHeader: header, trustedProxies: ['1.1.1.1'] } } as any),
     ).to.equal(socketAddress)
   })
 
@@ -51,17 +51,12 @@ describe('getRemoteAddress', () => {
           },
         } as any,
         { network: { remoteIpHeader: header, trustedProxies: ['127.0.0.1'] } } as any,
-      )
+      ),
     ).to.equal(address)
   })
 
   it('returns address from socket when header is unset', () => {
-    expect(
-      getRemoteAddress(
-        request,
-        { network: { } } as any,
-      )
-    ).to.equal(socketAddress)
+    expect(getRemoteAddress(request, { network: {} } as any)).to.equal(socketAddress)
   })
 
   it('returns first address when forwarded header is an array', () => {
@@ -70,10 +65,7 @@ describe('getRemoteAddress', () => {
       socket: { remoteAddress: socketAddress },
     } as any
     expect(
-      getRemoteAddress(
-        arrayRequest,
-        { network: { remoteIpHeader: header, trustedProxies: [socketAddress] } } as any,
-      )
+      getRemoteAddress(arrayRequest, { network: { remoteIpHeader: header, trustedProxies: [socketAddress] } } as any),
     ).to.equal(address)
   })
 })
@@ -81,10 +73,13 @@ describe('getRemoteAddress', () => {
 describe('getPublicPathPrefix', () => {
   it('returns the relay_url path prefix by default', () => {
     expect(
-      getPublicPathPrefix({ headers: {}, socket: { remoteAddress: 'client' } } as any, {
-        info: { relay_url: 'wss://relay.example.com/nostream/' },
-        network: {},
-      } as any),
+      getPublicPathPrefix(
+        { headers: {}, socket: { remoteAddress: 'client' } } as any,
+        {
+          info: { relay_url: 'wss://relay.example.com/nostream/' },
+          network: {},
+        } as any,
+      ),
     ).to.equal('/nostream')
   })
 
@@ -214,5 +209,62 @@ describe('isSecureRequest', () => {
         settings,
       ),
     ).to.equal(false)
+  })
+})
+
+describe('getAbsoluteHttpRequestUrl', () => {
+  const request = {
+    originalUrl: '/admin/settings',
+    get: (name: string) => (name.toLowerCase() === 'host' ? 'evil.example' : undefined),
+    socket: { remoteAddress: '127.0.0.1' },
+    headers: { 'x-forwarded-proto': 'https', host: 'evil.example' },
+  } as any
+
+  it('binds scheme and host from relay_url, ignoring request Host and forwarded proto', () => {
+    expect(
+      getAbsoluteHttpRequestUrl(request, {
+        info: { relay_url: 'wss://relay.example.com/nostream' },
+        network: { trustedProxies: ['127.0.0.1'] },
+      } as any),
+    ).to.equal('https://relay.example.com/nostream/admin/settings')
+  })
+
+  it('maps ws relay_url to http', () => {
+    expect(
+      getAbsoluteHttpRequestUrl(request, {
+        info: { relay_url: 'ws://relay.example.com:8080' },
+        network: {},
+      } as any),
+    ).to.equal('http://relay.example.com:8080/admin/settings')
+  })
+
+  it('does not double-apply prefix when originalUrl already includes it', () => {
+    expect(
+      getAbsoluteHttpRequestUrl(
+        { ...request, originalUrl: '/nostream/admin/settings' },
+        {
+          info: { relay_url: 'wss://relay.example.com/nostream' },
+          network: {},
+        } as any,
+      ),
+    ).to.equal('https://relay.example.com/nostream/admin/settings')
+  })
+
+  it('returns undefined when relay_url is missing so Host cannot be trusted', () => {
+    expect(
+      getAbsoluteHttpRequestUrl(request, {
+        info: {},
+        network: {},
+      } as any),
+    ).to.equal(undefined)
+  })
+
+  it('returns undefined for non http(s)/ws(s) relay_url protocols', () => {
+    expect(
+      getAbsoluteHttpRequestUrl(request, {
+        info: { relay_url: 'ftp://relay.example.com' },
+        network: {},
+      } as any),
+    ).to.equal(undefined)
   })
 })
