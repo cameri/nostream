@@ -1,11 +1,10 @@
+import { ICacheAdapter } from '../@types/adapters'
 import { CacheClient } from '../@types/cache'
 import { createLogger } from '../factories/logger-factory'
-import { ICacheAdapter } from '../@types/adapters'
 
 const logger = createLogger('redis-adapter')
 
 export class RedisAdapter implements ICacheAdapter {
-
   private connection: Promise<void>
 
   private scriptShas: Map<string, string> = new Map()
@@ -70,6 +69,15 @@ export class RedisAdapter implements ICacheAdapter {
     return 'OK' === (await this.client.set(key, value))
   }
 
+  public async setKeyIfNotExists(key: string, value: string, expirySeconds?: number): Promise<boolean> {
+    await this.connection
+    logger('set nx %s key', key)
+    if (typeof expirySeconds === 'number') {
+      return 'OK' === (await this.client.set(key, value, { EX: expirySeconds, NX: true }))
+    }
+    return 'OK' === (await this.client.set(key, value, { NX: true }))
+  }
+
   public async removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number> {
     await this.connection
     logger('remove %d..%d range from sorted set %s', min, max, key)
@@ -96,7 +104,6 @@ export class RedisAdapter implements ICacheAdapter {
     return this.client.zAdd(key, members)
   }
 
-
   public async deleteKey(key: string): Promise<number> {
     await this.connection
     logger('delete %s key', key)
@@ -106,13 +113,13 @@ export class RedisAdapter implements ICacheAdapter {
   public async getHKey(key: string, field: string): Promise<string> {
     await this.connection
     logger('get %s field for key %s', field, key)
-    return await this.client.hGet(key, field) ?? ''
+    return (await this.client.hGet(key, field)) ?? ''
   }
 
   public async setHKey(key: string, fields: Record<string, string>): Promise<boolean> {
     await this.connection
     logger('set %s key', key)
-    return await this.client.hSet(key, fields) >= 0
+    return (await this.client.hSet(key, fields)) >= 0
   }
 
   public async eval(script: string, keys: string[], args: string[]): Promise<unknown> {
@@ -123,6 +130,4 @@ export class RedisAdapter implements ICacheAdapter {
     }
     return await this.client.evalSha(this.scriptShas.get(script)!, { keys, arguments: args })
   }
-
-
 }
