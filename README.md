@@ -322,6 +322,17 @@ The importer:
 - Prints progress in the format:
   `[Processed: 50,000 | Inserted: 45,000 | Skipped: 5,000 | Errors: 0]`
 
+### NIP-43 invite codes
+
+Kind 28934 join requests are implemented. Mint a code and share it out of band:
+
+  ```
+  nostream invite create --json
+  docker compose exec nostream node src/cli/index.js invite create
+  ```
+
+See [CLI.md](CLI.md) for `--uses` / `--expires-in` and Docker vs local Postgres.
+
 ### Running as a Service
 
 By default this server will run continuously until you stop it with Ctrl+C or until the system restarts.

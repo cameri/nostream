@@ -21,6 +21,15 @@ describe('cli documentation alignment', () => {
     expect(cliDoc).to.include('Advanced dot-path get/set remains available for full settings access.')
   })
 
+  it('documents NIP-43 invite minting', () => {
+    const readme = fs.readFileSync(path.join(projectRoot, 'README.md'), 'utf-8')
+    const cliDoc = fs.readFileSync(path.join(projectRoot, 'CLI.md'), 'utf-8')
+
+    expect(cliDoc).to.include('nostream invite create')
+    expect(cliDoc).to.include('docker compose exec nostream node src/cli/index.js invite create')
+    expect(readme).to.include('nostream invite create')
+  })
+
   it('does not ship removed legacy wrapper scripts', () => {
     const removedWrappers = [
       'start',

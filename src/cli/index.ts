@@ -29,8 +29,9 @@ import {
   runDevTestIntegration,
   runDevTestUnit,
   runDevTestPerfConnection,
-  runDevTestPerfMessage
+  runDevTestPerfMessage,
 } from './commands/dev'
+import { runInviteCreate } from './commands/invite'
 import { runTui } from './tui/main'
 import { logError, logInfo } from './utils/output'
 
@@ -89,6 +90,10 @@ const configEnvSubHelp: Record<string, string> = {
   get: 'Usage: nostream config env get <key> [--show-secrets]',
   set: 'Usage: nostream config env set <key> <value>',
   validate: 'Usage: nostream config env validate',
+}
+
+const inviteSubHelp: Record<string, string> = {
+  create: 'Usage: nostream invite create [--uses N] [--expires-in <seconds>] [--json]',
 }
 
 const devSubHelp: Record<string, string> = {
@@ -170,21 +175,17 @@ cli
     }),
   )
 
-cli
-  .command('update [...args]', 'Pull latest git changes and restart relay')
-  .action(
-    withErrorBoundary(async (args: unknown) => {
-      return runUpdate(args as string[])
-    }),
-  )
+cli.command('update [...args]', 'Pull latest git changes and restart relay').action(
+  withErrorBoundary(async (args: unknown) => {
+    return runUpdate(args as string[])
+  }),
+)
 
-cli
-  .command('clean', 'Clean Docker resources (legacy script replacement)')
-  .action(
-    withErrorBoundary(async () => {
-      return runDevDockerClean({ yes: true })
-    }),
-  )
+cli.command('clean', 'Clean Docker resources (legacy script replacement)').action(
+  withErrorBoundary(async () => {
+    return runDevDockerClean({ yes: true })
+  }),
+)
 
 cli
   .command('import [file] [...args]', 'Import events from .jsonl or .json')
@@ -237,9 +238,7 @@ cli
         (format) => !isStructuredExportFormat(format) && !isCompressionExportFormat(format),
       )
       if (unknownFormats.length > 0) {
-        throw new CliUsageError(
-          `Unsupported format: ${unknownFormats[0]}. Supported values: json, jsonl, gzip, gz, xz`,
-        )
+        throw new CliUsageError(`Unsupported format: ${unknownFormats[0]}. Supported values: json, jsonl, gzip, gz, xz`)
       }
 
       const structuredFormats = [...formatCandidates].filter(isStructuredExportFormat)
@@ -251,17 +250,16 @@ cli
 
       const compressionFamilies = new Set(compressionFormats.map((format) => (format === 'xz' ? 'xz' : 'gzip')))
       if (compressionFamilies.size > 1) {
-        throw new CliUsageError(
-          'Conflicting compression formats were provided. Use only one of: gzip/gz or xz',
-        )
+        throw new CliUsageError('Conflicting compression formats were provided. Use only one of: gzip/gz or xz')
       }
 
       if (structuredFormats.length > 0 && compressionFormats.length > 0) {
-        throw new CliUsageError('Cannot combine structured export format (json/jsonl) with compression format (gzip/gz/xz).')
+        throw new CliUsageError(
+          'Cannot combine structured export format (json/jsonl) with compression format (gzip/gz/xz).',
+        )
       }
 
-      const compress =
-        Boolean(resolved.compress) || passthrough.includes('--compress') || passthrough.includes('-z')
+      const compress = Boolean(resolved.compress) || passthrough.includes('--compress') || passthrough.includes('-z')
       if (structuredFormats.length > 0 && compress) {
         throw new CliUsageError('Cannot combine --compress with --format json/jsonl.')
       }
@@ -287,6 +285,45 @@ cli
       const resolved = options as Record<string, unknown>
       const normalizedCount = Array.isArray(resolved.count) ? resolved.count[0] : resolved.count
       return runSeed({ ...(resolved as any), count: normalizedCount as number | undefined })
+    }),
+  )
+
+cli
+  .command('invite [...args]', 'Mint NIP-43 invite codes')
+  .option('--uses <uses>', 'Times the code can be claimed (default: nip43.defaultMaxUses)', { type: [Number] })
+  .option('--expires-in <seconds>', 'Code lifetime in seconds (default: nip43.inviteCodeExpiry)', { type: [Number] })
+  .option('--json', 'Print machine-readable JSON')
+  .action(
+    withErrorBoundary(async (args: unknown, options: unknown) => {
+      const positional = (args as string[]) ?? []
+      const command = positional[0]
+      const resolved = options as Record<string, unknown>
+      const json = Boolean(resolved.json)
+
+      if (resolved.help && command && inviteSubHelp[command]) {
+        logInfo(inviteSubHelp[command])
+        return 0
+      }
+
+      if (command !== 'create' || positional.length > 1) {
+        throw new CliUsageError(inviteSubHelp.create)
+      }
+
+      const uses = Array.isArray(resolved.uses) ? resolved.uses[0] : resolved.uses
+      const expiresIn = Array.isArray(resolved.expiresIn) ? resolved.expiresIn[0] : resolved.expiresIn
+
+      if (uses !== undefined && (!Number.isSafeInteger(uses) || (uses as number) < 1)) {
+        throw new CliUsageError('--uses must be a positive integer')
+      }
+      if (expiresIn !== undefined && (!Number.isSafeInteger(expiresIn) || (expiresIn as number) < 1)) {
+        throw new CliUsageError('--expires-in must be a positive integer (seconds)')
+      }
+
+      return runInviteCreate({
+        uses: uses as number | undefined,
+        expiresIn: expiresIn as number | undefined,
+        json,
+      })
     }),
   )
 
@@ -444,6 +481,7 @@ withErrorBoundary(async () => {
     'dev',
     'update',
     'clean',
+    'invite',
   ])
 
   if (userArgs.length >= 2 && userArgs.includes('--help')) {
@@ -464,6 +502,11 @@ withErrorBoundary(async () => {
 
     if (userArgs[0] === 'dev' && devSubHelp[userArgs[1]]) {
       logInfo(devSubHelp[userArgs[1]])
+      return 0
+    }
+
+    if (userArgs[0] === 'invite' && inviteSubHelp[userArgs[1]]) {
+      logInfo(inviteSubHelp[userArgs[1]])
       return 0
     }
   }

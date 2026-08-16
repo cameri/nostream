@@ -26,9 +26,27 @@ nostream update
 nostream clean
 nostream setup [--yes] [--start]
 nostream seed [--count 100]
+nostream invite create [--uses N] [--expires-in <seconds>] [--json]
 nostream import [file.jsonl|file.json] [--file file.jsonl|file.json] [--batch-size 1000]
 nostream export [output] [--output output] [--format jsonl|json]
 ```
+
+## NIP-43 invite codes
+
+Join (kind 28934) is already implemented. Operators mint a claim string and share it out of band; the client then publishes a join request with a `claim` tag.
+
+```bash
+# Local PostgreSQL (DB_URI or DB_HOST in the environment / .env)
+nostream invite create
+nostream invite create --uses 3 --expires-in 86400 --json
+
+# Docker: Postgres is not published to the host
+docker compose exec nostream node src/cli/index.js invite create
+```
+
+`--uses` defaults to `nip43.defaultMaxUses` (1). `--expires-in` defaults to `nip43.inviteCodeExpiry` (0 = never). The printed code is the first line of human output so scripts can capture it. If `info.self` is a hex pubkey or `npub1…`, it is stored as `created_by`.
+
+This does not yet generate kind 28935 on `REQ` or publish membership list events.
 
 ## Removed Legacy Wrappers
 
@@ -135,4 +153,8 @@ nostream config set payments.enabled true --restart
 nostream config env set RELAY_PORT 8008
 nostream config env get SECRET --show-secrets
 nostream config env validate
+
+# Mint a NIP-43 invite code (kind 28934 join)
+nostream invite create --json
+docker compose exec nostream node src/cli/index.js invite create
 ```

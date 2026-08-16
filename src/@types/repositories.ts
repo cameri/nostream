@@ -3,7 +3,7 @@ import { EventKinds } from '../constants/base'
 import { DatabaseClient, EventId, Pubkey } from './base'
 import { DvmJob } from './dvm'
 import { DBEvent, Event } from './event'
-import { InviteCode } from './invite-code'
+import { CreateInviteCodeOptions, InviteCode } from './invite-code'
 import { Invoice } from './invoice'
 import { Nip05Verification } from './nip05'
 import { EventKindsRange } from './settings'
@@ -67,7 +67,7 @@ export interface INip05VerificationRepository {
 }
 
 export interface IInviteCodeRepository {
-  create(code: string, expiresAt?: Date, remainingUses?: number | null): Promise<InviteCode>
+  create(code: string, options?: CreateInviteCodeOptions): Promise<InviteCode>
   findByCode(code: string): Promise<InviteCode | undefined>
   claimCode(code: string, pubkey: Pubkey): Promise<boolean>
   findActiveCodes(limit?: number): Promise<InviteCode[]>
