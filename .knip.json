@@ -16,6 +16,7 @@
   "ignore": [
     ".nostr/**",
     "src/repositories/invite-code-repository.ts",
+    "src/repositories/dvm-job-repository.ts",
     "src/utils/relay-probe/**"
   ],
   "commitlint": false,
