@@ -73,6 +73,11 @@ nip43:
   # (users who claimed an invite code via a kind 28934 join request) may
   # publish events. Enabling this on an open relay blocks all non-members.
   enabled: false
+  # Seconds until a newly minted invite code expires. Default is 600 (10 minutes).
+  # 0 means the code never expires.
+  inviteCodeExpirySeconds: 600
+  # How many times a newly minted invite code can be claimed.
+  defaultMaxUses: 1
 nip45:
   enabled: true
 nip50:
