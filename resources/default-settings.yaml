@@ -73,7 +73,8 @@ nip43:
   # (users who claimed an invite code via a kind 28934 join request) may
   # publish events. Enabling this on an open relay blocks all non-members.
   enabled: false
-  # Seconds until a newly minted invite code expires. 0 means the code never expires.
+  # Seconds until a newly minted invite code expires. Default is 600 (10 minutes).
+  # 0 means the code never expires.
   inviteCodeExpirySeconds: 600
   # How many times a newly minted invite code can be claimed.
   defaultMaxUses: 1
@@ -86,10 +87,9 @@ nip50:
   maxQueryLength: 256
 nip66:
   # NIP-66 relay liveness monitoring. Disabled by default.
-  # Settings only in this release (no monitor worker yet); enabling is currently a no-op.
-  # Future versions may probe public relay URLs and publish kind 30166/10166 events.
+  # When enabled, a relay-monitor worker probes targets and stores the latest snapshot in Redis.
   enabled: false
-  # Seconds between scheduled probe runs (reserved for a future monitor worker).
+  # Seconds between scheduled probe runs.
   probeIntervalSeconds: 3600
   timeouts:
     dnsMs: 10000
