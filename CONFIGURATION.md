@@ -192,7 +192,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip42.restrictedReads.enabled               | Enable NIP-42 auth-based read filtering. When enabled, events of the restricted kinds are only delivered to clients that have authenticated as the event's author or as a pubkey listed in the event's `p` tags. Applies to stored events (REQ), live broadcasts and COUNT queries. Subscriptions that exclusively target restricted kinds from unauthenticated clients are closed with an `auth-required:` reason. Defaults to false. |
 | nip42.restrictedReads.kinds                 | List of event kinds (or `[min, max]` ranges) protected by auth-based read filtering. Defaults to `[4, 1059]` (NIP-04 encrypted direct messages and NIP-59 gift wraps). |
 | nip43.enabled                               | Enable NIP-43 invite-based membership. When true, only admitted members may publish. Defaults to false. |
-| nip43.inviteCodeExpiry                      | Seconds until a newly minted invite code expires. `0` means the code never expires. Defaults to 0. |
+| nip43.inviteCodeExpirySeconds               | Seconds until a newly minted invite code expires. `0` means the code never expires. Defaults to 600 (10 minutes). |
 | nip43.defaultMaxUses                        | How many times a newly minted invite code can be claimed. Defaults to 1. |
 | nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
 | nip50.enabled                               | Enable or disable NIP-50 full-text search. Defaults to false. When enabled, clients can include a `search` field in REQ filters to perform text queries against event content. Requires the GIN full-text index migration. |

@@ -266,7 +266,7 @@ describe('SettingsStatic', () => {
       const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
 
       expect(defaults).to.have.nested.property('nip43.enabled', false)
-      expect(defaults).to.have.nested.property('nip43.inviteCodeExpiry', 0)
+      expect(defaults).to.have.nested.property('nip43.inviteCodeExpirySeconds', 600)
       expect(defaults).to.have.nested.property('nip43.defaultMaxUses', 1)
     })
 
@@ -275,14 +275,14 @@ describe('SettingsStatic', () => {
       const userConfig = {
         nip43: {
           enabled: true,
-          inviteCodeExpiry: 86400,
+          inviteCodeExpirySeconds: 86400,
           defaultMaxUses: 5,
         },
       }
       const merged = mergeDeepRight(defaults, userConfig) as Settings
 
       expect(merged.nip43?.enabled).to.equal(true)
-      expect(merged.nip43?.inviteCodeExpiry).to.equal(86400)
+      expect(merged.nip43?.inviteCodeExpirySeconds).to.equal(86400)
       expect(merged.nip43?.defaultMaxUses).to.equal(5)
     })
   })

@@ -6,6 +6,7 @@ import { Nip43Settings } from '../@types/settings'
 import { fromBech32 } from './transform'
 
 export const DEFAULT_INVITE_MAX_USES = 1
+export const DEFAULT_INVITE_CODE_EXPIRY_SECONDS = 600
 
 const HEX_PUBKEY = /^[0-9a-f]{64}$/i
 
@@ -54,7 +55,7 @@ export const resolveInviteCodeLimits = (
     return { remainingUses, expiresAt: overrides.expiresAt }
   }
 
-  const expirySeconds = settings?.inviteCodeExpiry
+  const expirySeconds = settings?.inviteCodeExpirySeconds ?? DEFAULT_INVITE_CODE_EXPIRY_SECONDS
   const expiresAt =
     typeof expirySeconds === 'number' && Number.isFinite(expirySeconds) && expirySeconds > 0
       ? new Date(Date.now() + expirySeconds * 1000)

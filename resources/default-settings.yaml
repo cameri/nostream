@@ -74,7 +74,7 @@ nip43:
   # publish events. Enabling this on an open relay blocks all non-members.
   enabled: false
   # Seconds until a newly minted invite code expires. 0 means the code never expires.
-  inviteCodeExpiry: 0
+  inviteCodeExpirySeconds: 600
   # How many times a newly minted invite code can be claimed.
   defaultMaxUses: 1
 nip45:

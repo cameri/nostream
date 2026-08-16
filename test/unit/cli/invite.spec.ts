@@ -36,7 +36,7 @@ describe('runInviteCreate', () => {
   const settings = (overrides: Partial<Settings> = {}): Settings =>
     ({
       info: { self: pubkey, relay_url: 'wss://test.relay', name: 'test', pubkey: '', contact: '', description: '' },
-      nip43: { enabled: false, defaultMaxUses: 1, inviteCodeExpiry: 0 },
+      nip43: { enabled: false, defaultMaxUses: 1, inviteCodeExpirySeconds: 600 },
       ...overrides,
     }) as Settings
 
@@ -92,7 +92,7 @@ describe('runInviteCreate', () => {
 
     expect(issue.calledOnce).to.equal(true)
     const [, nip43, overrides] = issue.firstCall.args
-    expect(nip43).to.deep.equal({ enabled: false, defaultMaxUses: 1, inviteCodeExpiry: 0 })
+    expect(nip43).to.deep.equal({ enabled: false, defaultMaxUses: 1, inviteCodeExpirySeconds: 600 })
     expect(overrides.remainingUses).to.equal(4)
     expect(overrides.expiresAt).to.deep.equal(new Date(now.getTime() + 120_000))
     expect(overrides.createdBy).to.equal(pubkey)

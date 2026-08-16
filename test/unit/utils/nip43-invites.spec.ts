@@ -6,6 +6,7 @@ import { InviteCode } from '../../../src/@types/invite-code'
 import { IInviteCodeRepository } from '../../../src/@types/repositories'
 import { Nip43Settings } from '../../../src/@types/settings'
 import {
+  DEFAULT_INVITE_CODE_EXPIRY_SECONDS,
   DEFAULT_INVITE_MAX_USES,
   generateInviteCode,
   isHexPubkey,
@@ -84,15 +85,15 @@ describe('nip43-invites', () => {
   })
 
   describe('resolveInviteCodeLimits', () => {
-    it('defaults to one use and no expiry', () => {
+    it('defaults to one use and a 10-minute expiry', () => {
       expect(resolveInviteCodeLimits(undefined)).to.deep.equal({
         remainingUses: DEFAULT_INVITE_MAX_USES,
-        expiresAt: null,
+        expiresAt: new Date(fixedNow.getTime() + DEFAULT_INVITE_CODE_EXPIRY_SECONDS * 1000),
       })
     })
 
-    it('reads defaultMaxUses and inviteCodeExpiry from settings', () => {
-      const settings: Nip43Settings = { enabled: true, defaultMaxUses: 3, inviteCodeExpiry: 60 }
+    it('reads defaultMaxUses and inviteCodeExpirySeconds from settings', () => {
+      const settings: Nip43Settings = { enabled: true, defaultMaxUses: 3, inviteCodeExpirySeconds: 60 }
 
       expect(resolveInviteCodeLimits(settings)).to.deep.equal({
         remainingUses: 3,
@@ -100,8 +101,8 @@ describe('nip43-invites', () => {
       })
     })
 
-    it('treats inviteCodeExpiry 0 as never expires', () => {
-      expect(resolveInviteCodeLimits({ enabled: false, inviteCodeExpiry: 0, defaultMaxUses: 1 })).to.deep.equal({
+    it('treats inviteCodeExpirySeconds 0 as never expires', () => {
+      expect(resolveInviteCodeLimits({ enabled: false, inviteCodeExpirySeconds: 0, defaultMaxUses: 1 })).to.deep.equal({
         remainingUses: 1,
         expiresAt: null,
       })
@@ -109,7 +110,7 @@ describe('nip43-invites', () => {
 
     it('lets overrides win over settings', () => {
       const expiresAt = new Date('2026-08-16T00:00:00.000Z')
-      const settings: Nip43Settings = { enabled: true, defaultMaxUses: 9, inviteCodeExpiry: 3600 }
+      const settings: Nip43Settings = { enabled: true, defaultMaxUses: 9, inviteCodeExpirySeconds: 3600 }
 
       expect(resolveInviteCodeLimits(settings, { remainingUses: 2, expiresAt })).to.deep.equal({
         remainingUses: 2,
@@ -134,11 +135,22 @@ describe('nip43-invites', () => {
       updatedAt: fixedNow,
     }
 
+    it('uses a 10-minute expiry when settings omit inviteCodeExpirySeconds', async () => {
+      const create = sandbox.stub().resolves(stored)
+      const repository = { create } as unknown as IInviteCodeRepository
+
+      await issueInviteCode(repository, { enabled: false })
+
+      expect(create.firstCall.args[1].expiresAt).to.deep.equal(
+        new Date(fixedNow.getTime() + DEFAULT_INVITE_CODE_EXPIRY_SECONDS * 1000),
+      )
+    })
+
     it('generates a code and persists yaml defaults', async () => {
       const create = sandbox.stub().resolves(stored)
       const repository = { create } as unknown as IInviteCodeRepository
 
-      const result = await issueInviteCode(repository, { enabled: false, defaultMaxUses: 1, inviteCodeExpiry: 0 })
+      const result = await issueInviteCode(repository, { enabled: false, defaultMaxUses: 1, inviteCodeExpirySeconds: 0 })
 
       expect(result).to.equal(stored)
       expect(create).to.have.been.calledOnce

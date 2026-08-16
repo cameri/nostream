@@ -291,7 +291,7 @@ cli
 cli
   .command('invite [...args]', 'Mint NIP-43 invite codes')
   .option('--uses <uses>', 'Times the code can be claimed (default: nip43.defaultMaxUses)', { type: [Number] })
-  .option('--expires-in <seconds>', 'Code lifetime in seconds (default: nip43.inviteCodeExpiry)', { type: [Number] })
+  .option('--expires-in <seconds>', 'Code lifetime in seconds (default: nip43.inviteCodeExpirySeconds)', { type: [Number] })
   .option('--json', 'Print machine-readable JSON')
   .action(
     withErrorBoundary(async (args: unknown, options: unknown) => {

@@ -44,7 +44,7 @@ nostream invite create --uses 3 --expires-in 86400 --json
 docker compose exec nostream node src/cli/index.js invite create
 ```
 
-`--uses` defaults to `nip43.defaultMaxUses` (1). `--expires-in` defaults to `nip43.inviteCodeExpiry` (0 = never). The printed code is the first line of human output so scripts can capture it. If `info.self` is a hex pubkey or `npub1…`, it is stored as `created_by`.
+`--uses` defaults to `nip43.defaultMaxUses` (1). `--expires-in` defaults to `nip43.inviteCodeExpirySeconds` (600 = 10 minutes; `0` = never). The printed code is the first line of human output so scripts can capture it. If `info.self` is a hex pubkey or `npub1…`, it is stored as `created_by`.
 
 This does not yet generate kind 28935 on `REQ` or publish membership list events.
 
