@@ -19,7 +19,7 @@ const getCache = (): ICacheAdapter => {
 export const nip98AuthReplayCacheKey = (eventId: string): string => `nip98:auth:${eventId}`
 
 const resolveMaxSkewSeconds = (maxSkewSeconds: number | undefined): number => {
-  if (typeof maxSkewSeconds === 'number' && Number.isSafeInteger(maxSkewSeconds) && maxSkewSeconds > 0) {
+  if (typeof maxSkewSeconds === 'number' && Number.isSafeInteger(maxSkewSeconds) && maxSkewSeconds >= 0) {
     return maxSkewSeconds
   }
 

@@ -102,7 +102,7 @@ export const adminAuthMiddleware = async (request: AdminRequest, response: Respo
     const nip98Settings = settings.admin?.nip98
     const authorizationHeader = request.headers.authorization
 
-    if (!nip98Settings?.enabled || !isNostrAuthorizationHeader(authorizationHeader)) {
+    if (nip98Settings?.enabled !== true || !isNostrAuthorizationHeader(authorizationHeader)) {
       sendUnauthorized(response)
       return
     }

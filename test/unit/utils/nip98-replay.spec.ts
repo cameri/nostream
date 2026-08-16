@@ -64,6 +64,10 @@ describe('nip98-replay', () => {
       expect(resolveNip98ReplayTtlSeconds(now - skew, skew, now)).to.equal(1)
     })
 
+    it('uses a 1s ttl when maxSkewSeconds is zero', () => {
+      expect(resolveNip98ReplayTtlSeconds(now, 0, now)).to.equal(1)
+    })
+
     it('clamps expired or invalid remaining windows to 1s', () => {
       expect(resolveNip98ReplayTtlSeconds(now - skew - 1, skew, now)).to.equal(1)
       expect(resolveNip98ReplayTtlSeconds(Number.NaN, skew, now)).to.equal(1)
