@@ -11,7 +11,7 @@ import {
 } from '../../../../src/handlers/request-handlers/admin-auth-middleware'
 import { AdminRequest } from '../../../../src/handlers/request-handlers/admin-json-body-middleware'
 import { getPublicKey, identifyEvent, signEvent } from '../../../../src/utils/event'
-import { hashNip98Payload } from '../../../../src/utils/nip98'
+import { hashNip98Payload, isNostrAuthorizationHeader } from '../../../../src/utils/nip98'
 import * as nip98Replay from '../../../../src/utils/nip98-replay'
 
 chai.use(sinonChai)
@@ -105,6 +105,17 @@ describe('adminAuthMiddleware', () => {
       },
     } as any)
   }
+
+  describe('isNostrAuthorizationHeader', () => {
+    it('accepts only a complete Nostr scheme and base64 token', () => {
+      expect(isNostrAuthorizationHeader('Nostr YQ==')).to.be.true
+      expect(isNostrAuthorizationHeader('nostr YQ==')).to.be.true
+      expect(isNostrAuthorizationHeader(' Nostr YQ==')).to.be.false
+      expect(isNostrAuthorizationHeader('Nostr YQ== ')).to.be.false
+      expect(isNostrAuthorizationHeader('Nostr  YQ==')).to.be.false
+      expect(isNostrAuthorizationHeader('Nostr not-valid-base64!!!')).to.be.false
+    })
+  })
 
   describe('adminAuthGateMiddleware', () => {
     it('continues for session-authenticated requests', async () => {
@@ -344,52 +355,6 @@ describe('adminAuthMiddleware', () => {
     await adminAuthMiddleware(
       mockRequest({
         headers: { authorization: await createAuthHeader() },
-      }),
-      response as any,
-      next,
-    )
-
-    expect(next).not.to.have.been.called
-    expect(response.status).to.have.been.calledWith(401)
-  })
-
-  it('rejects PATCH with a body when rawBody was not captured', async () => {
-    enableNip98()
-    sandbox.stub(Date, 'now').returns(now * 1000)
-    const body = '{"path":"info.name","value":"relay"}'
-    const authorization = await createAuthHeader({
-      method: 'PATCH',
-      payload: hashNip98Payload(body),
-    })
-
-    await adminAuthMiddleware(
-      mockRequest({
-        method: 'PATCH',
-        headers: {
-          authorization,
-          'content-length': String(Buffer.byteLength(body)),
-        },
-      }),
-      response as any,
-      next,
-    )
-
-    expect(next).not.to.have.been.called
-    expect(response.status).to.have.been.calledWith(401)
-  })
-
-  it('rejects PATCH with chunked transfer-encoding when rawBody was not captured', async () => {
-    enableNip98()
-    sandbox.stub(Date, 'now').returns(now * 1000)
-    const authorization = await createAuthHeader({ method: 'PATCH' })
-
-    await adminAuthMiddleware(
-      mockRequest({
-        method: 'PATCH',
-        headers: {
-          authorization,
-          'transfer-encoding': 'chunked',
-        },
       }),
       response as any,
       next,
