@@ -7,6 +7,7 @@ import { createSettings } from '../../factories/settings-factory'
 import { getAbsoluteHttpRequestUrl } from '../../utils/http'
 import {
   DEFAULT_NIP98_MAX_AUTHORIZATION_HEADER_LENGTH,
+  isNostrAuthorizationHeader,
   verifyNip98Auth,
 } from '../../utils/nip98'
 import { claimNip98AuthEventId, resolveNip98ReplayTtlSeconds } from '../../utils/nip98-replay'
@@ -18,44 +19,17 @@ const adminAuthProvider: IAdminAuthProvider = createAdminAuthProvider()
 
 const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
-export const isNostrAuthorizationHeader = (authorizationHeader: string | undefined): boolean => {
-  if (typeof authorizationHeader !== 'string') {
-    return false
-  }
-
-  return /^Nostr\s+/i.test(authorizationHeader.trim())
-}
-
-const isAllowedNip98Pubkey = (pubkey: string, allowedPubkeys: string[] | undefined): boolean => {
-  if (!Array.isArray(allowedPubkeys) || allowedPubkeys.length === 0) {
-    return false
-  }
-
+const isAllowedNip98Pubkey = (pubkey: string, allowedPubkeys: string[] = []): boolean => {
   const normalized = pubkey.toLowerCase()
-  return allowedPubkeys.some((allowed) => typeof allowed === 'string' && allowed.toLowerCase() === normalized)
+  return allowedPubkeys.some((allowed) => allowed.toLowerCase() === normalized)
 }
 
-const resolveBodyForNip98 = (request: AdminRequest): Buffer | undefined | 'missing-raw-body' => {
-  if (request.rawBody !== undefined) {
-    return request.rawBody
-  }
-
+const resolveBodyForNip98 = (request: AdminRequest): Buffer | undefined => {
   if (!METHODS_WITH_BODY.has(request.method.toUpperCase())) {
     return undefined
   }
 
-  const contentLength = Number(request.headers['content-length'] ?? '0')
-  const transferEncodingHeader = request.headers['transfer-encoding']
-  const transferEncoding = Array.isArray(transferEncodingHeader)
-    ? transferEncodingHeader.join(',')
-    : (transferEncodingHeader ?? '')
-  const hasChunkedBody = transferEncoding.toLowerCase().includes('chunked')
-
-  if ((Number.isFinite(contentLength) && contentLength > 0) || hasChunkedBody) {
-    return 'missing-raw-body'
-  }
-
-  return Buffer.alloc(0)
+  return request.rawBody ?? Buffer.alloc(0)
 }
 
 const sendUnauthorized = (response: Response): void => {
@@ -140,18 +114,11 @@ export const adminAuthMiddleware = async (request: AdminRequest, response: Respo
       return
     }
 
-    const body = resolveBodyForNip98(request)
-    if (body === 'missing-raw-body') {
-      logger('rejecting NIP-98 auth: request body present but rawBody was not captured')
-      sendUnauthorized(response)
-      return
-    }
-
     const result = await verifyNip98Auth({
       authorizationHeader,
       url: absoluteUrl,
       method: request.method.toUpperCase(),
-      body,
+      body: resolveBodyForNip98(request),
       maxSkewSeconds: nip98Settings.maxSkewSeconds,
       payloadPolicy: 'require-when-body',
     })

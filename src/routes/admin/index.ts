@@ -88,7 +88,6 @@ router.post(
   '/settings/validate',
   adminRateLimitMiddleware,
   adminAuthGateMiddleware,
-  adminJsonBodyMiddleware,
   adminAuthMiddleware,
   withAdminController(createPostAdminSettingsValidateController),
 )
