@@ -33,6 +33,7 @@ describe('relay-probe safety helpers', () => {
   it('rejects unsafe NIP-11 fetch targets', () => {
     expect(isNip11FetchTargetSafe('https://relay.example.com/')).to.equal(true)
     expect(isNip11FetchTargetSafe('http://127.0.0.1/')).to.equal(false)
+    expect(isNip11FetchTargetSafe('http://[::1]/')).to.equal(false)
     expect(isNip11FetchTargetSafe('ftp://relay.example.com/')).to.equal(false)
   })
 })

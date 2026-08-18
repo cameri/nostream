@@ -273,6 +273,40 @@ export interface Nip50Settings {
   maxQueryLength?: number
 }
 
+export interface Nip66ProbeTimeouts {
+  dnsMs: number
+  tlsMs: number
+  wsRttMs: number
+  nip11Ms: number
+}
+
+export interface Nip66Settings {
+  /**
+   * Enable NIP-66 relay monitoring. When true, the primary process starts a
+   * relay-monitor cluster worker that probes configured targets on an interval.
+   * Defaults to false.
+   */
+  enabled: boolean
+  /**
+   * Interval in seconds between probe runs. Defaults to 3600.
+   */
+  probeIntervalSeconds: number
+  /**
+   * Per-check probe timeouts in milliseconds.
+   */
+  timeouts: Nip66ProbeTimeouts
+  /**
+   * Public relay WebSocket URLs to probe (for example wss://relay.example.com).
+   * When empty, the monitor worker uses info.relay_url.
+   */
+  targets: string[]
+  /**
+   * DNS cache TTL in seconds for repeated probes of the same hostname.
+   * Defaults to 300.
+   */
+  dnsCacheTtlSeconds: number
+}
+
 export interface Nip05Settings {
   mode: Nip05Mode
   /**
@@ -341,7 +375,7 @@ export interface Nip42Settings {
 
 export interface Nip43Settings {
   enabled: boolean
-  inviteCodeExpiry?: number
+  inviteCodeExpirySeconds?: number
   defaultMaxUses?: number
   allowInviteRequests?: boolean
   inviteRequestWhitelist?: Pubkey[]
@@ -362,5 +396,6 @@ export interface Settings {
   nip43?: Nip43Settings
   nip45?: Nip45Settings
   nip50?: Nip50Settings
+  nip66?: Nip66Settings
   wot?: WoTSettings
 }

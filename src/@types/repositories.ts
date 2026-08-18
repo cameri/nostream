@@ -1,12 +1,12 @@
 import { PassThrough } from 'stream'
-
-import { DatabaseClient, EventId, Pubkey } from './base'
-import { DBEvent, Event } from './event'
 import { EventKinds } from '../constants/base'
-import { EventKindsRange } from './settings'
-import { InviteCode } from './invite-code'
+import { DatabaseClient, EventId, Pubkey } from './base'
+import { DvmJob } from './dvm'
+import { DBEvent, Event } from './event'
+import { CreateInviteCodeOptions, InviteCode } from './invite-code'
 import { Invoice } from './invoice'
 import { Nip05Verification } from './nip05'
+import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
 
@@ -67,9 +67,19 @@ export interface INip05VerificationRepository {
 }
 
 export interface IInviteCodeRepository {
-  create(code: string, expiresAt?: Date, remainingUses?: number | null): Promise<InviteCode>
+  create(code: string, options?: CreateInviteCodeOptions): Promise<InviteCode>
   findByCode(code: string): Promise<InviteCode | undefined>
   claimCode(code: string, pubkey: Pubkey): Promise<boolean>
   findActiveCodes(limit?: number): Promise<InviteCode[]>
   deleteExpiredCodes(): Promise<number>
+}
+
+export interface IDvmJobRepository {
+  create(id: string, requesterPubkey: Pubkey, kind: number): Promise<DvmJob>
+  findById(id: string): Promise<DvmJob | undefined>
+  assignWorker(id: string, workerIndex: number): Promise<boolean>
+  updateStatus(
+    job: Pick<DvmJob, 'id' | 'status'> & Partial<Pick<DvmJob, 'resultEventId' | 'error'>>,
+  ): Promise<DvmJob | undefined>
+  findPendingJobs(limit?: number): Promise<DvmJob[]>
 }

@@ -5,7 +5,7 @@ import sinonChai from 'sinon-chai'
 import chaiAsPromised from 'chai-as-promised'
 
 import { DatabaseClient } from '../../../src/@types/base'
-import { generateInviteCode, InviteCodeRepository } from '../../../src/repositories/invite-code-repository'
+import { InviteCodeRepository } from '../../../src/repositories/invite-code-repository'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
@@ -40,21 +40,11 @@ describe('InviteCodeRepository', () => {
   })
 
   afterEach(async () => {
-    try { await dbClient.destroy() } finally { sandbox.restore() }
-  })
-
-  describe('generateInviteCode', () => {
-    it('returns a 32-character hex string', () => {
-      const code = generateInviteCode()
-      expect(code).to.be.a('string')
-      expect(code).to.have.lengthOf(32)
-      expect(code).to.match(/^[0-9a-f]{32}$/)
-    })
-
-    it('generates unique codes on successive calls', () => {
-      const codes = new Set(Array.from({ length: 50 }, () => generateInviteCode()))
-      expect(codes.size).to.equal(50)
-    })
+    try {
+      await dbClient.destroy()
+    } finally {
+      sandbox.restore()
+    }
   })
 
   describe('.create', () => {
@@ -64,7 +54,7 @@ describe('InviteCodeRepository', () => {
         insert: insertStub,
       }) as unknown as DatabaseClient
 
-      await repository.create(testCode, undefined, 1, client)
+      await repository.create(testCode, { remainingUses: 1 }, client)
 
       expect(client).to.have.been.calledWith('invite_codes')
     })
@@ -75,7 +65,7 @@ describe('InviteCodeRepository', () => {
         insert: insertStub,
       }) as unknown as DatabaseClient
 
-      const result = await repository.create(testCode, undefined, 1, client)
+      const result = await repository.create(testCode, { remainingUses: 1 }, client)
 
       expect(result).to.deep.include({
         code: testCode,
@@ -95,7 +85,7 @@ describe('InviteCodeRepository', () => {
       }) as unknown as DatabaseClient
 
       const expiresAt = new Date('2026-07-01T00:00:00.000Z')
-      const result = await repository.create(testCode, expiresAt, 5, client)
+      const result = await repository.create(testCode, { expiresAt, remainingUses: 5 }, client)
 
       expect(result.expiresAt).to.deep.equal(expiresAt)
       expect(result.remainingUses).to.equal(5)
@@ -111,7 +101,7 @@ describe('InviteCodeRepository', () => {
         insert: insertStub,
       }) as unknown as DatabaseClient
 
-      const result = await repository.create(testCode, undefined, 1, client)
+      const result = await repository.create(testCode, { remainingUses: 1 }, client)
 
       expect(result.expiresAt).to.be.null
       const insertedRow = insertStub.firstCall.args[0]
@@ -124,9 +114,22 @@ describe('InviteCodeRepository', () => {
         insert: insertStub,
       }) as unknown as DatabaseClient
 
-      const result = await repository.create(testCode, undefined, undefined, client)
+      const result = await repository.create(testCode, {}, client)
 
       expect(result.remainingUses).to.equal(1)
+    })
+
+    it('persists created_by when provided', async () => {
+      const insertStub = sandbox.stub().resolves()
+      const client = sandbox.stub().returns({
+        insert: insertStub,
+      }) as unknown as DatabaseClient
+
+      const result = await repository.create(testCode, { createdBy: pubkeyHex }, client)
+
+      expect(result.createdBy).to.equal(pubkeyHex)
+      const insertedRow = insertStub.firstCall.args[0]
+      expect(insertedRow.created_by).to.deep.equal(Buffer.from(pubkeyHex, 'hex'))
     })
   })
 

@@ -55,7 +55,8 @@ export const isNip11FetchTargetSafe = (targetUrl: string): boolean => {
     }
   }
 
-  if (host.startsWith('[') && host.endsWith(']')) {
+  // IPv6 literal: URL.hostname is unbracketed (e.g. "::1"); NIP-11 fetch targets should not be IP literals.
+  if (host.includes(':')) {
     return false
   }
 

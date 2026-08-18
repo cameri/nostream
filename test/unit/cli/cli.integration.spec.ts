@@ -80,11 +80,7 @@ const runPnpmCli = (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliRes
 
 const createShimCommand = (dir: string, name: string, scriptBody: string) => {
   const target = path.join(dir, name)
-  fs.writeFileSync(
-    target,
-    ['#!/usr/bin/env bash', 'set -euo pipefail', scriptBody].join('\n'),
-    'utf-8',
-  )
+  fs.writeFileSync(target, ['#!/usr/bin/env bash', 'set -euo pipefail', scriptBody].join('\n'), 'utf-8')
   fs.chmodSync(target, 0o755)
 }
 
@@ -135,6 +131,7 @@ describe('cli integration (spawn)', function () {
     expect(result.code).to.equal(0)
     expect(result.stdout).to.include('Usage:')
     expect(result.stdout).to.include('config [...args]')
+    expect(result.stdout).to.include('invite [...args]')
     expect(result.stdout).to.include('update [...args]')
     expect(result.stdout).to.include('clean')
   })
@@ -183,6 +180,34 @@ describe('cli integration (spawn)', function () {
     expect(devClean.stdout).to.include('Usage: nostream dev db:clean')
   })
 
+  it('shows invite create help', async () => {
+    const result = await runCli(['invite', 'create', '--help'])
+
+    expect(result.code).to.equal(0)
+    expect(result.stdout).to.include('Usage: nostream invite create')
+  })
+
+  it('returns usage exit code for invite without a subcommand', async () => {
+    const result = await runCli(['invite'])
+
+    expect(result.code).to.equal(2)
+    expect(result.stderr).to.include('Usage: nostream invite create')
+  })
+
+  it('rejects --uses 0 before touching the database', async () => {
+    const result = await runCli(['invite', 'create', '--uses', '0'])
+
+    expect(result.code).to.equal(2)
+    expect(result.stderr).to.include('--uses must be a positive integer')
+  })
+
+  it('rejects extra positional arguments after invite create', async () => {
+    const result = await runCli(['invite', 'create', 'leftover'])
+
+    expect(result.code).to.equal(2)
+    expect(result.stderr).to.include('Usage: nostream invite create')
+  })
+
   it('returns usage exit code for unknown command', async () => {
     const result = await runCli(['nope'])
 
@@ -200,29 +225,25 @@ describe('cli integration (spawn)', function () {
   it('supports config set/get with indexed path and validation controls', async () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-config-'))
 
-    const setIndexed = await runCli(
-      ['config', 'set', 'limits.event.content[0].maxLength', '2048'],
-      { NOSTR_CONFIG_DIR: configDir },
-    )
+    const setIndexed = await runCli(['config', 'set', 'limits.event.content[0].maxLength', '2048'], {
+      NOSTR_CONFIG_DIR: configDir,
+    })
     expect(setIndexed.code).to.equal(0)
 
-    const getIndexed = await runCli(
-      ['config', 'get', 'limits.event.content[0].maxLength'],
-      { NOSTR_CONFIG_DIR: configDir },
-    )
+    const getIndexed = await runCli(['config', 'get', 'limits.event.content[0].maxLength'], {
+      NOSTR_CONFIG_DIR: configDir,
+    })
     expect(getIndexed.code).to.equal(0)
     expect(getIndexed.stdout).to.include('2048')
 
-    const setInvalidValidated = await runCli(
-      ['config', 'set', 'limits.rateLimiter.strategy', 'broken-strategy'],
-      { NOSTR_CONFIG_DIR: configDir },
-    )
+    const setInvalidValidated = await runCli(['config', 'set', 'limits.rateLimiter.strategy', 'broken-strategy'], {
+      NOSTR_CONFIG_DIR: configDir,
+    })
     expect(setInvalidValidated.code).to.equal(1)
 
-    const getStrategyAfterReject = await runCli(
-      ['config', 'get', 'limits.rateLimiter.strategy'],
-      { NOSTR_CONFIG_DIR: configDir },
-    )
+    const getStrategyAfterReject = await runCli(['config', 'get', 'limits.rateLimiter.strategy'], {
+      NOSTR_CONFIG_DIR: configDir,
+    })
     expect(getStrategyAfterReject.code).to.equal(0)
     expect(getStrategyAfterReject.stdout).to.include('ewma')
 
@@ -232,10 +253,9 @@ describe('cli integration (spawn)', function () {
     )
     expect(setInvalidNoValidate.code).to.equal(0)
 
-    const getStrategyAfterNoValidate = await runCli(
-      ['config', 'get', 'limits.rateLimiter.strategy'],
-      { NOSTR_CONFIG_DIR: configDir },
-    )
+    const getStrategyAfterNoValidate = await runCli(['config', 'get', 'limits.rateLimiter.strategy'], {
+      NOSTR_CONFIG_DIR: configDir,
+    })
     expect(getStrategyAfterNoValidate.code).to.equal(0)
     expect(getStrategyAfterNoValidate.stdout).to.include('broken-strategy')
   })
@@ -250,10 +270,7 @@ describe('cli integration (spawn)', function () {
 
     expect(setResult.code).to.equal(0)
 
-    const getResult = await runCli(
-      ['config', 'get', 'nip05.domainWhitelist'],
-      { NOSTR_CONFIG_DIR: configDir },
-    )
+    const getResult = await runCli(['config', 'get', 'nip05.domainWhitelist'], { NOSTR_CONFIG_DIR: configDir })
 
     expect(getResult.code).to.equal(0)
     expect(getResult.stdout).to.include('example.com')
@@ -334,7 +351,9 @@ describe('cli integration (spawn)', function () {
     expect(importResult.stderr).to.include('Unknown option `--format`')
 
     expect(exportResult.code).to.equal(2)
-    expect(exportResult.stderr).to.include('Error: Unsupported format: yaml. Supported values: json, jsonl, gzip, gz, xz')
+    expect(exportResult.stderr).to.include(
+      'Error: Unsupported format: yaml. Supported values: json, jsonl, gzip, gz, xz',
+    )
     expect(exportResult.stderr).to.include('Unsupported format: yaml')
 
     expect(conflictingExportResult.code).to.equal(2)
@@ -353,14 +372,7 @@ describe('cli integration (spawn)', function () {
     const logPath = path.join(shimDir, 'docker.log')
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-shim-config-'))
 
-    createShimCommand(
-      shimDir,
-      'docker',
-      [
-        `echo "$*" >> "${logPath}"`,
-        'exit 0',
-      ].join('\n'),
-    )
+    createShimCommand(shimDir, 'docker', [`echo "$*" >> "${logPath}"`, 'exit 0'].join('\n'))
 
     const result = await runCli(['start', '--tor', '--i2p', '--debug'], {
       PATH: `${shimDir}:${process.env.PATH}`,
@@ -381,14 +393,7 @@ describe('cli integration (spawn)', function () {
     const logPath = path.join(shimDir, 'docker.log')
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-shim-port-config-'))
 
-    createShimCommand(
-      shimDir,
-      'docker',
-      [
-        `echo "$*" >> "${logPath}"`,
-        'exit 0',
-      ].join('\n'),
-    )
+    createShimCommand(shimDir, 'docker', [`echo "$*" >> "${logPath}"`, 'exit 0'].join('\n'))
 
     const before = fs
       .readdirSync(os.tmpdir())
@@ -419,14 +424,7 @@ describe('cli integration (spawn)', function () {
     const logPath = path.join(shimDir, 'docker.log')
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-shim-clean-config-'))
 
-    createShimCommand(
-      shimDir,
-      'docker',
-      [
-        `echo "$*" >> "${logPath}"`,
-        'exit 0',
-      ].join('\n'),
-    )
+    createShimCommand(shimDir, 'docker', [`echo "$*" >> "${logPath}"`, 'exit 0'].join('\n'))
 
     const result = await runCli(['clean'], {
       PATH: `${shimDir}:${process.env.PATH}`,
@@ -448,14 +446,7 @@ describe('cli integration (spawn)', function () {
     const gitLogPath = path.join(shimDir, 'git.log')
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-shim-update-config-'))
 
-    createShimCommand(
-      shimDir,
-      'docker',
-      [
-        `echo "$*" >> "${dockerLogPath}"`,
-        'exit 0',
-      ].join('\n'),
-    )
+    createShimCommand(shimDir, 'docker', [`echo "$*" >> "${dockerLogPath}"`, 'exit 0'].join('\n'))
 
     createShimCommand(
       shimDir,
