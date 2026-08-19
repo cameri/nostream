@@ -68,7 +68,7 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (isExpiredEvent(event)) {
-      logger('event %s rejected: expired')
+      logger('event %s rejected: expired', event.id)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, 'event is expired'))
       return
     }
@@ -76,7 +76,7 @@ export class EventMessageHandler implements IMessageHandler {
     event = this.addExpirationMetadata(event)
 
     if (await this.isRateLimited(event)) {
-      logger('event %s rejected: rate-limited')
+      logger('event %s rejected: rate-limited', event.id)
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
         createEventCommandResult(event.id, false, 'rate-limited: slow down'),
