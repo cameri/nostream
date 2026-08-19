@@ -5,7 +5,11 @@ info:
   banner: https://nostream.your-domain.com/banner.png
   icon: https://nostream.your-domain.com/icon.png
   pubkey: replace-with-your-pubkey-in-hex
-  self: replace-with-your-relay-pubkey-in-hex
+  # Optional. The relay's own signing pubkey, published as `self` in the NIP-11
+  # document. NIP-43 clients verify relay-signed events against it, so it MUST
+  # match the key the relay signs with. Leave it unset to have it derived from
+  # SECRET automatically; run `nostream info` to see the derived value.
+  # self: replace-with-your-relay-pubkey-in-hex
   contact: mailto:operator@your-domain.com
   terms_of_service: https://nostream.your-domain.com/terms
 payments:

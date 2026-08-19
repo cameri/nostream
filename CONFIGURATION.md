@@ -148,7 +148,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | info.name                                   | Public name of your relay. (e.g. TBG's Public Relay) |
 | info.pubkey                                 | Relay operator's Nostr pubkey in hex format. |
 | info.relay_url                              | Public-facing URL of your relay. (e.g. wss://relay.your-domain.com) |
-| info.self                                   | Relay pubkey in hex format for the relay information document `self` field. |
+| info.self                                   | Optional. The relay's own signing pubkey (hex or `npub1...`), published as `self` in the relay information document. NIP-43 clients verify relay-signed events against it, so it must match the key the relay signs with. Leave unset to derive it from `SECRET`; run `nostream info` to print the derived value. A configured value that does not match disables kind 28935 invite requests. |
 | info.terms_of_service                       | Public URL to relay terms of service. |
 | limits.admissionCheck.ipWhitelist           | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.admissionCheck.rateLimits[].period   | Rate limit period in milliseconds. |
