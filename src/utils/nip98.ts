@@ -16,6 +16,11 @@ export const DEFAULT_NIP98_MAX_AUTHORIZATION_HEADER_LENGTH = 2048
 const NOSTR_AUTHORIZATION_HEADER = /^Nostr [A-Za-z0-9+/]+={0,2}$/i
 const LOWER_HEX_64 = /^[0-9a-f]{64}$/
 
+export const isNostrAuthorizationHeader = (
+  authorizationHeader: string | undefined | null,
+): authorizationHeader is string =>
+  typeof authorizationHeader === 'string' && NOSTR_AUTHORIZATION_HEADER.test(authorizationHeader)
+
 // Lean NIP-01 shape only — avoids eventSchema superRefine (reactions, geohash, etc.).
 const nip98EventSchema = z
   .object({
@@ -150,13 +155,12 @@ const decodeAuthorizationHeader = (
     return fail('invalid authorization header')
   }
 
-  const trimmed = authorizationHeader.trim()
-  if (!NOSTR_AUTHORIZATION_HEADER.test(trimmed)) {
+  if (!isNostrAuthorizationHeader(authorizationHeader)) {
     return fail('invalid authorization header')
   }
 
   // Safe after the regex match: scheme, single space, base64 token.
-  const token = trimmed.split(' ')[1]
+  const token = authorizationHeader.split(' ')[1]
   const remainder = token.length % 4
   const hasPadding = token.endsWith('=')
   if (remainder === 1 || (hasPadding && remainder !== 0)) {

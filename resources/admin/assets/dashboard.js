@@ -282,6 +282,7 @@
     document.body.classList.toggle('nav-open', isOpen)
     if (menuToggle) {
       menuToggle.setAttribute('aria-expanded', String(isOpen))
+      menuToggle.setAttribute('aria-label', isOpen ? 'Close navigation' : 'Open navigation')
     }
     if (navPanel) {
       navPanel.setAttribute('aria-hidden', String(!isOpen))
@@ -294,7 +295,7 @@
     }
 
     const tag = target.tagName.toLowerCase()
-    return tag === 'input' || tag === 'textarea' || target.isContentEditable
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable
   }
 
   const showLogin = () => {
@@ -1300,7 +1301,7 @@
       return
     }
 
-    if (isTypingTarget(event.target)) {
+    if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) {
       return
     }
 
