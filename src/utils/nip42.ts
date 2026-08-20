@@ -12,6 +12,8 @@ export const DEFAULT_RESTRICTED_READ_KINDS: (EventKinds | EventKindsRange)[] = [
   EventKinds.GIFT_WRAP,
 ]
 
+export const isAuthRequired = (settings: Settings | undefined): boolean => settings?.nip42?.authRequired === true
+
 export const getRestrictedReadKinds = (settings: Settings | undefined): (EventKinds | EventKindsRange)[] => {
   const restrictedReads = settings?.nip42?.restrictedReads
   if (!restrictedReads?.enabled) {

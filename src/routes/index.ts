@@ -13,6 +13,8 @@ import { hasExplicitNostrJsonAcceptHeader, rootRequestHandler } from '../handler
 
 const router: Router = express.Router()
 
+// Public NIP-11 / homepage — advertises relay metadata only; not an authentication endpoint.
+// codeql[js/missing-rate-limiting]
 router.use((req, res, next) => {
   if (req.method === 'GET' && req.path === '/' && hasExplicitNostrJsonAcceptHeader(req)) {
     return rootRequestHandler(req, res, next)
@@ -20,6 +22,7 @@ router.use((req, res, next) => {
   next()
 })
 
+// codeql[js/missing-rate-limiting]
 router.get('/', rootRequestHandler)
 router.get('/healthz', getHealthRequestHandler)
 router.get('/terms', getTermsRequestHandler)
