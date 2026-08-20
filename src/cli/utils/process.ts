@@ -120,7 +120,7 @@ export const runCommandWithOutput = (
 export type WorkerSpawnErrorReason = 'not-found' | 'permission-denied' | 'spawn-error'
 
 export type WorkerProcessHandle = {
-  send: (message: unknown) => void
+  send: (message: unknown) => boolean
   onMessage: (handler: (message: unknown) => void) => void
   onExit: (handler: (code: number | null, signal: NodeJS.Signals | null) => void) => void
   onSpawnError: (handler: (reason: WorkerSpawnErrorReason) => void) => void
@@ -180,7 +180,15 @@ export const spawnWorkerProcess = (
 
   return {
     send: (message) => {
-      child.stdin.write(`${JSON.stringify(message)}\n`)
+      // stdin.write() can throw synchronously (e.g. write after end) if the
+      // worker has already exited — report failure instead of crashing the
+      // orchestrator so the caller can fail the job.
+      try {
+        child.stdin.write(`${JSON.stringify(message)}\n`)
+        return true
+      } catch {
+        return false
+      }
     },
     onMessage: (handler) => {
       messageHandlers.push(handler)

@@ -54,9 +54,19 @@ describe('spawnWorkerProcess', () => {
   it('writes sent messages to stdin as a newline-terminated JSON line', () => {
     const handle = spawnWorkerProcess('python3', ['worker.py'])
 
-    handle.send({ id: 'abc', kind: 5000 })
+    const sent = handle.send({ id: 'abc', kind: 5000 })
 
     expect(fakeChild.stdin.write).to.have.been.calledWith('{"id":"abc","kind":5000}\n')
+    expect(sent).to.be.true
+  })
+
+  it('returns false instead of throwing when stdin.write fails on a dead worker', () => {
+    fakeChild.stdin.write.throws(new Error('write after end'))
+    const handle = spawnWorkerProcess('python3', ['worker.py'])
+
+    const sent = handle.send({ id: 'abc', kind: 5000 })
+
+    expect(sent).to.be.false
   })
 
   it('parses newline-delimited JSON from stdout and dispatches each line to message handlers', () => {
