@@ -189,6 +189,22 @@ describe('nip98', () => {
       expect(result).to.deep.equal({ ok: false, reason: 'invalid authorization header' })
     })
 
+    it('rejects authorization headers with surrounding whitespace', async () => {
+      const event = await createAuthEvent()
+      const authorizationHeader = toAuthorizationHeader(event)
+
+      for (const value of [` ${authorizationHeader}`, `${authorizationHeader} `]) {
+        const result = await verifyNip98Auth({
+          authorizationHeader: value,
+          url,
+          method,
+          nowSeconds: now,
+        })
+
+        expect(result).to.deep.equal({ ok: false, reason: 'invalid authorization header' })
+      }
+    })
+
     it('rejects invalid event json', async () => {
       const result = await verifyNip98Auth({
         authorizationHeader: `Nostr ${Buffer.from('{not-json', 'utf8').toString('base64')}`,
