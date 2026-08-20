@@ -1,6 +1,12 @@
 import { expect } from 'chai'
 
-import { IEventRepository, IInviteCodeRepository, INip05VerificationRepository, IUserRepository } from '../../../src/@types/repositories'
+import {
+  IDvmJobRepository,
+  IEventRepository,
+  IInviteCodeRepository,
+  INip05VerificationRepository,
+  IUserRepository,
+} from '../../../src/@types/repositories'
 import { IncomingMessage, MessageType } from '../../../src/@types/messages'
 import { AuthMessageHandler } from '../../../src/handlers/auth-message-handler'
 import { Event } from '../../../src/@types/event'
@@ -19,6 +25,7 @@ describe('messageHandlerFactory', () => {
   let userRepository: IUserRepository
   let nip05VerificationRepository: INip05VerificationRepository
   let inviteCodeRepository: IInviteCodeRepository
+  let dvmJobRepository: IDvmJobRepository
   let message: IncomingMessage
   let adapter: IWebSocketAdapter
   let factory
@@ -42,11 +49,18 @@ describe('messageHandlerFactory', () => {
     userRepository = {} as any
     nip05VerificationRepository = {} as any
     inviteCodeRepository = {} as any
+    dvmJobRepository = {} as any
     adapter = {} as any
     event = {
       tags: [],
     } as any
-    factory = messageHandlerFactory(eventRepository, userRepository, nip05VerificationRepository, inviteCodeRepository)
+    factory = messageHandlerFactory(
+      eventRepository,
+      userRepository,
+      nip05VerificationRepository,
+      inviteCodeRepository,
+      dvmJobRepository,
+    )
   })
 
   afterEach(() => {
@@ -89,4 +103,3 @@ describe('messageHandlerFactory', () => {
     expect(() => factory([message, adapter])).to.throw(Error, 'Unknown message type: undefined')
   })
 })
-

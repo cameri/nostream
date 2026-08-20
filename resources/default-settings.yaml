@@ -290,3 +290,7 @@ limits:
 admin:
   enabled: false
   sessionTtlSeconds: 86400
+  nip98:
+    enabled: false
+    allowedPubkeys: []
+    maxSkewSeconds: 60

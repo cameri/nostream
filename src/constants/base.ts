@@ -41,6 +41,9 @@ export enum EventKinds {
   // Lightning zaps
   ZAP_REQUEST = 9734,
   ZAP_RECEIPT = 9735,
+  // NIP-90: Data Vending Machines — job request events
+  DVM_JOB_REQUEST_FIRST = 5000,
+  DVM_JOB_REQUEST_LAST = 5999,
   // Replaceable events
   REPLACEABLE_FIRST = 10000,
   // NIP-65: Relay List Metadata

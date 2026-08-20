@@ -5,7 +5,6 @@
     "src/import-events.ts!",
     "src/cli/index.ts!",
     "src/scripts/benchmark-queries.ts!",
-    "src/utils/nip98.ts!",
     "knexfile.js!"
   ],
   "project": [
@@ -16,7 +15,6 @@
   ],
   "ignore": [
     ".nostr/**",
-    "src/repositories/dvm-job-repository.ts",
     "src/utils/relay-probe/**"
   ],
   "commitlint": false,
