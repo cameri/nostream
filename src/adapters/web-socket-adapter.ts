@@ -86,7 +86,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     recordWebsocketConnectionOpened()
 
     // NIP-42: challenge-response session for this socket
-    this.session = new Nip42SessionManager(() => this.settings().nip42?.sessionTtl)
+    this.session = new Nip42SessionManager(() => this.settings().nip42?.sessionExpirySeconds)
     this.sendMessage(createAuthChallengeMessage(this.session.getChallenge()))
   }
 

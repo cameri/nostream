@@ -813,9 +813,9 @@ describe('WebSocketAdapter', () => {
       expect(adapter.addAuthenticatedPubkey(pubkey, eventId)).to.equal(false)
     })
 
-    it('expires authenticated pubkeys after sessionTtl', () => {
+    it('expires authenticated pubkeys after sessionExpirySeconds', () => {
       const clock = sandbox.useFakeTimers({ now: 1_700_000_000_000 })
-      settingsFactory.returns({ nip42: { sessionTtl: 60 } })
+      settingsFactory.returns({ nip42: { sessionExpirySeconds: 60 } })
 
       const pubkey = 'a'.repeat(64)
       adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))

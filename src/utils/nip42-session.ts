@@ -15,7 +15,7 @@ export interface Nip42Session {
  * Optional TTL can force re-AUTH after a configured lifetime (off by default).
  *
  * Accepted AUTH event IDs are remembered for the connection so the same signed
- * AUTH event cannot be replayed to refresh sessionTtl.
+ * AUTH event cannot be replayed to refresh sessionExpirySeconds.
  */
 export class Nip42SessionManager {
   private challenge: string
