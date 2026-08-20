@@ -4,6 +4,7 @@ import {
   createReadAuthorizationGuard,
   DEFAULT_RESTRICTED_READ_KINDS,
   getRestrictedReadKinds,
+  isAuthRequired,
   isClientAuthorizedToReadMention,
   isCountAuthorized,
   isSubscriptionAuthRequired,
@@ -38,6 +39,17 @@ const enabledSettings = (kinds?: (number | [number, number])[]): Settings =>
   }) as unknown as Settings
 
 describe('nip42', () => {
+  describe('isAuthRequired', () => {
+    it('returns false when unset or disabled', () => {
+      expect(isAuthRequired(undefined)).to.equal(false)
+      expect(isAuthRequired({} as Settings)).to.equal(false)
+      expect(isAuthRequired({ nip42: { authRequired: false } } as Settings)).to.equal(false)
+    })
+
+    it('returns true when enabled', () => {
+      expect(isAuthRequired({ nip42: { authRequired: true } } as Settings)).to.equal(true)
+    })
+  })
   describe('getRestrictedReadKinds', () => {
     it('returns empty array when settings are undefined', () => {
       expect(getRestrictedReadKinds(undefined)).to.deep.equal([])
