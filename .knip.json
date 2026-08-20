@@ -14,7 +14,8 @@
     "lzma-native"
   ],
   "ignore": [
-    ".nostr/**"
+    ".nostr/**",
+    "src/utils/relay-probe/**"
   ],
   "commitlint": false,
   "eslint": false,

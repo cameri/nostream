@@ -5,6 +5,10 @@ import { createSettings } from './settings-factory'
 import router from '../routes'
 import { getGrafanaFrameOrigin } from '../utils/admin-grafana'
 
+// Extracted so the ws:/wss: -> http:/https: mapping can be unit tested directly,
+// without needing to exercise the full Express middleware stack.
+export const getWebProtocolForRelay = (relayProtocol: string): string => (relayProtocol === 'wss:' ? 'https:' : 'http:')
+
 export const createWebApp = (): Express => {
   const app = express()
   app
@@ -16,7 +20,7 @@ export const createWebApp = (): Express => {
 
       const relayUrl = new URL(settings.info.relay_url)
       const webRelayUrl = new URL(relayUrl.toString())
-      webRelayUrl.protocol = relayUrl.protocol === 'wss:' ? 'https:' : 'http:'
+      webRelayUrl.protocol = getWebProtocolForRelay(relayUrl.protocol)
 
       const directives = {
         'img-src': ["'self'", 'data:', 'https://cdn.zebedee.io/an/nostr/'],

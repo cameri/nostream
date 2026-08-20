@@ -4,6 +4,7 @@ import {
   getEventExpiration,
   isDeleteEvent,
   isDirectMessageEvent,
+  isDvmJobRequestEvent,
   isEphemeralEvent,
   isEventIdValid,
   isEventMatchingFilter,
@@ -415,6 +416,24 @@ describe('NIP-16', () => {
       expect(isEphemeralEvent({ kind: 30000 } as any)).to.be.false
     })
   })
+
+  describe('isDvmJobRequestEvent', () => {
+    it('returns true for the first kind in the DVM job request range (5000)', () => {
+      expect(isDvmJobRequestEvent({ kind: 5000 } as any)).to.be.true
+    })
+
+    it('returns true for the last kind in the DVM job request range (5999)', () => {
+      expect(isDvmJobRequestEvent({ kind: 5999 } as any)).to.be.true
+    })
+
+    it('returns false for a kind below the DVM job request range', () => {
+      expect(isDvmJobRequestEvent({ kind: 4999 } as any)).to.be.false
+    })
+
+    it('returns false for a kind above the DVM job request range', () => {
+      expect(isDvmJobRequestEvent({ kind: 6000 } as any)).to.be.false
+    })
+  })
 })
 
 describe('NIP-17', () => {
@@ -689,6 +708,31 @@ describe('NIP-40', () => {
 
     it('returns false if expiration is malformed data', () => {
       event.tags = [['expiration', 'a']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns false if expiration is 0', () => {
+      event.tags = [['expiration', '0']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns false if expiration exceeds the Postgres int4 column max', () => {
+      event.tags = [['expiration', '10000000000']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns false if expiration is the maximum representable Unix seconds timestamp', () => {
+      event.tags = [['expiration', '253402300799']]
+      expect(getEventExpiration(event)).to.be.undefined
+    })
+
+    it('returns true if expiration is the maximum value the expires_at column can store', () => {
+      event.tags = [['expiration', '2147483647']]
+      expect(getEventExpiration(event)).to.equal(2147483647)
+    })
+
+    it('returns false if expiration looks like a millisecond-scale timestamp', () => {
+      event.tags = [['expiration', '1700000000000']]
       expect(getEventExpiration(event)).to.be.undefined
     })
   })

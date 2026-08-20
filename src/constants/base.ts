@@ -41,6 +41,9 @@ export enum EventKinds {
   // Lightning zaps
   ZAP_REQUEST = 9734,
   ZAP_RECEIPT = 9735,
+  // NIP-90: Data Vending Machines — job request events
+  DVM_JOB_REQUEST_FIRST = 5000,
+  DVM_JOB_REQUEST_LAST = 5999,
   // Replaceable events
   REPLACEABLE_FIRST = 10000,
   // NIP-65: Relay List Metadata
@@ -54,6 +57,8 @@ export enum EventKinds {
   EPHEMERAL_FIRST = 20000,
   // NIP-42: Client Authentication
   AUTH = 22242,
+  // NIP-98: HTTP Auth
+  HTTP_AUTH = 27235,
   // NIP-43: Ephemeral access request kinds
   NIP43_JOIN_REQUEST = 28934,
   NIP43_INVITE_REQUEST = 28935,
@@ -95,6 +100,10 @@ export enum EventTags {
   // NIP-43: Relay Access Metadata
   Member = 'member',
   Claim = 'claim',
+  // NIP-98: HTTP Auth
+  Url = 'u',
+  Method = 'method',
+  Payload = 'payload',
 }
 
 export const ALL_RELAYS = 'ALL_RELAYS'

@@ -61,6 +61,7 @@ The following environment variables can be set:
 | ADMIN_DEPENDENCY_PING_TIMEOUT_MS | Timeout for admin DB/Redis dependency pings (ms) | 3000 |
 | GRAFANA_URL                      | Grafana base URL for admin dashboard embeds      | http://127.0.0.1:7777 |
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
+| MONITOR_PRIVATE_KEY              | Hex-encoded private key for the NIP-66 monitor identity that will sign kind 30166/10166 events. Configure via environment variable, not settings.yaml. | |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
 | NWC_URL                          | NWC connection URL (`nostr+walletconnect://...`) | |
@@ -133,6 +134,13 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 
 | Name                                        | Description                                                                   |
 |---------------------------------------------|-------------------------------------------------------------------------------|
+| admin.nip98.allowedPubkeys                  | Hex pubkeys allowed to use NIP-98 on the admin API. Empty means nobody (fail-closed). Defaults to []. |
+| admin.nip98.enabled                         | Accept `Authorization: Nostr` (NIP-98) on protected admin API routes alongside session auth. Defaults to false. Clients must sign `u` using the HTTP(S) scheme and host derived from `info.relay_url` (`ws`/`http` → `http`, `wss`/`https` → `https`; never the request Host), plus the public path prefix and `/admin/...`. Successful auth events are one-time through `created_at + maxSkewSeconds` (Redis). |
+| admin.nip98.maxSkewSeconds                  | Max skew in seconds between now and the auth event `created_at`. Replay claims last until that window ends (inclusive). Defaults to 60. |
+| dvm.workers[].args                          | Arguments passed to the spawned command. Optional. |
+| dvm.workers[].command                       | Command to spawn for this DVM worker (e.g. an interpreter or executable path). |
+| dvm.workers[].kinds                         | NIP-90 job request kinds (5000-5999) this worker accepts. Optional. |
+| dvm.workers[].timeoutMs                     | Max time in ms to wait for a job result before considering it timed out. Optional. |
 | info.banner                                 | Public banner image URL for the relay information document. |
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
 | info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
@@ -186,10 +194,21 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
 | nip42.restrictedReads.enabled               | Enable NIP-42 auth-based read filtering. When enabled, events of the restricted kinds are only delivered to clients that have authenticated as the event's author or as a pubkey listed in the event's `p` tags. Applies to stored events (REQ), live broadcasts and COUNT queries. Subscriptions that exclusively target restricted kinds from unauthenticated clients are closed with an `auth-required:` reason. Defaults to false. |
 | nip42.restrictedReads.kinds                 | List of event kinds (or `[min, max]` ranges) protected by auth-based read filtering. Defaults to `[4, 1059]` (NIP-04 encrypted direct messages and NIP-59 gift wraps). |
+| nip43.enabled                               | Enable NIP-43 invite-based membership. When true, only admitted members may publish. Defaults to false. |
+| nip43.inviteCodeExpirySeconds               | Seconds until a newly minted invite code expires. `0` means the code never expires. Defaults to 600 (10 minutes). |
+| nip43.defaultMaxUses                        | How many times a newly minted invite code can be claimed. Defaults to 1. |
 | nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
 | nip50.enabled                               | Enable or disable NIP-50 full-text search. Defaults to false. When enabled, clients can include a `search` field in REQ filters to perform text queries against event content. Requires the GIN full-text index migration. |
 | nip50.language                              | PostgreSQL text-search configuration name. Defaults to `simple` (language-agnostic tokenization). Set to `english`, `spanish`, etc. for stemming support. See [PostgreSQL text search configurations](https://www.postgresql.org/docs/current/textsearch-configuration.html). **Note:** The GIN index migration is built with the `simple` configuration. If you change this value, you must manually rebuild the index: `DROP INDEX CONCURRENTLY events_content_fts_idx; CREATE INDEX CONCURRENTLY events_content_fts_idx ON events USING gin (to_tsvector('<your_language>', event_content));` — otherwise the planner cannot use the index and queries fall back to sequential scans. |
 | nip50.maxQueryLength                        | Maximum length of the search query string. Queries exceeding this are truncated. Defaults to 256. |
+| nip66.dnsCacheTtlSeconds                    | DNS cache TTL in seconds for repeated probe lookups of the same hostname. Defaults to 300. |
+| nip66.enabled                               | Enable NIP-66 relay monitoring. When true, starts a `relay-monitor` cluster worker that probes targets on an interval and stores the latest snapshot in Redis. Defaults to false. |
+| nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Defaults to 3600. |
+| nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. |
+| nip66.timeouts.dnsMs                        | DNS probe timeout in milliseconds. Defaults to 10000. |
+| nip66.timeouts.nip11Ms                      | NIP-11 fetch timeout in milliseconds. Defaults to 10000. |
+| nip66.timeouts.tlsMs                        | TLS probe timeout in milliseconds. Defaults to 10000. |
+| nip66.timeouts.wsRttMs                      | WebSocket open RTT probe timeout in milliseconds. Defaults to 10000. |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |

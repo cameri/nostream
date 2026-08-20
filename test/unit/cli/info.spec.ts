@@ -1,7 +1,7 @@
-const { expect } = require('chai')
-const fs = require('fs')
-const path = require('path')
-const sinon = require('sinon')
+import { expect } from 'chai'
+import fs from 'fs'
+import path from 'path'
+import sinon from 'sinon'
 
 const infoCommand = require('../../../dist/src/cli/commands/info.js')
 const configUtils = require('../../../dist/src/cli/utils/config.js')
@@ -33,7 +33,9 @@ describe('runInfo', () => {
 
   it('outputs valid JSON when docker is not installed (ENOENT)', async () => {
     sinon.stub(fs, 'existsSync').returns(false)
-    sinon.stub(processUtils, 'runCommandWithOutput').resolves({ ok: false, reason: 'not-found', stdout: '', stderr: '' })
+    sinon
+      .stub(processUtils, 'runCommandWithOutput')
+      .resolves({ ok: false, reason: 'not-found', stdout: '', stderr: '' })
 
     const code = await infoCommand.runInfo({ json: true })
 

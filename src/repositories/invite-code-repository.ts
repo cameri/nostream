@@ -1,16 +1,10 @@
-import { randomBytes } from 'crypto'
-
 import { DatabaseClient, Pubkey } from '../@types/base'
-import { DBInviteCode, InviteCode } from '../@types/invite-code'
+import { CreateInviteCodeOptions, DBInviteCode, InviteCode } from '../@types/invite-code'
 import { IInviteCodeRepository } from '../@types/repositories'
 import { createLogger } from '../factories/logger-factory'
 import { toBuffer } from '../utils/transform'
 
 const logger = createLogger('invite-code-repository')
-
-export function generateInviteCode(): string {
-  return randomBytes(16).toString('hex')
-}
 
 function fromDBInviteCode(row: DBInviteCode): InviteCode {
   return {
@@ -25,8 +19,12 @@ function fromDBInviteCode(row: DBInviteCode): InviteCode {
 }
 
 function affectedRows(result: unknown): number {
-  if (typeof result === 'number') { return result }
-  if (result && typeof (result as any).rowCount === 'number') { return (result as any).rowCount }
+  if (typeof result === 'number') {
+    return result
+  }
+  if (result && typeof (result as any).rowCount === 'number') {
+    return (result as any).rowCount
+  }
   return 0
 }
 
@@ -35,18 +33,21 @@ export class InviteCodeRepository implements IInviteCodeRepository {
 
   public async create(
     code: string,
-    expiresAt?: Date,
-    remainingUses: number | null = 1,
+    options: CreateInviteCodeOptions = {},
     client: DatabaseClient = this.dbClient,
   ): Promise<InviteCode> {
+    const expiresAt = options.expiresAt ?? null
+    const remainingUses = options.remainingUses === undefined ? 1 : options.remainingUses
+    const createdBy = options.createdBy ?? null
+
     logger('create invite code (expires: %s, remainingUses: %s)', expiresAt ?? 'never', remainingUses ?? 'unlimited')
 
     const now = new Date()
     const row: DBInviteCode = {
       code,
-      created_by: null,
+      created_by: createdBy ? toBuffer(createdBy) : null,
       claimed_by: null,
-      expires_at: expiresAt ?? null,
+      expires_at: expiresAt,
       remaining_uses: remainingUses,
       created_at: now,
       updated_at: now,
@@ -57,15 +58,10 @@ export class InviteCodeRepository implements IInviteCodeRepository {
     return fromDBInviteCode(row)
   }
 
-  public async findByCode(
-    code: string,
-    client: DatabaseClient = this.dbClient,
-  ): Promise<InviteCode | undefined> {
+  public async findByCode(code: string, client: DatabaseClient = this.dbClient): Promise<InviteCode | undefined> {
     logger('find invite code')
 
-    const [row] = await client<DBInviteCode>('invite_codes')
-      .where('code', code)
-      .select()
+    const [row] = await client<DBInviteCode>('invite_codes').where('code', code).select()
 
     if (!row) {
       return
@@ -75,11 +71,7 @@ export class InviteCodeRepository implements IInviteCodeRepository {
   }
 
   // Atomic claim: single UPDATE ensures only one caller wins on a single-use code
-  public async claimCode(
-    code: string,
-    pubkey: Pubkey,
-    client: DatabaseClient = this.dbClient,
-  ): Promise<boolean> {
+  public async claimCode(code: string, pubkey: Pubkey, client: DatabaseClient = this.dbClient): Promise<boolean> {
     logger('claim invite code for %s', pubkey)
 
     const now = new Date()
@@ -91,8 +83,7 @@ export class InviteCodeRepository implements IInviteCodeRepository {
           .orWhere('remaining_uses', '>', 0)
       })
       .where(function () {
-        this.whereNull('expires_at')
-          .orWhere('expires_at', '>', now)
+        this.whereNull('expires_at').orWhere('expires_at', '>', now)
       })
       .update({
         remaining_uses: client.raw('remaining_uses - 1'),
@@ -103,22 +94,17 @@ export class InviteCodeRepository implements IInviteCodeRepository {
     return affectedRows(result) > 0
   }
 
-  public async findActiveCodes(
-    limit: number = 100,
-    client: DatabaseClient = this.dbClient,
-  ): Promise<InviteCode[]> {
+  public async findActiveCodes(limit: number = 100, client: DatabaseClient = this.dbClient): Promise<InviteCode[]> {
     logger('find active invite codes (limit %d)', limit)
 
     const now = new Date()
 
     const rows = await client<DBInviteCode>('invite_codes')
       .where(function () {
-        this.whereNull('expires_at')
-          .orWhere('expires_at', '>', now)
+        this.whereNull('expires_at').orWhere('expires_at', '>', now)
       })
       .where(function () {
-        this.whereNull('remaining_uses')
-          .orWhere('remaining_uses', '>', 0)
+        this.whereNull('remaining_uses').orWhere('remaining_uses', '>', 0)
       })
       .orderBy('created_at', 'desc')
       .limit(limit)
@@ -127,9 +113,7 @@ export class InviteCodeRepository implements IInviteCodeRepository {
     return rows.map(fromDBInviteCode)
   }
 
-  public async deleteExpiredCodes(
-    client: DatabaseClient = this.dbClient,
-  ): Promise<number> {
+  public async deleteExpiredCodes(client: DatabaseClient = this.dbClient): Promise<number> {
     logger('delete expired invite codes')
 
     const now = new Date()
