@@ -261,6 +261,32 @@ describe('SettingsStatic', () => {
     })
   })
 
+  describe('NIP-43 settings defaults', () => {
+    it('default-settings.yaml contains a nip43 block with mint defaults', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
+
+      expect(defaults).to.have.nested.property('nip43.enabled', false)
+      expect(defaults).to.have.nested.property('nip43.inviteCodeExpirySeconds', 600)
+      expect(defaults).to.have.nested.property('nip43.defaultMaxUses', 1)
+    })
+
+    it('user config nip43 block overrides defaults', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
+      const userConfig = {
+        nip43: {
+          enabled: true,
+          inviteCodeExpirySeconds: 86400,
+          defaultMaxUses: 5,
+        },
+      }
+      const merged = mergeDeepRight(defaults, userConfig) as Settings
+
+      expect(merged.nip43?.enabled).to.equal(true)
+      expect(merged.nip43?.inviteCodeExpirySeconds).to.equal(86400)
+      expect(merged.nip43?.defaultMaxUses).to.equal(5)
+    })
+  })
+
   describe('NIP-66 settings defaults', () => {
     it('default-settings.yaml contains a nip66 block with safe defaults', () => {
       const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())

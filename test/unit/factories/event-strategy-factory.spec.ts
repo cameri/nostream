@@ -1,8 +1,14 @@
 import { expect } from 'chai'
 
-import { IEventRepository, IInviteCodeRepository, IUserRepository } from '../../../src/@types/repositories'
+import {
+  IDvmJobRepository,
+  IEventRepository,
+  IInviteCodeRepository,
+  IUserRepository,
+} from '../../../src/@types/repositories'
 import { DefaultEventStrategy } from '../../../src/handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../../../src/handlers/event-strategies/delete-event-strategy'
+import { DvmJobRequestEventStrategy } from '../../../src/handlers/event-strategies/dvm-job-request-event-strategy'
 import { EphemeralEventStrategy } from '../../../src/handlers/event-strategies/ephemeral-event-strategy'
 import { Event } from '../../../src/@types/event'
 import { EventKinds } from '../../../src/constants/base'
@@ -24,6 +30,7 @@ describe('eventStrategyFactory', () => {
   let eventRepository: IEventRepository
   let userRepository: IUserRepository
   let inviteCodeRepository: IInviteCodeRepository
+  let dvmJobRepository: IDvmJobRepository
   let cache: ICacheAdapter
   let settings: () => Settings
   let event: Event
@@ -34,12 +41,20 @@ describe('eventStrategyFactory', () => {
     eventRepository = {} as any
     userRepository = {} as any
     inviteCodeRepository = {} as any
+    dvmJobRepository = {} as any
     cache = {} as any
-    settings = () => ({ info: { relay_url: 'wss://test.relay' } } as any)
+    settings = () => ({ info: { relay_url: 'wss://test.relay' } }) as any
     event = {} as any
     adapter = {} as any
 
-    factory = eventStrategyFactory(eventRepository, userRepository, inviteCodeRepository, cache, settings)
+    factory = eventStrategyFactory(
+      eventRepository,
+      userRepository,
+      inviteCodeRepository,
+      dvmJobRepository,
+      cache,
+      settings,
+    )
   })
 
   it('returns ReplaceableEvent given a set_metadata event', () => {
@@ -135,5 +150,15 @@ describe('eventStrategyFactory', () => {
   it('returns LeaveRequestEventStrategy given a NIP-43 leave request (kind 28936)', () => {
     event.kind = EventKinds.NIP43_LEAVE_REQUEST
     expect(factory([event, adapter])).to.be.an.instanceOf(LeaveRequestEventStrategy)
+  })
+
+  it('returns DvmJobRequestEventStrategy given a DVM job request (kind 5000-5999)', () => {
+    event.kind = EventKinds.DVM_JOB_REQUEST_FIRST
+    expect(factory([event, adapter])).to.be.an.instanceOf(DvmJobRequestEventStrategy)
+  })
+
+  it('returns DvmJobRequestEventStrategy given the last DVM job request kind (5999)', () => {
+    event.kind = EventKinds.DVM_JOB_REQUEST_LAST
+    expect(factory([event, adapter])).to.be.an.instanceOf(DvmJobRequestEventStrategy)
   })
 })

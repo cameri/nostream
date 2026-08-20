@@ -40,18 +40,20 @@ export const isEventMatchingFilter =
   (filter: SubscriptionFilter) =>
   (event: Event): boolean => {
     const startsWith = (input: string) => (prefix: string) => input.startsWith(prefix)
-    const isMatchingGenericTagCriterion = (key: string, criterion: string) => (tag: Tag): boolean => {
-      const [, tagName] = key
-      if (tag[0] !== tagName) {
-        return false
-      }
+    const isMatchingGenericTagCriterion =
+      (key: string, criterion: string) =>
+      (tag: Tag): boolean => {
+        const [, tagName] = key
+        if (tag[0] !== tagName) {
+          return false
+        }
 
-      if (isGeohashPrefixCriterion(key, criterion)) {
-        return tag[1].startsWith(stripGeohashPrefixWildcard(criterion))
-      }
+        if (isGeohashPrefixCriterion(key, criterion)) {
+          return tag[1].startsWith(stripGeohashPrefixWildcard(criterion))
+        }
 
-      return tag[1] === criterion
-    }
+        return tag[1] === criterion
+      }
 
     // NIP-01: Basic protocol flow description
 
@@ -96,7 +98,9 @@ export const isEventMatchingFilter =
       Object.entries(filter)
         .filter(([key, criteria]) => isGenericTagQuery(key) && Array.isArray(criteria))
         .some(([key, criteria]) => {
-          return !event.tags.some((tag) => criteria.some((criterion) => isMatchingGenericTagCriterion(key, criterion)(tag)))
+          return !event.tags.some((tag) =>
+            criteria.some((criterion) => isMatchingGenericTagCriterion(key, criterion)(tag)),
+          )
         })
     ) {
       return false
@@ -203,6 +207,10 @@ export const isReplaceableEvent = (event: Event): boolean => {
 
 export const isEphemeralEvent = (event: Event): boolean => {
   return event.kind >= EventKinds.EPHEMERAL_FIRST && event.kind <= EventKinds.EPHEMERAL_LAST
+}
+
+export const isDvmJobRequestEvent = (event: Event): boolean => {
+  return event.kind >= EventKinds.DVM_JOB_REQUEST_FIRST && event.kind <= EventKinds.DVM_JOB_REQUEST_LAST
 }
 
 export const isParameterizedReplaceableEvent = (event: Event): boolean => {

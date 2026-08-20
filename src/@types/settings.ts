@@ -374,7 +374,7 @@ export interface Nip42Settings {
 
 export interface Nip43Settings {
   enabled: boolean
-  inviteCodeExpiry?: number
+  inviteCodeExpirySeconds?: number
   defaultMaxUses?: number
   allowInviteRequests?: boolean
   inviteRequestWhitelist?: Pubkey[]
