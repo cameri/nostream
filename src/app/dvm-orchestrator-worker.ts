@@ -22,6 +22,7 @@ const logger = createLogger('dvm-orchestrator-worker')
 
 const POLL_INTERVAL_MS = 2000
 const DEFAULT_JOB_TIMEOUT_MS = 30000
+const DISPATCH_BATCH_SIZE = 10
 
 type PendingJob = {
   job: DvmJob
@@ -111,14 +112,22 @@ export class DvmOrchestratorWorker implements IRunnable {
       return
     }
 
-    const [job] = await this.dvmJobRepository.findPendingJobs(1, this.config.kinds)
-    if (!job) {
-      return
+    // findPendingJobs() returns both SUBMITTED and PICKED_UP jobs (oldest first);
+    // assignWorker() only succeeds against SUBMITTED ones. Walk a batch instead of
+    // just the oldest candidate so an already-picked-up job at the head can't
+    // starve out later SUBMITTED jobs behind it.
+    const candidates = await this.dvmJobRepository.findPendingJobs(DISPATCH_BATCH_SIZE, this.config.kinds)
+
+    let job: DvmJob | undefined
+    for (const candidate of candidates) {
+      if (await this.dvmJobRepository.assignWorker(candidate.id, this.workerIndex())) {
+        job = candidate
+        break
+      }
     }
 
-    const assigned = await this.dvmJobRepository.assignWorker(job.id, this.workerIndex())
-    if (!assigned) {
-      // Lost the race to another worker instance polling the same job — try again next tick.
+    if (!job) {
+      // Lost the race on every candidate in this batch — try again next tick.
       return
     }
 
@@ -135,13 +144,19 @@ export class DvmOrchestratorWorker implements IRunnable {
     const timer = setTimeout(() => this.handleJobTimeout(job.id), timeoutMs)
     this.pending.set(job.id, { job, requestEvent, timer })
 
-    this.worker.send({
+    const sent = this.worker.send({
       id: requestEvent.id,
       kind: requestEvent.kind,
       pubkey: requestEvent.pubkey,
       tags: requestEvent.tags,
       content: requestEvent.content,
     })
+
+    if (!sent) {
+      clearTimeout(timer)
+      this.pending.delete(job.id)
+      await this.failJob(job.id, 'unable to send job to worker process')
+    }
   }
 
   // The worker replies on the same pipe with { id: <job id>, content: <string> },
@@ -286,13 +301,29 @@ export class DvmOrchestratorWorker implements IRunnable {
     if (this.interval) {
       clearInterval(this.interval)
     }
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer)
+
+    const invokeCallback = () => {
+      if (typeof callback === 'function') {
+        callback()
+      }
     }
+
+    if (this.pending.size === 0) {
+      this.worker?.kill()
+      invokeCallback()
+      return
+    }
+
+    // Fail every still-in-flight job before killing the worker: clearing
+    // `this.pending` first (as before) meant handleWorkerExit() found nothing
+    // to fail, leaving those jobs stuck at PICKED_UP in the DB forever.
+    const failures = Array.from(this.pending.entries()).map(([jobId, pending]) => {
+      clearTimeout(pending.timer)
+      return this.failJob(jobId, 'worker shutting down')
+    })
     this.pending.clear()
     this.worker?.kill()
-    if (typeof callback === 'function') {
-      callback()
-    }
+
+    void Promise.all(failures).finally(invokeCallback)
   }
 }

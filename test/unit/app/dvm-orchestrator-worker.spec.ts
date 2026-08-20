@@ -34,7 +34,7 @@ const flushMicrotasks = async (ticks = 10): Promise<void> => {
 
 const createFakeWorkerHandle = (): FakeWorkerHandle => {
   const handle: FakeWorkerHandle = {
-    send: Sinon.stub(),
+    send: Sinon.stub().returns(true),
     kill: Sinon.stub(),
     onMessage: (handler) => {
       handle.messageHandler = handler
@@ -192,7 +192,23 @@ describe('DvmOrchestratorWorker', () => {
 
       await clock.tickAsync(2000)
 
-      expect(dvmJobRepository.findPendingJobs).to.have.been.calledWith(1, [5000, 5001])
+      expect(dvmJobRepository.findPendingJobs).to.have.been.calledWith(10, [5000, 5001])
+    })
+
+    it('tries the next candidate in the batch when an earlier one cannot be assigned', async () => {
+      const job2 = { ...job, id: 'c'.repeat(64) }
+      dvmJobRepository.findPendingJobs.resolves([job, job2])
+      dvmJobRepository.assignWorker.onFirstCall().resolves(false)
+      dvmJobRepository.assignWorker.onSecondCall().resolves(true)
+      worker = createWorker()
+      worker.run()
+
+      await clock.tickAsync(2000)
+
+      expect(dvmJobRepository.assignWorker).to.have.been.calledTwice
+      expect(dvmJobRepository.assignWorker.firstCall).to.have.been.calledWith(job.id, 0)
+      expect(dvmJobRepository.assignWorker.secondCall).to.have.been.calledWith(job2.id, 0)
+      expect(currentWorkerHandle().send).to.have.been.called
     })
 
     it('does not dispatch when it loses the race to assign the job', async () => {
@@ -233,6 +249,24 @@ describe('DvmOrchestratorWorker', () => {
       expect(currentWorkerHandle().send).to.have.been.calledWith(
         Sinon.match({ id: requestEvent.id, kind: requestEvent.kind }),
       )
+    })
+
+    it('fails the job instead of leaving it stuck when the worker pipe write fails', async () => {
+      dvmJobRepository.findPendingJobs.resolves([job])
+      dvmJobRepository.assignWorker.resolves(true)
+      worker = createWorker()
+      worker.run()
+
+      currentWorkerHandle().send.returns(false)
+      await clock.tickAsync(2000)
+
+      expect(dvmJobRepository.updateStatus).to.have.been.calledWithMatch({
+        id: job.id,
+        status: DvmJobStatus.FAILED,
+      })
+
+      expect(() => currentWorkerHandle().messageHandler!({ id: requestEvent.id, content: 'late reply' })).to.not.throw()
+      expect(eventRepository.create).not.to.have.been.called
     })
 
     it('marks the job completed and publishes a result event when the worker replies', async () => {
@@ -346,6 +380,31 @@ describe('DvmOrchestratorWorker', () => {
 
       expect(callback).to.have.been.calledOnce
       expect(currentWorkerHandle().kill).to.have.been.calledOnce
+    })
+
+    it('fails in-flight jobs before invoking the callback', async () => {
+      const clock = Sinon.useFakeTimers()
+      try {
+        dvmJobRepository.findPendingJobs.resolves([job])
+        dvmJobRepository.assignWorker.resolves(true)
+        worker = createWorker()
+        worker.run()
+
+        await clock.tickAsync(2000)
+
+        const callback = sandbox.stub()
+        worker.close(callback)
+        await flushMicrotasks()
+
+        expect(dvmJobRepository.updateStatus).to.have.been.calledWithMatch({
+          id: job.id,
+          status: DvmJobStatus.FAILED,
+        })
+        expect(callback).to.have.been.calledOnce
+        expect(currentWorkerHandle().kill).to.have.been.calledOnce
+      } finally {
+        clock.restore()
+      }
     })
   })
 })
