@@ -4,6 +4,7 @@ import { EventKinds, EventTags } from '../constants/base'
 import { getPublicKey, getRelayPrivateKey } from './event'
 import { parseRelayPubkey } from './nip43-invites'
 import { Settings } from '../@types/settings'
+import { SubscriptionFilter } from '../@types/subscription'
 
 const logger = createLogger('nip43')
 
@@ -82,3 +83,9 @@ export const resolveRelaySelfPubkey = (settings: Settings): string | undefined =
 
   return configured ?? tryGetRelayNip43Pubkey(settings)
 }
+
+// NIP-43 kind 28935 is not an event clients publish: it is a REQ the relay
+// answers by minting an invite code on the fly and returning a relay-signed
+// ephemeral event. This detects those REQ filters.
+export const isNip43InviteRequestFilter = (filter: SubscriptionFilter): boolean =>
+  Array.isArray(filter.kinds) && filter.kinds.includes(EventKinds.NIP43_INVITE_REQUEST)

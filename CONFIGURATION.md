@@ -173,6 +173,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.event.retention.pubkey.whitelist     | Public keys excluded from retention purge. |
 | limits.event.whitelists.ipAddresses         | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.event.whitelists.pubkeys             | List of public keys to ignore rate limits. |
+| limits.invite.rateLimits[].period            | Rate limit period in milliseconds for NIP-43 kind 28935 invite requests, counted per requesting pubkey. |
+| limits.invite.rateLimits[].rate              | Maximum number of invite requests a single pubkey may make during period. Each granted request writes a row to `invite_codes`, so this is the main defence against a code flood. Defaults to 5 per hour. |
 | limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.message.rateLimits[].period          | Rate limit period in milliseconds. |
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
@@ -199,6 +201,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip43.enabled                               | Enable NIP-43 invite-based membership. When true, only admitted members may publish. Defaults to false. |
 | nip43.inviteCodeExpirySeconds               | Seconds until a newly minted invite code expires. `0` means the code never expires. Defaults to 600 (10 minutes). |
 | nip43.defaultMaxUses                        | How many times a newly minted invite code can be claimed. Defaults to 1. |
+| nip43.allowInviteRequests                   | Answer REQs for kind 28935 by minting an invite code on the fly and returning it as a relay-signed ephemeral event on that subscription. NIP-43 requires relays to opt in to this explicitly. Requesters must be authenticated via NIP-42, and `info.self` must match the relay's signing pubkey. Defaults to false. |
+| nip43.inviteRequestWhitelist                | Public keys allowed to request kind 28935 invite codes. Empty (the default) means any authenticated pubkey may request one; a non-empty list restricts minting to those pubkeys. |
 | nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
 | nip50.enabled                               | Enable or disable NIP-50 full-text search. Defaults to false. When enabled, clients can include a `search` field in REQ filters to perform text queries against event content. Requires the GIN full-text index migration. |
 | nip50.language                              | PostgreSQL text-search configuration name. Defaults to `simple` (language-agnostic tokenization). Set to `english`, `spanish`, etc. for stemming support. See [PostgreSQL text search configurations](https://www.postgresql.org/docs/current/textsearch-configuration.html). **Note:** The GIN index migration is built with the `simple` configuration. If you change this value, you must manually rebuild the index: `DROP INDEX CONCURRENTLY events_content_fts_idx; CREATE INDEX CONCURRENTLY events_content_fts_idx ON events USING gin (to_tsvector('<your_language>', event_content));` — otherwise the planner cannot use the index and queries fall back to sequential scans. |

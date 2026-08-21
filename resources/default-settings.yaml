@@ -88,6 +88,13 @@ nip43:
   inviteCodeExpirySeconds: 600
   # How many times a newly minted invite code can be claimed.
   defaultMaxUses: 1
+  # Answer REQs for kind 28935 by minting an invite code on the fly and returning
+  # it as a relay-signed ephemeral event. NIP-43 requires relays to opt in to this
+  # explicitly. Requesters must be authenticated via NIP-42.
+  allowInviteRequests: false
+  # Pubkeys allowed to request invite codes. Empty means any authenticated pubkey
+  # may request one; non-empty restricts minting to the listed pubkeys.
+  inviteRequestWhitelist: []
 nip45:
   enabled: true
 nip50:
@@ -152,6 +159,13 @@ limits:
       - "::1"
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
+  invite:
+    # Per-pubkey limit on kind 28935 invite requests. Each mint writes a row to
+    # invite_codes, so this is the main defence against a code flood.
+    rateLimits:
+      - description: 5 invite requests per hour per pubkey
+        period: 3600000
+        rate: 5
   admissionCheck:
     rateLimits:
       - description: 30 admission checks/min or 1 check every 2 seconds

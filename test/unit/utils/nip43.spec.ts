@@ -5,6 +5,7 @@ import sinonChai from 'sinon-chai'
 import * as eventUtils from '../../../src/utils/event'
 import {
   getRelayNip43Pubkey,
+  isNip43InviteRequestFilter,
   isRelaySelfConsistent,
   resolveRelaySelfPubkey,
   tryGetRelayNip43Pubkey,
@@ -124,6 +125,28 @@ describe('nip43 relay self pubkey', () => {
       getRelayPrivateKeyStub.throws(new Error('SECRET environment variable not set'))
 
       expect(resolveRelaySelfPubkey(settingsWith())).to.be.undefined
+    })
+  })
+
+  describe('isNip43InviteRequestFilter', () => {
+    it('matches a filter naming kind 28935', () => {
+      expect(isNip43InviteRequestFilter({ kinds: [28935] })).to.equal(true)
+    })
+
+    it('matches a filter naming 28935 alongside other kinds', () => {
+      expect(isNip43InviteRequestFilter({ kinds: [1, 28935] })).to.equal(true)
+    })
+
+    it('does not match a filter naming other kinds', () => {
+      expect(isNip43InviteRequestFilter({ kinds: [28934, 28936] })).to.equal(false)
+    })
+
+    it('does not match a filter with no kinds', () => {
+      expect(isNip43InviteRequestFilter({ authors: ['a'.repeat(64)] })).to.equal(false)
+    })
+
+    it('does not match an empty filter', () => {
+      expect(isNip43InviteRequestFilter({})).to.equal(false)
     })
   })
 })
