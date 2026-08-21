@@ -21,7 +21,7 @@ import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 const logger = createLogger('dvm-orchestrator-worker')
 
 const POLL_INTERVAL_MS = 2000
-const DEFAULT_JOB_TIMEOUT_MS = 30000
+const DEFAULT_JOB_TIMEOUT_MS = 60000
 const DISPATCH_BATCH_SIZE = 10
 
 type PendingJob = {
