@@ -411,8 +411,17 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
-    // NIP-43: join/leave requests must bypass admission — they ARE the admission flow
-    if (event.kind === EventKinds.NIP43_JOIN_REQUEST || event.kind === EventKinds.NIP43_LEAVE_REQUEST) {
+    // NIP-43: join/leave requests must bypass admission — they ARE the admission
+    // flow. Invite requests bypass it too, not because they are valid to publish
+    // (they never are) but so InviteRequestEventStrategy can tell the client to
+    // use a REQ instead. Without this the people most likely to get 28935 wrong —
+    // non-members trying to obtain a code — are the only ones who never see that
+    // message.
+    if (
+      event.kind === EventKinds.NIP43_JOIN_REQUEST ||
+      event.kind === EventKinds.NIP43_LEAVE_REQUEST ||
+      event.kind === EventKinds.NIP43_INVITE_REQUEST
+    ) {
       return
     }
 
