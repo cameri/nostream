@@ -122,14 +122,23 @@ export class DvmJobRepository implements IDvmJobRepository {
     return row ? fromDBDvmJob(row) : undefined
   }
 
-  public async findPendingJobs(limit = 100, client: DatabaseClient = this.dbClient): Promise<DvmJob[]> {
-    logger('find pending dvm jobs (limit %d)', limit)
+  public async findPendingJobs(
+    limit = 100,
+    kinds?: number[],
+    client: DatabaseClient = this.dbClient,
+  ): Promise<DvmJob[]> {
+    logger('find pending dvm jobs (limit %d, kinds %o)', limit, kinds)
 
-    const rows = await client<DBDvmJob>('dvm_jobs')
+    const query = client<DBDvmJob>('dvm_jobs')
       .whereIn('status', [DvmJobStatus.SUBMITTED, DvmJobStatus.PICKED_UP])
       .orderBy('created_at', 'asc')
       .limit(limit)
-      .select()
+
+    if (Array.isArray(kinds) && kinds.length) {
+      query.whereIn('kind', kinds)
+    }
+
+    const rows = await query.select()
 
     return rows.map(fromDBDvmJob)
   }

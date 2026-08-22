@@ -9,7 +9,12 @@ export type RunOptions = {
 
 export type CommandResult =
   | { ok: true; code: number; stdout: string; stderr: string }
-  | { ok: false; reason: 'not-found' | 'permission-denied' | 'spawn-error' | 'timeout' | 'signal'; stdout: string; stderr: string }
+  | {
+      ok: false
+      reason: 'not-found' | 'permission-denied' | 'spawn-error' | 'timeout' | 'signal'
+      stdout: string
+      stderr: string
+    }
 
 export const runCommand = (command: string, args: string[], options: RunOptions = {}): Promise<number> => {
   return new Promise((resolve, reject) => {
@@ -80,7 +85,9 @@ export const runCommandWithOutput = (
     })
 
     child.on('error', (err: NodeJS.ErrnoException) => {
-      if (timer) { clearTimeout(timer) }
+      if (timer) {
+        clearTimeout(timer)
+      }
       if (err.code === 'ENOENT') {
         settle({ ok: false, reason: 'not-found', stdout, stderr })
       } else if (err.code === 'EACCES') {
@@ -91,7 +98,9 @@ export const runCommandWithOutput = (
     })
 
     child.on('close', (code, signal) => {
-      if (timer) { clearTimeout(timer) }
+      if (timer) {
+        clearTimeout(timer)
+      }
 
       if (timedOut) {
         settle({ ok: false, reason: 'timeout', stdout, stderr })
@@ -106,4 +115,92 @@ export const runCommandWithOutput = (
       settle({ ok: true, code: code ?? 1, stdout, stderr })
     })
   })
+}
+
+export type WorkerSpawnErrorReason = 'not-found' | 'permission-denied' | 'spawn-error'
+
+export type WorkerProcessHandle = {
+  send: (message: unknown) => boolean
+  onMessage: (handler: (message: unknown) => void) => void
+  onExit: (handler: (code: number | null, signal: NodeJS.Signals | null) => void) => void
+  onSpawnError: (handler: (reason: WorkerSpawnErrorReason) => void) => void
+  kill: () => void
+}
+
+/**
+ * Spawns a long-lived worker process and frames messages to/from it as
+ * newline-delimited JSON over stdin/stdout, so one process can multiplex
+ * multiple in-flight jobs. Reuses the same spawn/error-classification
+ * conventions as runCommandWithOutput rather than a second spawn pattern.
+ */
+export const spawnWorkerProcess = (
+  command: string,
+  args: string[],
+  options: Pick<RunOptions, 'cwd' | 'env'> = {},
+): WorkerProcessHandle => {
+  const child = spawn(command, args, {
+    cwd: options.cwd,
+    env: { ...process.env, ...(options.env ?? {}) },
+    stdio: 'pipe',
+    shell: false,
+  })
+
+  const messageHandlers: Array<(message: unknown) => void> = []
+  const exitHandlers: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = []
+  const spawnErrorHandlers: Array<(reason: WorkerSpawnErrorReason) => void> = []
+
+  let buffer = ''
+  child.stdout.on('data', (chunk) => {
+    buffer += chunk.toString()
+    let newlineIndex = buffer.indexOf('\n')
+    while (newlineIndex >= 0) {
+      const line = buffer.slice(0, newlineIndex).trim()
+      buffer = buffer.slice(newlineIndex + 1)
+      if (line) {
+        try {
+          const message = JSON.parse(line)
+          messageHandlers.forEach((handler) => handler(message))
+        } catch {
+          // Malformed line from the worker — drop it rather than crash the relay process.
+        }
+      }
+      newlineIndex = buffer.indexOf('\n')
+    }
+  })
+
+  child.on('error', (err: NodeJS.ErrnoException) => {
+    const reason: WorkerSpawnErrorReason =
+      err.code === 'ENOENT' ? 'not-found' : err.code === 'EACCES' ? 'permission-denied' : 'spawn-error'
+    spawnErrorHandlers.forEach((handler) => handler(reason))
+  })
+
+  child.on('exit', (code, signal) => {
+    exitHandlers.forEach((handler) => handler(code, signal))
+  })
+
+  return {
+    send: (message) => {
+      // stdin.write() can throw synchronously (e.g. write after end) if the
+      // worker has already exited — report failure instead of crashing the
+      // orchestrator so the caller can fail the job.
+      try {
+        child.stdin.write(`${JSON.stringify(message)}\n`)
+        return true
+      } catch {
+        return false
+      }
+    },
+    onMessage: (handler) => {
+      messageHandlers.push(handler)
+    },
+    onExit: (handler) => {
+      exitHandlers.push(handler)
+    },
+    onSpawnError: (handler) => {
+      spawnErrorHandlers.push(handler)
+    },
+    kill: () => {
+      child.kill('SIGTERM')
+    },
+  }
 }
