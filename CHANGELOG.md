@@ -1,5 +1,146 @@
 # nostream
 
+## 3.1.0
+
+### Minor Changes
+
+- [#641](https://github.com/cameri/nostream/pull/641) [`837540b`](https://github.com/cameri/nostream/commit/837540b1c5e557fd987fdb10af8a99bab953bdc6) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add disabled-by-default admin API with password auth, session, and health endpoints
+
+- [#666](https://github.com/cameri/nostream/pull/666) [`44f3bb4`](https://github.com/cameri/nostream/commit/44f3bb4a48d917ca3302ef464f32c52d17b1897e) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add admin observability dashboard with Grafana embed and provisioned metrics panels
+
+- [#653](https://github.com/cameri/nostream/pull/653) [`8ab4825`](https://github.com/cameri/nostream/commit/8ab482559fad7b50518984f4159af5b4071de547) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add OpenTelemetry metrics bootstrap with OTLP export for Prometheus
+
+- [#661](https://github.com/cameri/nostream/pull/661) [`237b1a4`](https://github.com/cameri/nostream/commit/237b1a4275fde23f842f6a2841218351f3964b60) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: instrument event and websocket handlers with OpenTelemetry metrics
+
+- [#662](https://github.com/cameri/nostream/pull/662) [`36d95cc`](https://github.com/cameri/nostream/commit/36d95ccd0ec21c1c33e4c75a72c4367756c1ce74) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add Prometheus-backed admin metrics SSE endpoint
+
+- [#690](https://github.com/cameri/nostream/pull/690) [`f70adf2`](https://github.com/cameri/nostream/commit/f70adf26eac8fb277e5826ea5b25a67ed39fde13) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add authenticated admin settings API endpoints
+
+- [#706](https://github.com/cameri/nostream/pull/706) [`841833f`](https://github.com/cameri/nostream/commit/841833faeab7cbcf93c5680fb82d53fae9ce9e5c) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat: add settings editor tab to admin dashboard UI
+
+- [#734](https://github.com/cameri/nostream/pull/734) [`fd7f56a`](https://github.com/cameri/nostream/commit/fd7f56a019afcde4627024afef96c1519de21707) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(dvm): dispatch pending DVM jobs to worker processes and publish kind 6000-6999 results back
+
+- [#729](https://github.com/cameri/nostream/pull/729) [`275c30c`](https://github.com/cameri/nostream/commit/275c30c2df72ef89f3fd85158d4a86c862af06f3) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(dvm): trap NIP-90 job request events (kind 5000-5999) and record them via the job repository
+
+- [#727](https://github.com/cameri/nostream/pull/727) [`d00eb42`](https://github.com/cameri/nostream/commit/d00eb42b0d12831622cc507fad6c29dad10ad039) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(dvm): add job persistence migration and repository for DVM job state
+
+- [#721](https://github.com/cameri/nostream/pull/721) [`11ec673`](https://github.com/cameri/nostream/commit/11ec673004eae1f446b4e6a8fe51764d4607b99c) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(dvm): add worker registry settings and dvm-orchestrator process topology
+
+- [#587](https://github.com/cameri/nostream/pull/587) [`30fa252`](https://github.com/cameri/nostream/commit/30fa252afffa1e79ac704fb616a2833484b0177f) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - Add NIP-50 full-text search support with PostgreSQL `tsvector`/`GIN` indexing.
+
+  Clients can now include a `search` field in REQ filter objects to perform full-text
+  queries against event content. Results are ranked by relevance (`ts_rank`) instead
+  of the usual `created_at` ordering, per the NIP-50 specification.
+
+  Features:
+
+  - New `search` filter field accepted in REQ messages
+  - PostgreSQL GIN index on `to_tsvector('simple', event_content)` for fast full-text lookups
+  - Configurable text-search language (defaults to `simple`, supports `english`, `spanish`, etc.)
+  - Configurable max search query length for abuse prevention
+  - NIP-50 listed in NIP-11 relay information document
+  - Search can be combined with all existing filter fields (kinds, authors, tags, etc.)
+
+- [#702](https://github.com/cameri/nostream/pull/702) [`e172cce`](https://github.com/cameri/nostream/commit/e172cce3d7a4d025b3ecbc8a199f6ed8c1b0673c) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat(nip42): enforce authentication on reads for restricted event kinds (encrypted DMs, gift wraps) across REQ, live broadcasts and COUNT
+
+- [#716](https://github.com/cameri/nostream/pull/716) [`2f5a1c0`](https://github.com/cameri/nostream/commit/2f5a1c0dae975c9ec296ae20ccfd4e103d2de05d) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat(nip42): add session tracking with optional TTL and publish-time authRequired (NIP-11 restricted_writes)
+
+- [#732](https://github.com/cameri/nostream/pull/732) [`d413bd6`](https://github.com/cameri/nostream/commit/d413bd61c737dd1d3dd42ca0a9a061f2c75392e3) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - Add a CLI to mint NIP-43 invite codes (`nostream invite create`) so operators can issue a claim without SQL. New codes honor `nip43.defaultMaxUses` and `nip43.inviteCodeExpirySeconds`.
+
+- [#650](https://github.com/cameri/nostream/pull/650) [`3461dfe`](https://github.com/cameri/nostream/commit/3461dfee95d6759a8a2a88ee2f3fbe88d1b3b002) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - Add NIP-43 invite code foundation: InviteCodeRepository with atomic claimCode, invite_codes migration, and event kind/tag constants.
+
+- [#676](https://github.com/cameri/nostream/pull/676) [`0bfa0b5`](https://github.com/cameri/nostream/commit/0bfa0b59b627e5a07c286f769d2ca3d83355bc57) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - Add NIP-43 join/leave request event strategies (kinds 28934/28936) with NIP-42 auth enforcement, created_at freshness validation, invite code claiming, and admission management. When `nip43.enabled` is set, publishing is restricted to admitted members even without payments enabled, and NIP-43 is advertised in the NIP-11 document (hidden when disabled). Join/leave update the admission cache so membership changes take effect immediately.
+
+- [#675](https://github.com/cameri/nostream/pull/675) [`5a70839`](https://github.com/cameri/nostream/commit/5a708398608448d517b695c432b3f125260f8794) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(nip66): add shared relay probe engine for DNS, TLS, WebSocket RTT, and NIP-11 checks
+
+- [#724](https://github.com/cameri/nostream/pull/724) [`d14b1e9`](https://github.com/cameri/nostream/commit/d14b1e99685da10b13bc790e75f80f9da4a59bcc) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(nip66): add RelayMonitorWorker cluster worker and probe scheduler
+
+- [#689](https://github.com/cameri/nostream/pull/689) [`e294a71`](https://github.com/cameri/nostream/commit/e294a715e7bf5e1d595d9c422d5c09be3c31ea03) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add NIP-66 relay monitor settings foundation with defaults for probe interval, timeouts, targets, monitor identity, and DNS cache TTL.
+
+- [#644](https://github.com/cameri/nostream/pull/644) [`2f6d773`](https://github.com/cameri/nostream/commit/2f6d77354cd150110c850e8d0a2601558742d3a6) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat: reject NIP-70 protected events and reposts embedding them
+
+- [#730](https://github.com/cameri/nostream/pull/730) [`ef4123e`](https://github.com/cameri/nostream/commit/ef4123ea0b84b2f16255782d79e3b69504a8d0e4) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat(admin): accept NIP-98 Authorization on protected admin API routes
+
+- [#722](https://github.com/cameri/nostream/pull/722) [`cf5ea4f`](https://github.com/cameri/nostream/commit/cf5ea4f9331282a5fa5b3dee3926c4a4b854f721) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat(nip98): add Authorization header event verifier for HTTP auth (kind 27235)
+
+- [#672](https://github.com/cameri/nostream/pull/672) [`595c0a6`](https://github.com/cameri/nostream/commit/595c0a625b53f854bbf020a82ec56d986b43bd9d) Thanks [@Ferryx349](https://github.com/Ferryx349)! - refactor: extract shared settings-config module and guided schema for admin settings editor foundation
+
+### Patch Changes
+
+- [#714](https://github.com/cameri/nostream/pull/714) [`df1ed5d`](https://github.com/cameri/nostream/commit/df1ed5de285d1f5527d9323dcaa45bb326695034) Thanks [@Ferryx349](https://github.com/Ferryx349)! - fix(admin): update aria-expanded and label when mobile menu is toggled
+
+- [#680](https://github.com/cameri/nostream/pull/680) [`f92eabe`](https://github.com/cameri/nostream/commit/f92eabed2daa2e275931180dfdea846d71895aed) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: advertise NIP-13 (Proof of Work) support in `supportedNips`
+
+- [#646](https://github.com/cameri/nostream/pull/646) [`eb64d8a`](https://github.com/cameri/nostream/commit/eb64d8a937a5a55f5bbd39ecabee84c3402c7101) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore(deps): bump js-yaml from 4.1.1 to 4.2.0
+
+- [#647](https://github.com/cameri/nostream/pull/647) [`68da3d4`](https://github.com/cameri/nostream/commit/68da3d43ba30fdd9d6bbae1f53b8e0ba2d66437a) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore(deps): bump ws from 8.20.1 to 8.21.0
+
+- [#705](https://github.com/cameri/nostream/pull/705) [`95a672e`](https://github.com/cameri/nostream/commit/95a672e1976bb00b64e83cdeaf5d9d0477065920) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore(deps): bump axios from 1.16.0 to 1.18.0
+
+- [#694](https://github.com/cameri/nostream/pull/694) [`7c4b728`](https://github.com/cameri/nostream/commit/7c4b728c99a9a56bfb3b31f18dff3aff2c5551df) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: de-duplicate events returned by generic tag-filter subscriptions
+
+  `EventRepository.findByFilters()` left-joins `event_tags` for generic tag filters
+  (`#e`, `#p`, etc.) without deduplicating the result. An event matching more than one
+  tag row for the same filter (e.g. `{"#p": ["a", "b"]}` matching an event tagged with
+  both) was returned once per matching `event_tags` row, so subscribers received the
+  same `EVENT` message multiple times. The query now selects `DISTINCT events.*` for
+  tag-filtered queries so each stored event is returned at most once. This also covers
+  generic tag filters combined with a NIP-50 `search` term (e.g.
+  `{"search": "...", "#p": ["a", "b"]}`), which take the search branch and are now
+  de-duplicated as well.
+
+- [#703](https://github.com/cameri/nostream/pull/703) [`7af0387`](https://github.com/cameri/nostream/commit/7af03871e887f92c9d09d2e6620254114edbf120) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - Fix the Content-Security-Policy `connect-src` directive for relays served over plain `ws://`.
+
+  The web app factory derived an HTTP(S) origin from the relay's WebSocket URL but mapped
+  `ws:` to the invalid scheme `':'`, which the WHATWG URL API silently ignores. As a result the
+  `connect-src` directive kept a `ws://…` entry instead of the intended `http://…` origin for
+  local/dev, Tor, or reverse-proxied setups. The `ws:` protocol now correctly maps to `http:`.
+
+  Adds regression test coverage for the protocol mapping (`getWebProtocolForRelay`, extracted from
+  `createWebApp` so it can be unit tested directly), since this file previously had no test coverage
+  at all.
+
+- [#708](https://github.com/cameri/nostream/pull/708) [`a76d0b5`](https://github.com/cameri/nostream/commit/a76d0b5a939c8d8e86d3a23e91b648e931a25117) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: reject expiration timestamp 0 and millisecond-scale values, and accept safe-integer second-based timestamps up to the Postgres int4 max (2038-01-19T03:14:07Z) in getEventExpiration()
+
+- [#735](https://github.com/cameri/nostream/pull/735) [`f0aab15`](https://github.com/cameri/nostream/commit/f0aab15b4d0526bfa346606fc675a3df2f269864) Thanks [@Ferryx349](https://github.com/Ferryx349)! - fix: include event id in expired and rate-limited rejection logs
+
+  Expired and rate-limited event rejections logged `event %s rejected: ...` without
+  passing `event.id`, so operators saw a literal `%s` instead of the event id.
+
+- [#715](https://github.com/cameri/nostream/pull/715) [`9361601`](https://github.com/cameri/nostream/commit/93616017344a6b37f2343fb4a6358d7a14fb6cd2) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: abort in-flight streaming queries when a subscription is cancelled
+
+- [#733](https://github.com/cameri/nostream/pull/733) [`9fb1c10`](https://github.com/cameri/nostream/commit/9fb1c1011910ffe61cb28ae0431c3f81fe2b5561) Thanks [@Ferryx349](https://github.com/Ferryx349)! - test(nip66): add integration tests for RelayMonitorWorker snapshot storage
+
+- [#725](https://github.com/cameri/nostream/pull/725) [`849c3f7`](https://github.com/cameri/nostream/commit/849c3f73cbad23a17e7de6b71bf4952000fbe5a9) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat(http): build absolute request URL from relay_url
+
+- [#726](https://github.com/cameri/nostream/pull/726) [`3d3848e`](https://github.com/cameri/nostream/commit/3d3848e66768faf272bc4187ff5c0af342f4137b) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat(redis): add setKeyIfNotExists for one-time claims
+
+- [#640](https://github.com/cameri/nostream/pull/640) [`ca23be1`](https://github.com/cameri/nostream/commit/ca23be1dcdd71becfb735f8a832b01176bf5bcc1) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - test: optimize nip05.spec.ts & nip03.spec.ts resource management
+
+  - Lift sinon stub to `before`/`after` in verifyNip05Identifier tests (create once, reset between tests)
+  - Extract SSRF guard callback once in `before` instead of per-test `beforeEach`
+  - Pre-build shared OTS buffers and attestations at module scope to eliminate redundant Buffer.concat calls
+  - Add shared event factory for extractNip05FromEvent tests
+
+- [#686](https://github.com/cameri/nostream/pull/686) [`cb7daf6`](https://github.com/cameri/nostream/commit/cb7daf61b2e4de33b84ec937ebdd739bce45d8cf) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: stop checking additional rate limit windows once a client is already rate-limited
+
+  `isRateLimited()` in `EventMessageHandler` and `WebSocketAdapter` looped through every
+  configured rate limit window even after one had already tripped, calling `rateLimiter.hit()`
+  (a Redis write) for each remaining window. Both now return as soon as the first exceeded
+  window is found, avoiding redundant Redis writes for clients that are already being limited.
+
+- [#684](https://github.com/cameri/nostream/pull/684) [`3648954`](https://github.com/cameri/nostream/commit/3648954659e206cc656e6be69d370bee72faa761) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: await Redis EXISTS call in RedisAdapter.hasKey() so it reflects actual key presence instead of always returning true
+
+- [#711](https://github.com/cameri/nostream/pull/711) [`220949d`](https://github.com/cameri/nostream/commit/220949dde1b0affaea048b0d8004ebc9ea3ef343) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: include the actual error message in replaceable event rejection responses
+
+  `ReplaceableEventStrategy.execute()` sent clients a bare `error: ` command result
+  (with no message body) whenever `eventRepository.upsert()` failed for a reason other
+  than a duplicate event id. The underlying `error.message` was caught but never
+  included in the response, leaving clients with no actionable information about why
+  the event was rejected. The command result now includes `error.message`.
+
+- [#682](https://github.com/cameri/nostream/pull/682) [`dc78df5`](https://github.com/cameri/nostream/commit/dc78df5352603842de6692b04cec4f8d3441dace) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix: prevent crash in NIP-11 relay information document when payments settings are absent
+
 ## 3.0.0
 
 ### Major Changes
