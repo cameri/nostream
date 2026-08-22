@@ -2202,6 +2202,55 @@ describe('EventMessageHandler', () => {
     })
   })
 
+  describe('isAuthenticationRequired', () => {
+    it('returns undefined when authRequired is disabled', () => {
+      handler = new EventMessageHandler(
+        { getAuthenticatedPubkeys: () => new Set() } as any,
+        () => null,
+        {} as any,
+        userRepository,
+        () => ({ info: { relay_url: 'relay_url' }, nip42: { authRequired: false } }) as any,
+        {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: async () => false }),
+      )
+
+      expect((handler as any).isAuthenticationRequired(event)).to.be.undefined
+    })
+
+    it('returns auth-required when enabled and the author is not authenticated', () => {
+      handler = new EventMessageHandler(
+        { getAuthenticatedPubkeys: () => new Set() } as any,
+        () => null,
+        {} as any,
+        userRepository,
+        () => ({ info: { relay_url: 'relay_url' }, nip42: { authRequired: true } }) as any,
+        {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: async () => false }),
+      )
+
+      expect((handler as any).isAuthenticationRequired(event)).to.equal(
+        'auth-required: authentication is required to publish events',
+      )
+    })
+
+    it('returns undefined when enabled and the author is authenticated', () => {
+      handler = new EventMessageHandler(
+        { getAuthenticatedPubkeys: () => new Set([event.pubkey]) } as any,
+        () => null,
+        {} as any,
+        userRepository,
+        () => ({ info: { relay_url: 'relay_url' }, nip42: { authRequired: true } }) as any,
+        {} as any,
+        { hasKey: async () => false, setKey: async () => true } as any,
+        () => ({ hit: async () => false }),
+      )
+
+      expect((handler as any).isAuthenticationRequired(event)).to.be.undefined
+    })
+  })
+
   describe('isProtectedEventBlocked', () => {
     const PRIVKEY = '0000000000000000000000000000000000000000000000000000000000000001'
 

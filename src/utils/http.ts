@@ -1,7 +1,6 @@
 import { IncomingMessage } from 'http'
-
-import { createLogger } from '../factories/logger-factory'
 import { Settings } from '../@types/settings'
+import { createLogger } from '../factories/logger-factory'
 
 const logger = createLogger('http-utils')
 
@@ -45,19 +44,18 @@ export const getRemoteAddress = (request: IncomingMessage, settings: Settings): 
 
   const trustedProxies = settings.network?.trustedProxies
   if (header && (!Array.isArray(trustedProxies) || trustedProxies.length === 0)) {
-    logger.warn('WARNING: network.remoteIpHeader is set but network.trustedProxies is empty. Forwarded headers will be ignored. Add your proxy IP to network.trustedProxies.')
+    logger.warn(
+      'WARNING: network.remoteIpHeader is set but network.trustedProxies is empty. Forwarded headers will be ignored. Add your proxy IP to network.trustedProxies.',
+    )
   }
 
   const rawHeaderAddress = header ? request.headers[header] : undefined
   const headerAddress = Array.isArray(rawHeaderAddress) ? rawHeaderAddress[0] : rawHeaderAddress
   const socketAddress = request.socket.remoteAddress
 
-  const trustedProxy = typeof socketAddress === 'string'
-    && isTrustedProxy(socketAddress, settings)
+  const trustedProxy = typeof socketAddress === 'string' && isTrustedProxy(socketAddress, settings)
 
-  const result = trustedProxy && typeof headerAddress === 'string'
-    ? headerAddress
-    : socketAddress
+  const result = trustedProxy && typeof headerAddress === 'string' ? headerAddress : socketAddress
 
   return (result as string).split(',')[0].trim()
 }
@@ -133,4 +131,53 @@ export const joinPathPrefix = (prefix: string, path: string): string => {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
 
   return `${normalizedPrefix}${normalizedPath}`
+}
+
+/**
+ * Absolute URL for NIP-98 `u` matching (scheme + host + path + query).
+ * Scheme and host come only from `info.relay_url` (never request Host / forwarded proto).
+ * Returns undefined if relay_url is missing or not a usable http(s)/ws(s) URL.
+ */
+export const getAbsoluteHttpRequestUrl = (
+  request: IncomingMessage & { originalUrl?: string },
+  settings: Settings,
+): string | undefined => {
+  const origin = getPublicHttpOrigin(settings)
+  if (!origin) {
+    return undefined
+  }
+
+  const originalUrl = typeof request.originalUrl === 'string' ? request.originalUrl : '/'
+  const prefix = getPublicPathPrefix(request, settings)
+  const pathAndQuery =
+    !prefix || originalUrl === prefix || originalUrl.startsWith(`${prefix}/`) || originalUrl.startsWith(`${prefix}?`)
+      ? originalUrl
+      : joinPathPrefix(prefix, originalUrl)
+
+  return `${origin}${pathAndQuery}`
+}
+
+const getPublicHttpOrigin = (settings: Settings): string | undefined => {
+  try {
+    const relayUrl = settings.info?.relay_url
+    if (typeof relayUrl !== 'string' || relayUrl.length === 0) {
+      return undefined
+    }
+
+    const parsed = new URL(relayUrl)
+    if (parsed.host.length === 0) {
+      return undefined
+    }
+
+    if (parsed.protocol === 'wss:' || parsed.protocol === 'https:') {
+      return `https://${parsed.host}`
+    }
+    if (parsed.protocol === 'ws:' || parsed.protocol === 'http:') {
+      return `http://${parsed.host}`
+    }
+  } catch {
+    // fall through
+  }
+
+  return undefined
 }

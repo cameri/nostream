@@ -62,7 +62,10 @@ export class AuthMessageHandler implements IMessageHandler {
     }
 
     logger('client %s authenticated as %s', this.webSocket.getClientId(), event.pubkey)
-    this.webSocket.addAuthenticatedPubkey(event.pubkey)
+    if (!this.webSocket.addAuthenticatedPubkey(event.pubkey, event.id)) {
+      this.sendResult(event.id, false, 'invalid: auth event already used')
+      return
+    }
     this.sendResult(event.id, true, '')
   }
 

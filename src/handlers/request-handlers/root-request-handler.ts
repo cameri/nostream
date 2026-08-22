@@ -61,6 +61,8 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     const hasWriteRestriction =
       hasAdmissionRestriction ||
       settings.nip43?.enabled === true ||
+      // Publish-only NIP-42 auth is a write condition, not connection-wide auth_required.
+      settings.nip42?.authRequired === true ||
       (eventLimits?.eventId?.minLeadingZeroBits ?? 0) > 0 ||
       (eventLimits?.pubkey?.minLeadingZeroBits ?? 0) > 0 ||
       (eventLimits?.pubkey?.whitelist?.length ?? 0) > 0 ||
@@ -101,6 +103,8 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
           ? content[0].maxLength // best guess since we have per-kind limits
           : content?.maxLength,
         min_pow_difficulty: eventLimits?.eventId?.minLeadingZeroBits,
+        // NIP-11: auth_required means AUTH before any action. We only gate publishes
+        // via nip42.authRequired (advertised as restricted_writes instead).
         auth_required: false,
         payment_required: settings.payments?.enabled,
         created_at_lower_limit: createdAtLimits?.maxNegativeDelta,

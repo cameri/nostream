@@ -8,6 +8,12 @@ export interface InviteCode {
   updatedAt: Date
 }
 
+export interface CreateInviteCodeOptions {
+  expiresAt?: Date | null
+  remainingUses?: number | null
+  createdBy?: string | null
+}
+
 export interface DBInviteCode {
   code: string
   created_by: Buffer | null

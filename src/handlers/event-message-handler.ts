@@ -28,6 +28,7 @@ import {
   isSealEvent,
   isWelcomeRumorEvent,
 } from '../utils/event'
+import { isAuthRequired } from '../utils/nip42'
 import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
 import { admissionCacheKey, CacheAdmissionState } from '../constants/caching'
@@ -68,7 +69,7 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (isExpiredEvent(event)) {
-      logger('event %s rejected: expired')
+      logger('event %s rejected: expired', event.id)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, 'event is expired'))
       return
     }
@@ -76,7 +77,7 @@ export class EventMessageHandler implements IMessageHandler {
     event = this.addExpirationMetadata(event)
 
     if (await this.isRateLimited(event)) {
-      logger('event %s rejected: rate-limited')
+      logger('event %s rejected: rate-limited', event.id)
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
         createEventCommandResult(event.id, false, 'rate-limited: slow down'),
@@ -85,6 +86,13 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     reason = this.canAcceptEvent(event)
+    if (reason) {
+      logger('event %s rejected: %s', event.id, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
+      return
+    }
+
+    reason = this.isAuthenticationRequired(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
@@ -231,6 +239,20 @@ export class EventMessageHandler implements IMessageHandler {
       limits.kind.blacklist.some(isEventKindOrRangeMatch(event))
     ) {
       return `blocked: event kind ${event.kind} not allowed`
+    }
+  }
+
+  protected isAuthenticationRequired(event: Event): string | undefined {
+    if (!isAuthRequired(this.settings())) {
+      return
+    }
+
+    if (this.getRelayPublicKey() === event.pubkey) {
+      return
+    }
+
+    if (!this.webSocket.getAuthenticatedPubkeys().has(event.pubkey)) {
+      return 'auth-required: authentication is required to publish events'
     }
   }
 

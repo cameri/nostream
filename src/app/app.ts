@@ -108,6 +108,25 @@ export class App implements IRunnable {
       logCentered(`${mirrors.length} static-mirroring worker started`, width)
     }
 
+    if (settings.nip66?.enabled) {
+      createWorker({
+        WORKER_TYPE: 'relay-monitor',
+      })
+      logCentered('1 relay-monitor worker started', width)
+    }
+
+    const dvmWorkers = settings?.dvm?.workers
+
+    if (Array.isArray(dvmWorkers) && dvmWorkers.length) {
+      for (let i = 0; i < dvmWorkers.length; i++) {
+        createWorker({
+          WORKER_TYPE: 'dvm-orchestrator',
+          DVM_WORKER_INDEX: i.toString(),
+        })
+      }
+      logCentered(`${dvmWorkers.length} dvm-orchestrator worker started`, width)
+    }
+
     logger('settings: %O', settings)
 
     const host = `${hostname()}:${port}`

@@ -3,12 +3,16 @@ import { expect } from 'chai'
 import express from 'express'
 import Sinon from 'sinon'
 
+import { Tag } from '../../../src/@types/base'
+import { EventKinds, EventTags } from '../../../src/constants/base'
 import * as getAdminHealthControllerFactory from '../../../src/factories/controllers/get-admin-health-controller-factory'
 import * as getAdminMetricsControllerFactory from '../../../src/factories/controllers/get-admin-metrics-controller-factory'
-import { hashAdminPassword } from '../../../src/utils/admin-password'
 import * as adminRateLimitMiddleware from '../../../src/handlers/request-handlers/admin-rate-limit-middleware'
 import * as rateLimiterMiddleware from '../../../src/handlers/request-handlers/rate-limiter-middleware'
 import * as settingsFactory from '../../../src/factories/settings-factory'
+import { hashAdminPassword } from '../../../src/utils/admin-password'
+import { getPublicKey, identifyEvent, signEvent } from '../../../src/utils/event'
+import * as nip98Replay from '../../../src/utils/nip98-replay'
 
 describe('admin router', () => {
   const originalSecret = process.env.SECRET
@@ -19,6 +23,7 @@ describe('admin router', () => {
   let rateLimiterMiddlewareStub: Sinon.SinonStub
   let adminRateLimitMiddlewareStub: Sinon.SinonStub
   let adminLoginRateLimitMiddlewareStub: Sinon.SinonStub
+  let claimNip98AuthEventIdStub: Sinon.SinonStub | undefined
   let server: any
 
   const loadAdminRouter = () => {
@@ -95,6 +100,8 @@ describe('admin router', () => {
     rateLimiterMiddlewareStub?.restore()
     adminRateLimitMiddlewareStub?.restore()
     adminLoginRateLimitMiddlewareStub?.restore()
+    claimNip98AuthEventIdStub?.restore()
+    claimNip98AuthEventIdStub = undefined
     delete require.cache[require.resolve('../../../src/routes/admin/index')]
     delete require.cache[require.resolve('../../../src/routes/admin')]
 
@@ -173,6 +180,49 @@ describe('admin router', () => {
     expect(healthResponse.status).to.equal(401)
     expect(metricsResponse.status).to.equal(401)
     expect(rateLimiterMiddlewareStub.callCount).to.equal(3)
+  })
+
+  it('authenticates a protected route with a signed NIP-98 event', async () => {
+    const privkey = 'a'.repeat(64)
+    const pubkey = getPublicKey(privkey)
+    const settings = {
+      info: { relay_url: 'http://placeholder.invalid' },
+      network: {},
+      admin: {
+        enabled: true,
+        nip98: {
+          enabled: true,
+          allowedPubkeys: [pubkey],
+          maxSkewSeconds: 60,
+        },
+      },
+    }
+    claimNip98AuthEventIdStub = Sinon.stub(nip98Replay, 'claimNip98AuthEventId').resolves('claimed')
+    const baseUrl = await startServer(settings)
+    const requestUrl = `${baseUrl}/session`
+    settings.info.relay_url = baseUrl.slice(0, -'/admin'.length)
+    const tags: Tag[] = [
+      [EventTags.Url, requestUrl],
+      [EventTags.Method, 'GET'],
+    ]
+    const identified = await identifyEvent({
+      pubkey,
+      created_at: Math.floor(Date.now() / 1000),
+      kind: EventKinds.HTTP_AUTH,
+      tags,
+      content: '',
+    })
+    const signed = await signEvent(privkey)(identified)
+    const authorization = `Nostr ${Buffer.from(JSON.stringify(signed), 'utf8').toString('base64')}`
+
+    const response = await axios.get(requestUrl, {
+      headers: { authorization },
+      validateStatus: () => true,
+    })
+
+    expect(response.status, JSON.stringify(response.data)).to.equal(200)
+    expect(response.data.authenticated).to.equal(true)
+    expect(claimNip98AuthEventIdStub.calledOnce).to.be.true
   })
 
   it('rejects invalid login credentials', async () => {

@@ -17,13 +17,15 @@ export type IWebSocketAdapter = EventEmitter & {
   getSubscriptions(): Map<string, SubscriptionFilter[]>
   getChallenge(): string
   getAuthenticatedPubkeys(): ReadonlySet<string>
-  addAuthenticatedPubkey(pubkey: string): void
+  /** Returns false if this AUTH event id was already accepted on this socket. */
+  addAuthenticatedPubkey(pubkey: string, authEventId: string): boolean
 }
 
 export interface ICacheAdapter {
   getKey(key: string): Promise<string>
   hasKey(key: string): Promise<boolean>
   setKey(key: string, value: string, expirySeconds?: number): Promise<boolean>
+  setKeyIfNotExists(key: string, value: string, expirySeconds?: number): Promise<boolean>
   addToSortedSet(key: string, set: Record<string, string> | Record<string, string>[]): Promise<number>
   removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number>
   getRangeFromSortedSet(key: string, start: number, stop: number): Promise<string[]>
@@ -32,7 +34,6 @@ export interface ICacheAdapter {
   deleteKey(key: string): Promise<number>
   getHKey(key: string, field: string): Promise<string>
   setHKey(key: string, fields: Record<string, string>): Promise<boolean>
-
 
   eval(script: string, keys: string[], args: string[]): Promise<unknown>
 }

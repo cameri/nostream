@@ -1,5 +1,5 @@
-import { Pubkey, Secret } from './base'
 import { EventKinds } from '../constants/base'
+import { Pubkey, Secret } from './base'
 import { MessageType } from './messages'
 import { SubscriptionFilter } from './subscription'
 
@@ -246,6 +246,21 @@ export interface Mirroring {
   static?: Mirror[]
 }
 
+export interface DvmWorker {
+  /** Command to spawn for this worker (e.g. an interpreter or executable path). */
+  command: string
+  /** Arguments passed to the spawned command. */
+  args?: string[]
+  /** NIP-90 job request kinds (5000-5999) this worker accepts. */
+  kinds?: number[]
+  /** Max time in ms to wait for a job result before considering it timed out. */
+  timeoutMs?: number
+}
+
+export interface Dvm {
+  workers?: DvmWorker[]
+}
+
 export type Nip05Mode = 'enabled' | 'passive' | 'disabled'
 
 export interface Nip45Settings {
@@ -256,6 +271,40 @@ export interface Nip50Settings {
   enabled?: boolean
   language?: string
   maxQueryLength?: number
+}
+
+export interface Nip66ProbeTimeouts {
+  dnsMs: number
+  tlsMs: number
+  wsRttMs: number
+  nip11Ms: number
+}
+
+export interface Nip66Settings {
+  /**
+   * Enable NIP-66 relay monitoring. When true, the primary process starts a
+   * relay-monitor cluster worker that probes configured targets on an interval.
+   * Defaults to false.
+   */
+  enabled: boolean
+  /**
+   * Interval in seconds between probe runs. Defaults to 3600.
+   */
+  probeIntervalSeconds: number
+  /**
+   * Per-check probe timeouts in milliseconds.
+   */
+  timeouts: Nip66ProbeTimeouts
+  /**
+   * Public relay WebSocket URLs to probe (for example wss://relay.example.com).
+   * When empty, the monitor worker uses info.relay_url.
+   */
+  targets: string[]
+  /**
+   * DNS cache TTL in seconds for repeated probes of the same hostname.
+   * Defaults to 300.
+   */
+  dnsCacheTtlSeconds: number
 }
 
 export interface Nip05Settings {
@@ -279,10 +328,20 @@ export interface Nip05Settings {
   domainBlacklist?: string[]
 }
 
+export interface AdminNip98Settings {
+  /** Accept NIP-98 Authorization headers on admin API routes. Defaults to false. */
+  enabled: boolean
+  /** Hex pubkeys allowed to authenticate via NIP-98. Fail-closed when empty. */
+  allowedPubkeys?: Pubkey[]
+  /** Max |now - created_at| in seconds. Defaults to 60. */
+  maxSkewSeconds?: number
+}
+
 export interface AdminSettings {
   enabled: boolean
   passwordHash?: string
   sessionTtlSeconds?: number
+  nip98?: AdminNip98Settings
 }
 export interface WoTSettings {
   enabled: boolean
@@ -310,12 +369,23 @@ export interface Nip42RestrictedReads {
 }
 
 export interface Nip42Settings {
+  /**
+   * When true, clients must NIP-42 AUTH as the event author before publishing.
+   * Advertised via NIP-11 `limitation.restricted_writes` (not `auth_required`,
+   * which means AUTH before any connection action).
+   */
+  authRequired?: boolean
+  /**
+   * Seconds after which an authenticated pubkey must AUTH again on this socket.
+   * Omit, 0, or negative = session lasts for the connection lifetime (NIP-42 default).
+   */
+  sessionExpirySeconds?: number
   restrictedReads?: Nip42RestrictedReads
 }
 
 export interface Nip43Settings {
   enabled: boolean
-  inviteCodeExpiry?: number
+  inviteCodeExpirySeconds?: number
   defaultMaxUses?: number
   allowInviteRequests?: boolean
   inviteRequestWhitelist?: Pubkey[]
@@ -330,10 +400,12 @@ export interface Settings {
   workers?: Worker
   limits?: Limits
   mirroring?: Mirroring
+  dvm?: Dvm
   nip05?: Nip05Settings
   nip42?: Nip42Settings
   nip43?: Nip43Settings
   nip45?: Nip45Settings
   nip50?: Nip50Settings
+  nip66?: Nip66Settings
   wot?: WoTSettings
 }
