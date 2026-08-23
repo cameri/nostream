@@ -81,5 +81,5 @@ export interface IDvmJobRepository {
   updateStatus(
     job: Pick<DvmJob, 'id' | 'status'> & Partial<Pick<DvmJob, 'resultEventId' | 'error'>>,
   ): Promise<DvmJob | undefined>
-  findPendingJobs(limit?: number): Promise<DvmJob[]>
+  findPendingJobs(limit?: number, kinds?: number[]): Promise<DvmJob[]>
 }
