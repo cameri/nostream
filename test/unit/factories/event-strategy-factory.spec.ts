@@ -161,4 +161,14 @@ describe('eventStrategyFactory', () => {
     event.kind = EventKinds.DVM_JOB_REQUEST_LAST
     expect(factory([event, adapter])).to.be.an.instanceOf(DvmJobRequestEventStrategy)
   })
+
+  it('returns ParameterizedReplaceableEventStrategy given a handler recommendation event (NIP-89, kind 31989)', () => {
+    event.kind = EventKinds.HANDLER_RECOMMENDATION
+    expect(factory([event, adapter])).to.be.an.instanceOf(ParameterizedReplaceableEventStrategy)
+  })
+
+  it('returns ParameterizedReplaceableEventStrategy given a handler information event (NIP-89, kind 31990)', () => {
+    event.kind = EventKinds.HANDLER_INFORMATION
+    expect(factory([event, adapter])).to.be.an.instanceOf(ParameterizedReplaceableEventStrategy)
+  })
 })
