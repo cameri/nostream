@@ -295,7 +295,7 @@ describe('DvmJobRepository', () => {
       const whereInStub = sandbox.stub().returns({ orderBy: orderByStub })
       const client = sandbox.stub().returns({ whereIn: whereInStub }) as unknown as DatabaseClient
 
-      const result = await repository.findPendingJobs(10, client)
+      const result = await repository.findPendingJobs(10, undefined, client)
 
       expect(result).to.be.an('array').that.is.empty
     })
@@ -307,7 +307,7 @@ describe('DvmJobRepository', () => {
       const whereInStub = sandbox.stub().returns({ orderBy: orderByStub })
       const client = sandbox.stub().returns({ whereIn: whereInStub }) as unknown as DatabaseClient
 
-      const result = await repository.findPendingJobs(10, client)
+      const result = await repository.findPendingJobs(10, undefined, client)
 
       expect(result).to.have.lengthOf(1)
       expect(result[0].id).to.equal(jobId)
@@ -320,7 +320,7 @@ describe('DvmJobRepository', () => {
       const whereInStub = sandbox.stub().returns({ orderBy: orderByStub })
       const client = sandbox.stub().returns({ whereIn: whereInStub }) as unknown as DatabaseClient
 
-      await repository.findPendingJobs(10, client)
+      await repository.findPendingJobs(10, undefined, client)
 
       expect(whereInStub).to.have.been.calledWith('status', [DvmJobStatus.SUBMITTED, DvmJobStatus.PICKED_UP])
     })
@@ -332,7 +332,7 @@ describe('DvmJobRepository', () => {
       const whereInStub = sandbox.stub().returns({ orderBy: orderByStub })
       const client = sandbox.stub().returns({ whereIn: whereInStub }) as unknown as DatabaseClient
 
-      await repository.findPendingJobs(10, client)
+      await repository.findPendingJobs(10, undefined, client)
 
       expect(orderByStub).to.have.been.calledWith('created_at', 'asc')
     })
@@ -344,9 +344,34 @@ describe('DvmJobRepository', () => {
       const whereInStub = sandbox.stub().returns({ orderBy: orderByStub })
       const client = sandbox.stub().returns({ whereIn: whereInStub }) as unknown as DatabaseClient
 
-      await repository.findPendingJobs(undefined, client)
+      await repository.findPendingJobs(undefined, undefined, client)
 
       expect(limitStub).to.have.been.calledWith(100)
+    })
+
+    it('filters by kind when kinds are provided', async () => {
+      const selectStub = sandbox.stub().resolves([])
+      const kindWhereInStub = sandbox.stub()
+      const limitStub = sandbox.stub().returns({ select: selectStub, whereIn: kindWhereInStub })
+      const orderByStub = sandbox.stub().returns({ limit: limitStub })
+      const whereInStub = sandbox.stub().returns({ orderBy: orderByStub })
+      const client = sandbox.stub().returns({ whereIn: whereInStub }) as unknown as DatabaseClient
+
+      await repository.findPendingJobs(10, [5000, 5001], client)
+
+      expect(kindWhereInStub).to.have.been.calledWith('kind', [5000, 5001])
+    })
+
+    it('does not filter by kind when kinds is omitted or empty', async () => {
+      const selectStub = sandbox.stub().resolves([])
+      const limitStub = sandbox.stub().returns({ select: selectStub })
+      const orderByStub = sandbox.stub().returns({ limit: limitStub })
+      const whereInStub = sandbox.stub().returns({ orderBy: orderByStub })
+      const client = sandbox.stub().returns({ whereIn: whereInStub }) as unknown as DatabaseClient
+
+      const result = await repository.findPendingJobs(10, [], client)
+
+      expect(result).to.be.an('array').that.is.empty
     })
   })
 })

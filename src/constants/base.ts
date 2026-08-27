@@ -44,6 +44,9 @@ export enum EventKinds {
   // NIP-90: Data Vending Machines — job request events
   DVM_JOB_REQUEST_FIRST = 5000,
   DVM_JOB_REQUEST_LAST = 5999,
+  // NIP-90: Data Vending Machines — job result events
+  DVM_JOB_RESULT_FIRST = 6000,
+  DVM_JOB_RESULT_LAST = 6999,
   // Replaceable events
   REPLACEABLE_FIRST = 10000,
   // NIP-65: Relay List Metadata
@@ -68,6 +71,9 @@ export enum EventKinds {
   PARAMETERIZED_REPLACEABLE_FIRST = 30000,
   // Marmot Protocol MIP-00: KeyPackage (addressable, replaces legacy 443)
   MARMOT_KEY_PACKAGE = 30443,
+  // NIP-89: Recommended Application Handlers
+  HANDLER_RECOMMENDATION = 31989,
+  HANDLER_INFORMATION = 31990,
   PARAMETERIZED_REPLACEABLE_LAST = 39999,
   USER_APPLICATION_FIRST = 40000,
 }
