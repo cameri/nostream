@@ -1,4 +1,4 @@
-# Copy to /opt/nostream/.nostr/settings.yaml on the server.
+# Copy to .nostr/settings.yaml on the server and edit for your relay.
 # Values here override resources/default-settings.yaml from the image.
 
 info:
