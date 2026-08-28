@@ -2,6 +2,7 @@ import { ALL_RELAYS, EventKinds, EventTags } from '../../../src/constants/base'
 import { CanonicalEvent, Event } from '../../../src/@types/event'
 import {
   getEventExpiration,
+  isContactListEvent,
   isDeleteEvent,
   isDirectMessageEvent,
   isDvmJobRequestEvent,
@@ -384,6 +385,18 @@ describe('NIP-12', () => {
     it('keeps #g filter exact when criterion has no wildcard', () => {
       expect(isEventMatchingFilter({ '#g': ['u4pruyd'] })(event)).to.be.false
       expect(isEventMatchingFilter({ '#g': ['u4pruydqqvj'] })(event)).to.be.true
+    })
+  })
+})
+
+describe('NIP-02', () => {
+  describe('isContactListEvent', () => {
+    it('returns true if event is a contact list', () => {
+      expect(isContactListEvent({ kind: EventKinds.CONTACT_LIST } as any)).to.be.true
+    })
+
+    it('returns false if event is not a contact list', () => {
+      expect(isContactListEvent({ kind: EventKinds.SET_METADATA } as any)).to.be.false
     })
   })
 })
