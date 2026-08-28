@@ -1,0 +1,8 @@
+FROM node:24-alpine
+
+WORKDIR /code
+
+# Pre-install migration deps on a machine with registry access, then load on the server.
+RUN npm install --no-save knex@2.4.0 pg@8.8.0
+
+ENTRYPOINT ["npx", "knex", "migrate:latest"]

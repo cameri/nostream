@@ -1,0 +1,91 @@
+services:
+  nostream:
+    image: ghcr.io/cameri/nostream:main
+    pull_policy: never
+    container_name: nostream
+    env_file: .env
+    environment:
+      RELAY_PORT: 8008
+      NOSTR_CONFIG_DIR: /home/node/.nostr
+      DB_HOST: nostream-db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_MIN_POOL_SIZE: ${DB_MIN_POOL_SIZE:-16}
+      DB_MAX_POOL_SIZE: ${DB_MAX_POOL_SIZE:-64}
+      DB_ACQUIRE_CONNECTION_TIMEOUT: ${DB_ACQUIRE_CONNECTION_TIMEOUT:-60000}
+      REDIS_HOST: nostream-cache
+      REDIS_PORT: 6379
+      REDIS_USER: default
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      READ_REPLICA_ENABLED: 'false'
+      WORKER_COUNT: ${WORKER_COUNT:-2}
+    user: node:node
+    volumes:
+      - ${PWD}/.nostr:/home/node/.nostr
+    ports:
+      - 127.0.0.1:8008:8008
+    depends_on:
+      nostream-cache:
+        condition: service_healthy
+      nostream-db:
+        condition: service_healthy
+      nostream-migrate:
+        condition: service_completed_successfully
+    restart: on-failure
+
+  nostream-db:
+    image: postgres:15
+    container_name: nostream-db
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ${PWD}/.nostr/data:/var/lib/postgresql/data
+      - ${PWD}/.nostr/db-logs:/var/log/postgresql
+      - ${PWD}/postgresql.conf:/postgresql.conf
+    command: postgres -c 'config_file=/postgresql.conf'
+    restart: always
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 360s
+
+  nostream-cache:
+    image: redis:7.0.5-alpine3.16
+    container_name: nostream-cache
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - cache:/data
+    command: sh -c 'redis-server --loglevel warning --requirepass "$$REDIS_PASSWORD"'
+    restart: always
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  nostream-migrate:
+    image: nostream-migrate:local
+    pull_policy: never
+    container_name: nostream-migrate
+    environment:
+      DB_HOST: nostream-db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+    volumes:
+      - ./migrations:/code/migrations
+      - ./knexfile.js:/code/knexfile.js
+    depends_on:
+      nostream-db:
+        condition: service_healthy
+
+volumes:
+  cache:
