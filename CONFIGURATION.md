@@ -257,3 +257,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `nwc`. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |
+| wot.enabled                                 | Enables the Web of Trust graph, rooted at `wot.seedPubkey`, built from NIP-02 contact lists. Defaults to false. |
+| wot.maxDepth                                | How many hops out from `wot.seedPubkey` the trust graph extends. Direct follows are distance 1. Defaults to 2. |
+| wot.minimumFollowers                        | Minimum number of already-trusted accounts that must follow a pubkey before it enters the graph at 2+ hops. Direct follows are always trusted. Defaults to 1. |
+| wot.refreshIntervalHours                    | Hours between full consistency rebuilds, on top of the real-time updates applied as kind-3 events are ingested. Defaults to 24. |
+| wot.seedPubkey                              | The relay owner's pubkey in hex. Root of the trust graph. Required when `wot.enabled` is true. |

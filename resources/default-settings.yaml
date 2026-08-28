@@ -106,15 +106,19 @@ nip66:
   targets: []
   dnsCacheTtlSeconds: 300
 wot:
-  # Web of Trust filtering. When enabled, only events from pubkeys within
-  # the relay owner's 2-hop follow graph are accepted.
+  # Web of Trust graph. When enabled, the relay builds a trust graph rooted
+  # at seedPubkey from NIP-02 contact lists, updated in real time as kind-3
+  # events arrive.
   enabled: false
   # The relay owner's pubkey in hex. This is the root of the trust graph.
   # Required when enabled is true.
   seedPubkey: ""
-  # A pubkey must be followed by at least this many 1-hop accounts to be trusted.
+  # A pubkey must be followed by at least this many already-trusted accounts
+  # to enter the graph at 2+ hops. Direct (1-hop) follows are always trusted.
   minimumFollowers: 1
-  # Hours between full trust graph rebuilds.
+  # How many hops out from seedPubkey the trust graph extends.
+  maxDepth: 2
+  # Hours between full consistency rebuilds, on top of real-time updates.
   refreshIntervalHours: 24
 network:
   maxPayloadSize: 524288
