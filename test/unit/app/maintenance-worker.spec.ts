@@ -433,13 +433,71 @@ describe('MaintenanceWorker', () => {
       settingsState.payments = { enabled: true } as any
       paymentsService.getPendingInvoices.resolves([pendingInvoice, secondInvoice])
       paymentsService.getInvoiceFromPaymentsProcessor
-        .onFirstCall().rejects(new Error('processor error'))
-        .onSecondCall().resolves({ id: 'inv-2', status: InvoiceStatus.PENDING })
+        .onFirstCall()
+        .rejects(new Error('processor error'))
+        .onSecondCall()
+        .resolves({ id: 'inv-2', status: InvoiceStatus.PENDING })
 
       await (worker as any).onSchedule()
 
       expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
       expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnce
+    })
+
+    it('walks the pending queue instead of re-reading the same page', async () => {
+      // A full page means there may be more behind it, so start further in next time.
+      settingsState.payments = { enabled: true } as any
+      const fullPage = Array.from({ length: 10 }, (_, i) => ({ ...pendingInvoice, id: `inv-${i}` }))
+      paymentsService.getPendingInvoices.resolves(fullPage)
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+        id: 'inv-0',
+        status: InvoiceStatus.PENDING,
+      })
+
+      await (worker as any).onSchedule()
+      await (worker as any).onSchedule()
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.getPendingInvoices.getCall(0).args[0]).to.equal(0)
+      expect(paymentsService.getPendingInvoices.getCall(1).args[0]).to.equal(10)
+      expect(paymentsService.getPendingInvoices.getCall(2).args[0]).to.equal(20)
+    })
+
+    it('starts over once it reaches the end of the queue', async () => {
+      settingsState.payments = { enabled: true } as any
+      const fullPage = Array.from({ length: 10 }, (_, i) => ({ ...pendingInvoice, id: `inv-${i}` }))
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+        id: 'inv-0',
+        status: InvoiceStatus.PENDING,
+      })
+
+      paymentsService.getPendingInvoices.resolves(fullPage)
+      await (worker as any).onSchedule()
+
+      // Short page: nothing left behind it.
+      paymentsService.getPendingInvoices.resolves([pendingInvoice])
+      await (worker as any).onSchedule()
+
+      paymentsService.getPendingInvoices.resolves(fullPage)
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.getPendingInvoices.getCall(1).args[0]).to.equal(10)
+      expect(paymentsService.getPendingInvoices.getCall(2).args[0]).to.equal(0)
+    })
+
+    it('stays at the start while there is only ever one short page', async () => {
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getPendingInvoices.resolves([pendingInvoice])
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+        id: pendingInvoice.id,
+        status: InvoiceStatus.PENDING,
+      })
+
+      await (worker as any).onSchedule()
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.getPendingInvoices.getCall(0).args[0]).to.equal(0)
+      expect(paymentsService.getPendingInvoices.getCall(1).args[0]).to.equal(0)
     })
 
     it('marks an expired pending invoice as expired when the payment processor returns 404', async () => {

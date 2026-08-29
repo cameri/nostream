@@ -21,6 +21,12 @@ payments:
             - replace-with-your-pubkey-in-hex
           event_kinds:
             - 9735 # Nip-57 Lightning Zap Receipts
+  # Applied only when the payments processor does not report an expiry of its own.
+  # Without it such invoices can never be retired and stay pending forever.
+  # Raise it if your processor issues invoices that stay payable for longer than
+  # this: LNURL and NWC have no callback, so a payment made after the invoice has
+  # been retired would not be noticed. Capped at 30 days.
+  invoiceExpirySeconds: 86400
 paymentsProcessors:
   zebedee:
     baseURL: https://api.zebedee.io/
