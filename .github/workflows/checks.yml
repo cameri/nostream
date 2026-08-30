@@ -219,11 +219,16 @@ jobs:
       - post-tests
     if: >-
       always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      (needs.changes.result == 'success' || needs.changes.result == 'skipped') &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
-      (needs.build-check.result == 'success' || needs.build-check.result == 'skipped') &&
-      (needs.test-units-and-cover.result == 'success' || needs.test-units-and-cover.result == 'skipped') &&
-      (needs.test-integrations-and-cover.result == 'success' || needs.test-integrations-and-cover.result == 'skipped') &&
+      needs.changes.result == 'success' &&
+      (
+        needs.changes.outputs.src != 'true' ||
+        (
+          needs.lint.result == 'success' &&
+          needs.build-check.result == 'success' &&
+          needs.test-units-and-cover.result == 'success' &&
+          needs.test-integrations-and-cover.result == 'success'
+        )
+      ) &&
       needs.post-tests.result == 'success'
     env:
       REGISTRY: ghcr.io

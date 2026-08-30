@@ -25,8 +25,10 @@ describe('container image publishing workflow', () => {
       'post-tests',
     ])
     expect(publish.if).to.include("always() && github.event_name == 'push' && github.ref == 'refs/heads/main'")
-    for (const job of publish.needs.filter((job) => job !== 'post-tests')) {
-      expect(publish.if).to.include(`needs.${job}.result == 'success' || needs.${job}.result == 'skipped'`)
+    expect(publish.if).to.include("needs.changes.result == 'success'")
+    expect(publish.if).to.include("needs.changes.outputs.src != 'true'")
+    for (const job of publish.needs.filter((job) => !['changes', 'post-tests'].includes(job))) {
+      expect(publish.if).to.include(`needs.${job}.result == 'success'`)
     }
     expect(publish.if).to.include("needs.post-tests.result == 'success'")
     expect(existsSync(join(process.cwd(), '.github', 'workflows', 'publish-container-image.yml'))).to.equal(false)
