@@ -2,6 +2,7 @@ import { IRunnable } from '../@types/base'
 import { IRelayProbeSnapshotStore, RelayProbeRunSnapshot } from '../@types/relay-probe-snapshot'
 import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
+import { INip66EventPublisher } from '../services/nip66-event-publisher'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 import { filterValidProbeTargets, resolveProbeTargets } from '../utils/relay-probe-targets'
 import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
@@ -40,6 +41,7 @@ export class RelayMonitorWorker implements IRunnable {
     private readonly settings: () => Settings,
     private readonly snapshotStore: IRelayProbeSnapshotStore,
     private readonly probeRunner: RunProbeFn = runProbe,
+    private readonly eventPublisher?: INip66EventPublisher,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -135,6 +137,14 @@ export class RelayMonitorWorker implements IRunnable {
 
     await this.snapshotStore.saveLatest(snapshot, expirySeconds)
     logger('saved probe snapshot for %d target(s) with status %s', valid.length, snapshot.status)
+
+    if (this.eventPublisher) {
+      try {
+        await this.eventPublisher.publishAfterProbe(snapshot, currentSettings)
+      } catch (error) {
+        logger.error('failed to publish NIP-66 events: %o', error)
+      }
+    }
   }
 
   private onError(error: Error) {
