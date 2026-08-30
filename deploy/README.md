@@ -4,8 +4,8 @@ Minimal Docker Compose stack for running nostream in production. The relay
 container pulls a pre-built image from GHCR instead of building on the server.
 
 This guide assumes a Linux host with Docker Engine and the Compose plugin
-installed. For image publishing on merge to `main`, see
-`.github/workflows/publish-container-image.yml`.
+installed. Container images are published automatically after CI succeeds on pushes to
+`main`. See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for the CI/CD flow.
 
 ## Prerequisites
 
