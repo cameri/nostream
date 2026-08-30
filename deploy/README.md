@@ -1,11 +1,15 @@
 # Production deployment
 
 Minimal Docker Compose stack for running nostream in production. The relay
-container pulls a pre-built image from GHCR instead of building on the server.
+container uses a pre-built image from GHCR instead of building on the server.
 
 This guide assumes a Linux host with Docker Engine and the Compose plugin
 installed. For image publishing on merge to `main`, see
 `.github/workflows/publish-container-image.yml`.
+
+Migrations ship inside that image (`migrations/` and `knexfile.js`). The
+`nostream-migrate` service is a one-shot container of the same image that
+runs `knex migrate:latest` before the relay starts.
 
 ## Prerequisites
 
@@ -18,13 +22,14 @@ Before deploying the compose stack:
 4. Copy `deploy/settings.yaml.example` to `.nostr/settings.yaml` and edit for
    your relay.
 5. Create `.env` from `deploy/env.example` with production secrets.
-6. Copy from the repository root into the deploy directory:
-   - `migrations/`
-   - `knexfile.js`
-   - `postgresql.conf`
+6. Copy `postgresql.conf` from the repository root into the deploy directory.
 7. Load `ghcr.io/cameri/nostream:main` on the host (see
    [Image delivery on restricted networks](#image-delivery-on-restricted-networks)
    if `docker pull` fails).
+
+Do not copy `migrations/` or `knexfile.js` onto the host. Compose does not
+mount them; changing files on disk will not change what the migrate service
+runs.
 
 ## Server layout
 
@@ -35,22 +40,23 @@ Before deploying the compose stack:
 ├── .nostr/
 │   ├── settings.yaml       # copy from deploy/settings.yaml.example
 │   └── data/               # Postgres data (created on first start)
-├── migrations/             # from repository root
-├── knexfile.js             # from repository root
 └── postgresql.conf         # from repository root
 ```
 
 ## Services
 
-| Service           | Image                          | Notes                                       |
-|-------------------|--------------------------------|---------------------------------------------|
-| nostream          | ghcr.io/cameri/nostream:main   | `pull_policy: never` when image is pre-loaded |
-| nostream-db       | postgres:15                    |                                             |
-| nostream-cache    | redis:7.0.5-alpine3.16         |                                             |
-| nostream-migrate  | nostream-migrate:local         | pre-built; see migrate image build below    |
+| Service           | Image                          | Notes                                                      |
+|-------------------|--------------------------------|------------------------------------------------------------|
+| nostream          | ghcr.io/cameri/nostream:main   | `pull_policy: never` when the image is pre-loaded          |
+| nostream-db       | postgres:15                    |                                                            |
+| nostream-cache    | redis:7.0.5-alpine3.16         |                                                            |
+| nostream-migrate  | ghcr.io/cameri/nostream:main   | one-shot `knex migrate:latest`; same image as the relay    |
 
 The relay listens on `127.0.0.1:8008` by default. Expose it publicly with a
 reverse proxy or tunnel (for example Cloudflare Tunnel) in front of that address.
+
+The relay service waits for `nostream-migrate` to exit 0
+(`service_completed_successfully`) before it starts.
 
 ## Deploy
 
@@ -80,33 +86,15 @@ curl -s -H 'Accept: application/nostr+json' http://127.0.0.1:8008/
 
 The second command should return NIP-11 relay metadata JSON.
 
-## Migrate image
-
-The migrate service expects a local image tagged `nostream-migrate:local`. Build
-it on a machine with registry access (use `linux/amd64` when building on Apple
-Silicon):
-
-```bash
-docker build --platform linux/amd64 -f deploy/Dockerfile.migrate -t nostream-migrate:local .
-docker save nostream-migrate:local | gzip > nostream-migrate.tar.gz
-```
-
-Transfer and load on the server:
-
-```bash
-gunzip -c nostream-migrate.tar.gz | docker load
-```
-
 ## Image delivery on restricted networks
 
-Some hosts cannot reach GHCR or npm over IPv4. Workarounds:
+Some hosts cannot reach GHCR over IPv4. Workarounds:
 
 - **nostream image:** build or pull elsewhere, then `docker save` → transfer →
-  `docker load` on the server. Keep `pull_policy: never` on the nostream service.
+  `docker load` on the server. Keep `pull_policy: never` on the nostream and
+  nostream-migrate services. One image is enough; migrations are already in it.
 - **postgres / redis:** usually available from Docker Hub; if not, use the same
   save/load approach.
-- **migrations:** use the pre-built migrate image above instead of running
-  `npm install` on the server.
 
 ## Settings file permissions
 
@@ -125,9 +113,17 @@ Without this, the relay falls back to default settings from the image.
 When a new image is available:
 
 ```bash
-docker load -i nostream-main.tar.gz   # if not pulling from GHCR
+docker pull ghcr.io/cameri/nostream:main   # or: docker load -i nostream-main.tar.gz
 docker compose up -d
 ```
 
-Migrations re-run automatically via the `nostream-migrate` service on each
-`docker compose up`.
+`pull_policy: never` means Compose will not fetch a new digest by itself.
+Load or pull the image first, then `up`. Compose recreates containers whose
+image id changed, so `nostream-migrate` runs `migrate:latest` against the
+schema baked into that image (no-op when already applied).
+
+If migrate does not re-run after a load, recreate it explicitly:
+
+```bash
+docker compose up -d --force-recreate nostream-migrate nostream
+```
