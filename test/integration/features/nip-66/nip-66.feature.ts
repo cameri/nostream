@@ -192,12 +192,13 @@ Then('the snapshot uses the configured relay URL as its probe target', function 
 })
 
 Then('a kind 30166 event is stored for the monitor identity', async function () {
-  const rows = await getMasterDbClient()('events')
-    .where('event_kind', EventKinds.RELAY_DISCOVERY)
-    .where('event_pubkey', Buffer.from(MONITOR_PUBKEY, 'hex'))
+  const tagRows = await getMasterDbClient()('event_tags')
+    .join('events', 'events.event_id', 'event_tags.event_id')
+    .where('events.event_kind', EventKinds.RELAY_DISCOVERY)
+    .where('events.event_pubkey', Buffer.from(MONITOR_PUBKEY, 'hex'))
+    .where('event_tags.tag_name', 'd')
+    .select('event_tags.tag_name', 'event_tags.tag_value')
 
-  expect(rows).to.have.length(1)
-
-  const tags = JSON.parse(rows[0].event_tags)
-  expect(tags).to.deep.include(['d', `${INTEGRATION_RELAY_URL}/`])
+  expect(tagRows).to.have.length(1)
+  expect(tagRows[0].tag_value).to.equal(`${INTEGRATION_RELAY_URL}/`)
 })
