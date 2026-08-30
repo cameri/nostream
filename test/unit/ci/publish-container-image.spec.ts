@@ -24,9 +24,11 @@ describe('container image publishing workflow', () => {
       'test-integrations-and-cover',
       'post-tests',
     ])
-    expect(publish.if).to.equal(
-      "github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.post-tests.result == 'success'",
-    )
+    expect(publish.if).to.include("always() && github.event_name == 'push' && github.ref == 'refs/heads/main'")
+    for (const job of publish.needs.filter((job) => job !== 'post-tests')) {
+      expect(publish.if).to.include(`needs.${job}.result == 'success' || needs.${job}.result == 'skipped'`)
+    }
+    expect(publish.if).to.include("needs.post-tests.result == 'success'")
     expect(existsSync(join(process.cwd(), '.github', 'workflows', 'publish-container-image.yml'))).to.equal(false)
   })
 })

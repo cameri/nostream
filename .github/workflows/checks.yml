@@ -217,7 +217,14 @@ jobs:
       - test-units-and-cover
       - test-integrations-and-cover
       - post-tests
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.post-tests.result == 'success'
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      (needs.changes.result == 'success' || needs.changes.result == 'skipped') &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+      (needs.build-check.result == 'success' || needs.build-check.result == 'skipped') &&
+      (needs.test-units-and-cover.result == 'success' || needs.test-units-and-cover.result == 'skipped') &&
+      (needs.test-integrations-and-cover.result == 'success' || needs.test-integrations-and-cover.result == 'skipped') &&
+      needs.post-tests.result == 'success'
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository }}
