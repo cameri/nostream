@@ -4,6 +4,21 @@ import yaml from 'js-yaml'
 import { mergeDeepRight } from 'ramda'
 
 import { Settings } from '../@types/settings'
+import {
+  getConfigBaseDir,
+  getDefaultSettingsFilePath,
+  getSettingsAuditLogPath,
+  getSettingsBackupDir,
+  getSettingsFilePath,
+} from './settings-paths'
+
+export {
+  getConfigBaseDir,
+  getDefaultSettingsFilePath,
+  getSettingsAuditLogPath,
+  getSettingsBackupDir,
+  getSettingsFilePath,
+} from './settings-paths'
 
 export type ValidationIssue = {
   path: string
@@ -19,16 +34,6 @@ type PathToken =
       type: 'index'
       index: number
     }
-
-export const getConfigBaseDir = (): string => process.env.NOSTR_CONFIG_DIR ?? join(process.cwd(), '.nostr')
-
-export const getSettingsFilePath = (): string => join(getConfigBaseDir(), 'settings.yaml')
-
-export const getDefaultSettingsFilePath = (): string => join(process.cwd(), 'resources', 'default-settings.yaml')
-
-export const getSettingsBackupDir = (): string => join(getConfigBaseDir(), 'backups')
-
-export const getSettingsAuditLogPath = (): string => join(getConfigBaseDir(), 'settings-audit.jsonl')
 
 export const toCategoryLabel = (key: string): string => {
   return key
@@ -282,15 +287,9 @@ const pathExistsInSchema = (schema: unknown, tokens: PathToken[]): boolean => {
 
 export const ensureSettingsExists = (): void => {
   const configDir = getConfigBaseDir()
-  const settingsPath = getSettingsFilePath()
-  const defaultsPath = getDefaultSettingsFilePath()
 
   if (!fs.existsSync(configDir)) {
     fs.mkdirSync(configDir, { recursive: true })
-  }
-
-  if (!fs.existsSync(settingsPath)) {
-    fs.copyFileSync(defaultsPath, settingsPath)
   }
 }
 
@@ -301,7 +300,13 @@ export const loadDefaults = (): Settings => {
 
 export const loadUserSettings = (): Settings => {
   ensureSettingsExists()
-  const raw = fs.readFileSync(getSettingsFilePath(), 'utf-8')
+  const settingsPath = getSettingsFilePath()
+
+  if (!fs.existsSync(settingsPath)) {
+    return {} as Settings
+  }
+
+  const raw = fs.readFileSync(settingsPath, 'utf-8')
   return (yaml.load(raw) as Settings) ?? ({} as Settings)
 }
 
