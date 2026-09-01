@@ -1,6 +1,11 @@
 import { expect } from 'chai'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
 import {
+  ensureSettingsExists,
+  loadUserSettings,
   toCategoryLabel,
   getByPath,
   getTopLevelSettingCategories,
@@ -117,5 +122,63 @@ describe('settings-guided-schema', () => {
     expect(requireSafeNonNegativeIntegerSettingValue('bad')).to.equal('Value must be a non-negative integer')
     expect(requireSafeNonNegativeIntegerSettingValue('2048')).to.equal(undefined)
     expect(requireNonEmptySettingValue(' ')).to.equal('Value is required')
+  })
+
+  it('does not create settings.yaml when ensuring config dir exists', () => {
+    const originalConfigDir = process.env.NOSTR_CONFIG_DIR
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-settings-config-'))
+
+    try {
+      process.env.NOSTR_CONFIG_DIR = tmpDir
+      ensureSettingsExists()
+      expect(loadUserSettings()).to.deep.equal({})
+      expect(fs.existsSync(path.join(tmpDir, 'settings.yaml'))).to.equal(false)
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+      if (originalConfigDir === undefined) {
+        delete process.env.NOSTR_CONFIG_DIR
+      } else {
+        process.env.NOSTR_CONFIG_DIR = originalConfigDir
+      }
+    }
+  })
+
+  it('falls back to deprecated settings.json when settings.yaml is absent', () => {
+    const originalConfigDir = process.env.NOSTR_CONFIG_DIR
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-settings-legacy-'))
+
+    try {
+      process.env.NOSTR_CONFIG_DIR = tmpDir
+      fs.writeFileSync(path.join(tmpDir, 'settings.json'), JSON.stringify({ info: { name: 'legacy' } }))
+
+      expect(loadUserSettings()).to.deep.equal({ info: { name: 'legacy' } })
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+      if (originalConfigDir === undefined) {
+        delete process.env.NOSTR_CONFIG_DIR
+      } else {
+        process.env.NOSTR_CONFIG_DIR = originalConfigDir
+      }
+    }
+  })
+
+  it('prefers settings.yaml over deprecated settings.json', () => {
+    const originalConfigDir = process.env.NOSTR_CONFIG_DIR
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-settings-precedence-'))
+
+    try {
+      process.env.NOSTR_CONFIG_DIR = tmpDir
+      fs.writeFileSync(path.join(tmpDir, 'settings.json'), JSON.stringify({ info: { name: 'legacy' } }))
+      fs.writeFileSync(path.join(tmpDir, 'settings.yaml'), 'info:\n  name: current\n')
+
+      expect(loadUserSettings()).to.deep.equal({ info: { name: 'current' } })
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+      if (originalConfigDir === undefined) {
+        delete process.env.NOSTR_CONFIG_DIR
+      } else {
+        process.env.NOSTR_CONFIG_DIR = originalConfigDir
+      }
+    }
   })
 })
