@@ -84,7 +84,9 @@ To override specific values:
 ```bash
 cp deploy/settings.yaml.example /opt/nostream/.nostr/settings.yaml
 # edit overrides only — not a full copy of default-settings.yaml
-chown 1000:1000 /opt/nostream/.nostr/settings.yaml
+# the relay also writes backups and the audit log into .nostr itself, so the
+# directory needs to be writable by uid 1000, not just the settings file
+chown 1000:1000 /opt/nostream/.nostr /opt/nostream/.nostr/settings.yaml
 chmod 600 /opt/nostream/.nostr/settings.yaml
 docker compose up -d
 ```

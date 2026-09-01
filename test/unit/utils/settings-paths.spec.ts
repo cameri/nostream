@@ -1,4 +1,5 @@
 import { expect } from 'chai'
+import { join } from 'path'
 
 import {
   getConfigBaseDir,
@@ -22,20 +23,20 @@ describe('settings paths', () => {
   it('defaults config dir to .nostr under cwd', () => {
     delete process.env.NOSTR_CONFIG_DIR
 
-    expect(getConfigBaseDir()).to.equal(`${process.cwd()}/.nostr`)
-    expect(getSettingsFilePath()).to.equal(`${process.cwd()}/.nostr/settings.yaml`)
-    expect(getSettingsBackupDir()).to.equal(`${process.cwd()}/.nostr/backups`)
-    expect(getSettingsAuditLogPath()).to.equal(`${process.cwd()}/.nostr/settings-audit.jsonl`)
+    expect(getConfigBaseDir()).to.equal(join(process.cwd(), '.nostr'))
+    expect(getSettingsFilePath()).to.equal(join(process.cwd(), '.nostr', 'settings.yaml'))
+    expect(getSettingsBackupDir()).to.equal(join(process.cwd(), '.nostr', 'backups'))
+    expect(getSettingsAuditLogPath()).to.equal(join(process.cwd(), '.nostr', 'settings-audit.jsonl'))
   })
 
   it('honors NOSTR_CONFIG_DIR', () => {
     process.env.NOSTR_CONFIG_DIR = '/srv/nostream/.nostr'
 
     expect(getConfigBaseDir()).to.equal('/srv/nostream/.nostr')
-    expect(getSettingsFilePath()).to.equal('/srv/nostream/.nostr/settings.yaml')
+    expect(getSettingsFilePath()).to.equal(join('/srv/nostream/.nostr', 'settings.yaml'))
   })
 
   it('points default settings at bundled resources file', () => {
-    expect(getDefaultSettingsFilePath()).to.equal(`${process.cwd()}/resources/default-settings.yaml`)
+    expect(getDefaultSettingsFilePath()).to.equal(join(process.cwd(), 'resources', 'default-settings.yaml'))
   })
 })

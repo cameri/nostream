@@ -5,7 +5,7 @@ import { extname, join } from 'path'
 
 import { createLogger } from '../factories/logger-factory'
 import { Settings } from '../@types/settings'
-import { loadDefaults, loadMergedSettings } from './settings-config'
+import { ensureSettingsExists, loadDefaults, loadMergedSettings } from './settings-config'
 import { getConfigBaseDir, getDefaultSettingsFilePath, getSettingsFilePath } from './settings-paths'
 
 const logger = createLogger('settings')
@@ -103,6 +103,11 @@ export class SettingsStatic {
   public static watchSettings() {
     const basePath = getConfigBaseDir()
     const defaultsFilePath = getDefaultSettingsFilePath()
+
+    // Workers can reach watchSettings() before any process has run createSettings(),
+    // and both settingsFileType() and fs.watch() throw if the config dir is missing.
+    ensureSettingsExists()
+
     const fileType = SettingsStatic.settingsFileType(basePath)
 
     const reload = () => {

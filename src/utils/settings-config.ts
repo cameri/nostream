@@ -3,10 +3,12 @@ import { join } from 'path'
 import yaml from 'js-yaml'
 import { mergeDeepRight } from 'ramda'
 
+import { createLogger } from '../factories/logger-factory'
 import { Settings } from '../@types/settings'
 import {
   getConfigBaseDir,
   getDefaultSettingsFilePath,
+  getLegacySettingsFilePath,
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
@@ -15,10 +17,13 @@ import {
 export {
   getConfigBaseDir,
   getDefaultSettingsFilePath,
+  getLegacySettingsFilePath,
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
 } from './settings-paths'
+
+const logger = createLogger('settings-config')
 
 export type ValidationIssue = {
   path: string
@@ -302,12 +307,20 @@ export const loadUserSettings = (): Settings => {
   ensureSettingsExists()
   const settingsPath = getSettingsFilePath()
 
-  if (!fs.existsSync(settingsPath)) {
-    return {} as Settings
+  if (fs.existsSync(settingsPath)) {
+    const raw = fs.readFileSync(settingsPath, 'utf-8')
+    return (yaml.load(raw) as Settings) ?? ({} as Settings)
   }
 
-  const raw = fs.readFileSync(settingsPath, 'utf-8')
-  return (yaml.load(raw) as Settings) ?? ({} as Settings)
+  // Deployments predating the yaml migration still hold their overrides in
+  // settings.json. Ignoring it would silently reset them to image defaults.
+  const legacyPath = getLegacySettingsFilePath()
+  if (fs.existsSync(legacyPath)) {
+    logger.warn('settings.json is deprecated, please migrate your overrides to %s', settingsPath)
+    return (JSON.parse(fs.readFileSync(legacyPath, 'utf-8')) as Settings) ?? ({} as Settings)
+  }
+
+  return {} as Settings
 }
 
 export const loadMergedSettings = (): Settings => {

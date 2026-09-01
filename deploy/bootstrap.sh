@@ -44,6 +44,13 @@ else
   echo "Keeping existing $TARGET/.nostr/settings.yaml"
 fi
 
+# The relay container runs as node (uid 1000) and writes settings.yaml, backups,
+# and the audit log directly under .nostr. Deliberately not recursive: .nostr/data
+# and .nostr/db-logs are owned by the postgres image's own user.
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown 1000:1000 "$TARGET/.nostr"
+fi
+
 chmod 755 "$TARGET/.nostr"
 
 cat <<EOF
