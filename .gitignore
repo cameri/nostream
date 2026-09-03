@@ -49,3 +49,6 @@ dist
 docker-compose.overrides.yml
 # Export output
 *.jsonl
+
+# Code coverage report output
+coverage-report/
