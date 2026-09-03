@@ -188,6 +188,8 @@ describe('PaymentsService', () => {
     })
 
     it('upserts user, creates invoice via processor, persists, and returns the invoice', async () => {
+      settings.returns({ payments: { invoiceExpirySeconds: 3600 } })
+
       const result = await service.createInvoice('pubkey1234', 1000n, 'test')
 
       expect(dbClient.transaction).to.have.been.called
@@ -201,6 +203,44 @@ describe('PaymentsService', () => {
       expect(mockTrx.commit).to.have.been.calledOnce
       expect(result.id).to.equal('new-inv-id')
       expect(result.pubkey).to.equal('pubkey1234')
+    })
+
+    it('gives the invoice an expiry when the processor does not report one', async () => {
+      // Without this the row can never be retired and stays pending forever.
+      settings.returns({ payments: { invoiceExpirySeconds: 3600 } })
+
+      const result = await service.createInvoice('pubkey1234', 1000n, 'test')
+
+      expect(result.expiresAt).to.be.instanceOf(Date)
+      const [persisted] = invoiceRepository.upsert.firstCall.args
+      expect(persisted.expiresAt).to.deep.equal(result.expiresAt)
+    })
+
+    it('keeps the expiry the processor reported', async () => {
+      const processorExpiry = new Date('2030-06-01T00:00:00.000Z')
+      settings.returns({ payments: { invoiceExpirySeconds: 3600 } })
+      paymentsProcessor.createInvoice.resolves({
+        id: 'new-inv-id',
+        bolt11: 'lnbc',
+        amountRequested: 1000n,
+        description: 'test',
+        unit: InvoiceUnit.MSATS,
+        status: InvoiceStatus.PENDING,
+        expiresAt: processorExpiry,
+        createdAt: new Date(),
+      })
+
+      const result = await service.createInvoice('pubkey1234', 1000n, 'test')
+
+      expect(result.expiresAt).to.equal(processorExpiry)
+    })
+
+    it('still creates the invoice when settings are unavailable', async () => {
+      settings.returns(undefined)
+
+      const result = await service.createInvoice('pubkey1234', 1000n, 'test')
+
+      expect(result.expiresAt).to.be.instanceOf(Date)
     })
 
     it('rolls back the transaction and re-throws when the processor fails', async () => {

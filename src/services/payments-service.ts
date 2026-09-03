@@ -11,8 +11,12 @@ import { createLogger } from '../factories/logger-factory'
 import { IPaymentsProcessor } from '../@types/clients'
 import { IPaymentsService } from '../@types/services'
 import { Transaction } from '../database/transaction'
+import { resolveInvoiceExpiry } from '../utils/invoice'
 
 const logger = createLogger('payments-service')
+
+/** Invoices per maintenance pass. Small because each one is a processor round trip. */
+export const PENDING_INVOICE_PAGE_SIZE = 10
 
 export class PaymentsService implements IPaymentsService {
   public constructor(
@@ -24,10 +28,10 @@ export class PaymentsService implements IPaymentsService {
     private readonly settings: () => Settings,
   ) {}
 
-  public async getPendingInvoices(): Promise<Invoice[]> {
-    logger('get pending invoices')
+  public async getPendingInvoices(offset = 0): Promise<Invoice[]> {
+    logger('get pending invoices from offset %d', offset)
     try {
-      return await this.invoiceRepository.findPendingInvoices(0, 10)
+      return await this.invoiceRepository.findPendingInvoices(offset, PENDING_INVOICE_PAGE_SIZE)
     } catch (error) {
       logger.error('Unable to get pending invoices.', error)
 
@@ -63,6 +67,11 @@ export class PaymentsService implements IPaymentsService {
       })
 
       const date = new Date()
+      const expiresAt = resolveInvoiceExpiry(
+        invoiceResponse.expiresAt,
+        date,
+        this.settings()?.payments?.invoiceExpirySeconds,
+      )
 
       await this.invoiceRepository.upsert(
         {
@@ -73,7 +82,7 @@ export class PaymentsService implements IPaymentsService {
           description: invoiceResponse.description,
           unit: invoiceResponse.unit,
           status: invoiceResponse.status,
-          expiresAt: invoiceResponse.expiresAt,
+          expiresAt,
           updatedAt: date,
           createdAt: date,
           verifyURL: invoiceResponse.verifyURL,
@@ -91,7 +100,7 @@ export class PaymentsService implements IPaymentsService {
         unit: invoiceResponse.unit,
         status: invoiceResponse.status,
         description,
-        expiresAt: invoiceResponse.expiresAt,
+        expiresAt,
         updatedAt: date,
         createdAt: invoiceResponse.createdAt,
         verifyURL: invoiceResponse.verifyURL,
