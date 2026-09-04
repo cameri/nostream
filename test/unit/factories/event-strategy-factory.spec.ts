@@ -6,6 +6,7 @@ import {
   IInviteCodeRepository,
   IUserRepository,
 } from '../../../src/@types/repositories'
+import { ContactListEventStrategy } from '../../../src/handlers/event-strategies/contact-list-event-strategy'
 import { DefaultEventStrategy } from '../../../src/handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../../../src/handlers/event-strategies/delete-event-strategy'
 import { DvmJobRequestEventStrategy } from '../../../src/handlers/event-strategies/dvm-job-request-event-strategy'
@@ -43,7 +44,7 @@ describe('eventStrategyFactory', () => {
     inviteCodeRepository = {} as any
     dvmJobRepository = {} as any
     cache = {} as any
-    settings = () => ({ info: { relay_url: 'wss://test.relay' } }) as any
+    settings = () => ({ info: { relay_url: 'wss://test.relay' }, wot: { enabled: false } }) as any
     event = {} as any
     adapter = {} as any
 
@@ -62,9 +63,9 @@ describe('eventStrategyFactory', () => {
     expect(factory([event, adapter])).to.be.an.instanceOf(ReplaceableEventStrategy)
   })
 
-  it('returns ReplaceableEvent given a contact_list event', () => {
+  it('returns ContactListEventStrategy given a contact_list event', () => {
     event.kind = EventKinds.CONTACT_LIST
-    expect(factory([event, adapter])).to.be.an.instanceOf(ReplaceableEventStrategy)
+    expect(factory([event, adapter])).to.be.an.instanceOf(ContactListEventStrategy)
   })
 
   it('returns ReplaceableEvent given a replaceable event', () => {

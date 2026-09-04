@@ -1,6 +1,7 @@
 import { ICacheAdapter, IWebSocketAdapter } from '../@types/adapters'
 import { IDvmJobRepository, IEventRepository, IInviteCodeRepository, IUserRepository } from '../@types/repositories'
 import {
+  isContactListEvent,
   isDeleteEvent,
   isDvmJobRequestEvent,
   isEphemeralEvent,
@@ -13,6 +14,7 @@ import {
 } from '../utils/event'
 import { isNip43JoinRequest, isNip43LeaveRequest } from '../utils/nip43'
 import { isRelayListEvent } from '../utils/nip65'
+import { ContactListEventStrategy } from '../handlers/event-strategies/contact-list-event-strategy'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
 import { DvmJobRequestEventStrategy } from '../handlers/event-strategies/dvm-job-request-event-strategy'
@@ -29,6 +31,7 @@ import { ReplaceableEventStrategy } from '../handlers/event-strategies/replaceab
 import { Settings } from '../@types/settings'
 import { TimestampEventStrategy } from '../handlers/event-strategies/timestamp-event-strategy'
 import { VanishEventStrategy } from '../handlers/event-strategies/vanish-event-strategy'
+import { wotGraphServiceFactory } from './wot-graph-service-factory'
 
 export const eventStrategyFactory =
   (
@@ -48,6 +51,15 @@ export const eventStrategyFactory =
       return new GroupEventStrategy(adapter, eventRepository)
     } else if (isOpenTimestampsEvent(event)) {
       return new TimestampEventStrategy(adapter, eventRepository)
+      // NIP-02: contact lists are replaceable (handled below), but need the
+      // extra wot-graph side effect, so they're intercepted before the
+      // generic replaceable-event branch.
+    } else if (isContactListEvent(event)) {
+      return new ContactListEventStrategy(
+        adapter,
+        eventRepository,
+        wotGraphServiceFactory(cache, eventRepository, settings),
+      )
     } else if (isRelayListEvent(event) || isReplaceableEvent(event)) {
       return new ReplaceableEventStrategy(adapter, eventRepository)
       // NIP-43: Join/Leave requests MUST be checked before the generic ephemeral
