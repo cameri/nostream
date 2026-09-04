@@ -196,6 +196,15 @@ limits:
         whitelist: []
     eventId:
       minLeadingZeroBits: 0
+    # Adaptive PoW: scales the required difficulty (applied to both eventId
+    # and pubkey checks) with observed relay load instead of using a fixed
+    # minLeadingZeroBits value. Disabled by default.
+    pow:
+      enabled: false
+      floorBits: 0
+      ceilingBits: 24
+      targetEventsPerSecond: 50
+      periodMs: 60000
     kind:
       whitelist: []
       blacklist: []
