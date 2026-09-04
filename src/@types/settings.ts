@@ -92,6 +92,19 @@ export interface EventRetentionLimits {
   pubkey?: EventRetentionPubkeyLimits
 }
 
+export interface AdaptivePowSettings {
+  /** Enables load-aware difficulty scaling on top of eventId/pubkey minLeadingZeroBits. Defaults to false. */
+  enabled: boolean
+  /** Minimum required difficulty, used at/under targetEventsPerSecond. */
+  floorBits: number
+  /** Maximum required difficulty, reached at 2x targetEventsPerSecond and beyond. */
+  ceilingBits: number
+  /** Event-rate threshold (same EWMA scale as limits.event.rateLimits) above which difficulty starts climbing. */
+  targetEventsPerSecond: number
+  /** EWMA half-life in ms used to smooth the observed event rate. */
+  periodMs: number
+}
+
 export interface EventLimits {
   eventId?: EventIdLimits
   pubkey?: PubkeyLimits
@@ -101,6 +114,7 @@ export interface EventLimits {
   rateLimits?: EventRateLimit[]
   whitelists?: EventWhitelists
   retention?: EventRetentionLimits
+  pow?: AdaptivePowSettings
 }
 
 export interface ClientSubscriptionLimits {

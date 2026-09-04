@@ -17,6 +17,7 @@ import { EventKinds, EventExpirationTimeMetadataKey, EventTags } from '../../../
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { IUserRepository } from '../../../src/@types/repositories'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
+import { resetAdaptivePowState } from '../../../src/utils/adaptive-pow'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 
 import * as nip05Utils from '../../../src/utils/nip05'
@@ -488,6 +489,82 @@ describe('EventMessageHandler', () => {
           eventLimits.pubkey.minLeadingZeroBits = 16
           event.pubkey = '0'.repeat(2) + 'f'.repeat(62)
           expect((handler as any).canAcceptEvent(event)).to.equal('pow: pubkey difficulty 8<16')
+        })
+      })
+
+      describe('pow (adaptive)', () => {
+        beforeEach(() => {
+          resetAdaptivePowState()
+        })
+
+        it('uses the floor difficulty while the observed rate is at or under target', () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 8,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '00' + 'f'.repeat(62) // 8 leading zero bits
+          event.pubkey = '00001' + 'f'.repeat(59) // well above the floor
+
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+        })
+
+        it('rejects with the floor difficulty when insufficient and under target', () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 9,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '00' + 'f'.repeat(62) // 8 leading zero bits
+
+          expect((handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<9')
+        })
+
+        it('checks pubkey proof of work against the adaptive difficulty too', () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 9,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '0001' + 'f'.repeat(60) // sufficient eventId pow
+          event.pubkey = '00' + 'f'.repeat(62) // 8 leading zero bits, insufficient
+
+          expect((handler as any).canAcceptEvent(event)).to.equal('pow: pubkey difficulty 8<9')
+        })
+
+        it('scales the required difficulty up as the observed rate exceeds target', () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 8,
+            ceilingBits: 24,
+            targetEventsPerSecond: 2,
+            periodMs: 60000,
+          }
+          event.id = '00' + 'f'.repeat(62) // 8 leading zero bits, passes only the floor
+          event.pubkey = '00001' + 'f'.repeat(59) // well above floor and the scaled-up ceiling used here
+
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined // 1st: rate=1 <= target
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined // 2nd: rate=2 <= target
+          expect((handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<16') // 3rd: rate=3, ratio=1.5
+        })
+
+        it('ignores the static minLeadingZeroBits settings while adaptive pow is enabled', () => {
+          eventLimits.eventId.minLeadingZeroBits = 40
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 0,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
       })
 

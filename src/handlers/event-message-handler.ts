@@ -1,3 +1,7 @@
+import {
+  getCurrentDifficulty as getAdaptivePowDifficulty,
+  recordEvent as recordAdaptivePowEvent,
+} from '../utils/adaptive-pow'
 import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
 import { attemptValidation } from '../utils/validation'
 import { eventSchema } from '../schemas/event-schema'
@@ -195,17 +199,32 @@ export class EventMessageHandler implements IMessageHandler {
       return `rejected: created_at is more than ${limits.createdAt.maxNegativeDelta} seconds in the past`
     }
 
-    if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
-      const pow = getEventProofOfWork(event.id)
-      if (pow < limits.eventId.minLeadingZeroBits) {
-        return `pow: difficulty ${pow}<${limits.eventId.minLeadingZeroBits}`
-      }
-    }
+    if (limits.pow?.enabled) {
+      recordAdaptivePowEvent(limits.pow.periodMs)
+      const requiredBits = getAdaptivePowDifficulty(limits.pow)
 
-    if (typeof limits.pubkey?.minLeadingZeroBits !== 'undefined' && limits.pubkey.minLeadingZeroBits > 0) {
-      const pow = getPubkeyProofOfWork(event.pubkey)
-      if (pow < limits.pubkey.minLeadingZeroBits) {
-        return `pow: pubkey difficulty ${pow}<${limits.pubkey.minLeadingZeroBits}`
+      const pow = getEventProofOfWork(event.id)
+      if (pow < requiredBits) {
+        return `pow: difficulty ${pow}<${requiredBits}`
+      }
+
+      const pubkeyPow = getPubkeyProofOfWork(event.pubkey)
+      if (pubkeyPow < requiredBits) {
+        return `pow: pubkey difficulty ${pubkeyPow}<${requiredBits}`
+      }
+    } else {
+      if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
+        const pow = getEventProofOfWork(event.id)
+        if (pow < limits.eventId.minLeadingZeroBits) {
+          return `pow: difficulty ${pow}<${limits.eventId.minLeadingZeroBits}`
+        }
+      }
+
+      if (typeof limits.pubkey?.minLeadingZeroBits !== 'undefined' && limits.pubkey.minLeadingZeroBits > 0) {
+        const pow = getPubkeyProofOfWork(event.pubkey)
+        if (pow < limits.pubkey.minLeadingZeroBits) {
+          return `pow: pubkey difficulty ${pow}<${limits.pubkey.minLeadingZeroBits}`
+        }
       }
     }
 
