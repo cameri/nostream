@@ -14,7 +14,7 @@ export class PostAdminSettingsRestoreController implements IController {
     }
 
     try {
-      restoreSettingsBackup(validation.value.filename)
+      await restoreSettingsBackup(validation.value.filename)
       appendSettingsAuditLog({
         action: 'settings.restored',
         filename: validation.value.filename,
