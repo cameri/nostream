@@ -61,6 +61,7 @@ The following environment variables can be set:
 | ADMIN_DEPENDENCY_PING_TIMEOUT_MS | Timeout for admin DB/Redis dependency pings (ms) | 3000 |
 | GRAFANA_URL                      | Grafana base URL for admin dashboard embeds      | http://127.0.0.1:7777 |
 | NOSTR_CONFIG_DIR                 | Configuration directory          | <project_root>/.nostr/ |
+| SETTINGS_BACKEND                 | Where operator overrides are stored: `file` (default) or `db` | file |
 | MONITOR_PRIVATE_KEY              | Hex-encoded private key for the NIP-66 monitor identity that will sign kind 30166/10166 events. Configure via environment variable, not settings.yaml. | |
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
