@@ -1,6 +1,11 @@
 import { randomBytes } from 'crypto'
+import { andThen, pipe } from 'ramda'
 
 import { CreateInviteCodeOptions, InviteCode } from '../@types/invite-code'
+import { Event, UnidentifiedEvent } from '../@types/event'
+import { EventKinds, EventTags } from '../constants/base'
+import { Tag } from '../@types/base'
+import { identifyEvent, signEvent } from './event'
 import { IInviteCodeRepository } from '../@types/repositories'
 import { Nip43Settings } from '../@types/settings'
 import { fromBech32 } from './transform'
@@ -84,4 +89,40 @@ export const issueInviteCode = async (
     expiresAt,
     createdBy,
   })
+}
+
+/**
+ * Builds the relay-signed kind 28935 event that answers a NIP-43 invite request.
+ *
+ * The `claim` tag is a bearer secret: the caller MUST send this event only to the
+ * socket that asked for it, and MUST NOT persist or broadcast it. 28935 is in the
+ * ephemeral range, so there is nothing to store either way.
+ */
+export const buildInviteCodeEvent = async (
+  relayPrivkey: string,
+  relayPubkey: string,
+  invite: Pick<InviteCode, 'code' | 'expiresAt'>,
+  createdAt: number = Math.floor(Date.now() / 1000),
+): Promise<Event> => {
+  const tags: Tag[] = [
+    [EventTags.Claim, invite.code],
+    // NIP-70: this event is for the requesting client only. The tag carries no
+    // value, which Tag (which requires an index 1) cannot express.
+    [EventTags.Protected] as unknown as Tag,
+  ]
+
+  // NIP-40: mirrors nip43.inviteCodeExpirySeconds so clients can show a countdown.
+  if (invite.expiresAt instanceof Date) {
+    tags.push([EventTags.Expiration, String(Math.floor(invite.expiresAt.getTime() / 1000))])
+  }
+
+  const unidentifiedEvent: UnidentifiedEvent = {
+    pubkey: relayPubkey,
+    kind: EventKinds.NIP43_INVITE_REQUEST,
+    created_at: createdAt,
+    content: '',
+    tags,
+  }
+
+  return pipe(identifyEvent, andThen(signEvent(relayPrivkey)))(unidentifiedEvent)
 }

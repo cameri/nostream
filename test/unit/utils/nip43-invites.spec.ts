@@ -6,6 +6,7 @@ import { InviteCode } from '../../../src/@types/invite-code'
 import { IInviteCodeRepository } from '../../../src/@types/repositories'
 import { Nip43Settings } from '../../../src/@types/settings'
 import {
+  buildInviteCodeEvent,
   DEFAULT_INVITE_CODE_EXPIRY_SECONDS,
   DEFAULT_INVITE_MAX_USES,
   generateInviteCode,
@@ -14,6 +15,8 @@ import {
   parseRelayPubkey,
   resolveInviteCodeLimits,
 } from '../../../src/utils/nip43-invites'
+import { EventTags } from '../../../src/constants/base'
+import { getPublicKey, isEventIdValid, isEventSignatureValid } from '../../../src/utils/event'
 import { toBech32 } from '../../../src/utils/transform'
 
 chai.use(sinonChai)
@@ -179,6 +182,63 @@ describe('nip43-invites', () => {
         'createdBy must be a 64-character hex pubkey',
       )
       expect((repository.create as sinon.SinonStub).called).to.equal(false)
+    })
+  })
+
+  describe('buildInviteCodeEvent', () => {
+    const relayPrivkey = '5c0c523f52a5b6fad39ed2403092df8cebc36318b39383bca6c00808626fab3a'
+    const relayPubkey = getPublicKey(relayPrivkey)
+    const code = 'ffee0011223344556677889900aabbcc'
+
+    it('builds a kind 28935 event signed by the relay', async () => {
+      const event = await buildInviteCodeEvent(relayPrivkey, relayPubkey, { code, expiresAt: null }, 1700000000)
+
+      expect(event.kind).to.equal(28935)
+      expect(event.pubkey).to.equal(relayPubkey)
+      expect(event.created_at).to.equal(1700000000)
+      expect(event.content).to.equal('')
+    })
+
+    it('produces a valid event id and signature', async () => {
+      const event = await buildInviteCodeEvent(relayPrivkey, relayPubkey, { code, expiresAt: null })
+
+      expect(await isEventIdValid(event)).to.equal(true)
+      expect(await isEventSignatureValid(event)).to.equal(true)
+    })
+
+    it('carries the claim code in a claim tag', async () => {
+      const event = await buildInviteCodeEvent(relayPrivkey, relayPubkey, { code, expiresAt: null })
+
+      expect(event.tags).to.deep.include([EventTags.Claim, code])
+    })
+
+    it('marks the event NIP-70 protected', async () => {
+      const event = await buildInviteCodeEvent(relayPrivkey, relayPubkey, { code, expiresAt: null })
+
+      expect(event.tags).to.deep.include([EventTags.Protected])
+    })
+
+    it('adds a NIP-40 expiration tag in seconds when the code expires', async () => {
+      const expiresAt = new Date('2026-08-20T12:00:00.000Z')
+
+      const event = await buildInviteCodeEvent(relayPrivkey, relayPubkey, { code, expiresAt })
+
+      expect(event.tags).to.deep.include([EventTags.Expiration, String(expiresAt.getTime() / 1000)])
+    })
+
+    it('omits the expiration tag when the code never expires', async () => {
+      const event = await buildInviteCodeEvent(relayPrivkey, relayPubkey, { code, expiresAt: null })
+
+      expect(event.tags.some((tag) => tag[0] === EventTags.Expiration)).to.equal(false)
+    })
+
+    it('defaults created_at to now', async () => {
+      const before = Math.floor(Date.now() / 1000)
+
+      const event = await buildInviteCodeEvent(relayPrivkey, relayPubkey, { code, expiresAt: null })
+
+      expect(event.created_at).to.be.at.least(before)
+      expect(event.created_at).to.be.at.most(Math.floor(Date.now() / 1000))
     })
   })
 })
