@@ -18,6 +18,7 @@ import { GiftWrapEventStrategy } from '../../../src/handlers/event-strategies/gi
 import { GroupEventStrategy } from '../../../src/handlers/event-strategies/group-event-strategy'
 import { IEventStrategy } from '../../../src/@types/message-handlers'
 import { ICacheAdapter, IWebSocketAdapter } from '../../../src/@types/adapters'
+import { InviteRequestEventStrategy } from '../../../src/handlers/event-strategies/invite-request-event-strategy'
 import { JoinRequestEventStrategy } from '../../../src/handlers/event-strategies/join-request-event-strategy'
 import { LeaveRequestEventStrategy } from '../../../src/handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
@@ -150,6 +151,15 @@ describe('eventStrategyFactory', () => {
   it('returns LeaveRequestEventStrategy given a NIP-43 leave request (kind 28936)', () => {
     event.kind = EventKinds.NIP43_LEAVE_REQUEST
     expect(factory([event, adapter])).to.be.an.instanceOf(LeaveRequestEventStrategy)
+  })
+
+  // 28935 travels relay -> client only. It sits in the ephemeral range, so without
+  // an explicit branch it would fall through to EphemeralEventStrategy and be
+  // broadcast to everyone subscribed to kind 28935 — the clients awaiting an invite.
+  it('returns InviteRequestEventStrategy given a NIP-43 invite request (kind 28935)', () => {
+    event.kind = EventKinds.NIP43_INVITE_REQUEST
+    expect(factory([event, adapter])).to.be.an.instanceOf(InviteRequestEventStrategy)
+    expect(factory([event, adapter])).to.not.be.an.instanceOf(EphemeralEventStrategy)
   })
 
   it('returns DvmJobRequestEventStrategy given a DVM job request (kind 5000-5999)', () => {

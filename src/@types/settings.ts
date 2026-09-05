@@ -141,6 +141,10 @@ export interface AdmissionCheckLimits {
   ipWhitelist?: string[]
 }
 
+export interface InviteLimits {
+  rateLimits?: RateLimit[]
+}
+
 export interface AdminLimits {
   rateLimits?: RateLimit[]
   loginRateLimits?: RateLimit[]
@@ -150,6 +154,7 @@ export interface AdminLimits {
 export interface Limits {
   rateLimiter?: RateLimiterSettings
   invoice?: InvoiceLimits
+  invite?: InviteLimits
   admissionCheck?: AdmissionCheckLimits
   admin?: AdminLimits
   connection?: ConnectionLimits

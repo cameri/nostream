@@ -1269,6 +1269,17 @@ describe('EventMessageHandler', () => {
         return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
       })
 
+      // Not because publishing 28935 is valid — it never is — but so the event
+      // reaches InviteRequestEventStrategy and the client is told to use a REQ.
+      // Non-members are exactly who gets this wrong, so they must not be the only
+      // ones who never see that message.
+      it('fulfills with undefined for an invite request from a non-member', async () => {
+        event.kind = EventKinds.NIP43_INVITE_REQUEST
+        userRepositoryFindByPubkeyStub.resolves(undefined)
+
+        return expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
       it('skips the minimum balance check when payments are disabled', async () => {
         settings.limits.event.pubkey.minBalance = 1000n
         userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, isVanished: false, balance: 0n })

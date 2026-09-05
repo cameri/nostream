@@ -11,7 +11,7 @@ import {
   isReplaceableEvent,
   isRequestToVanishEvent,
 } from '../utils/event'
-import { isNip43JoinRequest, isNip43LeaveRequest } from '../utils/nip43'
+import { isNip43InviteRequest, isNip43JoinRequest, isNip43LeaveRequest } from '../utils/nip43'
 import { isRelayListEvent } from '../utils/nip65'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
@@ -22,6 +22,7 @@ import { Factory } from '../@types/base'
 import { GiftWrapEventStrategy } from '../handlers/event-strategies/gift-wrap-event-strategy'
 import { GroupEventStrategy } from '../handlers/event-strategies/group-event-strategy'
 import { IEventStrategy } from '../@types/message-handlers'
+import { InviteRequestEventStrategy } from '../handlers/event-strategies/invite-request-event-strategy'
 import { JoinRequestEventStrategy } from '../handlers/event-strategies/join-request-event-strategy'
 import { LeaveRequestEventStrategy } from '../handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strategies/parameterized-replaceable-event-strategy'
@@ -50,12 +51,15 @@ export const eventStrategyFactory =
       return new TimestampEventStrategy(adapter, eventRepository)
     } else if (isRelayListEvent(event) || isReplaceableEvent(event)) {
       return new ReplaceableEventStrategy(adapter, eventRepository)
-      // NIP-43: Join/Leave requests MUST be checked before the generic ephemeral
-      // handler, because kinds 28934/28936 fall in the ephemeral range (20000-29999).
+      // NIP-43: Join/Leave/Invite requests MUST be checked before the generic
+      // ephemeral handler, because kinds 28934/28935/28936 fall in the ephemeral
+      // range (20000-29999) and would otherwise be broadcast to every subscriber.
     } else if (isNip43JoinRequest(event)) {
       return new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, cache, settings)
     } else if (isNip43LeaveRequest(event)) {
       return new LeaveRequestEventStrategy(adapter, userRepository, cache, settings)
+    } else if (isNip43InviteRequest(event)) {
+      return new InviteRequestEventStrategy(adapter)
       // NIP-90: DVM job requests (kind 5000-5999) checked early, same reasoning
       // as the NIP-43 checks above — kept explicit rather than relying on it
       // falling through to DefaultEventStrategy.

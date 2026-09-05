@@ -230,6 +230,22 @@ describe('SettingsStatic', () => {
       expect(defaults).to.have.nested.property('nip43.enabled', false)
       expect(defaults).to.have.nested.property('nip43.inviteCodeExpirySeconds', 600)
       expect(defaults).to.have.nested.property('nip43.defaultMaxUses', 1)
+      expect(defaults).to.have.nested.property('nip43.allowInviteRequests', false)
+      expect(defaults).to.have.nested.property('nip43.inviteRequestWhitelist').that.deep.equals([])
+    })
+
+    it('default-settings.yaml rate limits kind 28935 invite requests per pubkey', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
+
+      expect(defaults).to.have.nested.property('limits.invite.rateLimits').that.is.an('array').with.lengthOf(1)
+      expect(defaults).to.have.nested.property('limits.invite.rateLimits.0.period', 3_600_000)
+      expect(defaults).to.have.nested.property('limits.invite.rateLimits.0.rate', 5)
+    })
+
+    it('default-settings.yaml leaves info.self unset so it is derived', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath()) as Settings
+
+      expect(defaults.info).to.not.have.property('self')
     })
 
     it('user config nip43 block overrides defaults', () => {
