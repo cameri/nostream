@@ -2,10 +2,11 @@ import fs from 'fs'
 import yaml from 'js-yaml'
 
 import { extname, join } from 'path'
-import { mergeDeepRight } from 'ramda'
 
 import { createLogger } from '../factories/logger-factory'
 import { Settings } from '../@types/settings'
+import { ensureSettingsExists, loadDefaults, loadMergedSettings } from './settings-config'
+import { getConfigBaseDir, getDefaultSettingsFilePath, getSettingsFilePath } from './settings-paths'
 
 const logger = createLogger('settings')
 
@@ -18,11 +19,11 @@ export class SettingsStatic {
   static _settings: Settings | undefined
 
   public static getSettingsFileBasePath(): string {
-    return process.env.NOSTR_CONFIG_DIR ?? join(process.cwd(), '.nostr')
+    return getConfigBaseDir()
   }
 
   public static getDefaultSettingsFilePath(): string {
-    return join(process.cwd(), 'resources', 'default-settings.yaml')
+    return getDefaultSettingsFilePath()
   }
 
   public static loadAndParseYamlFile(path: string): Settings {
@@ -71,23 +72,15 @@ export class SettingsStatic {
     }
     logger('creating settings')
 
-    const basePath = SettingsStatic.getSettingsFileBasePath()
+    const basePath = getConfigBaseDir()
     if (!fs.existsSync(basePath)) {
-      fs.mkdirSync(basePath)
+      fs.mkdirSync(basePath, { recursive: true })
     }
-    const defaultsFilePath = SettingsStatic.getDefaultSettingsFilePath()
-    const fileType = SettingsStatic.settingsFileType(basePath)
-    const settingsFilePath = join(basePath, `settings.${fileType}`)
 
-    const defaults = SettingsStatic.loadSettings(defaultsFilePath, SettingsFileTypes.yaml)
+    const settingsFilePath = getSettingsFilePath()
 
     try {
-      if (fileType) {
-        SettingsStatic._settings = mergeDeepRight(defaults, SettingsStatic.loadSettings(settingsFilePath, fileType))
-      } else {
-        SettingsStatic.saveSettings(basePath, defaults)
-        SettingsStatic._settings = mergeDeepRight({}, defaults)
-      }
+      SettingsStatic._settings = loadMergedSettings()
 
       if (typeof SettingsStatic._settings === 'undefined') {
         throw new Error('Unable to set settings')
@@ -97,7 +90,8 @@ export class SettingsStatic {
     } catch (error) {
       logger('error reading config file at %s: %o', settingsFilePath, error)
 
-      return defaults
+      SettingsStatic._settings = loadDefaults()
+      return SettingsStatic._settings
     }
   }
 
@@ -107,8 +101,13 @@ export class SettingsStatic {
   }
 
   public static watchSettings() {
-    const basePath = SettingsStatic.getSettingsFileBasePath()
-    const defaultsFilePath = SettingsStatic.getDefaultSettingsFilePath()
+    const basePath = getConfigBaseDir()
+    const defaultsFilePath = getDefaultSettingsFilePath()
+
+    // Workers can reach watchSettings() before any process has run createSettings(),
+    // and both settingsFileType() and fs.watch() throw if the config dir is missing.
+    ensureSettingsExists()
+
     const fileType = SettingsStatic.settingsFileType(basePath)
 
     const reload = () => {

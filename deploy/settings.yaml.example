@@ -1,0 +1,18 @@
+# Optional relay overrides — copy to .nostr/settings.yaml only when needed.
+# Omit this file entirely to run with resources/default-settings.yaml from the image.
+# Values here override image defaults (deep merge). New release keys come from the image automatically.
+
+info:
+  relay_url: wss://relay.example.com
+  name: relay.example.com
+  description: A Nostr relay powered by nostream.
+  contact: mailto:operator@example.com
+
+# payments:
+#   enabled: false
+
+# nip66:
+#   enabled: false
+
+# admin:
+#   enabled: false

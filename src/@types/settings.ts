@@ -188,6 +188,8 @@ export interface Payments {
   enabled: boolean
   processor: keyof PaymentsProcessors
   feeSchedules: FeeSchedules
+  /** Fallback when the processor reports no expiry. A reported one always wins. */
+  invoiceExpirySeconds?: number
 }
 
 export interface LnurlPaymentsProcessor {
