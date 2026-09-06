@@ -331,7 +331,11 @@ Kind 28934 join requests are implemented. Mint a code and share it out of band:
   docker compose exec nostream node src/cli/index.js invite create
   ```
 
-See [CLI.md](CLI.md) for `--uses` / `--expires-in` and Docker vs local Postgres.
+Users can also request a code themselves: the relay answers a `REQ` for kind 28935 by
+minting one on the fly. Off by default — set `nip43.allowInviteRequests` to enable it.
+
+See [CLI.md](CLI.md) for `--uses` / `--expires-in` and Docker vs local Postgres, and
+[CONFIGURATION.md](CONFIGURATION.md) for the invite request settings.
 
 ### Running as a Service
 

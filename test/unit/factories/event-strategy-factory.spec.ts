@@ -18,6 +18,7 @@ import { GiftWrapEventStrategy } from '../../../src/handlers/event-strategies/gi
 import { GroupEventStrategy } from '../../../src/handlers/event-strategies/group-event-strategy'
 import { IEventStrategy } from '../../../src/@types/message-handlers'
 import { ICacheAdapter, IWebSocketAdapter } from '../../../src/@types/adapters'
+import { InviteRequestEventStrategy } from '../../../src/handlers/event-strategies/invite-request-event-strategy'
 import { JoinRequestEventStrategy } from '../../../src/handlers/event-strategies/join-request-event-strategy'
 import { LeaveRequestEventStrategy } from '../../../src/handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
@@ -152,6 +153,15 @@ describe('eventStrategyFactory', () => {
     expect(factory([event, adapter])).to.be.an.instanceOf(LeaveRequestEventStrategy)
   })
 
+  // 28935 travels relay -> client only. It sits in the ephemeral range, so without
+  // an explicit branch it would fall through to EphemeralEventStrategy and be
+  // broadcast to everyone subscribed to kind 28935 — the clients awaiting an invite.
+  it('returns InviteRequestEventStrategy given a NIP-43 invite request (kind 28935)', () => {
+    event.kind = EventKinds.NIP43_INVITE_REQUEST
+    expect(factory([event, adapter])).to.be.an.instanceOf(InviteRequestEventStrategy)
+    expect(factory([event, adapter])).to.not.be.an.instanceOf(EphemeralEventStrategy)
+  })
+
   it('returns DvmJobRequestEventStrategy given a DVM job request (kind 5000-5999)', () => {
     event.kind = EventKinds.DVM_JOB_REQUEST_FIRST
     expect(factory([event, adapter])).to.be.an.instanceOf(DvmJobRequestEventStrategy)
@@ -160,5 +170,15 @@ describe('eventStrategyFactory', () => {
   it('returns DvmJobRequestEventStrategy given the last DVM job request kind (5999)', () => {
     event.kind = EventKinds.DVM_JOB_REQUEST_LAST
     expect(factory([event, adapter])).to.be.an.instanceOf(DvmJobRequestEventStrategy)
+  })
+
+  it('returns ParameterizedReplaceableEventStrategy given a handler recommendation event (NIP-89, kind 31989)', () => {
+    event.kind = EventKinds.HANDLER_RECOMMENDATION
+    expect(factory([event, adapter])).to.be.an.instanceOf(ParameterizedReplaceableEventStrategy)
+  })
+
+  it('returns ParameterizedReplaceableEventStrategy given a handler information event (NIP-89, kind 31990)', () => {
+    event.kind = EventKinds.HANDLER_INFORMATION
+    expect(factory([event, adapter])).to.be.an.instanceOf(ParameterizedReplaceableEventStrategy)
   })
 })

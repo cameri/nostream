@@ -1,0 +1,5 @@
+name: cameri/nostream-javascript-models
+version: 0.0.1
+library: true
+dependencies:
+  codeql/javascript-all: "*"

@@ -141,6 +141,10 @@ export interface AdmissionCheckLimits {
   ipWhitelist?: string[]
 }
 
+export interface InviteLimits {
+  rateLimits?: RateLimit[]
+}
+
 export interface AdminLimits {
   rateLimits?: RateLimit[]
   loginRateLimits?: RateLimit[]
@@ -150,6 +154,7 @@ export interface AdminLimits {
 export interface Limits {
   rateLimiter?: RateLimiterSettings
   invoice?: InvoiceLimits
+  invite?: InviteLimits
   admissionCheck?: AdmissionCheckLimits
   admin?: AdminLimits
   connection?: ConnectionLimits
@@ -183,6 +188,8 @@ export interface Payments {
   enabled: boolean
   processor: keyof PaymentsProcessors
   feeSchedules: FeeSchedules
+  /** Fallback when the processor reports no expiry. A reported one always wins. */
+  invoiceExpirySeconds?: number
 }
 
 export interface LnurlPaymentsProcessor {

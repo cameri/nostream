@@ -12,5 +12,5 @@ export interface IPaymentsService {
   updateInvoiceStatus(invoice: Pick<Invoice, 'id' | 'status'>): Promise<Invoice>
   confirmInvoice(invoice: Pick<Invoice, 'id' | 'amountPaid' | 'confirmedAt' | 'status' | 'pubkey'>): Promise<void>
   sendInvoiceUpdateNotification(invoice: Invoice): Promise<void>
-  getPendingInvoices(): Promise<Invoice[]>
+  getPendingInvoices(offset?: number): Promise<Invoice[]>
 }
