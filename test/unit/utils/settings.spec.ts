@@ -6,6 +6,7 @@ import { mergeDeepRight } from 'ramda'
 import { Settings } from '../../../src/@types/settings'
 
 import { SettingsFileTypes, SettingsStatic } from '../../../src/utils/settings'
+import * as settingsConfig from '../../../src/utils/settings-config'
 
 describe('SettingsStatic', () => {
   describe('.getSettingsFilePath', () => {
@@ -147,12 +148,8 @@ describe('SettingsStatic', () => {
   describe('.createSettings', () => {
     let existsSyncStub: Sinon.SinonStub
     let mkdirSyncStub: Sinon.SinonStub
-    let readdirSyncStub: Sinon.SinonStub
-    let getSettingsFileBasePathStub: Sinon.SinonStub
-    let getDefaultSettingsFilePathStub: Sinon.SinonStub
-    let settingsFileTypeStub: Sinon.SinonStub
-    let saveSettingsStub: Sinon.SinonStub
-    let loadSettingsStub: Sinon.SinonStub
+    let loadMergedSettingsStub: Sinon.SinonStub
+    let loadDefaultsStub: Sinon.SinonStub
 
     let sandbox: Sinon.SinonSandbox
 
@@ -163,67 +160,34 @@ describe('SettingsStatic', () => {
 
       existsSyncStub = sandbox.stub(fs, 'existsSync')
       mkdirSyncStub = sandbox.stub(fs, 'mkdirSync')
-      readdirSyncStub = sandbox.stub(fs, 'readdirSync')
-      getSettingsFileBasePathStub = sandbox.stub(SettingsStatic, 'getSettingsFileBasePath')
-      getDefaultSettingsFilePathStub = sandbox.stub(SettingsStatic, 'getDefaultSettingsFilePath')
-      settingsFileTypeStub = sandbox.stub(SettingsStatic, 'settingsFileType')
-      saveSettingsStub = sandbox.stub(SettingsStatic, 'saveSettings')
-      loadSettingsStub = sandbox.stub(SettingsStatic, 'loadSettings')
+      loadMergedSettingsStub = sandbox.stub(settingsConfig, 'loadMergedSettings')
+      loadDefaultsStub = sandbox.stub(settingsConfig, 'loadDefaults')
     })
 
     afterEach(() => {
       sandbox.restore()
     })
 
-    it('creates settings from defaults if settings file is missing', () => {
-      getSettingsFileBasePathStub.returns('/some/path/settings.yaml')
+    it('loads merged settings from defaults and optional overrides', () => {
       existsSyncStub.returns(false)
       mkdirSyncStub.returns(true)
-      readdirSyncStub.returns(['file.yaml'])
-      loadSettingsStub.returns({})
+      loadMergedSettingsStub.returns({ info: { name: 'relay' } })
 
-      expect(SettingsStatic.createSettings()).to.be.an('object')
-
-      expect(existsSyncStub).to.have.been.calledOnceWithExactly('/some/path/settings.yaml')
-      expect(getSettingsFileBasePathStub).to.have.been.calledOnce
-      expect(saveSettingsStub).to.have.been.calledOnceWithExactly('/some/path/settings.yaml', Sinon.match.object)
-      expect(loadSettingsStub).to.have.been.called
+      expect(SettingsStatic.createSettings()).to.deep.equal({ info: { name: 'relay' } })
+      expect(loadMergedSettingsStub).to.have.been.calledOnce
+      expect(loadDefaultsStub).not.to.have.been.called
     })
 
-    it('returns default settings if saving settings file throws', () => {
-      const error = new Error('mistakes were made')
-      getSettingsFileBasePathStub.returns('/some/path/settings.json')
-      saveSettingsStub.throws(error)
+    it('returns image defaults if loading merged settings throws', () => {
       existsSyncStub.returns(false)
-      readdirSyncStub.returns(['file.yaml'])
-      loadSettingsStub.returns({})
+      mkdirSyncStub.returns(true)
+      loadMergedSettingsStub.throws(new Error('mistakes were made'))
+      loadDefaultsStub.returns({ info: { name: 'default-relay' } })
 
-      expect(SettingsStatic.createSettings()).to.be.an('object')
+      expect(SettingsStatic.createSettings()).to.deep.equal({ info: { name: 'default-relay' } })
 
-      const settingsPathExistsChecks = existsSyncStub.getCalls().filter((call) => {
-        return call.args.length === 1 && call.args[0] === '/some/path/settings.json'
-      })
-
-      expect(settingsPathExistsChecks).to.have.lengthOf(1)
-      expect(getSettingsFileBasePathStub).to.have.been.calledOnce
-      expect(saveSettingsStub).to.have.been.calledOnceWithExactly('/some/path/settings.json', Sinon.match.object)
-      expect(loadSettingsStub).to.have.been.called
-    })
-
-    it('loads settings from file if settings file exists', () => {
-      loadSettingsStub.returns({ test: 'value' })
-      getSettingsFileBasePathStub.returns('/some/path/settings.yaml')
-      getDefaultSettingsFilePathStub.returns('/some/path/settings.yaml')
-      existsSyncStub.returns(true)
-      readdirSyncStub.returns(['settings.yaml'])
-      settingsFileTypeStub.returns('yaml')
-
-      expect(SettingsStatic.createSettings()).to.be.an('object')
-
-      expect(existsSyncStub).to.have.been.calledWithExactly('/some/path/settings.yaml')
-      expect(getSettingsFileBasePathStub).to.have.been.calledOnce
-      expect(saveSettingsStub).not.to.have.been.called
-      expect(loadSettingsStub).to.have.been.calledWithExactly('/some/path/settings.yaml', 'yaml')
+      expect(loadMergedSettingsStub).to.have.been.calledOnce
+      expect(loadDefaultsStub).to.have.been.calledOnce
     })
 
     it('returns cached settings if set', () => {
@@ -232,10 +196,8 @@ describe('SettingsStatic', () => {
 
       expect(SettingsStatic.createSettings()).to.equal(cachedSettings)
 
-      expect(getSettingsFileBasePathStub).not.to.have.been.calledOnce
       expect(existsSyncStub).not.to.have.been.called
-      expect(saveSettingsStub).not.to.have.been.called
-      expect(loadSettingsStub).not.to.have.been.called
+      expect(loadMergedSettingsStub).not.to.have.been.called
     })
   })
 
@@ -268,6 +230,22 @@ describe('SettingsStatic', () => {
       expect(defaults).to.have.nested.property('nip43.enabled', false)
       expect(defaults).to.have.nested.property('nip43.inviteCodeExpirySeconds', 600)
       expect(defaults).to.have.nested.property('nip43.defaultMaxUses', 1)
+      expect(defaults).to.have.nested.property('nip43.allowInviteRequests', false)
+      expect(defaults).to.have.nested.property('nip43.inviteRequestWhitelist').that.deep.equals([])
+    })
+
+    it('default-settings.yaml rate limits kind 28935 invite requests per pubkey', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
+
+      expect(defaults).to.have.nested.property('limits.invite.rateLimits').that.is.an('array').with.lengthOf(1)
+      expect(defaults).to.have.nested.property('limits.invite.rateLimits.0.period', 3_600_000)
+      expect(defaults).to.have.nested.property('limits.invite.rateLimits.0.rate', 5)
+    })
+
+    it('default-settings.yaml leaves info.self unset so it is derived', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath()) as Settings
+
+      expect(defaults.info).to.not.have.property('self')
     })
 
     it('user config nip43 block overrides defaults', () => {

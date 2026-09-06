@@ -71,18 +71,17 @@ services:
       retries: 10
 
   nostream-migrate:
-    image: nostream-migrate:local
+    image: ghcr.io/cameri/nostream:main
     pull_policy: never
     container_name: nostream-migrate
+    user: node:node
+    command: ['node_modules/.bin/knex', 'migrate:latest']
     environment:
       DB_HOST: nostream-db
       DB_PORT: 5432
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
-    volumes:
-      - ./migrations:/code/migrations
-      - ./knexfile.js:/code/knexfile.js
     depends_on:
       nostream-db:
         condition: service_healthy

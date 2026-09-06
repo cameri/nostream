@@ -46,7 +46,20 @@ docker compose exec nostream node src/cli/index.js invite create
 
 `--uses` defaults to `nip43.defaultMaxUses` (1). `--expires-in` defaults to `nip43.inviteCodeExpirySeconds` (600 = 10 minutes). `--expires-in` must be a positive integer; never-expiring codes are a yaml policy (`nip43.inviteCodeExpirySeconds: 0`), not a CLI flag. The printed code is the first line of human output so scripts can capture it. If `info.self` is a hex pubkey or `npub1…`, it is stored as `created_by`.
 
-This does not yet generate kind 28935 on `REQ` or publish membership list events.
+The relay also answers `REQ`s for kind 28935 by minting a code on the fly and returning it as a relay-signed ephemeral event, so users can obtain a claim string without an operator handing one out. It is off by default and requires `nip43.enabled`, `nip43.allowInviteRequests` and a NIP-42 authenticated client — see [CONFIGURATION.md](CONFIGURATION.md). Membership list events (kind 13534) are not published yet.
+
+Invites minted over `REQ` record the requesting pubkey as `created_by`; `nostream invite create` records `info.self`.
+
+### Relay signing pubkey
+
+NIP-43 clients verify relay-signed events against the `self` field of the NIP-11 document, so `self` must match the key the relay actually signs with. That key is derived from `SECRET` and is otherwise invisible, so `nostream info` prints it:
+
+```bash
+nostream info | grep 'Signing pubkey'
+nostream info --json     # same value under relay.signingPubkey
+```
+
+Leave `info.self` unset in settings to have this value advertised automatically. Set it only if you want to pin it explicitly, and set it to exactly this value — a mismatch disables kind 28935 invite requests.
 
 ## Removed Legacy Wrappers
 

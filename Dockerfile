@@ -31,6 +31,8 @@ ADD resources /app/resources
 
 COPY --from=build /build/dist .
 COPY --from=build /build/package.json /build/pnpm-lock.yaml ./
+COPY --from=build /build/migrations ./migrations
+COPY --from=build /build/knexfile.js ./knexfile.js
 
 RUN corepack enable && corepack prepare pnpm@$PNPM_VERSION --activate && pnpm install --prod --frozen-lockfile --silent
 

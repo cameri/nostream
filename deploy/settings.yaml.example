@@ -1,26 +1,18 @@
-# Copy to .nostr/settings.yaml on the server and edit for your relay.
-# Values here override resources/default-settings.yaml from the image.
+# Optional relay overrides — copy to .nostr/settings.yaml only when needed.
+# Omit this file entirely to run with resources/default-settings.yaml from the image.
+# Values here override image defaults (deep merge). New release keys come from the image automatically.
 
 info:
-  relay_url: wss://relay.tnsor.network
-  name: relay.tnsor.network
+  relay_url: wss://relay.example.com
+  name: relay.example.com
   description: A Nostr relay powered by nostream.
-  pubkey: ""
-  contact: mailto:operator@tnsor.network
-  terms_of_service: https://relay.tnsor.network/terms
-  privacy_policy: https://relay.tnsor.network/privacy
+  contact: mailto:operator@example.com
 
-payments:
-  enabled: false
+# payments:
+#   enabled: false
 
-nip45:
-  enabled: true
+# nip66:
+#   enabled: false
 
-nip66:
-  enabled: false
-
-workers:
-  count: 2
-
-admin:
-  enabled: false
+# admin:
+#   enabled: false

@@ -7,6 +7,7 @@ import { DEFAULT_FILTER_LIMIT } from '../../constants/base'
 import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
 import { getPublicPathPrefix, joinPathPrefix } from '../../utils/http'
+import { resolveRelaySelfPubkey } from '../../utils/nip43'
 import packageJson from '../../../package.json'
 
 export const hasExplicitNostrJsonAcceptHeader = (request: Request): boolean => {
@@ -45,7 +46,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
 
   if (hasExplicitNostrJsonAcceptHeader(request)) {
     const {
-      info: { name, description, banner, icon, pubkey: rawPubkey, self: rawSelf, contact, relay_url, terms_of_service },
+      info: { name, description, banner, icon, pubkey: rawPubkey, contact, relay_url, terms_of_service },
     } = settings
 
     const paymentsUrl = new URL(relay_url)
@@ -71,7 +72,11 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       (eventLimits?.kind?.blacklist?.length ?? 0) > 0
 
     const pubkey = rawPubkey.startsWith('npub1') ? fromBech32(rawPubkey) : rawPubkey
-    const self = rawSelf?.startsWith('npub1') ? fromBech32(rawSelf) : rawSelf
+    // NIP-43 clients verify relay-signed events against `self`, so it must be the
+    // key the relay actually signs with. `info.self` is only authoritative when it
+    // parses; otherwise (unset, or still the placeholder) we advertise the derived
+    // signing pubkey, which is correct by construction.
+    const self = resolveRelaySelfPubkey(settings)
 
     const relayInformationDocument = {
       name,

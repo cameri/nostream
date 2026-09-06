@@ -12,6 +12,8 @@ import {
   rootRequestHandler,
 } from '../../../../src/handlers/request-handlers/root-request-handler'
 import { DEFAULT_FILTER_LIMIT } from '../../../../src/constants/base'
+import * as eventUtils from '../../../../src/utils/event'
+import { toBech32 } from '../../../../src/utils/transform'
 
 const baseSettings = {
   info: {
@@ -145,7 +147,6 @@ describe('rootRequestHandler', () => {
           ...baseSettings.info,
           banner: 'https://relay.example.com/banner.png',
           icon: 'https://relay.example.com/icon.png',
-          self: 'f'.repeat(64),
           terms_of_service: 'https://relay.example.com/terms',
         },
       })
@@ -155,7 +156,6 @@ describe('rootRequestHandler', () => {
       const doc = res.send.firstCall.args[0]
       expect(doc.banner).to.equal('https://relay.example.com/banner.png')
       expect(doc.icon).to.equal('https://relay.example.com/icon.png')
-      expect(doc.self).to.equal('f'.repeat(64))
       expect(doc.terms_of_service).to.equal('https://relay.example.com/terms')
     })
 
@@ -165,8 +165,66 @@ describe('rootRequestHandler', () => {
       const doc = res.send.firstCall.args[0]
       expect(doc).to.not.have.property('banner')
       expect(doc).to.not.have.property('icon')
-      expect(doc).to.not.have.property('self')
       expect(doc).to.not.have.property('terms_of_service')
+    })
+
+    // NIP-43 clients verify relay-signed events against `self`, so the document
+    // must advertise the key the relay actually signs with, not a stale or
+    // placeholder string.
+    describe('self pubkey', () => {
+      const derivedPubkey = '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793'
+      const configuredPubkey = '1e0d0c0b0a09080706050403020100ff0e0d0c0b0a09080706050403020100ff'
+
+      let getRelayPrivateKeyStub: sinon.SinonStub
+      let getPublicKeyStub: sinon.SinonStub
+
+      const sendWithSelf = (self?: string) => {
+        createSettingsStub.returns({
+          ...baseSettings,
+          info: { ...baseSettings.info, ...(self !== undefined ? { self } : {}) },
+        })
+
+        rootRequestHandler(req, res, next)
+
+        return res.send.firstCall.args[0]
+      }
+
+      beforeEach(() => {
+        getRelayPrivateKeyStub = sinon.stub(eventUtils, 'getRelayPrivateKey').returns('deadbeef')
+        getPublicKeyStub = sinon.stub(eventUtils, 'getPublicKey').returns(derivedPubkey)
+      })
+
+      afterEach(() => {
+        getRelayPrivateKeyStub.restore()
+        getPublicKeyStub.restore()
+      })
+
+      it('advertises the derived signing pubkey when info.self is unset', () => {
+        expect(sendWithSelf().self).to.equal(derivedPubkey)
+      })
+
+      it('advertises the derived signing pubkey when info.self is the placeholder default', () => {
+        expect(sendWithSelf('replace-with-your-relay-pubkey-in-hex').self).to.equal(derivedPubkey)
+      })
+
+      it('advertises a configured hex info.self verbatim', () => {
+        expect(sendWithSelf(configuredPubkey).self).to.equal(configuredPubkey)
+      })
+
+      it('decodes a configured npub info.self', () => {
+        expect(sendWithSelf(toBech32('npub')(configuredPubkey)).self).to.equal(configuredPubkey)
+      })
+
+      it('does not throw on a malformed npub info.self', () => {
+        expect(sendWithSelf('npub1notavalidbech32string').self).to.equal(derivedPubkey)
+        expect(next).to.not.have.been.called
+      })
+
+      it('omits self when it cannot be derived and none is configured', () => {
+        getRelayPrivateKeyStub.throws(new Error('SECRET environment variable not set'))
+
+        expect(sendWithSelf()).to.not.have.property('self')
+      })
     })
 
     it('includes NIP-11 limitation created_at and default_limit fields', () => {
