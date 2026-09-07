@@ -16,7 +16,7 @@ import { Tag } from '../../../src/@types/base'
 import { WotGraphService } from '../../../src/services/wot-graph-service'
 
 describe('WotGraphService', () => {
-  const seedPubkey = 'seed-pubkey'
+  const seedPubkey = 'a'.repeat(64)
 
   let cache: ICacheAdapter
   let eventRepository: IEventRepository
@@ -28,6 +28,8 @@ describe('WotGraphService', () => {
   let findByFiltersStub: Sinon.SinonStub
 
   let sandbox: Sinon.SinonSandbox
+
+  let originalConsoleError: typeof console.error
 
   const dbEventWithFollows = (tags: Tag[]): DBEvent =>
     ({
@@ -48,6 +50,8 @@ describe('WotGraphService', () => {
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
+    originalConsoleError = console.error
+    console.error = () => undefined
 
     for (const key of Object.keys(followsOf)) {
       delete followsOf[key]
@@ -90,6 +94,7 @@ describe('WotGraphService', () => {
   })
 
   afterEach(() => {
+    console.error = originalConsoleError
     sandbox.restore()
   })
 
@@ -168,7 +173,27 @@ describe('WotGraphService', () => {
 
       expect(distance).to.equal(1)
       expect(findByFiltersStub).to.have.been.calledOnceWithExactly([{ kinds: [3], authors: [seedPubkey], limit: 1 }])
-      expect(addToSetStub).to.have.been.calledOnceWithExactly('wot:follows:seed-pubkey', ['direct-follow'])
+      expect(addToSetStub).to.have.been.calledOnceWithExactly(`wot:follows:${seedPubkey}`, ['direct-follow'])
+    })
+
+    it('promotes a candidate once its cumulative followers across depths meet minimumFollowers, even if no single depth layer alone does', async () => {
+      settings.wot!.minimumFollowers = 2
+      settings.wot!.maxDepth = 3
+      followsOf[seedPubkey] = ['a', 'p', 'q']
+      followsOf.a = ['x'] // x gets 1 follower from the depth-1 layer -- not enough alone
+      followsOf.p = ['b']
+      followsOf.q = ['b'] // b gets 2 depth-1 followers -- promoted to depth 2
+      followsOf.b = ['x'] // x gets a 2nd follower from the depth-2 layer -- 1 + 1 = 2 total
+
+      expect(await service().getDistance('x')).to.equal(3)
+    })
+
+    it('treats an invalid seedPubkey as an empty graph instead of throwing', async () => {
+      settings.wot!.seedPubkey = 'not-a-valid-hex-pubkey'
+
+      const distance = await service().getDistance('anyone')
+
+      expect(distance).to.be.undefined
     })
   })
 
@@ -192,8 +217,8 @@ describe('WotGraphService', () => {
 
     it('clears and repopulates the pubkey follow set', async () => {
       await service().updateFollowList(seedPubkey, ['a', 'b'])
-      expect(deleteKeyStub).to.have.been.calledOnceWithExactly('wot:follows:seed-pubkey')
-      expect(addToSetStub).to.have.been.calledOnceWithExactly('wot:follows:seed-pubkey', ['a', 'b'])
+      expect(deleteKeyStub).to.have.been.calledOnceWithExactly(`wot:follows:${seedPubkey}`)
+      expect(addToSetStub).to.have.been.calledOnceWithExactly(`wot:follows:${seedPubkey}`, ['a', 'b'])
     })
 
     it('does not call addToSet for an empty follow list', async () => {
@@ -208,6 +233,7 @@ describe('WotGraphService', () => {
       getSetMembersStub.resetHistory()
 
       await wot.updateFollowList(seedPubkey, ['a'])
+      await (wot as any).building // the triggered rebuild is fire-and-forget; wait for it here
 
       expect(getSetMembersStub).to.have.been.called // rebuild re-read the graph
       expect(await wot.getDistance('a')).to.equal(1)
@@ -221,6 +247,45 @@ describe('WotGraphService', () => {
       await wot.updateFollowList('unrelated-pubkey', ['x'])
 
       expect(getSetMembersStub).not.to.have.been.called
+    })
+
+    it('does not block on the triggered rebuild (fire-and-forget)', async () => {
+      const wot = service()
+      await wot.getDistance('anyone') // first build completes, ready=true
+
+      let releaseRebuild: () => void = () => undefined
+      getSetMembersStub.callsFake(async (key: string) => {
+        const pubkey = key.replace('wot:follows:', '')
+        if (pubkey === seedPubkey) {
+          await new Promise<void>((resolve) => {
+            releaseRebuild = resolve
+          })
+        }
+        return followsOf[pubkey] ?? []
+      })
+
+      let updateFollowListResolved = false
+      const updatePromise = wot.updateFollowList(seedPubkey, ['a']).then(() => {
+        updateFollowListResolved = true
+      })
+
+      await updatePromise // only awaits the Redis writes, not the stuck rebuild
+      expect(updateFollowListResolved).to.equal(true)
+
+      releaseRebuild()
+      await (wot as any).building
+    })
+
+    it('recovers after a rebuild failure instead of staying stuck on a rejected promise', async () => {
+      findByFiltersStub.rejects(new Error('db unavailable'))
+
+      const wot = service()
+      await wot.getDistance('anyone') // build fails internally; caught, not thrown
+      expect(wot.isReady()).to.equal(false)
+
+      findByFiltersStub.resolves([]) // "recovery"
+      await wot.getDistance('anyone') // must retry, not hang on the earlier failure
+      expect(wot.isReady()).to.equal(true)
     })
   })
 })

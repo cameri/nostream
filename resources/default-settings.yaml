@@ -135,7 +135,7 @@ wot:
   minimumFollowers: 1
   # How many hops out from seedPubkey the trust graph extends.
   maxDepth: 2
-  # Hours between full consistency rebuilds, on top of real-time updates.
+  # Reserved for a future periodic rebuild; not yet read by any code.
   refreshIntervalHours: 24
 network:
   maxPayloadSize: 524288

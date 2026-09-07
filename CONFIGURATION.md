@@ -264,5 +264,5 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | wot.enabled                                 | Enables the Web of Trust graph, rooted at `wot.seedPubkey`, built from NIP-02 contact lists. Defaults to false. |
 | wot.maxDepth                                | How many hops out from `wot.seedPubkey` the trust graph extends. Direct follows are distance 1. Defaults to 2. |
 | wot.minimumFollowers                        | Minimum number of already-trusted accounts that must follow a pubkey before it enters the graph at 2+ hops. Direct follows are always trusted. Defaults to 1. |
-| wot.refreshIntervalHours                    | Hours between full consistency rebuilds, on top of the real-time updates applied as kind-3 events are ingested. Defaults to 24. |
+| wot.refreshIntervalHours                    | Reserved for a future periodic full rebuild; not yet read by any code (real-time kind-3 ingestion already keeps the graph current). Defaults to 24. |
 | wot.seedPubkey                              | The relay owner's pubkey in hex. Root of the trust graph. Required when `wot.enabled` is true. |

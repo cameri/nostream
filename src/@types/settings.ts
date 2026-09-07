@@ -370,10 +370,9 @@ export interface WoTSettings {
    */
   maxDepth: number
   /**
-   * How often (in hours) the graph does a full consistency rebuild from
-   * stored contact-list events, on top of the real-time updates applied as
-   * kind-3 events are ingested. Not the primary update mechanism — just a
-   * periodic safety net (e.g. after a restart with a cold Redis cache).
+   * Reserved for a future periodic full consistency rebuild, on top of the
+   * real-time updates already applied as kind-3 events are ingested. Not
+   * yet consumed by any code — no background worker reads this field.
    * Defaults to 24.
    */
   refreshIntervalHours: number
