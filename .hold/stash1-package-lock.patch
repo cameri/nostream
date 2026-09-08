@@ -1,0 +1,42 @@
+diff --git a/package-lock.json b/package-lock.json
+index bf6b1a7..f866ad3 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -14,10 +14,10 @@
+         "bech32": "2.0.0",
+         "debug": "4.3.4",
+         "dotenv": "16.0.3",
+-        "express": "^4.22.1",
++        "express": "4.22.1",
+         "helmet": "6.0.1",
+         "joi": "17.7.0",
+-        "js-yaml": "^4.1.1",
++        "js-yaml": "4.1.1",
+         "knex": "2.4.2",
+         "pg": "8.9.0",
+         "pg-query-stream": "4.3.0",
+@@ -39,7 +39,7 @@
+         "@types/chai": "^4.3.1",
+         "@types/chai-as-promised": "^7.1.5",
+         "@types/debug": "4.1.7",
+-        "@types/express": "^4.17.21",
++        "@types/express": "4.17.21",
+         "@types/js-yaml": "4.0.5",
+         "@types/mocha": "^9.1.1",
+         "@types/node": "^24.0.0",
+@@ -1852,6 +1852,7 @@
+       "integrity": "sha512-YfcB2QrX+Wx1o6LD1G2Y2fhDhOix/bAY/oAnMpHoNLsKkWIRbt1oKLkIFvxBMzLwAEPqnYWguJrYC+J6i4ywbw==",
+       "dev": true,
+       "license": "MIT",
++      "peer": true,
+       "dependencies": {
+         "bole": "^5.0.0",
+         "ndjson": "^2.0.0"
+@@ -16477,6 +16478,7 @@
+       "integrity": "sha512-iC+8Io04lddc+mVqQ9AZ7OQ2MrUKGN+oIQyq1vemgt46jwCwLfhq7/pwnBnNXXXZb8VTVLKwp9EDkx+ryxIWmg==",
+       "dev": true,
+       "license": "MIT",
++      "peer": true,
+       "funding": {
+         "url": "https://github.com/sponsors/colinhacks"
+       }

@@ -1,0 +1,12 @@
+diff --git a/package-lock.json b/package-lock.json
+index cc31369..b4de286 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -10,6 +10,7 @@
+       "license": "MIT",
+       "dependencies": {
+         "@noble/secp256k1": "1.7.1",
++        "accepts": "^1.3.8",
+         "axios": "^1.15.0",
+         "bech32": "2.0.0",
+         "debug": "4.3.4",
