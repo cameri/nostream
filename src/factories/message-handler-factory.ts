@@ -56,13 +56,7 @@ export const messageHandlerFactory =
         )
       }
       case MessageType.REQ:
-        return new SubscribeMessageHandler(
-          adapter,
-          eventRepository,
-          createSettings,
-          inviteCodeRepository,
-          rateLimiterFactory,
-        )
+        return new SubscribeMessageHandler(adapter, eventRepository, createSettings)
       case MessageType.CLOSE:
         return new UnsubscribeMessageHandler(adapter)
       case MessageType.COUNT:
