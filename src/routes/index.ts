@@ -5,6 +5,7 @@ import adminRouter from './admin'
 import admissionRouter from './admissions'
 import callbacksRouter from './callbacks'
 import { getHealthRequestHandler } from '../handlers/request-handlers/get-health-request-handler'
+import { getReadyzRequestHandler } from '../handlers/request-handlers/get-readyz-request-handler'
 import { getPrivacyRequestHandler } from '../handlers/request-handlers/get-privacy-request-handler'
 import { getTermsRequestHandler } from '../handlers/request-handlers/get-terms-request-handler'
 import invoiceRouter from './invoices'
@@ -24,7 +25,10 @@ router.use((req, res, next) => {
 
 // codeql[js/missing-rate-limiting]
 router.get('/', rootRequestHandler)
+// Liveness: process is running (always 200). Used for "is the container up?" checks.
 router.get('/healthz', getHealthRequestHandler)
+// Readiness: Postgres + Redis must respond. Used before routing traffic during deploys.
+router.get('/readyz', getReadyzRequestHandler)
 router.get('/terms', getTermsRequestHandler)
 router.get('/privacy', getPrivacyRequestHandler)
 
