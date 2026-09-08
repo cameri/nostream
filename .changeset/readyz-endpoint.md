@@ -1,5 +1,5 @@
 ---
-"nostream": patch
+"nostream": minor
 ---
 
 feat(ops): add /readyz readiness probe for Postgres and Redis
