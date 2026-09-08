@@ -94,6 +94,33 @@
             </div>
           </section>
 
+          <section id="network-health-section" class="dashboard-section">
+            <h2 class="section-title">Network Health</h2>
+            <p id="network-health-sync" class="sync-line mb-3"><span class="prompt-char">&gt;</span> probes: waiting for snapshot…</p>
+            <div id="network-health-empty" class="panel-card admin-muted small">No external probe results yet. Enable NIP-66 relay monitoring to populate this panel.</div>
+            <div id="network-health-summary" class="row g-2 mb-3 d-none">
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100">
+                  <p class="metric-label"><span class="module-code">RUN</span> Probe status</p>
+                  <p id="network-health-run-status" class="metric-value status-no-data mb-0"><span class="status-led" aria-hidden="true"></span>Pending</p>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100">
+                  <p class="metric-label"><span class="module-code">TGT</span> Targets</p>
+                  <p id="network-health-target-count" class="metric-value mb-0"><span class="metric-number">0</span></p>
+                </div>
+              </div>
+              <div class="col-12 col-md-6">
+                <div class="metric-card h-100">
+                  <p class="metric-label"><span class="module-code">TS</span> Last probe run</p>
+                  <p id="network-health-run-at" class="metric-value mb-0"><span class="metric-number">—</span></p>
+                </div>
+              </div>
+            </div>
+            <div id="network-health-results" class="network-health-results d-none" aria-live="polite"></div>
+          </section>
+
           <section class="dashboard-section">
             <h2 class="section-title">Throughput</h2>
             <div class="row g-2">

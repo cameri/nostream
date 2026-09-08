@@ -51,6 +51,7 @@ export interface Nip11Result {
   statusCode: number
   name?: string
   pubkey?: string
+  supportedNips?: number[]
 }
 
 export interface ProbeResult {

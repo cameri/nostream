@@ -35,6 +35,11 @@
   const settingsDiffContent = document.getElementById('settings-diff-content')
   const settingsDiffSummary = document.getElementById('settings-diff-summary')
   const dashboardViews = document.querySelectorAll('.dashboard-view')
+  const networkHealthSync = document.getElementById('network-health-sync')
+  const networkHealthEmpty = document.getElementById('network-health-empty')
+  const networkHealthSummary = document.getElementById('network-health-summary')
+  const networkHealthResults = document.getElementById('network-health-results')
+  const networkHealthRunAt = document.getElementById('network-health-run-at')
 
   let settingsLoaded = false
   let settingsLoading = false
@@ -52,6 +57,8 @@
   let relativeTimeTimer
   let staleCheckTimer
   const staleThresholdMs = 15000
+  let networkHealthPollTimer
+  const networkHealthPollIntervalMs = 60000
 
   const statusClasses = ['status-ok', 'status-degraded', 'status-unavailable', 'status-down', 'status-no-data']
 
@@ -80,6 +87,16 @@
       stale: '[STALE]',
       parseError: '[ERR]',
       reconnect: '[RETRY]',
+    },
+    probeRun: {
+      ok: '[OK]',
+      partial: '[WARN]',
+      failed: '[FAULT]',
+    },
+    probeCheck: {
+      ok: '[OK]',
+      error: '[ERR]',
+      skipped: '[SKIP]',
     },
   }
 
@@ -300,6 +317,7 @@
 
   const showLogin = () => {
     stopMetricsStream()
+    stopNetworkHealthPolling()
     setNavOpen(false)
     loginPanel.classList.remove('d-none')
     dashboardPanel.classList.add('d-none')
@@ -341,6 +359,230 @@
     })
 
     startMetricsStream()
+    void refreshNetworkHealth()
+    startNetworkHealthPolling()
+  }
+
+  const stopNetworkHealthPolling = () => {
+    if (networkHealthPollTimer) {
+      clearInterval(networkHealthPollTimer)
+      networkHealthPollTimer = undefined
+    }
+  }
+
+  const startNetworkHealthPolling = () => {
+    stopNetworkHealthPolling()
+    networkHealthPollTimer = setInterval(() => {
+      void refreshNetworkHealth()
+    }, networkHealthPollIntervalMs)
+  }
+
+  const setNetworkHealthSyncLine = (message) => {
+    if (!networkHealthSync) {
+      return
+    }
+
+    networkHealthSync.innerHTML = `<span class="prompt-char">&gt;</span> probes: ${message}`
+  }
+
+  const probeCheckStatusClass = (status, options = {}) => {
+    if (status === 'ok') {
+      if (typeof options.tlsDaysUntilExpiry === 'number' && options.tlsDaysUntilExpiry < 14) {
+        return 'status-degraded'
+      }
+
+      return 'status-ok'
+    }
+    if (status === 'error') {
+      return 'status-down'
+    }
+
+    return 'status-no-data'
+  }
+
+  const formatProbeCheckDetail = (check, formatter, options = {}) => {
+    const label = statusLabels.probeCheck[check?.status] ?? statusLabels.probeCheck.skipped
+    const detail = typeof formatter === 'function' && check?.status === 'ok' ? formatter(check.data) : check?.error
+    const className = probeCheckStatusClass(check?.status, options)
+
+    return {
+      label,
+      className,
+      detail: detail ? String(detail) : '',
+    }
+  }
+
+  const renderNetworkHealthSnapshot = (snapshot) => {
+    if (!networkHealthEmpty || !networkHealthSummary || !networkHealthResults) {
+      return
+    }
+
+    if (!snapshot) {
+      networkHealthEmpty.classList.remove('d-none')
+      networkHealthSummary.classList.add('d-none')
+      networkHealthResults.classList.add('d-none')
+      networkHealthResults.replaceChildren()
+      setNetworkHealthSyncLine('no probe snapshot available')
+      return
+    }
+
+    networkHealthEmpty.classList.add('d-none')
+    networkHealthSummary.classList.remove('d-none')
+    networkHealthResults.classList.remove('d-none')
+
+    const runStatus = snapshot.status ?? 'failed'
+    const runStatusClass =
+      runStatus === 'ok' ? 'status-ok' : runStatus === 'partial' ? 'status-degraded' : 'status-down'
+    setStatusText(
+      'network-health-run-status',
+      statusLabels.probeRun[runStatus] ?? statusLabels.probeRun.failed,
+      runStatusClass,
+    )
+    setMetricValue('network-health-target-count', Array.isArray(snapshot.results) ? snapshot.results.length : 0)
+
+    const runAtMs = Date.parse(snapshot.runAt)
+    if (Number.isFinite(runAtMs)) {
+      networkHealthRunAt.innerHTML = `<span class="metric-number">${new Date(runAtMs).toISOString()}</span>`
+      setNetworkHealthSyncLine(`last updated ${formatRelativeTime(runAtMs)}`)
+    } else {
+      networkHealthRunAt.innerHTML = '<span class="metric-number">—</span>'
+      setNetworkHealthSyncLine('snapshot received')
+    }
+
+    networkHealthResults.replaceChildren()
+
+    if (!Array.isArray(snapshot.results) || snapshot.results.length === 0) {
+      const empty = document.createElement('p')
+      empty.className = 'admin-muted small mb-0'
+      empty.textContent = 'Probe run completed with no target results.'
+      networkHealthResults.appendChild(empty)
+      return
+    }
+
+    snapshot.results.forEach((result) => {
+      const card = document.createElement('article')
+      card.className = 'network-health-target'
+
+      const header = document.createElement('div')
+      header.className = 'network-health-target-header'
+
+      const title = document.createElement('p')
+      title.className = 'network-health-target-url mb-0'
+      title.textContent = result?.target?.relayUrl ?? result?.target?.wsUrl ?? 'Unknown target'
+      header.appendChild(title)
+
+      const networkType = result?.target?.networkType
+      if (networkType) {
+        const badge = document.createElement('span')
+        badge.className = 'network-health-network-type'
+        badge.textContent = networkType
+        header.appendChild(badge)
+      }
+
+      card.appendChild(header)
+
+      const checks = document.createElement('div')
+      checks.className = 'network-health-checks'
+
+      const dns = formatProbeCheckDetail(result.dns, (data) => {
+        const records = Array.isArray(data?.records) ? data.records : []
+
+        if (records.length === 0) {
+          return 'no records'
+        }
+
+        const preview = records.slice(0, 3).map((record) => {
+          const ttl = typeof record?.ttl === 'number' ? ` TTL ${record.ttl}` : ''
+          return `${record.type} ${record.value}${ttl}`
+        })
+
+        if (records.length > 3) {
+          preview.push(`+${records.length - 3} more`)
+        }
+
+        return preview.join('; ')
+      })
+      const tlsDaysUntilExpiry =
+        result.tls?.status === 'ok' && typeof result.tls?.data?.daysUntilExpiry === 'number'
+          ? result.tls.data.daysUntilExpiry
+          : undefined
+      const tls = formatProbeCheckDetail(
+        result.tls,
+        (data) => {
+          if (typeof data?.daysUntilExpiry === 'number') {
+            return `${data.daysUntilExpiry}d remaining`
+          }
+
+          return data?.issuer ?? 'valid'
+        },
+        { tlsDaysUntilExpiry },
+      )
+      const wsRtt = formatProbeCheckDetail(result.wsRtt, (data) => `${data.rttOpenMs} ms`)
+      const nip11 = formatProbeCheckDetail(result.nip11, (data) => {
+        const name = data?.name ? ` ${data.name}` : ''
+        const supportedNips = Array.isArray(data?.supportedNips) ? data.supportedNips : null
+        const nip66Warning =
+          supportedNips && !supportedNips.includes(66) ? ' · NIP-66 not in supported_nips' : ''
+
+        return `HTTP ${data.statusCode}${name}${nip66Warning}`
+      })
+
+      if (
+        result.nip11?.status === 'ok' &&
+        Array.isArray(result.nip11?.data?.supportedNips) &&
+        !result.nip11.data.supportedNips.includes(66)
+      ) {
+        nip11.className = 'status-degraded'
+      }
+
+      ;[
+        ['DNS', dns],
+        ['TLS', tls],
+        ['WS RTT', wsRtt],
+        ['NIP-11', nip11],
+      ].forEach(([name, check]) => {
+        const item = document.createElement('div')
+        item.className = 'network-health-check'
+
+        const label = document.createElement('p')
+        label.className = 'network-health-check-label mb-0'
+        label.textContent = name
+
+        const value = document.createElement('p')
+        value.className = `network-health-check-value ${check.className} mb-0`
+        value.textContent = check.detail ? `${check.label} · ${check.detail}` : check.label
+
+        item.appendChild(label)
+        item.appendChild(value)
+        checks.appendChild(item)
+      })
+
+      card.appendChild(checks)
+      networkHealthResults.appendChild(card)
+    })
+  }
+
+  const refreshNetworkHealth = async () => {
+    try {
+      const response = await fetch(`${adminBase}/network-health`, {
+        credentials: 'include',
+      })
+
+      if (response.status === 401) {
+        showLogin()
+        return
+      }
+
+      if (!response.ok) {
+        setNetworkHealthSyncLine('failed to load probe snapshot')
+        return
+      }
+
+      const body = await response.json()
+      renderNetworkHealthSnapshot(body.snapshot ?? null)
+    } catch {
+      setNetworkHealthSyncLine('network error while loading probes')
+    }
   }
 
   const parsePathTokens = (path) => {
