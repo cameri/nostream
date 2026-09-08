@@ -35,5 +35,8 @@ export interface ICacheAdapter {
   getHKey(key: string, field: string): Promise<string>
   setHKey(key: string, fields: Record<string, string>): Promise<boolean>
 
+  addToSet(key: string, members: string[]): Promise<number>
+  getSetMembers(key: string): Promise<string[]>
+
   eval(script: string, keys: string[], args: string[]): Promise<unknown>
 }
