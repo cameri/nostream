@@ -385,8 +385,12 @@
     networkHealthSync.innerHTML = `<span class="prompt-char">&gt;</span> probes: ${message}`
   }
 
-  const probeCheckStatusClass = (status) => {
+  const probeCheckStatusClass = (status, options = {}) => {
     if (status === 'ok') {
+      if (typeof options.tlsDaysUntilExpiry === 'number' && options.tlsDaysUntilExpiry < 14) {
+        return 'status-degraded'
+      }
+
       return 'status-ok'
     }
     if (status === 'error') {
@@ -396,13 +400,14 @@
     return 'status-no-data'
   }
 
-  const formatProbeCheckDetail = (check, formatter) => {
+  const formatProbeCheckDetail = (check, formatter, options = {}) => {
     const label = statusLabels.probeCheck[check?.status] ?? statusLabels.probeCheck.skipped
     const detail = typeof formatter === 'function' && check?.status === 'ok' ? formatter(check.data) : check?.error
+    const className = probeCheckStatusClass(check?.status, options)
 
     return {
       label,
-      className: probeCheckStatusClass(check?.status),
+      className,
       detail: detail ? String(detail) : '',
     }
   }
@@ -458,30 +463,77 @@
       const card = document.createElement('article')
       card.className = 'network-health-target'
 
+      const header = document.createElement('div')
+      header.className = 'network-health-target-header'
+
       const title = document.createElement('p')
       title.className = 'network-health-target-url mb-0'
       title.textContent = result?.target?.relayUrl ?? result?.target?.wsUrl ?? 'Unknown target'
-      card.appendChild(title)
+      header.appendChild(title)
+
+      const networkType = result?.target?.networkType
+      if (networkType) {
+        const badge = document.createElement('span')
+        badge.className = 'network-health-network-type'
+        badge.textContent = networkType
+        header.appendChild(badge)
+      }
+
+      card.appendChild(header)
 
       const checks = document.createElement('div')
       checks.className = 'network-health-checks'
 
       const dns = formatProbeCheckDetail(result.dns, (data) => {
-        const count = Array.isArray(data?.records) ? data.records.length : 0
-        return `${count} record${count === 1 ? '' : 's'}`
-      })
-      const tls = formatProbeCheckDetail(result.tls, (data) => {
-        if (typeof data?.daysUntilExpiry === 'number') {
-          return `${data.daysUntilExpiry}d remaining`
+        const records = Array.isArray(data?.records) ? data.records : []
+
+        if (records.length === 0) {
+          return 'no records'
         }
 
-        return data?.issuer ?? 'valid'
+        const preview = records.slice(0, 3).map((record) => {
+          const ttl = typeof record?.ttl === 'number' ? ` TTL ${record.ttl}` : ''
+          return `${record.type} ${record.value}${ttl}`
+        })
+
+        if (records.length > 3) {
+          preview.push(`+${records.length - 3} more`)
+        }
+
+        return preview.join('; ')
       })
+      const tlsDaysUntilExpiry =
+        result.tls?.status === 'ok' && typeof result.tls?.data?.daysUntilExpiry === 'number'
+          ? result.tls.data.daysUntilExpiry
+          : undefined
+      const tls = formatProbeCheckDetail(
+        result.tls,
+        (data) => {
+          if (typeof data?.daysUntilExpiry === 'number') {
+            return `${data.daysUntilExpiry}d remaining`
+          }
+
+          return data?.issuer ?? 'valid'
+        },
+        { tlsDaysUntilExpiry },
+      )
       const wsRtt = formatProbeCheckDetail(result.wsRtt, (data) => `${data.rttOpenMs} ms`)
       const nip11 = formatProbeCheckDetail(result.nip11, (data) => {
         const name = data?.name ? ` ${data.name}` : ''
-        return `HTTP ${data.statusCode}${name}`
+        const supportedNips = Array.isArray(data?.supportedNips) ? data.supportedNips : null
+        const nip66Warning =
+          supportedNips && !supportedNips.includes(66) ? ' · NIP-66 not in supported_nips' : ''
+
+        return `HTTP ${data.statusCode}${name}${nip66Warning}`
       })
+
+      if (
+        result.nip11?.status === 'ok' &&
+        Array.isArray(result.nip11?.data?.supportedNips) &&
+        !result.nip11.data.supportedNips.includes(66)
+      ) {
+        nip11.className = 'status-degraded'
+      }
 
       ;[
         ['DNS', dns],

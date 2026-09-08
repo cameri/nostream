@@ -765,12 +765,33 @@
   padding: 0.85rem 1rem;
 }
 
+.network-health-target-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+
 .network-health-target-url {
   color: var(--text);
+  flex: 1;
   font-size: 0.85rem;
   font-weight: 600;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0;
   word-break: break-all;
+}
+
+.network-health-network-type {
+  background: var(--panel-border);
+  border: 1px solid var(--panel-border);
+  color: var(--label);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.4rem;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .network-health-checks {

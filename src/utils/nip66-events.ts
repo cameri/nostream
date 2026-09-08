@@ -3,6 +3,7 @@ import { Tag } from '../@types/base'
 import { StoredProbeResult } from '../@types/relay-probe-snapshot'
 import { Settings } from '../@types/settings'
 import { EventKinds, EventTags } from '../constants/base'
+import { getEffectiveProbeIntervalSeconds } from './nip66-schedule'
 
 export const normalizeRelayUrlForDTag = (relayUrl: string): string => {
   const parsed = new URL(relayUrl)
@@ -57,7 +58,7 @@ export const buildMonitorAnnouncementEvent = (
   const timeouts = nip66?.timeouts
 
   const tags: Tag[] = [
-    ['frequency', String(nip66?.probeIntervalSeconds ?? 3600)],
+    ['frequency', String(getEffectiveProbeIntervalSeconds(settings))],
     ['c', 'ws'],
     ['c', 'nip11'],
     ['c', 'ssl'],
