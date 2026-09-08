@@ -39,8 +39,6 @@
   const networkHealthEmpty = document.getElementById('network-health-empty')
   const networkHealthSummary = document.getElementById('network-health-summary')
   const networkHealthResults = document.getElementById('network-health-results')
-  const networkHealthRunStatus = document.getElementById('network-health-run-status')
-  const networkHealthTargetCount = document.getElementById('network-health-target-count')
   const networkHealthRunAt = document.getElementById('network-health-run-at')
 
   let settingsLoaded = false
