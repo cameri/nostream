@@ -98,7 +98,26 @@ Or use the admin API/UI once `admin.enabled` is configured.
 ```bash
 docker compose ps
 curl -s -H 'Accept: application/nostr+json' http://127.0.0.1:8008/
+curl -s http://127.0.0.1:8008/readyz
 ```
+
+## Health checks
+
+Use the relay HTTP port (default `8008`) for deploy and load-balancer probes:
+
+| Endpoint   | Type       | Behavior                                                 | Typical use                   |
+|------------|------------|----------------------------------------------------------|-------------------------------|
+| `/healthz` | Liveness   | Always `200 OK` if the process is running                | Restart unhealthy containers  |
+| `/readyz`  | Readiness  | `200` when Postgres and Redis respond; `503` otherwise   | HAProxy blue/green cutover    |
+
+`/readyz` is unauthenticated and intended for infrastructure. It reuses the same
+Postgres and Redis checks as `/admin/health` without requiring admin auth.
+Each dependency ping uses the default 3s timeout (`ADMIN_DEPENDENCY_PING_TIMEOUT_MS`).
+Set your load balancer check timeout above that (for example HAProxy
+`timeout check 5s`) so slow-but-healthy backends do not flap during probes.
+Responses are cached in-process for 1s to absorb polling without hammering the DB pool.
+Use readiness before routing traffic to a new instance during deploys; graceful
+WebSocket draining on shutdown is planned as a follow-up.
 
 ## Image delivery on restricted networks
 
