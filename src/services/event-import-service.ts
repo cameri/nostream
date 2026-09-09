@@ -1,8 +1,10 @@
 import fs from 'fs'
 import readline from 'readline'
 
-const streamArray = require('stream-json/streamers/stream-array.js') as {
-  withParserAsStream: () => NodeJS.ReadWriteStream
+const { streamArray } = require('stream-json/streamers/stream-array.js') as {
+  streamArray: {
+    withParserAsStream: () => NodeJS.ReadWriteStream
+  }
 }
 
 import {
