@@ -95,6 +95,10 @@ export class SettingsStatic {
     }
   }
 
+  public static invalidateCache(): void {
+    SettingsStatic._settings = undefined
+  }
+
   public static saveSettings(path: string, settings: Settings) {
     logger('saving settings to %s: %o', path, settings)
     return fs.writeFileSync(join(path, 'settings.yaml'), yaml.dump(settings), { encoding: 'utf-8' })
