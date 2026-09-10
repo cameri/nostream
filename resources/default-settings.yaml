@@ -137,6 +137,14 @@ wot:
   maxDepth: 2
   # Reserved for a future periodic rebuild; not yet read by any code.
   refreshIntervalHours: 24
+nip56:
+  # NIP-56 content reporting. When enabled, kind-1984 report events are
+  # stored and scored by the reporter's WoT distance from wot.seedPubkey.
+  enabled: false
+  # Pubkeys (hex) whose reports are always maximum-weight and actionable,
+  # regardless of WoT distance. Reports from any other pubkey are stored
+  # and weighted, but never trigger automatic actions on their own.
+  trustedModerators: []
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
