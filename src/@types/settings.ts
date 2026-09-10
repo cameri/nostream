@@ -407,6 +407,18 @@ export interface Nip43Settings {
   inviteRequestWhitelist?: Pubkey[]
 }
 
+export interface Nip56Settings {
+  enabled: boolean
+  /**
+   * Pubkeys (hex) whose kind-1984 reports are treated as coming from a
+   * trusted moderator: their reports get maximum weight and are flagged
+   * actionable, regardless of WoT graph distance. Reports from any other
+   * pubkey are scored purely by WoT distance from `wot.seedPubkey` and are
+   * never actionable on their own -- only stored for manual review.
+   */
+  trustedModerators: Pubkey[]
+}
+
 export interface Settings {
   info: Info
   admin?: AdminSettings
@@ -422,6 +434,7 @@ export interface Settings {
   nip43?: Nip43Settings
   nip45?: Nip45Settings
   nip50?: Nip50Settings
+  nip56?: Nip56Settings
   nip66?: Nip66Settings
   wot?: WoTSettings
 }

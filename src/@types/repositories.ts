@@ -6,6 +6,7 @@ import { DBEvent, Event } from './event'
 import { CreateInviteCodeOptions, InviteCode } from './invite-code'
 import { Invoice } from './invoice'
 import { Nip05Verification } from './nip05'
+import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
@@ -82,4 +83,10 @@ export interface IDvmJobRepository {
     job: Pick<DvmJob, 'id' | 'status'> & Partial<Pick<DvmJob, 'resultEventId' | 'error'>>,
   ): Promise<DvmJob | undefined>
   findPendingJobs(limit?: number, kinds?: number[]): Promise<DvmJob[]>
+}
+
+export interface IReportRepository {
+  create(report: Omit<Report, 'createdAt'>): Promise<Report>
+  findById(id: EventId): Promise<Report | undefined>
+  findActionable(limit?: number): Promise<Report[]>
 }
