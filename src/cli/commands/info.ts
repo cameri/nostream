@@ -3,6 +3,7 @@ import knex from 'knex'
 
 import packageJson from '../../../package.json'
 import { loadMergedSettings } from '../utils/config'
+import { tryGetRelayNip43Pubkey } from '../../utils/nip43'
 import { logError, logInfo } from '../utils/output'
 import { getOnionKeyPath, getTorHostnamePath } from '../utils/bootstrap'
 import { getProjectPath } from '../utils/paths'
@@ -127,6 +128,9 @@ export const getInfoPayload = async () => {
       name: settings.info?.name,
       url: settings.info?.relay_url,
       pubkey: settings.info?.pubkey,
+      // The key the relay signs its own events with, and what NIP-11 `self` must
+      // be set to. Derived from SECRET, so it is otherwise invisible to operators.
+      signingPubkey: tryGetRelayNip43Pubkey(settings) ?? null,
       paymentsEnabled: settings.payments?.enabled ?? false,
       paymentProcessor: settings.payments?.processor ?? null,
     },
@@ -236,6 +240,7 @@ export const runInfo = async (options: InfoOptions): Promise<number> => {
   logInfo(`Nostream v${payload.version}`)
   logInfo(`Relay: ${payload.relay.name ?? 'n/a'} (${payload.relay.url ?? 'n/a'})`)
   logInfo(`Pubkey: ${payload.relay.pubkey ?? 'n/a'}`)
+  logInfo(`Signing pubkey (NIP-11 self): ${payload.relay.signingPubkey ?? 'unavailable (SECRET not set)'}`)
   logInfo(`Payments: ${payload.relay.paymentsEnabled ? `enabled (${payload.relay.paymentProcessor})` : 'disabled'}`)
   logInfo(`Tor hostname: ${payload.tor.hostname ?? 'not found'}`)
   logInfo(`Onion key path: ${payload.tor.onionPrivateKeyPath}`)

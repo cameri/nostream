@@ -9,6 +9,7 @@ import { mergeDeepLeft, path, pipe } from 'ramda'
 import { IRunnable } from '../@types/base'
 
 import { createLogger } from '../factories/logger-factory'
+import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
 import { delayMs } from '../utils/misc'
 import { INip05VerificationRepository } from '../@types/repositories'
 import { InvoiceStatus } from '../@types/invoice'
@@ -23,8 +24,7 @@ const CLEAR_OLD_EVENTS_TIMEOUT_MS = 5000
 
 const logger = createLogger('maintenance-worker')
 
-const isNotFoundError = (error: unknown): boolean =>
-  (error as any)?.response?.status === 404
+const isNotFoundError = (error: unknown): boolean => (error as any)?.response?.status === 404
 
 /**
  * Merge a re-verification outcome onto an existing verification row.
@@ -74,6 +74,11 @@ export function applyReverificationOutcome(
 export class MaintenanceWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
   private isRunning = false
+  /**
+   * Where the next pass starts. Without it every pass re-reads the oldest ten, so
+   * ten invoices that never resolve starve everything behind them.
+   */
+  private pendingInvoiceOffset = 0
 
   public constructor(
     private readonly process: NodeJS.Process,
@@ -132,8 +137,12 @@ export class MaintenanceWorker implements IRunnable {
       return
     }
 
-    const invoices = await this.paymentsService.getPendingInvoices()
-    logger('found %d pending invoices', invoices.length)
+    const invoices = await this.paymentsService.getPendingInvoices(this.pendingInvoiceOffset)
+    logger('found %d pending invoices from offset %d', invoices.length, this.pendingInvoiceOffset)
+
+    // A short page means we reached the end, so start over next pass.
+    this.pendingInvoiceOffset =
+      invoices.length < PENDING_INVOICE_PAGE_SIZE ? 0 : this.pendingInvoiceOffset + PENDING_INVOICE_PAGE_SIZE
     const delay = () => delayMs(100 + Math.floor(Math.random() * 10))
 
     let successful = 0

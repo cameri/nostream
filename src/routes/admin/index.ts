@@ -25,9 +25,9 @@ import { withAdminController } from '../../handlers/request-handlers/with-admin-
 
 const router: Router = Router()
 
-// codeql[js/missing-rate-limiting] - custom Redis-backed sliding window rate limiter
+// Custom Redis-backed sliding window rate limiter
 router.use(rateLimiterMiddleware)
-// codeql[js/missing-rate-limiting] - feature gate only, not authentication
+// Feature gate only, not authentication
 router.use(adminEnabledMiddleware)
 router.use('/assets', express.static('./resources/admin/assets'))
 router.get('/', getAdminDashboardRequestHandler)
@@ -81,7 +81,6 @@ router.get(
   adminAuthMiddleware,
   withAdminController(createGetAdminSettingsSchemaController),
 )
-// codeql[js/missing-rate-limiting] - adminRateLimitMiddleware applies Redis-backed admin rate limits
 router.patch(
   '/settings',
   adminRateLimitMiddleware,
@@ -90,7 +89,6 @@ router.patch(
   adminAuthMiddleware,
   withAdminController(createPatchAdminSettingsController),
 )
-// codeql[js/missing-rate-limiting] - adminRateLimitMiddleware applies Redis-backed admin rate limits
 router.post(
   '/settings/validate',
   adminRateLimitMiddleware,

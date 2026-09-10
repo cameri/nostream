@@ -30,6 +30,22 @@ describe('cli documentation alignment', () => {
     expect(readme).to.include('nostream invite create')
   })
 
+  it('documents how to obtain the relay signing pubkey', () => {
+    const cliDoc = fs.readFileSync(path.join(projectRoot, 'CLI.md'), 'utf-8')
+    const configurationDoc = fs.readFileSync(path.join(projectRoot, 'CONFIGURATION.md'), 'utf-8')
+
+    expect(cliDoc).to.include('relay.signingPubkey')
+    expect(cliDoc).to.include("Leave `info.self` unset")
+    expect(configurationDoc).to.include('nostream info')
+  })
+
+  it('does not claim kind 28935 is unimplemented', () => {
+    const cliDoc = fs.readFileSync(path.join(projectRoot, 'CLI.md'), 'utf-8')
+
+    expect(cliDoc).to.not.include('does not yet generate kind 28935')
+    expect(cliDoc).to.include('answers `REQ`s for kind 28935')
+  })
+
   it('does not ship removed legacy wrapper scripts', () => {
     const removedWrappers = [
       'start',
