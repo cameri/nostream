@@ -141,6 +141,10 @@ export interface AdmissionCheckLimits {
   ipWhitelist?: string[]
 }
 
+export interface InviteLimits {
+  rateLimits?: RateLimit[]
+}
+
 export interface AdminLimits {
   rateLimits?: RateLimit[]
   loginRateLimits?: RateLimit[]
@@ -150,6 +154,7 @@ export interface AdminLimits {
 export interface Limits {
   rateLimiter?: RateLimiterSettings
   invoice?: InvoiceLimits
+  invite?: InviteLimits
   admissionCheck?: AdmissionCheckLimits
   admin?: AdminLimits
   connection?: ConnectionLimits
@@ -353,12 +358,21 @@ export interface WoTSettings {
    */
   seedPubkey: Pubkey
   /**
-   * Minimum number of 1-hop follows a pubkey must have to enter the trust filter.
-   * Defaults to 1.
+   * Minimum number of already-trusted accounts that must follow a pubkey
+   * before it enters the trust graph at 2+ hops. Direct (1-hop) follows of
+   * the seed are always trusted regardless of this value. Defaults to 1.
    */
   minimumFollowers: number
   /**
-   * How many hours between full trust graph rebuilds.
+   * How many hops out from the seed pubkey the trust graph extends.
+   * Direct follows are distance 1, follows-of-follows are distance 2, etc.
+   * Defaults to 2.
+   */
+  maxDepth: number
+  /**
+   * Reserved for a future periodic full consistency rebuild, on top of the
+   * real-time updates already applied as kind-3 events are ingested. Not
+   * yet consumed by any code — no background worker reads this field.
    * Defaults to 24.
    */
   refreshIntervalHours: number
