@@ -307,6 +307,51 @@ describe('rootRequestHandler', () => {
       expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(true)
     })
 
+    it('advertises the static minLeadingZeroBits as min_pow_difficulty when adaptive pow is disabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: { ...baseSettings.limits.event, eventId: { minLeadingZeroBits: 12 } },
+        },
+      })
+      rootRequestHandler(req, res, next)
+      expect(res.send.firstCall.args[0].limitation.min_pow_difficulty).to.equal(12)
+    })
+
+    it('advertises the adaptive pow floor as min_pow_difficulty when adaptive pow is enabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: {
+            ...baseSettings.limits.event,
+            eventId: { minLeadingZeroBits: 12 },
+            pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+          },
+        },
+      })
+      rootRequestHandler(req, res, next)
+      // The live requirement can be higher than floorBits under load, but floorBits
+      // is the only number the relay can promise as a static minimum.
+      expect(res.send.firstCall.args[0].limitation.min_pow_difficulty).to.equal(8)
+    })
+
+    it('sets limitation.restricted_writes when adaptive pow is enabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: {
+            ...baseSettings.limits.event,
+            pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+          },
+        },
+      })
+      rootRequestHandler(req, res, next)
+      expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(true)
+    })
+
     it('returns empty fees instead of crashing when the payments block is absent', () => {
       const { payments: _payments, ...settingsWithoutPayments } = baseSettings
       createSettingsStub.returns(settingsWithoutPayments)

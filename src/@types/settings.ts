@@ -93,7 +93,7 @@ export interface EventRetentionLimits {
 }
 
 export interface AdaptivePowSettings {
-  /** Enables load-aware difficulty scaling on top of eventId/pubkey minLeadingZeroBits. Defaults to false. */
+  /** Enables load-aware difficulty scaling; replaces the eventId/pubkey minLeadingZeroBits checks while enabled. Defaults to false. */
   enabled: boolean
   /** Minimum required difficulty, used at/under targetEventsPerSecond. */
   floorBits: number

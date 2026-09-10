@@ -131,6 +131,16 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
+    // Recorded here, not inside canAcceptEvent's PoW branch: only events that
+    // clear every admission check (PoW, blacklist, auth, NIP-05, dedup, ...)
+    // should count toward the load signal. Recording earlier would let cheap,
+    // easily-rejected spam (e.g. from rotating pubkeys) push the difficulty to
+    // ceiling for everyone without the attacker ever doing any real work.
+    const powSettings = this.settings().limits?.event?.pow
+    if (powSettings?.enabled) {
+      recordAdaptivePowEvent(powSettings.periodMs)
+    }
+
     const strategy = this.strategyFactory([event, this.webSocket])
 
     if (typeof strategy?.execute !== 'function') {
@@ -200,7 +210,6 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (limits.pow?.enabled) {
-      recordAdaptivePowEvent(limits.pow.periodMs)
       const requiredBits = getAdaptivePowDifficulty(limits.pow)
 
       const pow = getEventProofOfWork(event.id)

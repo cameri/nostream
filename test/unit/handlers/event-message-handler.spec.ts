@@ -17,7 +17,7 @@ import { EventKinds, EventExpirationTimeMetadataKey, EventTags } from '../../../
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { IUserRepository } from '../../../src/@types/repositories'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
-import { resetAdaptivePowState } from '../../../src/utils/adaptive-pow'
+import { getCurrentRate, recordEvent, resetAdaptivePowState } from '../../../src/utils/adaptive-pow'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 
 import * as nip05Utils from '../../../src/utils/nip05'
@@ -75,6 +75,7 @@ describe('EventMessageHandler', () => {
     let isUserAdmitted: Sinon.SinonStub
 
     beforeEach(() => {
+      resetAdaptivePowState()
       canAcceptEventStub = sandbox.stub(EventMessageHandler.prototype, 'canAcceptEvent' as any)
       isEventValidStub = sandbox.stub(EventMessageHandler.prototype, 'isEventValid' as any)
       isUserAdmitted = sandbox.stub(EventMessageHandler.prototype, 'isUserAdmitted' as any)
@@ -240,6 +241,74 @@ describe('EventMessageHandler', () => {
       strategyExecuteStub.rejects()
 
       return expect(handler.handleMessage(message)).to.eventually.be.fulfilled
+    })
+
+    describe('adaptive pow load recording', () => {
+      const powSettings = () =>
+        ({
+          info: { relay_url: 'relay_url' },
+          limits: {
+            event: {
+              pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+            },
+          },
+        }) as any
+
+      it('does not record load for an event rejected before acceptance (canAcceptEvent)', async () => {
+        const powHandler = new EventMessageHandler(
+          webSocket as any,
+          strategyFactoryStub,
+          eventRepository,
+          userRepository,
+          powSettings,
+          {} as any,
+          { hasKey: async () => false, setKey: async () => true } as any,
+          () => ({ hit: async () => false }),
+        )
+        canAcceptEventStub.returns('rejected: pow')
+
+        await powHandler.handleMessage(message)
+
+        expect(getCurrentRate()).to.equal(0)
+      })
+
+      it('does not record load for an event rejected by rate limiting', async () => {
+        const powHandler = new EventMessageHandler(
+          webSocket as any,
+          strategyFactoryStub,
+          eventRepository,
+          userRepository,
+          powSettings,
+          {} as any,
+          { hasKey: async () => false, setKey: async () => true } as any,
+          () => ({ hit: async () => false }),
+        )
+        isRateLimitedStub.resolves(true)
+
+        await powHandler.handleMessage(message)
+
+        expect(getCurrentRate()).to.equal(0)
+      })
+
+      it('records load only once the event clears every check and is dispatched', async () => {
+        const powHandler = new EventMessageHandler(
+          webSocket as any,
+          strategyFactoryStub,
+          eventRepository,
+          userRepository,
+          powSettings,
+          {} as any,
+          { hasKey: async () => false, setKey: async () => true } as any,
+          () => ({ hit: async () => false }),
+        )
+        isEventValidStub.returns(undefined)
+        canAcceptEventStub.returns(undefined)
+
+        await powHandler.handleMessage(message)
+
+        expect(getCurrentRate()).to.be.greaterThan(0)
+        expect(strategyExecuteStub).to.have.been.calledOnceWithExactly(event)
+      })
     })
   })
 
@@ -538,7 +607,7 @@ describe('EventMessageHandler', () => {
           expect((handler as any).canAcceptEvent(event)).to.equal('pow: pubkey difficulty 8<9')
         })
 
-        it('scales the required difficulty up as the observed rate exceeds target', () => {
+        it('scales the required difficulty up as the sustained recorded rate exceeds target', () => {
           eventLimits.pow = {
             enabled: true,
             floorBits: 8,
@@ -549,9 +618,39 @@ describe('EventMessageHandler', () => {
           event.id = '00' + 'f'.repeat(62) // 8 leading zero bits, passes only the floor
           event.pubkey = '00001' + 'f'.repeat(59) // well above floor and the scaled-up ceiling used here
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined // 1st: rate=1 <= target
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined // 2nd: rate=2 <= target
-          expect((handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<16') // 3rd: rate=3, ratio=1.5
+          // canAcceptEvent only reads the current difficulty -- it no longer records
+          // load itself (that now happens in handleMessage, after full acceptance).
+          // Simulate a real sustained rate of 2.6 events/sec (1.3x the 2/s target,
+          // deliberately not 1.5x -- that ratio sits exactly on ceil()'s integer
+          // boundary, which the EWMA's convergence can overshoot by a hair) by
+          // driving recordEvent() with time-spaced calls until the EWMA converges.
+          const periodMs = 60000
+          const intervalMs = 1000 / 2.6
+          let now = 1000
+          for (let i = 0; i < Math.ceil((periodMs * 20) / intervalMs); i++) {
+            recordEvent(periodMs, now)
+            now += intervalMs
+          }
+
+          expect((handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<13') // ratio=1.3 -> 8+ceil(0.3*16)=13
+        })
+
+        it('does not record load itself -- repeated calls do not change the observed rate', () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 8,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '00' + 'f'.repeat(62) // 8 leading zero bits
+          event.pubkey = '00001' + 'f'.repeat(59) // well above the floor
+
+          ;(handler as any).canAcceptEvent(event)
+          ;(handler as any).canAcceptEvent(event)
+          ;(handler as any).canAcceptEvent(event)
+
+          expect(getCurrentRate()).to.equal(0)
         })
 
         it('ignores the static minLeadingZeroBits settings while adaptive pow is enabled', () => {

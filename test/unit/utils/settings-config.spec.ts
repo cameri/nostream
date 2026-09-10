@@ -97,6 +97,67 @@ describe('settings-config', () => {
     expect(issues.some((issue) => issue.path === 'network')).to.equal(true)
   })
 
+  describe('adaptive pow settings', () => {
+    const baseSettings = () =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+        limits: {
+          event: {
+            pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+          },
+        },
+      }) as any
+
+    it('accepts a valid pow config', () => {
+      const issues = validateSettings(baseSettings())
+      expect(issues.some((issue) => issue.path.startsWith('limits.event.pow'))).to.equal(false)
+    })
+
+    it('rejects floorBits greater than ceilingBits', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.floorBits = 20
+      settings.limits.event.pow.ceilingBits = 10
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.floorBits')).to.equal(true)
+    })
+
+    it('rejects a negative floorBits', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.floorBits = -1
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.floorBits')).to.equal(true)
+    })
+
+    it('rejects a non-positive periodMs', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.periodMs = 0
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.periodMs')).to.equal(true)
+    })
+
+    it('rejects a non-positive targetEventsPerSecond', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.targetEventsPerSecond = 0
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.targetEventsPerSecond')).to.equal(true)
+    })
+
+    it('skips validation entirely when pow is disabled', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.enabled = false
+      settings.limits.event.pow.floorBits = -1
+      settings.limits.event.pow.periodMs = -1
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path.startsWith('limits.event.pow'))).to.equal(false)
+    })
+  })
+
   it('formats setting category labels', () => {
     expect(toCategoryLabel('payments_processors')).to.equal('Payments Processors')
     expect(toCategoryLabel('rate_limiter')).to.equal('Rate Limiter')
