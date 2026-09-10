@@ -8,8 +8,11 @@ import sinonChai from 'sinon-chai'
 import { IAbortable, IMessageHandler } from '../../../src/@types/message-handlers'
 import { MessageType, SubscribeMessage } from '../../../src/@types/messages'
 import { SubscriptionFilter, SubscriptionId } from '../../../src/@types/subscription'
+import * as eventUtils from '../../../src/utils/event'
 import { Event } from '../../../src/@types/event'
-import { IEventRepository } from '../../../src/@types/repositories'
+import { EventTags } from '../../../src/constants/base'
+import { IEventRepository, IInviteCodeRepository } from '../../../src/@types/repositories'
+import { IRateLimiter } from '../../../src/@types/utils'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { PassThrough } from 'stream'
 import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
@@ -42,6 +45,11 @@ describe('SubscribeMessageHandler', () => {
   let settingsFactory: Sinon.SinonStub
   let webSocketGetSubscriptionsStub: Sinon.SinonStub
   let eventRepositoryFindByFiltersStub: Sinon.SinonSpy
+  let inviteCodeRepository: IInviteCodeRepository
+  let inviteCodeRepositoryCreateStub: Sinon.SinonStub
+  let rateLimiter: IRateLimiter
+  let rateLimiterHitStub: Sinon.SinonStub
+  let rateLimiterFactory: Sinon.SinonStub
 
   let sandbox: Sinon.SinonSandbox
 
@@ -61,8 +69,28 @@ describe('SubscribeMessageHandler', () => {
     })
     eventRepository = {
       findByFilters: eventRepositoryFindByFiltersStub,
+      create: sandbox.stub(),
     } as any
-    handler = new SubscribeMessageHandler(webSocket, eventRepository, settingsFactory)
+    inviteCodeRepositoryCreateStub = sandbox.stub().callsFake(async (code: string, options: any) => ({
+      code,
+      createdBy: options?.createdBy ?? null,
+      claimedBy: null,
+      expiresAt: options?.expiresAt ?? null,
+      remainingUses: options?.remainingUses ?? 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }))
+    inviteCodeRepository = { create: inviteCodeRepositoryCreateStub } as any
+    rateLimiterHitStub = sandbox.stub().resolves(false)
+    rateLimiter = { hit: rateLimiterHitStub } as any
+    rateLimiterFactory = sandbox.stub().returns(rateLimiter)
+    handler = new SubscribeMessageHandler(
+      webSocket,
+      eventRepository,
+      settingsFactory,
+      inviteCodeRepository,
+      rateLimiterFactory,
+    )
   })
 
   afterEach(() => {
@@ -144,6 +172,330 @@ describe('SubscribeMessageHandler', () => {
 
       expect(webSocketOnSubscribeStub).to.have.been.calledOnceWith(subscriptionId)
       expect(fetchAndSendStub).to.have.been.calledOnce
+    })
+  })
+
+  // NIP-43: kind 28935 is answered by minting a code and returning a relay-signed
+  // ephemeral event on the requesting socket. These tests exercise handleMessage
+  // end to end (fetchAndSend is NOT stubbed) so the EOSE assertions are real.
+  describe('#handleMessage NIP-43 invite requests', () => {
+    const relayPrivkey = '5c0c523f52a5b6fad39ed2403092df8cebc36318b39383bca6c00808626fab3a'
+    const requester = 'a'.repeat(64)
+    const stranger = 'b'.repeat(64)
+
+    let relayPubkey: string
+    let webSocketOnMessageStub: Sinon.SinonStub
+    let webSocketOnBroadcastStub: Sinon.SinonStub
+    let getRelayPrivateKeyStub: Sinon.SinonStub
+
+    const nip43Settings = (overrides: Record<string, unknown> = {}) => ({
+      enabled: true,
+      allowInviteRequests: true,
+      inviteCodeExpirySeconds: 600,
+      defaultMaxUses: 1,
+      ...overrides,
+    })
+
+    const settingsWith = (overrides: Record<string, unknown> = {}) => ({
+      info: { relay_url: 'wss://relay.example.com' },
+      limits: { client: { subscription: {} } },
+      nip43: nip43Settings(),
+      ...overrides,
+    })
+
+    // Drives a full REQ and lets fetchAndSend stream to completion so a genuine
+    // EOSE is emitted.
+    const request = async (filters: SubscriptionFilter[], dbEvents: any[] = []) => {
+      const promise = handler.handleMessage([MessageType.REQ, subscriptionId, ...filters] as any)
+      for (const dbEvent of dbEvents) {
+        stream.write(dbEvent)
+      }
+      stream.end()
+      await promise
+    }
+
+    const emittedMessages = () => webSocketOnMessageStub.getCalls().map((call) => call.args[0])
+    const emittedEvents = (): Event[] =>
+      emittedMessages()
+        .filter((message) => message[0] === 'EVENT')
+        .map((message) => message[2])
+    const claimEvents = () => emittedEvents().filter((event) => event.kind === 28935)
+    const sentEOSE = () => emittedMessages().some((message) => message[0] === 'EOSE')
+
+    beforeEach(() => {
+      // Stub only the derivation: real signing still runs, so the emitted event's
+      // signature is genuinely verifiable against the derived pubkey.
+      getRelayPrivateKeyStub = sandbox.stub(eventUtils, 'getRelayPrivateKey').returns(relayPrivkey)
+      relayPubkey = eventUtils.getPublicKey(relayPrivkey)
+
+      settingsFactory.returns(settingsWith())
+      webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set([requester]))
+
+      webSocketOnMessageStub = sandbox.stub()
+      webSocketOnBroadcastStub = sandbox.stub()
+      webSocket.on(WebSocketAdapterEvent.Message, webSocketOnMessageStub)
+      webSocket.on(WebSocketAdapterEvent.Broadcast, webSocketOnBroadcastStub)
+    })
+
+    describe('when every guard passes', () => {
+      it('emits exactly one claim event followed by EOSE', async () => {
+        await request([{ kinds: [28935] }])
+
+        const messages = emittedMessages()
+        expect(messages).to.have.lengthOf(2)
+        expect(messages[0][0]).to.equal('EVENT')
+        expect(messages[0][1]).to.equal(subscriptionId)
+        expect(messages[1]).to.deep.equal(['EOSE', subscriptionId])
+      })
+
+      it('emits a kind 28935 event carrying the minted claim code', async () => {
+        await request([{ kinds: [28935] }])
+
+        const [event] = claimEvents()
+        const claim = event.tags.find((tag) => tag[0] === EventTags.Claim)
+
+        expect(event.kind).to.equal(28935)
+        expect(event.content).to.equal('')
+        expect(claim?.[1]).to.equal(inviteCodeRepositoryCreateStub.firstCall.args[0])
+      })
+
+      it('signs the event as the derived relay pubkey with a valid id and signature', async () => {
+        await request([{ kinds: [28935] }])
+
+        const [event] = claimEvents()
+
+        expect(event.pubkey).to.equal(relayPubkey)
+        expect(getRelayPrivateKeyStub).to.have.been.calledWith('wss://relay.example.com')
+        expect(await eventUtils.isEventIdValid(event)).to.equal(true)
+        expect(await eventUtils.isEventSignatureValid(event)).to.equal(true)
+      })
+
+      it('tags the event as NIP-70 protected', async () => {
+        await request([{ kinds: [28935] }])
+
+        expect(claimEvents()[0].tags).to.deep.include([EventTags.Protected])
+      })
+
+      it('adds a NIP-40 expiration tag mirroring inviteCodeExpirySeconds', async () => {
+        await request([{ kinds: [28935] }])
+
+        const [event] = claimEvents()
+        const expiration = event.tags.find((tag) => tag[0] === EventTags.Expiration)
+        const expiresAt: Date = inviteCodeRepositoryCreateStub.firstCall.args[1].expiresAt
+
+        expect(expiration?.[1]).to.equal(String(Math.floor(expiresAt.getTime() / 1000)))
+      })
+
+      it('omits the expiration tag when codes never expire', async () => {
+        settingsFactory.returns(settingsWith({ nip43: nip43Settings({ inviteCodeExpirySeconds: 0 }) }))
+
+        await request([{ kinds: [28935] }])
+
+        expect(claimEvents()[0].tags.some((tag) => tag[0] === EventTags.Expiration)).to.equal(false)
+      })
+
+      it('records the requesting pubkey as createdBy', async () => {
+        await request([{ kinds: [28935] }])
+
+        expect(inviteCodeRepositoryCreateStub).to.have.been.calledOnce
+        expect(inviteCodeRepositoryCreateStub.firstCall.args[1]).to.include({ createdBy: requester, remainingUses: 1 })
+      })
+
+      it('never persists the claim event', async () => {
+        await request([{ kinds: [28935] }])
+
+        expect(eventRepository.create).to.not.have.been.called
+      })
+
+      it('never broadcasts the claim event', async () => {
+        await request([{ kinds: [28935] }])
+
+        expect(webSocketOnBroadcastStub).to.not.have.been.called
+      })
+
+      it('mints for a pubkey on a non-empty inviteRequestWhitelist', async () => {
+        settingsFactory.returns(
+          settingsWith({ nip43: nip43Settings({ inviteRequestWhitelist: [stranger, requester] }) }),
+        )
+
+        await request([{ kinds: [28935] }])
+
+        expect(claimEvents()).to.have.lengthOf(1)
+      })
+
+      it('mints when info.self matches the derived signing pubkey', async () => {
+        settingsFactory.returns(settingsWith({ info: { relay_url: 'wss://relay.example.com', self: relayPubkey } }))
+
+        await request([{ kinds: [28935] }])
+
+        expect(claimEvents()).to.have.lengthOf(1)
+      })
+    })
+
+    // Every guard fails the same way: no claim event, no error to the client, and
+    // EOSE still sent. A REQ has no OK channel to report a reason on.
+    describe('guards', () => {
+      const expectSkipped = () => {
+        expect(claimEvents()).to.have.lengthOf(0)
+        expect(inviteCodeRepositoryCreateStub).to.not.have.been.called
+        expect(sentEOSE()).to.equal(true)
+      }
+
+      it('skips when info.self does not match the derived signing pubkey', async () => {
+        settingsFactory.returns(settingsWith({ info: { relay_url: 'wss://relay.example.com', self: 'f'.repeat(64) } }))
+
+        await request([{ kinds: [28935] }])
+
+        expectSkipped()
+      })
+
+      it('skips when info.self is a malformed npub', async () => {
+        settingsFactory.returns(
+          settingsWith({ info: { relay_url: 'wss://relay.example.com', self: 'npub1notavalidbech32string' } }),
+        )
+
+        await request([{ kinds: [28935] }])
+
+        expectSkipped()
+      })
+
+      it('skips when NIP-43 is disabled', async () => {
+        settingsFactory.returns(settingsWith({ nip43: nip43Settings({ enabled: false }) }))
+
+        await request([{ kinds: [28935] }])
+
+        expectSkipped()
+      })
+
+      it('skips when allowInviteRequests is not enabled', async () => {
+        settingsFactory.returns(settingsWith({ nip43: nip43Settings({ allowInviteRequests: false }) }))
+
+        await request([{ kinds: [28935] }])
+
+        expectSkipped()
+      })
+
+      it('skips when the nip43 block is absent entirely', async () => {
+        settingsFactory.returns(settingsWith({ nip43: undefined }))
+
+        await request([{ kinds: [28935] }])
+
+        expectSkipped()
+      })
+
+      it('skips when the requester is not NIP-42 authenticated', async () => {
+        webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set())
+
+        await request([{ kinds: [28935] }])
+
+        expectSkipped()
+      })
+
+      it('skips when a non-empty inviteRequestWhitelist does not include the requester', async () => {
+        settingsFactory.returns(settingsWith({ nip43: nip43Settings({ inviteRequestWhitelist: [stranger] }) }))
+
+        await request([{ kinds: [28935] }])
+
+        expectSkipped()
+      })
+
+      it('skips when the per-pubkey rate limit is exceeded', async () => {
+        settingsFactory.returns(
+          settingsWith({
+            limits: { client: { subscription: {} }, invite: { rateLimits: [{ period: 3600000, rate: 5 }] } },
+          }),
+        )
+        rateLimiterHitStub.resolves(true)
+
+        await request([{ kinds: [28935] }])
+
+        expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${requester}:invites:3600000`, 1, {
+          period: 3600000,
+          rate: 5,
+        })
+        expectSkipped()
+      })
+
+      it('fails closed when the rate limiter is unavailable', async () => {
+        settingsFactory.returns(
+          settingsWith({
+            limits: { client: { subscription: {} }, invite: { rateLimits: [{ period: 3600000, rate: 5 }] } },
+          }),
+        )
+        rateLimiterHitStub.rejects(new Error('redis is down'))
+
+        await request([{ kinds: [28935] }])
+
+        expectSkipped()
+      })
+
+      it('does not consult the rate limiter when no invite rate limits are configured', async () => {
+        await request([{ kinds: [28935] }])
+
+        expect(rateLimiterHitStub).to.not.have.been.called
+        expect(claimEvents()).to.have.lengthOf(1)
+      })
+    })
+
+    describe('boundaries', () => {
+      it('does not mint for a REQ that does not ask for kind 28935', async () => {
+        await request([{ kinds: [1] }])
+
+        expect(inviteCodeRepositoryCreateStub).to.not.have.been.called
+        expect(claimEvents()).to.have.lengthOf(0)
+        expect(sentEOSE()).to.equal(true)
+      })
+
+      it('does not mint for a filter with no kinds at all', async () => {
+        await request([{ authors: [requester] }])
+
+        expect(inviteCodeRepositoryCreateStub).to.not.have.been.called
+      })
+
+      // uniqWith(equals) upstream only collapses byte-identical filters, so this
+      // pair survives deduplication and would mint twice without an explicit guard.
+      it('mints exactly one code for two non-identical filters naming 28935', async () => {
+        await request([{ kinds: [28935] }, { kinds: [28935], limit: 1 }])
+
+        expect(inviteCodeRepositoryCreateStub).to.have.been.calledOnce
+        expect(claimEvents()).to.have.lengthOf(1)
+      })
+
+      it('serves stored events alongside the claim event on a mixed filter', async () => {
+        const storedEvent: Event = {
+          id: 'b1601d26958e6508b7b9df0af609c652346c09392b6534d93aead9819a51b4ef',
+          pubkey: '22e804d26ed16b68db5259e78449e96dab5d464c8f470bda3eb1a70467f2c793',
+          created_at: 1648339664,
+          kind: 1,
+          tags: [],
+          content: 'learning terraform rn!',
+          sig: 'ec8b2bc640c8c7e92fbc0e0a6f539da2635068a99809186f15106174d727456132977c78f3371d0ab01c108173df75750f33d8e04c4d7980bbb3fb70ba1e3848',
+        }
+
+        await request([{ kinds: [1, 28935] }], [toDbEvent(storedEvent)])
+
+        expect(claimEvents()).to.have.lengthOf(1)
+        expect(emittedEvents().filter((event) => event.kind === 1)).to.deep.equal([storedEvent])
+        expect(sentEOSE()).to.equal(true)
+      })
+
+      it('still sends EOSE when the invite code repository throws', async () => {
+        inviteCodeRepositoryCreateStub.rejects(new Error('unique violation on invite_codes_pkey'))
+
+        await request([{ kinds: [28935] }])
+
+        expect(claimEvents()).to.have.lengthOf(0)
+        expect(sentEOSE()).to.equal(true)
+      })
+
+      it('still sends EOSE when the relay private key cannot be derived', async () => {
+        getRelayPrivateKeyStub.throws(new Error('SECRET environment variable not set'))
+
+        await request([{ kinds: [28935] }])
+
+        expect(claimEvents()).to.have.lengthOf(0)
+        expect(sentEOSE()).to.equal(true)
+      })
     })
   })
 

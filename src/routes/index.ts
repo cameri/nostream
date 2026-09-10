@@ -6,6 +6,7 @@ import admissionRouter from './admissions'
 import callbacksRouter from './callbacks'
 import { getHealthRequestHandler } from '../handlers/request-handlers/get-health-request-handler'
 import { getPrivacyRequestHandler } from '../handlers/request-handlers/get-privacy-request-handler'
+import { getReadyzRequestHandler } from '../handlers/request-handlers/get-readyz-request-handler'
 import { getTermsRequestHandler } from '../handlers/request-handlers/get-terms-request-handler'
 import invoiceRouter from './invoices'
 import { rateLimiterMiddleware } from '../handlers/request-handlers/rate-limiter-middleware'
@@ -14,7 +15,6 @@ import { hasExplicitNostrJsonAcceptHeader, rootRequestHandler } from '../handler
 const router: Router = express.Router()
 
 // Public NIP-11 / homepage — advertises relay metadata only; not an authentication endpoint.
-// codeql[js/missing-rate-limiting]
 router.use((req, res, next) => {
   if (req.method === 'GET' && req.path === '/' && hasExplicitNostrJsonAcceptHeader(req)) {
     return rootRequestHandler(req, res, next)
@@ -22,11 +22,13 @@ router.use((req, res, next) => {
   next()
 })
 
-// codeql[js/missing-rate-limiting]
 router.get('/', rootRequestHandler)
+// Liveness: process is running (always 200). Used for "is the container up?" checks.
 router.get('/healthz', getHealthRequestHandler)
-router.get('/terms', getTermsRequestHandler)
 router.get('/privacy', getPrivacyRequestHandler)
+// Readiness: Postgres + Redis must respond. Used before routing traffic during deploys.
+router.get('/readyz', getReadyzRequestHandler)
+router.get('/terms', getTermsRequestHandler)
 
 router.get('/.well-known/nodeinfo', nodeinfoHandler)
 router.get('/nodeinfo/2.1', nodeinfo21Handler)

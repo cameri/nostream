@@ -122,6 +122,18 @@ export class RedisAdapter implements ICacheAdapter {
     return (await this.client.hSet(key, fields)) >= 0
   }
 
+  public async addToSet(key: string, members: string[]): Promise<number> {
+    await this.connection
+    logger('add %o to set %s', members, key)
+    return this.client.sAdd(key, members)
+  }
+
+  public async getSetMembers(key: string): Promise<string[]> {
+    await this.connection
+    logger('get members of set %s', key)
+    return this.client.sMembers(key)
+  }
+
   public async eval(script: string, keys: string[], args: string[]): Promise<unknown> {
     await this.connection
     if (!this.scriptShas.has(script)) {
