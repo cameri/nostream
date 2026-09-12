@@ -121,6 +121,21 @@ describe('rootRequestHandler', () => {
       expect(doc.name).to.equal('Test Relay')
     })
 
+    it('advertises the configured filter value limit', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          client: { subscription: { maxFilterValues: 500 } },
+        },
+      })
+
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.limitation.max_filter_values).to.equal(500)
+    })
+
     it('does not render the HTML template', () => {
       rootRequestHandler(req, res, next)
 
