@@ -6,9 +6,11 @@ import { createLogger } from '../factories/logger-factory'
 import { FSWatcher } from 'fs'
 import { SettingsStatic } from '../utils/settings'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { beginDraining } from '../utils/shutdown-state'
 
 const logger = createLogger('app-worker')
 export class AppWorker implements IRunnable {
+  private exiting = false
   private watchers: FSWatcher[] | undefined
 
   public constructor(
@@ -46,6 +48,11 @@ export class AppWorker implements IRunnable {
   }
 
   private onExit() {
+    if (this.exiting) {
+      return
+    }
+    this.exiting = true
+    beginDraining()
     logger('exiting')
     void shutdownMetricsTelemetry().finally(() => {
       this.close(() => {

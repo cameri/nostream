@@ -5,7 +5,12 @@ import { WebSocket } from 'ws'
 import { ZodError } from 'zod'
 
 import { ContextMetadata, Factory } from '../@types/base'
-import { createAuthChallengeMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import {
+  createAuthChallengeMessage,
+  createClosedMessage,
+  createNoticeMessage,
+  createOutgoingEventMessage,
+} from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, OutgoingMessage } from '../@types/messages'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
@@ -154,6 +159,16 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public getSubscriptions(): Map<string, SubscriptionFilter[]> {
     return new Map(this.subscriptions)
+  }
+
+  public drainAndClose(reason = 'relay shutting down'): void {
+    this.subscriptions.forEach((_filters, subscriptionId) => {
+      this.sendMessage(createClosedMessage(subscriptionId, `closed: ${reason}`))
+    })
+
+    if (this.client.readyState === WebSocket.OPEN) {
+      this.client.close(1001, reason)
+    }
   }
 
   // NIP-42

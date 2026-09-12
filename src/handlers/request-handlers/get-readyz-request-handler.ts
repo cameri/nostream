@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 
 import { AdminDependencyHealth, collectAdminHealthSnapshot } from '../../utils/admin-health'
+import { isDraining } from '../../utils/shutdown-state'
 
 // Public readiness probe for load balancers (e.g. HAProxy blue/green). Unlike /healthz
 // (liveness), /readyz returns non-200 when Postgres or Redis is unavailable.
@@ -72,6 +73,16 @@ const sendReadyzResponse = (res: Response, statusCode: number, snapshot: ReadyzS
 }
 
 export const getReadyzRequestHandler = async (_req: Request, res: Response, next: NextFunction) => {
+  if (isDraining()) {
+    sendReadyzResponse(res, 503, {
+      status: 'unavailable',
+      database: { ok: false },
+      redis: { ok: false },
+    })
+    next()
+    return
+  }
+
   try {
     const snapshot = await collectReadyzSnapshot()
     const statusCode = snapshot.status === 'ok' ? 200 : 503
