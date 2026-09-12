@@ -593,6 +593,25 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
     issues.push({ path: 'limits.rateLimiter.strategy', message: 'strategy must be ewma or sliding_window' })
   }
 
+  const pow = settings.limits?.event?.pow
+  if (pow?.enabled) {
+    if (!(pow.floorBits >= 0) || !(pow.floorBits <= pow.ceilingBits)) {
+      issues.push({ path: 'limits.event.pow.floorBits', message: 'floorBits must be >= 0 and <= ceilingBits' })
+    }
+    if (!(pow.ceilingBits <= 256)) {
+      issues.push({ path: 'limits.event.pow.ceilingBits', message: 'ceilingBits must be <= 256' })
+    }
+    if (!(pow.periodMs > 0)) {
+      issues.push({ path: 'limits.event.pow.periodMs', message: 'periodMs must be greater than 0' })
+    }
+    if (!(pow.targetEventsPerSecond > 0)) {
+      issues.push({
+        path: 'limits.event.pow.targetEventsPerSecond',
+        message: 'targetEventsPerSecond must be greater than 0',
+      })
+    }
+  }
+
   validateShape(loadDefaults(), settings, [], issues)
 
   return issues
