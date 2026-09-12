@@ -1,5 +1,5 @@
 import { IncomingMessage, Server } from 'http'
-import WebSocket, { OPEN, WebSocketServer } from 'ws'
+import WebSocket, { CLOSED, CLOSING, OPEN, WebSocketServer } from 'ws'
 import { propEq } from 'ramda'
 
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
@@ -10,6 +10,7 @@ import { Factory } from '../@types/base'
 import { getRemoteAddress } from '../utils/http'
 import { isRateLimited } from '../handlers/request-handlers/rate-limiter-middleware'
 import { Settings } from '../@types/settings'
+import { getWsDrainTimeoutMs, isDraining } from '../utils/shutdown-state'
 import { WebServerAdapter } from './web-server-adapter'
 
 const logger = createLogger('web-socket-server-adapter')
@@ -49,23 +50,59 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     super.close(() => {
       logger('closing')
       clearInterval(this.heartbeatInterval)
-      this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
-        const webSocketAdapter = this.webSocketsAdapters.get(webSocket)
-        if (webSocketAdapter) {
-          logger('terminating client %s: %s', webSocketAdapter.getClientId(), webSocketAdapter.getClientAddress())
-        }
-        webSocket.terminate()
-      })
-      logger('closing web socket server')
-      this.webSocketServer.close(() => {
-        this.webSocketServer.removeAllListeners()
-        if (typeof callback !== 'undefined') {
-          callback()
-        }
-        logger('closed')
+      void this.drainClients(getWsDrainTimeoutMs()).finally(() => {
+        logger('closing web socket server')
+        this.webSocketServer.close(() => {
+          this.webSocketServer.removeAllListeners()
+          if (typeof callback !== 'undefined') {
+            callback()
+          }
+          logger('closed')
+        })
       })
     })
     this.removeAllListeners()
+  }
+
+  private async drainClients(timeoutMs: number): Promise<void> {
+    const clients = [...this.webSocketServer.clients] as WebSocket[]
+    if (clients.length === 0) {
+      return
+    }
+
+    logger('draining %d websocket client(s)', clients.length)
+
+    for (const webSocket of clients) {
+      const webSocketAdapter = this.webSocketsAdapters.get(webSocket)
+      if (webSocketAdapter) {
+        logger('closing client %s: %s', webSocketAdapter.getClientId(), webSocketAdapter.getClientAddress())
+        webSocketAdapter.drainAndClose()
+      } else if (webSocket.readyState === OPEN) {
+        webSocket.close(1001, 'relay shutting down')
+      }
+    }
+
+    await Promise.race([
+      Promise.all(clients.map((webSocket) => this.waitForWebSocketClose(webSocket))),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ])
+
+    for (const webSocket of this.webSocketServer.clients) {
+      if (webSocket.readyState === OPEN || webSocket.readyState === CLOSING) {
+        logger('terminating client after drain timeout')
+        webSocket.terminate()
+      }
+    }
+  }
+
+  private waitForWebSocketClose(webSocket: WebSocket): Promise<void> {
+    if (webSocket.readyState === CLOSED) {
+      return Promise.resolve()
+    }
+
+    return new Promise((resolve) => {
+      webSocket.once('close', () => resolve())
+    })
   }
 
   private onBroadcast(event: Event) {
@@ -86,6 +123,12 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   private async onConnection(client: WebSocket, req: IncomingMessage) {
+    if (isDraining()) {
+      logger('client rejected: draining')
+      client.close(1001, 'relay shutting down')
+      return
+    }
+
     const currentSettings = this.settings()
     const remoteAddress = getRemoteAddress(req, currentSettings)
 

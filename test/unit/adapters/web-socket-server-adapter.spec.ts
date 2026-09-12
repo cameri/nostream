@@ -12,6 +12,7 @@ const { expect } = chai
 
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 import { WebSocketServerAdapter } from '../../../src/adapters/web-socket-server-adapter'
+import * as shutdownState from '../../../src/utils/shutdown-state'
 
 describe('WebSocketServerAdapter', () => {
   let sandbox: Sinon.SinonSandbox
@@ -23,10 +24,19 @@ describe('WebSocketServerAdapter', () => {
   let isRateLimitedStub: Sinon.SinonStub
 
   let originalConsoleError: typeof console.error
+  let originalDrainTimeout: string | undefined
+
+  const flushClose = async (callback?: () => void) => {
+    adapter.close(callback)
+    await sandbox.clock.runAllAsync()
+  }
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
     sandbox.useFakeTimers()
+    originalDrainTimeout = process.env.WS_DRAIN_TIMEOUT_MS
+    process.env.WS_DRAIN_TIMEOUT_MS = '0'
+    shutdownState.resetDrainingState()
     originalConsoleError = console.error
     console.error = () => undefined
 
@@ -71,6 +81,12 @@ describe('WebSocketServerAdapter', () => {
     webSocketServer.close.callsFake((cb: () => void) => cb())
     adapter.close()
     sandbox.restore()
+    shutdownState.resetDrainingState()
+    if (originalDrainTimeout === undefined) {
+      delete process.env.WS_DRAIN_TIMEOUT_MS
+    } else {
+      process.env.WS_DRAIN_TIMEOUT_MS = originalDrainTimeout
+    }
   })
 
   describe('constructor', () => {
@@ -111,48 +127,99 @@ describe('WebSocketServerAdapter', () => {
       expect(webServer.close).to.have.been.calledOnce
     })
 
-    it('terminates all connected WebSocket clients', () => {
-      const terminateStub1 = sandbox.stub()
-      const terminateStub2 = sandbox.stub()
+    it('drains connected WebSocket clients before closing the server', async () => {
+      const drainAndCloseStub1 = sandbox.stub()
+      const drainAndCloseStub2 = sandbox.stub()
+      const client1 = { readyState: 1, once: sandbox.stub().callsFake((_event: string, cb: () => void) => cb()) }
+      const client2 = { readyState: 1, once: sandbox.stub().callsFake((_event: string, cb: () => void) => cb()) }
 
-      webSocketServer.clients = new Set([{ terminate: terminateStub1 }, { terminate: terminateStub2 }] as any)
+      const mockAdapter1 = {
+        drainAndClose: drainAndCloseStub1,
+        getClientId: () => 'client-1',
+        getClientAddress: () => '127.0.0.1',
+      }
+      const mockAdapter2 = {
+        drainAndClose: drainAndCloseStub2,
+        getClientId: () => 'client-2',
+        getClientAddress: () => '127.0.0.2',
+      }
+
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
+      const onConnection = connectionCall.args[1]
+
+      webSocketServer.clients = new Set([client1, client2] as any)
+      createWebSocketAdapter.callsFake(([client]: [typeof client1, unknown, unknown]) => {
+        if (client === client1) {
+          return mockAdapter1
+        }
+        if (client === client2) {
+          return mockAdapter2
+        }
+      })
+
+      await onConnection(client1, { headers: {}, socket: { remoteAddress: '127.0.0.1' } })
+      await onConnection(client2, { headers: {}, socket: { remoteAddress: '127.0.0.2' } })
 
       webServer.close.callsFake((cb: () => void) => cb())
       webSocketServer.close.callsFake((cb: () => void) => cb())
 
-      adapter.close()
+      await flushClose()
 
-      expect(terminateStub1).to.have.been.calledOnce
-      expect(terminateStub2).to.have.been.calledOnce
+      expect(drainAndCloseStub1).to.have.been.calledOnce
+      expect(drainAndCloseStub2).to.have.been.calledOnce
+      expect(webSocketServer.close).to.have.been.calledOnce
     })
 
-    it('closes the webSocketServer after terminating clients', () => {
+    it('terminates clients that remain open after the drain timeout', async () => {
+      process.env.WS_DRAIN_TIMEOUT_MS = '1000'
+
+      const terminateStub = sandbox.stub()
+      const client = {
+        readyState: 1,
+        close: sandbox.stub(),
+        terminate: terminateStub,
+        once: sandbox.stub(),
+      }
+
+      webSocketServer.clients = new Set([client] as any)
+      webServer.close.callsFake((cb: () => void) => cb())
+      webSocketServer.close.callsFake((cb: () => void) => cb())
+
+      adapter.close()
+      await sandbox.clock.tickAsync(1000)
+
+      expect(terminateStub).to.have.been.calledOnce
+    })
+
+    it('closes the webSocketServer after draining clients', async () => {
       webSocketServer.clients = new Set()
       webServer.close.callsFake((cb: () => void) => cb())
       webSocketServer.close.callsFake((cb: () => void) => cb())
 
-      adapter.close()
+      await flushClose()
 
       expect(webSocketServer.close).to.have.been.calledOnce
     })
 
-    it('invokes callback after full close', () => {
+    it('invokes callback after full close', async () => {
       const callback = sandbox.stub()
       webSocketServer.clients = new Set()
       webServer.close.callsFake((cb: () => void) => cb())
       webSocketServer.close.callsFake((cb: () => void) => cb())
 
-      adapter.close(callback)
+      await flushClose(callback)
 
       expect(callback).to.have.been.calledOnce
     })
 
-    it('removes all listeners from webSocketServer after close', () => {
+    it('removes all listeners from webSocketServer after close', async () => {
       webSocketServer.clients = new Set()
       webServer.close.callsFake((cb: () => void) => cb())
       webSocketServer.close.callsFake((cb: () => void) => cb())
 
-      adapter.close()
+      await flushClose()
 
       expect(webSocketServer.removeAllListeners).to.have.been.calledOnce
     })
@@ -275,6 +342,21 @@ describe('WebSocketServerAdapter', () => {
       await onConnection(mockClient, mockReq)
 
       expect(terminateStub).to.have.been.calledOnce
+      expect(createWebSocketAdapter).not.to.have.been.called
+    })
+
+    it('rejects new connections while draining', async () => {
+      const closeStub = sandbox.stub()
+      shutdownState.beginDraining()
+
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
+      const onConnection = connectionCall.args[1]
+
+      await onConnection({ close: closeStub }, { headers: {}, socket: { remoteAddress: '127.0.0.1' } })
+
+      expect(closeStub).to.have.been.calledOnceWithExactly(1001, 'relay shutting down')
       expect(createWebSocketAdapter).not.to.have.been.called
     })
   })

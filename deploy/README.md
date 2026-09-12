@@ -116,8 +116,10 @@ Each dependency ping uses the default 3s timeout (`ADMIN_DEPENDENCY_PING_TIMEOUT
 Set your load balancer check timeout above that (for example HAProxy
 `timeout check 5s`) so slow-but-healthy backends do not flap during probes.
 Responses are cached in-process for 1s to absorb polling without hammering the DB pool.
-Use readiness before routing traffic to a new instance during deploys; graceful
-WebSocket draining on shutdown is planned as a follow-up.
+Use readiness before routing traffic to a new instance during deploys. On
+SIGTERM the relay returns `503` on `/readyz`, stops accepting new WebSocket
+connections, and drains existing clients before exit (`WS_DRAIN_TIMEOUT_MS`,
+default 30s).
 
 ## Image delivery on restricted networks
 
