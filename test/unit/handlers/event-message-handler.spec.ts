@@ -575,7 +575,7 @@ describe('EventMessageHandler', () => {
             periodMs: 60000,
           }
           event.id = '00' + 'f'.repeat(62) // 8 leading zero bits
-          event.pubkey = '00001' + 'f'.repeat(59) // well above the floor
+          event.pubkey = '00001' + 'f'.repeat(59) // irrelevant here: pubkey.minLeadingZeroBits is unset
 
           expect((handler as any).canAcceptEvent(event)).to.be.undefined
         })
@@ -593,7 +593,7 @@ describe('EventMessageHandler', () => {
           expect((handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<9')
         })
 
-        it('checks pubkey proof of work against the adaptive difficulty too', () => {
+        it('does not apply the adaptive difficulty to the pubkey check', () => {
           eventLimits.pow = {
             enabled: true,
             floorBits: 9,
@@ -602,9 +602,26 @@ describe('EventMessageHandler', () => {
             periodMs: 60000,
           }
           event.id = '0001' + 'f'.repeat(60) // sufficient eventId pow
-          event.pubkey = '00' + 'f'.repeat(62) // 8 leading zero bits, insufficient
+          event.pubkey = '00' + 'f'.repeat(62) // 8 leading zero bits -- below the adaptive floor of 9
 
-          expect((handler as any).canAcceptEvent(event)).to.equal('pow: pubkey difficulty 8<9')
+          // pubkey.minLeadingZeroBits is unset (0/disabled), so this must pass:
+          // adaptive PoW never gates the pubkey axis, only eventId.
+          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+        })
+
+        it('still enforces the static pubkey.minLeadingZeroBits setting while adaptive pow is enabled', () => {
+          eventLimits.pubkey.minLeadingZeroBits = 16
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 0,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '0001' + 'f'.repeat(60) // sufficient eventId pow (floor is 0 anyway)
+          event.pubkey = '00' + 'f'.repeat(62) // 8 leading zero bits, insufficient against the static 16
+
+          expect((handler as any).canAcceptEvent(event)).to.equal('pow: pubkey difficulty 8<16')
         })
 
         it('scales the required difficulty up as the sustained recorded rate exceeds target', () => {
@@ -616,7 +633,7 @@ describe('EventMessageHandler', () => {
             periodMs: 60000,
           }
           event.id = '00' + 'f'.repeat(62) // 8 leading zero bits, passes only the floor
-          event.pubkey = '00001' + 'f'.repeat(59) // well above floor and the scaled-up ceiling used here
+          event.pubkey = '00001' + 'f'.repeat(59) // irrelevant here: pubkey.minLeadingZeroBits is unset
 
           // canAcceptEvent only reads the current difficulty -- it no longer records
           // load itself (that now happens in handleMessage, after full acceptance).
@@ -644,7 +661,7 @@ describe('EventMessageHandler', () => {
             periodMs: 60000,
           }
           event.id = '00' + 'f'.repeat(62) // 8 leading zero bits
-          event.pubkey = '00001' + 'f'.repeat(59) // well above the floor
+          event.pubkey = '00001' + 'f'.repeat(59) // irrelevant here: pubkey.minLeadingZeroBits is unset
 
           ;(handler as any).canAcceptEvent(event)
           ;(handler as any).canAcceptEvent(event)
@@ -653,7 +670,7 @@ describe('EventMessageHandler', () => {
           expect(getCurrentRate()).to.equal(0)
         })
 
-        it('ignores the static minLeadingZeroBits settings while adaptive pow is enabled', () => {
+        it('ignores the static eventId.minLeadingZeroBits setting while adaptive pow is enabled', () => {
           eventLimits.eventId.minLeadingZeroBits = 40
           eventLimits.pow = {
             enabled: true,

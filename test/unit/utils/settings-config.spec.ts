@@ -131,6 +131,23 @@ describe('settings-config', () => {
       expect(issues.some((issue) => issue.path === 'limits.event.pow.floorBits')).to.equal(true)
     })
 
+    it('rejects a ceilingBits above 256', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.ceilingBits = 300
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.ceilingBits')).to.equal(true)
+    })
+
+    it('accepts a ceilingBits of exactly 256', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.ceilingBits = 256
+      settings.limits.event.pow.floorBits = 0
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.ceilingBits')).to.equal(false)
+    })
+
     it('rejects a non-positive periodMs', () => {
       const settings = baseSettings()
       settings.limits.event.pow.periodMs = 0

@@ -162,13 +162,13 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. Ignored on the client path while `limits.event.pow.enabled` is true (mirrored events from `static-mirroring-worker.ts` still enforce this static value). |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
-| limits.event.pow.ceilingBits                | Maximum adaptive PoW difficulty, reached at 2x `targetEventsPerSecond` and beyond. |
-| limits.event.pow.enabled                    | Enables load-aware PoW difficulty scaling, applied to both eventId and pubkey checks, in place of the static `minLeadingZeroBits` values. Defaults to false. |
-| limits.event.pow.floorBits                  | Minimum adaptive PoW difficulty, used at or under `targetEventsPerSecond`. |
+| limits.event.pow.ceilingBits                | Maximum adaptive PoW difficulty, reached at approximately 2x `targetEventsPerSecond` and beyond. |
+| limits.event.pow.enabled                    | Enables load-aware PoW difficulty scaling on the eventId check only, in place of the static `eventId.minLeadingZeroBits` value. Does not affect `pubkey.minLeadingZeroBits`, which stays a static, non-adaptive knob regardless of this setting -- a pubkey requirement is a one-time offline identity cost, not a per-event load signal. Defaults to false. |
+| limits.event.pow.floorBits                  | Minimum adaptive PoW difficulty, used at or below approximately `targetEventsPerSecond`. With the default `floorBits: 0`, the load signal costs an attacker nothing to drive; set a non-zero floor if the gate should cost something even under light load. |
 | limits.event.pow.periodMs                   | EWMA half-life (ms) used to smooth the observed event rate. |
-| limits.event.pow.targetEventsPerSecond      | Event-rate threshold above which the adaptive difficulty starts climbing toward `ceilingBits`. |
+| limits.event.pow.targetEventsPerSecond      | Event-rate threshold (in real events/sec) above which the adaptive difficulty starts climbing toward `ceilingBits`. |
 | limits.event.pubkey.blacklist               | List of public keys to always reject. Public keys in this list will not be able to post to this relay. |
-| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. Defaults to zero. Disabled when set to zero. Ignored on the client path while `limits.event.pow.enabled` is true (mirrored events from `static-mirroring-worker.ts` still enforce this static value). |
+| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. Defaults to zero. Disabled when set to zero. Always enforced regardless of `limits.event.pow.enabled` -- adaptive PoW never applies to the pubkey check (see `limits.event.pow.enabled`). |
 | limits.event.pubkey.whitelist               | List of public keys to always allow. Only public keys in this list will be able to post to this relay. Use for private relays. |
 | limits.event.rateLimits[].kinds             | List of event kinds rate limited. Use `[min, max]` for ranges. Optional. |
 | limits.event.rateLimits[].period | Rate limiting period in milliseconds. For `sliding_window`: the time window during which requests are counted. For `ewma`: the half-life of the exponential decay — shorter values forget bursts faster, longer values are stricter on bursty clients. |

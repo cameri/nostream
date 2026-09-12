@@ -132,10 +132,12 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     // Recorded here, not inside canAcceptEvent's PoW branch: only events that
-    // clear every admission check (PoW, blacklist, auth, NIP-05, dedup, ...)
-    // should count toward the load signal. Recording earlier would let cheap,
-    // easily-rejected spam (e.g. from rotating pubkeys) push the difficulty to
-    // ceiling for everyone without the attacker ever doing any real work.
+    // clear every admission check up to this point (PoW, blacklist, auth,
+    // NIP-05, ...) should count toward the load signal. Recording earlier
+    // would let cheap, easily-rejected spam (e.g. from rotating pubkeys) push
+    // the difficulty to ceiling for everyone without the attacker ever doing
+    // any real work. Note: a duplicate/no-op write still counts here, since
+    // dedup is decided later inside the event strategy's own execute().
     const powSettings = this.settings().limits?.event?.pow
     if (powSettings?.enabled) {
       recordAdaptivePowEvent(powSettings.periodMs)
@@ -209,6 +211,11 @@ export class EventMessageHandler implements IMessageHandler {
       return `rejected: created_at is more than ${limits.createdAt.maxNegativeDelta} seconds in the past`
     }
 
+    // Adaptive PoW applies to the eventId check only: a pubkey requirement is a
+    // one-time, offline identity cost, not a per-event load signal, so it can't
+    // respond to relay load the way an event id's mined-per-submission pow can.
+    // The static pubkey.minLeadingZeroBits knob is left untouched regardless of
+    // pow.enabled -- per maintainer direction on PR #756.
     if (limits.pow?.enabled) {
       const requiredBits = getAdaptivePowDifficulty(limits.pow)
 
@@ -216,24 +223,17 @@ export class EventMessageHandler implements IMessageHandler {
       if (pow < requiredBits) {
         return `pow: difficulty ${pow}<${requiredBits}`
       }
-
-      const pubkeyPow = getPubkeyProofOfWork(event.pubkey)
-      if (pubkeyPow < requiredBits) {
-        return `pow: pubkey difficulty ${pubkeyPow}<${requiredBits}`
+    } else if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
+      const pow = getEventProofOfWork(event.id)
+      if (pow < limits.eventId.minLeadingZeroBits) {
+        return `pow: difficulty ${pow}<${limits.eventId.minLeadingZeroBits}`
       }
-    } else {
-      if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
-        const pow = getEventProofOfWork(event.id)
-        if (pow < limits.eventId.minLeadingZeroBits) {
-          return `pow: difficulty ${pow}<${limits.eventId.minLeadingZeroBits}`
-        }
-      }
+    }
 
-      if (typeof limits.pubkey?.minLeadingZeroBits !== 'undefined' && limits.pubkey.minLeadingZeroBits > 0) {
-        const pow = getPubkeyProofOfWork(event.pubkey)
-        if (pow < limits.pubkey.minLeadingZeroBits) {
-          return `pow: pubkey difficulty ${pow}<${limits.pubkey.minLeadingZeroBits}`
-        }
+    if (typeof limits.pubkey?.minLeadingZeroBits !== 'undefined' && limits.pubkey.minLeadingZeroBits > 0) {
+      const pow = getPubkeyProofOfWork(event.pubkey)
+      if (pow < limits.pubkey.minLeadingZeroBits) {
+        return `pow: pubkey difficulty ${pow}<${limits.pubkey.minLeadingZeroBits}`
       }
     }
 
