@@ -101,6 +101,10 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         max_message_length: settings.network.maxPayloadSize,
         max_subscriptions: settings.limits?.client?.subscription?.maxSubscriptions,
         max_filters: settings.limits?.client?.subscription?.maxFilters,
+        // NIP-11 has no field for the number of values a client may put in a
+        // filter's array criteria (ids, authors, kinds, #<tag>), so the limit
+        // the relay enforces is advertised as a non-standard extension.
+        max_filter_values: settings.limits?.client?.subscription?.maxFilterValues,
         max_limit: settings.limits?.client?.subscription?.maxLimit,
         max_subid_length: settings.limits?.client?.subscription?.maxSubscriptionIdLength,
         min_prefix: settings.limits?.client?.subscription?.minPrefixLength,

@@ -154,6 +154,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].period   | Rate limit period in milliseconds. |
 | limits.admissionCheck.rateLimits[].rate     | Maximum number of admission checks during period. |
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
+| limits.client.subscription.maxFilterValues  | Maximum number of values allowed in each filter, counting its array criteria (`ids`, `authors`, `kinds`, `#<tag>`) together. Defaults to 2500. Disabled when set to zero. |
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
 | limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |

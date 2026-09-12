@@ -2,6 +2,7 @@ import { anyPass, equals, isNil, map, omit, propSatisfies, uniqWith } from 'ramd
 import { addAbortSignal } from 'stream'
 import { pipeline } from 'stream/promises'
 
+import { countFilterValues } from '../utils/filter'
 import {
   createClosedMessage,
   createEndOfStoredEventsNoticeMessage,
@@ -268,6 +269,14 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     if (maxFilters > 0) {
       if (filters.length > maxFilters) {
         return `Too many filters: Number of filters per susbscription must be less then or equal to ${maxFilters}`
+      }
+    }
+
+    const maxFilterValues = subscriptionLimits?.maxFilterValues ?? 0
+    if (maxFilterValues > 0) {
+      const hasExcessiveFilterValues = filters.some((filter) => countFilterValues(filter) > maxFilterValues)
+      if (hasExcessiveFilterValues) {
+        return `Too many filter values: Number of values per filter must be less than or equal to ${maxFilterValues}`
       }
     }
 
