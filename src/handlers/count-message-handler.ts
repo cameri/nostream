@@ -8,6 +8,7 @@ import { Settings } from '../@types/settings'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 import { createLogger } from '../factories/logger-factory'
+import { countFilterValues } from '../utils/filter'
 import { createClosedMessage, createCountResultMessage } from '../utils/messages'
 import { isCountAuthorized } from '../utils/nip42'
 
@@ -56,6 +57,11 @@ export class CountMessageHandler implements IMessageHandler {
 
     if (maxFilters > 0 && filters.length > maxFilters) {
       return `Too many filters: Number of filters per count query must be less than or equal to ${maxFilters}`
+    }
+
+    const maxFilterValues = subscriptionLimits?.maxFilterValues ?? 0
+    if (maxFilterValues > 0 && filters.some((filter) => countFilterValues(filter) > maxFilterValues)) {
+      return `Too many filter values: Number of values per filter must be less than or equal to ${maxFilterValues}`
     }
 
     if (

@@ -154,16 +154,22 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].period   | Rate limit period in milliseconds. |
 | limits.admissionCheck.rateLimits[].rate     | Maximum number of admission checks during period. |
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
+| limits.client.subscription.maxFilterValues  | Maximum number of values allowed in each filter, counting its array criteria (`ids`, `authors`, `kinds`, `#<tag>`) together. Defaults to 2500. Disabled when set to zero. |
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
 | limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.createdAt.maxNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. |
+| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. Ignored on the client path while `limits.event.pow.enabled` is true (mirrored events from `static-mirroring-worker.ts` still enforce this static value). |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
+| limits.event.pow.ceilingBits                | Maximum adaptive PoW difficulty, reached at approximately 2x `targetEventsPerSecond` and beyond. |
+| limits.event.pow.enabled                    | Enables load-aware PoW difficulty scaling on the eventId check only, in place of the static `eventId.minLeadingZeroBits` value. Does not affect `pubkey.minLeadingZeroBits`, which stays a static, non-adaptive knob regardless of this setting -- a pubkey requirement is a one-time offline identity cost, not a per-event load signal. Defaults to false. |
+| limits.event.pow.floorBits                  | Minimum adaptive PoW difficulty, used at or below approximately `targetEventsPerSecond`. With the default `floorBits: 0`, the load signal costs an attacker nothing to drive; set a non-zero floor if the gate should cost something even under light load. |
+| limits.event.pow.periodMs                   | EWMA half-life (ms) used to smooth the observed event rate. |
+| limits.event.pow.targetEventsPerSecond      | Event-rate threshold (in real events/sec) above which the adaptive difficulty starts climbing toward `ceilingBits`. |
 | limits.event.pubkey.blacklist               | List of public keys to always reject. Public keys in this list will not be able to post to this relay. |
-| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. Defaults to zero. Disabled when set to zero. |
+| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. Defaults to zero. Disabled when set to zero. Always enforced regardless of `limits.event.pow.enabled` -- adaptive PoW never applies to the pubkey check (see `limits.event.pow.enabled`). |
 | limits.event.pubkey.whitelist               | List of public keys to always allow. Only public keys in this list will be able to post to this relay. Use for private relays. |
 | limits.event.rateLimits[].kinds             | List of event kinds rate limited. Use `[min, max]` for ranges. Optional. |
 | limits.event.rateLimits[].period | Rate limiting period in milliseconds. For `sliding_window`: the time window during which requests are counted. For `ewma`: the half-life of the exponential decay — shorter values forget bursts faster, longer values are stricter on bursty clients. |
@@ -261,3 +267,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `nwc`. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |
+| wot.enabled                                 | Enables the Web of Trust graph, rooted at `wot.seedPubkey`, built from NIP-02 contact lists. Defaults to false. |
+| wot.maxDepth                                | How many hops out from `wot.seedPubkey` the trust graph extends. Direct follows are distance 1. Defaults to 2. |
+| wot.minimumFollowers                        | Minimum number of already-trusted accounts that must follow a pubkey before it enters the graph at 2+ hops. Direct follows are always trusted. Defaults to 1. |
+| wot.refreshIntervalHours                    | Reserved for a future periodic full rebuild; not yet read by any code (real-time kind-3 ingestion already keeps the graph current). Defaults to 24. |
+| wot.seedPubkey                              | The relay owner's pubkey in hex. Root of the trust graph. Required when `wot.enabled` is true. |
