@@ -6,7 +6,9 @@ that image.
 
 This guide assumes a Linux host with Docker Engine and the Compose plugin
 installed. Container images are published automatically after CI succeeds on pushes to
-`main`. See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for the CI/CD flow.
+`main`. See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for the CI/CD flow and
+[`docs/DEPLOY-RUNBOOK.md`](../docs/DEPLOY-RUNBOOK.md) for the step-by-step update
+procedure after a new image lands on the host.
 
 ## What the server keeps locally
 
@@ -14,7 +16,7 @@ installed. Container images are published automatically after CI succeeds on pus
 |------|----------|------------------------|
 | `.env` | **Yes** | No — your secrets and tuning |
 | `.nostr/data/` | Created at runtime | No — Postgres data |
-| `docker-compose.yml` | Yes (via bootstrap) | **Yes** — re-run bootstrap or PR 2 auto-sync |
+| `docker-compose.yml` | Yes (via bootstrap) | **Yes** — re-run bootstrap when release notes say so |
 | `postgresql.conf` | Yes (via bootstrap) | Rarely |
 | `.nostr/settings.yaml` | **Optional** | Your overrides only |
 
@@ -129,21 +131,23 @@ Some hosts cannot reach GHCR over IPv4:
 
 ## Updating
 
-When a new image is available:
+After a new image is on the host (`docker pull`, `docker load`, or the webhook
+pull stack), **recreate the relay** so migrations run and the new code starts:
 
 ```bash
-docker pull ghcr.io/cameri/nostream:main   # or: docker load -i nostream-main.tar.gz
-docker compose up -d
+chmod +x deploy/recreate-relay.sh
+./deploy/recreate-relay.sh /opt/nostream
 ```
 
-If migrate does not re-run after a load:
+The script runs `nostream-migrate`, force-recreates `nostream`, and waits for
+`/readyz` to return `200`.
 
-```bash
-docker compose up -d --force-recreate nostream-migrate nostream
-```
+Full checklist, rollback steps, and troubleshooting:
+[`docs/DEPLOY-RUNBOOK.md`](../docs/DEPLOY-RUNBOOK.md).
 
 When compose or `postgresql.conf` change in a release, re-run bootstrap against
-the new checkout (or copy the updated files). Automated sync is planned separately.
+the new checkout before recreating the relay. Automated post-pull recreate and
+HAProxy blue/green cutover are planned separately.
 
 ## Refresh release-managed files
 
