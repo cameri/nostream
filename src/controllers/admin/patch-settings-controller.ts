@@ -8,11 +8,11 @@ import {
   getByPath,
   loadMergedSettings,
   loadUserSettings,
-  saveSettings,
   setByPath,
   validatePathAgainstDefaults,
   validateSettings,
 } from '../../utils/settings-config'
+import { saveUserSettingsOverrides } from '../../utils/settings-store'
 import {
   isWriteProtectedSettingsPath,
   redactSettingsValue,
@@ -61,7 +61,7 @@ export class PatchAdminSettingsController implements IController {
       return
     }
 
-    saveSettings(nextUserSettings as unknown as Settings)
+    await saveUserSettingsOverrides(nextUserSettings as unknown as Settings)
     const updatedChanges = changes.map(({ path }) => ({
       path,
       value: redactSettingsValue(path, getByPath(nextUserSettings, path)),
