@@ -6,6 +6,7 @@ import {
   IEventRepository,
   IInviteCodeRepository,
   INip05VerificationRepository,
+  IReportRepository,
   IUserRepository,
 } from '../@types/repositories'
 import { createSettings } from './settings-factory'
@@ -21,6 +22,7 @@ export const webSocketAdapterFactory =
     nip05VerificationRepository: INip05VerificationRepository,
     inviteCodeRepository: IInviteCodeRepository,
     dvmJobRepository: IDvmJobRepository,
+    reportRepository: IReportRepository,
   ) =>
   ([client, request, webSocketServerAdapter]: [WebSocket, IncomingMessage, IWebSocketServerAdapter]) =>
     new WebSocketAdapter(
@@ -33,6 +35,7 @@ export const webSocketAdapterFactory =
         nip05VerificationRepository,
         inviteCodeRepository,
         dvmJobRepository,
+        reportRepository,
       ),
       rateLimiterFactory,
       createSettings,
