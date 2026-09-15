@@ -650,6 +650,33 @@ describe('EventRepository', () => {
       expect(sql).to.include('"events"."expires_at" is null')
       expect(sql).to.include('"events"."expires_at" >')
     })
+
+    it('projects event_id exactly once for generic tag filters', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.include('select "events"."event_id" from "events" left join "event_tags"')
+      expect(sql).to.not.include('"events"."event_id", "events"."event_id"')
+    })
+
+    it('projects the same columns in both branches of a mixed union', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        countDistinct: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ kinds: [1] }, { '#e': ['aaaaaa'] } as any])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql.match(/select "events"\."event_id" from "events"/g)).to.have.lengthOf(2)
+    })
   })
 
   describe('.create', () => {
