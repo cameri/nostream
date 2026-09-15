@@ -47,10 +47,10 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
   }
 
   public close(callback?: () => void): void {
-    super.close(() => {
-      logger('closing')
-      clearInterval(this.heartbeatInterval)
-      void this.drainClients(getWsDrainTimeoutMs()).finally(() => {
+    logger('closing')
+    clearInterval(this.heartbeatInterval)
+    void this.drainClients(getWsDrainTimeoutMs()).finally(() => {
+      super.close(() => {
         logger('closing web socket server')
         this.webSocketServer.close(() => {
           this.webSocketServer.removeAllListeners()
@@ -60,8 +60,8 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
           logger('closed')
         })
       })
+      this.removeAllListeners()
     })
-    this.removeAllListeners()
   }
 
   private async drainClients(timeoutMs: number): Promise<void> {

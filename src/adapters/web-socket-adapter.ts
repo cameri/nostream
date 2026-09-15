@@ -163,7 +163,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public drainAndClose(reason = 'relay shutting down'): void {
     this.subscriptions.forEach((_filters, subscriptionId) => {
-      this.sendMessage(createClosedMessage(subscriptionId, `closed: ${reason}`))
+      this.sendMessage(createClosedMessage(subscriptionId, `error: ${reason}`))
     })
 
     if (this.client.readyState === WebSocket.OPEN) {

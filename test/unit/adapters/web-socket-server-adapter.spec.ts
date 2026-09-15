@@ -121,8 +121,11 @@ describe('WebSocketServerAdapter', () => {
   })
 
   describe('close', () => {
-    it('calls parent close which closes webServer', () => {
-      adapter.close()
+    it('calls parent close which closes webServer', async () => {
+      webServer.close.callsFake((cb: () => void) => cb())
+      webSocketServer.close.callsFake((cb: () => void) => cb())
+
+      await flushClose()
 
       expect(webServer.close).to.have.been.calledOnce
     })

@@ -2,6 +2,7 @@ import chai from 'chai'
 
 import {
   beginDraining,
+  getPrimaryShutdownDeadlineMs,
   getWsDrainTimeoutMs,
   isDraining,
   resetDrainingState,
@@ -40,5 +41,10 @@ describe('shutdown-state', () => {
   it('falls back to default for invalid WS drain timeout', () => {
     process.env.WS_DRAIN_TIMEOUT_MS = 'invalid'
     expect(getWsDrainTimeoutMs()).to.equal(30_000)
+  })
+
+  it('adds a buffer to the primary shutdown deadline', () => {
+    delete process.env.WS_DRAIN_TIMEOUT_MS
+    expect(getPrimaryShutdownDeadlineMs()).to.equal(35_000)
   })
 })

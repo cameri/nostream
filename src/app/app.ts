@@ -11,6 +11,7 @@ import { Serializable } from 'child_process'
 import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { getPrimaryShutdownDeadlineMs } from '../utils/shutdown-state'
 
 const logger = createLogger('app-primary')
 
@@ -186,16 +187,31 @@ export class App implements IRunnable {
     }
 
     let remaining = workers.length
+    let finished = false
+    const finishOnce = () => {
+      if (finished) {
+        return
+      }
+      finished = true
+      clearTimeout(deadline)
+      this.finishExit()
+    }
+
     const onWorkerDone = () => {
       remaining -= 1
       if (remaining <= 0) {
-        this.finishExit()
+        finishOnce()
       }
     }
 
+    const deadline = setTimeout(() => {
+      logger.warn('shutdown deadline exceeded, exiting primary')
+      finishOnce()
+    }, getPrimaryShutdownDeadlineMs())
+
     for (const worker of workers) {
       worker.once('exit', onWorkerDone)
-      worker.process.kill('SIGTERM')
+      worker.kill()
     }
   }
 

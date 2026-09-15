@@ -64,18 +64,19 @@ describe('getReadyzRequestHandler', () => {
 
   it('responds with 503 JSON while the relay is draining', async () => {
     beginDraining()
+    collectAdminHealthSnapshotStub.resolves(healthyAdminSnapshot)
 
     const res = createResponse()
     const next = sinon.stub()
 
     await getReadyzRequestHandler({} as any, res, next)
 
-    expect(collectAdminHealthSnapshotStub).not.to.have.been.called
+    expect(collectAdminHealthSnapshotStub).to.have.been.calledOnce
     expect(res.status).to.have.been.calledOnceWithExactly(503)
     expect(res.send).to.have.been.calledOnceWithExactly({
-      status: 'unavailable',
-      database: { ok: false },
-      redis: { ok: false },
+      status: 'draining',
+      database: { ok: true },
+      redis: { ok: true },
     })
     expect(next).to.have.been.calledOnce
   })

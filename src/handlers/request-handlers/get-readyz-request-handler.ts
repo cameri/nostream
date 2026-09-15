@@ -8,7 +8,7 @@ import { isDraining } from '../../utils/shutdown-state'
 const READY_SNAPSHOT_CACHE_TTL_MS = 1000
 
 export interface ReadyzSnapshot {
-  status: 'ok' | 'unavailable'
+  status: 'ok' | 'unavailable' | 'draining'
   database: AdminDependencyHealth
   redis: AdminDependencyHealth
 }
@@ -74,11 +74,20 @@ const sendReadyzResponse = (res: Response, statusCode: number, snapshot: ReadyzS
 
 export const getReadyzRequestHandler = async (_req: Request, res: Response, next: NextFunction) => {
   if (isDraining()) {
-    sendReadyzResponse(res, 503, {
-      status: 'unavailable',
-      database: { ok: false },
-      redis: { ok: false },
-    })
+    try {
+      const health = await collectAdminHealthSnapshot()
+      sendReadyzResponse(res, 503, {
+        status: 'draining',
+        database: health.database,
+        redis: health.redis,
+      })
+    } catch {
+      sendReadyzResponse(res, 503, {
+        status: 'draining',
+        database: { ok: false },
+        redis: { ok: false },
+      })
+    }
     next()
     return
   }
