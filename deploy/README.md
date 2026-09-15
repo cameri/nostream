@@ -152,3 +152,31 @@ the new checkout (or copy the updated files). Automated sync is planned separate
 ```
 
 Existing `.env` and `.nostr/settings.yaml` are preserved.
+
+## Zero-downtime updates (HAProxy blue/green)
+
+`deploy/docker-compose.haproxy.yml` replaces the single-relay stack with two
+relays (`nostream-blue`, `nostream-green`) behind HAProxy on `127.0.0.1:8008`.
+Postgres, Redis, and migrations are unchanged.
+
+Install alongside `.env` and `postgresql.conf`, then start:
+
+```bash
+cp deploy/docker-compose.haproxy.yml deploy/rolling-relay-recreate.sh /opt/nostream/
+cp -r deploy/haproxy /opt/nostream/
+cd /opt/nostream
+docker compose -f docker-compose.haproxy.yml up -d
+curl -s http://127.0.0.1:8008/readyz
+```
+
+To update, load the new image, then replace relays one at a time:
+
+```bash
+./rolling-relay-recreate.sh
+```
+
+The script stops a relay, waits for the replacement to report healthy, and only
+then moves to the second one, so a ready backend is always serving. HAProxy
+health-checks `/readyz` every 2s and retries failed requests on the other
+backend (`option redispatch`). Relays get `stop_grace_period: 45s` so the
+`WS_DRAIN_TIMEOUT_MS` drain (default 30s) finishes before Docker sends SIGKILL.
