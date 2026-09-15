@@ -66,6 +66,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       settings.nip42?.authRequired === true ||
       (eventLimits?.eventId?.minLeadingZeroBits ?? 0) > 0 ||
       (eventLimits?.pubkey?.minLeadingZeroBits ?? 0) > 0 ||
+      eventLimits?.pow?.enabled === true ||
       (eventLimits?.pubkey?.whitelist?.length ?? 0) > 0 ||
       (eventLimits?.pubkey?.blacklist?.length ?? 0) > 0 ||
       (eventLimits?.kind?.whitelist?.length ?? 0) > 0 ||
@@ -100,6 +101,10 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         max_message_length: settings.network.maxPayloadSize,
         max_subscriptions: settings.limits?.client?.subscription?.maxSubscriptions,
         max_filters: settings.limits?.client?.subscription?.maxFilters,
+        // NIP-11 has no field for the number of values a client may put in a
+        // filter's array criteria (ids, authors, kinds, #<tag>), so the limit
+        // the relay enforces is advertised as a non-standard extension.
+        max_filter_values: settings.limits?.client?.subscription?.maxFilterValues,
         max_limit: settings.limits?.client?.subscription?.maxLimit,
         max_subid_length: settings.limits?.client?.subscription?.maxSubscriptionIdLength,
         min_prefix: settings.limits?.client?.subscription?.minPrefixLength,
@@ -107,7 +112,12 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         max_content_length: Array.isArray(content)
           ? content[0].maxLength // best guess since we have per-kind limits
           : content?.maxLength,
-        min_pow_difficulty: eventLimits?.eventId?.minLeadingZeroBits,
+        // When adaptive PoW is enabled it replaces the static minLeadingZeroBits checks
+        // entirely, so advertise its floor -- the guaranteed minimum; the live requirement
+        // can be higher under load, but there's no static number to promise instead.
+        min_pow_difficulty: eventLimits?.pow?.enabled
+          ? eventLimits.pow.floorBits
+          : eventLimits?.eventId?.minLeadingZeroBits,
         // NIP-11: auth_required means AUTH before any action. We only gate publishes
         // via nip42.authRequired (advertised as restricted_writes instead).
         auth_required: false,

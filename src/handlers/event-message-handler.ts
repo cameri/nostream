@@ -1,3 +1,7 @@
+import {
+  getCurrentDifficulty as getAdaptivePowDifficulty,
+  recordEvent as recordAdaptivePowEvent,
+} from '../utils/adaptive-pow'
 import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
 import { attemptValidation } from '../utils/validation'
 import { eventSchema } from '../schemas/event-schema'
@@ -127,6 +131,18 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
+    // Recorded here, not inside canAcceptEvent's PoW branch: only events that
+    // clear every admission check up to this point (PoW, blacklist, auth,
+    // NIP-05, ...) should count toward the load signal. Recording earlier
+    // would let cheap, easily-rejected spam (e.g. from rotating pubkeys) push
+    // the difficulty to ceiling for everyone without the attacker ever doing
+    // any real work. Note: a duplicate/no-op write still counts here, since
+    // dedup is decided later inside the event strategy's own execute().
+    const powSettings = this.settings().limits?.event?.pow
+    if (powSettings?.enabled) {
+      recordAdaptivePowEvent(powSettings.periodMs)
+    }
+
     const strategy = this.strategyFactory([event, this.webSocket])
 
     if (typeof strategy?.execute !== 'function') {
@@ -195,7 +211,19 @@ export class EventMessageHandler implements IMessageHandler {
       return `rejected: created_at is more than ${limits.createdAt.maxNegativeDelta} seconds in the past`
     }
 
-    if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
+    // Adaptive PoW applies to the eventId check only: a pubkey requirement is a
+    // one-time, offline identity cost, not a per-event load signal, so it can't
+    // respond to relay load the way an event id's mined-per-submission pow can.
+    // The static pubkey.minLeadingZeroBits knob is left untouched regardless of
+    // pow.enabled -- per maintainer direction on PR #756.
+    if (limits.pow?.enabled) {
+      const requiredBits = getAdaptivePowDifficulty(limits.pow)
+
+      const pow = getEventProofOfWork(event.id)
+      if (pow < requiredBits) {
+        return `pow: difficulty ${pow}<${requiredBits}`
+      }
+    } else if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
       const pow = getEventProofOfWork(event.id)
       if (pow < limits.eventId.minLeadingZeroBits) {
         return `pow: difficulty ${pow}<${limits.eventId.minLeadingZeroBits}`
