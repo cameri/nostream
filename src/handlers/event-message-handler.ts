@@ -2,6 +2,7 @@ import {
   getCurrentDifficulty as getAdaptivePowDifficulty,
   recordEvent as recordAdaptivePowEvent,
 } from '../utils/adaptive-pow'
+import { applyWotPowPolicy } from '../utils/wot-pow-policy'
 import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
 import { attemptValidation } from '../utils/validation'
 import { eventSchema } from '../schemas/event-schema'
@@ -43,6 +44,7 @@ import { ICacheAdapter } from '../@types/adapters'
 import { IncomingEventMessage } from '../@types/messages'
 import { IRateLimiter } from '../@types/utils'
 import { IWebSocketAdapter } from '../@types/adapters'
+import { IWotGraphService } from '../@types/services'
 import { Nip05Verification } from '../@types/nip05'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
@@ -58,6 +60,7 @@ export class EventMessageHandler implements IMessageHandler {
     private readonly nip05VerificationRepository: INip05VerificationRepository,
     private readonly cache: ICacheAdapter,
     private readonly rateLimiter: Factory<IRateLimiter>,
+    private readonly wotGraphService: IWotGraphService,
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
@@ -89,7 +92,7 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
-    reason = this.canAcceptEvent(event)
+    reason = await this.canAcceptEvent(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
@@ -167,7 +170,7 @@ export class EventMessageHandler implements IMessageHandler {
     return getPublicKey(relayPrivkey)
   }
 
-  protected canAcceptEvent(event: Event): string | undefined {
+  protected async canAcceptEvent(event: Event): Promise<string | undefined> {
     if (this.getRelayPublicKey() === event.pubkey) {
       return
     }
@@ -217,7 +220,14 @@ export class EventMessageHandler implements IMessageHandler {
     // The static pubkey.minLeadingZeroBits knob is left untouched regardless of
     // pow.enabled -- per maintainer direction on PR #756.
     if (limits.pow?.enabled) {
-      const requiredBits = getAdaptivePowDifficulty(limits.pow)
+      const computedDifficulty = getAdaptivePowDifficulty(limits.pow)
+      // Only consult the WoT graph when thresholds are actually configured --
+      // a distance lookup is unnecessary work otherwise, and skipping it also
+      // means wot.enabled=false relays never pay for it.
+      const distance = limits.pow.wotThresholds?.length
+        ? await this.wotGraphService.getDistance(event.pubkey)
+        : undefined
+      const requiredBits = applyWotPowPolicy(computedDifficulty, distance, limits.pow.wotThresholds)
 
       const pow = getEventProofOfWork(event.id)
       if (pow < requiredBits) {

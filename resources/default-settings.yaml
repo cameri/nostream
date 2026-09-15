@@ -228,6 +228,15 @@ limits:
       ceilingBits: 24
       targetEventsPerSecond: 50
       periodMs: 60000
+      # Optional WoT-distance-based reductions on top of the computed adaptive
+      # difficulty. Requires wot.enabled. Example: direct follows (distance 1)
+      # bypass eventId PoW entirely, distance-2 pubkeys need half the computed
+      # difficulty, anyone farther (or outside the trust graph) pays it in full.
+      #   - maxDistance: 1
+      #     difficultyFactor: 0
+      #   - maxDistance: 2
+      #     difficultyFactor: 0.5
+      wotThresholds: []
     kind:
       whitelist: []
       blacklist: []
