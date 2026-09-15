@@ -21,7 +21,6 @@ describe('App', () => {
     fork: Sinon.SinonStub
   }
   let settings: Sinon.SinonStub
-  let app: App
 
   const createWorker = (id: string, pid: number) => {
     const worker = new EventEmitter() as EventEmitter & {
@@ -64,7 +63,7 @@ describe('App', () => {
       workers: { count: 1 },
     } as Settings)
 
-    app = new App(fakeProcess as any, cluster as any, settings)
+    new App(fakeProcess as any, cluster as any, settings)
   })
 
   afterEach(() => {
