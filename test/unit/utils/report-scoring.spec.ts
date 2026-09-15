@@ -19,8 +19,9 @@ describe('calculateReportWeight', () => {
     expect(calculateReportWeight(2, false)).to.equal(0.5)
   })
 
-  it('halves again for each additional hop', () => {
-    expect(calculateReportWeight(4, false)).to.equal(0.25)
+  it('halves again for each additional hop (exponential decay, not linear)', () => {
+    expect(calculateReportWeight(3, false)).to.equal(0.25)
+    expect(calculateReportWeight(4, false)).to.equal(0.125)
   })
 
   it('treats distance 0 (the seed pubkey itself) as full weight', () => {

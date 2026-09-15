@@ -86,7 +86,7 @@ export interface IDvmJobRepository {
 }
 
 export interface IReportRepository {
-  create(report: Omit<Report, 'createdAt'>): Promise<Report>
-  findById(id: EventId): Promise<Report | undefined>
+  create(report: Omit<Report, 'id' | 'createdAt'>): Promise<Report>
+  findByEventId(eventId: EventId): Promise<Report[]>
   findActionable(limit?: number): Promise<Report[]>
 }

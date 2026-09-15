@@ -20,6 +20,7 @@ import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
 describe('ReportEventStrategy', () => {
   const reporterPubkey = '2'.repeat(64)
   const reportedPubkey = '3'.repeat(64)
+  const reportedEventId = '4'.repeat(64)
 
   const event: Event = {
     id: 'event-id',
@@ -124,7 +125,7 @@ describe('ReportEventStrategy', () => {
       await strategy.execute(event)
 
       expect(reportRepositoryCreateStub).to.have.been.calledOnceWithExactly({
-        id: 'event-id',
+        eventId: 'event-id',
         reporterPubkey,
         reportedPubkey,
         reportedEventId: null,
@@ -142,7 +143,7 @@ describe('ReportEventStrategy', () => {
       await strategy.execute(event)
 
       expect(reportRepositoryCreateStub).to.have.been.calledOnceWithExactly({
-        id: 'event-id',
+        eventId: 'event-id',
         reporterPubkey,
         reportedPubkey,
         reportedEventId: null,
@@ -157,18 +158,83 @@ describe('ReportEventStrategy', () => {
       strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
       eventRepositoryCreateStub.resolves(1)
       reportRepositoryCreateStub.resolves({})
-      getDistanceStub.resolves(undefined)
 
       await strategy.execute(event)
 
       expect(reportRepositoryCreateStub).to.have.been.calledOnceWithExactly({
-        id: 'event-id',
+        eventId: 'event-id',
         reporterPubkey,
         reportedPubkey,
         reportedEventId: null,
         reportType: ReportType.SPAM,
         weight: 1,
         actionable: true,
+      })
+    })
+
+    it('does not consult the WoT graph for a trusted moderator', async () => {
+      settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey] } }) as any
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      eventRepositoryCreateStub.resolves(1)
+      reportRepositoryCreateStub.resolves({})
+
+      await strategy.execute(event)
+
+      expect(getDistanceStub).not.to.have.been.called
+    })
+
+    it('does not mark a moderator report actionable when it has no valid target', async () => {
+      const noTargetEvent: Event = { ...event, tags: [] } as any
+      settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey] } }) as any
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      eventRepositoryCreateStub.resolves(1)
+      reportRepositoryCreateStub.resolves({})
+
+      await strategy.execute(noTargetEvent)
+
+      expect(reportRepositoryCreateStub).to.have.been.calledOnceWithExactly({
+        eventId: 'event-id',
+        reporterPubkey,
+        reportedPubkey: null,
+        reportedEventId: null,
+        reportType: ReportType.OTHER,
+        weight: 1,
+        actionable: false,
+      })
+    })
+
+    it('records one row per target when p and e tags carry different report types', async () => {
+      const mixedEvent: Event = {
+        ...event,
+        tags: [
+          ['p', reportedPubkey, 'impersonation'],
+          ['e', reportedEventId, 'nudity'],
+        ],
+      } as any
+      eventRepositoryCreateStub.resolves(1)
+      reportRepositoryCreateStub.resolves({})
+      getDistanceStub.resolves(1)
+
+      await strategy.execute(mixedEvent)
+
+      expect(reportRepositoryCreateStub).to.have.been.calledTwice
+      expect(reportRepositoryCreateStub.firstCall).to.have.been.calledWithExactly({
+        eventId: 'event-id',
+        reporterPubkey,
+        reportedPubkey: null,
+        reportedEventId,
+        reportType: ReportType.NUDITY,
+        weight: 1,
+        actionable: false,
+      })
+      expect(reportRepositoryCreateStub.secondCall).to.have.been.calledWithExactly({
+        eventId: 'event-id',
+        reporterPubkey,
+        reportedPubkey,
+        reportedEventId: null,
+        reportType: ReportType.IMPERSONATION,
+        weight: 1,
+        actionable: false,
       })
     })
 

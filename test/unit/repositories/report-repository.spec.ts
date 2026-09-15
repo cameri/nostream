@@ -17,13 +17,14 @@ describe('ReportRepository', () => {
   let sandbox: sinon.SinonSandbox
 
   const fixedDate = new Date('2026-09-10T00:00:00.000Z')
-  const reportId = 'a'.repeat(64)
+  const eventId = 'a'.repeat(64)
   const reporterPubkey = '2'.repeat(64)
   const reportedPubkey = '3'.repeat(64)
   const reportedEventId = '4'.repeat(64)
 
   const dbReportRow = {
-    id: Buffer.from(reportId, 'hex'),
+    id: 7,
+    event_id: Buffer.from(eventId, 'hex'),
     reporter_pubkey: Buffer.from(reporterPubkey, 'hex'),
     reported_pubkey: Buffer.from(reportedPubkey, 'hex'),
     reported_event_id: Buffer.from(reportedEventId, 'hex'),
@@ -46,12 +47,13 @@ describe('ReportRepository', () => {
 
   describe('.create', () => {
     it('inserts into the reports table', async () => {
-      const insertStub = sandbox.stub().resolves()
+      const returningStub = sandbox.stub().resolves([{ id: 7 }])
+      const insertStub = sandbox.stub().returns({ returning: returningStub })
       const client = sandbox.stub().returns({ insert: insertStub }) as unknown as DatabaseClient
 
       await repository.create(
         {
-          id: reportId,
+          eventId,
           reporterPubkey,
           reportedPubkey,
           reportedEventId,
@@ -63,15 +65,17 @@ describe('ReportRepository', () => {
       )
 
       expect(client).to.have.been.calledWith('reports')
+      expect(returningStub).to.have.been.calledWith(['id'])
     })
 
-    it('returns a Report reflecting the input', async () => {
-      const insertStub = sandbox.stub().resolves()
+    it('returns a Report reflecting the input, with the DB-generated id', async () => {
+      const returningStub = sandbox.stub().resolves([{ id: 7 }])
+      const insertStub = sandbox.stub().returns({ returning: returningStub })
       const client = sandbox.stub().returns({ insert: insertStub }) as unknown as DatabaseClient
 
       const result = await repository.create(
         {
-          id: reportId,
+          eventId,
           reporterPubkey,
           reportedPubkey,
           reportedEventId,
@@ -83,7 +87,8 @@ describe('ReportRepository', () => {
       )
 
       expect(result).to.deep.include({
-        id: reportId,
+        id: 7,
+        eventId,
         reporterPubkey,
         reportedPubkey,
         reportedEventId,
@@ -95,12 +100,13 @@ describe('ReportRepository', () => {
     })
 
     it('stores hex fields as buffers', async () => {
-      const insertStub = sandbox.stub().resolves()
+      const returningStub = sandbox.stub().resolves([{ id: 7 }])
+      const insertStub = sandbox.stub().returns({ returning: returningStub })
       const client = sandbox.stub().returns({ insert: insertStub }) as unknown as DatabaseClient
 
       await repository.create(
         {
-          id: reportId,
+          eventId,
           reporterPubkey,
           reportedPubkey,
           reportedEventId,
@@ -112,19 +118,21 @@ describe('ReportRepository', () => {
       )
 
       const insertedRow = insertStub.firstCall.args[0]
-      expect(insertedRow.id).to.deep.equal(Buffer.from(reportId, 'hex'))
+      expect(insertedRow.event_id).to.deep.equal(Buffer.from(eventId, 'hex'))
       expect(insertedRow.reporter_pubkey).to.deep.equal(Buffer.from(reporterPubkey, 'hex'))
       expect(insertedRow.reported_pubkey).to.deep.equal(Buffer.from(reportedPubkey, 'hex'))
       expect(insertedRow.reported_event_id).to.deep.equal(Buffer.from(reportedEventId, 'hex'))
+      expect(insertedRow).to.not.have.property('id')
     })
 
     it('stores null reported_pubkey/reported_event_id when not provided', async () => {
-      const insertStub = sandbox.stub().resolves()
+      const returningStub = sandbox.stub().resolves([{ id: 8 }])
+      const insertStub = sandbox.stub().returns({ returning: returningStub })
       const client = sandbox.stub().returns({ insert: insertStub }) as unknown as DatabaseClient
 
       await repository.create(
         {
-          id: reportId,
+          eventId,
           reporterPubkey,
           reportedPubkey: null,
           reportedEventId: null,
@@ -141,28 +149,38 @@ describe('ReportRepository', () => {
     })
   })
 
-  describe('.findById', () => {
-    it('returns undefined when no report is found', async () => {
+  describe('.findByEventId', () => {
+    it('returns an empty array when no reports are found', async () => {
       const client = sandbox.stub().returns({
         where: sandbox.stub().returns({ select: sandbox.stub().resolves([]) }),
       }) as unknown as DatabaseClient
 
-      const result = await repository.findById(reportId, client)
+      const result = await repository.findByEventId(eventId, client)
 
-      expect(result).to.be.undefined
+      expect(result).to.be.an('array').that.is.empty
     })
 
-    it('returns a transformed Report when found', async () => {
+    it('returns transformed Report rows when found', async () => {
       const client = sandbox.stub().returns({
         where: sandbox.stub().returns({ select: sandbox.stub().resolves([dbReportRow]) }),
       }) as unknown as DatabaseClient
 
-      const result = await repository.findById(reportId, client)
+      const result = await repository.findByEventId(eventId, client)
 
-      expect(result).to.not.be.undefined
-      expect(result!.id).to.equal(reportId)
-      expect(result!.reporterPubkey).to.equal(reporterPubkey)
-      expect(result!.actionable).to.equal(true)
+      expect(result).to.have.lengthOf(1)
+      expect(result[0].id).to.equal(7)
+      expect(result[0].eventId).to.equal(eventId)
+      expect(result[0].reporterPubkey).to.equal(reporterPubkey)
+      expect(result[0].actionable).to.equal(true)
+    })
+
+    it('queries by event_id', async () => {
+      const whereStub = sandbox.stub().returns({ select: sandbox.stub().resolves([]) })
+      const client = sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient
+
+      await repository.findByEventId(eventId, client)
+
+      expect(whereStub).to.have.been.calledWith('event_id', Buffer.from(eventId, 'hex'))
     })
   })
 
@@ -180,7 +198,7 @@ describe('ReportRepository', () => {
       expect(orderByStub).to.have.been.calledWith('created_at', 'desc')
       expect(limitStub).to.have.been.calledWith(10)
       expect(result).to.have.lengthOf(1)
-      expect(result[0].id).to.equal(reportId)
+      expect(result[0].id).to.equal(7)
     })
 
     it('defaults limit to 100', async () => {

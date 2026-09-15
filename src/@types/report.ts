@@ -12,7 +12,9 @@ export enum ReportType {
 }
 
 export interface Report {
-  id: EventId
+  id: number
+  /** The kind-1984 report event that produced this row. */
+  eventId: EventId
   reporterPubkey: Pubkey
   reportedPubkey: Pubkey | null
   reportedEventId: EventId | null
@@ -23,7 +25,8 @@ export interface Report {
 }
 
 export interface DBReport {
-  id: Buffer
+  id: number
+  event_id: Buffer
   reporter_pubkey: Buffer
   reported_pubkey: Buffer | null
   reported_event_id: Buffer | null
