@@ -37,6 +37,8 @@ describe('RedisAdapter', () => {
       del: sandbox.stub(),
       hGet: sandbox.stub(),
       hSet: sandbox.stub(),
+      sAdd: sandbox.stub(),
+      sMembers: sandbox.stub(),
       scriptLoad: sandbox.stub(),
       evalSha: sandbox.stub(),
       isOpen: false,
@@ -257,6 +259,28 @@ describe('RedisAdapter', () => {
 
       expect(client.hSet).to.have.been.calledOnceWithExactly('test-key', { field1: 'value1', field2: 'value2' })
       expect(result).to.be.true
+    })
+  })
+
+  describe('addToSet', () => {
+    it('calls client.sAdd with key and members and returns the count added', async () => {
+      client.sAdd.resolves(2)
+
+      const result = await adapter.addToSet('test-key', ['member1', 'member2'])
+
+      expect(client.sAdd).to.have.been.calledOnceWithExactly('test-key', ['member1', 'member2'])
+      expect(result).to.equal(2)
+    })
+  })
+
+  describe('getSetMembers', () => {
+    it('calls client.sMembers with the key and returns the members', async () => {
+      client.sMembers.resolves(['member1', 'member2'])
+
+      const result = await adapter.getSetMembers('test-key')
+
+      expect(client.sMembers).to.have.been.calledOnceWithExactly('test-key')
+      expect(result).to.deep.equal(['member1', 'member2'])
     })
   })
 

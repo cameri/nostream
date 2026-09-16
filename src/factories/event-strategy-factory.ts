@@ -1,6 +1,13 @@
 import { ICacheAdapter, IWebSocketAdapter } from '../@types/adapters'
-import { IDvmJobRepository, IEventRepository, IInviteCodeRepository, IUserRepository } from '../@types/repositories'
 import {
+  IDvmJobRepository,
+  IEventRepository,
+  IInviteCodeRepository,
+  IReportRepository,
+  IUserRepository,
+} from '../@types/repositories'
+import {
+  isContactListEvent,
   isDeleteEvent,
   isDvmJobRequestEvent,
   isEphemeralEvent,
@@ -12,7 +19,9 @@ import {
   isRequestToVanishEvent,
 } from '../utils/event'
 import { isNip43InviteRequest, isNip43JoinRequest, isNip43LeaveRequest } from '../utils/nip43'
+import { isReportEvent } from '../utils/nip56'
 import { isRelayListEvent } from '../utils/nip65'
+import { ContactListEventStrategy } from '../handlers/event-strategies/contact-list-event-strategy'
 import { DefaultEventStrategy } from '../handlers/event-strategies/default-event-strategy'
 import { DeleteEventStrategy } from '../handlers/event-strategies/delete-event-strategy'
 import { DvmJobRequestEventStrategy } from '../handlers/event-strategies/dvm-job-request-event-strategy'
@@ -27,9 +36,11 @@ import { JoinRequestEventStrategy } from '../handlers/event-strategies/join-requ
 import { LeaveRequestEventStrategy } from '../handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strategies/parameterized-replaceable-event-strategy'
 import { ReplaceableEventStrategy } from '../handlers/event-strategies/replaceable-event-strategy'
+import { ReportEventStrategy } from '../handlers/event-strategies/report-event-strategy'
 import { Settings } from '../@types/settings'
 import { TimestampEventStrategy } from '../handlers/event-strategies/timestamp-event-strategy'
 import { VanishEventStrategy } from '../handlers/event-strategies/vanish-event-strategy'
+import { wotGraphServiceFactory } from './wot-graph-service-factory'
 
 export const eventStrategyFactory =
   (
@@ -37,6 +48,7 @@ export const eventStrategyFactory =
     userRepository: IUserRepository,
     inviteCodeRepository: IInviteCodeRepository,
     dvmJobRepository: IDvmJobRepository,
+    reportRepository: IReportRepository,
     cache: ICacheAdapter,
     settings: () => Settings,
   ): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
@@ -49,6 +61,26 @@ export const eventStrategyFactory =
       return new GroupEventStrategy(adapter, eventRepository)
     } else if (isOpenTimestampsEvent(event)) {
       return new TimestampEventStrategy(adapter, eventRepository)
+      // NIP-02: contact lists are replaceable (handled below), but need the
+      // extra wot-graph side effect, so they're intercepted before the
+      // generic replaceable-event branch.
+    } else if (isContactListEvent(event)) {
+      return new ContactListEventStrategy(
+        adapter,
+        eventRepository,
+        wotGraphServiceFactory(cache, eventRepository, settings),
+      )
+      // NIP-56: reports (kind 1984) need WoT-weighted scoring against the
+      // same graph, and kind 1984 isn't in any special range, so it must be
+      // checked explicitly before falling through to DefaultEventStrategy.
+    } else if (isReportEvent(event)) {
+      return new ReportEventStrategy(
+        adapter,
+        eventRepository,
+        reportRepository,
+        wotGraphServiceFactory(cache, eventRepository, settings),
+        settings,
+      )
     } else if (isRelayListEvent(event) || isReplaceableEvent(event)) {
       return new ReplaceableEventStrategy(adapter, eventRepository)
       // NIP-43: Join/Leave/Invite requests MUST be checked before the generic

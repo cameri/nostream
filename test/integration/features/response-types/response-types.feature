@@ -10,6 +10,7 @@ Feature: HTTP response types
       | /                      | application/nostr+json  | 200        | application/nostr+json |
       | /                      | text/html               | 200        | text/html              |
       | /healthz               | */*                     | 200        | text/plain             |
+      | /readyz                | */*                     | 200        | application/json       |
       | /terms                 | */*                     | 200        | text/html              |
       | /.well-known/nodeinfo  | */*                     | 200        | application/json       |
       | /nodeinfo/2.1          | */*                     | 200        | application/json       |

@@ -196,6 +196,10 @@ export const broadcastEvent = async (event: Event): Promise<Event> => {
   })
 }
 
+export const isContactListEvent = (event: Event): boolean => {
+  return event.kind === EventKinds.CONTACT_LIST
+}
+
 export const isReplaceableEvent = (event: Event): boolean => {
   return (
     event.kind === EventKinds.SET_METADATA ||

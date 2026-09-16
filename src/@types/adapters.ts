@@ -19,6 +19,7 @@ export type IWebSocketAdapter = EventEmitter & {
   getAuthenticatedPubkeys(): ReadonlySet<string>
   /** Returns false if this AUTH event id was already accepted on this socket. */
   addAuthenticatedPubkey(pubkey: string, authEventId: string): boolean
+  drainAndClose(reason?: string): void
 }
 
 export interface ICacheAdapter {
@@ -34,6 +35,9 @@ export interface ICacheAdapter {
   deleteKey(key: string): Promise<number>
   getHKey(key: string, field: string): Promise<string>
   setHKey(key: string, fields: Record<string, string>): Promise<boolean>
+
+  addToSet(key: string, members: string[]): Promise<number>
+  getSetMembers(key: string): Promise<string[]>
 
   eval(script: string, keys: string[], args: string[]): Promise<unknown>
 }
