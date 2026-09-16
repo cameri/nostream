@@ -8,6 +8,7 @@ import {
   getReadyzRequestHandler,
   resetReadyzSnapshotCache,
 } from '../../../../src/handlers/request-handlers/get-readyz-request-handler'
+import { beginDraining, resetDrainingState } from '../../../../src/utils/shutdown-state'
 
 chai.use(sinonChai)
 const { expect } = chai
@@ -58,6 +59,26 @@ describe('getReadyzRequestHandler', () => {
   afterEach(() => {
     sandbox.restore()
     resetReadyzSnapshotCache()
+    resetDrainingState()
+  })
+
+  it('responds with 503 JSON while the relay is draining', async () => {
+    beginDraining()
+    collectAdminHealthSnapshotStub.resolves(healthyAdminSnapshot)
+
+    const res = createResponse()
+    const next = sinon.stub()
+
+    await getReadyzRequestHandler({} as any, res, next)
+
+    expect(collectAdminHealthSnapshotStub).to.have.been.calledOnce
+    expect(res.status).to.have.been.calledOnceWithExactly(503)
+    expect(res.send).to.have.been.calledOnceWithExactly({
+      status: 'draining',
+      database: { ok: true },
+      redis: { ok: true },
+    })
+    expect(next).to.have.been.calledOnce
   })
 
   it('responds with 200 JSON when dependencies are ready', async () => {
