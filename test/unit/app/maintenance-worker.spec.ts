@@ -7,7 +7,7 @@ import sinonChai from 'sinon-chai'
 
 import { InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
 import { Nip05Verification } from '../../../src/@types/nip05'
-import { IMaintenanceService, IPaymentsService } from '../../../src/@types/services'
+import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../../../src/@types/services'
 import { Settings } from '../../../src/@types/settings'
 import { applyReverificationOutcome, MaintenanceWorker } from '../../../src/app/maintenance-worker'
 import * as metricsTelemetry from '../../../src/telemetry/metrics'
@@ -28,6 +28,9 @@ describe('MaintenanceWorker', () => {
   let settings: Sinon.SinonStub
   let settingsState: Settings
   let nip05VerificationRepository: any
+  let notificationOutboxService: Sinon.SinonStubbedInstance<INotificationOutboxService>
+  let notificationDeliveryLogRepository: any
+  let notificationOutboxRepository: any
   let verifyStub: Sinon.SinonStub
 
   const pendingInvoice = {
@@ -91,6 +94,18 @@ describe('MaintenanceWorker', () => {
       clearOldEvents: sandbox.stub().resolves(),
     } as any
 
+    notificationOutboxService = {
+      processBatch: sandbox.stub().resolves(0),
+    } as any
+
+    notificationDeliveryLogRepository = {
+      deleteOlderThan: sandbox.stub().resolves(0),
+    }
+
+    notificationOutboxRepository = {
+      enqueue: sandbox.stub().resolves(),
+    }
+
     // Prevent real timeouts and randomized per-invoice delays.
     sandbox.stub(misc, 'delayMs').resolves()
 
@@ -100,6 +115,9 @@ describe('MaintenanceWorker', () => {
       maintenanceService,
       settings as any,
       nip05VerificationRepository,
+      notificationOutboxService,
+      notificationDeliveryLogRepository,
+      notificationOutboxRepository,
     )
   })
 

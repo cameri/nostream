@@ -340,3 +340,16 @@ admin:
     enabled: false
     allowedPubkeys: []
     maxSkewSeconds: 60
+  notifications:
+    enabled: false
+    targets: []
+    events:
+      admission.invoice.created: true
+      admission.invoice.paid: true
+      admission.invoice.failed: true
+      settings.changed: true
+      relay.restarted: false
+    retry:
+      maxAttempts: 5
+      baseDelayMs: 1000
+    deliveryLogRetentionDays: 30

@@ -1,4 +1,4 @@
-const SENSITIVE_SETTING_KEYS = new Set(['passwordHash', 'secret'])
+const SENSITIVE_SETTING_KEYS = new Set(['passwordHash', 'secret', 'botToken'])
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
