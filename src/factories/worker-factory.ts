@@ -12,6 +12,7 @@ import { DvmJobRepository } from '../repositories/dvm-job-repository'
 import { EventRepository } from '../repositories/event-repository'
 import { InviteCodeRepository } from '../repositories/invite-code-repository'
 import { Nip05VerificationRepository } from '../repositories/nip05-verification-repository'
+import { ReportRepository } from '../repositories/report-repository'
 import { UserRepository } from '../repositories/user-repository'
 import { webSocketAdapterFactory } from './websocket-adapter-factory'
 import { WebSocketServerAdapter } from '../adapters/web-socket-server-adapter'
@@ -26,6 +27,7 @@ export const workerFactory = (): AppWorker => {
   const nip05VerificationRepository = new Nip05VerificationRepository(dbClient)
   const inviteCodeRepository = new InviteCodeRepository(dbClient)
   const dvmJobRepository = new DvmJobRepository(dbClient)
+  const reportRepository = new ReportRepository(dbClient)
 
   const settings = createSettings()
 
@@ -73,6 +75,7 @@ export const workerFactory = (): AppWorker => {
       nip05VerificationRepository,
       inviteCodeRepository,
       dvmJobRepository,
+      reportRepository,
     ),
     createSettings,
   )
