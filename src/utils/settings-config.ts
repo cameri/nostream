@@ -612,6 +612,13 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
     }
     if (Array.isArray(pow.wotThresholds)) {
       pow.wotThresholds.forEach((threshold, index) => {
+        if (threshold === null || typeof threshold !== 'object') {
+          issues.push({
+            path: `limits.event.pow.wotThresholds[${index}]`,
+            message: 'wotThresholds entry must be an object',
+          })
+          return
+        }
         if (!(threshold.maxDistance >= 0)) {
           issues.push({
             path: `limits.event.pow.wotThresholds[${index}].maxDistance`,

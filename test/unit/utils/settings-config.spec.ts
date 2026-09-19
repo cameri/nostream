@@ -204,6 +204,20 @@ describe('settings-config', () => {
       expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[0].difficultyFactor')).to.equal(true)
       expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[1].difficultyFactor')).to.equal(true)
     })
+
+    it('rejects null or non-object entries in wotThresholds without throwing', () => {
+      const settings = baseSettings()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(settings.limits.event.pow as any).wotThresholds = [null, undefined, 42]
+
+      let issues: ReturnType<typeof validateSettings>
+      expect(() => {
+        issues = validateSettings(settings)
+      }).not.to.throw()
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[0]')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[1]')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[2]')).to.equal(true)
+    })
   })
 
   it('formats setting category labels', () => {
