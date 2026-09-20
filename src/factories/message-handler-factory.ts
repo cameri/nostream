@@ -18,6 +18,7 @@ import { RedisAdapter } from '../adapters/redis-adapter'
 import { rateLimiterFactory } from './rate-limiter-factory'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
+import { wotGraphServiceFactory } from './wot-graph-service-factory'
 
 let cacheAdapter: ICacheAdapter | undefined = undefined
 const getCache = (): ICacheAdapter => {
@@ -56,6 +57,7 @@ export const messageHandlerFactory =
           nip05VerificationRepository,
           getCache(),
           rateLimiterFactory,
+          wotGraphServiceFactory(getCache(), eventRepository, createSettings),
         )
       }
       case MessageType.REQ:

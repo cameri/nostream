@@ -93,6 +93,17 @@ export interface EventRetentionLimits {
   pubkey?: EventRetentionPubkeyLimits
 }
 
+export interface WotPowThreshold {
+  /** Reporters at or under this WoT distance get this threshold's reduction. */
+  maxDistance: number
+  /**
+   * Fraction of the computed adaptive difficulty required at this distance:
+   * 0 bypasses eventId PoW entirely, 1 requires the full computed difficulty,
+   * fractional values scale linearly in between.
+   */
+  difficultyFactor: number
+}
+
 export interface AdaptivePowSettings {
   /** Enables load-aware difficulty scaling on the eventId check, replacing eventId.minLeadingZeroBits while enabled. Does not affect the pubkey check -- pubkey.minLeadingZeroBits stays a static, non-adaptive knob. Defaults to false. */
   enabled: boolean
@@ -104,6 +115,15 @@ export interface AdaptivePowSettings {
   targetEventsPerSecond: number
   /** EWMA half-life in ms used to smooth the observed event rate. */
   periodMs: number
+  /**
+   * Optional WoT-distance-based reductions layered on top of the computed
+   * adaptive difficulty. The eligible threshold with the smallest maxDistance
+   * applies; a pubkey outside the trust graph (distance undefined) or beyond
+   * every threshold's maxDistance gets the full computed difficulty. Requires
+   * wot.enabled -- otherwise every distance lookup is undefined and this has
+   * no effect.
+   */
+  wotThresholds?: WotPowThreshold[]
 }
 
 export interface EventLimits {

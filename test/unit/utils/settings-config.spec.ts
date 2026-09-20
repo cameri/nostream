@@ -173,6 +173,51 @@ describe('settings-config', () => {
       const issues = validateSettings(settings)
       expect(issues.some((issue) => issue.path.startsWith('limits.event.pow'))).to.equal(false)
     })
+
+    it('accepts valid wotThresholds', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.wotThresholds = [
+        { maxDistance: 1, difficultyFactor: 0 },
+        { maxDistance: 2, difficultyFactor: 0.5 },
+      ]
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path.startsWith('limits.event.pow.wotThresholds'))).to.equal(false)
+    })
+
+    it('rejects a negative wotThresholds maxDistance', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.wotThresholds = [{ maxDistance: -1, difficultyFactor: 0.5 }]
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[0].maxDistance')).to.equal(true)
+    })
+
+    it('rejects a wotThresholds difficultyFactor outside [0, 1]', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.wotThresholds = [
+        { maxDistance: 1, difficultyFactor: -0.1 },
+        { maxDistance: 2, difficultyFactor: 1.1 },
+      ]
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[0].difficultyFactor')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[1].difficultyFactor')).to.equal(true)
+    })
+
+    it('rejects null or non-object entries in wotThresholds without throwing', () => {
+      const settings = baseSettings()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(settings.limits.event.pow as any).wotThresholds = [null, undefined, 42]
+
+      let issues: ReturnType<typeof validateSettings>
+      expect(() => {
+        issues = validateSettings(settings)
+      }).not.to.throw()
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[0]')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[1]')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[2]')).to.equal(true)
+    })
   })
 
   it('formats setting category labels', () => {
