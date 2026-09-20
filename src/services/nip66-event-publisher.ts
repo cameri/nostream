@@ -1,11 +1,11 @@
 import { ICacheAdapter } from '../@types/adapters'
-import { ParameterizedReplaceableEvent, UnidentifiedEvent } from '../@types/event'
+import { Event, ParameterizedReplaceableEvent, UnidentifiedEvent } from '../@types/event'
 import { RelayProbeRunSnapshot } from '../@types/relay-probe-snapshot'
 import { IEventRepository } from '../@types/repositories'
 import { Settings } from '../@types/settings'
 import { EventDeduplicationMetadataKey, EventTags } from '../constants/base'
 import { createLogger } from '../factories/logger-factory'
-import { getPublicKey, identifyEvent, isParameterizedReplaceableEvent, signEvent } from '../utils/event'
+import { broadcastEvent, getPublicKey, identifyEvent, isParameterizedReplaceableEvent, signEvent } from '../utils/event'
 import { getMonitorPrivateKey } from '../utils/monitor-identity'
 import {
   buildMonitorAnnouncementEvent,
@@ -13,9 +13,12 @@ import {
   buildMonitorRelayListEvent,
   buildRelayDiscoveryEvent,
 } from '../utils/nip66-events'
+import { filterValidProbeTargets } from '../utils/relay-probe-targets'
+
 const logger = createLogger('nip66-event-publisher')
 
 export const NIP66_MONITOR_BOOTSTRAPPED_KEY = 'nip66:monitor:bootstrapped'
+export const NIP66_MONITOR_BOOTSTRAP_TTL_SECONDS = 30 * 24 * 60 * 60
 
 export interface INip66EventPublisher {
   publishAfterProbe(snapshot: RelayProbeRunSnapshot, settings: Settings): Promise<void>
@@ -61,17 +64,24 @@ export class Nip66EventPublisher implements INip66EventPublisher {
       return
     }
 
-    const relayUrl = settings.info.relay_url
+    const { valid } = filterValidProbeTargets([settings.info?.relay_url?.trim() ?? ''])
+    const [relayUrl] = valid
+
+    if (!relayUrl) {
+      logger.warn('info.relay_url is not a valid relay URL; skipping NIP-66 monitor bootstrap')
+      return
+    }
 
     await this.persistSignedEvent(buildMonitorProfileEvent(monitorPubkey, createdAt), privkey)
     await this.persistSignedEvent(buildMonitorRelayListEvent(relayUrl, monitorPubkey, createdAt), privkey)
 
-    await this.cache.setKey(NIP66_MONITOR_BOOTSTRAPPED_KEY, monitorPubkey)
+    await this.cache.setKey(NIP66_MONITOR_BOOTSTRAPPED_KEY, monitorPubkey, NIP66_MONITOR_BOOTSTRAP_TTL_SECONDS)
     logger('bootstrapped NIP-66 monitor identity for pubkey %s', monitorPubkey)
   }
 
   private async persistSignedEvent(unsigned: UnidentifiedEvent, privkey: string): Promise<void> {
     const signed = await signEvent(privkey)(await identifyEvent(unsigned))
+    let count: number
 
     if (isParameterizedReplaceableEvent(signed)) {
       const [, deduplication] = signed.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Deduplication) ?? [
@@ -79,14 +89,16 @@ export class Nip66EventPublisher implements INip66EventPublisher {
         '',
       ]
 
-      await this.eventRepository.upsert({
+      count = await this.eventRepository.upsert({
         ...signed,
         [EventDeduplicationMetadataKey]: deduplication ? [deduplication] : [''],
       } as ParameterizedReplaceableEvent)
-
-      return
+    } else {
+      count = await this.eventRepository.upsert(signed as Event)
     }
 
-    await this.eventRepository.upsert(signed)
+    if (count) {
+      await broadcastEvent(signed)
+    }
   }
 }

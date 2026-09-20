@@ -754,6 +754,71 @@
   }
 }
 
+.network-health-results {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.network-health-target {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  padding: 0.85rem 1rem;
+}
+
+.network-health-target-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+
+.network-health-target-url {
+  color: var(--text);
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0;
+  word-break: break-all;
+}
+
+.network-health-network-type {
+  background: var(--panel-border);
+  border: 1px solid var(--panel-border);
+  color: var(--label);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.4rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.network-health-checks {
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.network-health-check {
+  border: 1px solid var(--panel-border);
+  padding: 0.45rem 0.55rem;
+}
+
+.network-health-check-label {
+  color: var(--label);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.15rem;
+  text-transform: uppercase;
+}
+
+.network-health-check-value {
+  font-size: 0.78rem;
+  margin-bottom: 0;
+}
+
 @media (max-width: 768px) {
   .admin-dashboard .metric-value {
     font-size: 1rem;
