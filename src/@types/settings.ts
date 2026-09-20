@@ -1,6 +1,7 @@
 import { EventKinds } from '../constants/base'
 import { Pubkey, Secret } from './base'
 import { MessageType } from './messages'
+import { AdminNotificationsSettings } from './operator-notifications'
 import { SubscriptionFilter } from './subscription'
 
 export interface Info {
@@ -92,6 +93,19 @@ export interface EventRetentionLimits {
   pubkey?: EventRetentionPubkeyLimits
 }
 
+export interface AdaptivePowSettings {
+  /** Enables load-aware difficulty scaling on the eventId check, replacing eventId.minLeadingZeroBits while enabled. Does not affect the pubkey check -- pubkey.minLeadingZeroBits stays a static, non-adaptive knob. Defaults to false. */
+  enabled: boolean
+  /** Minimum required difficulty, used at or below approximately targetEventsPerSecond. */
+  floorBits: number
+  /** Maximum required difficulty, reached at approximately 2x targetEventsPerSecond and beyond. */
+  ceilingBits: number
+  /** Event-rate threshold, in real events/sec, above which difficulty starts climbing toward ceilingBits. */
+  targetEventsPerSecond: number
+  /** EWMA half-life in ms used to smooth the observed event rate. */
+  periodMs: number
+}
+
 export interface EventLimits {
   eventId?: EventIdLimits
   pubkey?: PubkeyLimits
@@ -101,6 +115,7 @@ export interface EventLimits {
   rateLimits?: EventRateLimit[]
   whitelists?: EventWhitelists
   retention?: EventRetentionLimits
+  pow?: AdaptivePowSettings
 }
 
 export interface ClientSubscriptionLimits {
@@ -349,6 +364,7 @@ export interface AdminSettings {
   passwordHash?: string
   sessionTtlSeconds?: number
   nip98?: AdminNip98Settings
+  notifications?: AdminNotificationsSettings
 }
 export interface WoTSettings {
   enabled: boolean
@@ -407,6 +423,18 @@ export interface Nip43Settings {
   inviteRequestWhitelist?: Pubkey[]
 }
 
+export interface Nip56Settings {
+  enabled: boolean
+  /**
+   * Pubkeys (hex) whose kind-1984 reports are treated as coming from a
+   * trusted moderator: their reports get maximum weight and are flagged
+   * actionable, regardless of WoT graph distance. Reports from any other
+   * pubkey are scored purely by WoT distance from `wot.seedPubkey` and are
+   * never actionable on their own -- only stored for manual review.
+   */
+  trustedModerators: Pubkey[]
+}
+
 export interface Settings {
   info: Info
   admin?: AdminSettings
@@ -422,6 +450,7 @@ export interface Settings {
   nip43?: Nip43Settings
   nip45?: Nip45Settings
   nip50?: Nip50Settings
+  nip56?: Nip56Settings
   nip66?: Nip66Settings
   wot?: WoTSettings
 }

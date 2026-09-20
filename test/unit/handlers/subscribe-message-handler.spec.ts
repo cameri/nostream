@@ -837,6 +837,70 @@ describe('SubscribeMessageHandler', () => {
       )
     })
 
+    it('returns undefined if filter value count limit is disabled', () => {
+      settingsFactory.returns({
+        limits: {
+          client: {
+            subscription: {
+              maxFilterValues: 0,
+            },
+          },
+        },
+      })
+      filters = [{ authors: ['aa', 'bb'] }]
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+    })
+
+    it('returns undefined if a filter is at the value count limit, ignoring scalar criteria', () => {
+      settingsFactory.returns({
+        limits: {
+          client: {
+            subscription: {
+              maxFilterValues: 1,
+            },
+          },
+        },
+      })
+      filters = [{ ids: ['aa'], since: 1, until: 2, limit: 3, search: 'aa bb cc' }]
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+    })
+
+    it('returns reason if a filter exceeds the value count limit', () => {
+      settingsFactory.returns({
+        limits: {
+          client: {
+            subscription: {
+              maxFilterValues: 2,
+            },
+          },
+        },
+      })
+      filters = [{ authors: ['aa', 'bb', 'cc'] }]
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
+        'Too many filter values: Number of values per filter must be less than or equal to 2',
+      )
+    })
+
+    it('counts filter values across every array criterion of a filter', () => {
+      settingsFactory.returns({
+        limits: {
+          client: {
+            subscription: {
+              maxFilterValues: 3,
+            },
+          },
+        },
+      })
+      filters = [{ authors: ['aa', 'bb'], '#e': ['cc', 'dd'] }]
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
+        'Too many filter values: Number of values per filter must be less than or equal to 3',
+      )
+    })
+
     it('returns reason if filter limit exceeds max limit', () => {
       settingsFactory.returns({
         limits: {

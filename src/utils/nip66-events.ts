@@ -5,6 +5,44 @@ import { Settings } from '../@types/settings'
 import { EventKinds, EventTags } from '../constants/base'
 import { getEffectiveProbeIntervalSeconds } from './nip66-schedule'
 
+const appendDnsProbeTags = (tags: Tag[], dns: StoredProbeResult['dns']): void => {
+  if (dns.status === 'skipped') {
+    tags.push(['dns', 'skipped'])
+    return
+  }
+
+  if (dns.status === 'error') {
+    tags.push(['dns', '!resolved'])
+    return
+  }
+
+  tags.push(['dns', 'resolved'])
+}
+
+const appendTlsProbeTags = (tags: Tag[], tls: StoredProbeResult['tls']): void => {
+  if (tls.status === 'skipped') {
+    tags.push(['ssl', 'skipped'])
+    return
+  }
+
+  if (tls.status === 'error') {
+    tags.push(['ssl', '!valid'])
+    return
+  }
+
+  const valid = tls.data?.valid === true
+  tags.push(['ssl', valid ? 'valid' : '!valid'])
+
+  if (tls.data?.expiresAt) {
+    const expiresAtSeconds = Math.floor(new Date(tls.data.expiresAt).getTime() / 1000)
+    tags.push(['ssl-expires', String(expiresAtSeconds)])
+  }
+
+  if (tls.data?.issuer) {
+    tags.push(['ssl-issuer', tls.data.issuer])
+  }
+}
+
 export const normalizeRelayUrlForDTag = (relayUrl: string): string => {
   const parsed = new URL(relayUrl)
   parsed.protocol = parsed.protocol.toLowerCase()
@@ -39,6 +77,9 @@ export const buildRelayDiscoveryEvent = (
   if (result.wsRtt.status === 'ok' && typeof result.wsRtt.data?.rttOpenMs === 'number') {
     tags.push(['rtt-open', String(result.wsRtt.data.rttOpenMs)])
   }
+
+  appendDnsProbeTags(tags, result.dns)
+  appendTlsProbeTags(tags, result.tls)
 
   return {
     kind: EventKinds.RELAY_DISCOVERY,

@@ -8,6 +8,7 @@ chai.use(chaiAsPromised)
 
 import * as eventUtils from '../../../src/utils/event'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
+import { OperatorNotificationEventType } from '../../../src/@types/operator-notifications'
 import { PaymentsService } from '../../../src/services/payments-service'
 
 const { expect } = chai
@@ -21,6 +22,7 @@ describe('PaymentsService', () => {
   let userRepository: any
   let invoiceRepository: any
   let eventRepository: any
+  let notificationOutboxRepository: any
   let settings: Sinon.SinonStub
 
   const stubInvoice = (overrides: Partial<Invoice> = {}): Invoice => ({
@@ -71,6 +73,10 @@ describe('PaymentsService', () => {
       create: sandbox.stub().resolves(),
     }
 
+    notificationOutboxRepository = {
+      enqueue: sandbox.stub().resolves(),
+    }
+
     settings = sandbox.stub()
 
     // Stub module-level utilities used inside PaymentsService
@@ -104,6 +110,7 @@ describe('PaymentsService', () => {
       invoiceRepository,
       eventRepository,
       settings,
+      notificationOutboxRepository,
     )
   })
 
@@ -340,6 +347,24 @@ describe('PaymentsService', () => {
       await expect(
         service.confirmInvoice(makeCompletedInvoice({ amountPaid: undefined }))
       ).to.be.rejectedWith('Unable to get transaction: transaction not started.')
+    })
+
+    it('enqueues operator invoice paid in the confirmation transaction', async () => {
+      const invoice = makeCompletedInvoice()
+
+      await service.confirmInvoice(invoice)
+
+      expect(notificationOutboxRepository.enqueue).to.have.been.calledOnceWithExactly(
+        OperatorNotificationEventType.ADMISSION_INVOICE_PAID,
+        {
+          invoiceId: invoice.id,
+          pubkey: invoice.pubkey,
+          amountPaid: invoice.amountPaid!.toString(),
+          unit: invoice.unit,
+          confirmedAt: invoice.confirmedAt!.toISOString(),
+        },
+        mockTrx,
+      )
     })
 
     it('converts SATS to msats before comparing against the fee', async () => {

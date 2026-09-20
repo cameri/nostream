@@ -115,6 +115,28 @@ describe('Nip66EventPublisher', () => {
     expect(eventRepository.upsert).to.have.callCount(2)
   })
 
+  it('rebootstraps when the cached monitor pubkey no longer matches', async () => {
+    cache.getKey.resolves('a'.repeat(64))
+
+    await publisher.publishAfterProbe(snapshot as any, settings as any)
+
+    expect(cache.setKey).to.have.been.calledOnceWithExactly(
+      NIP66_MONITOR_BOOTSTRAPPED_KEY,
+      monitorPubkey,
+      NIP66_MONITOR_BOOTSTRAP_TTL_SECONDS,
+    )
+    expect(eventRepository.upsert).to.have.callCount(4)
+  })
+
+  it('skips bootstrap when the configured relay URL is invalid', async () => {
+    const invalidSettings = { ...settings, info: { ...settings.info, relay_url: 'not a relay url' } }
+
+    await publisher.publishAfterProbe(snapshot as any, invalidSettings as any)
+
+    expect(cache.setKey).to.not.have.been.called
+    expect(eventRepository.upsert).to.have.callCount(2)
+  })
+
   it('does not broadcast duplicate upserts', async () => {
     cache.getKey.resolves(monitorPubkey)
     eventRepository.upsert.resolves(0)

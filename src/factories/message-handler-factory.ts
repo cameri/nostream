@@ -4,6 +4,7 @@ import {
   IEventRepository,
   IInviteCodeRepository,
   INip05VerificationRepository,
+  IReportRepository,
   IUserRepository,
 } from '../@types/repositories'
 import { IncomingMessage, MessageType } from '../@types/messages'
@@ -33,6 +34,7 @@ export const messageHandlerFactory =
     nip05VerificationRepository: INip05VerificationRepository,
     inviteCodeRepository: IInviteCodeRepository,
     dvmJobRepository: IDvmJobRepository,
+    reportRepository: IReportRepository,
   ) =>
   ([message, adapter]: [IncomingMessage, IWebSocketAdapter]) => {
     switch (message[0]) {
@@ -44,6 +46,7 @@ export const messageHandlerFactory =
             userRepository,
             inviteCodeRepository,
             dvmJobRepository,
+            reportRepository,
             getCache(),
             createSettings,
           ),

@@ -94,6 +94,31 @@ describe('CountMessageHandler', () => {
       expect(webSocketOnMessageStub.firstCall.args[0][1]).to.equal('q1')
     })
 
+    it('returns CLOSED when a filter has too many values', async () => {
+      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
+        limits: {
+          client: {
+            subscription: {
+              maxFilters: 10,
+              maxFilterValues: 2,
+              maxSubscriptionIdLength: 256,
+            },
+          },
+        },
+      }) as Settings)
+
+      const message = [MessageType.COUNT, 'q1', { authors: ['aa', 'bb', 'cc'] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(eventRepository.countByFilters).to.not.have.been.called
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        MessageType.CLOSED,
+        'q1',
+        'Too many filter values: Number of values per filter must be less than or equal to 2',
+      ])
+    })
+
     it('returns CLOSED when the query ID is too long', async () => {
       handler = new CountMessageHandler(webSocket, eventRepository, () => ({
         limits: {

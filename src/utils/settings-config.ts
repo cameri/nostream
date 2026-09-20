@@ -593,7 +593,108 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
     issues.push({ path: 'limits.rateLimiter.strategy', message: 'strategy must be ewma or sliding_window' })
   }
 
+  const pow = settings.limits?.event?.pow
+  if (pow?.enabled) {
+    if (!(pow.floorBits >= 0) || !(pow.floorBits <= pow.ceilingBits)) {
+      issues.push({ path: 'limits.event.pow.floorBits', message: 'floorBits must be >= 0 and <= ceilingBits' })
+    }
+    if (!(pow.ceilingBits <= 256)) {
+      issues.push({ path: 'limits.event.pow.ceilingBits', message: 'ceilingBits must be <= 256' })
+    }
+    if (!(pow.periodMs > 0)) {
+      issues.push({ path: 'limits.event.pow.periodMs', message: 'periodMs must be greater than 0' })
+    }
+    if (!(pow.targetEventsPerSecond > 0)) {
+      issues.push({
+        path: 'limits.event.pow.targetEventsPerSecond',
+        message: 'targetEventsPerSecond must be greater than 0',
+      })
+    }
+  }
+
   validateShape(loadDefaults(), settings, [], issues)
+  issues.push(...validateAdminNotifications(settings))
+
+  return issues
+}
+
+const validateAdminNotifications = (settings: Settings): ValidationIssue[] => {
+  const issues: ValidationIssue[] = []
+  const notifications = settings.admin?.notifications
+  if (!notifications) {
+    return issues
+  }
+
+  if (notifications.retry?.maxAttempts !== undefined && notifications.retry.maxAttempts < 1) {
+    issues.push({ path: 'admin.notifications.retry.maxAttempts', message: 'maxAttempts must be at least 1' })
+  }
+
+  if (notifications.retry?.baseDelayMs !== undefined && notifications.retry.baseDelayMs < 0) {
+    issues.push({ path: 'admin.notifications.retry.baseDelayMs', message: 'baseDelayMs must be >= 0' })
+  }
+
+  if (notifications.deliveryLogRetentionDays !== undefined && notifications.deliveryLogRetentionDays < 1) {
+    issues.push({
+      path: 'admin.notifications.deliveryLogRetentionDays',
+      message: 'deliveryLogRetentionDays must be at least 1',
+    })
+  }
+
+  const rawTargets = notifications.targets
+  if (rawTargets !== undefined && !Array.isArray(rawTargets)) {
+    issues.push({ path: 'admin.notifications.targets', message: 'targets must be an array' })
+    return issues
+  }
+
+  const targetIds = new Set<string>()
+  for (const [index, target] of (rawTargets ?? []).entries()) {
+    const prefix = `admin.notifications.targets[${index}]`
+    if (!target || typeof target !== 'object' || Array.isArray(target)) {
+      issues.push({ path: prefix, message: 'target must be an object' })
+      continue
+    }
+
+    if (typeof target.id !== 'string' || !target.id.trim()) {
+      issues.push({ path: `${prefix}.id`, message: 'target id is required' })
+    } else if (targetIds.has(target.id)) {
+      issues.push({ path: `${prefix}.id`, message: 'target id must be unique' })
+    } else {
+      targetIds.add(target.id)
+    }
+
+    if (
+      typeof target.type !== 'string' ||
+      !['http', 'discord', 'slack', 'telegram'].includes(target.type)
+    ) {
+      issues.push({ path: `${prefix}.type`, message: 'type must be http, discord, slack, or telegram' })
+    }
+
+    if (target.enabled !== undefined && typeof target.enabled !== 'boolean') {
+      issues.push({ path: `${prefix}.enabled`, message: 'enabled must be a boolean' })
+    }
+
+    if (target.type === 'telegram') {
+      if (typeof target.botToken !== 'string' || !target.botToken.trim()) {
+        issues.push({ path: `${prefix}.botToken`, message: 'botToken is required for telegram targets' })
+      }
+      if (typeof target.chatId !== 'string' || !target.chatId.trim()) {
+        issues.push({ path: `${prefix}.chatId`, message: 'chatId is required for telegram targets' })
+      }
+    } else if (target.type === 'http' || target.type === 'discord' || target.type === 'slack') {
+      if (typeof target.url !== 'string' || !target.url.trim()) {
+        issues.push({ path: `${prefix}.url`, message: 'url is required for webhook targets' })
+      } else {
+        try {
+          const parsed = new URL(target.url)
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            issues.push({ path: `${prefix}.url`, message: 'url must use http or https' })
+          }
+        } catch {
+          issues.push({ path: `${prefix}.url`, message: 'url must be a valid URL' })
+        }
+      }
+    }
+  }
 
   return issues
 }

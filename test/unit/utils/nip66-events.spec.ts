@@ -28,7 +28,7 @@ const storedProbeResult = (relayUrl = 'wss://Relay.Example.com:443/'): StoredPro
     },
     checkedAt: '2026-01-01T00:00:00.000Z',
     dns: { status: 'ok', durationMs: 1 },
-    tls: { status: 'ok', durationMs: 1 },
+    tls: { status: 'ok', durationMs: 1, data: { valid: true, issuer: 'Test CA' } },
     wsRtt: { status: 'ok', durationMs: 12, data: { rttOpenMs: 234, address: '127.0.0.1:443' } },
     nip11: { status: 'ok', durationMs: 1 },
   }) as StoredProbeResult
@@ -47,6 +47,8 @@ describe('nip66-events', () => {
     expect(event.tags).to.deep.include(['d', 'wss://relay.example.com/'])
     expect(event.tags).to.deep.include(['n', 'clearnet'])
     expect(event.tags).to.deep.include(['rtt-open', '234'])
+    expect(event.tags).to.deep.include(['dns', 'resolved'])
+    expect(event.tags).to.deep.include(['ssl', 'valid'])
   })
 
   it('builds kind 10166 monitor announcement events', () => {
