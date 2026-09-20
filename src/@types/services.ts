@@ -45,6 +45,7 @@ export interface INotificationDispatcher {
 export interface IOperatorNotificationService extends INotificationDispatcher {
   dispatchTestTarget(targetId: string): Promise<void>
   getMaxAttempts(): number
+  getBaseDelayMs(): number
 }
 
 export interface INotificationOutboxService {

@@ -640,10 +640,21 @@ const validateAdminNotifications = (settings: Settings): ValidationIssue[] => {
     })
   }
 
+  const rawTargets = notifications.targets
+  if (rawTargets !== undefined && !Array.isArray(rawTargets)) {
+    issues.push({ path: 'admin.notifications.targets', message: 'targets must be an array' })
+    return issues
+  }
+
   const targetIds = new Set<string>()
-  for (const [index, target] of (notifications.targets ?? []).entries()) {
+  for (const [index, target] of (rawTargets ?? []).entries()) {
     const prefix = `admin.notifications.targets[${index}]`
-    if (!target.id?.trim()) {
+    if (!target || typeof target !== 'object' || Array.isArray(target)) {
+      issues.push({ path: prefix, message: 'target must be an object' })
+      continue
+    }
+
+    if (typeof target.id !== 'string' || !target.id.trim()) {
       issues.push({ path: `${prefix}.id`, message: 'target id is required' })
     } else if (targetIds.has(target.id)) {
       issues.push({ path: `${prefix}.id`, message: 'target id must be unique' })
@@ -651,20 +662,36 @@ const validateAdminNotifications = (settings: Settings): ValidationIssue[] => {
       targetIds.add(target.id)
     }
 
-    if (!['http', 'discord', 'slack', 'telegram'].includes(target.type)) {
+    if (
+      typeof target.type !== 'string' ||
+      !['http', 'discord', 'slack', 'telegram'].includes(target.type)
+    ) {
       issues.push({ path: `${prefix}.type`, message: 'type must be http, discord, slack, or telegram' })
     }
 
+    if (target.enabled !== undefined && typeof target.enabled !== 'boolean') {
+      issues.push({ path: `${prefix}.enabled`, message: 'enabled must be a boolean' })
+    }
+
     if (target.type === 'telegram') {
-      if (!target.botToken?.trim()) {
+      if (typeof target.botToken !== 'string' || !target.botToken.trim()) {
         issues.push({ path: `${prefix}.botToken`, message: 'botToken is required for telegram targets' })
       }
-      if (!target.chatId?.trim()) {
+      if (typeof target.chatId !== 'string' || !target.chatId.trim()) {
         issues.push({ path: `${prefix}.chatId`, message: 'chatId is required for telegram targets' })
       }
     } else if (target.type === 'http' || target.type === 'discord' || target.type === 'slack') {
-      if (!target.url?.trim()) {
+      if (typeof target.url !== 'string' || !target.url.trim()) {
         issues.push({ path: `${prefix}.url`, message: 'url is required for webhook targets' })
+      } else {
+        try {
+          const parsed = new URL(target.url)
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            issues.push({ path: `${prefix}.url`, message: 'url must use http or https' })
+          }
+        } catch {
+          issues.push({ path: `${prefix}.url`, message: 'url must be a valid URL' })
+        }
       }
     }
   }

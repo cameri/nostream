@@ -53,6 +53,17 @@ export class NotificationDeliveryLogRepository implements INotificationDeliveryL
     })
   }
 
+  public async findSuccessfulTargetIds(
+    outboxId: string,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<string[]> {
+    return client<DBNotificationDeliveryLogEntry>('notification_delivery_log')
+      .where('outbox_id', outboxId)
+      .where('status', NotificationDeliveryStatus.SUCCESS)
+      .distinct('target_id')
+      .pluck('target_id')
+  }
+
   public async findRecent(limit = 50, client: DatabaseClient = this.dbClient): Promise<NotificationDeliveryLogEntry[]> {
     const rows = await client<DBNotificationDeliveryLogEntry>('notification_delivery_log')
       .orderBy('created_at', 'desc')

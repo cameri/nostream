@@ -111,6 +111,7 @@ export interface INotificationDeliveryLogRepository {
     client?: DatabaseClient,
   ): Promise<void>
   findRecent(limit?: number, client?: DatabaseClient): Promise<NotificationDeliveryLogEntry[]>
+  findSuccessfulTargetIds(outboxId: string, client?: DatabaseClient): Promise<string[]>
   deleteOlderThan(cutoff: Date, client?: DatabaseClient): Promise<number>
 }
 
@@ -127,6 +128,8 @@ export interface INotificationOutboxRepository {
     error: string,
     attemptCount: number,
     maxAttempts: number,
+    baseDelayMs: number,
     client?: DatabaseClient,
   ): Promise<void>
+  deleteTerminalOlderThan(cutoff: Date, client?: DatabaseClient): Promise<number>
 }

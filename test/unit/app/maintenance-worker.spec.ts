@@ -104,6 +104,7 @@ describe('MaintenanceWorker', () => {
 
     notificationOutboxRepository = {
       enqueue: sandbox.stub().resolves(),
+      deleteTerminalOlderThan: sandbox.stub().resolves(0),
     }
 
     // Prevent real timeouts and randomized per-invoice delays.

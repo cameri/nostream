@@ -100,7 +100,7 @@ router.post(
   withAdminController(createPostAdminSettingsRestoreController),
 )
 router.get(
-  '/notifications/delivery-log',
+  '/notifications/deliveries',
   adminRateLimitMiddleware,
   adminAuthMiddleware,
   withAdminController(createGetAdminNotificationDeliveryLogController),

@@ -12,6 +12,9 @@ import { createLogger } from '../factories/logger-factory'
 
 const logger = createLogger('notification-outbox-repository')
 
+/** Reclaim PROCESSING rows when a worker dies after claim. */
+export const NOTIFICATION_OUTBOX_PROCESSING_LEASE_MS = 5 * 60 * 1000
+
 function fromDB(row: DBNotificationOutboxMessage): NotificationOutboxMessage {
   return {
     id: row.id,
@@ -63,9 +66,23 @@ export class NotificationOutboxRepository implements INotificationOutboxReposito
     logger('claim notification outbox batch (limit %d)', limit)
 
     return client.transaction(async (trx) => {
+      const now = new Date()
+      const staleBefore = new Date(now.getTime() - NOTIFICATION_OUTBOX_PROCESSING_LEASE_MS)
+
       const rows = await trx<DBNotificationOutboxMessage>('notification_outbox')
-        .where('status', NotificationOutboxStatus.PENDING)
-        .where('available_at', '<=', trx.fn.now())
+        .where((builder) => {
+          builder
+            .where((pending) => {
+              pending
+                .where('status', NotificationOutboxStatus.PENDING)
+                .where('available_at', '<=', trx.fn.now())
+            })
+            .orWhere((processing) => {
+              processing
+                .where('status', NotificationOutboxStatus.PROCESSING)
+                .where('updated_at', '<', staleBefore)
+            })
+        })
         .orderBy('created_at', 'asc')
         .limit(limit)
         .forUpdate()
@@ -76,7 +93,6 @@ export class NotificationOutboxRepository implements INotificationOutboxReposito
         return []
       }
 
-      const now = new Date()
       const ids = rows.map((row) => row.id)
 
       await trx<DBNotificationOutboxMessage>('notification_outbox').whereIn('id', ids).update({
@@ -111,13 +127,15 @@ export class NotificationOutboxRepository implements INotificationOutboxReposito
     error: string,
     attemptCount: number,
     maxAttempts: number,
+    baseDelayMs: number,
     client: DatabaseClient = this.dbClient,
   ): Promise<void> {
     logger('mark notification outbox failed %s (attempt %d)', id, attemptCount)
 
     const now = new Date()
     const isDead = attemptCount >= maxAttempts
-    const backoffMs = Math.min(60_000, 1000 * 2 ** Math.max(0, attemptCount - 1))
+    const delayBase = Math.max(0, baseDelayMs)
+    const backoffMs = Math.min(60_000, delayBase * 2 ** Math.max(0, attemptCount - 1))
     const availableAt = new Date(now.getTime() + backoffMs)
 
     await client<DBNotificationOutboxMessage>('notification_outbox')
@@ -129,5 +147,16 @@ export class NotificationOutboxRepository implements INotificationOutboxReposito
         last_error: error.slice(0, 2000),
         updated_at: now,
       })
+  }
+
+  public async deleteTerminalOlderThan(cutoff: Date, client: DatabaseClient = this.dbClient): Promise<number> {
+    logger('delete terminal notification outbox rows older than %s', cutoff.toISOString())
+
+    const result = await client<DBNotificationOutboxMessage>('notification_outbox')
+      .whereIn('status', [NotificationOutboxStatus.DELIVERED, NotificationOutboxStatus.DEAD])
+      .where('updated_at', '<', cutoff)
+      .delete()
+
+    return typeof result === 'number' ? result : 0
   }
 }

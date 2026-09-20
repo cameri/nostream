@@ -7,7 +7,18 @@ export class GetAdminNotificationDeliveryLogController implements IController {
   public constructor(private readonly deliveryLogRepository: INotificationDeliveryLogRepository) {}
 
   public async handleRequest(_request: Request, response: Response): Promise<void> {
-    const limit = Math.min(Number(_request.query.limit) || 50, 200)
+    let limit = 50
+    if (_request.query.limit !== undefined) {
+      const parsed = Number(_request.query.limit)
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        response.status(400).setHeader('content-type', 'application/json').send({
+          error: 'limit must be a positive integer',
+        })
+        return
+      }
+      limit = Math.min(parsed, 200)
+    }
+
     const entries = await this.deliveryLogRepository.findRecent(limit)
 
     response.status(200).setHeader('content-type', 'application/json').send({

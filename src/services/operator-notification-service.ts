@@ -40,7 +40,17 @@ export class OperatorNotificationService implements INotificationDispatcher {
       return
     }
 
-    const targets = config.targets.filter((target) => target.enabled)
+    const enabledTargets = config.targets.filter((target) => target.enabled)
+    if (!enabledTargets.length) {
+      return
+    }
+
+    const alreadyDelivered = new Set(
+      context.outboxId
+        ? await this.deliveryLogRepository.findSuccessfulTargetIds(context.outboxId)
+        : [],
+    )
+    const targets = enabledTargets.filter((target) => !alreadyDelivered.has(target.id))
     if (!targets.length) {
       return
     }
@@ -100,6 +110,10 @@ export class OperatorNotificationService implements INotificationDispatcher {
 
   public getMaxAttempts(): number {
     return this.getNotificationsConfig().retry.maxAttempts
+  }
+
+  public getBaseDelayMs(): number {
+    return this.getNotificationsConfig().retry.baseDelayMs
   }
 
   private getNotificationsConfig(): AdminNotificationsSettings {

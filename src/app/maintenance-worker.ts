@@ -229,6 +229,7 @@ export class MaintenanceWorker implements IRunnable {
       const retentionDays = this.settings().admin?.notifications?.deliveryLogRetentionDays ?? 30
       const cutoff = new Date(Date.now() - retentionDays * 86_400_000)
       await this.notificationDeliveryLogRepository.deleteOlderThan(cutoff)
+      await this.notificationOutboxRepository.deleteTerminalOlderThan(cutoff)
     } catch (error) {
       logger.error('Unable to process notification outbox', error)
     }

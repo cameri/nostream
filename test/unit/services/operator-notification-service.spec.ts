@@ -21,6 +21,7 @@ describe('OperatorNotificationService', () => {
     sandbox = Sinon.createSandbox()
     deliveryLogRepository = {
       append: sandbox.stub().resolves(),
+      findSuccessfulTargetIds: sandbox.stub().resolves([]),
     }
     service = new OperatorNotificationService(
       () =>
@@ -81,5 +82,48 @@ describe('OperatorNotificationService', () => {
     await expect(
       service.dispatch(OperatorNotificationEventType.ADMISSION_INVOICE_PAID, { invoiceId: 'inv-1' }),
     ).to.be.rejectedWith('network down')
+  })
+
+  it('skips targets that already succeeded for the same outbox message', async () => {
+    service = new OperatorNotificationService(
+      () =>
+        ({
+          info: { relay_url: 'wss://relay.example' },
+          admin: {
+            notifications: {
+              enabled: true,
+              targets: [
+                {
+                  id: 'discord-main',
+                  type: 'discord',
+                  enabled: true,
+                  url: 'https://discord.com/api/webhooks/test',
+                },
+                {
+                  id: 'slack-ops',
+                  type: 'slack',
+                  enabled: true,
+                  url: 'https://hooks.slack.com/services/test',
+                },
+              ],
+              events: { 'admission.invoice.paid': true },
+              retry: { maxAttempts: 5, baseDelayMs: 1000 },
+            },
+          },
+        }) as any,
+      deliveryLogRepository,
+    )
+    deliveryLogRepository.findSuccessfulTargetIds.resolves(['discord-main'])
+    ;(axios.post as Sinon.SinonStub).rejects(new Error('slack down'))
+
+    await expect(
+      service.dispatch(
+        OperatorNotificationEventType.ADMISSION_INVOICE_PAID,
+        { invoiceId: 'inv-1' },
+        { outboxId: 'ob-1', attemptNumber: 2 },
+      ),
+    ).to.be.rejectedWith('slack-ops: slack down')
+
+    expect(axios.post).to.have.been.calledOnce
   })
 })

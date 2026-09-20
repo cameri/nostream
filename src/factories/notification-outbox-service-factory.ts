@@ -17,5 +17,6 @@ export const createNotificationOutboxService = () => {
     outboxRepository,
     operatorNotificationService,
     () => operatorNotificationService.getMaxAttempts(),
+    () => operatorNotificationService.getBaseDelayMs(),
   )
 }

@@ -12,6 +12,7 @@ export class NotificationOutboxService implements INotificationOutboxService {
     private readonly outboxRepository: INotificationOutboxRepository,
     private readonly dispatcher: INotificationDispatcher,
     private readonly maxAttempts: () => number = () => NOTIFICATION_OUTBOX_MAX_ATTEMPTS,
+    private readonly baseDelayMs: () => number = () => 1000,
   ) {}
 
   public async processBatch(limit = NOTIFICATION_OUTBOX_BATCH_SIZE): Promise<number> {
@@ -39,6 +40,7 @@ export class NotificationOutboxService implements INotificationOutboxService {
           reason,
           message.attemptCount + 1,
           this.maxAttempts(),
+          this.baseDelayMs(),
         )
       }
     }

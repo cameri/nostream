@@ -74,6 +74,7 @@ describe('NotificationOutboxService', () => {
       'network down',
       1,
       5,
+      1000,
     )
   })
 })
