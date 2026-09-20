@@ -5,6 +5,7 @@ import {
   IEventRepository,
   IInviteCodeRepository,
   INip05VerificationRepository,
+  IReportRepository,
   IUserRepository,
 } from '../../../src/@types/repositories'
 import { IncomingMessage, MessageType } from '../../../src/@types/messages'
@@ -26,6 +27,7 @@ describe('messageHandlerFactory', () => {
   let nip05VerificationRepository: INip05VerificationRepository
   let inviteCodeRepository: IInviteCodeRepository
   let dvmJobRepository: IDvmJobRepository
+  let reportRepository: IReportRepository
   let message: IncomingMessage
   let adapter: IWebSocketAdapter
   let factory
@@ -50,6 +52,7 @@ describe('messageHandlerFactory', () => {
     nip05VerificationRepository = {} as any
     inviteCodeRepository = {} as any
     dvmJobRepository = {} as any
+    reportRepository = {} as any
     adapter = {} as any
     event = {
       tags: [],
@@ -60,6 +63,7 @@ describe('messageHandlerFactory', () => {
       nip05VerificationRepository,
       inviteCodeRepository,
       dvmJobRepository,
+      reportRepository,
     )
   })
 

@@ -154,16 +154,22 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].period   | Rate limit period in milliseconds. |
 | limits.admissionCheck.rateLimits[].rate     | Maximum number of admission checks during period. |
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
+| limits.client.subscription.maxFilterValues  | Maximum number of values allowed in each filter, counting its array criteria (`ids`, `authors`, `kinds`, `#<tag>`) together. Defaults to 2500. Disabled when set to zero. |
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
 | limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.createdAt.maxNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. |
+| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. Ignored on the client path while `limits.event.pow.enabled` is true (mirrored events from `static-mirroring-worker.ts` still enforce this static value). |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
+| limits.event.pow.ceilingBits                | Maximum adaptive PoW difficulty, reached at approximately 2x `targetEventsPerSecond` and beyond. |
+| limits.event.pow.enabled                    | Enables load-aware PoW difficulty scaling on the eventId check only, in place of the static `eventId.minLeadingZeroBits` value. Does not affect `pubkey.minLeadingZeroBits`, which stays a static, non-adaptive knob regardless of this setting -- a pubkey requirement is a one-time offline identity cost, not a per-event load signal. Defaults to false. |
+| limits.event.pow.floorBits                  | Minimum adaptive PoW difficulty, used at or below approximately `targetEventsPerSecond`. With the default `floorBits: 0`, the load signal costs an attacker nothing to drive; set a non-zero floor if the gate should cost something even under light load. |
+| limits.event.pow.periodMs                   | EWMA half-life (ms) used to smooth the observed event rate. |
+| limits.event.pow.targetEventsPerSecond      | Event-rate threshold (in real events/sec) above which the adaptive difficulty starts climbing toward `ceilingBits`. |
 | limits.event.pubkey.blacklist               | List of public keys to always reject. Public keys in this list will not be able to post to this relay. |
-| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. Defaults to zero. Disabled when set to zero. |
+| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. Defaults to zero. Disabled when set to zero. Always enforced regardless of `limits.event.pow.enabled` -- adaptive PoW never applies to the pubkey check (see `limits.event.pow.enabled`). |
 | limits.event.pubkey.whitelist               | List of public keys to always allow. Only public keys in this list will be able to post to this relay. Use for private relays. |
 | limits.event.rateLimits[].kinds             | List of event kinds rate limited. Use `[min, max]` for ranges. Optional. |
 | limits.event.rateLimits[].period | Rate limiting period in milliseconds. For `sliding_window`: the time window during which requests are counted. For `ewma`: the half-life of the exponential decay — shorter values forget bursts faster, longer values are stricter on bursty clients. |
@@ -207,6 +213,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip50.enabled                               | Enable or disable NIP-50 full-text search. Defaults to false. When enabled, clients can include a `search` field in REQ filters to perform text queries against event content. Requires the GIN full-text index migration. |
 | nip50.language                              | PostgreSQL text-search configuration name. Defaults to `simple` (language-agnostic tokenization). Set to `english`, `spanish`, etc. for stemming support. See [PostgreSQL text search configurations](https://www.postgresql.org/docs/current/textsearch-configuration.html). **Note:** The GIN index migration is built with the `simple` configuration. If you change this value, you must manually rebuild the index: `DROP INDEX CONCURRENTLY events_content_fts_idx; CREATE INDEX CONCURRENTLY events_content_fts_idx ON events USING gin (to_tsvector('<your_language>', event_content));` — otherwise the planner cannot use the index and queries fall back to sequential scans. |
 | nip50.maxQueryLength                        | Maximum length of the search query string. Queries exceeding this are truncated. Defaults to 256. |
+| nip56.enabled                               | Enable NIP-56 content reporting. When true, kind-1984 report events are stored and scored by the reporter's WoT distance from `wot.seedPubkey`. Defaults to false. |
+| nip56.trustedModerators                     | Pubkeys (hex) whose reports are always maximum-weight and actionable, regardless of WoT distance. Reports from any other pubkey are stored and weighted, but never trigger automatic actions on their own. Defaults to []. |
 | nip66.dnsCacheTtlSeconds                    | DNS cache TTL in seconds for repeated probe lookups of the same hostname. Defaults to 300. |
 | nip66.enabled                               | Enable NIP-66 relay monitoring. When true, starts a `relay-monitor` cluster worker that probes targets on an interval and stores the latest snapshot in Redis. Defaults to false. |
 | nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Defaults to 3600. |

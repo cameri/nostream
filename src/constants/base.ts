@@ -32,6 +32,8 @@ export enum EventKinds {
   GIFT_WRAP = 1059,
   // NIP-03: OpenTimestamps attestation
   OPEN_TIMESTAMPS = 1040,
+  // NIP-56: Reporting
+  REPORT = 1984,
   // Relay-only
   RELAY_INVITE = 50,
   INVOICE_UPDATE = 402,
