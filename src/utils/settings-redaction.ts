@@ -1,4 +1,4 @@
-const SENSITIVE_SETTING_KEYS = new Set(['passwordHash', 'secret'])
+const SENSITIVE_SETTING_KEYS = new Set(['passwordHash', 'secret', 'botToken'])
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -9,7 +9,16 @@ export const isSensitiveSettingsPath = (path: string): boolean => {
   const lastSegment = segments[segments.length - 1] ?? ''
   const key = lastSegment.replace(/\[\d+\]$/, '')
 
-  return SENSITIVE_SETTING_KEYS.has(key)
+  if (SENSITIVE_SETTING_KEYS.has(key)) {
+    return true
+  }
+
+  // Webhook URLs embed secrets (Discord/Slack tokens, signed HTTP endpoints).
+  if (key === 'url' && path.startsWith('admin.notifications.targets')) {
+    return true
+  }
+
+  return false
 }
 
 export const isWriteProtectedSettingsPath = (path: string): boolean => {
@@ -25,9 +34,9 @@ export const redactSettingsValue = (path: string, value: unknown): unknown => {
 }
 
 export const redactSettingsSecrets = <T>(settings: T): T => {
-  const redactWalk = (value: unknown): unknown => {
+  const redactWalk = (value: unknown, path = ''): unknown => {
     if (Array.isArray(value)) {
-      return value.map(redactWalk)
+      return value.map((entry, index) => redactWalk(entry, `${path}[${index}]`))
     }
 
     if (!isPlainObject(value)) {
@@ -37,12 +46,13 @@ export const redactSettingsSecrets = <T>(settings: T): T => {
     const result: Record<string, unknown> = {}
 
     for (const [key, entry] of Object.entries(value)) {
-      if (SENSITIVE_SETTING_KEYS.has(key) && typeof entry === 'string' && entry.length > 0) {
+      const childPath = path ? `${path}.${key}` : key
+      if (isSensitiveSettingsPath(childPath) && typeof entry === 'string' && entry.length > 0) {
         result[key] = '***'
         continue
       }
 
-      result[key] = redactWalk(entry)
+      result[key] = redactWalk(entry, childPath)
     }
 
     return result

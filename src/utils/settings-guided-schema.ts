@@ -262,6 +262,11 @@ export const guidedSettingCategories: GuidedSettingCategory[] = [
         type: 'number',
         validate: requireSafeNonNegativeIntegerSettingValue,
       },
+      {
+        label: 'Enable operator notifications',
+        path: 'admin.notifications.enabled',
+        type: 'boolean',
+      },
     ],
   },
 ]
