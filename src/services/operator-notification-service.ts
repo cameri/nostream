@@ -100,9 +100,10 @@ export class OperatorNotificationService implements INotificationDispatcher {
       throw new Error(`Unknown notification target: ${targetId}`)
     }
 
+    const relayName = this.settings().info?.name?.trim() || this.settings().info.relay_url
     const envelope = this.buildEnvelope(OperatorNotificationEventType.RELAY_RESTARTED, {
       test: true,
-      message: 'Operator notification test delivery',
+      message: `Test notification from ${relayName}`,
     })
 
     await deliverToTarget(target, envelope)
