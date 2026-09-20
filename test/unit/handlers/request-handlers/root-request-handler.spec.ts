@@ -121,6 +121,21 @@ describe('rootRequestHandler', () => {
       expect(doc.name).to.equal('Test Relay')
     })
 
+    it('advertises the configured filter value limit', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          client: { subscription: { maxFilterValues: 500 } },
+        },
+      })
+
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.limitation.max_filter_values).to.equal(500)
+    })
+
     it('does not render the HTML template', () => {
       rootRequestHandler(req, res, next)
 
@@ -302,6 +317,51 @@ describe('rootRequestHandler', () => {
       createSettingsStub.returns({
         ...baseSettings,
         nip42: { authRequired: true },
+      })
+      rootRequestHandler(req, res, next)
+      expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(true)
+    })
+
+    it('advertises the static minLeadingZeroBits as min_pow_difficulty when adaptive pow is disabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: { ...baseSettings.limits.event, eventId: { minLeadingZeroBits: 12 } },
+        },
+      })
+      rootRequestHandler(req, res, next)
+      expect(res.send.firstCall.args[0].limitation.min_pow_difficulty).to.equal(12)
+    })
+
+    it('advertises the adaptive pow floor as min_pow_difficulty when adaptive pow is enabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: {
+            ...baseSettings.limits.event,
+            eventId: { minLeadingZeroBits: 12 },
+            pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+          },
+        },
+      })
+      rootRequestHandler(req, res, next)
+      // The live requirement can be higher than floorBits under load, but floorBits
+      // is the only number the relay can promise as a static minimum.
+      expect(res.send.firstCall.args[0].limitation.min_pow_difficulty).to.equal(8)
+    })
+
+    it('sets limitation.restricted_writes when adaptive pow is enabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: {
+            ...baseSettings.limits.event,
+            pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+          },
+        },
       })
       rootRequestHandler(req, res, next)
       expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(true)

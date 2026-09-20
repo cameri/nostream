@@ -8,6 +8,7 @@ import {
   IEventRepository,
   IInviteCodeRepository,
   INip05VerificationRepository,
+  IReportRepository,
   IUserRepository,
 } from '../../../src/@types/repositories'
 import { IWebSocketServerAdapter } from '../../../src/@types/adapters'
@@ -40,6 +41,7 @@ describe('webSocketAdapterFactory', () => {
     const nip05VerificationRepository: INip05VerificationRepository = {} as any
     const inviteCodeRepository: IInviteCodeRepository = {} as any
     const dvmJobRepository: IDvmJobRepository = {} as any
+    const reportRepository: IReportRepository = {} as any
 
     const client: WebSocket = {
       on: onStub,
@@ -61,6 +63,7 @@ describe('webSocketAdapterFactory', () => {
       nip05VerificationRepository,
       inviteCodeRepository,
       dvmJobRepository,
+      reportRepository,
     )
     expect(factory([client, request, webSocketServerAdapter])).to.be.an.instanceOf(WebSocketAdapter)
   })

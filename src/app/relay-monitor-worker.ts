@@ -4,15 +4,13 @@ import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 import { INip66EventPublisher } from '../services/nip66-event-publisher'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { getEffectiveProbeIntervalSeconds } from '../utils/nip66-events'
 import { filterValidProbeTargets, resolveProbeTargets } from '../utils/relay-probe-targets'
 import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
 import { runProbe } from '../utils/relay-probe'
 import { ProbeOptions, ProbeResult } from '../utils/relay-probe/types'
 
 const logger = createLogger('relay-monitor-worker')
-
-const DEFAULT_PROBE_INTERVAL_SECONDS = 3600
-const MIN_PROBE_INTERVAL_SECONDS = 60
 
 export type RunProbeFn = (relayUrl: string, options?: ProbeOptions) => Promise<ProbeResult>
 
@@ -26,10 +24,7 @@ export const buildProbeOptions = (settings: Settings): ProbeOptions => {
 }
 
 export const getProbeIntervalMs = (settings: Settings): number => {
-  const configured = settings.nip66?.probeIntervalSeconds ?? DEFAULT_PROBE_INTERVAL_SECONDS
-  const intervalSeconds = Math.max(configured, MIN_PROBE_INTERVAL_SECONDS)
-
-  return intervalSeconds * 1000
+  return getEffectiveProbeIntervalSeconds(settings) * 1000
 }
 
 export class RelayMonitorWorker implements IRunnable {
@@ -130,10 +125,7 @@ export class RelayMonitorWorker implements IRunnable {
       status: deriveRelayProbeRunStatus(results),
     }
 
-    const expirySeconds = Math.max(
-      (currentSettings.nip66?.probeIntervalSeconds ?? DEFAULT_PROBE_INTERVAL_SECONDS) * 2,
-      MIN_PROBE_INTERVAL_SECONDS * 2,
-    )
+    const expirySeconds = getEffectiveProbeIntervalSeconds(currentSettings) * 2
 
     await this.snapshotStore.saveLatest(snapshot, expirySeconds)
     logger('saved probe snapshot for %d target(s) with status %s', valid.length, snapshot.status)

@@ -1,8 +1,13 @@
-import { expect } from 'chai'
+import chai from 'chai'
 import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
 
 import { IRelayProbeSnapshotStore, RelayProbeRunSnapshot } from '../../../../src/@types/relay-probe-snapshot'
 import { GetAdminNetworkHealthController } from '../../../../src/controllers/admin/get-network-health-controller'
+
+chai.use(sinonChai)
+
+const { expect } = chai
 
 describe('GetAdminNetworkHealthController', () => {
   let snapshotStore: Sinon.SinonStubbedInstance<IRelayProbeSnapshotStore>

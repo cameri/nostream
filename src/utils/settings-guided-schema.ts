@@ -242,6 +242,13 @@ export const guidedSettingCategories: GuidedSettingCategory[] = [
         type: 'number',
         validate: requireSafeNonNegativeIntegerSettingValue,
       },
+      { label: 'Enable NIP-56 content reporting', path: 'nip56.enabled', type: 'boolean' },
+      {
+        label: 'NIP-56 trusted moderator pubkeys (hex)',
+        path: 'nip56.trustedModerators',
+        type: 'stringArray',
+        placeholder: 'One pubkey per line',
+      },
     ],
   },
   {
@@ -254,6 +261,11 @@ export const guidedSettingCategories: GuidedSettingCategory[] = [
         path: 'admin.sessionTtlSeconds',
         type: 'number',
         validate: requireSafeNonNegativeIntegerSettingValue,
+      },
+      {
+        label: 'Enable operator notifications',
+        path: 'admin.notifications.enabled',
+        type: 'boolean',
       },
     ],
   },

@@ -4,6 +4,53 @@ import { StoredProbeResult } from '../@types/relay-probe-snapshot'
 import { Settings } from '../@types/settings'
 import { EventKinds, EventTags } from '../constants/base'
 
+const DEFAULT_PROBE_INTERVAL_SECONDS = 3600
+const MIN_PROBE_INTERVAL_SECONDS = 60
+
+export const getEffectiveProbeIntervalSeconds = (settings: Settings): number => {
+  const configured = settings.nip66?.probeIntervalSeconds ?? DEFAULT_PROBE_INTERVAL_SECONDS
+
+  return Math.max(configured, MIN_PROBE_INTERVAL_SECONDS)
+}
+
+const appendDnsProbeTags = (tags: Tag[], dns: StoredProbeResult['dns']): void => {
+  if (dns.status === 'skipped') {
+    tags.push(['dns', 'skipped'])
+    return
+  }
+
+  if (dns.status === 'error') {
+    tags.push(['dns', '!resolved'])
+    return
+  }
+
+  tags.push(['dns', 'resolved'])
+}
+
+const appendTlsProbeTags = (tags: Tag[], tls: StoredProbeResult['tls']): void => {
+  if (tls.status === 'skipped') {
+    tags.push(['ssl', 'skipped'])
+    return
+  }
+
+  if (tls.status === 'error') {
+    tags.push(['ssl', '!valid'])
+    return
+  }
+
+  const valid = tls.data?.valid === true
+  tags.push(['ssl', valid ? 'valid' : '!valid'])
+
+  if (tls.data?.expiresAt) {
+    const expiresAtSeconds = Math.floor(new Date(tls.data.expiresAt).getTime() / 1000)
+    tags.push(['ssl-expires', String(expiresAtSeconds)])
+  }
+
+  if (tls.data?.issuer) {
+    tags.push(['ssl-issuer', tls.data.issuer])
+  }
+}
+
 export const normalizeRelayUrlForDTag = (relayUrl: string): string => {
   const parsed = new URL(relayUrl)
   parsed.protocol = parsed.protocol.toLowerCase()
@@ -39,6 +86,9 @@ export const buildRelayDiscoveryEvent = (
     tags.push(['rtt-open', String(result.wsRtt.data.rttOpenMs)])
   }
 
+  appendDnsProbeTags(tags, result.dns)
+  appendTlsProbeTags(tags, result.tls)
+
   return {
     kind: EventKinds.RELAY_DISCOVERY,
     pubkey: monitorPubkey,
@@ -57,7 +107,7 @@ export const buildMonitorAnnouncementEvent = (
   const timeouts = nip66?.timeouts
 
   const tags: Tag[] = [
-    ['frequency', String(nip66?.probeIntervalSeconds ?? 3600)],
+    ['frequency', String(getEffectiveProbeIntervalSeconds(settings))],
     ['c', 'ws'],
     ['c', 'nip11'],
     ['c', 'ssl'],

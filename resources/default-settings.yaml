@@ -137,6 +137,14 @@ wot:
   maxDepth: 2
   # Reserved for a future periodic rebuild; not yet read by any code.
   refreshIntervalHours: 24
+nip56:
+  # NIP-56 content reporting. When enabled, kind-1984 report events are
+  # stored and scored by the reporter's WoT distance from wot.seedPubkey.
+  enabled: false
+  # Pubkeys (hex) whose reports are always maximum-weight and actionable,
+  # regardless of WoT distance. Reports from any other pubkey are stored
+  # and weighted, but never trigger automatic actions on their own.
+  trustedModerators: []
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
@@ -218,6 +226,16 @@ limits:
         whitelist: []
     eventId:
       minLeadingZeroBits: 0
+    # Adaptive PoW: scales the required difficulty on the eventId check with
+    # observed relay load instead of using a fixed minLeadingZeroBits value.
+    # Does not affect the pubkey check above -- that stays static regardless.
+    # Disabled by default.
+    pow:
+      enabled: false
+      floorBits: 0
+      ceilingBits: 24
+      targetEventsPerSecond: 50
+      periodMs: 60000
     kind:
       whitelist: []
       blacklist: []
@@ -322,3 +340,16 @@ admin:
     enabled: false
     allowedPubkeys: []
     maxSkewSeconds: 60
+  notifications:
+    enabled: false
+    targets: []
+    events:
+      admission.invoice.created: true
+      admission.invoice.paid: true
+      admission.invoice.failed: true
+      settings.changed: true
+      relay.restarted: false
+    retry:
+      maxAttempts: 5
+      baseDelayMs: 1000
+    deliveryLogRetentionDays: 30
