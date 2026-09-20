@@ -1,95 +1,149 @@
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
+
 import chai from 'chai'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
-import { EventKinds } from '../../../src/constants/base'
-import { Nip66EventPublisher, NIP66_MONITOR_BOOTSTRAPPED_KEY } from '../../../src/services/nip66-event-publisher'
-import * as eventUtils from '../../../src/utils/event'
-import { resetMonitorPrivateKeyCache } from '../../../src/utils/monitor-identity'
-
 chai.use(sinonChai)
 
 const { expect } = chai
+const require = createRequire(fileURLToPath(import.meta.url))
+const eventUtils = require('../../../src/utils/event') as typeof import('../../../src/utils/event')
+const monitorIdentity = require('../../../src/utils/monitor-identity') as typeof import('../../../src/utils/monitor-identity')
+const {
+  NIP66_MONITOR_BOOTSTRAP_TTL_SECONDS,
+  NIP66_MONITOR_BOOTSTRAPPED_KEY,
+  Nip66EventPublisher,
+} = require('../../../src/services/nip66-event-publisher') as typeof import('../../../src/services/nip66-event-publisher')
 
-const PRIVKEY = 'f'.repeat(64)
+const monitorPrivkey = '0000000000000000000000000000000000000000000000000000000000000001'
 
 describe('Nip66EventPublisher', () => {
   let sandbox: Sinon.SinonSandbox
   let eventRepository: { upsert: Sinon.SinonStub }
   let cache: { getKey: Sinon.SinonStub; setKey: Sinon.SinonStub }
-  let publisher: Nip66EventPublisher
+  let publisher: InstanceType<typeof Nip66EventPublisher>
 
   const settings = {
-    info: { relay_url: 'wss://relay.example.com' },
-    nip66: { enabled: true, probeIntervalSeconds: 3600, targets: ['wss://other.example.com'], timeouts: {} },
-  } as any
+    info: { relay_url: 'wss://relay.example.com', name: 'relay.example.com' },
+    nip66: {
+      enabled: true,
+      probeIntervalSeconds: 3600,
+      targets: ['wss://external.example.com'],
+      timeouts: { dnsMs: 1, tlsMs: 1, wsRttMs: 1, nip11Ms: 1 },
+      dnsCacheTtlSeconds: 300,
+    },
+  }
 
   const snapshot = {
-    runAt: new Date().toISOString(),
-    targets: ['wss://relay.example.com'],
+    runAt: '2026-01-01T00:00:00.000Z',
+    targets: ['wss://external.example.com'],
     status: 'ok',
-    results: [],
-  } as any
+    results: [
+      {
+        target: {
+          relayUrl: 'wss://external.example.com',
+          hostname: 'external.example.com',
+          networkType: 'clearnet',
+          httpOrigin: 'https://external.example.com',
+          nip11Url: 'https://external.example.com/',
+          wsUrl: 'wss://external.example.com',
+        },
+        checkedAt: '2026-01-01T00:00:00.000Z',
+        dns: { status: 'ok', durationMs: 1 },
+        tls: { status: 'ok', durationMs: 1 },
+        wsRtt: { status: 'ok', durationMs: 1, data: { rttOpenMs: 100, address: 'wss://external.example.com' } },
+        nip11: { status: 'ok', durationMs: 1, data: { statusCode: 200 } },
+      },
+    ],
+  }
+
+  let monitorPubkey: string
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
-    resetMonitorPrivateKeyCache()
-    process.env.MONITOR_PRIVATE_KEY = PRIVKEY
-
-    eventRepository = { upsert: sandbox.stub().resolves() }
+    monitorPubkey = eventUtils.getPublicKey(monitorPrivkey)
+    eventRepository = { upsert: sandbox.stub().resolves(1) }
     cache = {
-      getKey: sandbox.stub().resolves(undefined),
-      setKey: sandbox.stub().resolves(),
+      getKey: sandbox.stub().resolves(null),
+      setKey: sandbox.stub().resolves(true),
     }
+    publisher = new Nip66EventPublisher(eventRepository, cache)
 
-    sandbox.stub(eventUtils, 'getPublicKey').returns('b'.repeat(64))
-    sandbox.stub(eventUtils, 'identifyEvent').callsFake(async (event: any) => ({ ...event, id: 'id'.repeat(16) }))
-    sandbox.stub(eventUtils, 'signEvent').returns(async (event: any) => ({ ...event, sig: 'sig'.repeat(32) }))
-    sandbox.stub(eventUtils, 'isParameterizedReplaceableEvent').returns(false)
-
-    publisher = new Nip66EventPublisher(eventRepository as any, cache as any)
+    sandbox.stub(monitorIdentity, 'getMonitorPrivateKey').returns(monitorPrivkey)
+    sandbox.stub(eventUtils, 'getPublicKey').returns(monitorPubkey)
+    sandbox.stub(eventUtils, 'identifyEvent').callsFake(async (event) => ({ ...event, id: 'event-id' }))
+    sandbox.stub(eventUtils, 'signEvent').returns(async (event: any) => ({ ...event, sig: 'sig' }))
+    sandbox.stub(eventUtils, 'broadcastEvent').resolves({} as any)
   })
 
   afterEach(() => {
-    delete process.env.MONITOR_PRIVATE_KEY
-    resetMonitorPrivateKeyCache()
     sandbox.restore()
   })
 
-  it('bootstraps with the public relay URL from settings', async () => {
-    await publisher.publishAfterProbe(snapshot, settings)
+  it('skips publish when MONITOR_PRIVATE_KEY is missing', async () => {
+    ;(monitorIdentity.getMonitorPrivateKey as Sinon.SinonStub).returns(undefined)
 
-    const relayListUpsert = eventRepository.upsert.getCalls().find((call) => call.args[0].kind === EventKinds.RELAY_LIST)
+    await publisher.publishAfterProbe(snapshot as any, settings as any)
 
-    expect(relayListUpsert).to.exist
-    expect(relayListUpsert!.args[0].tags).to.deep.include(['r', 'wss://relay.example.com', 'read'])
-    expect(cache.setKey).to.have.been.calledWith(NIP66_MONITOR_BOOTSTRAPPED_KEY, 'b'.repeat(64))
+    expect(eventRepository.upsert).to.not.have.been.called
+  })
+
+  it('bootstraps once and broadcasts newly persisted events', async () => {
+    await publisher.publishAfterProbe(snapshot as any, settings as any)
+
+    expect(cache.setKey).to.have.been.calledOnceWithExactly(
+      NIP66_MONITOR_BOOTSTRAPPED_KEY,
+      monitorPubkey,
+      NIP66_MONITOR_BOOTSTRAP_TTL_SECONDS,
+    )
+    expect(eventRepository.upsert).to.have.callCount(4)
+    expect(eventUtils.broadcastEvent).to.have.callCount(4)
+
+    const relayListEvent = (eventUtils.identifyEvent as Sinon.SinonStub).getCall(1).args[0]
+    expect(relayListEvent.kind).to.equal(10002)
+    expect(relayListEvent.tags[0]).to.deep.equal(['r', 'wss://relay.example.com', 'read'])
+  })
+
+  it('does not rebootstrap when the bootstrap flag is already set', async () => {
+    cache.getKey.resolves(monitorPubkey)
+
+    await publisher.publishAfterProbe(snapshot as any, settings as any)
+
+    expect(cache.setKey).to.not.have.been.called
+    expect(eventRepository.upsert).to.have.callCount(2)
+  })
+
+  it('rebootstraps when the cached monitor pubkey no longer matches', async () => {
+    cache.getKey.resolves('a'.repeat(64))
+
+    await publisher.publishAfterProbe(snapshot as any, settings as any)
+
+    expect(cache.setKey).to.have.been.calledOnceWithExactly(
+      NIP66_MONITOR_BOOTSTRAPPED_KEY,
+      monitorPubkey,
+      NIP66_MONITOR_BOOTSTRAP_TTL_SECONDS,
+    )
+    expect(eventRepository.upsert).to.have.callCount(4)
   })
 
   it('skips bootstrap when the configured relay URL is invalid', async () => {
-    const invalidSettings = { ...settings, info: { relay_url: 'not a relay url' } } as any
+    const invalidSettings = { ...settings, info: { ...settings.info, relay_url: 'not a relay url' } }
 
-    await publisher.publishAfterProbe(snapshot, invalidSettings)
+    await publisher.publishAfterProbe(snapshot as any, invalidSettings as any)
 
-    const bootstrapKinds = [EventKinds.SET_METADATA, EventKinds.RELAY_LIST]
-    const bootstrapUpserts = eventRepository.upsert
-      .getCalls()
-      .filter((call) => bootstrapKinds.includes(call.args[0].kind))
-
-    expect(bootstrapUpserts).to.be.empty
     expect(cache.setKey).to.not.have.been.called
+    expect(eventRepository.upsert).to.have.callCount(2)
   })
 
-  it('re-bootstraps when the monitor pubkey changes', async () => {
-    cache.getKey.resolves('a'.repeat(64))
+  it('does not broadcast duplicate upserts', async () => {
+    cache.getKey.resolves(monitorPubkey)
+    eventRepository.upsert.resolves(0)
 
-    await publisher.publishAfterProbe(snapshot, settings)
+    await publisher.publishAfterProbe(snapshot as any, settings as any)
 
-    const profileUpserts = eventRepository.upsert
-      .getCalls()
-      .filter((call) => call.args[0].kind === EventKinds.SET_METADATA)
-
-    expect(profileUpserts).to.have.length(1)
-    expect(cache.setKey).to.have.been.calledWith(NIP66_MONITOR_BOOTSTRAPPED_KEY, 'b'.repeat(64))
+    expect(eventRepository.upsert).to.have.callCount(2)
+    expect(eventUtils.broadcastEvent).to.not.have.been.called
   })
 })

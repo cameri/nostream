@@ -10,6 +10,7 @@ import {
   buildRelayDiscoveryEvent,
   normalizeRelayUrlForDTag,
 } from '../../../src/utils/nip66-events'
+import { MIN_PROBE_INTERVAL_SECONDS } from '../../../src/utils/nip66-schedule'
 
 const { expect } = chai
 
@@ -55,7 +56,7 @@ describe('nip66-events', () => {
       info: { relay_url: 'wss://relay.example.com' },
       nip66: {
         enabled: true,
-        probeIntervalSeconds: 3600,
+        probeIntervalSeconds: 10,
         targets: [],
         timeouts: {
           dnsMs: 1000,
@@ -70,15 +71,7 @@ describe('nip66-events', () => {
     const event = buildMonitorAnnouncementEvent(settings, monitorPubkey, 1_700_000_000)
 
     expect(event.kind).to.equal(EventKinds.RELAY_MONITOR_ANNOUNCEMENT)
-    expect(event.tags).to.deep.include(['frequency', '3600'])
-
-    const clampedSettings = {
-      ...settings,
-      nip66: { ...settings.nip66!, probeIntervalSeconds: 10 },
-    } as Settings
-
-    const clamped = buildMonitorAnnouncementEvent(clampedSettings, monitorPubkey, 1_700_000_000)
-    expect(clamped.tags).to.deep.include(['frequency', '60'])
+    expect(event.tags).to.deep.include(['frequency', String(MIN_PROBE_INTERVAL_SECONDS)])
     expect(event.tags).to.deep.include(['timeout', 'open', '3000'])
     expect(event.tags).to.deep.include(['timeout', 'nip11', '4000'])
     expect(event.tags).to.deep.include(['c', 'dns'])

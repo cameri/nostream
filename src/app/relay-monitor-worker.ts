@@ -4,9 +4,9 @@ import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 import { INip66EventPublisher } from '../services/nip66-event-publisher'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
-import { getEffectiveProbeIntervalSeconds } from '../utils/nip66-events'
 import { filterValidProbeTargets, resolveProbeTargets } from '../utils/relay-probe-targets'
 import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
+import { getEffectiveProbeIntervalSeconds, getProbeIntervalMs } from '../utils/nip66-schedule'
 import { runProbe } from '../utils/relay-probe'
 import { ProbeOptions, ProbeResult } from '../utils/relay-probe/types'
 
@@ -23,9 +23,7 @@ export const buildProbeOptions = (settings: Settings): ProbeOptions => {
   }
 }
 
-export const getProbeIntervalMs = (settings: Settings): number => {
-  return getEffectiveProbeIntervalSeconds(settings) * 1000
-}
+export { getProbeIntervalMs } from '../utils/nip66-schedule'
 
 export class RelayMonitorWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
