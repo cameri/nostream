@@ -66,6 +66,20 @@ describe('Nip66EventPublisher', () => {
     expect(cache.setKey).to.have.been.calledWith(NIP66_MONITOR_BOOTSTRAPPED_KEY, 'b'.repeat(64))
   })
 
+  it('skips bootstrap when the configured relay URL is invalid', async () => {
+    const invalidSettings = { ...settings, info: { relay_url: 'not a relay url' } } as any
+
+    await publisher.publishAfterProbe(snapshot, invalidSettings)
+
+    const bootstrapKinds = [EventKinds.SET_METADATA, EventKinds.RELAY_LIST]
+    const bootstrapUpserts = eventRepository.upsert
+      .getCalls()
+      .filter((call) => bootstrapKinds.includes(call.args[0].kind))
+
+    expect(bootstrapUpserts).to.be.empty
+    expect(cache.setKey).to.not.have.been.called
+  })
+
   it('re-bootstraps when the monitor pubkey changes', async () => {
     cache.getKey.resolves('a'.repeat(64))
 

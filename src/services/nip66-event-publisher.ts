@@ -13,6 +13,8 @@ import {
   buildMonitorRelayListEvent,
   buildRelayDiscoveryEvent,
 } from '../utils/nip66-events'
+import { filterValidProbeTargets } from '../utils/relay-probe-targets'
+
 const logger = createLogger('nip66-event-publisher')
 
 export const NIP66_MONITOR_BOOTSTRAPPED_KEY = 'nip66:monitor:bootstrapped'
@@ -61,7 +63,13 @@ export class Nip66EventPublisher implements INip66EventPublisher {
       return
     }
 
-    const relayUrl = settings.info.relay_url
+    const { valid } = filterValidProbeTargets([settings.info.relay_url?.trim() ?? ''])
+    const [relayUrl] = valid
+
+    if (!relayUrl) {
+      logger.warn('info.relay_url is not a valid relay URL; skipping NIP-66 monitor bootstrap')
+      return
+    }
 
     await this.persistSignedEvent(buildMonitorProfileEvent(monitorPubkey, createdAt), privkey)
     await this.persistSignedEvent(buildMonitorRelayListEvent(relayUrl, monitorPubkey, createdAt), privkey)
