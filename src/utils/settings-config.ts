@@ -610,6 +610,29 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
         message: 'targetEventsPerSecond must be greater than 0',
       })
     }
+    if (Array.isArray(pow.wotThresholds)) {
+      pow.wotThresholds.forEach((threshold, index) => {
+        if (threshold === null || typeof threshold !== 'object') {
+          issues.push({
+            path: `limits.event.pow.wotThresholds[${index}]`,
+            message: 'wotThresholds entry must be an object',
+          })
+          return
+        }
+        if (!(threshold.maxDistance >= 0)) {
+          issues.push({
+            path: `limits.event.pow.wotThresholds[${index}].maxDistance`,
+            message: 'maxDistance must be >= 0',
+          })
+        }
+        if (!(threshold.difficultyFactor >= 0) || !(threshold.difficultyFactor <= 1)) {
+          issues.push({
+            path: `limits.event.pow.wotThresholds[${index}].difficultyFactor`,
+            message: 'difficultyFactor must be between 0 and 1',
+          })
+        }
+      })
+    }
   }
 
   validateShape(loadDefaults(), settings, [], issues)
