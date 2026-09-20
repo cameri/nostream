@@ -1,6 +1,7 @@
 import { EventKinds } from '../constants/base'
 import { Pubkey, Secret } from './base'
 import { MessageType } from './messages'
+import { AdminNotificationsSettings } from './operator-notifications'
 import { SubscriptionFilter } from './subscription'
 
 export interface Info {
@@ -383,6 +384,7 @@ export interface AdminSettings {
   passwordHash?: string
   sessionTtlSeconds?: number
   nip98?: AdminNip98Settings
+  notifications?: AdminNotificationsSettings
 }
 export interface WoTSettings {
   enabled: boolean
