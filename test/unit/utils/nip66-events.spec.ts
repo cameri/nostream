@@ -27,7 +27,7 @@ const storedProbeResult = (relayUrl = 'wss://Relay.Example.com:443/'): StoredPro
     },
     checkedAt: '2026-01-01T00:00:00.000Z',
     dns: { status: 'ok', durationMs: 1 },
-    tls: { status: 'ok', durationMs: 1 },
+    tls: { status: 'ok', durationMs: 1, data: { valid: true, issuer: 'Test CA' } },
     wsRtt: { status: 'ok', durationMs: 12, data: { rttOpenMs: 234, address: '127.0.0.1:443' } },
     nip11: { status: 'ok', durationMs: 1 },
   }) as StoredProbeResult
@@ -46,6 +46,8 @@ describe('nip66-events', () => {
     expect(event.tags).to.deep.include(['d', 'wss://relay.example.com/'])
     expect(event.tags).to.deep.include(['n', 'clearnet'])
     expect(event.tags).to.deep.include(['rtt-open', '234'])
+    expect(event.tags).to.deep.include(['dns', 'resolved'])
+    expect(event.tags).to.deep.include(['ssl', 'valid'])
   })
 
   it('builds kind 10166 monitor announcement events', () => {
@@ -69,6 +71,14 @@ describe('nip66-events', () => {
 
     expect(event.kind).to.equal(EventKinds.RELAY_MONITOR_ANNOUNCEMENT)
     expect(event.tags).to.deep.include(['frequency', '3600'])
+
+    const clampedSettings = {
+      ...settings,
+      nip66: { ...settings.nip66!, probeIntervalSeconds: 10 },
+    } as Settings
+
+    const clamped = buildMonitorAnnouncementEvent(clampedSettings, monitorPubkey, 1_700_000_000)
+    expect(clamped.tags).to.deep.include(['frequency', '60'])
     expect(event.tags).to.deep.include(['timeout', 'open', '3000'])
     expect(event.tags).to.deep.include(['timeout', 'nip11', '4000'])
     expect(event.tags).to.deep.include(['c', 'dns'])
