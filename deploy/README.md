@@ -168,24 +168,51 @@ relays publish accepted events to a shared Redis stream; each cluster primary
 subscribes and fans out to its workers so live WebSocket clients stay in sync
 when HAProxy balances across blue and green.
 
+Do **not** run the single-relay `docker-compose.yml` stack and the HAProxy stack
+at the same time: both bind `127.0.0.1:8008`. Stop the old stack before starting
+blue/green:
+
+```bash
+cd /opt/nostream
+docker compose down   # single-relay stack, if it was running
+```
+
 Install alongside `.env` and `postgresql.conf`, then start:
 
 ```bash
 cp deploy/docker-compose.haproxy.yml deploy/rolling-relay-recreate.sh /opt/nostream/
 cp -r deploy/haproxy /opt/nostream/
+chmod +x /opt/nostream/rolling-relay-recreate.sh
 cd /opt/nostream
 docker compose -f docker-compose.haproxy.yml up -d
 curl -s http://127.0.0.1:8008/readyz
 ```
 
-To update, load the new image, then replace relays one at a time:
+HAProxy sets `X-Forwarded-For`. In `.nostr/settings.yaml` (or your settings
+overrides), enable forwarded client IPs when using this stack:
+
+```yaml
+network:
+  remoteIpHeader: x-forwarded-for
+  trustedProxies:
+    - "127.0.0.1"
+    - "::ffff:127.0.0.1"
+    - "::1"
+    # HAProxy container on the compose network (get after first up):
+    # docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' nostream-haproxy
+```
+
+To update, load the new image, run migrations, then replace relays one at a time:
 
 ```bash
+cd /opt/nostream
+docker compose -f docker-compose.haproxy.yml up -d --force-recreate nostream-migrate
 ./rolling-relay-recreate.sh
 ```
 
-The script stops a relay, waits for the replacement to report healthy, and only
-then moves to the second one, so a ready backend is always serving. HAProxy
-health-checks `/readyz` every 2s and retries failed requests on the other
-backend (`option redispatch`). Relays get `stop_grace_period: 45s` so the
-`WS_DRAIN_TIMEOUT_MS` drain (default 30s) finishes before Docker sends SIGKILL.
+The script requires the peer relay to be running and `/readyz` healthy before it
+stops either backend. It waits for each replacement to become healthy before
+moving to the second relay. HAProxy health-checks `/readyz` every 2s and retries
+failed requests on the other backend (`option redispatch`). Set
+`STOP_GRACE_PERIOD` (default `45s`) above `WS_DRAIN_TIMEOUT_MS` (default 30s) so
+WebSocket drain finishes before Docker sends SIGKILL.

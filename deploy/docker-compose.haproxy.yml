@@ -38,7 +38,7 @@ x-nostream-relay: &nostream-relay
     nostream-migrate:
       condition: service_completed_successfully
   restart: on-failure
-  stop_grace_period: 45s
+  stop_grace_period: ${STOP_GRACE_PERIOD:-45s}
   # Gates `up --wait` during rolling recreate, so the next relay is only
   # replaced once this one serves traffic.
   healthcheck:
