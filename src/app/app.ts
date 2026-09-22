@@ -11,12 +11,21 @@ import { Serializable } from 'child_process'
 import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { RedisRelayBroadcastFanout } from '../relay-broadcast/redis-relay-broadcast-fanout'
+import { RelayBroadcastDeduplicator } from '../utils/relay-broadcast-deduplicator'
+import {
+  isRelayBroadcastFanoutEnabled,
+  isRelayBroadcastMessage,
+  RelayBroadcastMessage,
+} from '../utils/relay-broadcast-message'
 
 const logger = createLogger('app-primary')
 
 export class App implements IRunnable {
   private workers: WeakMap<Worker, Record<string, string>>
   private watchers: FSWatcher[] | undefined
+  private relayBroadcastFanout: RedisRelayBroadcastFanout | undefined
+  private readonly relayBroadcastDeduplicator = new RelayBroadcastDeduplicator()
 
   public constructor(
     private readonly process: NodeJS.Process,
@@ -129,6 +138,19 @@ export class App implements IRunnable {
 
     logger('settings: %O', settings)
 
+    if (isRelayBroadcastFanoutEnabled()) {
+      this.relayBroadcastFanout = new RedisRelayBroadcastFanout()
+      void this.relayBroadcastFanout
+        .start((message) => this.onRelayBroadcastFromPeer(message))
+        .then(() => {
+          logCentered('Relay broadcast fan-out enabled (Redis stream)', width)
+        })
+        .catch((error) => {
+          logger.error('relay broadcast fan-out failed to start: %o', error)
+          this.relayBroadcastFanout = undefined
+        })
+    }
+
     const host = `${hostname()}:${port}`
     addOnion(torHiddenServicePort, host).then(
       (value) => {
@@ -142,8 +164,28 @@ export class App implements IRunnable {
 
   private onClusterMessage(source: Worker, message: Serializable) {
     logger('message received from worker %s: %o', source.process.pid, message)
+
+    if (isRelayBroadcastMessage(message)) {
+      this.relayBroadcastDeduplicator.mark(message.event.id)
+      void this.relayBroadcastFanout?.publish(message)
+    }
+
+    this.fanOutClusterMessage(message, source.id)
+  }
+
+  private onRelayBroadcastFromPeer(message: RelayBroadcastMessage) {
+    if (this.relayBroadcastDeduplicator.has(message.event.id)) {
+      logger('skipping duplicate relay broadcast %s', message.event.id)
+      return
+    }
+
+    this.relayBroadcastDeduplicator.mark(message.event.id)
+    this.fanOutClusterMessage(message)
+  }
+
+  private fanOutClusterMessage(message: Serializable, excludeWorkerId?: number) {
     for (const worker of Object.values(this.cluster.workers as any) as Worker[]) {
-      if (source.id === worker.id) {
+      if (excludeWorkerId !== undefined && worker.id === excludeWorkerId) {
         continue
       }
 
@@ -187,8 +229,11 @@ export class App implements IRunnable {
         watcher.close()
       }
     }
-    if (typeof callback === 'function') {
-      callback()
-    }
+    const stopFanout = this.relayBroadcastFanout?.stop() ?? Promise.resolve()
+    void stopFanout.finally(() => {
+      if (typeof callback === 'function') {
+        callback()
+      }
+    })
   }
 }

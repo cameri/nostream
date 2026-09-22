@@ -23,6 +23,8 @@ x-nostream-relay: &nostream-relay
     REDIS_USER: default
     REDIS_PASSWORD: ${REDIS_PASSWORD}
     READ_REPLICA_ENABLED: 'false'
+    RELAY_BROADCAST_FANOUT: ${RELAY_BROADCAST_FANOUT:-true}
+    RELAY_BROADCAST_STREAM_KEY: ${RELAY_BROADCAST_STREAM_KEY:-nostream:relay:broadcast}
     WORKER_COUNT: ${WORKER_COUNT:-2}
     WS_DRAIN_TIMEOUT_MS: ${WS_DRAIN_TIMEOUT_MS:-30000}
   user: node:node
