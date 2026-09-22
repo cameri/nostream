@@ -238,12 +238,15 @@ export class App implements IRunnable {
 
     let remaining = workers.length
     let finished = false
+    let deadline: NodeJS.Timeout | undefined
     const finishOnce = () => {
       if (finished) {
         return
       }
       finished = true
-      clearTimeout(deadline)
+      if (deadline !== undefined) {
+        clearTimeout(deadline)
+      }
       this.finishExit()
     }
 
@@ -254,7 +257,7 @@ export class App implements IRunnable {
       }
     }
 
-    const deadline = setTimeout(() => {
+    deadline = setTimeout(() => {
       logger.warn('shutdown deadline exceeded, exiting primary')
       finishOnce()
     }, getPrimaryShutdownDeadlineMs())

@@ -80,7 +80,9 @@ describe('App', () => {
     })
 
     sigtermHandler()
-    await Promise.resolve()
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve)
+    })
 
     expect(worker.kill).to.have.been.calledOnce
     expect(fakeProcess.exit).to.have.been.calledOnceWithExactly(0)
