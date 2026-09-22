@@ -4,6 +4,7 @@ import {
   IEventRepository,
   IInviteCodeRepository,
   INip05VerificationRepository,
+  IReportRepository,
   IUserRepository,
 } from '../@types/repositories'
 import { IncomingMessage, MessageType } from '../@types/messages'
@@ -17,6 +18,7 @@ import { RedisAdapter } from '../adapters/redis-adapter'
 import { rateLimiterFactory } from './rate-limiter-factory'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
+import { wotGraphServiceFactory } from './wot-graph-service-factory'
 
 let cacheAdapter: ICacheAdapter | undefined = undefined
 const getCache = (): ICacheAdapter => {
@@ -33,6 +35,7 @@ export const messageHandlerFactory =
     nip05VerificationRepository: INip05VerificationRepository,
     inviteCodeRepository: IInviteCodeRepository,
     dvmJobRepository: IDvmJobRepository,
+    reportRepository: IReportRepository,
   ) =>
   ([message, adapter]: [IncomingMessage, IWebSocketAdapter]) => {
     switch (message[0]) {
@@ -44,6 +47,7 @@ export const messageHandlerFactory =
             userRepository,
             inviteCodeRepository,
             dvmJobRepository,
+            reportRepository,
             getCache(),
             createSettings,
           ),
@@ -53,6 +57,7 @@ export const messageHandlerFactory =
           nip05VerificationRepository,
           getCache(),
           rateLimiterFactory,
+          wotGraphServiceFactory(getCache(), eventRepository, createSettings),
         )
       }
       case MessageType.REQ:

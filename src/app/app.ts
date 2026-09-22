@@ -11,13 +11,16 @@ import { Serializable } from 'child_process'
 import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import { RedisRelayBroadcastFanout } from '../relay-broadcast/redis-relay-broadcast-fanout'
+import { enqueueOperatorNotification } from '../utils/operator-notification-enqueue'
 import { RelayBroadcastDeduplicator } from '../utils/relay-broadcast-deduplicator'
 import {
   isRelayBroadcastFanoutEnabled,
   isRelayBroadcastMessage,
   RelayBroadcastMessage,
 } from '../utils/relay-broadcast-message'
+import { getPrimaryShutdownDeadlineMs } from '../utils/shutdown-state'
 
 const logger = createLogger('app-primary')
 
@@ -26,6 +29,7 @@ export class App implements IRunnable {
   private watchers: FSWatcher[] | undefined
   private relayBroadcastFanout: RedisRelayBroadcastFanout | undefined
   private readonly relayBroadcastDeduplicator = new RelayBroadcastDeduplicator()
+  private shuttingDown = false
 
   public constructor(
     private readonly process: NodeJS.Process,
@@ -151,6 +155,12 @@ export class App implements IRunnable {
         })
     }
 
+    // Primary-only: one outbox event per process start (not per client worker).
+    void enqueueOperatorNotification(OperatorNotificationEventType.RELAY_RESTARTED, {
+      version: packageJson.version,
+      relayPort: port,
+    })
+
     const host = `${hostname()}:${port}`
     addOnion(torHiddenServicePort, host).then(
       (value) => {
@@ -197,7 +207,7 @@ export class App implements IRunnable {
   private onClusterExit(deadWorker: Worker, code: number, signal: string) {
     logger('worker %s died', deadWorker.process.pid)
 
-    if (code === 0 || signal === 'SIGINT') {
+    if (this.shuttingDown || code === 0 || signal === 'SIGINT') {
       return
     }
     setTimeout(() => {
@@ -214,7 +224,48 @@ export class App implements IRunnable {
   }
 
   private onExit() {
+    if (this.shuttingDown) {
+      return
+    }
+    this.shuttingDown = true
     logger.info('exiting')
+
+    const workers = Object.values(this.cluster.workers ?? {}) as Worker[]
+    if (workers.length === 0) {
+      this.finishExit()
+      return
+    }
+
+    let remaining = workers.length
+    let finished = false
+    const finishOnce = () => {
+      if (finished) {
+        return
+      }
+      finished = true
+      clearTimeout(deadline)
+      this.finishExit()
+    }
+
+    const onWorkerDone = () => {
+      remaining -= 1
+      if (remaining <= 0) {
+        finishOnce()
+      }
+    }
+
+    const deadline = setTimeout(() => {
+      logger.warn('shutdown deadline exceeded, exiting primary')
+      finishOnce()
+    }, getPrimaryShutdownDeadlineMs())
+
+    for (const worker of workers) {
+      worker.once('exit', onWorkerDone)
+      worker.kill()
+    }
+  }
+
+  private finishExit() {
     void shutdownMetricsTelemetry().finally(() => {
       this.close(() => {
         this.process.exit(0)

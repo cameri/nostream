@@ -56,5 +56,27 @@ describe('settings-redaction', () => {
   it('redacts single values by path', () => {
     expect(redactSettingsValue('mirroring.static[0].secret', 'top-secret')).to.equal('***')
     expect(redactSettingsValue('payments.enabled', true)).to.equal(true)
+    expect(redactSettingsValue('admin.notifications.targets[0].url', 'https://discord.com/api/webhooks/secret')).to.equal(
+      '***',
+    )
+  })
+
+  it('redacts notification webhook urls in nested settings', () => {
+    const input = {
+      admin: {
+        notifications: {
+          targets: [
+            {
+              id: 'slack-ops',
+              type: 'slack',
+              enabled: true,
+              url: 'https://hooks.slack.com/services/T00/B00/xxxxx',
+            },
+          ],
+        },
+      },
+    }
+
+    expect(redactSettingsSecrets(input).admin.notifications.targets[0].url).to.equal('***')
   })
 })

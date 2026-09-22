@@ -32,6 +32,8 @@ export enum EventKinds {
   GIFT_WRAP = 1059,
   // NIP-03: OpenTimestamps attestation
   OPEN_TIMESTAMPS = 1040,
+  // NIP-56: Reporting
+  REPORT = 1984,
   // Relay-only
   RELAY_INVITE = 50,
   INVOICE_UPDATE = 402,
@@ -51,6 +53,8 @@ export enum EventKinds {
   REPLACEABLE_FIRST = 10000,
   // NIP-65: Relay List Metadata
   RELAY_LIST = 10002,
+  // NIP-66: Relay monitor announcement
+  RELAY_MONITOR_ANNOUNCEMENT = 10166,
   // Marmot Protocol MIP-00: KeyPackage Relay List
   MARMOT_KEY_PACKAGE_RELAY_LIST = 10051,
   // NIP-43: Membership List
@@ -69,6 +73,8 @@ export enum EventKinds {
   EPHEMERAL_LAST = 29999,
   // Parameterized replaceable events
   PARAMETERIZED_REPLACEABLE_FIRST = 30000,
+  // NIP-66: Relay discovery
+  RELAY_DISCOVERY = 30166,
   // Marmot Protocol MIP-00: KeyPackage (addressable, replaces legacy 443)
   MARMOT_KEY_PACKAGE = 30443,
   // NIP-89: Recommended Application Handlers

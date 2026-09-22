@@ -1,12 +1,15 @@
 import express, { json, Router } from 'express'
 
+import { createGetAdminNotificationDeliveryLogController } from '../../factories/controllers/get-admin-notification-delivery-log-controller-factory'
 import { createGetAdminHealthController } from '../../factories/controllers/get-admin-health-controller-factory'
 import { createGetAdminMetricsController } from '../../factories/controllers/get-admin-metrics-controller-factory'
+import { createGetAdminNetworkHealthController } from '../../factories/controllers/get-admin-network-health-controller-factory'
 import { createGetAdminSessionController } from '../../factories/controllers/get-admin-session-controller-factory'
 import { createGetAdminSettingsBackupsController } from '../../factories/controllers/get-admin-settings-backups-controller-factory'
 import { createGetAdminSettingsController } from '../../factories/controllers/get-admin-settings-controller-factory'
 import { createGetAdminSettingsSchemaController } from '../../factories/controllers/get-admin-settings-schema-controller-factory'
 import { createPatchAdminSettingsController } from '../../factories/controllers/patch-admin-settings-controller-factory'
+import { createPostAdminNotificationTestController } from '../../factories/controllers/post-admin-notification-test-controller-factory'
 import { createPostAdminLoginController } from '../../factories/controllers/post-admin-login-controller-factory'
 import { createPostAdminLogoutController } from '../../factories/controllers/post-admin-logout-controller-factory'
 import { createPostAdminSettingsRestoreController } from '../../factories/controllers/post-admin-settings-restore-controller-factory'
@@ -57,6 +60,12 @@ router.get(
   withAdminController(createGetAdminMetricsController),
 )
 router.get(
+  '/network-health',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminNetworkHealthController),
+)
+router.get(
   '/settings',
   adminRateLimitMiddleware,
   adminAuthMiddleware,
@@ -96,6 +105,20 @@ router.post(
   adminJsonBodyMiddleware,
   adminAuthMiddleware,
   withAdminController(createPostAdminSettingsRestoreController),
+)
+router.get(
+  '/notifications/deliveries',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminNotificationDeliveryLogController),
+)
+router.post(
+  '/notifications/test',
+  adminRateLimitMiddleware,
+  adminAuthGateMiddleware,
+  adminJsonBodyMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPostAdminNotificationTestController),
 )
 
 export default router

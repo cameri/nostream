@@ -1,6 +1,7 @@
 import { EventKinds } from '../constants/base'
 import { Pubkey, Secret } from './base'
 import { MessageType } from './messages'
+import { AdminNotificationsSettings } from './operator-notifications'
 import { SubscriptionFilter } from './subscription'
 
 export interface Info {
@@ -92,6 +93,17 @@ export interface EventRetentionLimits {
   pubkey?: EventRetentionPubkeyLimits
 }
 
+export interface WotPowThreshold {
+  /** Reporters at or under this WoT distance get this threshold's reduction. */
+  maxDistance: number
+  /**
+   * Fraction of the computed adaptive difficulty required at this distance:
+   * 0 bypasses eventId PoW entirely, 1 requires the full computed difficulty,
+   * fractional values scale linearly in between.
+   */
+  difficultyFactor: number
+}
+
 export interface AdaptivePowSettings {
   /** Enables load-aware difficulty scaling on the eventId check, replacing eventId.minLeadingZeroBits while enabled. Does not affect the pubkey check -- pubkey.minLeadingZeroBits stays a static, non-adaptive knob. Defaults to false. */
   enabled: boolean
@@ -103,6 +115,15 @@ export interface AdaptivePowSettings {
   targetEventsPerSecond: number
   /** EWMA half-life in ms used to smooth the observed event rate. */
   periodMs: number
+  /**
+   * Optional WoT-distance-based reductions layered on top of the computed
+   * adaptive difficulty. The eligible threshold with the smallest maxDistance
+   * applies; a pubkey outside the trust graph (distance undefined) or beyond
+   * every threshold's maxDistance gets the full computed difficulty. Requires
+   * wot.enabled -- otherwise every distance lookup is undefined and this has
+   * no effect.
+   */
+  wotThresholds?: WotPowThreshold[]
 }
 
 export interface EventLimits {
@@ -363,6 +384,7 @@ export interface AdminSettings {
   passwordHash?: string
   sessionTtlSeconds?: number
   nip98?: AdminNip98Settings
+  notifications?: AdminNotificationsSettings
 }
 export interface WoTSettings {
   enabled: boolean
@@ -421,6 +443,18 @@ export interface Nip43Settings {
   inviteRequestWhitelist?: Pubkey[]
 }
 
+export interface Nip56Settings {
+  enabled: boolean
+  /**
+   * Pubkeys (hex) whose kind-1984 reports are treated as coming from a
+   * trusted moderator: their reports get maximum weight and are flagged
+   * actionable, regardless of WoT graph distance. Reports from any other
+   * pubkey are scored purely by WoT distance from `wot.seedPubkey` and are
+   * never actionable on their own -- only stored for manual review.
+   */
+  trustedModerators: Pubkey[]
+}
+
 export interface Settings {
   info: Info
   admin?: AdminSettings
@@ -436,6 +470,7 @@ export interface Settings {
   nip43?: Nip43Settings
   nip45?: Nip45Settings
   nip50?: Nip50Settings
+  nip56?: Nip56Settings
   nip66?: Nip66Settings
   wot?: WoTSettings
 }
