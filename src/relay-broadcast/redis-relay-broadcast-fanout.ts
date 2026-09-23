@@ -4,8 +4,12 @@ import { hostname } from 'os'
 import { CacheClient } from '../@types/cache'
 import { createLogger } from '../factories/logger-factory'
 import { getCacheConfig } from '../cache/client'
-import { WebSocketServerAdapterEvent } from '../constants/adapter'
-import { getRelayBroadcastStreamKey, RelayBroadcastMessage } from '../utils/relay-broadcast-message'
+import {
+  getRelayBroadcastStreamKey,
+  getRelayBroadcastStreamMaxLen,
+  isRelayBroadcastMessage,
+  RelayBroadcastMessage,
+} from '../utils/relay-broadcast-message'
 
 const logger = createLogger('relay-broadcast-fanout')
 
@@ -58,9 +62,20 @@ export class RedisRelayBroadcastFanout {
       originInstanceId: this.instanceId,
     }
 
-    await this.publisher.xAdd(this.streamKey, '*', {
-      payload: JSON.stringify(payload),
-    })
+    await this.publisher.xAdd(
+      this.streamKey,
+      '*',
+      {
+        payload: JSON.stringify(payload),
+      },
+      {
+        TRIM: {
+          strategy: 'MAXLEN',
+          strategyModifier: '~',
+          threshold: getRelayBroadcastStreamMaxLen(),
+        },
+      },
+    )
   }
 
   public async stop(): Promise<void> {
@@ -119,15 +134,18 @@ export class RedisRelayBroadcastFanout {
               continue
             }
 
-            if (parsed.eventName !== WebSocketServerAdapterEvent.Broadcast) {
-              continue
-            }
-
-            onMessage({
+            const relayMessage: RelayBroadcastMessage = {
               eventName: parsed.eventName,
               event: parsed.event,
               source: parsed.source,
-            })
+            }
+
+            if (!isRelayBroadcastMessage(relayMessage)) {
+              logger.warn('skipping invalid relay broadcast stream entry')
+              continue
+            }
+
+            onMessage(relayMessage)
           }
         }
       } catch (error) {

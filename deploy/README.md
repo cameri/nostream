@@ -163,10 +163,11 @@ Existing `.env` and `.nostr/settings.yaml` are preserved.
 relays (`nostream-blue`, `nostream-green`) behind HAProxy on `127.0.0.1:8008`.
 Postgres, Redis, and migrations are unchanged.
 
-With `RELAY_BROADCAST_FANOUT=true` (default in the HAProxy compose file), both
-relays publish accepted events to a shared Redis stream; each cluster primary
-subscribes and fans out to its workers so live WebSocket clients stay in sync
-when HAProxy balances across blue and green.
+The HAProxy compose file **always sets `RELAY_BROADCAST_FANOUT=true` on relay
+services** (even if bootstrap `.env` leaves it `false` for the single-relay
+stack). Both relays publish accepted events to a shared Redis stream; each
+cluster primary subscribes and fans out to its workers so live WebSocket clients
+stay in sync when HAProxy balances across blue and green.
 
 Do **not** run the single-relay `docker-compose.yml` stack and the HAProxy stack
 at the same time: both bind `127.0.0.1:8008`. Stop the old stack before starting
@@ -206,7 +207,7 @@ To update, load the new image, run migrations, then replace relays one at a time
 
 ```bash
 cd /opt/nostream
-docker compose -f docker-compose.haproxy.yml up -d --force-recreate nostream-migrate
+docker compose -f docker-compose.haproxy.yml run --rm nostream-migrate
 ./rolling-relay-recreate.sh
 ```
 

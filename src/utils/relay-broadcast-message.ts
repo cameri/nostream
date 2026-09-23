@@ -33,3 +33,19 @@ export const getRelayBroadcastStreamKey = (): string => {
   const key = process.env.RELAY_BROADCAST_STREAM_KEY?.trim()
   return key && key.length > 0 ? key : 'nostream:relay:broadcast'
 }
+
+const DEFAULT_STREAM_MAXLEN = 50_000
+
+export const getRelayBroadcastStreamMaxLen = (): number => {
+  const raw = process.env.RELAY_BROADCAST_STREAM_MAXLEN?.trim()
+  if (raw === undefined || raw === '') {
+    return DEFAULT_STREAM_MAXLEN
+  }
+
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_STREAM_MAXLEN
+  }
+
+  return Math.floor(parsed)
+}

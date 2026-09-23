@@ -177,7 +177,10 @@ export class App implements IRunnable {
 
     if (isRelayBroadcastMessage(message)) {
       this.relayBroadcastDeduplicator.mark(message.event.id)
-      void this.relayBroadcastFanout?.publish(message)
+      const publishPromise = this.relayBroadcastFanout?.publish(message)
+      void publishPromise?.catch((error) => {
+        logger.error('relay broadcast publish failed: %o', error)
+      })
     }
 
     this.fanOutClusterMessage(message, source.id)
