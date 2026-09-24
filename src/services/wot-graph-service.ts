@@ -38,6 +38,15 @@ export class WotGraphService implements IWotGraphService {
   }
 
   public warmUp(): void {
+    // Do NOT call ensureBuilt() when WoT is disabled: rebuild()'s
+    // disabled-graph branch marks `ready = true` permanently, and if an
+    // operator later hot-enables WoT at runtime, getDistance() would see
+    // `ready` already true and skip rebuilding, leaving the graph
+    // permanently empty until the worker restarts. Only warm up when
+    // there's an actual graph to build.
+    if (!this.settings().wot?.enabled) {
+      return
+    }
     void this.ensureBuilt()
   }
 

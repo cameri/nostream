@@ -31,10 +31,11 @@ export interface ReportTarget {
 const targetTypeOf = (tag: Tag): ReportType => (isValidReportType(tag[2]) ? tag[2] : ReportType.OTHER)
 
 // A single report event can legitimately carry more than one p/e tag (e.g.
-// reporting several pubkeys at once); cap how many targets one event can
-// produce so a pathological event can't fan out into an unbounded number of
-// rows.
-const MAX_TARGETS_PER_EVENT = 20
+// a moderator batch-reporting a raid of spam accounts in one event); cap how
+// many targets one event can produce so a pathological event can't fan out
+// into an unbounded number of rows, while staying well above any realistic
+// legitimate batch so a genuine report isn't silently truncated.
+const MAX_TARGETS_PER_EVENT = 100
 
 // NIP-56: the report type is the 3rd element of the tag identifying what's
 // being reported. A p tag and an e tag are separate claims (report this

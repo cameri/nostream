@@ -169,9 +169,15 @@ describe('NIP-56', () => {
     })
 
     it('caps the number of targets a single event can produce', () => {
-      const tags = Array.from({ length: 25 }, (_, i) => ['p', i.toString(16).padStart(64, '0'), 'spam']) as Tag[]
+      const tags = Array.from({ length: 105 }, (_, i) => ['p', i.toString(16).padStart(64, '0'), 'spam']) as Tag[]
       const targets = extractReportTargets(tags)
-      expect(targets).to.have.lengthOf(20)
+      expect(targets).to.have.lengthOf(100)
+    })
+
+    it('does not truncate a realistic moderator batch report', () => {
+      const tags = Array.from({ length: 21 }, (_, i) => ['p', i.toString(16).padStart(64, '0'), 'spam']) as Tag[]
+      const targets = extractReportTargets(tags)
+      expect(targets).to.have.lengthOf(21)
     })
   })
 })

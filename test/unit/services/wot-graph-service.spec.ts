@@ -123,6 +123,19 @@ describe('WotGraphService', () => {
       await new Promise((resolve) => setImmediate(resolve))
       expect(wot.isReady()).to.equal(true)
     })
+
+    it('does nothing when wot is disabled, so a later hot-enable still triggers a real build', async () => {
+      settings.wot!.enabled = false
+      const wot = service()
+
+      wot.warmUp()
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(wot.isReady()).to.equal(false)
+
+      settings.wot!.enabled = true
+      await wot.getDistance('someone')
+      expect(wot.isReady()).to.equal(true)
+    })
   })
 
   describe('getDistance', () => {
