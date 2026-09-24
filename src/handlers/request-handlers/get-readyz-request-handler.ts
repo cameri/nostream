@@ -1,6 +1,8 @@
 import { NextFunction, Request, Response } from 'express'
 
 import { AdminDependencyHealth, collectAdminHealthSnapshot } from '../../utils/admin-health'
+import { isRelayBroadcastFanoutEnabled } from '../../utils/relay-broadcast-message'
+import { isRelayBroadcastFanoutReady } from '../../utils/relay-broadcast-state'
 import { isDraining } from '../../utils/shutdown-state'
 
 // Public readiness probe for load balancers (e.g. HAProxy blue/green). Unlike /healthz
@@ -11,6 +13,7 @@ export interface ReadyzSnapshot {
   status: 'ok' | 'unavailable' | 'draining'
   database: AdminDependencyHealth
   redis: AdminDependencyHealth
+  relayBroadcast?: { ok: boolean }
 }
 
 interface CachedReadyzSnapshot {
@@ -27,12 +30,15 @@ export const resetReadyzSnapshotCache = (): void => {
 }
 
 export const buildReadyzSnapshot = (database: AdminDependencyHealth, redis: AdminDependencyHealth): ReadyzSnapshot => {
-  const ready = database.ok && redis.ok
+  const fanoutRequired = isRelayBroadcastFanoutEnabled()
+  const relayBroadcastOk = !fanoutRequired || isRelayBroadcastFanoutReady()
+  const ready = database.ok && redis.ok && relayBroadcastOk
 
   return {
     status: ready ? 'ok' : 'unavailable',
     database,
     redis,
+    ...(fanoutRequired ? { relayBroadcast: { ok: relayBroadcastOk } } : {}),
   }
 }
 

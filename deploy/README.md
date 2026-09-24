@@ -189,19 +189,22 @@ docker compose -f docker-compose.haproxy.yml up -d
 curl -s http://127.0.0.1:8008/readyz
 ```
 
-HAProxy sets `X-Forwarded-For`. In `.nostr/settings.yaml` (or your settings
-overrides), enable forwarded client IPs when using this stack:
+HAProxy sets `X-Forwarded-For` (appended as the rightmost hop). In
+`.nostr/settings.yaml` (or your settings overrides), trust the HAProxy address
+from `docker-compose.haproxy.yml` (`172.28.0.2` on subnet `172.28.0.0/24`):
 
 ```yaml
 network:
   remoteIpHeader: x-forwarded-for
   trustedProxies:
+    - "172.28.0.2"
     - "127.0.0.1"
     - "::ffff:127.0.0.1"
     - "::1"
-    # HAProxy container on the compose network (get after first up):
-    # docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' nostream-haproxy
 ```
+
+With a trusted proxy, the relay uses the **last** `X-Forwarded-For` hop (what
+HAProxy appended), not the leftmost value clients may supply.
 
 To update, load the new image, run migrations, then replace relays one at a time:
 

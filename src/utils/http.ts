@@ -55,9 +55,17 @@ export const getRemoteAddress = (request: IncomingMessage, settings: Settings): 
 
   const trustedProxy = typeof socketAddress === 'string' && isTrustedProxy(socketAddress, settings)
 
-  const result = trustedProxy && typeof headerAddress === 'string' ? headerAddress : socketAddress
+  if (trustedProxy && typeof headerAddress === 'string') {
+    const hops = headerAddress
+      .split(',')
+      .map((hop) => hop.trim())
+      .filter((hop) => hop.length > 0)
+    if (hops.length > 0) {
+      return hops[hops.length - 1]
+    }
+  }
 
-  return (result as string).split(',')[0].trim()
+  return socketAddress as string
 }
 
 const normalizePathPrefix = (pathPrefix: string | undefined): string => {

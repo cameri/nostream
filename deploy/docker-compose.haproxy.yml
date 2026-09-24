@@ -3,6 +3,12 @@
 #
 #   docker compose -f docker-compose.haproxy.yml up -d
 
+networks:
+  nostream_haproxy:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
 x-nostream-relay: &nostream-relay
   image: ghcr.io/cameri/nostream:main
   pull_policy: never
@@ -40,6 +46,8 @@ x-nostream-relay: &nostream-relay
       condition: service_completed_successfully
   restart: on-failure
   stop_grace_period: ${STOP_GRACE_PERIOD:-45s}
+  networks:
+    - nostream_haproxy
   # Gates `up --wait` during rolling recreate, so the next relay is only
   # replaced once this one serves traffic.
   healthcheck:
@@ -65,6 +73,9 @@ services:
       - nostream-blue
       - nostream-green
     restart: on-failure
+    networks:
+      nostream_haproxy:
+        ipv4_address: 172.28.0.2
 
   nostream-blue:
     <<: *nostream-relay
@@ -77,6 +88,8 @@ services:
   nostream-db:
     image: postgres:15
     container_name: nostream-db
+    networks:
+      - nostream_haproxy
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -97,6 +110,8 @@ services:
   nostream-cache:
     image: redis:7.0.5-alpine3.16
     container_name: nostream-cache
+    networks:
+      - nostream_haproxy
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
@@ -113,6 +128,8 @@ services:
     image: ghcr.io/cameri/nostream:main
     pull_policy: never
     container_name: nostream-migrate
+    networks:
+      - nostream_haproxy
     user: node:node
     command: ['node_modules/.bin/knex', 'migrate:latest']
     environment:

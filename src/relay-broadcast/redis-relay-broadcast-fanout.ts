@@ -17,12 +17,24 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 type StreamPayload = RelayBroadcastMessage & { originInstanceId: string }
 
+const compareStreamIds = (left: string, right: string): number => {
+  const [leftMs, leftSeq] = left.split('-').map((part) => Number(part))
+  const [rightMs, rightSeq] = right.split('-').map((part) => Number(part))
+
+  if (leftMs !== rightMs) {
+    return leftMs - rightMs
+  }
+
+  return leftSeq - rightSeq
+}
+
 export class RedisRelayBroadcastFanout {
   private publisher: CacheClient | undefined
   private subscriber: CacheClient | undefined
   private running = false
   private readLoopPromise: Promise<void> | undefined
   private lastStreamId = '$'
+  private trimGapWarned = false
 
   public constructor(
     private readonly streamKey = getRelayBroadcastStreamKey(),
@@ -52,8 +64,8 @@ export class RedisRelayBroadcastFanout {
   }
 
   public async publish(message: RelayBroadcastMessage): Promise<void> {
-    if (!this.publisher?.isOpen) {
-      logger.warn('publish skipped: publisher not connected')
+    if (!this.publisher?.isReady) {
+      logger.warn('publish skipped: publisher not ready')
       return
     }
 
@@ -81,18 +93,43 @@ export class RedisRelayBroadcastFanout {
   public async stop(): Promise<void> {
     this.running = false
 
-    if (this.readLoopPromise) {
-      await this.readLoopPromise.catch(() => undefined)
-      this.readLoopPromise = undefined
-    }
-
     await Promise.all([
       this.subscriber?.isOpen ? this.subscriber.disconnect() : Promise.resolve(),
       this.publisher?.isOpen ? this.publisher.disconnect() : Promise.resolve(),
     ])
 
+    if (this.readLoopPromise) {
+      await this.readLoopPromise.catch(() => undefined)
+      this.readLoopPromise = undefined
+    }
+
     this.subscriber = undefined
     this.publisher = undefined
+  }
+
+  private async warnIfStreamTrimmedPastCursor(): Promise<void> {
+    if (this.trimGapWarned || this.lastStreamId === '$' || !this.subscriber?.isReady) {
+      return
+    }
+
+    try {
+      const info = await this.subscriber.xInfoStream(this.streamKey)
+      const firstEntryId = info.firstEntry?.id
+      if (typeof firstEntryId !== 'string') {
+        return
+      }
+
+      if (compareStreamIds(firstEntryId, this.lastStreamId) > 0) {
+        this.trimGapWarned = true
+        logger.warn(
+          'relay broadcast stream may have evicted unread entries (cursor=%s, first-entry=%s)',
+          this.lastStreamId,
+          firstEntryId,
+        )
+      }
+    } catch (error) {
+      logger.warn('unable to inspect relay broadcast stream: %o', error)
+    }
   }
 
   private async readLoop(onMessage: (message: RelayBroadcastMessage) => void): Promise<void> {
@@ -148,6 +185,8 @@ export class RedisRelayBroadcastFanout {
             onMessage(relayMessage)
           }
         }
+
+        await this.warnIfStreamTrimmedPastCursor()
       } catch (error) {
         if (!this.running) {
           return

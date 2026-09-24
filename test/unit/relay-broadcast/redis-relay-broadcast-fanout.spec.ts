@@ -24,6 +24,7 @@ describe('RedisRelayBroadcastFanout', () => {
       disconnect: sandbox.stub().resolves(),
       on: sandbox.stub(),
       isOpen: true,
+      isReady: true,
       xAdd: sandbox.stub().resolves('1-0'),
     }
 
@@ -33,7 +34,9 @@ describe('RedisRelayBroadcastFanout', () => {
       disconnect: sandbox.stub().resolves(),
       on: sandbox.stub(),
       isOpen: true,
+      isReady: true,
       xRead: xReadStub,
+      xInfoStream: sandbox.stub().resolves({ firstEntry: { id: '1-0' } }),
     }
 
     sandbox.stub(redis, 'createClient').callsFake(() => {

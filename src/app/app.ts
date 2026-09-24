@@ -20,6 +20,7 @@ import {
   isRelayBroadcastMessage,
   RelayBroadcastMessage,
 } from '../utils/relay-broadcast-message'
+import { setRelayBroadcastFanoutReady } from '../utils/relay-broadcast-state'
 import { getPrimaryShutdownDeadlineMs } from '../utils/shutdown-state'
 
 const logger = createLogger('app-primary')
@@ -143,13 +144,16 @@ export class App implements IRunnable {
     logger('settings: %O', settings)
 
     if (isRelayBroadcastFanoutEnabled()) {
+      setRelayBroadcastFanoutReady(false)
       this.relayBroadcastFanout = new RedisRelayBroadcastFanout()
       void this.relayBroadcastFanout
         .start((message) => this.onRelayBroadcastFromPeer(message))
         .then(() => {
+          setRelayBroadcastFanoutReady(true)
           logCentered('Relay broadcast fan-out enabled (Redis stream)', width)
         })
         .catch((error) => {
+          setRelayBroadcastFanoutReady(false)
           logger.error('relay broadcast fan-out failed to start: %o', error)
           this.relayBroadcastFanout = undefined
         })
@@ -288,6 +292,7 @@ export class App implements IRunnable {
     }
     const stopFanout = this.relayBroadcastFanout?.stop() ?? Promise.resolve()
     void stopFanout.finally(() => {
+      setRelayBroadcastFanoutReady(false)
       if (typeof callback === 'function') {
         callback()
       }
