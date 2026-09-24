@@ -8,11 +8,11 @@ chai.use(chaiAsPromised)
 
 const { expect } = chai
 
-import { DBEvent } from '../../../src/@types/event'
 import { ICacheAdapter } from '../../../src/@types/adapters'
+import { Tag } from '../../../src/@types/base'
+import { DBEvent } from '../../../src/@types/event'
 import { IEventRepository } from '../../../src/@types/repositories'
 import { Settings } from '../../../src/@types/settings'
-import { Tag } from '../../../src/@types/base'
 import { WotGraphService } from '../../../src/services/wot-graph-service'
 
 describe('WotGraphService', () => {
@@ -106,6 +106,21 @@ describe('WotGraphService', () => {
     it('is true after a distance lookup triggers a build', async () => {
       const wot = service()
       await wot.getDistance('someone')
+      expect(wot.isReady()).to.equal(true)
+    })
+  })
+
+  describe('warmUp', () => {
+    it('does not block the caller', () => {
+      const wot = service()
+      expect(() => wot.warmUp()).to.not.throw()
+      expect(wot.isReady()).to.equal(false)
+    })
+
+    it('eventually completes a build without a getDistance call', async () => {
+      const wot = service()
+      wot.warmUp()
+      await new Promise((resolve) => setImmediate(resolve))
       expect(wot.isReady()).to.equal(true)
     })
   })

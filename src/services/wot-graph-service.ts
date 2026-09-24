@@ -1,10 +1,10 @@
-import { createLogger } from '../factories/logger-factory'
-import { EventKinds, EventTags } from '../constants/base'
 import { ICacheAdapter } from '../@types/adapters'
+import { Pubkey, Tag } from '../@types/base'
 import { IEventRepository } from '../@types/repositories'
 import { IWotGraphService } from '../@types/services'
-import { Pubkey, Tag } from '../@types/base'
 import { Settings } from '../@types/settings'
+import { EventKinds, EventTags } from '../constants/base'
+import { createLogger } from '../factories/logger-factory'
 import { toNostrEvent } from '../utils/event'
 
 const logger = createLogger('wot-graph-service')
@@ -35,6 +35,10 @@ export class WotGraphService implements IWotGraphService {
 
   public isReady(): boolean {
     return this.ready
+  }
+
+  public warmUp(): void {
+    void this.ensureBuilt()
   }
 
   public async getDistance(pubkey: Pubkey): Promise<number | undefined> {

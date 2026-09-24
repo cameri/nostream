@@ -6,12 +6,12 @@ import { DBEvent, Event } from './event'
 import { CreateInviteCodeOptions, InviteCode } from './invite-code'
 import { Invoice } from './invoice'
 import { Nip05Verification } from './nip05'
+import { NotificationOutboxMessage, NotificationOutboxPayload } from './notification-outbox'
 import {
   NotificationDeliveryLogEntry,
   NotificationDeliveryStatus,
   OperatorNotificationChannelType,
 } from './operator-notifications'
-import { NotificationOutboxMessage, NotificationOutboxPayload } from './notification-outbox'
 import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
@@ -93,6 +93,8 @@ export interface IDvmJobRepository {
 
 export interface IReportRepository {
   create(report: Omit<Report, 'id' | 'createdAt'>): Promise<Report>
+  /** Inserts every row in a single transaction, so a mid-batch failure leaves none of them. */
+  createMany(reports: Omit<Report, 'id' | 'createdAt'>[]): Promise<Report[]>
   findByEventId(eventId: EventId): Promise<Report[]>
   findActionable(limit?: number): Promise<Report[]>
 }
