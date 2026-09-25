@@ -4,8 +4,8 @@ import * as sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
 import { DatabaseClient } from '../../../src/@types/base'
-import { ReportRepository } from '../../../src/repositories/report-repository'
 import { ReportType } from '../../../src/@types/report'
+import { ReportRepository } from '../../../src/repositories/report-repository'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
@@ -146,6 +146,75 @@ describe('ReportRepository', () => {
       const insertedRow = insertStub.firstCall.args[0]
       expect(insertedRow.reported_pubkey).to.be.null
       expect(insertedRow.reported_event_id).to.be.null
+    })
+  })
+
+  describe('.createMany', () => {
+    it('returns an empty array without opening a transaction when given no reports', async () => {
+      const transactionStub = sandbox.stub()
+      const client = { transaction: transactionStub } as unknown as DatabaseClient
+
+      const result = await repository.createMany([], client)
+
+      expect(result).to.deep.equal([])
+      expect(transactionStub).not.to.have.been.called
+    })
+
+    it('inserts every report inside a single transaction', async () => {
+      const returningStub = sandbox.stub().resolves([{ id: 7 }])
+      const insertStub = sandbox.stub().returns({ returning: returningStub })
+      const trx = sandbox.stub().returns({ insert: insertStub }) as unknown as DatabaseClient
+      const transactionStub = sandbox.stub().callsFake(async (fn: (trx: DatabaseClient) => Promise<unknown>) => fn(trx))
+      const client = { transaction: transactionStub } as unknown as DatabaseClient
+
+      const reports = [
+        {
+          eventId,
+          reporterPubkey,
+          reportedPubkey,
+          reportedEventId: null,
+          reportType: ReportType.SPAM,
+          weight: 1,
+          actionable: false,
+        },
+        {
+          eventId,
+          reporterPubkey,
+          reportedPubkey: null,
+          reportedEventId,
+          reportType: ReportType.NUDITY,
+          weight: 0.5,
+          actionable: false,
+        },
+      ]
+
+      const result = await repository.createMany(reports, client)
+
+      expect(transactionStub).to.have.been.calledOnce
+      expect(insertStub).to.have.been.calledTwice
+      expect(result).to.have.lengthOf(2)
+    })
+
+    it('propagates a failure from the transaction without inserting a partial set', async () => {
+      const transactionStub = sandbox.stub().rejects(new Error('constraint violation'))
+      const client = { transaction: transactionStub } as unknown as DatabaseClient
+
+      await expect(
+        repository.createMany(
+          [
+            {
+              eventId,
+              reporterPubkey,
+              reportedPubkey,
+              reportedEventId: null,
+              reportType: ReportType.SPAM,
+              weight: 1,
+              actionable: false,
+            },
+          ],
+          client,
+        ),
+      ).to.eventually.be.rejectedWith('constraint violation')
     })
   })
 
