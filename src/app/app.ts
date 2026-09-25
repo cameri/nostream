@@ -12,7 +12,15 @@ import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
+import { RedisRelayBroadcastFanout } from '../relay-broadcast/redis-relay-broadcast-fanout'
 import { enqueueOperatorNotification } from '../utils/operator-notification-enqueue'
+import { RelayBroadcastDeduplicator } from '../utils/relay-broadcast-deduplicator'
+import {
+  isRelayBroadcastFanoutEnabled,
+  isRelayBroadcastMessage,
+  RelayBroadcastMessage,
+} from '../utils/relay-broadcast-message'
+import { setRelayBroadcastFanoutReady } from '../utils/relay-broadcast-state'
 import { getPrimaryShutdownDeadlineMs } from '../utils/shutdown-state'
 
 const logger = createLogger('app-primary')
@@ -20,6 +28,8 @@ const logger = createLogger('app-primary')
 export class App implements IRunnable {
   private workers: WeakMap<Worker, Record<string, string>>
   private watchers: FSWatcher[] | undefined
+  private relayBroadcastFanout: RedisRelayBroadcastFanout | undefined
+  private readonly relayBroadcastDeduplicator = new RelayBroadcastDeduplicator()
   private shuttingDown = false
 
   public constructor(
@@ -133,6 +143,22 @@ export class App implements IRunnable {
 
     logger('settings: %O', settings)
 
+    if (isRelayBroadcastFanoutEnabled()) {
+      setRelayBroadcastFanoutReady(false)
+      this.relayBroadcastFanout = new RedisRelayBroadcastFanout()
+      void this.relayBroadcastFanout
+        .start((message) => this.onRelayBroadcastFromPeer(message))
+        .then(() => {
+          setRelayBroadcastFanoutReady(true)
+          logCentered('Relay broadcast fan-out enabled (Redis stream)', width)
+        })
+        .catch((error) => {
+          setRelayBroadcastFanoutReady(false)
+          logger.error('relay broadcast fan-out failed to start: %o', error)
+          this.relayBroadcastFanout = undefined
+        })
+    }
+
     // Primary-only: one outbox event per process start (not per client worker).
     void enqueueOperatorNotification(OperatorNotificationEventType.RELAY_RESTARTED, {
       version: packageJson.version,
@@ -152,8 +178,31 @@ export class App implements IRunnable {
 
   private onClusterMessage(source: Worker, message: Serializable) {
     logger('message received from worker %s: %o', source.process.pid, message)
+
+    if (isRelayBroadcastMessage(message)) {
+      this.relayBroadcastDeduplicator.mark(message.event.id)
+      const publishPromise = this.relayBroadcastFanout?.publish(message)
+      void publishPromise?.catch((error) => {
+        logger.error('relay broadcast publish failed: %o', error)
+      })
+    }
+
+    this.fanOutClusterMessage(message, source.id)
+  }
+
+  private onRelayBroadcastFromPeer(message: RelayBroadcastMessage) {
+    if (this.relayBroadcastDeduplicator.has(message.event.id)) {
+      logger('skipping duplicate relay broadcast %s', message.event.id)
+      return
+    }
+
+    this.relayBroadcastDeduplicator.mark(message.event.id)
+    this.fanOutClusterMessage(message)
+  }
+
+  private fanOutClusterMessage(message: Serializable, excludeWorkerId?: number) {
     for (const worker of Object.values(this.cluster.workers as any) as Worker[]) {
-      if (source.id === worker.id) {
+      if (excludeWorkerId !== undefined && worker.id === excludeWorkerId) {
         continue
       }
 
@@ -196,12 +245,15 @@ export class App implements IRunnable {
 
     let remaining = workers.length
     let finished = false
+    let deadline: NodeJS.Timeout | undefined
     const finishOnce = () => {
       if (finished) {
         return
       }
       finished = true
-      clearTimeout(deadline)
+      if (deadline !== undefined) {
+        clearTimeout(deadline)
+      }
       this.finishExit()
     }
 
@@ -212,7 +264,7 @@ export class App implements IRunnable {
       }
     }
 
-    const deadline = setTimeout(() => {
+    deadline = setTimeout(() => {
       logger.warn('shutdown deadline exceeded, exiting primary')
       finishOnce()
     }, getPrimaryShutdownDeadlineMs())
@@ -238,8 +290,12 @@ export class App implements IRunnable {
         watcher.close()
       }
     }
-    if (typeof callback === 'function') {
-      callback()
-    }
+    const stopFanout = this.relayBroadcastFanout?.stop() ?? Promise.resolve()
+    void stopFanout.finally(() => {
+      setRelayBroadcastFanoutReady(false)
+      if (typeof callback === 'function') {
+        callback()
+      }
+    })
   }
 }

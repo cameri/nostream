@@ -54,6 +54,10 @@ The following environment variables can be set:
 | REDIS_PORT                       | Redis Port                       | 6379                   |
 | REDIS_USER                       | Redis User                       | default                |
 | REDIS_PASSWORD                   | Redis Password                   | nostr_ts_relay         |
+| RELAY_BROADCAST_FANOUT           | Publish accepted events to a Redis stream so multiple relay containers share live fan-out (`true`/`false`) | `false` |
+| RELAY_BROADCAST_STREAM_KEY       | Redis stream key used when `RELAY_BROADCAST_FANOUT` is enabled | `nostream:relay:broadcast` |
+| RELAY_BROADCAST_STREAM_MAXLEN    | Approximate max entries retained on the broadcast Redis stream (`XADD` trim). Dominant Redis memory use when fan-out is enabled. | `50000` |
+| RELAY_INSTANCE_ID                | Optional stable id for this relay instance (defaults to hostname and pid) | |
 | PROMETHEUS_URL                   | Prometheus base URL for admin metrics queries | http://127.0.0.1:9090 |
 | PROMETHEUS_QUERY_TIMEOUT_MS      | Timeout for each Prometheus admin metrics query (ms) | 5000 |
 | ADMIN_METRICS_SSE_INTERVAL_MS    | Interval between `/admin/metrics` SSE snapshots (ms) | 5000 |
