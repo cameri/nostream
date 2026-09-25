@@ -84,6 +84,20 @@ describe('OperatorNotificationService', () => {
     ).to.be.rejectedWith('network down')
   })
 
+  it('logs success when a test delivery succeeds', async () => {
+    await service.dispatchTestTarget('discord-main')
+
+    expect(axios.post).to.have.been.calledOnce
+    expect(deliveryLogRepository.append).to.have.been.calledOnce
+  })
+
+  it('logs failure and rethrows when a test delivery fails', async () => {
+    ;(axios.post as Sinon.SinonStub).rejects(new Error('network down'))
+
+    await expect(service.dispatchTestTarget('discord-main')).to.be.rejectedWith('network down')
+    expect(deliveryLogRepository.append).to.have.been.calledOnce
+  })
+
   it('skips targets that already succeeded for the same outbox message', async () => {
     service = new OperatorNotificationService(
       () =>

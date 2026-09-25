@@ -41,4 +41,57 @@ describe('admin-notifications-settings', () => {
     expect(next.targets[0].enabled).to.equal(false)
     expect(next.targets[0].url).to.equal('https://discord.com/api/webhooks/secret')
   })
+
+  it('does not persist redacted placeholders for new targets', () => {
+    const current = getMergedAdminNotifications({
+      admin: {
+        notifications: {
+          enabled: true,
+          targets: [],
+          events: {},
+          retry: { maxAttempts: 5, baseDelayMs: 1000 },
+        },
+      },
+    } as any)
+
+    const next = mergeAdminNotificationsPatch(current, {
+      targets: [
+        {
+          id: 'telegram-new',
+          type: 'telegram',
+          enabled: true,
+          botToken: '***',
+          chatId: '123',
+        },
+      ],
+    })
+
+    expect(next.targets[0].botToken).to.equal(undefined)
+  })
+
+  it('does not persist redacted webhook url for new http targets', () => {
+    const current = getMergedAdminNotifications({
+      admin: {
+        notifications: {
+          enabled: true,
+          targets: [],
+          events: {},
+          retry: { maxAttempts: 5, baseDelayMs: 1000 },
+        },
+      },
+    } as any)
+
+    const next = mergeAdminNotificationsPatch(current, {
+      targets: [
+        {
+          id: 'http-new',
+          type: 'http',
+          enabled: true,
+          url: '***',
+        },
+      ],
+    })
+
+    expect(next.targets[0].url).to.equal(undefined)
+  })
 })

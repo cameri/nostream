@@ -38,13 +38,24 @@ const mergeTargetSecrets = (
 ): OperatorNotificationTarget => {
   const merged: OperatorNotificationTarget = { ...incoming }
 
-  if (existing) {
-    if (isRedactedSecret(incoming.url) || (incoming.url === undefined && existing.url)) {
+  if (isRedactedSecret(incoming.url)) {
+    if (existing?.url) {
       merged.url = existing.url
+    } else {
+      delete merged.url
     }
-    if (isRedactedSecret(incoming.botToken) || (incoming.botToken === undefined && existing.botToken)) {
+  } else if (incoming.url === undefined && existing?.url) {
+    merged.url = existing.url
+  }
+
+  if (isRedactedSecret(incoming.botToken)) {
+    if (existing?.botToken) {
       merged.botToken = existing.botToken
+    } else {
+      delete merged.botToken
     }
+  } else if (incoming.botToken === undefined && existing?.botToken) {
+    merged.botToken = existing.botToken
   }
 
   return merged

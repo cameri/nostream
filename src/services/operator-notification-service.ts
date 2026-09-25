@@ -101,12 +101,37 @@ export class OperatorNotificationService implements INotificationDispatcher {
     }
 
     const relayName = this.settings().info?.name?.trim() || this.settings().info.relay_url
-    const envelope = this.buildEnvelope(OperatorNotificationEventType.RELAY_RESTARTED, {
+    const eventType = OperatorNotificationEventType.RELAY_RESTARTED
+    const envelope = this.buildEnvelope(eventType, {
       test: true,
       message: `Test notification from ${relayName}`,
     })
 
-    await deliverToTarget(target, envelope)
+    try {
+      await deliverToTarget(target, envelope)
+      await this.deliveryLogRepository.append({
+        outboxId: null,
+        eventType,
+        targetId: target.id,
+        targetType: target.type,
+        status: NotificationDeliveryStatus.SUCCESS,
+        attemptNumber: 1,
+        errorSnippet: null,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error('test delivery failed for %s: %s', maskTargetForLog(target), message)
+      await this.deliveryLogRepository.append({
+        outboxId: null,
+        eventType,
+        targetId: target.id,
+        targetType: target.type,
+        status: NotificationDeliveryStatus.FAILED,
+        attemptNumber: 1,
+        errorSnippet: message.slice(0, 2000),
+      })
+      throw error
+    }
   }
 
   public getMaxAttempts(): number {
