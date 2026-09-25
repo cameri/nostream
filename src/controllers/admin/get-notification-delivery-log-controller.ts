@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 
 import { IController } from '../../@types/controllers'
+import { NotificationDeliveryStatus } from '../../@types/operator-notifications'
 import { INotificationDeliveryLogRepository } from '../../@types/repositories'
 
 export class GetAdminNotificationDeliveryLogController implements IController {
@@ -19,7 +20,26 @@ export class GetAdminNotificationDeliveryLogController implements IController {
       limit = Math.min(parsed, 200)
     }
 
-    const entries = await this.deliveryLogRepository.findRecent(limit)
+    let status: NotificationDeliveryStatus | undefined
+    if (_request.query.status !== undefined) {
+      const value = String(_request.query.status)
+      if (value !== NotificationDeliveryStatus.SUCCESS && value !== NotificationDeliveryStatus.FAILED) {
+        response.status(400).setHeader('content-type', 'application/json').send({
+          error: 'status must be success or failed',
+        })
+        return
+      }
+      status = value
+    }
+
+    const eventType =
+      _request.query.eventType !== undefined ? String(_request.query.eventType).trim() : undefined
+    if (eventType !== undefined && !eventType) {
+      response.status(400).setHeader('content-type', 'application/json').send({ error: 'eventType must be non-empty' })
+      return
+    }
+
+    const entries = await this.deliveryLogRepository.findRecent(limit, { status, eventType })
 
     response.status(200).setHeader('content-type', 'application/json').send({
       entries: entries.map((entry) => ({

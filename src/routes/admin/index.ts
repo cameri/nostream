@@ -1,6 +1,8 @@
 import express, { json, Router } from 'express'
 
 import { createGetAdminNotificationDeliveryLogController } from '../../factories/controllers/get-admin-notification-delivery-log-controller-factory'
+import { createGetAdminNotificationsController } from '../../factories/controllers/get-admin-notifications-controller-factory'
+import { createPatchAdminNotificationsController } from '../../factories/controllers/patch-admin-notifications-controller-factory'
 import { createGetAdminHealthController } from '../../factories/controllers/get-admin-health-controller-factory'
 import { createGetAdminMetricsController } from '../../factories/controllers/get-admin-metrics-controller-factory'
 import { createGetAdminNetworkHealthController } from '../../factories/controllers/get-admin-network-health-controller-factory'
@@ -105,6 +107,20 @@ router.post(
   adminJsonBodyMiddleware,
   adminAuthMiddleware,
   withAdminController(createPostAdminSettingsRestoreController),
+)
+router.get(
+  '/notifications',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminNotificationsController),
+)
+router.patch(
+  '/notifications',
+  adminRateLimitMiddleware,
+  adminAuthGateMiddleware,
+  adminJsonBodyMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPatchAdminNotificationsController),
 )
 router.get(
   '/notifications/deliveries',

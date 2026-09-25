@@ -59,6 +59,7 @@
           <p class="admin-kicker mb-2"><span class="prompt-char">&gt;</span> Navigation</p>
           <button type="button" class="nav-item active" data-view="metrics-view">Metrics</button>
           <button type="button" class="nav-item" data-view="settings-view">Settings</button>
+          <button type="button" class="nav-item" data-view="notifications-view">Notifications</button>
         </aside>
 
         <div id="system-alert" class="system-alert d-none" role="status"></div>
@@ -220,6 +221,120 @@
           </section>
         </div>
 
+        <div id="notifications-view" class="dashboard-view d-none">
+          <section class="dashboard-section">
+            <h2 class="section-title">Operator notifications</h2>
+            <p class="admin-muted small mb-3">Configure alert targets, event toggles, and review delivery history.</p>
+            <div id="notifications-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div id="notifications-success" class="alert settings-success d-none small" role="status"></div>
+
+            <div class="panel-card mb-3">
+              <div class="form-check form-switch mb-3">
+                <input id="notifications-enabled" class="form-check-input" type="checkbox" role="switch">
+                <label class="form-check-label field-label" for="notifications-enabled">Enable operator notifications</label>
+              </div>
+              <fieldset id="notifications-events-fieldset" class="notifications-events mb-0">
+                <legend class="field-label fs-6 mb-2">Events</legend>
+                <div class="row g-2">
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-invoice-created" class="form-check-input" type="checkbox" data-event-key="admission.invoice.created">
+                      <label class="form-check-label small" for="notifications-event-invoice-created">Invoice created</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-invoice-paid" class="form-check-input" type="checkbox" data-event-key="admission.invoice.paid">
+                      <label class="form-check-label small" for="notifications-event-invoice-paid">Invoice paid</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-invoice-failed" class="form-check-input" type="checkbox" data-event-key="admission.invoice.failed">
+                      <label class="form-check-label small" for="notifications-event-invoice-failed">Invoice failed</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-settings-changed" class="form-check-input" type="checkbox" data-event-key="settings.changed">
+                      <label class="form-check-label small" for="notifications-event-settings-changed">Settings changed</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-relay-restarted" class="form-check-input" type="checkbox" data-event-key="relay.restarted">
+                      <label class="form-check-label small" for="notifications-event-relay-restarted">Relay restarted</label>
+                    </div>
+                  </div>
+                </div>
+              </fieldset>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <button id="notifications-save-button" type="button" class="btn btn-console btn-sm">Save configuration</button>
+              <button id="notifications-reload-button" type="button" class="btn btn-console btn-sm">Reload</button>
+              <button id="notifications-add-target-button" type="button" class="btn btn-console btn-sm">Add target</button>
+            </div>
+
+            <div id="notifications-targets" class="notifications-targets mb-3" aria-live="polite"></div>
+
+            <details class="panel-card notifications-advanced mb-3">
+              <summary class="field-label">Advanced (retry &amp; retention)</summary>
+              <div class="row g-3 mt-1">
+                <div class="col-md-4">
+                  <label class="form-label field-label" for="notifications-retry-max">Max attempts</label>
+                  <input id="notifications-retry-max" class="form-control console-input" type="number" min="1" step="1">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label field-label" for="notifications-retry-delay">Base delay (ms)</label>
+                  <input id="notifications-retry-delay" class="form-control console-input" type="number" min="0" step="1">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label field-label" for="notifications-log-retention">Delivery log retention (days)</label>
+                  <input id="notifications-log-retention" class="form-control console-input" type="number" min="1" step="1">
+                </div>
+              </div>
+            </details>
+
+            <section class="dashboard-section pt-2">
+              <h3 class="section-title h6">Delivery history</h3>
+              <div class="d-flex flex-wrap gap-2 mb-2 align-items-end">
+                <div>
+                  <label class="form-label field-label small mb-1" for="notifications-log-status">Status</label>
+                  <select id="notifications-log-status" class="form-select console-input form-select-sm">
+                    <option value="">All</option>
+                    <option value="success">Success</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label field-label small mb-1" for="notifications-log-event">Event type</label>
+                  <input id="notifications-log-event" class="form-control console-input form-control-sm" type="text" placeholder="e.g. admission.invoice.paid">
+                </div>
+                <button id="notifications-log-refresh" type="button" class="btn btn-console btn-sm">Refresh log</button>
+                <button id="notifications-log-more" type="button" class="btn btn-console btn-sm">Load more</button>
+              </div>
+              <div class="table-responsive panel-card">
+                <table class="table table-sm notifications-log-table mb-0" aria-describedby="notifications-log-caption">
+                  <caption id="notifications-log-caption" class="visually-hidden">Notification delivery log</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Time (UTC)</th>
+                      <th scope="col">Event</th>
+                      <th scope="col">Target</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Error</th>
+                    </tr>
+                  </thead>
+                  <tbody id="notifications-log-body">
+                    <tr><td colspan="5" class="admin-muted small">No entries loaded.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        </div>
+
         <div id="settings-view" class="dashboard-view d-none">
           <section class="dashboard-section">
             <h2 class="section-title">Configuration<span class="sync-cursor" aria-hidden="true"></span></h2>
@@ -264,5 +379,6 @@
       }
     </script>
     <script src="{{path_prefix}}/admin/assets/dashboard.js" nonce="{{nonce}}"></script>
+    <script src="{{path_prefix}}/admin/assets/notifications.js" nonce="{{nonce}}"></script>
   </body>
 </html>

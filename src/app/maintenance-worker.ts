@@ -20,7 +20,10 @@ import {
 import { InvoiceStatus } from '../@types/invoice'
 import { isExpiredInvoice } from '../utils/invoice'
 import { Nip05Verification } from '../@types/nip05'
+import { FSWatcher } from 'fs'
+
 import { Settings } from '../@types/settings'
+import { SettingsStatic } from '../utils/settings'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 
 const UPDATE_INVOICE_INTERVAL = 60000
@@ -79,6 +82,7 @@ export function applyReverificationOutcome(
 export class MaintenanceWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
   private isRunning = false
+  private watchers: FSWatcher[] | undefined
   /**
    * Where the next pass starts. Without it every pass re-reads the oldest ten, so
    * ten invoices that never resolve starve everything behind them.
@@ -117,6 +121,8 @@ export class MaintenanceWorker implements IRunnable {
   }
 
   public run(): void {
+    this.watchers = SettingsStatic.watchSettings()
+
     this.interval = setInterval(async () => {
       if (this.isRunning) {
         logger('skipping scheduled maintenance run because previous run is still in progress')
@@ -289,6 +295,11 @@ export class MaintenanceWorker implements IRunnable {
   public close(callback?: () => void) {
     logger('closing')
     clearInterval(this.interval)
+    if (Array.isArray(this.watchers)) {
+      for (const watcher of this.watchers) {
+        watcher.close()
+      }
+    }
     if (typeof callback === 'function') {
       callback()
     }

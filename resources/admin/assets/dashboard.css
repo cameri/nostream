@@ -819,6 +819,48 @@
   margin-bottom: 0;
 }
 
+.notifications-target-card .notifications-target-type {
+  max-width: 10rem;
+}
+
+.notifications-log-table {
+  color: var(--text);
+  font-size: 0.75rem;
+}
+
+.notifications-log-table thead th {
+  border-bottom-color: var(--panel-border);
+  color: var(--label);
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.notifications-log-table td,
+.notifications-log-table th {
+  border-color: var(--panel-border);
+  vertical-align: top;
+}
+
+.notifications-status-ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.notifications-status-failed {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.notifications-advanced summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.notifications-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .admin-dashboard .metric-value {
     font-size: 1rem;
