@@ -453,6 +453,15 @@ export interface Nip56Settings {
    * never actionable on their own -- only stored for manual review.
    */
   trustedModerators: Pubkey[]
+  /**
+   * When true, events matching an `actionable` report (a trusted-moderator
+   * report against a valid target) are excluded from REQ/COUNT results.
+   * A pubkey-targeted report hides every event from that pubkey; an
+   * event-targeted report hides just that event. Requires `enabled` to have
+   * any effect. Defaults to false so enabling reporting alone never changes
+   * what existing subscribers see.
+   */
+  hideActionableReports: boolean
 }
 
 export interface Settings {

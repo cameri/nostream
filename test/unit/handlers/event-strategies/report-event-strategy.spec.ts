@@ -16,6 +16,7 @@ import { IWotGraphService } from '../../../../src/@types/services'
 import { Settings } from '../../../../src/@types/settings'
 import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
 import { ReportEventStrategy } from '../../../../src/handlers/event-strategies/report-event-strategy'
+import { isHidden, resetHiddenContentCache } from '../../../../src/utils/hidden-content-cache'
 
 describe('ReportEventStrategy', () => {
   const reporterPubkey = '2'.repeat(64)
@@ -74,6 +75,7 @@ describe('ReportEventStrategy', () => {
 
   afterEach(() => {
     sandbox.restore()
+    resetHiddenContentCache()
   })
 
   describe('execute', () => {
@@ -176,6 +178,40 @@ describe('ReportEventStrategy', () => {
           actionable: true,
         },
       ])
+    })
+
+    it('marks the target in the hidden-content cache when hideActionableReports is enabled', async () => {
+      settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey], hideActionableReports: true } }) as any
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      eventRepositoryCreateStub.resolves(1)
+      reportRepositoryCreateManyStub.resolves([{}])
+
+      await strategy.execute(event)
+
+      expect(isHidden({ id: 'unrelated-id', pubkey: reportedPubkey })).to.be.true
+    })
+
+    it('does not mark the cache when hideActionableReports is disabled', async () => {
+      settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey], hideActionableReports: false } }) as any
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      eventRepositoryCreateStub.resolves(1)
+      reportRepositoryCreateManyStub.resolves([{}])
+
+      await strategy.execute(event)
+
+      expect(isHidden({ id: 'unrelated-id', pubkey: reportedPubkey })).to.be.false
+    })
+
+    it('does not mark the cache for a non-actionable (non-moderator) report even when hideActionableReports is enabled', async () => {
+      settings = () => ({ nip56: { enabled: true, trustedModerators: [], hideActionableReports: true } }) as any
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      eventRepositoryCreateStub.resolves(1)
+      reportRepositoryCreateManyStub.resolves([{}])
+      getDistanceStub.resolves(1)
+
+      await strategy.execute(event)
+
+      expect(isHidden({ id: 'unrelated-id', pubkey: reportedPubkey })).to.be.false
     })
 
     it('does not consult the WoT graph for a trusted moderator', async () => {

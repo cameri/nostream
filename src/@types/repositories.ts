@@ -97,6 +97,8 @@ export interface IReportRepository {
   createMany(reports: Omit<Report, 'id' | 'createdAt'>[]): Promise<Report[]>
   findByEventId(eventId: EventId): Promise<Report[]>
   findActionable(limit?: number): Promise<Report[]>
+  /** Every distinct actionable report target, unpaginated -- feeds the hidden-content cache's boot-time warm-up. */
+  findActionableTargets(): Promise<{ reportedPubkey: Pubkey | null; reportedEventId: EventId | null }[]>
 }
 
 export interface INotificationDeliveryLogRepository {

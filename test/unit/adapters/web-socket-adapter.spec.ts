@@ -14,6 +14,7 @@ const { expect } = chai
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 import { IWebSocketServerAdapter } from '../../../src/@types/adapters'
 import { WebSocketAdapter } from '../../../src/adapters/web-socket-adapter'
+import { markActionableTarget, resetHiddenContentCache } from '../../../src/utils/hidden-content-cache'
 
 describe('WebSocketAdapter', () => {
   let sandbox: Sinon.SinonSandbox
@@ -380,6 +381,77 @@ describe('WebSocketAdapter', () => {
       adapter.emit(WebSocketAdapterEvent.Event, event)
 
       expect(client.send).to.have.been.calledOnce
+    })
+
+    describe('NIP-56: hidden content', () => {
+      afterEach(() => {
+        resetHiddenContentCache()
+      })
+
+      it('does not broadcast an event matching an actionable report when hideActionableReports is enabled', () => {
+        const reportedPubkey = 'a'.repeat(64)
+        markActionableTarget({ reportedPubkey, reportedEventId: null })
+        settingsFactory.returns({ nip56: { enabled: true, hideActionableReports: true } })
+        client.readyState = WebSocket.OPEN
+        adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+
+        const event = {
+          id: 'a'.repeat(64),
+          pubkey: reportedPubkey,
+          kind: 1,
+          content: 'spam',
+          created_at: 1000000,
+          sig: 'c'.repeat(128),
+          tags: [],
+        }
+
+        adapter.emit(WebSocketAdapterEvent.Event, event)
+
+        expect(client.send).not.to.have.been.called
+      })
+
+      it('still broadcasts a hidden-target event when hideActionableReports is disabled', () => {
+        const reportedPubkey = 'a'.repeat(64)
+        markActionableTarget({ reportedPubkey, reportedEventId: null })
+        settingsFactory.returns({ nip56: { enabled: true, hideActionableReports: false } })
+        client.readyState = WebSocket.OPEN
+        adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+
+        const event = {
+          id: 'a'.repeat(64),
+          pubkey: reportedPubkey,
+          kind: 1,
+          content: 'spam',
+          created_at: 1000000,
+          sig: 'c'.repeat(128),
+          tags: [],
+        }
+
+        adapter.emit(WebSocketAdapterEvent.Event, event)
+
+        expect(client.send).to.have.been.calledOnce
+      })
+
+      it('still broadcasts an unrelated event when hideActionableReports is enabled', () => {
+        markActionableTarget({ reportedPubkey: 'a'.repeat(64), reportedEventId: null })
+        settingsFactory.returns({ nip56: { enabled: true, hideActionableReports: true } })
+        client.readyState = WebSocket.OPEN
+        adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+
+        const event = {
+          id: 'b'.repeat(64),
+          pubkey: 'c'.repeat(64),
+          kind: 1,
+          content: 'hello',
+          created_at: 1000000,
+          sig: 'c'.repeat(128),
+          tags: [],
+        }
+
+        adapter.emit(WebSocketAdapterEvent.Event, event)
+
+        expect(client.send).to.have.been.calledOnce
+      })
     })
   })
 
