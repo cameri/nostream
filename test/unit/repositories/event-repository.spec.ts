@@ -559,6 +559,82 @@ describe('EventRepository', () => {
         expect(query).to.include("plainto_tsquery('simple'::regconfig, 'bitco')")
       })
     })
+
+    describe('NIP-56: hideActionableReports', () => {
+      let hideEnabledRepository: IEventRepository
+
+      beforeEach(() => {
+        hideEnabledRepository = new EventRepository(dbClient, rrDbClient, () => ({
+          nip56: { enabled: true, trustedModerators: [], hideActionableReports: true },
+        }) as any)
+      })
+
+      it('adds a NOT EXISTS clause against reports when enabled', () => {
+        const filters = [{ kinds: [1] }]
+
+        const query = hideEnabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.include('not exists')
+        expect(query).to.include('from "reports"')
+        expect(query).to.include('"reports"."actionable" = true')
+        expect(query).to.include('reports.reported_event_id = events.event_id')
+        expect(query).to.include('reports.reported_pubkey = events.event_pubkey')
+      })
+
+      it('applies the exclusion to countByFilters too', async () => {
+        const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+          countDistinct: () => ({
+            first: async () => ({ count: '0' }),
+          }),
+        } as any)
+
+        await hideEnabledRepository.countByFilters([{ kinds: [1] }])
+
+        const sql = fromStub.firstCall.args[0].toString()
+        expect(sql).to.include('not exists')
+        expect(sql).to.include('from "reports"')
+      })
+
+      it('omits the clause when hideActionableReports is false', () => {
+        const disabledRepository = new EventRepository(dbClient, rrDbClient, () => ({
+          nip56: { enabled: true, trustedModerators: [], hideActionableReports: false },
+        }) as any)
+        const filters = [{ kinds: [1] }]
+
+        const query = disabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.not.include('reports')
+      })
+
+      it('omits the clause when nip56 is disabled even if hideActionableReports is true', () => {
+        const disabledRepository = new EventRepository(dbClient, rrDbClient, () => ({
+          nip56: { enabled: false, trustedModerators: [], hideActionableReports: true },
+        }) as any)
+        const filters = [{ kinds: [1] }]
+
+        const query = disabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.not.include('reports')
+      })
+
+      it('omits the clause when no settings are provided', () => {
+        const noSettingsRepository = new EventRepository(dbClient, rrDbClient)
+        const filters = [{ kinds: [1] }]
+
+        const query = noSettingsRepository.findByFilters(filters).toString()
+
+        expect(query).to.not.include('reports')
+      })
+
+      it('composes with other filter conditions', () => {
+        const filters = [{ authors: ['a'.repeat(64)], kinds: [1] }]
+
+        const query = hideEnabledRepository.findByFilters(filters).toString()
+
+        expect(query).to.include('"event_kind" in (1)')
+        expect(query).to.include('not exists')
+      })
+    })
   })
 
   describe('.countByFilters', () => {

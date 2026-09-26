@@ -249,6 +249,11 @@ export const guidedSettingCategories: GuidedSettingCategory[] = [
         type: 'stringArray',
         placeholder: 'One pubkey per line',
       },
+      {
+        label: 'Hide content matching actionable NIP-56 reports',
+        path: 'nip56.hideActionableReports',
+        type: 'boolean',
+      },
     ],
   },
   {

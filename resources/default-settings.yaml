@@ -145,6 +145,9 @@ nip56:
   # regardless of WoT distance. Reports from any other pubkey are stored
   # and weighted, but never trigger automatic actions on their own.
   trustedModerators: []
+  # When true, events matching an actionable report are excluded from
+  # REQ/COUNT results. Has no effect unless enabled is also true.
+  hideActionableReports: false
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
