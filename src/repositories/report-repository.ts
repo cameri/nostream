@@ -90,4 +90,20 @@ export class ReportRepository implements IReportRepository {
 
     return rows.map(fromDBReport)
   }
+
+  public async findActionableTargets(
+    client: DatabaseClient = this.dbClient,
+  ): Promise<{ reportedPubkey: string | null; reportedEventId: string | null }[]> {
+    logger('find all actionable report targets')
+
+    const rows = await client<DBReport>('reports')
+      .where('actionable', true)
+      .distinct('reported_pubkey', 'reported_event_id')
+      .select()
+
+    return rows.map((row) => ({
+      reportedPubkey: row.reported_pubkey ? fromBuffer(row.reported_pubkey) : null,
+      reportedEventId: row.reported_event_id ? fromBuffer(row.reported_event_id) : null,
+    }))
+  }
 }

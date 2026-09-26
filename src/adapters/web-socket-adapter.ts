@@ -26,6 +26,7 @@ import { createReadAuthorizationGuard } from '../utils/nip42'
 import { Nip42SessionManager } from '../utils/nip42-session'
 import { IRateLimiter } from '../@types/utils'
 import { isEventMatchingFilter } from '../utils/event'
+import { isHidden } from '../utils/hidden-content-cache'
 import { messageSchema } from '../schemas/message-schema'
 import { Settings } from '../@types/settings'
 import { SocketAddress } from 'net'
@@ -127,6 +128,14 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     // NIP-42: don't broadcast restricted-kind events to unauthorized clients.
     const isReadAuthorized = createReadAuthorizationGuard(this.settings(), () => this.session.getAuthenticatedPubkeys())
     if (!isReadAuthorized(event)) {
+      return
+    }
+
+    // NIP-56: keep live subscriptions consistent with what a fresh REQ would
+    // now exclude -- EventRepository's hiding only applies to DB queries, so
+    // this in-memory check covers the broadcast path the same way.
+    const nip56 = this.settings().nip56
+    if (nip56?.enabled && nip56?.hideActionableReports && isHidden(event)) {
       return
     }
 

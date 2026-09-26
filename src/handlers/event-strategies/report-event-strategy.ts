@@ -8,6 +8,7 @@ import { Settings } from '../../@types/settings'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 import { createLogger } from '../../factories/logger-factory'
 import { createEventCommandResult } from '../../telemetry/event-metrics'
+import { markActionableTarget } from '../../utils/hidden-content-cache'
 import { extractReportTargets } from '../../utils/nip56'
 import { calculateReportWeight } from '../../utils/report-scoring'
 
@@ -77,6 +78,14 @@ export class ReportEventStrategy implements IEventStrategy<Event, Promise<void>>
         // producing more than one row (see extractReportTargets) shouldn't be
         // able to leave a partial set behind on a mid-batch failure.
         await this.reportRepository.createMany(reports)
+
+        // Keeps the live-broadcast path (WebSocketAdapter.onSendEvent, which
+        // matches events against open subscriptions in-process) in sync with
+        // what a fresh REQ would now exclude -- without this, a freshly
+        // actionable pubkey/event could still reach existing subscribers.
+        if (isTrustedModerator && nip56.hideActionableReports) {
+          reports.forEach(markActionableTarget)
+        }
       }
     } catch (error) {
       // Report scoring/recording is best-effort: the report event itself is

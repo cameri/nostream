@@ -12,6 +12,7 @@ import { InviteCodeRepository } from '../repositories/invite-code-repository'
 import { Nip05VerificationRepository } from '../repositories/nip05-verification-repository'
 import { ReportRepository } from '../repositories/report-repository'
 import { UserRepository } from '../repositories/user-repository'
+import { warmHiddenContentCache } from '../utils/hidden-content-cache'
 import { createLogger } from './logger-factory'
 import { getCache } from './message-handler-factory'
 import { createWebApp } from './web-app-factory'
@@ -38,6 +39,17 @@ export const workerFactory = (): AppWorker => {
   wotGraphServiceFactory(getCache(), eventRepository, createSettings)
 
   const settings = createSettings()
+
+  // NIP-56: warms the in-memory hidden-content cache from every actionable
+  // report already in the DB, so the live-broadcast path (WebSocketAdapter)
+  // is consistent with query-time hiding from the moment the worker starts
+  // accepting connections, not just from the first report recorded after
+  // boot. Fire-and-forget: a failure here must not block worker startup.
+  if (settings.nip56?.enabled && settings.nip56?.hideActionableReports) {
+    warmHiddenContentCache(reportRepository).catch((error) =>
+      logger.error('failed to warm hidden content cache: %o', error),
+    )
+  }
 
   const app = createWebApp()
 
