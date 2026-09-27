@@ -17,7 +17,7 @@ export class GetAdminNotificationDeliveryLogController implements IController {
         })
         return
       }
-      limit = Math.min(parsed, 200)
+      limit = Math.min(parsed, 500)
     }
 
     let status: NotificationDeliveryStatus | undefined
