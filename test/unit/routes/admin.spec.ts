@@ -8,6 +8,7 @@ import { EventKinds, EventTags } from '../../../src/constants/base'
 import * as getAdminHealthControllerFactory from '../../../src/factories/controllers/get-admin-health-controller-factory'
 import * as getAdminMetricsControllerFactory from '../../../src/factories/controllers/get-admin-metrics-controller-factory'
 import * as getAdminNetworkHealthControllerFactory from '../../../src/factories/controllers/get-admin-network-health-controller-factory'
+import * as getAdminNotificationsControllerFactory from '../../../src/factories/controllers/get-admin-notifications-controller-factory'
 import * as adminRateLimitMiddleware from '../../../src/handlers/request-handlers/admin-rate-limit-middleware'
 import * as rateLimiterMiddleware from '../../../src/handlers/request-handlers/rate-limiter-middleware'
 import * as settingsFactory from '../../../src/factories/settings-factory'
@@ -21,6 +22,7 @@ describe('admin router', () => {
   let createGetAdminHealthControllerStub: Sinon.SinonStub
   let createGetAdminMetricsControllerStub: Sinon.SinonStub
   let createGetAdminNetworkHealthControllerStub: Sinon.SinonStub
+  let createGetAdminNotificationsControllerStub: Sinon.SinonStub
   let createSettingsStub: Sinon.SinonStub
   let rateLimiterMiddlewareStub: Sinon.SinonStub
   let adminRateLimitMiddlewareStub: Sinon.SinonStub
@@ -80,6 +82,17 @@ describe('admin router', () => {
           .send({ snapshot: null })
       },
     } as any)
+    createGetAdminNotificationsControllerStub = Sinon.stub(
+      getAdminNotificationsControllerFactory,
+      'createGetAdminNotificationsController',
+    ).returns({
+      handleRequest: async (_request: any, response: any) => {
+        response
+          .status(200)
+          .setHeader('content-type', 'application/json')
+          .send({ notifications: { enabled: false, targets: [], events: {}, retry: { maxAttempts: 5, baseDelayMs: 1000 } } })
+      },
+    } as any)
     createSettingsStub = Sinon.stub(settingsFactory, 'createSettings').returns(settings as any)
     const passthrough = async (_request: any, _response: any, next: any) => {
       next()
@@ -110,6 +123,7 @@ describe('admin router', () => {
     createGetAdminHealthControllerStub?.restore()
     createGetAdminMetricsControllerStub?.restore()
     createGetAdminNetworkHealthControllerStub?.restore()
+    createGetAdminNotificationsControllerStub?.restore()
     createSettingsStub?.restore()
     rateLimiterMiddlewareStub?.restore()
     adminRateLimitMiddlewareStub?.restore()
@@ -190,12 +204,14 @@ describe('admin router', () => {
     const healthResponse = await axios.get(`${baseUrl}/health`, { validateStatus: () => true })
     const metricsResponse = await axios.get(`${baseUrl}/metrics`, { validateStatus: () => true })
     const networkHealthResponse = await axios.get(`${baseUrl}/network-health`, { validateStatus: () => true })
+    const notificationsResponse = await axios.get(`${baseUrl}/notifications`, { validateStatus: () => true })
 
     expect(sessionResponse.status).to.equal(401)
     expect(healthResponse.status).to.equal(401)
     expect(metricsResponse.status).to.equal(401)
     expect(networkHealthResponse.status).to.equal(401)
-    expect(rateLimiterMiddlewareStub.callCount).to.equal(4)
+    expect(notificationsResponse.status).to.equal(401)
+    expect(rateLimiterMiddlewareStub.callCount).to.equal(5)
   })
 
   it('authenticates a protected route with a signed NIP-98 event', async () => {

@@ -112,7 +112,11 @@ export interface INotificationDeliveryLogRepository {
     },
     client?: DatabaseClient,
   ): Promise<void>
-  findRecent(limit?: number, client?: DatabaseClient): Promise<NotificationDeliveryLogEntry[]>
+  findRecent(
+    limit?: number,
+    filters?: { status?: NotificationDeliveryStatus; eventType?: string },
+    client?: DatabaseClient,
+  ): Promise<NotificationDeliveryLogEntry[]>
   findSuccessfulTargetIds(outboxId: string, client?: DatabaseClient): Promise<string[]>
   deleteOlderThan(cutoff: Date, client?: DatabaseClient): Promise<number>
 }
