@@ -91,6 +91,14 @@ describe('OperatorNotificationService', () => {
     expect(deliveryLogRepository.append).to.have.been.calledOnce
   })
 
+  it('does not fail test delivery when success logging fails', async () => {
+    deliveryLogRepository.append.onFirstCall().rejects(new Error('db write failed'))
+
+    await expect(service.dispatchTestTarget('discord-main')).to.be.fulfilled
+
+    expect(axios.post).to.have.been.calledOnce
+  })
+
   it('logs failure and rethrows when a test delivery fails', async () => {
     ;(axios.post as Sinon.SinonStub).rejects(new Error('network down'))
 

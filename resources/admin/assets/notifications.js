@@ -62,14 +62,34 @@
     'relay.restarted': false,
   })
 
+  const newTargetId = () => {
+    if (globalThis.crypto?.randomUUID) {
+      return globalThis.crypto.randomUUID()
+    }
+    return `tgt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  }
+
   const createEmptyTarget = () => ({
-    id: crypto.randomUUID(),
+    id: newTargetId(),
     type: 'http',
     enabled: true,
     url: '',
     botToken: '',
     chatId: '',
   })
+
+  const setTestButtonEnabled = (card, enabled) => {
+    const button = card.querySelector('[data-action="test-target"]')
+    if (!button) {
+      return
+    }
+    button.disabled = !enabled
+    if (enabled) {
+      button.removeAttribute('title')
+    } else {
+      button.title = 'Save notification settings before testing this target.'
+    }
+  }
 
   const readEventsFromForm = () => {
     const events = { ...defaultEvents(), ...(notificationsConfig?.events ?? {}) }
@@ -128,68 +148,129 @@
     deliveryLogRetentionDays: Number(elements.logRetention?.value ?? 30),
   })
 
-  const renderTargetCard = (target) => {
+  const appendOption = (select, value, label) => {
+    const option = document.createElement('option')
+    option.value = value
+    option.textContent = label
+    select.appendChild(option)
+  }
+
+  const renderTargetCard = (target, { saved = true } = {}) => {
     const card = document.createElement('article')
     card.className = 'panel-card notifications-target-card mb-2'
     card.dataset.targetId = target.id
 
-    const urlValue = target.url ?? ''
-    const botTokenValue = target.botToken ?? ''
+    const header = document.createElement('div')
+    header.className = 'd-flex flex-wrap justify-content-between align-items-center gap-2 mb-2'
 
-    card.innerHTML = `
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <span class="module-code">TGT</span>
-          <label class="visually-hidden" for="target-type-${target.id}">Target type</label>
-          <select id="target-type-${target.id}" data-target-field="type" class="form-select form-select-sm console-input notifications-target-type">
-            <option value="http">HTTP</option>
-            <option value="discord">Discord</option>
-            <option value="slack">Slack</option>
-            <option value="telegram">Telegram</option>
-          </select>
-          <div class="form-check form-switch mb-0">
-            <input id="target-enabled-${target.id}" data-target-field="enabled" class="form-check-input" type="checkbox" role="switch">
-            <label class="form-check-label small" for="target-enabled-${target.id}">Enabled</label>
-          </div>
-        </div>
-        <div class="d-flex gap-2">
-          <button type="button" class="btn btn-console btn-sm" data-action="test-target">Test</button>
-          <button type="button" class="btn btn-console btn-sm" data-action="remove-target">Remove</button>
-        </div>
-      </div>
-      <p class="notifications-target-status small mb-2 admin-muted" data-target-status aria-live="polite"></p>
-      <div class="row g-2">
-        <div class="col-12 col-lg-6">
-          <label class="form-label field-label small mb-1" for="target-url-${target.id}">Webhook URL</label>
-          <input id="target-url-${target.id}" data-target-field="url" class="form-control console-input form-control-sm" type="url" autocomplete="off">
-        </div>
-        <div class="col-12 col-md-6 col-lg-3">
-          <label class="form-label field-label small mb-1" for="target-bot-${target.id}">Bot token</label>
-          <input id="target-bot-${target.id}" data-target-field="botToken" class="form-control console-input form-control-sm" type="password" autocomplete="off">
-        </div>
-        <div class="col-12 col-md-6 col-lg-3">
-          <label class="form-label field-label small mb-1" for="target-chat-${target.id}">Chat ID</label>
-          <input id="target-chat-${target.id}" data-target-field="chatId" class="form-control console-input form-control-sm" type="text" autocomplete="off">
-        </div>
-      </div>
-    `
+    const headerLeft = document.createElement('div')
+    headerLeft.className = 'd-flex align-items-center gap-2 flex-wrap'
 
-    card.querySelector('[data-target-field="type"]').value = target.type
-    card.querySelector('[data-target-field="enabled"]').checked = target.enabled !== false
-    card.querySelector('[data-target-field="url"]').value = urlValue
-    card.querySelector('[data-target-field="botToken"]').value = botTokenValue
-    card.querySelector('[data-target-field="chatId"]').value = target.chatId ?? ''
+    const badge = document.createElement('span')
+    badge.className = 'module-code'
+    badge.textContent = 'TGT'
 
-    card.querySelector('[data-action="remove-target"]')?.addEventListener('click', () => {
+    const typeSelect = document.createElement('select')
+    typeSelect.dataset.targetField = 'type'
+    typeSelect.className = 'form-select form-select-sm console-input notifications-target-type'
+    appendOption(typeSelect, 'http', 'HTTP')
+    appendOption(typeSelect, 'discord', 'Discord')
+    appendOption(typeSelect, 'slack', 'Slack')
+    appendOption(typeSelect, 'telegram', 'Telegram')
+    typeSelect.value = target.type ?? 'http'
+
+    const enabledWrap = document.createElement('div')
+    enabledWrap.className = 'form-check form-switch mb-0'
+    const enabledInput = document.createElement('input')
+    enabledInput.type = 'checkbox'
+    enabledInput.role = 'switch'
+    enabledInput.className = 'form-check-input'
+    enabledInput.dataset.targetField = 'enabled'
+    enabledInput.checked = target.enabled !== false
+    const enabledLabel = document.createElement('label')
+    enabledLabel.className = 'form-check-label small'
+    enabledLabel.textContent = 'Enabled'
+    enabledWrap.append(enabledInput, enabledLabel)
+
+    headerLeft.append(badge, typeSelect, enabledWrap)
+
+    const headerActions = document.createElement('div')
+    headerActions.className = 'd-flex gap-2'
+    const testButton = document.createElement('button')
+    testButton.type = 'button'
+    testButton.className = 'btn btn-console btn-sm'
+    testButton.dataset.action = 'test-target'
+    testButton.textContent = 'Test'
+    const removeButton = document.createElement('button')
+    removeButton.type = 'button'
+    removeButton.className = 'btn btn-console btn-sm'
+    removeButton.dataset.action = 'remove-target'
+    removeButton.textContent = 'Remove'
+    headerActions.append(testButton, removeButton)
+    header.append(headerLeft, headerActions)
+
+    const statusEl = document.createElement('p')
+    statusEl.className = 'notifications-target-status small mb-2 admin-muted'
+    statusEl.dataset.targetStatus = ''
+    statusEl.setAttribute('aria-live', 'polite')
+
+    const fieldsRow = document.createElement('div')
+    fieldsRow.className = 'row g-2'
+
+    const urlCol = document.createElement('div')
+    urlCol.className = 'col-12 col-lg-6'
+    const urlLabel = document.createElement('label')
+    urlLabel.className = 'form-label field-label small mb-1'
+    urlLabel.textContent = 'Webhook URL'
+    const urlInput = document.createElement('input')
+    urlInput.type = 'url'
+    urlInput.autocomplete = 'off'
+    urlInput.className = 'form-control console-input form-control-sm'
+    urlInput.dataset.targetField = 'url'
+    urlInput.value = target.url ?? ''
+    urlCol.append(urlLabel, urlInput)
+
+    const botCol = document.createElement('div')
+    botCol.className = 'col-12 col-md-6 col-lg-3'
+    const botLabel = document.createElement('label')
+    botLabel.className = 'form-label field-label small mb-1'
+    botLabel.textContent = 'Bot token'
+    const botInput = document.createElement('input')
+    botInput.type = 'password'
+    botInput.autocomplete = 'off'
+    botInput.className = 'form-control console-input form-control-sm'
+    botInput.dataset.targetField = 'botToken'
+    botInput.value = target.botToken ?? ''
+    botCol.append(botLabel, botInput)
+
+    const chatCol = document.createElement('div')
+    chatCol.className = 'col-12 col-md-6 col-lg-3'
+    const chatLabel = document.createElement('label')
+    chatLabel.className = 'form-label field-label small mb-1'
+    chatLabel.textContent = 'Chat ID'
+    const chatInput = document.createElement('input')
+    chatInput.type = 'text'
+    chatInput.autocomplete = 'off'
+    chatInput.className = 'form-control console-input form-control-sm'
+    chatInput.dataset.targetField = 'chatId'
+    chatInput.value = target.chatId ?? ''
+    chatCol.append(chatLabel, chatInput)
+
+    fieldsRow.append(urlCol, botCol, chatCol)
+    card.append(header, statusEl, fieldsRow)
+
+    removeButton.addEventListener('click', () => {
       card.remove()
       if (!elements.targetsRoot.querySelector('[data-target-id]')) {
         elements.targetsRoot.innerHTML = '<p class="admin-muted small mb-0">No targets configured.</p>'
       }
     })
 
-    card.querySelector('[data-action="test-target"]')?.addEventListener('click', () => {
-      void testTarget(target.id, card)
+    testButton.addEventListener('click', () => {
+      void testTarget(card.dataset.targetId, card)
     })
+
+    setTestButtonEnabled(card, saved)
 
     return card
   }
@@ -202,7 +283,7 @@
     }
 
     targets.forEach((target) => {
-      elements.targetsRoot.appendChild(renderTargetCard(target))
+      elements.targetsRoot.appendChild(renderTargetCard(target, { saved: true }))
     })
   }
 
@@ -347,13 +428,36 @@
     entries.forEach((entry) => {
       const row = document.createElement('tr')
       const statusClass = entry.status === 'success' ? 'notifications-status-ok' : 'notifications-status-failed'
-      row.innerHTML = `
-        <td>${formatLogTime(entry.createdAt)}</td>
-        <td><code class="small">${entry.eventType ?? '—'}</code></td>
-        <td><span class="small">${entry.targetType ?? '—'}</span> <span class="admin-muted small">${entry.targetId ?? ''}</span></td>
-        <td><span class="${statusClass}">${entry.status ?? '—'}</span></td>
-        <td class="small text-break">${entry.errorSnippet ?? '—'}</td>
-      `
+
+      const timeCell = document.createElement('td')
+      timeCell.textContent = formatLogTime(entry.createdAt)
+
+      const eventCell = document.createElement('td')
+      const eventCode = document.createElement('code')
+      eventCode.className = 'small'
+      eventCode.textContent = entry.eventType ?? '—'
+      eventCell.appendChild(eventCode)
+
+      const targetCell = document.createElement('td')
+      const targetType = document.createElement('span')
+      targetType.className = 'small'
+      targetType.textContent = entry.targetType ?? '—'
+      const targetId = document.createElement('span')
+      targetId.className = 'admin-muted small'
+      targetId.textContent = entry.targetId ? ` ${entry.targetId}` : ''
+      targetCell.append(targetType, targetId)
+
+      const statusCell = document.createElement('td')
+      const statusSpan = document.createElement('span')
+      statusSpan.className = statusClass
+      statusSpan.textContent = entry.status ?? '—'
+      statusCell.appendChild(statusSpan)
+
+      const errorCell = document.createElement('td')
+      errorCell.className = 'small text-break'
+      errorCell.textContent = entry.errorSnippet ?? '—'
+
+      row.append(timeCell, eventCell, targetCell, statusCell, errorCell)
       elements.logBody.appendChild(row)
     })
   }
@@ -404,7 +508,7 @@
     if (placeholder && !elements.targetsRoot.querySelector('[data-target-id]')) {
       elements.targetsRoot.replaceChildren()
     }
-    elements.targetsRoot.appendChild(renderTargetCard(createEmptyTarget()))
+    elements.targetsRoot.appendChild(renderTargetCard(createEmptyTarget(), { saved: false }))
   })
 
   elements.logRefresh?.addEventListener('click', () => {
@@ -412,7 +516,7 @@
   })
 
   elements.logMore?.addEventListener('click', () => {
-    logLimit = Math.min(logLimit + 25, 200)
+    logLimit = Math.min(logLimit + 25, 500)
     void loadDeliveryLog(false)
   })
 
