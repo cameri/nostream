@@ -1285,6 +1285,11 @@
       return
     }
 
+    if (viewId === 'notifications-view') {
+      window.__ADMIN_NOTIFICATIONS__?.load?.()
+      return
+    }
+
     if (viewId === 'metrics-view') {
       startMetricsStream()
     }
