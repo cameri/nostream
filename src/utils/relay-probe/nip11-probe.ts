@@ -11,6 +11,7 @@ const nip11DocumentSchema = z
   .object({
     name: z.string().optional(),
     pubkey: pubkeySchema.optional(),
+    supported_nips: z.array(z.number().int().positive()).optional(),
   })
   .passthrough()
 
@@ -96,6 +97,7 @@ export const createNodeNip11Fetcher = (): Nip11Fetcher => ({
         statusCode: response.status,
         name: parsed.data.name,
         pubkey: parsed.data.pubkey,
+        supportedNips: parsed.data.supported_nips,
       }
     } catch (error: unknown) {
       const axiosError = error as AxiosError

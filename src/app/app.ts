@@ -11,6 +11,8 @@ import { Serializable } from 'child_process'
 import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { OperatorNotificationEventType } from '../@types/operator-notifications'
+import { enqueueOperatorNotification } from '../utils/operator-notification-enqueue'
 import { getPrimaryShutdownDeadlineMs } from '../utils/shutdown-state'
 
 const logger = createLogger('app-primary')
@@ -130,6 +132,12 @@ export class App implements IRunnable {
     }
 
     logger('settings: %O', settings)
+
+    // Primary-only: one outbox event per process start (not per client worker).
+    void enqueueOperatorNotification(OperatorNotificationEventType.RELAY_RESTARTED, {
+      version: packageJson.version,
+      relayPort: port,
+    })
 
     const host = `${hostname()}:${port}`
     addOnion(torHiddenServicePort, host).then(

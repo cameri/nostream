@@ -1,4 +1,5 @@
 import { ICacheAdapter, IWebSocketAdapter } from '../@types/adapters'
+import { IncomingMessage, MessageType } from '../@types/messages'
 import {
   IDvmJobRepository,
   IEventRepository,
@@ -7,20 +8,20 @@ import {
   IReportRepository,
   IUserRepository,
 } from '../@types/repositories'
-import { IncomingMessage, MessageType } from '../@types/messages'
-import { createSettings } from './settings-factory'
+import { RedisAdapter } from '../adapters/redis-adapter'
+import { getCacheClient } from '../cache/client'
 import { AuthMessageHandler } from '../handlers/auth-message-handler'
 import { CountMessageHandler } from '../handlers/count-message-handler'
 import { EventMessageHandler } from '../handlers/event-message-handler'
-import { eventStrategyFactory } from './event-strategy-factory'
-import { getCacheClient } from '../cache/client'
-import { RedisAdapter } from '../adapters/redis-adapter'
-import { rateLimiterFactory } from './rate-limiter-factory'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
+import { eventStrategyFactory } from './event-strategy-factory'
+import { rateLimiterFactory } from './rate-limiter-factory'
+import { createSettings } from './settings-factory'
+import { wotGraphServiceFactory } from './wot-graph-service-factory'
 
 let cacheAdapter: ICacheAdapter | undefined = undefined
-const getCache = (): ICacheAdapter => {
+export const getCache = (): ICacheAdapter => {
   if (!cacheAdapter) {
     cacheAdapter = new RedisAdapter(getCacheClient())
   }
@@ -56,6 +57,7 @@ export const messageHandlerFactory =
           nip05VerificationRepository,
           getCache(),
           rateLimiterFactory,
+          wotGraphServiceFactory(getCache(), eventRepository, createSettings),
         )
       }
       case MessageType.REQ:

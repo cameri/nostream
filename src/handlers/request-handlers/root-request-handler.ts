@@ -113,10 +113,21 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
           ? content[0].maxLength // best guess since we have per-kind limits
           : content?.maxLength,
         // When adaptive PoW is enabled it replaces the static minLeadingZeroBits checks
-        // entirely, so advertise its floor -- the guaranteed minimum; the live requirement
-        // can be higher under load, but there's no static number to promise instead.
+        // entirely. Advertise the lowest difficulty any client may be accepted at:
+        // - Without WoT thresholds: floorBits is the guaranteed minimum.
+        // - With WoT thresholds: a trusted pubkey may receive a further reduction down
+        //   to ceil(floorBits * minFactor) where minFactor is the smallest configured
+        //   difficultyFactor. Advertising floorBits when trusted pubkeys may be accepted
+        //   at lower difficulty would mislead clients (NIP-11 contract violation).
         min_pow_difficulty: eventLimits?.pow?.enabled
-          ? eventLimits.pow.floorBits
+          ? (() => {
+              const thresholds = eventLimits.pow.wotThresholds
+              if (thresholds?.length) {
+                const minFactor = Math.min(...thresholds.map((t) => t.difficultyFactor))
+                return Math.ceil(eventLimits.pow.floorBits * minFactor)
+              }
+              return eventLimits.pow.floorBits
+            })()
           : eventLimits?.eventId?.minLeadingZeroBits,
         // NIP-11: auth_required means AUTH before any action. We only gate publishes
         // via nip42.authRequired (advertised as restricted_writes instead).

@@ -27,6 +27,9 @@
   <a href='https://github.com/cameri/nostream/actions'>
     <img alt='Build status' src='https://github.com/cameri/nostream/actions/workflows/checks.yml/badge.svg?branch=main&event=push' />
   </a>
+  <a href="https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source">
+    <img alt="Greptile: The War on Bugs" src="https://www.greptile.com/badge.svg" />
+  </a>
 </p>
 
 This is a [nostr](https://github.com/fiatjaf/nostr) relay, written in

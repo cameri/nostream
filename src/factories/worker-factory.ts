@@ -1,21 +1,22 @@
-import { is, path, pathSatisfies } from 'ramda'
 import http from 'http'
 import process from 'process'
+import { is, path, pathSatisfies } from 'ramda'
 import { WebSocketServer } from 'ws'
-
-import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
+import { WebSocketServerAdapter } from '../adapters/web-socket-server-adapter'
 import { AppWorker } from '../app/worker'
-import { createLogger } from './logger-factory'
+import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
 import { createSettings } from '../factories/settings-factory'
-import { createWebApp } from './web-app-factory'
 import { DvmJobRepository } from '../repositories/dvm-job-repository'
 import { EventRepository } from '../repositories/event-repository'
 import { InviteCodeRepository } from '../repositories/invite-code-repository'
 import { Nip05VerificationRepository } from '../repositories/nip05-verification-repository'
 import { ReportRepository } from '../repositories/report-repository'
 import { UserRepository } from '../repositories/user-repository'
+import { createLogger } from './logger-factory'
+import { getCache } from './message-handler-factory'
+import { createWebApp } from './web-app-factory'
 import { webSocketAdapterFactory } from './websocket-adapter-factory'
-import { WebSocketServerAdapter } from '../adapters/web-socket-server-adapter'
+import { wotGraphServiceFactory } from './wot-graph-service-factory'
 
 const logger = createLogger('worker-factory')
 
@@ -28,6 +29,13 @@ export const workerFactory = (): AppWorker => {
   const inviteCodeRepository = new InviteCodeRepository(dbClient)
   const dvmJobRepository = new DvmJobRepository(dbClient)
   const reportRepository = new ReportRepository(dbClient)
+
+  // Constructs the WoT graph singleton (and starts warming it up, if enabled)
+  // right at worker boot -- before this call, the singleton was only ever
+  // created lazily inside per-event handler wiring, so the very first
+  // EVENT/report needing a WoT distance was also the thing paying for the
+  // cold-start rebuild the warm-up was meant to avoid.
+  wotGraphServiceFactory(getCache(), eventRepository, createSettings)
 
   const settings = createSettings()
 

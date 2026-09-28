@@ -6,6 +6,12 @@ import { DBEvent, Event } from './event'
 import { CreateInviteCodeOptions, InviteCode } from './invite-code'
 import { Invoice } from './invoice'
 import { Nip05Verification } from './nip05'
+import { NotificationOutboxMessage, NotificationOutboxPayload } from './notification-outbox'
+import {
+  NotificationDeliveryLogEntry,
+  NotificationDeliveryStatus,
+  OperatorNotificationChannelType,
+} from './operator-notifications'
 import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
@@ -87,6 +93,49 @@ export interface IDvmJobRepository {
 
 export interface IReportRepository {
   create(report: Omit<Report, 'id' | 'createdAt'>): Promise<Report>
+  /** Inserts every row in a single transaction, so a mid-batch failure leaves none of them. */
+  createMany(reports: Omit<Report, 'id' | 'createdAt'>[]): Promise<Report[]>
   findByEventId(eventId: EventId): Promise<Report[]>
   findActionable(limit?: number): Promise<Report[]>
+}
+
+export interface INotificationDeliveryLogRepository {
+  append(
+    entry: {
+      outboxId: string | null
+      eventType: string
+      targetId: string
+      targetType: OperatorNotificationChannelType
+      status: NotificationDeliveryStatus
+      attemptNumber: number
+      errorSnippet: string | null
+    },
+    client?: DatabaseClient,
+  ): Promise<void>
+  findRecent(
+    limit?: number,
+    filters?: { status?: NotificationDeliveryStatus; eventType?: string },
+    client?: DatabaseClient,
+  ): Promise<NotificationDeliveryLogEntry[]>
+  findSuccessfulTargetIds(outboxId: string, client?: DatabaseClient): Promise<string[]>
+  deleteOlderThan(cutoff: Date, client?: DatabaseClient): Promise<number>
+}
+
+export interface INotificationOutboxRepository {
+  enqueue(
+    eventType: string,
+    payload: NotificationOutboxPayload,
+    client?: DatabaseClient,
+  ): Promise<NotificationOutboxMessage>
+  claimBatch(limit: number, client?: DatabaseClient): Promise<NotificationOutboxMessage[]>
+  markDelivered(id: string, client?: DatabaseClient): Promise<void>
+  markFailed(
+    id: string,
+    error: string,
+    attemptCount: number,
+    maxAttempts: number,
+    baseDelayMs: number,
+    client?: DatabaseClient,
+  ): Promise<void>
+  deleteTerminalOlderThan(cutoff: Date, client?: DatabaseClient): Promise<number>
 }

@@ -159,4 +159,25 @@ describe('RelayMonitorWorker', () => {
     await new Promise((resolve) => setImmediate(resolve))
     expect(fakeProcess.exit).to.have.been.calledOnceWithExactly(0)
   })
+
+  it('publishes NIP-66 events after saving a probe snapshot', async () => {
+    const eventPublisher = {
+      publishAfterProbe: sandbox.stub().resolves(),
+    }
+
+    worker = new RelayMonitorWorker(
+      fakeProcess as unknown as NodeJS.Process,
+      settings,
+      snapshotStore,
+      probeRunner,
+      eventPublisher,
+    )
+
+    worker.run()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(eventPublisher.publishAfterProbe).to.have.been.calledOnce
+    expect(eventPublisher.publishAfterProbe.firstCall.args[0].status).to.equal('ok')
+  })
 })

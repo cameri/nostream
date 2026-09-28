@@ -6,16 +6,16 @@ chai.use(chaiAsPromised)
 
 const { expect } = chai
 
-import { Event } from '../../../../src/@types/event'
-import { IEventRepository, IReportRepository } from '../../../../src/@types/repositories'
-import { IEventStrategy } from '../../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../../src/@types/adapters'
-import { IWotGraphService } from '../../../../src/@types/services'
+import { Event } from '../../../../src/@types/event'
+import { IEventStrategy } from '../../../../src/@types/message-handlers'
 import { MessageType } from '../../../../src/@types/messages'
-import { ReportEventStrategy } from '../../../../src/handlers/event-strategies/report-event-strategy'
 import { ReportType } from '../../../../src/@types/report'
+import { IEventRepository, IReportRepository } from '../../../../src/@types/repositories'
+import { IWotGraphService } from '../../../../src/@types/services'
 import { Settings } from '../../../../src/@types/settings'
 import { WebSocketAdapterEvent } from '../../../../src/constants/adapter'
+import { ReportEventStrategy } from '../../../../src/handlers/event-strategies/report-event-strategy'
 
 describe('ReportEventStrategy', () => {
   const reporterPubkey = '2'.repeat(64)
@@ -37,7 +37,7 @@ describe('ReportEventStrategy', () => {
 
   let webSocketEmitStub: Sinon.SinonStub
   let eventRepositoryCreateStub: Sinon.SinonStub
-  let reportRepositoryCreateStub: Sinon.SinonStub
+  let reportRepositoryCreateManyStub: Sinon.SinonStub
   let getDistanceStub: Sinon.SinonStub
 
   let strategy: IEventStrategy<Event, Promise<void>>
@@ -57,9 +57,9 @@ describe('ReportEventStrategy', () => {
       create: eventRepositoryCreateStub,
     } as any
 
-    reportRepositoryCreateStub = sandbox.stub()
+    reportRepositoryCreateManyStub = sandbox.stub()
     reportRepository = {
-      create: reportRepositoryCreateStub,
+      createMany: reportRepositoryCreateManyStub,
     } as any
 
     getDistanceStub = sandbox.stub()
@@ -79,7 +79,7 @@ describe('ReportEventStrategy', () => {
   describe('execute', () => {
     it('creates the event', async () => {
       eventRepositoryCreateStub.resolves(1)
-      reportRepositoryCreateStub.resolves({})
+      reportRepositoryCreateManyStub.resolves([{}])
       getDistanceStub.resolves(1)
 
       await strategy.execute(event)
@@ -89,7 +89,7 @@ describe('ReportEventStrategy', () => {
 
     it('broadcasts the event when newly created', async () => {
       eventRepositoryCreateStub.resolves(1)
-      reportRepositoryCreateStub.resolves({})
+      reportRepositoryCreateManyStub.resolves([{}])
       getDistanceStub.resolves(1)
 
       await strategy.execute(event)
@@ -114,96 +114,103 @@ describe('ReportEventStrategy', () => {
         true,
         'duplicate:',
       ])
-      expect(reportRepositoryCreateStub).not.to.have.been.called
+      expect(reportRepositoryCreateManyStub).not.to.have.been.called
     })
 
     it('records a report with full weight for a direct follow (distance 1)', async () => {
       eventRepositoryCreateStub.resolves(1)
-      reportRepositoryCreateStub.resolves({})
+      reportRepositoryCreateManyStub.resolves([{}])
       getDistanceStub.resolves(1)
 
       await strategy.execute(event)
 
-      expect(reportRepositoryCreateStub).to.have.been.calledOnceWithExactly({
-        eventId: 'event-id',
-        reporterPubkey,
-        reportedPubkey,
-        reportedEventId: null,
-        reportType: ReportType.SPAM,
-        weight: 1,
-        actionable: false,
-      })
+      expect(reportRepositoryCreateManyStub).to.have.been.calledOnceWithExactly([
+        {
+          eventId: 'event-id',
+          reporterPubkey,
+          reportedPubkey,
+          reportedEventId: null,
+          reportType: ReportType.SPAM,
+          weight: 1,
+          actionable: false,
+        },
+      ])
     })
 
     it('records a report with zero weight for a reporter outside the trust graph', async () => {
       eventRepositoryCreateStub.resolves(1)
-      reportRepositoryCreateStub.resolves({})
+      reportRepositoryCreateManyStub.resolves([{}])
       getDistanceStub.resolves(undefined)
 
       await strategy.execute(event)
 
-      expect(reportRepositoryCreateStub).to.have.been.calledOnceWithExactly({
-        eventId: 'event-id',
-        reporterPubkey,
-        reportedPubkey,
-        reportedEventId: null,
-        reportType: ReportType.SPAM,
-        weight: 0,
-        actionable: false,
-      })
+      expect(reportRepositoryCreateManyStub).to.have.been.calledOnceWithExactly([
+        {
+          eventId: 'event-id',
+          reporterPubkey,
+          reportedPubkey,
+          reportedEventId: null,
+          reportType: ReportType.SPAM,
+          weight: 0,
+          actionable: false,
+        },
+      ])
     })
 
     it('records an actionable, max-weight report from a trusted moderator regardless of distance', async () => {
       settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey] } }) as any
       strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
       eventRepositoryCreateStub.resolves(1)
-      reportRepositoryCreateStub.resolves({})
+      reportRepositoryCreateManyStub.resolves([{}])
 
       await strategy.execute(event)
 
-      expect(reportRepositoryCreateStub).to.have.been.calledOnceWithExactly({
-        eventId: 'event-id',
-        reporterPubkey,
-        reportedPubkey,
-        reportedEventId: null,
-        reportType: ReportType.SPAM,
-        weight: 1,
-        actionable: true,
-      })
+      expect(reportRepositoryCreateManyStub).to.have.been.calledOnceWithExactly([
+        {
+          eventId: 'event-id',
+          reporterPubkey,
+          reportedPubkey,
+          reportedEventId: null,
+          reportType: ReportType.SPAM,
+          weight: 1,
+          actionable: true,
+        },
+      ])
     })
 
     it('does not consult the WoT graph for a trusted moderator', async () => {
       settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey] } }) as any
       strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
       eventRepositoryCreateStub.resolves(1)
-      reportRepositoryCreateStub.resolves({})
+      reportRepositoryCreateManyStub.resolves([{}])
 
       await strategy.execute(event)
 
       expect(getDistanceStub).not.to.have.been.called
     })
 
-    it('does not mark a moderator report actionable when it has no valid target', async () => {
+    it('does not record any report when the event has no valid target', async () => {
+      const noTargetEvent: Event = { ...event, tags: [] } as any
+      eventRepositoryCreateStub.resolves(1)
+      getDistanceStub.resolves(1)
+
+      await strategy.execute(noTargetEvent)
+
+      expect(reportRepositoryCreateManyStub).not.to.have.been.called
+    })
+
+    it('does not record any report for a moderator event with no valid target', async () => {
       const noTargetEvent: Event = { ...event, tags: [] } as any
       settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey] } }) as any
       strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
       eventRepositoryCreateStub.resolves(1)
-      reportRepositoryCreateStub.resolves({})
 
       await strategy.execute(noTargetEvent)
 
-      expect(reportRepositoryCreateStub).to.have.been.calledOnceWithExactly({
-        eventId: 'event-id',
-        reporterPubkey,
-        reportedPubkey: null,
-        reportedEventId: null,
-        reportType: ReportType.OTHER,
-        weight: 1,
-        actionable: false,
-      })
+      expect(reportRepositoryCreateManyStub).not.to.have.been.called
     })
 
-    it('records one row per target when p and e tags carry different report types', async () => {
+    it('records one row per target, in a single batch, when p and e tags carry different report types', async () => {
       const mixedEvent: Event = {
         ...event,
         tags: [
@@ -212,30 +219,31 @@ describe('ReportEventStrategy', () => {
         ],
       } as any
       eventRepositoryCreateStub.resolves(1)
-      reportRepositoryCreateStub.resolves({})
+      reportRepositoryCreateManyStub.resolves([{}, {}])
       getDistanceStub.resolves(1)
 
       await strategy.execute(mixedEvent)
 
-      expect(reportRepositoryCreateStub).to.have.been.calledTwice
-      expect(reportRepositoryCreateStub.firstCall).to.have.been.calledWithExactly({
-        eventId: 'event-id',
-        reporterPubkey,
-        reportedPubkey: null,
-        reportedEventId,
-        reportType: ReportType.NUDITY,
-        weight: 1,
-        actionable: false,
-      })
-      expect(reportRepositoryCreateStub.secondCall).to.have.been.calledWithExactly({
-        eventId: 'event-id',
-        reporterPubkey,
-        reportedPubkey,
-        reportedEventId: null,
-        reportType: ReportType.IMPERSONATION,
-        weight: 1,
-        actionable: false,
-      })
+      expect(reportRepositoryCreateManyStub).to.have.been.calledOnceWithExactly([
+        {
+          eventId: 'event-id',
+          reporterPubkey,
+          reportedPubkey: null,
+          reportedEventId,
+          reportType: ReportType.NUDITY,
+          weight: 1,
+          actionable: false,
+        },
+        {
+          eventId: 'event-id',
+          reporterPubkey,
+          reportedPubkey,
+          reportedEventId: null,
+          reportType: ReportType.IMPERSONATION,
+          weight: 1,
+          actionable: false,
+        },
+      ])
     })
 
     it('stores the event but does not record a report when nip56 is disabled', async () => {
@@ -247,14 +255,14 @@ describe('ReportEventStrategy', () => {
 
       expect(eventRepositoryCreateStub).to.have.been.calledOnceWithExactly(event)
       expect(webSocketEmitStub).to.have.been.calledWithExactly(WebSocketAdapterEvent.Broadcast, event)
-      expect(reportRepositoryCreateStub).not.to.have.been.called
+      expect(reportRepositoryCreateManyStub).not.to.have.been.called
       expect(getDistanceStub).not.to.have.been.called
     })
 
     it('does not reject the event when report recording fails', async () => {
       eventRepositoryCreateStub.resolves(1)
       getDistanceStub.resolves(1)
-      reportRepositoryCreateStub.rejects(new Error('db unavailable'))
+      reportRepositoryCreateManyStub.rejects(new Error('db unavailable'))
 
       await expect(strategy.execute(event)).to.eventually.be.fulfilled
 
@@ -272,7 +280,7 @@ describe('ReportEventStrategy', () => {
 
       await expect(strategy.execute(event)).to.eventually.be.rejectedWith(error)
 
-      expect(reportRepositoryCreateStub).not.to.have.been.called
+      expect(reportRepositoryCreateManyStub).not.to.have.been.called
     })
   })
 })

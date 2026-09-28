@@ -25,3 +25,10 @@ Feature: NIP-66 relay monitoring
     When the relay monitor worker completes a probe run
     Then the latest probe snapshot in Redis has status "ok"
     And the snapshot includes probe results for "ws://localhost:18808"
+
+  Scenario: probe run publishes kind 30166 events
+    Given NIP-66 relay monitoring is enabled
+    And the NIP-66 monitor private key is configured
+    And the probe target is "ws://localhost:18808"
+    When the relay monitor worker completes a probe run
+    Then a kind 30166 event is stored for the monitor identity
