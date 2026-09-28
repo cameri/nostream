@@ -6,6 +6,7 @@ import * as databaseClientModule from '../../../src/database/client'
 import { workerFactory } from '../../../src/factories/worker-factory'
 import { ReportRepository } from '../../../src/repositories/report-repository'
 import { SettingsStatic } from '../../../src/utils/settings'
+import { stopHiddenContentCache } from '../../../src/utils/hidden-content-cache'
 
 describe('workerFactory', () => {
   let createSettingsStub: Sinon.SinonStub
@@ -19,12 +20,13 @@ describe('workerFactory', () => {
     getReadReplicaDbClientStub = Sinon.stub(databaseClientModule, 'getReadReplicaDbClient')
     // workerFactory() now constructs the WoT graph singleton at boot (via
     // getCache()), which would otherwise build a real Redis client here.
-    const fakeRedisClient: any = { isOpen: true }
+    const fakeRedisClient: any = { isOpen: true, sAdd: Sinon.stub().resolves(1), sMembers: Sinon.stub().resolves([]) }
     fakeRedisClient.on = Sinon.stub().returns(fakeRedisClient)
     getCacheClientStub = Sinon.stub(cacheClientModule, 'getCacheClient').returns(fakeRedisClient)
   })
 
   afterEach(() => {
+    stopHiddenContentCache()
     getCacheClientStub.restore()
     getReadReplicaDbClientStub.restore()
     getMasterDbClientStub.restore()
@@ -55,21 +57,10 @@ describe('workerFactory', () => {
       findActionableTargetsStub.restore()
     })
 
-    it('warms the cache at boot when nip56.hideActionableReports is enabled', async () => {
-      createSettingsStub.returns({
-        info: { relay_url: 'url' },
-        network: {},
-        nip56: { enabled: true, trustedModerators: [], hideActionableReports: true },
-      })
-
-      const worker = workerFactory()
-      await new Promise((resolve) => setImmediate(resolve))
-
-      expect(findActionableTargetsStub.callCount).to.equal(1)
-      worker.close()
-    })
-
-    it('does not warm the cache when hideActionableReports is disabled', async () => {
+    it('starts the cache at boot when nip56 is enabled, even if hideActionableReports is off', async () => {
+      // Runs regardless of hideActionableReports, not gated to it, so a
+      // later hot-enable of hideActionableReports finds an already-current
+      // cache instead of one that was never warmed.
       createSettingsStub.returns({
         info: { relay_url: 'url' },
         network: {},
@@ -79,11 +70,11 @@ describe('workerFactory', () => {
       const worker = workerFactory()
       await new Promise((resolve) => setImmediate(resolve))
 
-      expect(findActionableTargetsStub.called).to.be.false
+      expect(findActionableTargetsStub.callCount).to.equal(1)
       worker.close()
     })
 
-    it('does not warm the cache when nip56 is unset', async () => {
+    it('does not start the cache when nip56 is unset', async () => {
       createSettingsStub.returns({
         info: { relay_url: 'url' },
         network: {},

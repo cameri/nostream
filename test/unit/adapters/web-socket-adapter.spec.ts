@@ -384,13 +384,18 @@ describe('WebSocketAdapter', () => {
     })
 
     describe('NIP-56: hidden content', () => {
+      const fakeCache: any = {
+        addToSet: Sinon.stub().resolves(1),
+        getSetMembers: Sinon.stub().resolves([]),
+      }
+
       afterEach(() => {
         resetHiddenContentCache()
       })
 
-      it('does not broadcast an event matching an actionable report when hideActionableReports is enabled', () => {
+      it('does not broadcast an event matching an actionable report when hideActionableReports is enabled', async () => {
         const reportedPubkey = 'a'.repeat(64)
-        markActionableTarget({ reportedPubkey, reportedEventId: null })
+        await markActionableTarget(fakeCache, { reportedPubkey, reportedEventId: null })
         settingsFactory.returns({ nip56: { enabled: true, hideActionableReports: true } })
         client.readyState = WebSocket.OPEN
         adapter.onSubscribed('sub-1', [{ kinds: [1] }])
@@ -410,9 +415,9 @@ describe('WebSocketAdapter', () => {
         expect(client.send).not.to.have.been.called
       })
 
-      it('still broadcasts a hidden-target event when hideActionableReports is disabled', () => {
+      it('still broadcasts a hidden-target event when hideActionableReports is disabled', async () => {
         const reportedPubkey = 'a'.repeat(64)
-        markActionableTarget({ reportedPubkey, reportedEventId: null })
+        await markActionableTarget(fakeCache, { reportedPubkey, reportedEventId: null })
         settingsFactory.returns({ nip56: { enabled: true, hideActionableReports: false } })
         client.readyState = WebSocket.OPEN
         adapter.onSubscribed('sub-1', [{ kinds: [1] }])
@@ -432,8 +437,8 @@ describe('WebSocketAdapter', () => {
         expect(client.send).to.have.been.calledOnce
       })
 
-      it('still broadcasts an unrelated event when hideActionableReports is enabled', () => {
-        markActionableTarget({ reportedPubkey: 'a'.repeat(64), reportedEventId: null })
+      it('still broadcasts an unrelated event when hideActionableReports is enabled', async () => {
+        await markActionableTarget(fakeCache, { reportedPubkey: 'a'.repeat(64), reportedEventId: null })
         settingsFactory.returns({ nip56: { enabled: true, hideActionableReports: true } })
         client.readyState = WebSocket.OPEN
         adapter.onSubscribed('sub-1', [{ kinds: [1] }])

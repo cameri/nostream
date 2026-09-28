@@ -6,7 +6,7 @@ chai.use(chaiAsPromised)
 
 const { expect } = chai
 
-import { IWebSocketAdapter } from '../../../../src/@types/adapters'
+import { ICacheAdapter, IWebSocketAdapter } from '../../../../src/@types/adapters'
 import { Event } from '../../../../src/@types/event'
 import { IEventStrategy } from '../../../../src/@types/message-handlers'
 import { MessageType } from '../../../../src/@types/messages'
@@ -35,11 +35,13 @@ describe('ReportEventStrategy', () => {
   let reportRepository: IReportRepository
   let wotGraphService: IWotGraphService
   let settings: () => Settings
+  let cache: ICacheAdapter
 
   let webSocketEmitStub: Sinon.SinonStub
   let eventRepositoryCreateStub: Sinon.SinonStub
   let reportRepositoryCreateManyStub: Sinon.SinonStub
   let getDistanceStub: Sinon.SinonStub
+  let addToSetStub: Sinon.SinonStub
 
   let strategy: IEventStrategy<Event, Promise<void>>
 
@@ -68,9 +70,15 @@ describe('ReportEventStrategy', () => {
       getDistance: getDistanceStub,
     } as any
 
+    addToSetStub = sandbox.stub().resolves(1)
+    cache = {
+      addToSet: addToSetStub,
+      getSetMembers: sandbox.stub().resolves([]),
+    } as any
+
     settings = () => ({ nip56: { enabled: true, trustedModerators: [] } }) as any
 
-    strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+    strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings, cache)
   })
 
   afterEach(() => {
@@ -161,7 +169,7 @@ describe('ReportEventStrategy', () => {
 
     it('records an actionable, max-weight report from a trusted moderator regardless of distance', async () => {
       settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey] } }) as any
-      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings, cache)
       eventRepositoryCreateStub.resolves(1)
       reportRepositoryCreateManyStub.resolves([{}])
 
@@ -182,7 +190,7 @@ describe('ReportEventStrategy', () => {
 
     it('marks the target in the hidden-content cache when hideActionableReports is enabled', async () => {
       settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey], hideActionableReports: true } }) as any
-      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings, cache)
       eventRepositoryCreateStub.resolves(1)
       reportRepositoryCreateManyStub.resolves([{}])
 
@@ -193,7 +201,7 @@ describe('ReportEventStrategy', () => {
 
     it('does not mark the cache when hideActionableReports is disabled', async () => {
       settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey], hideActionableReports: false } }) as any
-      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings, cache)
       eventRepositoryCreateStub.resolves(1)
       reportRepositoryCreateManyStub.resolves([{}])
 
@@ -204,7 +212,7 @@ describe('ReportEventStrategy', () => {
 
     it('does not mark the cache for a non-actionable (non-moderator) report even when hideActionableReports is enabled', async () => {
       settings = () => ({ nip56: { enabled: true, trustedModerators: [], hideActionableReports: true } }) as any
-      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings, cache)
       eventRepositoryCreateStub.resolves(1)
       reportRepositoryCreateManyStub.resolves([{}])
       getDistanceStub.resolves(1)
@@ -216,7 +224,7 @@ describe('ReportEventStrategy', () => {
 
     it('does not consult the WoT graph for a trusted moderator', async () => {
       settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey] } }) as any
-      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings, cache)
       eventRepositoryCreateStub.resolves(1)
       reportRepositoryCreateManyStub.resolves([{}])
 
@@ -238,7 +246,7 @@ describe('ReportEventStrategy', () => {
     it('does not record any report for a moderator event with no valid target', async () => {
       const noTargetEvent: Event = { ...event, tags: [] } as any
       settings = () => ({ nip56: { enabled: true, trustedModerators: [reporterPubkey] } }) as any
-      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings, cache)
       eventRepositoryCreateStub.resolves(1)
 
       await strategy.execute(noTargetEvent)
@@ -284,7 +292,7 @@ describe('ReportEventStrategy', () => {
 
     it('stores the event but does not record a report when nip56 is disabled', async () => {
       settings = () => ({ nip56: { enabled: false, trustedModerators: [] } }) as any
-      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings)
+      strategy = new ReportEventStrategy(webSocket, eventRepository, reportRepository, wotGraphService, settings, cache)
       eventRepositoryCreateStub.resolves(1)
 
       await strategy.execute(event)

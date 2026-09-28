@@ -1,4 +1,4 @@
-import { IWebSocketAdapter } from '../../@types/adapters'
+import { ICacheAdapter, IWebSocketAdapter } from '../../@types/adapters'
 import { Event } from '../../@types/event'
 import { IEventStrategy } from '../../@types/message-handlers'
 import { Report } from '../../@types/report'
@@ -21,6 +21,7 @@ export class ReportEventStrategy implements IEventStrategy<Event, Promise<void>>
     private readonly reportRepository: IReportRepository,
     private readonly wotGraphService: IWotGraphService,
     private readonly settings: () => Settings,
+    private readonly cache: ICacheAdapter,
   ) {}
 
   public async execute(event: Event): Promise<void> {
@@ -84,7 +85,7 @@ export class ReportEventStrategy implements IEventStrategy<Event, Promise<void>>
         // what a fresh REQ would now exclude -- without this, a freshly
         // actionable pubkey/event could still reach existing subscribers.
         if (isTrustedModerator && nip56.hideActionableReports) {
-          reports.forEach(markActionableTarget)
+          await Promise.all(reports.map((report) => markActionableTarget(this.cache, report)))
         }
       }
     } catch (error) {
