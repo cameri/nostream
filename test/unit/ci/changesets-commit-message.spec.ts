@@ -30,6 +30,11 @@ describe('changesets commit message', () => {
     return loadFromRepo(join(process.cwd(), '.changeset', specifier as string)) as CommitModule
   }
 
+  // The options Changesets actually passes to the module, so a change to them
+  // (say `skipCI: true`) cannot quietly put `[skip ci]` back on the version
+  // commit without failing these assertions.
+  const configuredOptions = (config.commit as unknown[])[1] ?? null
+
   const releasePlan = {
     releases: [
       { name: 'nostream', type: 'minor', oldVersion: '3.0.0', newVersion: '3.1.0' },
@@ -40,17 +45,17 @@ describe('changesets commit message', () => {
   // The stock message is `RELEASING: Releasing N package(s)`, which commitlint
   // rejects for type-case and type-enum.
   it('writes a conventional subject', () => {
-    expect(commitModule().getVersionMessage(releasePlan, { skipCI: false })).to.equal('chore: release nostream@3.1.0')
+    expect(commitModule().getVersionMessage(releasePlan, configuredOptions)).to.equal('chore: release nostream@3.1.0')
   })
 
   // `[skip ci]` makes GitHub skip both push and pull_request runs for the
   // commit, which is why the version PR's required checks never reported.
   it('writes no [skip ci]', () => {
-    expect(commitModule().getVersionMessage(releasePlan, { skipCI: false })).not.to.include('skip ci')
+    expect(commitModule().getVersionMessage(releasePlan, configuredOptions)).not.to.include('skip ci')
   })
 
   it('names only the packages that are actually released', () => {
-    expect(commitModule().getVersionMessage(releasePlan, { skipCI: false })).not.to.include('nostream-extra')
+    expect(commitModule().getVersionMessage(releasePlan, configuredOptions)).not.to.include('nostream-extra')
   })
 
   it('still honours skipCI when it is asked for', () => {
