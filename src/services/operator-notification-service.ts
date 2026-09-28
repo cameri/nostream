@@ -62,7 +62,7 @@ export class OperatorNotificationService implements INotificationDispatcher {
     for (const target of targets) {
       try {
         await deliverToTarget(target, envelope)
-        await this.deliveryLogRepository.append({
+        await this.appendDeliveryLog({
           outboxId: context.outboxId ?? null,
           eventType,
           targetId: target.id,
@@ -75,7 +75,7 @@ export class OperatorNotificationService implements INotificationDispatcher {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('delivery failed for %s: %s', maskTargetForLog(target), message)
         failures.push(`${target.id}: ${message}`)
-        await this.deliveryLogRepository.append({
+        await this.appendDeliveryLog({
           outboxId: context.outboxId ?? null,
           eventType,
           targetId: target.id,
@@ -100,12 +100,39 @@ export class OperatorNotificationService implements INotificationDispatcher {
       throw new Error(`Unknown notification target: ${targetId}`)
     }
 
-    const envelope = this.buildEnvelope(OperatorNotificationEventType.RELAY_RESTARTED, {
+    const relayName = this.settings().info?.name?.trim() || this.settings().info.relay_url
+    const eventType = OperatorNotificationEventType.RELAY_RESTARTED
+    const envelope = this.buildEnvelope(eventType, {
       test: true,
-      message: 'Operator notification test delivery',
+      message: `Test notification from ${relayName}`,
     })
 
-    await deliverToTarget(target, envelope)
+    try {
+      await deliverToTarget(target, envelope)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error('test delivery failed for %s: %s', maskTargetForLog(target), message)
+      await this.appendDeliveryLog({
+        outboxId: null,
+        eventType,
+        targetId: target.id,
+        targetType: target.type,
+        status: NotificationDeliveryStatus.FAILED,
+        attemptNumber: 1,
+        errorSnippet: message.slice(0, 2000),
+      })
+      throw error
+    }
+
+    await this.appendDeliveryLog({
+      outboxId: null,
+      eventType,
+      targetId: target.id,
+      targetType: target.type,
+      status: NotificationDeliveryStatus.SUCCESS,
+      attemptNumber: 1,
+      errorSnippet: null,
+    })
   }
 
   public getMaxAttempts(): number {
@@ -114,6 +141,28 @@ export class OperatorNotificationService implements INotificationDispatcher {
 
   public getBaseDelayMs(): number {
     return this.getNotificationsConfig().retry.baseDelayMs
+  }
+
+  private async appendDeliveryLog(entry: {
+    outboxId: string | null
+    eventType: string
+    targetId: string
+    targetType: OperatorNotificationTarget['type']
+    status: NotificationDeliveryStatus
+    attemptNumber: number
+    errorSnippet: string | null
+  }): Promise<void> {
+    try {
+      await this.deliveryLogRepository.append(entry)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error(
+        'delivery log append failed for target %s (%s): %s',
+        entry.targetId,
+        entry.status,
+        message,
+      )
+    }
   }
 
   private getNotificationsConfig(): AdminNotificationsSettings {

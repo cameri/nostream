@@ -1,8 +1,8 @@
 import { expect } from 'chai'
-import { Event } from '../../../src/@types/event'
-import { extractReportTargets, isReportEvent } from '../../../src/utils/nip56'
-import { ReportType } from '../../../src/@types/report'
 import { Tag } from '../../../src/@types/base'
+import { Event } from '../../../src/@types/event'
+import { ReportType } from '../../../src/@types/report'
+import { extractReportTargets, isReportEvent } from '../../../src/utils/nip56'
 
 const baseEvent = (): Partial<Event> => ({
   kind: 1984,
@@ -130,6 +130,54 @@ describe('NIP-56', () => {
       expect(extractReportTargets(tags)).to.deep.equal([
         { reportedPubkey: 'a'.repeat(64), reportedEventId: null, reportType: ReportType.SPAM },
       ])
+    })
+
+    it('records a target for every additional p tag beyond the first', () => {
+      const tags = [
+        ['p', 'a'.repeat(64), 'spam'],
+        ['p', 'c'.repeat(64), 'malware'],
+        ['p', 'd'.repeat(64)],
+      ] as Tag[]
+      expect(extractReportTargets(tags)).to.deep.equal([
+        { reportedPubkey: 'a'.repeat(64), reportedEventId: null, reportType: ReportType.SPAM },
+        { reportedPubkey: 'c'.repeat(64), reportedEventId: null, reportType: ReportType.MALWARE },
+        { reportedPubkey: 'd'.repeat(64), reportedEventId: null, reportType: ReportType.OTHER },
+      ])
+    })
+
+    it('records a target for every additional e tag beyond the first', () => {
+      const tags = [
+        ['e', 'b'.repeat(64), 'nudity'],
+        ['e', 'f'.repeat(64), 'illegal'],
+      ] as Tag[]
+      expect(extractReportTargets(tags)).to.deep.equal([
+        { reportedPubkey: null, reportedEventId: 'b'.repeat(64), reportType: ReportType.NUDITY },
+        { reportedPubkey: null, reportedEventId: 'f'.repeat(64), reportType: ReportType.ILLEGAL },
+      ])
+    })
+
+    it('combines a merged first p/e pair with additional independent targets', () => {
+      const tags = [
+        ['p', 'a'.repeat(64), 'nudity'],
+        ['e', 'b'.repeat(64), 'nudity'],
+        ['p', 'c'.repeat(64), 'spam'],
+      ] as Tag[]
+      expect(extractReportTargets(tags)).to.deep.equal([
+        { reportedPubkey: 'a'.repeat(64), reportedEventId: 'b'.repeat(64), reportType: ReportType.NUDITY },
+        { reportedPubkey: 'c'.repeat(64), reportedEventId: null, reportType: ReportType.SPAM },
+      ])
+    })
+
+    it('caps the number of targets a single event can produce', () => {
+      const tags = Array.from({ length: 105 }, (_, i) => ['p', i.toString(16).padStart(64, '0'), 'spam']) as Tag[]
+      const targets = extractReportTargets(tags)
+      expect(targets).to.have.lengthOf(100)
+    })
+
+    it('does not truncate a realistic moderator batch report', () => {
+      const tags = Array.from({ length: 21 }, (_, i) => ['p', i.toString(16).padStart(64, '0'), 'spam']) as Tag[]
+      const targets = extractReportTargets(tags)
+      expect(targets).to.have.lengthOf(21)
     })
   })
 })
