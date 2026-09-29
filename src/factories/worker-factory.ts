@@ -33,10 +33,10 @@ export const workerFactory = (): AppWorker => {
 
   const settings = createSettings()
 
-  // NIP-56: starts the hidden-content cache (Redis-backed, cross-worker --
-  // see hidden-content-cache.ts) as early in boot as possible, before any
-  // other setup, so it has the largest possible head start on
-  // server.listen() below. Fire-and-forget, same reasoning as
+  // NIP-56: starts the hidden-content cache (polls Postgres directly, every
+  // worker independently -- see hidden-content-cache.ts) as early in boot as
+  // possible, before any other setup, so it has the largest possible head
+  // start on server.listen() below. Fire-and-forget, same reasoning as
   // WotGraphService's warm-up: making worker boot itself wait on this would
   // require every IRunnable worker type's bootstrap to become async, which
   // is out of scope here. The narrow startup race this leaves (a live
@@ -44,7 +44,7 @@ export const workerFactory = (): AppWorker => {
   // resolves) self-heals on the cache's own periodic refresh, not a
   // dedicated retry path.
   if (settings.nip56?.enabled) {
-    startHiddenContentCache(getCache(), reportRepository).catch((error) =>
+    startHiddenContentCache(reportRepository).catch((error) =>
       logger.error('failed to start hidden content cache: %o', error),
     )
   }

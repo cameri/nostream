@@ -80,7 +80,6 @@ export const eventStrategyFactory =
         reportRepository,
         wotGraphServiceFactory(cache, eventRepository, settings),
         settings,
-        cache,
       )
     } else if (isRelayListEvent(event) || isReplaceableEvent(event)) {
       return new ReplaceableEventStrategy(adapter, eventRepository)

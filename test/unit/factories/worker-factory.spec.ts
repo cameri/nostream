@@ -20,7 +20,7 @@ describe('workerFactory', () => {
     getReadReplicaDbClientStub = Sinon.stub(databaseClientModule, 'getReadReplicaDbClient')
     // workerFactory() now constructs the WoT graph singleton at boot (via
     // getCache()), which would otherwise build a real Redis client here.
-    const fakeRedisClient: any = { isOpen: true, sAdd: Sinon.stub().resolves(1), sMembers: Sinon.stub().resolves([]) }
+    const fakeRedisClient: any = { isOpen: true }
     fakeRedisClient.on = Sinon.stub().returns(fakeRedisClient)
     getCacheClientStub = Sinon.stub(cacheClientModule, 'getCacheClient').returns(fakeRedisClient)
   })

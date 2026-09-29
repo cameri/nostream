@@ -6,7 +6,6 @@ import sinonChai from 'sinon-chai'
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
 
-import { ICacheAdapter } from '../../../src/@types/adapters'
 import { IReportRepository } from '../../../src/@types/repositories'
 import {
   isHidden,
@@ -17,86 +16,91 @@ import {
 } from '../../../src/utils/hidden-content-cache'
 
 describe('hidden-content-cache', () => {
-  let cache: ICacheAdapter
-  let addToSetStub: Sinon.SinonStub
-  let getSetMembersStub: Sinon.SinonStub
-
-  beforeEach(() => {
-    addToSetStub = Sinon.stub().resolves(1)
-    getSetMembersStub = Sinon.stub().resolves([])
-    cache = { addToSet: addToSetStub, getSetMembers: getSetMembersStub } as unknown as ICacheAdapter
-  })
-
   afterEach(() => {
     resetHiddenContentCache()
     stopHiddenContentCache()
   })
 
   describe('markActionableTarget/isHidden', () => {
-    it('marks the pubkey in memory and in the cache', async () => {
-      await markActionableTarget(cache, { reportedPubkey: 'a'.repeat(64), reportedEventId: null })
+    it('hides an event whose pubkey was marked', () => {
+      markActionableTarget({ reportedPubkey: 'a'.repeat(64), reportedEventId: null })
 
       expect(isHidden({ id: 'b'.repeat(64), pubkey: 'a'.repeat(64) })).to.be.true
-      expect(addToSetStub).to.have.been.calledOnceWithExactly('nip56:hidden:pubkeys', ['a'.repeat(64)])
     })
 
-    it('marks the event id in memory and in the cache', async () => {
-      await markActionableTarget(cache, { reportedPubkey: null, reportedEventId: 'c'.repeat(64) })
+    it('hides an event whose id was marked', () => {
+      markActionableTarget({ reportedPubkey: null, reportedEventId: 'c'.repeat(64) })
 
       expect(isHidden({ id: 'c'.repeat(64), pubkey: 'd'.repeat(64) })).to.be.true
-      expect(addToSetStub).to.have.been.calledOnceWithExactly('nip56:hidden:event_ids', ['c'.repeat(64)])
     })
 
-    it('does not hide an unmarked event', async () => {
-      await markActionableTarget(cache, { reportedPubkey: 'a'.repeat(64), reportedEventId: null })
+    it('does not hide an unmarked event', () => {
+      markActionableTarget({ reportedPubkey: 'a'.repeat(64), reportedEventId: null })
 
       expect(isHidden({ id: 'e'.repeat(64), pubkey: 'f'.repeat(64) })).to.be.false
     })
 
-    it('does not touch the cache for a target with both fields null', async () => {
-      await markActionableTarget(cache, { reportedPubkey: null, reportedEventId: null })
+    it('ignores a target with both fields null', () => {
+      markActionableTarget({ reportedPubkey: null, reportedEventId: null })
 
-      expect(addToSetStub).not.to.have.been.called
+      expect(isHidden({ id: 'g'.repeat(64), pubkey: 'h'.repeat(64) })).to.be.false
     })
   })
 
   describe('startHiddenContentCache', () => {
-    it('seeds Redis from every actionable target in the DB, then loads the merged Redis state', async () => {
+    it('seeds the cache from the DB at boot', async () => {
       const reportRepository = {
         findActionableTargets: Sinon.stub().resolves([{ reportedPubkey: 'a'.repeat(64), reportedEventId: null }]),
       } as unknown as IReportRepository
-      getSetMembersStub.withArgs('nip56:hidden:pubkeys').resolves(['a'.repeat(64), 'z'.repeat(64)])
-      getSetMembersStub.withArgs('nip56:hidden:event_ids').resolves([])
 
-      await startHiddenContentCache(cache, reportRepository)
+      await startHiddenContentCache(reportRepository)
 
-      expect(addToSetStub).to.have.been.calledOnceWithExactly('nip56:hidden:pubkeys', ['a'.repeat(64)])
-      // z...z came from Redis only (e.g. written by another worker), not from this worker's own DB read.
-      expect(isHidden({ id: 'x'.repeat(64), pubkey: 'z'.repeat(64) })).to.be.true
       expect(isHidden({ id: 'x'.repeat(64), pubkey: 'a'.repeat(64) })).to.be.true
     })
 
-    it('logs and continues if the DB seed query fails, without throwing', async () => {
+    it('logs and continues if the initial DB read fails, without throwing', async () => {
       const reportRepository = {
         findActionableTargets: Sinon.stub().rejects(new Error('db down')),
       } as unknown as IReportRepository
 
-      await expect(startHiddenContentCache(cache, reportRepository)).to.eventually.be.fulfilled
+      await expect(startHiddenContentCache(reportRepository)).to.eventually.be.fulfilled
     })
 
-    it('periodically refreshes the in-memory cache from Redis', async () => {
+    it('periodically re-reads the DB and reconciles the in-memory set', async () => {
       const clock = Sinon.useFakeTimers()
       try {
-        const reportRepository = {
-          findActionableTargets: Sinon.stub().resolves([]),
-        } as unknown as IReportRepository
+        const findActionableTargetsStub = Sinon.stub()
+        findActionableTargetsStub.onCall(0).resolves([{ reportedPubkey: 'a'.repeat(64), reportedEventId: null }])
+        findActionableTargetsStub.onCall(1).resolves([{ reportedPubkey: 'b'.repeat(64), reportedEventId: null }])
+        const reportRepository = { findActionableTargets: findActionableTargetsStub } as unknown as IReportRepository
 
-        await startHiddenContentCache(cache, reportRepository, 1000)
-        getSetMembersStub.withArgs('nip56:hidden:pubkeys').resolves(['later'.padEnd(64, '0')])
+        await startHiddenContentCache(reportRepository, 1000)
+        expect(isHidden({ id: 'x'.repeat(64), pubkey: 'a'.repeat(64) })).to.be.true
 
         await clock.tickAsync(1000)
 
-        expect(isHidden({ id: 'x'.repeat(64), pubkey: 'later'.padEnd(64, '0') })).to.be.true
+        // Fully replaced by the fresh DB read -- a pruned/no-longer-actionable
+        // target does not linger just because it was seen on a prior tick.
+        expect(isHidden({ id: 'x'.repeat(64), pubkey: 'a'.repeat(64) })).to.be.false
+        expect(isHidden({ id: 'x'.repeat(64), pubkey: 'b'.repeat(64) })).to.be.true
+      } finally {
+        clock.restore()
+      }
+    })
+
+    it('stopHiddenContentCache stops further polling', async () => {
+      const clock = Sinon.useFakeTimers()
+      try {
+        const findActionableTargetsStub = Sinon.stub().resolves([])
+        const reportRepository = { findActionableTargets: findActionableTargetsStub } as unknown as IReportRepository
+
+        await startHiddenContentCache(reportRepository, 1000)
+        stopHiddenContentCache()
+        findActionableTargetsStub.resetHistory()
+
+        await clock.tickAsync(5000)
+
+        expect(findActionableTargetsStub.called).to.be.false
       } finally {
         clock.restore()
       }
@@ -104,8 +108,8 @@ describe('hidden-content-cache', () => {
   })
 
   describe('resetHiddenContentCache', () => {
-    it('clears previously marked targets', async () => {
-      await markActionableTarget(cache, { reportedPubkey: 'a'.repeat(64), reportedEventId: null })
+    it('clears previously marked targets', () => {
+      markActionableTarget({ reportedPubkey: 'a'.repeat(64), reportedEventId: null })
       resetHiddenContentCache()
 
       expect(isHidden({ id: 'z'.repeat(64), pubkey: 'a'.repeat(64) })).to.be.false
