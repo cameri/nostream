@@ -142,6 +142,7 @@ export class EventRepository implements IEventRepository {
 
   private applyFilterConditions(builder: any, currentFilter: SubscriptionFilter): FilterConditionFlags {
     this.applyHexFilterConditions(builder, currentFilter)
+    this.applyActionableReportExclusion(builder)
 
     if (Array.isArray(currentFilter.kinds)) {
       builder.whereIn('event_kind', currentFilter.kinds)
@@ -178,6 +179,31 @@ export class EventRepository implements IEventRepository {
     }
 
     return { isTagQuery, isSearchQuery }
+  }
+
+  /**
+   * NIP-56: excludes events matching an actionable report -- a pubkey-targeted
+   * report hides every event from that pubkey, an event-targeted report hides
+   * just that event. No-op unless both nip56.enabled and
+   * nip56.hideActionableReports are set, so relays not using this feature pay
+   * no extra query cost.
+   */
+  private applyActionableReportExclusion(builder: any): void {
+    const nip56Settings = this.settings?.()?.nip56
+    if (!nip56Settings?.enabled || !nip56Settings?.hideActionableReports) {
+      return
+    }
+
+    builder.whereNotExists(function () {
+      this.select('id')
+        .from('reports')
+        .where('reports.actionable', true)
+        .andWhere((bd: any) => {
+          bd.whereRaw('reports.reported_event_id = events.event_id').orWhereRaw(
+            'reports.reported_pubkey = events.event_pubkey',
+          )
+        })
+    })
   }
 
   /** Resolve the PostgreSQL text-search configuration name from settings. */
