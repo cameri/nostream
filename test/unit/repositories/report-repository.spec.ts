@@ -282,4 +282,25 @@ describe('ReportRepository', () => {
       expect(limitStub).to.have.been.calledWith(100)
     })
   })
+
+  describe('.findActionableTargets', () => {
+    it('filters by actionable and selects distinct targets', async () => {
+      const selectStub = sandbox.stub().resolves([
+        { reported_pubkey: Buffer.from(reportedPubkey, 'hex'), reported_event_id: null },
+        { reported_pubkey: null, reported_event_id: Buffer.from(reportedEventId, 'hex') },
+      ])
+      const distinctStub = sandbox.stub().returns({ select: selectStub })
+      const whereStub = sandbox.stub().returns({ distinct: distinctStub })
+      const client = sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient
+
+      const result = await repository.findActionableTargets(client)
+
+      expect(whereStub).to.have.been.calledWith('actionable', true)
+      expect(distinctStub).to.have.been.calledWith('reported_pubkey', 'reported_event_id')
+      expect(result).to.deep.equal([
+        { reportedPubkey, reportedEventId: null },
+        { reportedPubkey: null, reportedEventId },
+      ])
+    })
+  })
 })
