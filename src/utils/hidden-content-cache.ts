@@ -1,6 +1,7 @@
 import { EventId, Pubkey } from '../@types/base'
 import { Event } from '../@types/event'
 import { IReportRepository } from '../@types/repositories'
+import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 
 const logger = createLogger('hidden-content-cache')
@@ -74,25 +75,39 @@ const refreshFromDatabase = async (reportRepository: IReportRepository): Promise
  * `reportRepository.findActionableTargets()`, awaited at boot (unlike
  * WotGraphService's graph rebuild, this is a single indexed query -- cheap
  * enough that blocking briefly on it is worth live filtering being correct
- * from the first accepted connection), then a periodic full re-read on
- * `intervalMs` for as long as nip56 is enabled at all, not only while
- * hideActionableReports is -- so hot-enabling hideActionableReports later
- * finds an already-current cache, and a failed/partial read on any given
- * tick self-heals on the next one instead of needing a dedicated retry path.
+ * from the first accepted connection), then a periodic re-read on
+ * `intervalMs` timer that keeps running for as long as the worker is up, but
+ * only actually queries the DB on a tick where `hideActionableReports` is
+ * currently true. `reports` rows have no automatic retention (see
+ * CONFIGURATION.md's nip56.enabled note), so continuously reading the full
+ * actionable-target set while hiding is off would be an unbounded,
+ * unused cost; checking the setting fresh on every tick instead of only at
+ * start means a later hot-enable of hideActionableReports is still picked up
+ * within one interval, without needing a separate start/stop call wired to
+ * a settings-change event. A failed/partial read on any given tick
+ * self-heals on the next one instead of needing a dedicated retry path.
  */
 export const startHiddenContentCache = async (
   reportRepository: IReportRepository,
+  settings: () => Pick<Settings, 'nip56'>,
   intervalMs = DEFAULT_REFRESH_INTERVAL_MS,
 ): Promise<void> => {
-  try {
+  const pollIfEnabled = async (): Promise<void> => {
+    if (!settings().nip56?.hideActionableReports) {
+      return
+    }
     await refreshFromDatabase(reportRepository)
+  }
+
+  try {
+    await pollIfEnabled()
   } catch (error) {
     logger.error('failed to seed hidden content cache: %o', error)
   }
 
   stopHiddenContentCache()
   refreshTimer = setInterval(() => {
-    refreshFromDatabase(reportRepository).catch((error) => logger.error('failed to refresh hidden content cache: %o', error))
+    pollIfEnabled().catch((error) => logger.error('failed to refresh hidden content cache: %o', error))
   }, intervalMs)
   refreshTimer.unref?.()
 }

@@ -57,10 +57,26 @@ describe('workerFactory', () => {
       findActionableTargetsStub.restore()
     })
 
-    it('starts the cache at boot when nip56 is enabled, even if hideActionableReports is off', async () => {
-      // Runs regardless of hideActionableReports, not gated to it, so a
-      // later hot-enable of hideActionableReports finds an already-current
-      // cache instead of one that was never warmed.
+    it('reads the DB at boot when nip56.enabled and hideActionableReports are both on', async () => {
+      createSettingsStub.returns({
+        info: { relay_url: 'url' },
+        network: {},
+        nip56: { enabled: true, trustedModerators: [], hideActionableReports: true },
+      })
+
+      const worker = workerFactory()
+      await new Promise((resolve) => setImmediate(resolve))
+
+      expect(findActionableTargetsStub.callCount).to.equal(1)
+      worker.close()
+    })
+
+    it('starts the polling timer at boot but skips the DB read while hideActionableReports is off', async () => {
+      // The timer itself starts regardless of hideActionableReports (cheap,
+      // no DB/memory cost), but each tick -- including the initial one --
+      // checks the setting fresh and skips the read while it's off, so a
+      // later hot-enable is still picked up within one interval without
+      // continuously re-reading the full set while the feature is unused.
       createSettingsStub.returns({
         info: { relay_url: 'url' },
         network: {},
@@ -70,7 +86,7 @@ describe('workerFactory', () => {
       const worker = workerFactory()
       await new Promise((resolve) => setImmediate(resolve))
 
-      expect(findActionableTargetsStub.callCount).to.equal(1)
+      expect(findActionableTargetsStub.called).to.be.false
       worker.close()
     })
 

@@ -44,7 +44,7 @@ export const workerFactory = (): AppWorker => {
   // resolves) self-heals on the cache's own periodic refresh, not a
   // dedicated retry path.
   if (settings.nip56?.enabled) {
-    startHiddenContentCache(reportRepository).catch((error) =>
+    startHiddenContentCache(reportRepository, createSettings).catch((error) =>
       logger.error('failed to start hidden content cache: %o', error),
     )
   }

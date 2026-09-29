@@ -48,14 +48,26 @@ describe('hidden-content-cache', () => {
   })
 
   describe('startHiddenContentCache', () => {
-    it('seeds the cache from the DB at boot', async () => {
+    const enabledSettings = () => ({ nip56: { enabled: true, trustedModerators: [], hideActionableReports: true } }) as any
+    const disabledSettings = () => ({ nip56: { enabled: true, trustedModerators: [], hideActionableReports: false } }) as any
+
+    it('seeds the cache from the DB at boot when hideActionableReports is enabled', async () => {
       const reportRepository = {
         findActionableTargets: Sinon.stub().resolves([{ reportedPubkey: 'a'.repeat(64), reportedEventId: null }]),
       } as unknown as IReportRepository
 
-      await startHiddenContentCache(reportRepository)
+      await startHiddenContentCache(reportRepository, enabledSettings)
 
       expect(isHidden({ id: 'x'.repeat(64), pubkey: 'a'.repeat(64) })).to.be.true
+    })
+
+    it('does not query the DB at boot when hideActionableReports is disabled', async () => {
+      const findActionableTargetsStub = Sinon.stub().resolves([])
+      const reportRepository = { findActionableTargets: findActionableTargetsStub } as unknown as IReportRepository
+
+      await startHiddenContentCache(reportRepository, disabledSettings)
+
+      expect(findActionableTargetsStub.called).to.be.false
     })
 
     it('logs and continues if the initial DB read fails, without throwing', async () => {
@@ -63,7 +75,7 @@ describe('hidden-content-cache', () => {
         findActionableTargets: Sinon.stub().rejects(new Error('db down')),
       } as unknown as IReportRepository
 
-      await expect(startHiddenContentCache(reportRepository)).to.eventually.be.fulfilled
+      await expect(startHiddenContentCache(reportRepository, enabledSettings)).to.eventually.be.fulfilled
     })
 
     it('periodically re-reads the DB and reconciles the in-memory set', async () => {
@@ -74,7 +86,7 @@ describe('hidden-content-cache', () => {
         findActionableTargetsStub.onCall(1).resolves([{ reportedPubkey: 'b'.repeat(64), reportedEventId: null }])
         const reportRepository = { findActionableTargets: findActionableTargetsStub } as unknown as IReportRepository
 
-        await startHiddenContentCache(reportRepository, 1000)
+        await startHiddenContentCache(reportRepository, enabledSettings, 1000)
         expect(isHidden({ id: 'x'.repeat(64), pubkey: 'a'.repeat(64) })).to.be.true
 
         await clock.tickAsync(1000)
@@ -88,13 +100,48 @@ describe('hidden-content-cache', () => {
       }
     })
 
+    it('does not poll the DB on later ticks while hideActionableReports stays disabled', async () => {
+      const clock = Sinon.useFakeTimers()
+      try {
+        const findActionableTargetsStub = Sinon.stub().resolves([])
+        const reportRepository = { findActionableTargets: findActionableTargetsStub } as unknown as IReportRepository
+
+        await startHiddenContentCache(reportRepository, disabledSettings, 1000)
+        await clock.tickAsync(3000)
+
+        expect(findActionableTargetsStub.called).to.be.false
+      } finally {
+        clock.restore()
+      }
+    })
+
+    it('resumes polling within one interval after hideActionableReports is hot-enabled', async () => {
+      const clock = Sinon.useFakeTimers()
+      try {
+        let hideActionableReports = false
+        const settings = () => ({ nip56: { enabled: true, trustedModerators: [], hideActionableReports } }) as any
+        const findActionableTargetsStub = Sinon.stub().resolves([{ reportedPubkey: 'a'.repeat(64), reportedEventId: null }])
+        const reportRepository = { findActionableTargets: findActionableTargetsStub } as unknown as IReportRepository
+
+        await startHiddenContentCache(reportRepository, settings, 1000)
+        expect(findActionableTargetsStub.called).to.be.false
+
+        hideActionableReports = true
+        await clock.tickAsync(1000)
+
+        expect(isHidden({ id: 'x'.repeat(64), pubkey: 'a'.repeat(64) })).to.be.true
+      } finally {
+        clock.restore()
+      }
+    })
+
     it('stopHiddenContentCache stops further polling', async () => {
       const clock = Sinon.useFakeTimers()
       try {
         const findActionableTargetsStub = Sinon.stub().resolves([])
         const reportRepository = { findActionableTargets: findActionableTargetsStub } as unknown as IReportRepository
 
-        await startHiddenContentCache(reportRepository, 1000)
+        await startHiddenContentCache(reportRepository, enabledSettings, 1000)
         stopHiddenContentCache()
         findActionableTargetsStub.resetHistory()
 
