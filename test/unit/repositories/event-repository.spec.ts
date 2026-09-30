@@ -295,7 +295,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
 
@@ -305,7 +305,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'e\' and ("event_tags"."tag_value" in (\'aaaaaa\'))) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
 
@@ -315,7 +315,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'e\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'e\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'e\' and ("event_tags"."tag_value" in (\'aaaaaa\', \'bbbbbb\'))) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
       })
@@ -327,7 +327,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'g\' AND event_tags.tag_value LIKE \'u4pruyd%\') order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'g\' and ("event_tags"."tag_value" like \'u4pruyd%\')) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
 
@@ -337,7 +337,17 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'g\' AND event_tags.tag_value = \'u4pruyd\') order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'g\' and ("event_tags"."tag_value" in (\'u4pruyd\'))) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
+        })
+
+        it('matches exact geohashes and prefixes in the same tag condition', () => {
+          const filters = [{ '#g': ['u4pruyd*', 'u4xx'] }]
+
+          const query = repository.findByFilters(filters).toString()
+
+          expect(query).to.equal(
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'g\' and ("event_tags"."tag_value" in (\'u4xx\') or "event_tags"."tag_value" like \'u4pruyd%\')) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
       })
@@ -349,7 +359,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
 
@@ -359,7 +369,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'p\' and ("event_tags"."tag_value" in (\'aaaaaa\'))) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
 
@@ -369,7 +379,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'p\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'p\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'p\' and ("event_tags"."tag_value" in (\'aaaaaa\', \'bbbbbb\'))) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
       })
@@ -381,7 +391,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where (1 = 0) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
 
@@ -391,7 +401,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\') order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'r\' and ("event_tags"."tag_value" in (\'aaaaaa\'))) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
 
@@ -401,7 +411,7 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'r\' AND event_tags.tag_value = \'aaaaaa\' or event_tags.tag_name = \'r\' AND event_tags.tag_value = \'bbbbbb\') order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'r\' and ("event_tags"."tag_value" in (\'aaaaaa\', \'bbbbbb\'))) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
       })
@@ -413,7 +423,33 @@ describe('EventRepository', () => {
           const query = repository.findByFilters(filters).toString()
 
           expect(query).to.equal(
-            'select distinct "events".* from "events" left join "event_tags" on "events"."event_id" = "event_tags"."event_id" where (event_tags.tag_name = \'d\' AND event_tags.tag_value = \'\') order by "event_created_at" asc, "event_id" asc limit 500',
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'d\' and ("event_tags"."tag_value" in (\'\'))) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
+        })
+      })
+
+      describe('ids and #e', () => {
+        it('matches tags without joining event_tags, so event_id stays unambiguous', () => {
+          const filters = [
+            { ids: ['6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407'], '#e': ['aaaaaa'] },
+          ]
+
+          const query = repository.findByFilters(filters).toString()
+
+          expect(query).to.equal(
+            'select * from "events" where ("event_id" in (X\'6b3cdd0302ded8068ad3f0269c74423ca4fee460f800f3d90103b63f14400407\')) and exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'e\' and ("event_tags"."tag_value" in (\'aaaaaa\'))) order by "event_created_at" asc, "event_id" asc limit 500',
+          )
+        })
+      })
+
+      describe('#e and #p', () => {
+        it('requires a match for every tag name, one EXISTS per name', () => {
+          const filters = [{ '#e': ['aaaaaa'], '#p': ['bbbbbb', 'cccccc'] }]
+
+          const query = repository.findByFilters(filters).toString()
+
+          expect(query).to.equal(
+            'select * from "events" where exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'e\' and ("event_tags"."tag_value" in (\'aaaaaa\'))) and exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'p\' and ("event_tags"."tag_value" in (\'bbbbbb\', \'cccccc\'))) order by "event_created_at" asc, "event_id" asc limit 500',
           )
         })
       })
@@ -426,7 +462,17 @@ describe('EventRepository', () => {
         const query = repository.findByFilters(filters).toString()
 
         expect(query).to.equal(
-          '(select * from "events") union (select * from "events" order by "event_created_at" asc, "event_id" asc limit 500) order by "event_created_at" asc, "event_id" asc limit 500',
+          '(select * from "events" order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" order by "event_created_at" asc, "event_id" asc limit 500) order by "event_created_at" asc, "event_id" asc',
+        )
+      })
+
+      it('keeps the first filter limit inside its own query', () => {
+        const filters = [{ kinds: [7], limit: 1 }, { kinds: [1] }]
+
+        const query = repository.findByFilters(filters).toString()
+
+        expect(query).to.equal(
+          '(select * from "events" where "event_kind" in (7) order by "event_created_at" DESC, "event_id" asc limit 1) union (select * from "events" where "event_kind" in (1) order by "event_created_at" asc, "event_id" asc limit 500) order by "event_created_at" DESC, "event_id" asc',
         )
       })
     })
@@ -445,7 +491,7 @@ describe('EventRepository', () => {
         const query = repository.findByFilters(filters).toString()
 
         expect(query).to.equal(
-          '(select * from "events" where "event_kind" in (1)) union (select * from "events" where (substring("event_id" from 1 for 3) BETWEEN E\'\\\\xaaaaa0\' AND E\'\\\\xaaaaaf\') order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where (substring("event_pubkey" from 1 for 3) BETWEEN E\'\\\\xbbbbb0\' AND E\'\\\\xbbbbbf\') order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" order by "event_created_at" DESC, "event_id" asc limit 1000) order by "event_created_at" asc, "event_id" asc limit 500',
+          '(select * from "events" where "event_kind" in (1) order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where (substring("event_id" from 1 for 3) BETWEEN E\'\\\\xaaaaa0\' AND E\'\\\\xaaaaaf\') order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where (substring("event_pubkey" from 1 for 3) BETWEEN E\'\\\\xbbbbb0\' AND E\'\\\\xbbbbbf\') order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where "event_created_at" >= 1000 order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" where "event_created_at" <= 1000 order by "event_created_at" asc, "event_id" asc limit 500) union (select * from "events" order by "event_created_at" DESC, "event_id" asc limit 1000) order by "event_created_at" asc, "event_id" asc',
         )
       })
     })
@@ -501,16 +547,17 @@ describe('EventRepository', () => {
         expect(query).to.include('"event_kind" in (1)')
       })
 
-      it('de-duplicates results when search is combined with a generic tag filter', () => {
+      it('matches generic tags with EXISTS when search is combined with a tag filter', () => {
         const filters = [{ search: 'bitcoin', '#p': ['a', 'b'] }]
 
         const query = searchEnabledRepository.findByFilters(filters).toString()
 
-        expect(query).to.include('select distinct events.*')
-        expect(query).to.include('ts_rank(')
-        expect(query).to.include('left join "event_tags" on "events"."event_id" = "event_tags"."event_id"')
+        expect(query).to.include('select events.*, ts_rank(')
+        expect(query).to.not.include('distinct')
+        expect(query).to.not.include('join')
         expect(query).to.include("plainto_tsquery('simple'::regconfig, 'bitcoin')")
-        expect(query).to.include("event_tags.tag_name = 'p'")
+        expect(query).to.include('exists (select 1 from "event_tags"')
+        expect(query).to.include('"event_tags"."tag_name" = \'p\'')
       })
 
       it('ignores search filter when NIP-50 is disabled', () => {
@@ -583,7 +630,7 @@ describe('EventRepository', () => {
 
       it('applies the exclusion to countByFilters too', async () => {
         const fromStub = sandbox.stub(rrDbClient, 'from').returns({
-          countDistinct: () => ({
+          count: () => ({
             first: async () => ({ count: '0' }),
           }),
         } as any)
@@ -649,7 +696,7 @@ describe('EventRepository', () => {
 
     it('returns count value from query result', async () => {
       sandbox.stub(rrDbClient, 'from').returns({
-        countDistinct: () => ({
+        count: () => ({
           first: async () => ({ count: '42' }),
         }),
       } as any)
@@ -659,21 +706,21 @@ describe('EventRepository', () => {
       expect(result).to.equal(42)
     })
 
-    it('uses countDistinct on event_id to avoid duplicate counts', async () => {
-      const countDistinctStub = sandbox.stub().returns({
+    it('counts rows with count(*) since no filter yields an event twice', async () => {
+      const countStub = sandbox.stub().returns({
         first: async () => ({ count: '1' }),
       })
 
-      sandbox.stub(rrDbClient, 'from').returns({ countDistinct: countDistinctStub } as any)
+      sandbox.stub(rrDbClient, 'from').returns({ count: countStub } as any)
 
       await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
 
-      expect(countDistinctStub).to.have.been.calledOnceWithExactly({ count: 'event_id' })
+      expect(countStub).to.have.been.calledOnceWithExactly({ count: '*' })
     })
 
     it('builds union query when there are multiple filters', async () => {
       const fromStub = sandbox.stub(rrDbClient, 'from').returns({
-        countDistinct: () => ({
+        count: () => ({
           first: async () => ({ count: '1' }),
         }),
       } as any)
@@ -684,9 +731,9 @@ describe('EventRepository', () => {
       expect(sql).to.include(' union ')
     })
 
-    it('joins tags table for generic tag filters', async () => {
+    it('matches generic tag filters with EXISTS on event_tags', async () => {
       const fromStub = sandbox.stub(rrDbClient, 'from').returns({
-        countDistinct: () => ({
+        count: () => ({
           first: async () => ({ count: '1' }),
         }),
       } as any)
@@ -694,14 +741,48 @@ describe('EventRepository', () => {
       await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
 
       const sql = fromStub.firstCall.args[0].toString()
-      expect(sql).to.include('left join "event_tags"')
-      expect(sql).to.include('event_tags.tag_name')
-      expect(sql).to.include('event_tags.tag_value')
+      expect(sql).to.include('exists (select 1 from "event_tags"')
+      expect(sql).to.include('"event_tags"."tag_name" = \'e\'')
+      expect(sql).to.include('"event_tags"."tag_value" in (\'aaaaaa\')')
+      expect(sql).to.not.include('join')
+    })
+
+    it('requires a match for every tag name in a filter', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        count: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ '#e': ['aaaaaa'], '#p': ['bbbbbb'] } as any])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql.match(/exists \(select 1 from "event_tags"/g)).to.have.lengthOf(2)
+      expect(sql).to.include('"event_tags"."tag_name" = \'e\' and ("event_tags"."tag_value" in (\'aaaaaa\')))')
+      expect(sql).to.include(
+        ') and exists (select 1 from "event_tags" where "event_tags"."event_id" = "events"."event_id" and "event_tags"."tag_name" = \'p\'',
+      )
+    })
+
+    it('keeps each filter limit inside its own branch of the union', async () => {
+      const fromStub = sandbox.stub(rrDbClient, 'from').returns({
+        count: () => ({
+          first: async () => ({ count: '1' }),
+        }),
+      } as any)
+
+      await repository.countByFilters([{ kinds: [7], limit: 1 }, { kinds: [1] }])
+
+      const sql = fromStub.firstCall.args[0].toString()
+      expect(sql).to.match(/^\(select "events"\."event_id" from "events" where "event_kind" in \(7\) /)
+      expect(sql).to.include('order by "event_created_at" DESC, "event_id" asc limit 1) union (select')
+      // Nothing may follow the last branch, or it would apply to the whole union.
+      expect(sql).to.match(/\)$/)
     })
 
     it('applies limit ordering when a filter includes limit', async () => {
       const fromStub = sandbox.stub(rrDbClient, 'from').returns({
-        countDistinct: () => ({
+        count: () => ({
           first: async () => ({ count: '1' }),
         }),
       } as any)
@@ -714,7 +795,7 @@ describe('EventRepository', () => {
 
     it('filters out deleted and expired events', async () => {
       const fromStub = sandbox.stub(rrDbClient, 'from').returns({
-        countDistinct: () => ({
+        count: () => ({
           first: async () => ({ count: '1' }),
         }),
       } as any)
@@ -729,7 +810,7 @@ describe('EventRepository', () => {
 
     it('projects event_id exactly once for generic tag filters', async () => {
       const fromStub = sandbox.stub(rrDbClient, 'from').returns({
-        countDistinct: () => ({
+        count: () => ({
           first: async () => ({ count: '1' }),
         }),
       } as any)
@@ -737,13 +818,13 @@ describe('EventRepository', () => {
       await repository.countByFilters([{ '#e': ['aaaaaa'] } as any])
 
       const sql = fromStub.firstCall.args[0].toString()
-      expect(sql).to.include('select "events"."event_id" from "events" left join "event_tags"')
+      expect(sql).to.include('select "events"."event_id" from "events" where exists (select 1 from "event_tags"')
       expect(sql).to.not.include('"events"."event_id", "events"."event_id"')
     })
 
     it('projects the same columns in both branches of a mixed union', async () => {
       const fromStub = sandbox.stub(rrDbClient, 'from').returns({
-        countDistinct: () => ({
+        count: () => ({
           first: async () => ({ count: '1' }),
         }),
       } as any)
