@@ -64,11 +64,24 @@ export class NotificationDeliveryLogRepository implements INotificationDeliveryL
       .pluck('target_id')
   }
 
-  public async findRecent(limit = 50, client: DatabaseClient = this.dbClient): Promise<NotificationDeliveryLogEntry[]> {
-    const rows = await client<DBNotificationDeliveryLogEntry>('notification_delivery_log')
+  public async findRecent(
+    limit = 50,
+    filters?: { status?: NotificationDeliveryStatus; eventType?: string },
+    client: DatabaseClient = this.dbClient,
+  ): Promise<NotificationDeliveryLogEntry[]> {
+    let query = client<DBNotificationDeliveryLogEntry>('notification_delivery_log')
       .orderBy('created_at', 'desc')
       .limit(limit)
-      .select('*')
+
+    if (filters?.status) {
+      query = query.where('status', filters.status)
+    }
+
+    if (filters?.eventType) {
+      query = query.where('event_type', filters.eventType)
+    }
+
+    const rows = await query.select('*')
 
     return rows.map(fromDB)
   }

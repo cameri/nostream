@@ -45,7 +45,6 @@ const DEFAULT_TS_CONFIG = 'simple'
 const DEFAULT_MAX_SEARCH_QUERY_LENGTH = 256
 
 interface FilterConditionFlags {
-  isTagQuery: boolean
   isSearchQuery: boolean
 }
 
@@ -61,46 +60,37 @@ export class EventRepository implements IEventRepository {
     if (!Array.isArray(filters) || !filters.length) {
       throw new Error('Filters cannot be empty')
     }
+    const isSearchQueries: boolean[] = []
     const queries = filters.map((currentFilter) => {
       const builder = this.readReplicaDbClient<DBEvent>('events')
 
-      const { isTagQuery, isSearchQuery } = this.applyFilterConditions(builder, currentFilter)
+      const { isSearchQuery } = this.applyFilterConditions(builder, currentFilter)
+      isSearchQueries.push(isSearchQuery)
 
       if (isSearchQuery) {
-        // NIP-50: sort by relevance (ts_rank) descending, then by event_id for stability
         const tsConfig = this.getNip50Language()
         const nip50Settings = this.settings?.()
         const maxLen = nip50Settings?.nip50?.maxQueryLength ?? DEFAULT_MAX_SEARCH_QUERY_LENGTH
         const searchQuery = currentFilter.search.trim().slice(0, maxLen)
-        const limit = typeof currentFilter.limit === 'number' ? currentFilter.limit : DEFAULT_FILTER_LIMIT
         const searchSelection = this.readReplicaDbClient.raw(
           'events.*, ts_rank(to_tsvector(?::regconfig, event_content), plainto_tsquery(?::regconfig, ?)) AS search_rank',
           [tsConfig, tsConfig, searchQuery],
         )
-        // De-duplicate rows multiplied by the event_tags left join when search is combined with a generic tag filter
-        if (isTagQuery) {
-          builder.distinct(searchSelection)
-        } else {
-          builder.select(searchSelection)
-        }
-        builder.limit(limit).orderBy('search_rank', 'DESC').orderBy('event_id', 'asc')
-      } else if (typeof currentFilter.limit === 'number') {
-        builder.limit(currentFilter.limit).orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
-      } else {
-        builder.limit(DEFAULT_FILTER_LIMIT).orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
+        builder.select(searchSelection)
       }
 
-      if (isTagQuery && !isSearchQuery) {
-        builder.distinct('events.*')
-      }
+      builder.limit(typeof currentFilter.limit === 'number' ? currentFilter.limit : DEFAULT_FILTER_LIMIT)
+      this.applyFilterOrder(builder, currentFilter, isSearchQuery)
 
       return builder
     })
 
-    const [query, ...subqueries] = queries
-    if (subqueries.length) {
-      query.union(subqueries, true)
+    if (queries.length === 1) {
+      return queries[0]
     }
+
+    const query = this.unionFilterQueries(queries)
+    this.applyFilterOrder(query, filters[0], isSearchQueries[0])
 
     return query
   }
@@ -130,18 +120,34 @@ export class EventRepository implements IEventRepository {
       return builder
     })
 
-    const [query, ...subqueries] = queries
-    if (subqueries.length) {
-      query.union(subqueries, true)
-    }
+    const query = queries.length === 1 ? queries[0] : this.unionFilterQueries(queries)
 
-    const result = await this.readReplicaDbClient.from(query.as('matching_events')).countDistinct({ count: 'event_id' }).first()
+    // Rows are already unique: EXISTS never repeats an event and UNION drops overlaps between filters.
+    const result = await this.readReplicaDbClient.from(query.as('matching_events')).count({ count: '*' }).first()
 
     return Number(result?.count ?? 0)
   }
 
+  // Wraps every query so each keeps its own ORDER BY and LIMIT. first.union(rest) would put the
+  // first query's ORDER BY and LIMIT after the UNION, applying them to the whole result.
+  private unionFilterQueries(queries: any[]): any {
+    return this.readReplicaDbClient.union(queries, true)
+  }
+
+  private applyFilterOrder(builder: any, currentFilter: SubscriptionFilter, isSearchQuery: boolean): void {
+    if (isSearchQuery) {
+      // NIP-50: sort by relevance (ts_rank) descending, then by event_id for stability
+      builder.orderBy('search_rank', 'DESC').orderBy('event_id', 'asc')
+    } else if (typeof currentFilter.limit === 'number') {
+      builder.orderBy('event_created_at', 'DESC').orderBy('event_id', 'asc')
+    } else {
+      builder.orderBy('event_created_at', 'asc').orderBy('event_id', 'asc')
+    }
+  }
+
   private applyFilterConditions(builder: any, currentFilter: SubscriptionFilter): FilterConditionFlags {
     this.applyHexFilterConditions(builder, currentFilter)
+    this.applyActionableReportExclusion(builder)
 
     if (Array.isArray(currentFilter.kinds)) {
       builder.whereIn('event_kind', currentFilter.kinds)
@@ -171,13 +177,34 @@ export class EventRepository implements IEventRepository {
       }
     }
 
-    const isTagQuery = this.applyGenericTagFilterConditions(builder, currentFilter)
+    this.applyGenericTagFilterConditions(builder, currentFilter)
 
-    if (isTagQuery) {
-      builder.leftJoin('event_tags', 'events.event_id', 'event_tags.event_id')
+    return { isSearchQuery }
+  }
+
+  /**
+   * NIP-56: excludes events matching an actionable report -- a pubkey-targeted
+   * report hides every event from that pubkey, an event-targeted report hides
+   * just that event. No-op unless both nip56.enabled and
+   * nip56.hideActionableReports are set, so relays not using this feature pay
+   * no extra query cost.
+   */
+  private applyActionableReportExclusion(builder: any): void {
+    const nip56Settings = this.settings?.()?.nip56
+    if (!nip56Settings?.enabled || !nip56Settings?.hideActionableReports) {
+      return
     }
 
-    return { isTagQuery, isSearchQuery }
+    builder.whereNotExists(function () {
+      this.select('id')
+        .from('reports')
+        .where('reports.actionable', true)
+        .andWhere((bd: any) => {
+          bd.whereRaw('reports.reported_event_id = events.event_id').orWhereRaw(
+            'reports.reported_pubkey = events.event_pubkey',
+          )
+        })
+    })
   }
 
   /** Resolve the PostgreSQL text-search configuration name from settings. */
@@ -247,34 +274,42 @@ export class EventRepository implements IEventRepository {
     )
   }
 
-  private applyGenericTagFilterConditions(builder: any, currentFilter: SubscriptionFilter): boolean {
+  private applyGenericTagFilterConditions(builder: any, currentFilter: SubscriptionFilter): void {
     const tagFilters = Object.entries(currentFilter).filter(([filterName]) => isGenericTagQuery(filterName))
 
     tagFilters.forEach(([filterName, criteria]) => {
       this.applyGenericTagCriteria(builder, filterName, criteria as string[])
     })
-
-    return tagFilters.length > 0
   }
 
+  // One EXISTS per tag name, so every tag name must match. A single join on event_tags can't do
+  // that, since each tag row has only one name.
   private applyGenericTagCriteria(builder: any, filterName: string, criteria: string[]): void {
-    builder.andWhere((bd) => {
-      if (!criteria.length) {
+    if (!criteria.length) {
+      builder.andWhere((bd) => {
         bd.andWhereRaw('1 = 0')
-        return
-      }
-
-      criteria.forEach((criterion) => {
-        if (isGeohashPrefixCriterion(filterName, criterion)) {
-          bd.orWhereRaw('event_tags.tag_name = ? AND event_tags.tag_value LIKE ?', [
-            filterName[1],
-            `${stripGeohashPrefixWildcard(criterion)}%`,
-          ])
-          return
-        }
-
-        bd.orWhereRaw('event_tags.tag_name = ? AND event_tags.tag_value = ?', [filterName[1], criterion])
       })
+      return
+    }
+
+    const values = criteria.filter((criterion) => !isGeohashPrefixCriterion(filterName, criterion))
+    const prefixes = criteria.filter((criterion) => isGeohashPrefixCriterion(filterName, criterion))
+
+    builder.whereExists((subquery) => {
+      subquery
+        .select(this.readReplicaDbClient.raw('1'))
+        .from('event_tags')
+        .whereColumn('event_tags.event_id', 'events.event_id')
+        .where('event_tags.tag_name', filterName[1])
+        .where((bd) => {
+          if (values.length) {
+            bd.whereIn('event_tags.tag_value', values)
+          }
+
+          prefixes.forEach((prefix) => {
+            bd.orWhere('event_tags.tag_value', 'like', `${stripGeohashPrefixWildcard(prefix)}%`)
+          })
+        })
     })
   }
 

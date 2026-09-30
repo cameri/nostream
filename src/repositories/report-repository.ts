@@ -52,6 +52,25 @@ export class ReportRepository implements IReportRepository {
     return fromDBReport({ ...row, id: inserted.id })
   }
 
+  public async createMany(
+    reports: Omit<Report, 'id' | 'createdAt'>[],
+    client: DatabaseClient = this.dbClient,
+  ): Promise<Report[]> {
+    if (!reports.length) {
+      return []
+    }
+
+    logger('create %d reports in a single transaction', reports.length)
+
+    return client.transaction(async (trx) => {
+      const created: Report[] = []
+      for (const report of reports) {
+        created.push(await this.create(report, trx))
+      }
+      return created
+    })
+  }
+
   public async findByEventId(eventId: EventId, client: DatabaseClient = this.dbClient): Promise<Report[]> {
     logger('find reports for event %s', eventId)
 
@@ -70,5 +89,21 @@ export class ReportRepository implements IReportRepository {
       .select()
 
     return rows.map(fromDBReport)
+  }
+
+  public async findActionableTargets(
+    client: DatabaseClient = this.dbClient,
+  ): Promise<{ reportedPubkey: string | null; reportedEventId: string | null }[]> {
+    logger('find all actionable report targets')
+
+    const rows = await client<DBReport>('reports')
+      .where('actionable', true)
+      .distinct('reported_pubkey', 'reported_event_id')
+      .select()
+
+    return rows.map((row) => ({
+      reportedPubkey: row.reported_pubkey ? fromBuffer(row.reported_pubkey) : null,
+      reportedEventId: row.reported_event_id ? fromBuffer(row.reported_event_id) : null,
+    }))
   }
 }

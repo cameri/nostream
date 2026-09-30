@@ -4,8 +4,8 @@ import * as sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
 import { DatabaseClient } from '../../../src/@types/base'
-import { ReportRepository } from '../../../src/repositories/report-repository'
 import { ReportType } from '../../../src/@types/report'
+import { ReportRepository } from '../../../src/repositories/report-repository'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
@@ -149,6 +149,75 @@ describe('ReportRepository', () => {
     })
   })
 
+  describe('.createMany', () => {
+    it('returns an empty array without opening a transaction when given no reports', async () => {
+      const transactionStub = sandbox.stub()
+      const client = { transaction: transactionStub } as unknown as DatabaseClient
+
+      const result = await repository.createMany([], client)
+
+      expect(result).to.deep.equal([])
+      expect(transactionStub).not.to.have.been.called
+    })
+
+    it('inserts every report inside a single transaction', async () => {
+      const returningStub = sandbox.stub().resolves([{ id: 7 }])
+      const insertStub = sandbox.stub().returns({ returning: returningStub })
+      const trx = sandbox.stub().returns({ insert: insertStub }) as unknown as DatabaseClient
+      const transactionStub = sandbox.stub().callsFake(async (fn: (trx: DatabaseClient) => Promise<unknown>) => fn(trx))
+      const client = { transaction: transactionStub } as unknown as DatabaseClient
+
+      const reports = [
+        {
+          eventId,
+          reporterPubkey,
+          reportedPubkey,
+          reportedEventId: null,
+          reportType: ReportType.SPAM,
+          weight: 1,
+          actionable: false,
+        },
+        {
+          eventId,
+          reporterPubkey,
+          reportedPubkey: null,
+          reportedEventId,
+          reportType: ReportType.NUDITY,
+          weight: 0.5,
+          actionable: false,
+        },
+      ]
+
+      const result = await repository.createMany(reports, client)
+
+      expect(transactionStub).to.have.been.calledOnce
+      expect(insertStub).to.have.been.calledTwice
+      expect(result).to.have.lengthOf(2)
+    })
+
+    it('propagates a failure from the transaction without inserting a partial set', async () => {
+      const transactionStub = sandbox.stub().rejects(new Error('constraint violation'))
+      const client = { transaction: transactionStub } as unknown as DatabaseClient
+
+      await expect(
+        repository.createMany(
+          [
+            {
+              eventId,
+              reporterPubkey,
+              reportedPubkey,
+              reportedEventId: null,
+              reportType: ReportType.SPAM,
+              weight: 1,
+              actionable: false,
+            },
+          ],
+          client,
+        ),
+      ).to.eventually.be.rejectedWith('constraint violation')
+    })
+  })
+
   describe('.findByEventId', () => {
     it('returns an empty array when no reports are found', async () => {
       const client = sandbox.stub().returns({
@@ -211,6 +280,27 @@ describe('ReportRepository', () => {
       await repository.findActionable(undefined, client)
 
       expect(limitStub).to.have.been.calledWith(100)
+    })
+  })
+
+  describe('.findActionableTargets', () => {
+    it('filters by actionable and selects distinct targets', async () => {
+      const selectStub = sandbox.stub().resolves([
+        { reported_pubkey: Buffer.from(reportedPubkey, 'hex'), reported_event_id: null },
+        { reported_pubkey: null, reported_event_id: Buffer.from(reportedEventId, 'hex') },
+      ])
+      const distinctStub = sandbox.stub().returns({ select: selectStub })
+      const whereStub = sandbox.stub().returns({ distinct: distinctStub })
+      const client = sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient
+
+      const result = await repository.findActionableTargets(client)
+
+      expect(whereStub).to.have.been.calledWith('actionable', true)
+      expect(distinctStub).to.have.been.calledWith('reported_pubkey', 'reported_event_id')
+      expect(result).to.deep.equal([
+        { reportedPubkey, reportedEventId: null },
+        { reportedPubkey: null, reportedEventId },
+      ])
     })
   })
 })
