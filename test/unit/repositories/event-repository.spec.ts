@@ -630,7 +630,7 @@ describe('EventRepository', () => {
 
       it('applies the exclusion to countByFilters too', async () => {
         const fromStub = sandbox.stub(rrDbClient, 'from').returns({
-          countDistinct: () => ({
+          count: () => ({
             first: async () => ({ count: '0' }),
           }),
         } as any)
