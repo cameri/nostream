@@ -8,13 +8,29 @@ import {
   getReadyzRequestHandler,
   resetReadyzSnapshotCache,
 } from '../../../../src/handlers/request-handlers/get-readyz-request-handler'
+import {
+  resetRelayBroadcastFanoutState,
+  setRelayBroadcastFanoutReady,
+} from '../../../../src/utils/relay-broadcast-state'
 import { beginDraining, resetDrainingState } from '../../../../src/utils/shutdown-state'
 
 chai.use(sinonChai)
 const { expect } = chai
 
 describe('buildReadyzSnapshot', () => {
+  const previousFanoutEnv = process.env.RELAY_BROADCAST_FANOUT
+
+  afterEach(() => {
+    resetRelayBroadcastFanoutState()
+    if (previousFanoutEnv === undefined) {
+      delete process.env.RELAY_BROADCAST_FANOUT
+    } else {
+      process.env.RELAY_BROADCAST_FANOUT = previousFanoutEnv
+    }
+  })
+
   it('returns ok when database and redis are healthy', () => {
+    delete process.env.RELAY_BROADCAST_FANOUT
     expect(buildReadyzSnapshot({ ok: true }, { ok: true })).to.deep.equal({
       status: 'ok',
       database: { ok: true },
@@ -23,10 +39,23 @@ describe('buildReadyzSnapshot', () => {
   })
 
   it('returns unavailable when either dependency is unhealthy', () => {
+    delete process.env.RELAY_BROADCAST_FANOUT
     expect(buildReadyzSnapshot({ ok: false }, { ok: true })).to.deep.equal({
       status: 'unavailable',
       database: { ok: false },
       redis: { ok: true },
+    })
+  })
+
+  it('returns unavailable when fan-out is required but not ready', () => {
+    process.env.RELAY_BROADCAST_FANOUT = 'true'
+    setRelayBroadcastFanoutReady(false)
+
+    expect(buildReadyzSnapshot({ ok: true }, { ok: true })).to.deep.equal({
+      status: 'unavailable',
+      database: { ok: true },
+      redis: { ok: true },
+      relayBroadcast: { ok: false },
     })
   })
 })

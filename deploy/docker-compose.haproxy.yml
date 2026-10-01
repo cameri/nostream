@@ -1,0 +1,146 @@
+# Blue/green alternative to docker-compose.prod.yml: two relays behind HAProxy.
+# Keep the shared services below in sync with docker-compose.prod.yml.
+#
+#   docker compose -f docker-compose.haproxy.yml up -d
+
+networks:
+  nostream_haproxy:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+x-nostream-relay: &nostream-relay
+  image: ghcr.io/cameri/nostream:main
+  pull_policy: never
+  env_file: .env
+  environment:
+    RELAY_PORT: 8008
+    NOSTR_CONFIG_DIR: /home/node/.nostr
+    DB_HOST: nostream-db
+    DB_PORT: 5432
+    DB_USER: ${DB_USER}
+    DB_PASSWORD: ${DB_PASSWORD}
+    DB_NAME: ${DB_NAME}
+    DB_MIN_POOL_SIZE: ${DB_MIN_POOL_SIZE:-16}
+    DB_MAX_POOL_SIZE: ${DB_MAX_POOL_SIZE:-64}
+    DB_ACQUIRE_CONNECTION_TIMEOUT: ${DB_ACQUIRE_CONNECTION_TIMEOUT:-60000}
+    REDIS_HOST: nostream-cache
+    REDIS_PORT: 6379
+    REDIS_USER: default
+    REDIS_PASSWORD: ${REDIS_PASSWORD}
+    READ_REPLICA_ENABLED: 'false'
+    # Required for blue/green; do not inherit RELAY_BROADCAST_FANOUT=false from bootstrap .env
+    RELAY_BROADCAST_FANOUT: 'true'
+    RELAY_BROADCAST_STREAM_KEY: ${RELAY_BROADCAST_STREAM_KEY:-nostream:relay:broadcast}
+    WORKER_COUNT: ${WORKER_COUNT:-2}
+    WS_DRAIN_TIMEOUT_MS: ${WS_DRAIN_TIMEOUT_MS:-30000}
+  user: node:node
+  volumes:
+    - ${PWD}/.nostr:/home/node/.nostr
+  depends_on:
+    nostream-cache:
+      condition: service_healthy
+    nostream-db:
+      condition: service_healthy
+    nostream-migrate:
+      condition: service_completed_successfully
+  restart: on-failure
+  stop_grace_period: ${STOP_GRACE_PERIOD:-45s}
+  networks:
+    - nostream_haproxy
+  # Gates `up --wait` during rolling recreate, so the next relay is only
+  # replaced once this one serves traffic.
+  healthcheck:
+    test:
+      [
+        'CMD-SHELL',
+        "node -e \"fetch('http://127.0.0.1:8008/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+      ]
+    interval: 5s
+    timeout: 5s
+    retries: 6
+    start_period: 60s
+
+services:
+  haproxy:
+    image: haproxy:3.0-alpine
+    container_name: nostream-haproxy
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - 127.0.0.1:8008:8008
+    depends_on:
+      - nostream-blue
+      - nostream-green
+    restart: on-failure
+    networks:
+      nostream_haproxy:
+        ipv4_address: 172.28.0.2
+
+  nostream-blue:
+    <<: *nostream-relay
+    container_name: nostream-blue
+
+  nostream-green:
+    <<: *nostream-relay
+    container_name: nostream-green
+
+  nostream-db:
+    image: postgres:15
+    container_name: nostream-db
+    networks:
+      - nostream_haproxy
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ${PWD}/.nostr/data:/var/lib/postgresql/data
+      - ${PWD}/.nostr/db-logs:/var/log/postgresql
+      - ${PWD}/postgresql.conf:/postgresql.conf
+    command: postgres -c 'config_file=/postgresql.conf'
+    restart: always
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 360s
+
+  nostream-cache:
+    image: redis:7.0.5-alpine3.16
+    container_name: nostream-cache
+    networks:
+      - nostream_haproxy
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - cache:/data
+    command: sh -c 'redis-server --loglevel warning --requirepass "$$REDIS_PASSWORD"'
+    restart: always
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  nostream-migrate:
+    image: ghcr.io/cameri/nostream:main
+    pull_policy: never
+    container_name: nostream-migrate
+    networks:
+      - nostream_haproxy
+    user: node:node
+    command: ['node_modules/.bin/knex', 'migrate:latest']
+    environment:
+      DB_HOST: nostream-db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+    depends_on:
+      nostream-db:
+        condition: service_healthy
+
+volumes:
+  cache:
