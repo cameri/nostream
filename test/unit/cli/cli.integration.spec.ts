@@ -320,6 +320,44 @@ describe('cli integration (spawn)', function () {
     expect(JSON.parse(configGetResult.stdout)).to.equal(false)
   })
 
+  // Regression for #739/#740: an unreachable DB (packets silently dropped, not
+  // refused) left knex's pool unable to close its underlying socket, keeping
+  // these one-shot CLI processes alive indefinitely instead of failing within
+  // their own configured timeout. 10.255.255.1 is a documented TEST-NET-1
+  // address that reliably drops packets rather than refusing the connection,
+  // which is the specific failure shape that exposed the hang (a host that
+  // actively refuses, e.g. connection reset, does not).
+  const UNREACHABLE_DB_ENV = {
+    DB_URI: undefined,
+    DB_HOST: '10.255.255.1',
+    DB_PORT: '5432',
+    DB_USER: 'nostream',
+    DB_PASSWORD: 'nostream',
+    DB_NAME: 'nostream',
+  }
+
+  it('exits promptly with a null event count when the database is unreachable during info --json', async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-unreachable-db-info-'))
+    const startedAt = Date.now()
+
+    const result = await runCli(['info', '--json'], { NOSTR_CONFIG_DIR: configDir, ...UNREACHABLE_DB_ENV })
+
+    expect(Date.now() - startedAt).to.be.lessThan(10000)
+    expect(result.code).to.equal(0)
+    const payload = JSON.parse(result.stdout)
+    expect(payload.runtime.eventCount).to.equal(null)
+  })
+
+  it('exits promptly instead of hanging when the database is unreachable during invite create', async () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-unreachable-db-invite-'))
+    const startedAt = Date.now()
+
+    const result = await runCli(['invite', 'create'], { NOSTR_CONFIG_DIR: configDir, ...UNREACHABLE_DB_ENV })
+
+    expect(Date.now() - startedAt).to.be.lessThan(10000)
+    expect(result.code).to.equal(1)
+  })
+
   it('prints json errors for read failures in json mode', async () => {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-cli-json-error-'))
 
