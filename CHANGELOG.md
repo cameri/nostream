@@ -1,5 +1,27 @@
 # nostream
 
+## 3.2.0
+
+### Minor Changes
+
+- [#777](https://github.com/cameri/nostream/pull/777) [`3ea816c`](https://github.com/cameri/nostream/commit/3ea816cce773892f064401ae5d0097ade1bda12e) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(deploy): add HAProxy blue/green compose stack
+
+  Two relays behind HAProxy with `/readyz` health checks and `option redispatch`, plus a rolling recreate script that replaces one relay at a time for zero-downtime image updates. Optional Redis stream fan-out (`RELAY_BROADCAST_FANOUT`) lets both relays share live WebSocket broadcasts while workers keep using cluster `process.send`.
+
+- [#788](https://github.com/cameri/nostream/pull/788) [`ce368e8`](https://github.com/cameri/nostream/commit/ce368e811d634c0fbe1d02de038ffc317ee20841) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat: execute hide action for actionable NIP-56 reports
+
+  Adds `nip56.hideActionableReports` (default `false`): when true, events matching an `actionable`
+  report (a trusted-moderator report against a valid target) are excluded from REQ/COUNT results. A
+  pubkey-targeted report hides every event from that pubkey; an event-targeted report hides just that
+  event. Requires `nip56.enabled` to have any effect. Previously an actionable report was only ever
+  recorded, never acted on.
+
+### Patch Changes
+
+- [#740](https://github.com/cameri/nostream/pull/740) [`b68919d`](https://github.com/cameri/nostream/commit/b68919dd9edeed2d458b4288ad091bd80d17934f) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(cli): stop `nostream info` and `nostream invite create` from hanging indefinitely when the database is unreachable
+
+- [#792](https://github.com/cameri/nostream/pull/792) [`29dbed8`](https://github.com/cameri/nostream/commit/29dbed86389887135e9105627a6d6b86de11706e) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - fix: match filters with several tag names and apply limit per filter
+
 ## 3.1.0
 
 ### Minor Changes
