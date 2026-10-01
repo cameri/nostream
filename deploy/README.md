@@ -108,10 +108,13 @@ Use the relay HTTP port (default `8008`) for deploy and load-balancer probes:
 | Endpoint   | Type       | Behavior                                                 | Typical use                   |
 |------------|------------|----------------------------------------------------------|-------------------------------|
 | `/healthz` | Liveness   | Always `200 OK` if the process is running                | Restart unhealthy containers  |
-| `/readyz`  | Readiness  | `200` when Postgres and Redis respond; `503` otherwise   | HAProxy blue/green cutover    |
+| `/readyz`  | Readiness  | `200` when Postgres and Redis respond; `503` otherwise. When `RELAY_BROADCAST_FANOUT=true` (HAProxy stack), fan-out must also be ready or `/readyz` is `503`. | HAProxy blue/green cutover    |
 
 `/readyz` is unauthenticated and intended for infrastructure. It reuses the same
 Postgres and Redis checks as `/admin/health` without requiring admin auth.
+When fan-out is enabled, the JSON body includes `relayBroadcast.ok` so a backend
+that lost Redis stream fan-out is drained by HAProxy instead of serving half of
+live subscribers.
 Each dependency ping uses the default 3s timeout (`ADMIN_DEPENDENCY_PING_TIMEOUT_MS`).
 Set your load balancer check timeout above that (for example HAProxy
 `timeout check 5s`) so slow-but-healthy backends do not flap during probes.
@@ -178,13 +181,28 @@ cd /opt/nostream
 docker compose down   # single-relay stack, if it was running
 ```
 
-Install alongside `.env` and `postgresql.conf`, then start:
+Install alongside `.env` and `postgresql.conf`, then validate and start:
 
 ```bash
 cp deploy/docker-compose.haproxy.yml deploy/rolling-relay-recreate.sh /opt/nostream/
 cp -r deploy/haproxy /opt/nostream/
 chmod +x /opt/nostream/rolling-relay-recreate.sh
 cd /opt/nostream
+```
+
+`docker compose config` only checks YAML merge syntax. Validate the HAProxy file
+with the same image the stack uses (`haproxy:3.0-alpine`) before `up -d`:
+
+```bash
+docker run --rm \
+  -v "$(pwd)/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro" \
+  haproxy:3.0-alpine \
+  haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
+```
+
+Expect `Configuration file is valid` and exit 0. Then start:
+
+```bash
 docker compose -f docker-compose.haproxy.yml up -d
 curl -s http://127.0.0.1:8008/readyz
 ```
