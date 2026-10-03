@@ -193,6 +193,7 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
           })
 
         const remainingTimeoutMs = (): number => Math.max(0, timeoutMs - (Date.now() - startedAt))
+        const phaseTimeoutMs = (): number => Math.max(500, Math.min(4_000, remainingTimeoutMs()))
 
         const authenticateIfNeeded = async (): Promise<void> => {
           const privateKey = options?.monitorPrivateKey?.trim()
@@ -206,7 +207,7 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
 
           const authResponse = await waitForMessage(
             (message) => message[0] === 'OK' && message[1] === authEvent.id,
-            remainingTimeoutMs(),
+            phaseTimeoutMs(),
           )
 
           if (authResponse[2] !== true) {
@@ -223,7 +224,7 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
               (message) =>
                 (message[0] === 'COUNT' && message[1] === PROBE_SUBSCRIPTION_ID) ||
                 (message[0] === 'CLOSED' && message[1] === PROBE_SUBSCRIPTION_ID),
-              remainingTimeoutMs(),
+              phaseTimeoutMs(),
             )
 
             if (response[0] === 'CLOSED' && isAuthRequiredMessage(String(response[2] ?? ''))) {
@@ -232,17 +233,27 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
             }
 
             if (response[0] !== 'COUNT') {
-              throw new Error(`Unexpected read probe response: ${JSON.stringify(response)}`)
+              return undefined
             }
 
             return Date.now() - readStartedAt
           }
 
-          let rtt = await runCount()
+          let rtt: number | undefined
+
+          try {
+            rtt = await runCount()
+          } catch {
+            return undefined
+          }
 
           if (rtt === undefined && nip42AuthRequired && options?.monitorPrivateKey?.trim()) {
-            await authenticateIfNeeded()
-            rtt = await runCount()
+            try {
+              await authenticateIfNeeded()
+              rtt = await runCount()
+            } catch {
+              return undefined
+            }
           }
 
           return rtt
@@ -262,7 +273,7 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
 
             const response = await waitForMessage(
               (message) => message[0] === 'OK' && message[1] === writeEvent.id,
-              remainingTimeoutMs(),
+              phaseTimeoutMs(),
             )
 
             if (response[2] !== true && isAuthRequiredMessage(String(response[3] ?? ''))) {
@@ -271,17 +282,27 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
             }
 
             if (response[2] !== true) {
-              throw new Error(`Write probe rejected: ${String(response[3] ?? '')}`)
+              return undefined
             }
 
             return Date.now() - writeStartedAt
           }
 
-          let rtt = await runWrite()
+          let rtt: number | undefined
+
+          try {
+            rtt = await runWrite()
+          } catch {
+            return undefined
+          }
 
           if (rtt === undefined && nip42AuthRequired) {
-            await authenticateIfNeeded()
-            rtt = await runWrite()
+            try {
+              await authenticateIfNeeded()
+              rtt = await runWrite()
+            } catch {
+              return undefined
+            }
           }
 
           return rtt
@@ -293,22 +314,33 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
           void (async () => {
             try {
               await waitForOptionalAuthChallenge(remainingTimeoutMs())
-
-              const rttReadMs = await measureReadRtt()
-              const rttWriteMs = await measureWriteRtt()
-
-              finish(undefined, {
-                rttOpenMs: openAt! - startedAt,
-                rttReadMs,
-                rttWriteMs,
-                nip42AuthRequired: nip42AuthRequired || undefined,
-                nip42ChallengeObserved: authChallenge ? true : undefined,
-                address: target.wsUrl,
-              })
-            } catch (error: unknown) {
-              const message = error instanceof Error ? error.message : String(error)
-              finish(new Error(message))
+            } catch {
+              // Best-effort: open RTT is still useful if optional auth wait fails.
             }
+
+            let rttReadMs: number | undefined
+            let rttWriteMs: number | undefined
+
+            try {
+              rttReadMs = await measureReadRtt()
+            } catch {
+              rttReadMs = undefined
+            }
+
+            try {
+              rttWriteMs = await measureWriteRtt()
+            } catch {
+              rttWriteMs = undefined
+            }
+
+            finish(undefined, {
+              rttOpenMs: openAt! - startedAt,
+              rttReadMs,
+              rttWriteMs,
+              nip42AuthRequired: nip42AuthRequired || undefined,
+              nip42ChallengeObserved: authChallenge ? true : undefined,
+              address: target.wsUrl,
+            })
           })()
         })
 
@@ -317,6 +349,16 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
         })
 
         setTimeout(() => {
+          if (openAt !== undefined) {
+            finish(undefined, {
+              rttOpenMs: openAt - startedAt,
+              nip42AuthRequired: nip42AuthRequired || undefined,
+              nip42ChallengeObserved: authChallenge ? true : undefined,
+              address: target.wsUrl,
+            })
+            return
+          }
+
           finish(new Error(`WebSocket probe timed out after ${timeoutMs}ms`))
         }, timeoutMs).unref()
       }),
