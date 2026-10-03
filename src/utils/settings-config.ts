@@ -303,7 +303,7 @@ export const loadDefaults = (): Settings => {
   return yaml.load(defaultsRaw) as Settings
 }
 
-export const loadUserSettings = (): Settings => {
+export const loadUserSettingsFromFiles = (): Settings => {
   ensureSettingsExists()
   const settingsPath = getSettingsFilePath()
 
@@ -321,6 +321,17 @@ export const loadUserSettings = (): Settings => {
   }
 
   return {} as Settings
+}
+
+export const loadUserSettings = (): Settings => {
+  if (process.env.SETTINGS_BACKEND === 'db') {
+    // Lazy import avoids a circular dependency with settings-store bootstrap.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getDbOverridesCache } = require('./settings-store') as typeof import('./settings-store')
+    return getDbOverridesCache()
+  }
+
+  return loadUserSettingsFromFiles()
 }
 
 export const loadMergedSettings = (): Settings => {
@@ -364,6 +375,40 @@ export const filterSettingsAgainstDefaults = (settings: unknown, defaults: unkno
   }
 
   return settings
+}
+
+export const flattenSettingsToPaths = (
+  value: unknown,
+  prefix = '',
+): Array<{ path: string; value: unknown }> => {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => {
+      const nextPrefix = prefix ? `${prefix}[${index}]` : `[${index}]`
+      return flattenSettingsToPaths(entry, nextPrefix)
+    })
+  }
+
+  if (isPlainObject(value)) {
+    const entries = Object.entries(value)
+    if (entries.length === 0 && prefix) {
+      return [{ path: prefix, value: {} }]
+    }
+
+    return entries.flatMap(([key, entry]) => {
+      const nextPrefix = prefix ? `${prefix}.${key}` : key
+      if (isPlainObject(entry) || Array.isArray(entry)) {
+        return flattenSettingsToPaths(entry, nextPrefix)
+      }
+
+      return [{ path: nextPrefix, value: entry }]
+    })
+  }
+
+  if (prefix) {
+    return [{ path: prefix, value }]
+  }
+
+  return []
 }
 
 export const saveSettings = (settings: Settings): void => {
@@ -428,7 +473,7 @@ export const listSettingsBackups = (): SettingsBackupInfo[] => {
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
-export const restoreSettingsBackup = (filename: string): Settings => {
+const loadValidatedSettingsBackup = (filename: string): Settings => {
   if (!isSafeBackupFilename(filename)) {
     throw new Error('Invalid backup filename')
   }
@@ -444,7 +489,15 @@ export const restoreSettingsBackup = (filename: string): Settings => {
     throw new Error(`Backup failed validation: ${issues.map((issue) => issue.path).join(', ')}`)
   }
 
-  saveSettings(restored)
+  return restored
+}
+
+export const restoreSettingsBackup = async (filename: string): Promise<Settings> => {
+  const restored = loadValidatedSettingsBackup(filename)
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { saveUserSettingsOverrides } = require('./settings-store') as typeof import('./settings-store')
+  await saveUserSettingsOverrides(restored)
   return restored
 }
 
