@@ -25,7 +25,8 @@ const addUniqueTarget = (targets: string[], seen: Set<string>, candidate: string
   targets.push(trimmed)
 }
 
-export const resolveProbeTargets = (settings: Settings): string[] => {
+/** Targets eligible for public kind 30166 publish (never includes mirroring.static peers). */
+export const resolvePublicProbeTargets = (settings: Settings): string[] => {
   const targets: string[] = []
   const seen = new Set<string>()
   const configured = settings.nip66?.targets?.map((target) => target.trim()).filter(Boolean) ?? []
@@ -36,6 +37,36 @@ export const resolveProbeTargets = (settings: Settings): string[] => {
     }
   } else {
     addUniqueTarget(targets, seen, settings.info?.relay_url)
+  }
+
+  return targets
+}
+
+export const resolvePublicProbeTargetKeys = (settings: Settings): Set<string> => {
+  const keys = new Set<string>()
+
+  for (const target of resolvePublicProbeTargets(settings)) {
+    try {
+      keys.add(normalizeRelayUrlForDTag(target))
+    } catch {
+      keys.add(target.toLowerCase())
+    }
+  }
+
+  return keys
+}
+
+/** All probe targets: public targets plus configured static mirrors (operator snapshot only). */
+export const resolveProbeTargets = (settings: Settings): string[] => {
+  const targets = resolvePublicProbeTargets(settings)
+  const seen = new Set<string>()
+
+  for (const target of targets) {
+    try {
+      seen.add(normalizeRelayUrlForDTag(target))
+    } catch {
+      seen.add(target.toLowerCase())
+    }
   }
 
   for (const mirror of settings.mirroring?.static ?? []) {

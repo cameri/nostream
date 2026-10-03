@@ -23,13 +23,35 @@ type NostrWireMessage = unknown[]
 const isAuthRequiredMessage = (message: string | undefined): boolean =>
   typeof message === 'string' && message.toLowerCase().includes('auth-required')
 
-const parseWireMessage = (raw: unknown): NostrWireMessage | undefined => {
-  if (typeof raw !== 'string') {
+export const wireMessagePayload = (raw: unknown): string | undefined => {
+  if (typeof raw === 'string') {
+    return raw
+  }
+
+  if (Buffer.isBuffer(raw)) {
+    return raw.toString('utf8')
+  }
+
+  if (Array.isArray(raw) && raw.length > 0 && raw.every((part) => Buffer.isBuffer(part))) {
+    return Buffer.concat(raw).toString('utf8')
+  }
+
+  if (raw instanceof ArrayBuffer) {
+    return Buffer.from(raw).toString('utf8')
+  }
+
+  return undefined
+}
+
+export const parseWireMessage = (raw: unknown): NostrWireMessage | undefined => {
+  const payload = wireMessagePayload(raw)
+
+  if (!payload) {
     return undefined
   }
 
   try {
-    const parsed = JSON.parse(raw) as unknown
+    const parsed = JSON.parse(payload) as unknown
     return Array.isArray(parsed) ? parsed : undefined
   } catch {
     return undefined
@@ -107,7 +129,6 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
 
           if (message?.[0] === 'AUTH' && typeof message[1] === 'string') {
             authChallenge = message[1]
-            nip42AuthRequired = true
           }
         }
 

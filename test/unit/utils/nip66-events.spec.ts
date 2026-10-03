@@ -8,7 +8,9 @@ import {
   buildMonitorProfileEvent,
   buildMonitorRelayListEvent,
   buildRelayDiscoveryEvent,
+  MAX_RELAY_DISCOVERY_CONTENT_LENGTH,
   normalizeRelayUrlForDTag,
+  relayDiscoveryContentFromNip11,
 } from '../../../src/utils/nip66-events'
 import { MIN_PROBE_INTERVAL_SECONDS } from '../../../src/utils/nip66-schedule'
 
@@ -48,6 +50,11 @@ const storedProbeResult = (relayUrl = 'wss://Relay.Example.com:443/'): StoredPro
   }) as StoredProbeResult
 
 describe('nip66-events', () => {
+  it('drops oversized NIP-11 documents from discovery content', () => {
+    const oversized = 'x'.repeat(MAX_RELAY_DISCOVERY_CONTENT_LENGTH + 1)
+    expect(relayDiscoveryContentFromNip11(oversized)).to.equal('')
+  })
+
   it('normalizes relay URLs for the d tag', () => {
     expect(normalizeRelayUrlForDTag('wss://Relay.Example.com:443/')).to.equal('wss://relay.example.com/')
     expect(normalizeRelayUrlForDTag('ws://localhost:18808')).to.equal('ws://localhost:18808/')

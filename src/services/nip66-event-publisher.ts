@@ -13,7 +13,8 @@ import {
   buildMonitorRelayListEvent,
   buildRelayDiscoveryEvent,
 } from '../utils/nip66-events'
-import { filterValidProbeTargets } from '../utils/relay-probe-targets'
+import { normalizeRelayUrlForDTag } from '../utils/nip66-events'
+import { filterValidProbeTargets, resolvePublicProbeTargetKeys } from '../utils/relay-probe-targets'
 
 const logger = createLogger('nip66-event-publisher')
 
@@ -45,11 +46,31 @@ export class Nip66EventPublisher implements INip66EventPublisher {
 
     await this.persistSignedEvent(buildMonitorAnnouncementEvent(settings, monitorPubkey, createdAt), privkey)
 
+    const publishableTargetKeys = resolvePublicProbeTargetKeys(settings)
+    let publishedTargets = 0
+
     for (const result of snapshot.results) {
+      let targetKey: string
+
+      try {
+        targetKey = normalizeRelayUrlForDTag(result.target.relayUrl)
+      } catch {
+        continue
+      }
+
+      if (!publishableTargetKeys.has(targetKey)) {
+        continue
+      }
+
       await this.persistSignedEvent(buildRelayDiscoveryEvent(result, monitorPubkey, createdAt), privkey)
+      publishedTargets += 1
     }
 
-    logger('published NIP-66 events for %d probe target(s)', snapshot.results.length)
+    logger(
+      'published NIP-66 discovery events for %d public probe target(s) (%d probed overall)',
+      publishedTargets,
+      snapshot.results.length,
+    )
   }
 
   private async ensureBootstrap(

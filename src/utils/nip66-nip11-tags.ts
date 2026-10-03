@@ -27,7 +27,10 @@ export const appendNip11DiscoveryTags = (tags: Tag[], result: StoredProbeResult)
     requirementTag('auth', limitation?.authRequired),
     requirementTag('writes', limitation?.restrictedWrites),
     requirementTag('payment', limitation?.paymentRequired),
-    requirementTag('pow', (limitation?.minPowDifficulty ?? 0) > 0),
+    requirementTag(
+      'pow',
+      limitation?.minPowDifficulty === undefined ? undefined : limitation.minPowDifficulty > 0,
+    ),
   ].filter((tag): tag is Tag => tag !== undefined)
 
   tags.push(...requirementTags)

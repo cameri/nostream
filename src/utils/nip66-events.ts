@@ -7,6 +7,21 @@ import { geohashSchema } from '../schemas/base-schema'
 import { appendNip11DiscoveryTags, appendWsProbeDiscoveryTags } from './nip66-nip11-tags'
 import { getEffectiveProbeIntervalSeconds } from './nip66-schedule'
 
+/** Matches default kind 30166 content limit in resources/default-settings.yaml. */
+export const MAX_RELAY_DISCOVERY_CONTENT_LENGTH = 102_400
+
+export const relayDiscoveryContentFromNip11 = (rawDocument?: string): string => {
+  if (!rawDocument) {
+    return ''
+  }
+
+  if (rawDocument.length > MAX_RELAY_DISCOVERY_CONTENT_LENGTH) {
+    return ''
+  }
+
+  return rawDocument
+}
+
 const appendDnsProbeTags = (tags: Tag[], dns: StoredProbeResult['dns']): void => {
   if (dns.status === 'skipped') {
     tags.push(['dns', 'skipped'])
@@ -83,7 +98,7 @@ export const buildRelayDiscoveryEvent = (
 
   const nip11Content =
     result.nip11.status === 'ok' && typeof result.nip11.data?.rawDocument === 'string'
-      ? result.nip11.data.rawDocument
+      ? relayDiscoveryContentFromNip11(result.nip11.data.rawDocument)
       : ''
 
   return {

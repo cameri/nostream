@@ -225,7 +225,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip66.dnsCacheTtlSeconds                    | DNS cache TTL in seconds for repeated probe lookups of the same hostname. Defaults to 300. |
 | nip66.enabled                               | Enable NIP-66 relay monitoring. When true, starts a `relay-monitor` cluster worker that probes targets on an interval and stores the latest snapshot in Redis. Defaults to false. |
 | nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Defaults to 3600. |
-| nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. Mirror addresses from `mirroring.static[]` are always probed in addition. |
+| nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. Addresses from `mirroring.static[]` are probed for the admin snapshot but are not published as kind `30166` discovery events. |
 | nip66.geohash                               | Optional NIP-52 geohash describing this monitor's network vantage. Published on kind `10166` monitor announcements when set. |
 | nip66.timeouts.dnsMs                        | DNS probe timeout in milliseconds. Defaults to 10000. |
 | nip66.timeouts.nip11Ms                      | NIP-11 fetch timeout in milliseconds. Defaults to 10000. |

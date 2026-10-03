@@ -116,13 +116,9 @@ export const createNodeNip11Fetcher = (): Nip11Fetcher => ({
       }
 
       const limitation = parsed.data.limitation
-      const acceptedKinds = new Set<number>(parsed.data.accepted_kinds ?? [])
-
-      for (const publicationFee of parsed.data.fees?.publication ?? []) {
-        for (const kind of publicationFee.kinds ?? []) {
-          acceptedKinds.add(kind)
-        }
-      }
+      const acceptedKinds = parsed.data.accepted_kinds?.length
+        ? [...parsed.data.accepted_kinds].sort((a, b) => a - b)
+        : undefined
 
       return {
         statusCode: response.status,
@@ -137,7 +133,7 @@ export const createNodeNip11Fetcher = (): Nip11Fetcher => ({
               minPowDifficulty: limitation.min_pow_difficulty,
             }
           : undefined,
-        acceptedKinds: acceptedKinds.size > 0 ? [...acceptedKinds].sort((a, b) => a - b) : undefined,
+        acceptedKinds,
         rawDocument: JSON.stringify(parsed.data),
       }
     } catch (error: unknown) {
