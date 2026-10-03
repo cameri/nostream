@@ -21,7 +21,14 @@ const makeClients = (overrides: Record<string, unknown> = {}) => ({
       daysUntilExpiry: 365,
     }),
   },
-  ws: { measureOpenRtt: async () => 42 },
+  ws: {
+    measureProtocol: async () => ({
+      rttOpenMs: 42,
+      rttReadMs: 55,
+      rttWriteMs: 67,
+      address: 'wss://relay.example.com',
+    }),
+  },
   nip11: {
     fetch: async () => ({
       statusCode: 200,

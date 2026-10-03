@@ -29,8 +29,22 @@ const storedProbeResult = (relayUrl = 'wss://Relay.Example.com:443/'): StoredPro
     checkedAt: '2026-01-01T00:00:00.000Z',
     dns: { status: 'ok', durationMs: 1 },
     tls: { status: 'ok', durationMs: 1, data: { valid: true, issuer: 'Test CA' } },
-    wsRtt: { status: 'ok', durationMs: 12, data: { rttOpenMs: 234, address: '127.0.0.1:443' } },
-    nip11: { status: 'ok', durationMs: 1 },
+    wsRtt: {
+      status: 'ok',
+      durationMs: 12,
+      data: { rttOpenMs: 234, rttReadMs: 300, rttWriteMs: 320, address: '127.0.0.1:443' },
+    },
+    nip11: {
+      status: 'ok',
+      durationMs: 1,
+      data: {
+        statusCode: 200,
+        supportedNips: [1, 11],
+        limitation: { authRequired: false, restrictedWrites: false, paymentRequired: false, minPowDifficulty: 0 },
+        acceptedKinds: [1, 7],
+        rawDocument: '{"name":"relay"}',
+      },
+    },
   }) as StoredProbeResult
 
 describe('nip66-events', () => {
@@ -47,6 +61,16 @@ describe('nip66-events', () => {
     expect(event.tags).to.deep.include(['d', 'wss://relay.example.com/'])
     expect(event.tags).to.deep.include(['n', 'clearnet'])
     expect(event.tags).to.deep.include(['rtt-open', '234'])
+    expect(event.tags).to.deep.include(['rtt-read', '300'])
+    expect(event.tags).to.deep.include(['rtt-write', '320'])
+    expect(event.tags).to.deep.include(['N', '1'])
+    expect(event.tags).to.deep.include(['N', '11'])
+    expect(event.tags).to.deep.include(['R', '!auth'])
+    expect(event.tags).to.deep.include(['R', '!writes'])
+    expect(event.tags).to.deep.include(['R', '!payment'])
+    expect(event.tags).to.deep.include(['R', '!pow'])
+    expect(event.tags).to.deep.include(['k', '1'])
+    expect(event.content).to.equal('{"name":"relay"}')
     expect(event.tags).to.deep.include(['dns', 'resolved'])
     expect(event.tags).to.deep.include(['ssl', 'valid'])
   })
@@ -73,7 +97,12 @@ describe('nip66-events', () => {
     expect(event.kind).to.equal(EventKinds.RELAY_MONITOR_ANNOUNCEMENT)
     expect(event.tags).to.deep.include(['frequency', String(MIN_PROBE_INTERVAL_SECONDS)])
     expect(event.tags).to.deep.include(['timeout', 'open', '3000'])
+    expect(event.tags).to.deep.include(['timeout', 'read', '3000'])
+    expect(event.tags).to.deep.include(['timeout', 'write', '3000'])
     expect(event.tags).to.deep.include(['timeout', 'nip11', '4000'])
+    expect(event.tags).to.deep.include(['c', 'read'])
+    expect(event.tags).to.deep.include(['c', 'write'])
+    expect(event.tags).to.deep.include(['c', 'auth'])
     expect(event.tags).to.deep.include(['c', 'dns'])
   })
 
@@ -82,7 +111,8 @@ describe('nip66-events', () => {
     const relayList = buildMonitorRelayListEvent('wss://relay.example.com', monitorPubkey, 1)
 
     expect(profile.kind).to.equal(EventKinds.SET_METADATA)
-    expect(JSON.parse(profile.content).name).to.equal('Nostream Relay Monitor')
+    expect(JSON.parse(profile.content).name).to.equal('Nostream self-hosted relay monitor')
+    expect(JSON.parse(profile.content).about).to.include('not authoritative')
 
     expect(relayList.kind).to.equal(EventKinds.RELAY_LIST)
     expect(relayList.tags).to.deep.equal([

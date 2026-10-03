@@ -517,7 +517,23 @@
         },
         { tlsDaysUntilExpiry },
       )
-      const wsRtt = formatProbeCheckDetail(result.wsRtt, (data) => `${data.rttOpenMs} ms`)
+      const wsRtt = formatProbeCheckDetail(result.wsRtt, (data) => {
+        const parts = [`open ${data.rttOpenMs} ms`]
+
+        if (typeof data.rttReadMs === 'number') {
+          parts.push(`read ${data.rttReadMs} ms`)
+        }
+
+        if (typeof data.rttWriteMs === 'number') {
+          parts.push(`write ${data.rttWriteMs} ms`)
+        }
+
+        if (data.nip42AuthRequired === true) {
+          parts.push('NIP-42 auth required')
+        }
+
+        return parts.join(' · ')
+      })
       const nip11 = formatProbeCheckDetail(result.nip11, (data) => {
         const name = data?.name ? ` ${data.name}` : ''
         const supportedNips = Array.isArray(data?.supportedNips) ? data.supportedNips : null

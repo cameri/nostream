@@ -7,11 +7,33 @@ import { Nip11Result } from './types'
 const MAX_RESPONSE_BYTES = 256 * 1024
 const MAX_REDIRECTS = 1
 
+const nip11LimitationSchema = z
+  .object({
+    auth_required: z.boolean().optional(),
+    restricted_writes: z.boolean().optional(),
+    payment_required: z.boolean().optional(),
+    min_pow_difficulty: z.number().optional(),
+  })
+  .passthrough()
+
 const nip11DocumentSchema = z
   .object({
     name: z.string().optional(),
     pubkey: pubkeySchema.optional(),
     supported_nips: z.array(z.number().int().positive()).optional(),
+    limitation: nip11LimitationSchema.optional(),
+    fees: z
+      .object({
+        publication: z
+          .array(
+            z.object({
+              kinds: z.array(z.number().int()).optional(),
+            }),
+          )
+          .optional(),
+      })
+      .optional(),
+    accepted_kinds: z.array(z.number().int()).optional(),
   })
   .passthrough()
 
@@ -93,11 +115,30 @@ export const createNodeNip11Fetcher = (): Nip11Fetcher => ({
         throw new Error(`invalid NIP-11 document: ${reason}`)
       }
 
+      const limitation = parsed.data.limitation
+      const acceptedKinds = new Set<number>(parsed.data.accepted_kinds ?? [])
+
+      for (const publicationFee of parsed.data.fees?.publication ?? []) {
+        for (const kind of publicationFee.kinds ?? []) {
+          acceptedKinds.add(kind)
+        }
+      }
+
       return {
         statusCode: response.status,
         name: parsed.data.name,
         pubkey: parsed.data.pubkey,
         supportedNips: parsed.data.supported_nips,
+        limitation: limitation
+          ? {
+              authRequired: limitation.auth_required,
+              restrictedWrites: limitation.restricted_writes,
+              paymentRequired: limitation.payment_required,
+              minPowDifficulty: limitation.min_pow_difficulty,
+            }
+          : undefined,
+        acceptedKinds: acceptedKinds.size > 0 ? [...acceptedKinds].sort((a, b) => a - b) : undefined,
+        rawDocument: JSON.stringify(parsed.data),
       }
     } catch (error: unknown) {
       const axiosError = error as AxiosError

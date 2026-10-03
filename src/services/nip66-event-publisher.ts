@@ -72,7 +72,7 @@ export class Nip66EventPublisher implements INip66EventPublisher {
       return
     }
 
-    await this.persistSignedEvent(buildMonitorProfileEvent(monitorPubkey, createdAt), privkey)
+    await this.persistSignedEvent(buildMonitorProfileEvent(monitorPubkey, createdAt, settings), privkey)
     await this.persistSignedEvent(buildMonitorRelayListEvent(relayUrl, monitorPubkey, createdAt), privkey)
 
     await this.cache.setKey(NIP66_MONITOR_BOOTSTRAPPED_KEY, monitorPubkey, NIP66_MONITOR_BOOTSTRAP_TTL_SECONDS)

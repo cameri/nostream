@@ -347,6 +347,10 @@ export interface Nip66Settings {
    * Defaults to 300.
    */
   dnsCacheTtlSeconds: number
+  /**
+   * Optional NIP-52 geohash describing this monitor's network vantage for kind 10166 events.
+   */
+  geohash?: string
 }
 
 export interface Nip05Settings {

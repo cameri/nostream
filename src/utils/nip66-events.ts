@@ -3,6 +3,8 @@ import { Tag } from '../@types/base'
 import { StoredProbeResult } from '../@types/relay-probe-snapshot'
 import { Settings } from '../@types/settings'
 import { EventKinds, EventTags } from '../constants/base'
+import { geohashSchema } from '../schemas/base-schema'
+import { appendNip11DiscoveryTags, appendWsProbeDiscoveryTags } from './nip66-nip11-tags'
 import { getEffectiveProbeIntervalSeconds } from './nip66-schedule'
 
 const appendDnsProbeTags = (tags: Tag[], dns: StoredProbeResult['dns']): void => {
@@ -74,18 +76,21 @@ export const buildRelayDiscoveryEvent = (
     ['n', result.target.networkType],
   ]
 
-  if (result.wsRtt.status === 'ok' && typeof result.wsRtt.data?.rttOpenMs === 'number') {
-    tags.push(['rtt-open', String(result.wsRtt.data.rttOpenMs)])
-  }
-
+  appendWsProbeDiscoveryTags(tags, result)
+  appendNip11DiscoveryTags(tags, result)
   appendDnsProbeTags(tags, result.dns)
   appendTlsProbeTags(tags, result.tls)
+
+  const nip11Content =
+    result.nip11.status === 'ok' && typeof result.nip11.data?.rawDocument === 'string'
+      ? result.nip11.data.rawDocument
+      : ''
 
   return {
     kind: EventKinds.RELAY_DISCOVERY,
     pubkey: monitorPubkey,
     created_at: createdAt,
-    content: '',
+    content: nip11Content,
     tags,
   }
 }
@@ -100,14 +105,25 @@ export const buildMonitorAnnouncementEvent = (
 
   const tags: Tag[] = [
     ['frequency', String(getEffectiveProbeIntervalSeconds(settings))],
-    ['c', 'ws'],
+    ['c', 'open'],
+    ['c', 'read'],
+    ['c', 'write'],
+    ['c', 'auth'],
     ['c', 'nip11'],
     ['c', 'ssl'],
     ['c', 'dns'],
   ]
 
+  const geohash = settings.nip66?.geohash?.trim()
+
+  if (geohash && geohashSchema.safeParse(geohash).success) {
+    tags.push(['g', geohash])
+  }
+
   if (timeouts) {
     tags.push(['timeout', 'open', String(timeouts.wsRttMs)])
+    tags.push(['timeout', 'read', String(timeouts.wsRttMs)])
+    tags.push(['timeout', 'write', String(timeouts.wsRttMs)])
     tags.push(['timeout', 'nip11', String(timeouts.nip11Ms)])
     tags.push(['timeout', 'dns', String(timeouts.dnsMs)])
     tags.push(['timeout', 'ssl', String(timeouts.tlsMs)])
@@ -122,14 +138,21 @@ export const buildMonitorAnnouncementEvent = (
   }
 }
 
-export const buildMonitorProfileEvent = (monitorPubkey: string, createdAt: number): UnidentifiedEvent => {
+export const buildMonitorProfileEvent = (
+  monitorPubkey: string,
+  createdAt: number,
+  settings?: Settings,
+): UnidentifiedEvent => {
+  const relayName = settings?.info?.name?.trim()
+
   return {
     kind: EventKinds.SET_METADATA,
     pubkey: monitorPubkey,
     created_at: createdAt,
     content: JSON.stringify({
-      name: 'Nostream Relay Monitor',
-      about: 'Automated NIP-66 relay health monitor for this Nostream instance.',
+      name: relayName ? `${relayName} (self-hosted monitor)` : 'Nostream self-hosted relay monitor',
+      about:
+        'Self-hosted NIP-66 monitor for this Nostream relay. Measurements reflect this relay’s network vantage only and are not authoritative for the wider network.',
     }),
     tags: [],
   }
