@@ -101,6 +101,8 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
         const socket = new WebSocket(target.wsUrl, { handshakeTimeout: timeoutMs })
         let settled = false
         let openAt: number | undefined
+        let rttReadMs: number | undefined
+        let rttWriteMs: number | undefined
         let authChallenge: string | undefined
         let nip42AuthRequired = false
 
@@ -339,9 +341,6 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
               // Best-effort: open RTT is still useful if optional auth wait fails.
             }
 
-            let rttReadMs: number | undefined
-            let rttWriteMs: number | undefined
-
             try {
               rttReadMs = await measureReadRtt()
             } catch {
@@ -373,6 +372,8 @@ export const createNodeWebSocketProtocolConnector = (): WebSocketProtocolConnect
           if (openAt !== undefined) {
             finish(undefined, {
               rttOpenMs: openAt - startedAt,
+              rttReadMs,
+              rttWriteMs,
               nip42AuthRequired: nip42AuthRequired || undefined,
               nip42ChallengeObserved: authChallenge ? true : undefined,
               address: target.wsUrl,
