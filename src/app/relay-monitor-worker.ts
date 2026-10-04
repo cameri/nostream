@@ -7,6 +7,7 @@ import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 import { filterValidProbeTargets, resolveProbeTargets } from '../utils/relay-probe-targets'
 import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
 import { getEffectiveProbeIntervalSeconds, getProbeIntervalMs } from '../utils/nip66-schedule'
+import { getMonitorPrivateKey } from '../utils/monitor-identity'
 import { runProbe } from '../utils/relay-probe'
 import { ProbeOptions, ProbeResult } from '../utils/relay-probe/types'
 
@@ -16,10 +17,12 @@ export type RunProbeFn = (relayUrl: string, options?: ProbeOptions) => Promise<P
 
 export const buildProbeOptions = (settings: Settings): ProbeOptions => {
   const nip66 = settings.nip66
+  const monitorPrivateKey = getMonitorPrivateKey()
 
   return {
     timeouts: nip66?.timeouts,
     dnsCacheTtlSeconds: nip66?.dnsCacheTtlSeconds,
+    ...(monitorPrivateKey ? { monitorPrivateKey } : {}),
   }
 }
 
