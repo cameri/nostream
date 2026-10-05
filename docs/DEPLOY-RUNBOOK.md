@@ -42,11 +42,22 @@ are documented under
 - Host bootstrapped (`deploy/bootstrap.sh /opt/nostream`)
 - New relay image on the host (`docker pull` or `docker load`)
 - Shell access (`cd /opt/nostream`)
-- Optional: record the previous image ID for rollback
+- Before loading a new image or recreating containers, record the **running**
+  relay image (not `docker image inspect :main` after pull — that tag may already
+  point at the new image)
 
 ```bash
-docker image inspect ghcr.io/cameri/nostream:main --format '{{.Id}}' | tee /tmp/nostream-pre-deploy-image-id
+cd /opt/nostream
+RELAY_CID="$(docker compose ps -q nostream 2>/dev/null || true)"
+if [[ -n "$RELAY_CID" ]]; then
+  docker inspect "$RELAY_CID" --format '{{.Image}}' | tee /tmp/nostream-pre-deploy-image-id
+else
+  echo "warn: nostream is not running; save a known-good image tarball or ID manually" >&2
+fi
 ```
+
+HAProxy stack: capture from a running backend, e.g.
+`docker compose -f docker-compose.haproxy.yml ps -q nostream-blue`.
 
 ## Shared steps (both stacks)
 
@@ -69,18 +80,25 @@ On hosts that cannot reach GHCR over IPv4, use `docker save` / `docker load`. Se
 
 ## Single-relay deploy
 
-From a repository checkout (for scripts) or on the host:
+Bootstrap copies compose files to `/opt/nostream` but **not** `recreate-relay.sh`.
+Run the script from a **git checkout**, or install it once on the host:
 
 ```bash
+# From repository checkout:
 chmod +x deploy/recreate-relay.sh
 ./deploy/recreate-relay.sh /opt/nostream
+
+# Or on the host (after copying from the repo):
+cp /path/to/nostream/deploy/recreate-relay.sh /opt/nostream/
+chmod +x /opt/nostream/recreate-relay.sh
+/opt/nostream/recreate-relay.sh /opt/nostream
 ```
 
 Equivalent manual steps:
 
 ```bash
 cd /opt/nostream
-docker compose up --no-deps --force-recreate --abort-on-container-exit nostream-migrate
+docker compose up --no-deps --force-recreate --exit-code-from nostream-migrate nostream-migrate
 docker compose up -d --force-recreate --no-deps nostream
 ```
 
@@ -144,12 +162,22 @@ docker tag "$PREVIOUS_IMAGE" ghcr.io/cameri/nostream:main
 
 Or `docker load -i /path/to/nostream-main-backup.tar.gz`.
 
-### 3. Recreate on the old image
+### 3. Recreate on the old image (skip migrations)
 
-Use the same script as your stack (`recreate-relay.sh` or `rolling-relay-recreate.sh`).
+Do **not** run the migrator from a downgraded image against an already-upgraded
+database. Recreate the relay **without** migrations:
 
-Do **not** re-run migrations against a downgraded image unless you know the
-schema is backward compatible.
+Single-relay:
+
+```bash
+cd /opt/nostream
+SKIP_MIGRATE=1 /opt/nostream/recreate-relay.sh /opt/nostream
+# or from checkout: SKIP_MIGRATE=1 ./deploy/recreate-relay.sh /opt/nostream
+```
+
+HAProxy: run migrate only when moving **forward** on a new image. For rollback,
+retag the old image to `:main`, then replace relays with
+`rolling-relay-recreate.sh` (it does not re-run `nostream-migrate`).
 
 ## Troubleshooting
 

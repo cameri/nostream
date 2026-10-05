@@ -6,15 +6,18 @@ set -euo pipefail
 #
 # Usage:
 #   ./deploy/recreate-relay.sh [/opt/nostream]
+#   SKIP_MIGRATE=1 ./deploy/recreate-relay.sh /opt/nostream   # rollback: relay only
 #
-# Runs migrations, recreates nostream, and waits for /readyz. Does not pull
-# images — load the image first (manually or via the webhook pull stack).
+# Runs migrations (unless SKIP_MIGRATE=1), recreates nostream, and waits for
+# /readyz. Does not pull images — load the image first (manually or via the
+# webhook pull stack).
 
 TARGET="${1:-/opt/nostream}"
 RELAY_PORT="${RELAY_PORT:-8008}"
 READYZ_URL="http://127.0.0.1:${RELAY_PORT}/readyz"
 READYZ_RETRIES="${READYZ_RETRIES:-30}"
 READYZ_INTERVAL_SECONDS="${READYZ_INTERVAL_SECONDS:-2}"
+SKIP_MIGRATE="${SKIP_MIGRATE:-0}"
 
 if [[ ! -f "$TARGET/docker-compose.yml" ]]; then
   echo "error: $TARGET/docker-compose.yml not found — run deploy/bootstrap.sh first" >&2
@@ -23,8 +26,12 @@ fi
 
 cd "$TARGET"
 
-echo "Running migrations (nostream-migrate)..."
-docker compose up --no-deps --force-recreate --abort-on-container-exit nostream-migrate
+if [[ "$SKIP_MIGRATE" != "1" ]]; then
+  echo "Running migrations (nostream-migrate)..."
+  docker compose up --no-deps --force-recreate --exit-code-from nostream-migrate nostream-migrate
+else
+  echo "Skipping migrations (SKIP_MIGRATE=1)..."
+fi
 
 echo "Recreating relay (nostream)..."
 docker compose up -d --force-recreate --no-deps nostream
