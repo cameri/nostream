@@ -819,6 +819,40 @@
   margin-bottom: 0;
 }
 
+.network-health-mismatches {
+  border-top: 1px solid var(--panel-border);
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+}
+
+.network-health-mismatch-heading {
+  color: var(--label);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.network-health-mismatch-list {
+  display: grid;
+  gap: 0.35rem;
+  list-style: none;
+  padding-left: 0;
+}
+
+.network-health-mismatch {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.network-health-mismatch-warning {
+  color: var(--status-degraded, #c9a227);
+}
+
+.network-health-mismatch-info {
+  color: var(--label);
+}
+
 .notifications-target-card .notifications-target-type {
   max-width: 10rem;
 }
