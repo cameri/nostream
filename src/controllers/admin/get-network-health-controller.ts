@@ -3,8 +3,10 @@ import { Request, Response } from 'express'
 import { IController } from '../../@types/controllers'
 import { IRelayProbeSnapshotStore } from '../../@types/relay-probe-snapshot'
 import { Settings } from '../../@types/settings'
-import { enrichSnapshotWithMismatches } from '../../utils/network-health-mismatches'
-import { resolvePublicProbeTargetKeys } from '../../utils/relay-probe-targets'
+import {
+  buildNetworkHealthMismatchContext,
+  enrichSnapshotWithMismatches,
+} from '../../utils/network-health-mismatches'
 import { loadMergedSettings } from '../../utils/settings-config'
 
 export class GetAdminNetworkHealthController implements IController {
@@ -22,10 +24,10 @@ export class GetAdminNetworkHealthController implements IController {
     }
 
     const settings = this.getSettings()
-    const enriched = enrichSnapshotWithMismatches(snapshot, {
-      configuredRelayUrl: settings.info?.relay_url,
-      publicTargetKeys: resolvePublicProbeTargetKeys(settings),
-    })
+    const enriched = enrichSnapshotWithMismatches(
+      snapshot,
+      buildNetworkHealthMismatchContext(snapshot, settings),
+    )
 
     response.status(200).setHeader('content-type', 'application/json').send({ snapshot: enriched })
   }

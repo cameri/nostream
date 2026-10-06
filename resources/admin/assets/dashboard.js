@@ -540,7 +540,10 @@
       })
 
       const mismatches = Array.isArray(result.mismatches) ? result.mismatches : []
-      if (mismatches.some((entry) => entry?.severity === 'warning')) {
+      if (
+        result.nip11?.status === 'ok' &&
+        mismatches.some((entry) => entry?.severity === 'warning')
+      ) {
         nip11.className = 'status-degraded'
       }
 

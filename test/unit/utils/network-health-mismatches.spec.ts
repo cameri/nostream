@@ -27,56 +27,80 @@ const baseResult = (): StoredProbeResult => ({
   },
 })
 
+const publicContext = {
+  configuredRelayUrl: 'wss://relay.example.com/',
+  publicTargetKeys: new Set(['wss://relay.example.com/']),
+}
+
 describe('network-health-mismatches', () => {
-  it('warns when NIP-66 is missing from supported_nips', () => {
+  it('warns when NIP-66 is missing from supported_nips on public targets', () => {
     const result = baseResult()
     result.nip11.data!.supportedNips = [1, 11]
 
-    const mismatches = collectNetworkHealthMismatches(result, {})
+    const mismatches = collectNetworkHealthMismatches(result, publicContext)
 
     expect(mismatches.some((entry) => entry.code === 'nip66-not-advertised')).to.equal(true)
+  })
+
+  it('does not warn about NIP-66 on mirror-only probe targets', () => {
+    const result = baseResult()
+    result.target.relayUrl = 'wss://mirror.example.com/'
+    result.target.wsUrl = 'wss://mirror.example.com/'
+    result.nip11.data!.supportedNips = [1, 11]
+
+    const mismatches = collectNetworkHealthMismatches(result, publicContext)
+
+    expect(mismatches.some((entry) => entry.code === 'nip66-not-advertised')).to.equal(false)
+    expect(mismatches.some((entry) => entry.code === 'public-url')).to.equal(false)
   })
 
   it('warns when NIP-11 advertises auth but probe did not observe NIP-42', () => {
     const result = baseResult()
     result.nip11.data!.limitation = { authRequired: true }
 
-    const mismatches = collectNetworkHealthMismatches(result, {})
+    const mismatches = collectNetworkHealthMismatches(result, publicContext)
 
     expect(mismatches.some((entry) => entry.code === 'nip42-not-observed')).to.equal(true)
   })
 
-  it('warns when probe observed NIP-42 but NIP-11 does not advertise auth', () => {
+  it('does not warn when restricted_writes explains observed NIP-42 on write', () => {
+    const result = baseResult()
+    result.nip11.data!.limitation = { restrictedWrites: true }
+    result.wsRtt.data!.nip42AuthRequired = true
+
+    const mismatches = collectNetworkHealthMismatches(result, publicContext)
+
+    expect(mismatches.some((entry) => entry.code === 'nip42-not-advertised')).to.equal(false)
+  })
+
+  it('warns when probe observed NIP-42 auth-required without NIP-11 policy', () => {
     const result = baseResult()
     result.wsRtt.data!.nip42AuthRequired = true
 
-    const mismatches = collectNetworkHealthMismatches(result, {})
+    const mismatches = collectNetworkHealthMismatches(result, publicContext)
 
     expect(mismatches.some((entry) => entry.code === 'nip42-not-advertised')).to.equal(true)
   })
 
-  it('warns on public URL mismatch for single-target self monitoring', () => {
+  it('warns on public URL mismatch for configured public targets', () => {
     const result = baseResult()
     result.target.relayUrl = 'wss://127.0.0.1:8008/'
     result.target.wsUrl = 'wss://127.0.0.1:8008/'
 
     const mismatches = collectNetworkHealthMismatches(result, {
       configuredRelayUrl: 'wss://relay.example.com/',
-      publicTargetKeys: new Set(['wss://relay.example.com/']),
+      publicTargetKeys: new Set(['wss://127.0.0.1:8008/']),
     })
 
     expect(mismatches.some((entry) => entry.code === 'public-url')).to.equal(true)
   })
 
-  it('does not warn on public URL when multiple public probe targets are configured', () => {
+  it('does not warn on public URL for static mirror peers', () => {
     const result = baseResult()
-    result.target.relayUrl = 'wss://peer.example.com/'
-    result.target.wsUrl = 'wss://peer.example.com/'
+    result.target.relayUrl = 'wss://mirror.example.com/'
+    result.target.wsUrl = 'wss://mirror.example.com/'
 
-    const mismatches = collectNetworkHealthMismatches(result, {
-      configuredRelayUrl: 'wss://relay.example.com/',
-      publicTargetKeys: new Set(['wss://relay.example.com/', 'wss://peer.example.com/']),
-    })
+    const mismatches = collectNetworkHealthMismatches(result, publicContext)
 
     expect(mismatches.some((entry) => entry.code === 'public-url')).to.equal(false)
   })
