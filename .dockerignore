@@ -16,3 +16,5 @@ Dockerfile
 .nostr
 postgresql.conf
 test/integration/docker-compose.yml
+# website tooling (not part of the relay image)
+website
