@@ -32,7 +32,7 @@
 	},
 	"overrides": [
 		{
-			"includes": ["migrations/**", "src/clean-db.ts", "src/import-events.ts", "src/scripts/**", "test/**"],
+			"includes": ["migrations/**", "src/clean-db.ts", "src/import-events.ts", "src/scripts/**", "test/**", "website/**"],
 			"linter": {
 				"rules": {
 					"suspicious": {
