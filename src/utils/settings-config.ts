@@ -1,9 +1,10 @@
 import fs from 'fs'
 import { join } from 'path'
 import yaml from 'js-yaml'
-import { mergeDeepRight } from 'ramda'
+import { isNil, mergeDeepRight } from 'ramda'
 
 import { createLogger } from '../factories/logger-factory'
+import { EVENT_STORE_BACKENDS, isEventStoreBackend } from './event-store'
 import { Settings } from '../@types/settings'
 import {
   getConfigBaseDir,
@@ -591,6 +592,14 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
   const strategy = settings.limits?.rateLimiter?.strategy
   if (strategy && strategy !== 'ewma' && strategy !== 'sliding_window') {
     issues.push({ path: 'limits.rateLimiter.strategy', message: 'strategy must be ewma or sliding_window' })
+  }
+
+  const eventStoreBackend = settings.eventStore?.backend
+  if (!isNil(eventStoreBackend) && !isEventStoreBackend(eventStoreBackend)) {
+    issues.push({
+      path: 'eventStore.backend',
+      message: `backend must be one of: ${EVENT_STORE_BACKENDS.join(', ')}`,
+    })
   }
 
   const pow = settings.limits?.event?.pow
