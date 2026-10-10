@@ -536,17 +536,13 @@
       })
       const nip11 = formatProbeCheckDetail(result.nip11, (data) => {
         const name = data?.name ? ` ${data.name}` : ''
-        const supportedNips = Array.isArray(data?.supportedNips) ? data.supportedNips : null
-        const nip66Warning =
-          supportedNips && !supportedNips.includes(66) ? ' · NIP-66 not in supported_nips' : ''
-
-        return `HTTP ${data.statusCode}${name}${nip66Warning}`
+        return `HTTP ${data.statusCode}${name}`
       })
 
+      const mismatches = Array.isArray(result.mismatches) ? result.mismatches : []
       if (
         result.nip11?.status === 'ok' &&
-        Array.isArray(result.nip11?.data?.supportedNips) &&
-        !result.nip11.data.supportedNips.includes(66)
+        mismatches.some((entry) => entry?.severity === 'warning')
       ) {
         nip11.className = 'status-degraded'
       }
@@ -574,6 +570,29 @@
       })
 
       card.appendChild(checks)
+
+      if (mismatches.length > 0) {
+        const mismatchBlock = document.createElement('div')
+        mismatchBlock.className = 'network-health-mismatches'
+
+        const heading = document.createElement('p')
+        heading.className = 'network-health-mismatch-heading mb-1'
+        heading.textContent = 'Advertised vs observed'
+        mismatchBlock.appendChild(heading)
+
+        const list = document.createElement('ul')
+        list.className = 'network-health-mismatch-list mb-0'
+
+        mismatches.forEach((entry) => {
+          const item = document.createElement('li')
+          item.className = `network-health-mismatch network-health-mismatch-${entry.severity ?? 'warning'}`
+          item.textContent = entry.message ?? entry.code ?? 'Mismatch'
+          list.appendChild(item)
+        })
+
+        mismatchBlock.appendChild(list)
+        card.appendChild(mismatchBlock)
+      }
       networkHealthResults.appendChild(card)
     })
   }

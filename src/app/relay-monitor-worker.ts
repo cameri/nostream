@@ -6,6 +6,7 @@ import { INip66EventPublisher } from '../services/nip66-event-publisher'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 import { filterValidProbeTargets, resolveProbeTargets } from '../utils/relay-probe-targets'
 import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
+import { resolvePublicProbeTargetKeys } from '../utils/relay-probe-targets'
 import { getEffectiveProbeIntervalSeconds, getProbeIntervalMs } from '../utils/nip66-schedule'
 import { getMonitorPrivateKey } from '../utils/monitor-identity'
 import { runProbe } from '../utils/relay-probe'
@@ -119,11 +120,17 @@ export class RelayMonitorWorker implements IRunnable {
       return
     }
 
+    const publicTargetKeys = resolvePublicProbeTargetKeys(currentSettings)
+
     const snapshot: RelayProbeRunSnapshot = {
       runAt: new Date().toISOString(),
       targets: valid,
       results: serializeProbeResults(results),
       status: deriveRelayProbeRunStatus(results),
+      probeContext: {
+        configuredRelayUrl: currentSettings.info?.relay_url,
+        publicTargetKeys: [...publicTargetKeys],
+      },
     }
 
     const expirySeconds = getEffectiveProbeIntervalSeconds(currentSettings) * 2
