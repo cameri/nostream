@@ -83,11 +83,13 @@ export class EventMessageHandler implements IMessageHandler {
 
     event = this.addExpirationMetadata(event)
 
-    if (await this.isRateLimited(event)) {
+    const rateLimited = await this.isRateLimited(event)
+    if (rateLimited) {
       logger('event %s rejected: rate-limited', event.id)
+      const retryAfterMs = typeof rateLimited === 'number' ? String(rateLimited) : undefined
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
-        createEventCommandResult(event.id, false, 'rate-limited: slow down'),
+        createEventCommandResult(event.id, false, 'rate-limited: slow down', retryAfterMs),
       )
       return
     }
@@ -371,7 +373,11 @@ export class EventMessageHandler implements IMessageHandler {
     }
   }
 
-  protected async isRateLimited(event: Event): Promise<boolean> {
+  /**
+   * Resolves to false when allowed; otherwise to the tripped window's period in ms,
+   * sent as the NIP-01 `rate-limited` backoff, or true when no backoff can be given.
+   */
+  protected async isRateLimited(event: Event): Promise<boolean | number> {
     if (this.getRelayPublicKey() === event.pubkey) {
       return false
     }
@@ -429,7 +435,7 @@ export class EventMessageHandler implements IMessageHandler {
       if (isRateLimited) {
         logger('rate limited %s: %d events / %d ms exceeded', event.pubkey, rate, period)
 
-        return true
+        return Math.max(1, Math.ceil(period))
       }
     }
 

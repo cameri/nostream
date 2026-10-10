@@ -124,12 +124,27 @@ describe('EventMessageHandler', () => {
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
-    it('rejects event if rate-limited', async () => {
-      isRateLimitedStub.resolves(true)
+    it('rejects event if rate-limited with the backoff in ms', async () => {
+      isRateLimitedStub.resolves(60000)
 
       await handler.handleMessage(message)
 
       expect(isRateLimitedStub).to.have.been.calledOnceWithExactly(event)
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly([
+        MessageType.OK,
+        event.id,
+        false,
+        'rate-limited: slow down',
+        '60000',
+      ])
+      expect(strategyFactoryStub).not.to.have.been.called
+    })
+
+    it('rejects event if rate-limited without a backoff when none is known', async () => {
+      isRateLimitedStub.resolves(true)
+
+      await handler.handleMessage(message)
+
       expect(onMessageSpy).to.have.been.calledOnceWithExactly([
         MessageType.OK,
         event.id,
@@ -1254,7 +1269,7 @@ describe('EventMessageHandler', () => {
       expect(actualResult).to.be.false
     })
 
-    it('fulfills with true if rate limited by second rate limit setting', async () => {
+    it('fulfills with the tripped period if rate limited by second rate limit setting', async () => {
       eventLimits.rateLimits = [
         {
           period: 60000,
@@ -1293,7 +1308,7 @@ describe('EventMessageHandler', () => {
           rate: 3,
         },
       )
-      expect(actualResult).to.be.true
+      expect(actualResult).to.equal(180)
     })
 
     it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
@@ -1313,7 +1328,7 @@ describe('EventMessageHandler', () => {
       const actualResult = await (handler as any).isRateLimited(event)
 
       expect(rateLimiterHitStub).to.have.been.calledOnce
-      expect(actualResult).to.be.true
+      expect(actualResult).to.equal(60000)
     })
 
     it('fails closed when the rate limiter backend is unavailable', async () => {
