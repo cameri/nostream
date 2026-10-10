@@ -9,6 +9,7 @@ import {
   toCategoryLabel,
   getByPath,
   getTopLevelSettingCategories,
+  loadDefaults,
   parseTypedValue,
   parseValue,
   setByPath,
@@ -217,6 +218,35 @@ describe('settings-config', () => {
       expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[0]')).to.equal(true)
       expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[1]')).to.equal(true)
       expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[2]')).to.equal(true)
+    })
+  })
+
+  describe('event store settings', () => {
+    const baseSettings = (): any => ({
+      info: { relay_url: 'wss://test.relay', name: 'test' },
+      network: {},
+    })
+
+    it('ships postgres as the default backend', () => {
+      expect(loadDefaults().eventStore?.backend).to.equal('postgres')
+    })
+
+    it('accepts settings without an eventStore section', () => {
+      const issues = validateSettings(baseSettings())
+
+      expect(issues.some((issue) => issue.path.startsWith('eventStore'))).to.equal(false)
+    })
+
+    it('accepts the postgres backend', () => {
+      const issues = validateSettings({ ...baseSettings(), eventStore: { backend: 'postgres' } })
+
+      expect(issues.some((issue) => issue.path.startsWith('eventStore'))).to.equal(false)
+    })
+
+    it('rejects an unsupported backend', () => {
+      const issues = validateSettings({ ...baseSettings(), eventStore: { backend: 'mongodb' } })
+
+      expect(issues).to.deep.include({ path: 'eventStore.backend', message: 'backend must be one of: postgres' })
     })
   })
 
