@@ -28,9 +28,11 @@ export const createEndOfStoredEventsNoticeMessage = (subscriptionId: Subscriptio
   return [MessageType.EOSE, subscriptionId]
 }
 
-// NIP-20
-export const createCommandResult = (eventId: EventId, successful: boolean, message: string) => {
-  return [MessageType.OK, eventId, successful, message]
+// NIP-20, NIP-01 optional params (e.g. rate-limited backoff in ms)
+export const createCommandResult = (eventId: EventId, successful: boolean, message: string, params?: string) => {
+  return params === undefined
+    ? [MessageType.OK, eventId, successful, message]
+    : [MessageType.OK, eventId, successful, message, params]
 }
 
 // NIP-45
