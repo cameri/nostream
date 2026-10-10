@@ -2,7 +2,7 @@ import type { EventId } from '../@types/base'
 import { createCommandResult } from '../utils/messages'
 import { getRelayMetricInstruments } from './metrics'
 
-export const createEventCommandResult = (eventId: EventId, successful: boolean, message: string) => {
+export const createEventCommandResult = (eventId: EventId, successful: boolean, message: string, params?: string) => {
   const instruments = getRelayMetricInstruments()
 
   if (successful) {
@@ -11,7 +11,7 @@ export const createEventCommandResult = (eventId: EventId, successful: boolean, 
     instruments.eventsRejectedTotal.add(1)
   }
 
-  return createCommandResult(eventId, successful, message)
+  return createCommandResult(eventId, successful, message, params)
 }
 
 export const recordWebsocketConnectionOpened = (): void => {

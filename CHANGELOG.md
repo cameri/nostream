@@ -1,5 +1,25 @@
 # nostream
 
+## 3.3.0
+
+### Minor Changes
+
+- [#806](https://github.com/cameri/nostream/pull/806) [`0304b8a`](https://github.com/cameri/nostream/commit/0304b8a55a1e9d6f481432155046f20902499f0d) Thanks [@Anshumancanrock](https://github.com/Anshumancanrock)! - feat(storage): add an `eventStore.backend` setting and build every event repository through one factory
+
+  Defaults to `postgres`, the only backend for now. The backend is read once at startup and passed to every worker.
+
+- [#799](https://github.com/cameri/nostream/pull/799) [`75d2a91`](https://github.com/cameri/nostream/commit/75d2a914c94270ddc155eb51baf4f816867a0fb8) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(admin): add NIP-11 vs probe mismatch warnings on Network Health
+
+  Closes [#798](https://github.com/cameri/nostream/issues/798)
+
+- [#807](https://github.com/cameri/nostream/pull/807) [`f7d4b76`](https://github.com/cameri/nostream/commit/f7d4b76befbf7dc2bfef84a0f6390c9c2e23498e) Thanks [@Ferryx349](https://github.com/Ferryx349)! - NIP-01: include an optional backoff (ms) as the fifth element of `rate-limited` OK messages
+
+- [#796](https://github.com/cameri/nostream/pull/796) [`e861beb`](https://github.com/cameri/nostream/commit/e861bebe691b396861e78fa10af1cee2ca0ec205) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(nip66): add read/write RTT probes, NIP-42 detection, mirror targets, and enriched kind 30166 tags
+
+  Extends the relay monitor with WebSocket read/write probes, optional NIP-42 auth detection, probing of `mirroring.static[]` peers, and richer NIP-66 discovery and monitor announcement events.
+
+  Closes [#794](https://github.com/cameri/nostream/issues/794)
+
 ## 3.2.0
 
 ### Minor Changes

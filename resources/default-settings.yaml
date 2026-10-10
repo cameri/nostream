@@ -162,6 +162,9 @@ network:
     - "::ffff:10.10.10.1"
 workers:
   count: 0
+eventStore:
+  # Only postgres for now. Changing it needs a restart.
+  backend: postgres
 mirroring:
   static: []
 dvm:

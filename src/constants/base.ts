@@ -127,6 +127,10 @@ export enum PaymentsProcessors {
   LNBITS = 'lnbits',
 }
 
+export enum EventStoreBackend {
+  POSTGRES = 'postgres',
+}
+
 export const EventDeduplicationMetadataKey = Symbol('Deduplication')
 export const ContextMetadataKey = Symbol('Context')
 export const EventExpirationTimeMetadataKey = Symbol('Expiration')

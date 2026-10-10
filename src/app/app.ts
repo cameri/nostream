@@ -5,6 +5,7 @@ import { FSWatcher } from 'fs'
 
 import { addOnion } from '../tor/client'
 import { createLogger } from '../factories/logger-factory'
+import { EventStoreBackend } from '../constants/base'
 import { IRunnable } from '../@types/base'
 import packageJson from '../../package.json'
 import { Serializable } from 'child_process'
@@ -14,6 +15,7 @@ import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import { RedisRelayBroadcastFanout } from '../relay-broadcast/redis-relay-broadcast-fanout'
 import { enqueueOperatorNotification } from '../utils/operator-notification-enqueue'
+import { EVENT_STORE_BACKEND_ENV, getConfiguredEventStoreBackend } from '../utils/event-store'
 import { RelayBroadcastDeduplicator } from '../utils/relay-broadcast-deduplicator'
 import {
   isRelayBroadcastFanoutEnabled,
@@ -87,13 +89,25 @@ export class App implements IRunnable {
       this.process.exit(1)
     }
 
+    // Resolve once so every worker shares it and a bad value fails before forking.
+    let eventStoreBackend: EventStoreBackend
+    try {
+      eventStoreBackend = getConfiguredEventStoreBackend(settings)
+    } catch (error) {
+      logger.error((error as Error).message)
+      this.process.exit(1)
+      return
+    }
+    logCentered(`Event store: ${eventStoreBackend}`, width)
+
     const workerCount = process.env.WORKER_COUNT
       ? Number(process.env.WORKER_COUNT)
       : this.settings().workers?.count || cpus().length
 
     const createWorker = (env: Record<string, string>) => {
-      const worker = this.cluster.fork(env)
-      this.workers.set(worker, env)
+      const workerEnv = { ...env, [EVENT_STORE_BACKEND_ENV]: eventStoreBackend }
+      const worker = this.cluster.fork(workerEnv)
+      this.workers.set(worker, workerEnv)
     }
 
     for (let i = 0; i < workerCount; i++) {

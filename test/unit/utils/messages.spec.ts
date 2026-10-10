@@ -60,6 +60,16 @@ describe('createCommandResult', () => {
       'blocked: content not allowed',
     ])
   })
+
+  it('appends optional params as a fifth element', () => {
+    expect(createCommandResult('event-id', false, 'rate-limited: slow down', '1000')).to.deep.equal([
+      MessageType.OK,
+      'event-id',
+      false,
+      'rate-limited: slow down',
+      '1000',
+    ])
+  })
 })
 
 describe('createSubscriptionMessage', () => {

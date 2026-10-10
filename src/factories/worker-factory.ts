@@ -7,12 +7,12 @@ import { AppWorker } from '../app/worker'
 import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
 import { createSettings } from '../factories/settings-factory'
 import { DvmJobRepository } from '../repositories/dvm-job-repository'
-import { EventRepository } from '../repositories/event-repository'
 import { InviteCodeRepository } from '../repositories/invite-code-repository'
 import { Nip05VerificationRepository } from '../repositories/nip05-verification-repository'
 import { ReportRepository } from '../repositories/report-repository'
 import { UserRepository } from '../repositories/user-repository'
 import { startHiddenContentCache } from '../utils/hidden-content-cache'
+import { createEventRepository } from './event-repository-factory'
 import { createLogger } from './logger-factory'
 import { getCache } from './message-handler-factory'
 import { createWebApp } from './web-app-factory'
@@ -24,7 +24,7 @@ const logger = createLogger('worker-factory')
 export const workerFactory = (): AppWorker => {
   const dbClient = getMasterDbClient()
   const readReplicaDbClient = getReadReplicaDbClient()
-  const eventRepository = new EventRepository(dbClient, readReplicaDbClient, createSettings)
+  const eventRepository = createEventRepository(dbClient, readReplicaDbClient)
   const userRepository = new UserRepository(dbClient, eventRepository)
   const nip05VerificationRepository = new Nip05VerificationRepository(dbClient)
   const inviteCodeRepository = new InviteCodeRepository(dbClient)

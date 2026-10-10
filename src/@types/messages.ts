@@ -66,6 +66,7 @@ export interface CommandResult {
   1: EventId
   2: boolean
   3: string
+  4?: string
 }
 
 export interface EndOfStoredEventsNotice {

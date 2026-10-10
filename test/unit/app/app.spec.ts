@@ -6,7 +6,10 @@ import sinonChai from 'sinon-chai'
 
 import { App } from '../../../src/app/app'
 import * as metricsTelemetry from '../../../src/telemetry/metrics'
+import * as operatorNotificationEnqueue from '../../../src/utils/operator-notification-enqueue'
+import * as torClient from '../../../src/tor/client'
 import { Settings } from '../../../src/@types/settings'
+import { SettingsStatic } from '../../../src/utils/settings'
 
 chai.use(sinonChai)
 
@@ -113,5 +116,66 @@ describe('App', () => {
     await sandbox.clock.tickAsync(35_000)
 
     expect(fakeProcess.exit).to.have.been.calledOnceWithExactly(0)
+  })
+
+  it('exits before forking any worker when eventStore.backend is unsupported', () => {
+    sandbox.stub(SettingsStatic, 'watchSettings').returns([])
+    const app = new App(
+      fakeProcess as any,
+      cluster as any,
+      sandbox.stub().returns({
+        payments: { enabled: false },
+        workers: { count: 1 },
+        eventStore: { backend: 'mongodb' },
+      } as unknown as Settings),
+    )
+
+    app.run()
+
+    expect(fakeProcess.exit).to.have.been.calledOnceWithExactly(1)
+    expect(cluster.fork).not.to.have.been.called
+  })
+
+  it('hands every worker, re-forked ones included, the event store resolved at startup', async () => {
+    // run() reads both from process.env
+    const env = { ...process.env }
+    delete env.WORKER_COUNT
+    delete env.RELAY_BROADCAST_FANOUT
+    sandbox.stub(process, 'env').value(env)
+    sandbox.useFakeTimers()
+    sandbox.stub(SettingsStatic, 'watchSettings').returns([])
+    sandbox.stub(operatorNotificationEnqueue, 'enqueueOperatorNotification').resolves()
+    sandbox.stub(torClient, 'addOnion').rejects(new Error('tor is not configured'))
+    let pid = 1001
+    cluster.fork.callsFake(() => createWorker(String(pid), pid++))
+    const app = new App(
+      fakeProcess as any,
+      cluster as any,
+      sandbox.stub().returns({
+        payments: { enabled: false },
+        workers: { count: 1 },
+        eventStore: { backend: 'postgres' },
+      } as Settings),
+    )
+
+    app.run()
+
+    expect(cluster.fork).to.have.been.calledTwice
+    expect(cluster.fork.firstCall.args[0]).to.deep.equal({
+      WORKER_TYPE: 'worker',
+      WORKER_INDEX: '0',
+      EVENT_STORE_BACKEND: 'postgres',
+    })
+    expect(cluster.fork.secondCall.args[0]).to.deep.equal({
+      WORKER_TYPE: 'maintenance',
+      EVENT_STORE_BACKEND: 'postgres',
+    })
+
+    const exitHandlers = cluster.on.getCalls().filter((call) => call.args[0] === 'exit')
+    exitHandlers[exitHandlers.length - 1].args[1](cluster.fork.firstCall.returnValue, 1, null)
+    await sandbox.clock.tickAsync(10_000)
+
+    expect(cluster.fork).to.have.been.calledThrice
+    expect(cluster.fork.thirdCall.args[0]).to.deep.equal(cluster.fork.firstCall.args[0])
   })
 })
