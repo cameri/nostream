@@ -1,5 +1,15 @@
 # nostream
 
+## 3.4.0
+
+### Minor Changes
+
+- [#768](https://github.com/cameri/nostream/pull/768) [`8a5600b`](https://github.com/cameri/nostream/commit/8a5600b99a2595b6114816f94c8b80ef9ff49c06) Thanks [@Ferryx349](https://github.com/Ferryx349)! - docs(deploy): add deploy runbook and single-relay recreate script
+
+### Patch Changes
+
+- [#810](https://github.com/cameri/nostream/pull/810) [`0133088`](https://github.com/cameri/nostream/commit/013308804d675d5c05935ee67c986c3906081746) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - docs(readme): document Marmot Protocol MIP support
+
 ## 3.3.0
 
 ### Minor Changes
