@@ -684,6 +684,80 @@ describe('EventRepository', () => {
     })
   })
 
+  describe('.findReconciliationItems', () => {
+    const NOW_SECONDS = 1791658580
+    const LIVE_EVENTS_CLAUSE =
+      '"events"."deleted_at" is null and ("events"."expires_at" is null or "events"."expires_at" > 1791658580)'
+    const ORDER_CLAUSE = 'order by "events"."event_created_at" asc, "events"."event_id" asc'
+
+    beforeEach(() => {
+      sandbox.stub(Date, 'now').returns(NOW_SECONDS * 1000)
+    })
+
+    it('returns a function with stream and then', () => {
+      const result = repository.findReconciliationItems({})
+
+      expect(result).to.have.property('stream')
+      expect(result).to.have.property('then')
+    })
+
+    it('selects only created_at and id, oldest first, skipping deleted and expired events', () => {
+      const query = repository.findReconciliationItems({}).toString()
+
+      expect(query).to.equal(
+        `select "events"."event_created_at", "events"."event_id" from "events" where ${LIVE_EVENTS_CLAUSE} ${ORDER_CLAUSE}`,
+      )
+    })
+
+    it('applies the filter conditions', () => {
+      const query = repository
+        .findReconciliationItems({ kinds: [1], authors: ['a'.repeat(64)], since: 5, until: 9 })
+        .toString()
+
+      expect(query).to.include(`"event_pubkey" in (X'${'a'.repeat(64)}')`)
+      expect(query).to.include('"event_kind" in (1)')
+      expect(query).to.include('"event_created_at" >= 5')
+      expect(query).to.include('"event_created_at" <= 9')
+      expect(query).to.include(LIVE_EVENTS_CLAUSE)
+    })
+
+    it('ignores the filter limit, since reconciliation needs the whole matching set', () => {
+      const query = repository.findReconciliationItems({ kinds: [1], limit: 3 }).toString()
+
+      expect(query).to.not.include('limit')
+      expect(query).to.include(ORDER_CLAUSE)
+    })
+
+    it('applies tag filters', () => {
+      const query = repository.findReconciliationItems({ '#e': ['b'.repeat(64)] } as any).toString()
+
+      expect(query).to.include('event_tags')
+      expect(query).to.include(LIVE_EVENTS_CLAUSE)
+    })
+
+    it('excludes events matching an actionable report when hiding is enabled', () => {
+      const hideEnabledRepository = new EventRepository(
+        dbClient,
+        rrDbClient,
+        () =>
+          ({
+            nip56: { enabled: true, trustedModerators: [], hideActionableReports: true },
+          }) as any,
+      )
+
+      const query = hideEnabledRepository.findReconciliationItems({ kinds: [1] }).toString()
+
+      expect(query).to.include('not exists')
+      expect(query).to.include('"reports"."actionable" = true')
+    })
+
+    it('does not touch the reports table when hiding is disabled', () => {
+      const query = repository.findReconciliationItems({ kinds: [1] }).toString()
+
+      expect(query).to.not.include('reports')
+    })
+  })
+
   describe('.countByFilters', () => {
     it('throws error if filters is empty', async () => {
       try {
