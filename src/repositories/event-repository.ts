@@ -23,7 +23,13 @@ import {
 } from '../constants/base'
 import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
-import { EventPurgeCounts, EventRetentionOptions, IEventRepository, IQueryResult } from '../@types/repositories'
+import {
+  EventPurgeCounts,
+  EventRetentionOptions,
+  IEventRepository,
+  IQueryResult,
+  ReconciliationItem,
+} from '../@types/repositories'
 import { toBuffer, toJSON } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
 import { isGenericTagQuery, isGeohashPrefixCriterion, stripGeohashPrefixWildcard } from '../utils/filter'
@@ -126,6 +132,31 @@ export class EventRepository implements IEventRepository {
     const result = await this.readReplicaDbClient.from(query.as('matching_events')).count({ count: '*' }).first()
 
     return Number(result?.count ?? 0)
+  }
+
+  /**
+   * Every live event matching the filter as (created_at, id), oldest first, for NIP-77 set
+   * reconciliation. The filter's limit is ignored on purpose: reconciliation compares whole sets, so
+   * truncating one side would report the cut-off events as missing. Deleted and expired events are
+   * excluded because they must never be advertised to a peer.
+   */
+  public findReconciliationItems(filter: SubscriptionFilter): IQueryResult<ReconciliationItem[]> {
+    logger('querying reconciliation items for %o', filter)
+
+    const now = Math.floor(Date.now() / 1000)
+    const builder = this.readReplicaDbClient<DBEvent>('events').select('events.event_created_at', 'events.event_id')
+
+    this.applyFilterConditions(builder, filter)
+
+    builder
+      .whereNull('events.deleted_at')
+      .andWhere((bd) => {
+        bd.whereNull('events.expires_at').orWhere('events.expires_at', '>', now)
+      })
+      .orderBy('events.event_created_at', 'asc')
+      .orderBy('events.event_id', 'asc')
+
+    return builder as unknown as IQueryResult<ReconciliationItem[]>
   }
 
   // Wraps every query so each keeps its own ORDER BY and LIMIT. first.union(rest) would put the
