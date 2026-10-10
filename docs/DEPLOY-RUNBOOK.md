@@ -67,6 +67,18 @@ HAProxy stack: capture from a running backend, e.g.
 ./deploy/bootstrap.sh /opt/nostream
 ```
 
+Bootstrap refreshes the **single-relay** `docker-compose.yml` and
+`postgresql.conf` only. On HAProxy hosts, also copy stack-specific files from
+your checkout (same paths as initial install in
+[`deploy/README.md`](../deploy/README.md#zero-downtime-updates-haproxy-bluegreen)):
+
+```bash
+REPO=/path/to/nostream   # git checkout at the release tag or commit
+cp "$REPO/deploy/docker-compose.haproxy.yml" "$REPO/deploy/rolling-relay-recreate.sh" /opt/nostream/
+cp -r "$REPO/deploy/haproxy" /opt/nostream/
+chmod +x /opt/nostream/rolling-relay-recreate.sh
+```
+
 Existing `.env` and `.nostr/settings.yaml` are preserved.
 
 ### 2. Load the new image (skip if webhook pull already did)
@@ -176,8 +188,35 @@ SKIP_MIGRATE=1 /opt/nostream/recreate-relay.sh /opt/nostream
 ```
 
 HAProxy: run migrate only when moving **forward** on a new image. For rollback,
-retag the old image to `:main`, then replace relays with
-`rolling-relay-recreate.sh` (it does not re-run `nostream-migrate`).
+retag the old image to `:main`, then recreate relays **without** migrations.
+
+`rolling-relay-recreate.sh` will **not** replace a running relay unless its peer
+is up and `/readyz` healthy. If step 1 left one backend stopped, running the
+rolling script first fails with “peer … is not running” and neither backend is
+restored.
+
+1. Recreate the **stopped** backend on the old image (substitute blue/green as
+   needed):
+
+   ```bash
+   cd /opt/nostream
+   STOPPED=nostream-green   # the relay you stopped in step 1
+   docker compose -f docker-compose.haproxy.yml rm -f "$STOPPED" 2>/dev/null || true
+   docker compose -f docker-compose.haproxy.yml up -d --no-deps --force-recreate --wait "$STOPPED"
+   ```
+
+2. If the other backend still runs the bad image, roll it back with the rolling
+   script (peer is healthy again; the script does not re-run `nostream-migrate`):
+
+   ```bash
+   cd /opt/nostream
+   ./rolling-relay-recreate.sh
+   ```
+
+   Or recreate that service alone the same way as step 1.
+
+If both backends were stopped, bring **one** up with step 1, then step 2 for the
+other.
 
 ## Troubleshooting
 

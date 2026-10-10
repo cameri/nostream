@@ -17,6 +17,7 @@ RELAY_PORT="${RELAY_PORT:-8008}"
 READYZ_URL="http://127.0.0.1:${RELAY_PORT}/readyz"
 READYZ_RETRIES="${READYZ_RETRIES:-30}"
 READYZ_INTERVAL_SECONDS="${READYZ_INTERVAL_SECONDS:-2}"
+READYZ_CURL_MAX_TIME="${READYZ_CURL_MAX_TIME:-5}"
 SKIP_MIGRATE="${SKIP_MIGRATE:-0}"
 
 if [[ ! -f "$TARGET/docker-compose.yml" ]]; then
@@ -38,9 +39,9 @@ docker compose up -d --force-recreate --no-deps nostream
 
 echo "Waiting for /readyz..."
 for attempt in $(seq 1 "$READYZ_RETRIES"); do
-  if curl -sf "$READYZ_URL" >/dev/null; then
+  if curl -sf --max-time "$READYZ_CURL_MAX_TIME" "$READYZ_URL" >/dev/null; then
     echo "ready: $READYZ_URL"
-    curl -s "$READYZ_URL"
+    curl -s --max-time "$READYZ_CURL_MAX_TIME" "$READYZ_URL"
     echo
     exit 0
   fi
