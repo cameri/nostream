@@ -28,6 +28,19 @@ const buildStorage = (entries: Entry[]): NegentropyStorageVector => {
   return storage
 }
 
+const varint = (n: number): number[] => {
+  const groups: number[] = []
+  for (let rest = n; rest > 0; rest = Math.floor(rest / 128)) {
+    groups.push(rest % 128)
+  }
+  if (groups.length === 0) {
+    groups.push(0)
+  }
+  groups.reverse()
+
+  return groups.map((group, i) => (i < groups.length - 1 ? group | 128 : group))
+}
+
 const hex = (bytes: Uint8Array | null): string => (bytes ? Buffer.from(bytes).toString('hex') : 'null')
 
 const idsOf = (entries: Entry[]): string[] => entries.map(([, id]) => id.toString('hex'))
@@ -141,6 +154,47 @@ describe('negentropy', () => {
 
       expect(() => storage.iterate(0, 4, () => true)).to.throw('bad range')
       expect(() => storage.fingerprint(2, 1)).to.throw('bad range')
+    })
+
+    it('rejects range indexes that are negative, fractional or not finite', () => {
+      const storage = buildStorage(buildEntries(0, 3))
+
+      for (const [begin, end] of [
+        [-1, 0],
+        [0, 1.5],
+        [Number.NaN, 2],
+        [0, Number.POSITIVE_INFINITY],
+        [-1, 2],
+      ]) {
+        expect(() => storage.iterate(begin, end, () => true), `iterate(${begin}, ${end})`).to.throw('bad range')
+        expect(() => storage.fingerprint(begin, end), `fingerprint(${begin}, ${end})`).to.throw('bad range')
+        expect(() => storage.findLowerBound(begin, end, { timestamp: 0, id: new Uint8Array(0) })).to.throw('bad range')
+      }
+    })
+
+    it('is not affected by the caller changing an id buffer after inserting it', () => {
+      const id = Buffer.from(idFor('mutable'))
+      const storage = new NegentropyStorageVector()
+      storage.insert(BASE_TIMESTAMP, id)
+      storage.seal()
+      const before = hex(storage.fingerprint(0, 1))
+
+      id.fill(0xff)
+
+      expect(hex(storage.fingerprint(0, 1))).to.equal(before)
+    })
+
+    it('hands out frozen items so callbacks cannot reorder a sealed set', () => {
+      const storage = buildStorage(buildEntries(0, 2))
+
+      storage.iterate(0, 2, (item) => {
+        expect(Object.isFrozen(item)).to.equal(true)
+        expect(() => {
+          ;(item as any).timestamp = 0
+        }).to.throw(TypeError)
+
+        return true
+      })
     })
 
     it('produces 16-byte fingerprints that do not depend on insertion order', () => {
@@ -298,6 +352,44 @@ describe('negentropy', () => {
         expect(reply.byteLength).to.be.at.most(frameSizeLimit)
         message = initiator.reconcile(reply).output
       }
+    })
+
+    it('restarts a frame-truncated reply at the last written bound, not after the dropped range', () => {
+      // The responder holds 160 events. The peer asks for the first 120 as an id list (3.8 KB of
+      // answers, almost the whole 4096-byte frame), then sends a mismatching fingerprint for the
+      // other 40. That second answer no longer fits and is dropped, so the trailing fingerprint
+      // must cover those 40 events: the peer compares it against everything after the last bound
+      // that was actually written, and a fingerprint that skipped them would match a peer with
+      // nothing there, ending the session without ever reporting the 40 events.
+      const entries = buildEntries(0, 160, 1)
+      const storage = buildStorage(entries)
+      const message = Uint8Array.from([
+        0x61,
+        ...varint(BASE_TIMESTAMP + 120 + 1), // upper bound of the first range, delta-encoded
+        0, // bound id length
+        2, // mode: id list
+        0, // peer lists no ids
+        0, // upper bound: infinity
+        0, // bound id length
+        1, // mode: fingerprint
+        ...new Array(16).fill(0), // a fingerprint that cannot match
+      ])
+
+      const reply = new Negentropy(storage, 4096).reconcile(message).output as Uint8Array
+
+      const trailingFingerprint = hex(reply.subarray(reply.length - 16))
+      expect(trailingFingerprint).to.equal(hex(storage.fingerprint(120, 160)))
+      expect(trailingFingerprint).to.not.equal(hex(storage.fingerprint(160, 160)))
+    })
+
+    it('still converges when several mismatched ranges are cut by the frame limit', () => {
+      const client = buildEntries(0, 60, 1)
+      const server = buildEntries(0, 3000, 1)
+
+      const outcome = sync(client, server, 4096)
+
+      expect(outcome.haveIds).to.deep.equal(difference(client, server))
+      expect(outcome.needIds).to.deep.equal(difference(server, client))
     })
 
     it('rejects frame size limits below 4096', () => {

@@ -26,8 +26,8 @@ enum Mode {
 }
 
 export interface NegentropyItem {
-  timestamp: number
-  id: Uint8Array
+  readonly timestamp: number
+  readonly id: Readonly<Uint8Array>
 }
 
 export interface ReconcileResult {
@@ -142,7 +142,7 @@ export class NegentropyStorageVector {
   private items: NegentropyItem[] = []
   private sealed = false
 
-  public insert(timestamp: number, id: Uint8Array): void {
+  public insert(timestamp: number, id: Readonly<Uint8Array>): void {
     if (this.sealed) {
       throw new Error('already sealed')
     }
@@ -153,7 +153,9 @@ export class NegentropyStorageVector {
       throw new Error('bad id size for added item')
     }
 
-    this.items.push({ timestamp, id })
+    // Copy the id and freeze the item: sealing relies on the sort order and uniqueness checked in
+    // seal(), which a caller mutating its own buffer afterwards would silently break.
+    this.items.push(Object.freeze({ timestamp, id: Uint8Array.from(id) }))
   }
 
   public seal(): void {
@@ -240,7 +242,13 @@ export class NegentropyStorageVector {
   }
 
   private assertBounds(begin: number, end: number): void {
-    if (begin > end || end > this.items.length) {
+    if (
+      !Number.isSafeInteger(begin) ||
+      !Number.isSafeInteger(end) ||
+      begin < 0 ||
+      begin > end ||
+      end > this.items.length
+    ) {
       throw new Error('bad range')
     }
   }
@@ -302,6 +310,10 @@ export class Negentropy {
     const storageSize = this.storage.size()
     let prevBound: NegentropyItem = { timestamp: 0, id: new Uint8Array(0) }
     let prevIndex = 0
+    // Index of the first item not yet accounted for by anything written to fullOutput. The peer
+    // compares a trailing fingerprint against everything after the last bound we wrote, so that is
+    // where a truncated reply must restart, not at the end of the range whose answer was dropped.
+    let writtenUpTo = 0
     let skip = false
 
     while (query.remaining !== 0) {
@@ -390,6 +402,7 @@ export class Negentropy {
           o.write(responseIds.toBytes())
 
           fullOutput.write(o.toBytes())
+          writtenUpTo = upper
           o = new ByteWriter()
         }
       } else {
@@ -398,7 +411,7 @@ export class Negentropy {
 
       if (this.exceededFrameSizeLimit(fullOutput.length + o.length)) {
         // Stop range processing and answer with one fingerprint covering everything that is left.
-        const remainingFingerprint = this.storage.fingerprint(upper, storageSize)
+        const remainingFingerprint = this.storage.fingerprint(writtenUpTo, storageSize)
 
         this.encodeBound({ timestamp: MAX_TIMESTAMP, id: new Uint8Array(0) }, fullOutput)
         fullOutput.writeVarInt(Mode.Fingerprint)
@@ -407,6 +420,9 @@ export class Negentropy {
       }
 
       fullOutput.write(o.toBytes())
+      if (o.length > 0) {
+        writtenUpTo = upper
+      }
 
       prevIndex = upper
       prevBound = currBound
