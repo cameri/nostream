@@ -1,4 +1,4 @@
-import { EventKinds } from '../constants/base'
+import { EventKinds, EventStoreBackend } from '../constants/base'
 import { Pubkey, Secret } from './base'
 import { MessageType } from './messages'
 import { AdminNotificationsSettings } from './operator-notifications'
@@ -200,6 +200,11 @@ export interface Limits {
 
 export interface Worker {
   count: number
+}
+
+export interface EventStoreSettings {
+  /** Read once at startup, so changing it needs a restart. Defaults to postgres. */
+  backend: EventStoreBackend
 }
 
 export interface FeeScheduleWhitelists {
@@ -475,6 +480,7 @@ export interface Settings {
   paymentsProcessors?: PaymentsProcessors
   network: Network
   workers?: Worker
+  eventStore?: EventStoreSettings
   limits?: Limits
   mirroring?: Mirroring
   dvm?: Dvm
