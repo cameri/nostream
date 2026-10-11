@@ -192,7 +192,10 @@ export async function buildFilm(): Promise<Composition> {
     }),
     LayerAnimation.create()
       .keys('opacity', planetOpacity.map(([f, v, e]) => (e ? [f, (v as number) * 0.8, e] : [f, (v as number) * 0.8]) as Key))
-      .keys('y', planetY)
+      .keys(
+        'y',
+        planetY.map(([f, v, e]) => (e ? [f, (v as number) - haloOffset, e] : [f, (v as number) - haloOffset]) as Key),
+      )
       .fromTo('rotation', 30, -20, { start: 0, end: LAST, ease: 'linear' }),
   )
 
@@ -423,6 +426,7 @@ export async function buildFilm(): Promise<Composition> {
     fps: FPS,
     durationMs: (DURATION_FILM / FPS) * 1000,
     backgroundColor: BG,
+    fonts: [path.join(ROOT, 'assets/fonts/JetBrainsMono.ttf'), path.join(ROOT, 'assets/fonts/Inter.ttf')],
   })
   for (const { node, anim } of pending) film.add((anim ? node.animate(anim) : node) as never)
   film.apply(new Vignette({ strength: 0.16, radius: 0.95, softness: 0.7 }))

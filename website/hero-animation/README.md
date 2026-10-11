@@ -56,7 +56,7 @@ A second, operator-focused cut in the same visual dialect: **40 s** at 1920×108
 ```bash
 pnpm run render:release        # → output/release/nostream-3.3.0-very_high.mp4 (~12 MB)
 pnpm run render:release:small  # → output/release/nostream-3.3.0-low.mp4 (~1.7 MB, for sharing)
-pnpm run frames:release        # → output/release/frames/f0000.png … (scene openers + last frame)
+pnpm run frames:release        # → output/release/frames/f0060.png … (one still per scene + the end card)
 ```
 
 ## Edit the story
