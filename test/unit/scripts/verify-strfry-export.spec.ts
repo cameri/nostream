@@ -78,6 +78,10 @@ describe('verify-strfry-export', () => {
   })
 
   describe('verifyFriedLine', () => {
+    afterEach(() => {
+      Sinon.restore()
+    })
+
     it('accepts a line whose packed record matches the event', async () => {
       expect(await verifyFriedLine(toFriedLine(event), true)).to.equal(undefined)
     })
@@ -121,14 +125,26 @@ describe('verify-strfry-export', () => {
       )
     })
 
+    it('accepts an expiration above 2^53', async () => {
+      const expiring = await createEvent({ tags: [['expiration', '18446744073709551615']] })
+
+      expect(await verifyFriedLine(toFriedLine(expiring), true)).to.equal(undefined)
+    })
+
+    it('catches a decoded expiration that is off by one above 2^53', async () => {
+      const expiring = await createEvent({ tags: [['expiration', '18446744073709551615']] })
+      Sinon.stub(PackedEventView.prototype, 'expiration').get(() => 18446744073709551614n)
+
+      expect(await verifyFriedLine(toFriedLine(expiring), true)).to.equal('Decoded expiration differs')
+    })
+
     it('reports a decoder that disagrees with the record', async () => {
       const kind = Sinon.stub(PackedEventView.prototype, 'kind').get(() => 7)
       expect(await verifyFriedLine(toFriedLine(event), true)).to.equal('Decoded kind differs')
       kind.restore()
 
-      const tags = Sinon.stub(PackedEventView.prototype, 'tags').returns([])
+      Sinon.stub(PackedEventView.prototype, 'tags').returns([])
       expect(await verifyFriedLine(toFriedLine(event), true)).to.equal('Decoded 0 tags, expected 2')
-      tags.restore()
     })
 
     it('reports events nostream cannot pack', async () => {

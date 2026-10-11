@@ -15,9 +15,15 @@ export interface PackedTag {
   value: Buffer
 }
 
-// Exact up to 2^53.
-const readUInt64 = (buffer: Buffer, offset: number): number =>
-  buffer.readUInt32LE(offset) + buffer.readUInt32LE(offset + 4) * 0x1_0000_0000
+// Throws instead of rounding above 2^53.
+const readUInt53 = (buffer: Buffer, offset: number): number => {
+  const high = buffer.readUInt32LE(offset + 4)
+  if (high > 0x1f_ffff) {
+    throw new RangeError(`Packed event value at byte ${offset} is above 2^53`)
+  }
+
+  return buffer.readUInt32LE(offset) + high * 0x1_0000_0000
+}
 
 export class PackedEventView {
   public constructor(private readonly buffer: Buffer) {
@@ -35,16 +41,16 @@ export class PackedEventView {
   }
 
   public get createdAt(): number {
-    return readUInt64(this.buffer, 64)
+    return readUInt53(this.buffer, 64)
   }
 
   public get kind(): number {
-    return readUInt64(this.buffer, 72)
+    return readUInt53(this.buffer, 72)
   }
 
   // 0 = never expires, 1 = ephemeral
-  public get expiration(): number {
-    return readUInt64(this.buffer, 80)
+  public get expiration(): bigint {
+    return this.buffer.readBigUInt64LE(80)
   }
 
   public tags(): PackedTag[] {

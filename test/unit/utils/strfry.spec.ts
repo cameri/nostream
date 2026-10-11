@@ -54,15 +54,32 @@ describe('strfry packed events', () => {
       expect(view.pubkey.equals(PUBKEY)).to.equal(true)
       expect(view.createdAt).to.equal(1700000000)
       expect(view.kind).to.equal(30023)
-      expect(view.expiration).to.equal(1800000000)
+      expect(view.expiration).to.equal(1800000000n)
     })
 
     it('reads values that do not fit in 32 bits', () => {
-      const view = new PackedEventView(record(0x1_0000_0005n, 0x100_0000_0000n, 0x1f_ffff_ffff_ffffn))
+      const view = new PackedEventView(record(0x1f_ffff_ffff_ffffn, 0x100_0000_0000n, 0x1_0000_0005n))
 
-      expect(view.createdAt).to.equal(0x1_0000_0005)
+      expect(view.createdAt).to.equal(Number.MAX_SAFE_INTEGER)
       expect(view.kind).to.equal(0x100_0000_0000)
-      expect(view.expiration).to.equal(Number.MAX_SAFE_INTEGER)
+      expect(view.expiration).to.equal(0x1_0000_0005n)
+    })
+
+    it('reads expiration exactly across the whole 64-bit range', () => {
+      for (const expiration of [0x20_0000_0000_0001n, 0xffff_ffff_ffff_ffffn]) {
+        expect(new PackedEventView(record(1n, 1n, expiration)).expiration).to.equal(expiration)
+      }
+    })
+
+    it('throws instead of rounding a created_at or kind above 2^53', () => {
+      expect(() => new PackedEventView(record(0x20_0000_0000_0000n, 1n, 0n)).createdAt).to.throw(
+        RangeError,
+        'Packed event value at byte 64 is above 2^53',
+      )
+      expect(() => new PackedEventView(record(1n, 0x20_0000_0000_0000n, 0n)).kind).to.throw(
+        RangeError,
+        'Packed event value at byte 72 is above 2^53',
+      )
     })
 
     it('reads tags in order, including empty and binary values', () => {
@@ -289,8 +306,16 @@ describe('strfry packed events', () => {
       expect(view.pubkey).to.deep.equal(fields.pubkey)
       expect(view.createdAt).to.equal(fields.createdAt)
       expect(view.kind).to.equal(fields.kind)
-      expect(view.expiration).to.equal(Number(fields.expiration))
+      expect(view.expiration).to.equal(fields.expiration)
       expect(view.tags()).to.deep.equal(fields.tags)
+    })
+
+    it('round-trips an expiration above 2^53', () => {
+      for (const expiration of ['9007199254740993', '18446744073709551615']) {
+        const fields = toPackedEventFields(event({ tags: [['expiration', expiration]] }))
+
+        expect(new PackedEventView(serializePackedEvent(fields)).expiration).to.equal(BigInt(expiration))
+      }
     })
 
     it('rejects an id or pubkey that is not 32 bytes', () => {

@@ -129,7 +129,7 @@ export const verifyFriedLine = async (line: string, checkSignatures: boolean): P
     if (decoded.kind !== expected.kind) {
       return 'Decoded kind differs'
     }
-    if (decoded.expiration !== Number(expected.expiration)) {
+    if (decoded.expiration !== expected.expiration) {
       return 'Decoded expiration differs'
     }
 
