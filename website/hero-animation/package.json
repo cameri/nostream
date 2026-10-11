@@ -13,6 +13,9 @@
     "render": "tsx src/render.ts video",
     "render:small": "tsx src/render.ts video low",
     "frames": "tsx src/render.ts frames 130 300 500 620 800 1010",
+    "render:release": "tsx src/release-render.ts video very_high",
+    "render:release:small": "tsx src/release-render.ts video low",
+    "frames:release": "tsx src/release-render.ts frames 60 300 650 1000 1199",
     "typecheck": "tsc -p ."
   },
   "engines": {

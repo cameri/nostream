@@ -570,6 +570,25 @@ export const validatePathAgainstDefaults = (path: string): ValidationIssue[] => 
   ]
 }
 
+const validateRateLimitPeriods = (
+  rateLimits: { period: number }[] | undefined,
+  pathPrefix: string,
+  issues: ValidationIssue[],
+): void => {
+  if (!Array.isArray(rateLimits)) {
+    return
+  }
+  rateLimits.forEach((entry, index) => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      issues.push({ path: `${pathPrefix}[${index}]`, message: 'rateLimits entry must be an object' })
+      return
+    }
+    if (!(entry.period > 0)) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be greater than 0' })
+    }
+  })
+}
+
 export const validateSettings = (settings: Settings): ValidationIssue[] => {
   const issues: ValidationIssue[] = []
 
@@ -642,6 +661,18 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
         }
       })
     }
+  }
+
+  const limits = settings.limits
+  if (limits) {
+    validateRateLimitPeriods(limits.event?.rateLimits, 'limits.event.rateLimits', issues)
+    validateRateLimitPeriods(limits.message?.rateLimits, 'limits.message.rateLimits', issues)
+    validateRateLimitPeriods(limits.connection?.rateLimits, 'limits.connection.rateLimits', issues)
+    validateRateLimitPeriods(limits.invoice?.rateLimits, 'limits.invoice.rateLimits', issues)
+    validateRateLimitPeriods(limits.admissionCheck?.rateLimits, 'limits.admissionCheck.rateLimits', issues)
+    validateRateLimitPeriods(limits.invite?.rateLimits, 'limits.invite.rateLimits', issues)
+    validateRateLimitPeriods(limits.admin?.rateLimits, 'limits.admin.rateLimits', issues)
+    validateRateLimitPeriods(limits.admin?.loginRateLimits, 'limits.admin.loginRateLimits', issues)
   }
 
   validateShape(loadDefaults(), settings, [], issues)

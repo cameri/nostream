@@ -44,8 +44,24 @@ pnpm run frames
 # → output/frames/f0130.png …
 ```
 
+## Release film — nostream 3.3.0
+
+A second, operator-focused cut in the same visual dialect: **40 s** at 1920×1080, 30 fps = **1200 frames**, composed in `src/release-film.ts` and rendered headlessly by `src/release-render.ts`.
+
+1. **Problem** (frames 0–150): a relay that is slow under load, and what the user sees — "Your relay says no"
+2. **Wait** (150–540): the throttled client. The `OK` carries the wait (`retry after 30 s`), so the client stops guessing and hammering
+3. **Docs** (540–760): the operator at 3am — NIP-11 and the relay's behaviour disagree, and the dashboard flags the mismatch
+4. **Close** (760–1200): sign-off over the particle planet
+
+```bash
+pnpm run render:release        # → output/release/nostream-3.3.0-very_high.mp4 (~14 MB)
+pnpm run render:release:small  # → output/release/nostream-3.3.0-low.mp4 (~2.3 MB, for sharing)
+pnpm run frames:release        # → output/release/frames/f0060.png … (one still per scene + the end card)
+```
+
 ## Edit the story
 
 - Timeline & layout: `src/film.ts` (scene windows `HERO`, `WHAT`, `FLOW`, `FEATURES`, `DEPLOY`)
+- Release film: `src/release-film.ts` (scene windows `PROBLEM`, `WAIT`, `DOCS`, `CLOSE`), rendered by `src/release-render.ts`
 - Palette & fonts: `src/theme.ts`
 - Logos / planet / grid: `src/build-assets.ts` (source SVGs in `assets/icons-raw/`, Nostr PNG in `assets/logos/`)

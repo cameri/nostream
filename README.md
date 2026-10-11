@@ -43,7 +43,7 @@ The project master repository is available on [GitHub](https://github.com/cameri
 
 ## Features
 
-NIPs with a relay-specific implementation are listed here.
+NIPs and MIPs with a relay-specific implementation are listed here.
 
 - [x] NIP-01: Basic protocol flow description
 - [x] NIP-02: Contact list and petnames
@@ -68,6 +68,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-45: Event Counts
 - [x] NIP-62: Request to Vanish
 - [x] NIP-65: Relay List Metadata
+- [x] Marmot Protocol [MIPs 00–03](https://github.com/marmot-protocol/marmot): E2EE group messaging over Nostr — kinds 443, 444, 445, 10051 and 30443, with `supported_mips` advertised in the NIP-11 relay information document
 
 ## Requirements
 
