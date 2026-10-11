@@ -579,6 +579,10 @@ const validateRateLimitPeriods = (
     return
   }
   rateLimits.forEach((entry, index) => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      issues.push({ path: `${pathPrefix}[${index}]`, message: 'rateLimits entry must be an object' })
+      return
+    }
     if (!(entry.period > 0)) {
       issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be greater than 0' })
     }
