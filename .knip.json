@@ -16,6 +16,7 @@
   ],
   "ignore": [
     ".nostr/**",
+    "src/utils/negentropy.ts",
     "src/utils/relay-probe/**"
   ],
   "commitlint": false,
