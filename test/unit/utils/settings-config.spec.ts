@@ -98,6 +98,30 @@ describe('settings-config', () => {
     expect(issues.some((issue) => issue.path === 'network')).to.equal(true)
   })
 
+  describe('rate limit period validation', () => {
+    const baseSettings = () =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+      }) as any
+
+    it('rejects a non-positive period on limits.event.rateLimits', () => {
+      const settings = baseSettings()
+      settings.limits = { event: { rateLimits: [{ period: 0, rate: 1 }] } }
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.rateLimits[0].period')).to.equal(true)
+    })
+
+    it('rejects a non-positive period on limits.admin.loginRateLimits', () => {
+      const settings = baseSettings()
+      settings.limits = { admin: { loginRateLimits: [{ period: -1, rate: 1 }] } }
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.admin.loginRateLimits[0].period')).to.equal(true)
+    })
+  })
+
   describe('adaptive pow settings', () => {
     const baseSettings = () =>
       ({
