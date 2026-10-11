@@ -200,4 +200,28 @@ describe('RelayMonitorWorker', () => {
     expect(eventPublisher.publishAfterProbe).to.have.been.calledOnce
     expect(eventPublisher.publishAfterProbe.firstCall.args[0].status).to.equal('ok')
   })
+
+  it('still publishes NIP-66 events when probe history append fails', async () => {
+    const eventPublisher = {
+      publishAfterProbe: sandbox.stub().resolves(),
+    }
+
+    historyStore.append.rejects(new Error('redis unavailable'))
+
+    worker = new RelayMonitorWorker(
+      fakeProcess as unknown as NodeJS.Process,
+      settings,
+      snapshotStore,
+      probeRunner,
+      eventPublisher,
+      historyStore as any,
+    )
+
+    worker.run()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(eventPublisher.publishAfterProbe).to.have.been.calledOnce
+  })
 })

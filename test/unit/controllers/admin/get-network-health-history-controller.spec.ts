@@ -53,7 +53,9 @@ describe('GetAdminNetworkHealthHistoryController', () => {
   it('returns bounded probe history newest first', async () => {
     await controller.handleRequest({ query: { limit: '5' } } as any, response as any)
 
-    expect(historyStore.list).to.have.been.calledOnceWithExactly(5)
+    expect(historyStore.list).to.have.been.calledOnce
+    expect(historyStore.list.firstCall.args[0]).to.equal(5)
+    expect(historyStore.list.firstCall.args[1]).to.deep.equal({ maxRuns: 168, maxAgeHours: undefined })
     expect(response.status).to.have.been.calledOnceWithExactly(200)
     const payload = response.send.firstCall.args[0] as { runs: RelayProbeRunSnapshot[] }
     expect(payload.runs).to.have.length(1)

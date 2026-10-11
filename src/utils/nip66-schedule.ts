@@ -14,7 +14,10 @@ export const getProbeIntervalMs = (settings: Settings): number => {
   return getEffectiveProbeIntervalSeconds(settings) * 1000
 }
 
-export const getNip66HistoryRetention = (settings: Settings) => ({
-  maxRuns: settings.nip66?.historyRetentionRuns ?? DEFAULT_HISTORY_RETENTION_RUNS,
-  maxAgeHours: settings.nip66?.historyRetentionHours,
-})
+export const getNip66HistoryRetention = (settings: Settings) => {
+  const maxAgeHours = settings.nip66?.historyRetentionHours
+  return {
+    maxRuns: settings.nip66?.historyRetentionRuns ?? DEFAULT_HISTORY_RETENTION_RUNS,
+    maxAgeHours: typeof maxAgeHours === 'number' && maxAgeHours > 0 ? maxAgeHours : undefined,
+  }
+}

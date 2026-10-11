@@ -29,6 +29,8 @@ export interface ICacheAdapter {
   setKeyIfNotExists(key: string, value: string, expirySeconds?: number): Promise<boolean>
   addToSortedSet(key: string, set: Record<string, string> | Record<string, string>[]): Promise<number>
   removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number>
+  removeRangeByRankFromSortedSet(key: string, start: number, stop: number): Promise<number>
+  getSortedSetSize(key: string): Promise<number>
   getRangeFromSortedSet(key: string, start: number, stop: number): Promise<string[]>
   setKeyExpiry(key: string, expiry: number): Promise<void>
 

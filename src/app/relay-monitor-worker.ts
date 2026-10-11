@@ -139,7 +139,11 @@ export class RelayMonitorWorker implements IRunnable {
 
     await this.snapshotStore.saveLatest(snapshot, expirySeconds)
     if (this.historyStore) {
-      await this.historyStore.append(snapshot, getNip66HistoryRetention(currentSettings))
+      try {
+        await this.historyStore.append(snapshot, getNip66HistoryRetention(currentSettings))
+      } catch (error) {
+        logger.error('failed to save probe history: %o', error)
+      }
     }
     logger('saved probe snapshot for %d target(s) with status %s', valid.length, snapshot.status)
 

@@ -106,7 +106,7 @@ describe('settings-config', () => {
     } as any)
 
     expect(issues.some((issue) => issue.path === 'nip66.historyRetentionRuns')).to.equal(true)
-    expect(issues.some((issue) => issue.path === 'nip66.historyRetentionHours')).to.equal(true)
+    expect(issues.some((issue) => issue.path === 'nip66.historyRetentionHours')).to.equal(false)
   })
 
   describe('adaptive pow settings', () => {

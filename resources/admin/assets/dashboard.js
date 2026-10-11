@@ -670,10 +670,16 @@
 
       const body = await response.json()
       const snapshot = body.snapshot ?? null
-      if (snapshot?.runAt) {
+      let displaySnapshot = snapshot
+      if (selectedNetworkHealthRunAt && networkHealthHistoryRuns.length > 0) {
+        const selected = networkHealthHistoryRuns.find((run) => run?.runAt === selectedNetworkHealthRunAt)
+        if (selected) {
+          displaySnapshot = selected
+        }
+      } else if (snapshot?.runAt) {
         selectedNetworkHealthRunAt = snapshot.runAt
       }
-      renderNetworkHealthSnapshot(snapshot)
+      renderNetworkHealthSnapshot(displaySnapshot)
       if (networkHealthHistoryRuns.length > 0) {
         renderNetworkHealthTimeline(networkHealthHistoryRuns)
       }

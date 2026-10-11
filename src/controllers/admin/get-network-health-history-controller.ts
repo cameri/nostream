@@ -6,6 +6,7 @@ import {
   buildNetworkHealthMismatchContext,
   enrichSnapshotWithMismatches,
 } from '../../utils/network-health-mismatches'
+import { getNip66HistoryRetention } from '../../utils/nip66-schedule'
 import { MAX_PROBE_HISTORY_API_LIMIT, RelayProbeHistoryStore } from '../../utils/relay-probe-history'
 import { loadMergedSettings } from '../../utils/settings-config'
 
@@ -38,7 +39,7 @@ export class GetAdminNetworkHealthHistoryController implements IController {
     }
 
     const settings = this.getSettings()
-    const runs = await this.historyStore.list(limit)
+    const runs = await this.historyStore.list(limit, getNip66HistoryRetention(settings))
     const enriched = runs.map((snapshot) =>
       enrichSnapshotWithMismatches(snapshot, buildNetworkHealthMismatchContext(snapshot, settings)),
     )

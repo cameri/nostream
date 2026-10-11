@@ -278,6 +278,7 @@ describe('SettingsStatic', () => {
       expect(defaults).to.have.nested.property('nip66.targets').that.deep.equals([])
       expect(defaults).to.have.nested.property('nip66.dnsCacheTtlSeconds', 300)
       expect(defaults).to.have.nested.property('nip66.historyRetentionRuns', 168)
+      expect(defaults).to.have.nested.property('nip66.historyRetentionHours', 0)
     })
 
     it('user config nip66 block overrides defaults', () => {

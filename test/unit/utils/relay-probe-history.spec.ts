@@ -13,6 +13,8 @@ describe('relay-probe-history', () => {
   let cache: {
     addToSortedSet: Sinon.SinonStub
     getRangeFromSortedSet: Sinon.SinonStub
+    getSortedSetSize: Sinon.SinonStub
+    removeRangeByRankFromSortedSet: Sinon.SinonStub
     removeRangeByScoreFromSortedSet: Sinon.SinonStub
   }
   let store: RelayProbeHistoryStore
@@ -38,6 +40,8 @@ describe('relay-probe-history', () => {
     cache = {
       addToSortedSet: Sinon.stub().resolves(1),
       getRangeFromSortedSet: Sinon.stub().resolves([]),
+      getSortedSetSize: Sinon.stub().resolves(0),
+      removeRangeByRankFromSortedSet: Sinon.stub().resolves(0),
       removeRangeByScoreFromSortedSet: Sinon.stub().resolves(0),
     }
 
@@ -52,19 +56,16 @@ describe('relay-probe-history', () => {
       status: 'ok',
     }
 
-    const older: RelayProbeRunSnapshot = {
-      runAt: '2025-12-31T00:00:00.000Z',
-      targets: [],
-      results: [],
-      status: 'failed',
-    }
-
-    cache.getRangeFromSortedSet.onFirstCall().resolves([JSON.stringify(older), JSON.stringify(snapshot)])
+    cache.getSortedSetSize.resolves(2)
 
     await store.append(snapshot, { maxRuns: 1 })
 
     expect(cache.addToSortedSet).to.have.been.calledOnce
-    expect(cache.removeRangeByScoreFromSortedSet).to.have.been.called
+    expect(cache.removeRangeByRankFromSortedSet).to.have.been.calledOnceWith(
+      RELAY_PROBE_HISTORY_KEY,
+      0,
+      0,
+    )
   })
 
   it('returns the newest history entries up to the requested limit', async () => {
@@ -87,5 +88,19 @@ describe('relay-probe-history', () => {
 
     expect(cache.getRangeFromSortedSet).to.have.been.calledOnceWith(RELAY_PROBE_HISTORY_KEY, -2, -1)
     expect(history.map((entry) => entry.runAt)).to.deep.equal([newer.runAt, older.runAt])
+  })
+
+  it('trims expired runs when listing with an age retention limit', async () => {
+    cache.getSortedSetSize.resolves(1)
+    cache.getRangeFromSortedSet.resolves([])
+
+    await store.list(10, { maxRuns: 168, maxAgeHours: 24 })
+
+    expect(cache.removeRangeByScoreFromSortedSet).to.have.been.calledOnce
+    const [key, minScore, maxScore] = cache.removeRangeByScoreFromSortedSet.firstCall.args
+    expect(key).to.equal(RELAY_PROBE_HISTORY_KEY)
+    expect(minScore).to.equal(0)
+    expect(maxScore).to.be.a('number')
+    expect(maxScore).to.be.lessThan(Date.now())
   })
 })

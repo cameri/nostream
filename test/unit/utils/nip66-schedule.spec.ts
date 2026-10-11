@@ -36,5 +36,11 @@ describe('nip66-schedule', () => {
         nip66: { historyRetentionRuns: 48, historyRetentionHours: 72 },
       } as Settings),
     ).to.deep.equal({ maxRuns: 48, maxAgeHours: 72 })
+
+    expect(
+      getNip66HistoryRetention({
+        nip66: { historyRetentionHours: 0 },
+      } as Settings),
+    ).to.deep.equal({ maxRuns: DEFAULT_HISTORY_RETENTION_RUNS, maxAgeHours: undefined })
   })
 })

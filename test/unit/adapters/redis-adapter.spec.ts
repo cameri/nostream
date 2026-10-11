@@ -29,6 +29,8 @@ describe('RedisAdapter', () => {
       get: sandbox.stub(),
       set: sandbox.stub(),
       zRemRangeByScore: sandbox.stub(),
+      zRemRangeByRank: sandbox.stub(),
+      zCard: sandbox.stub(),
       zRange: sandbox.stub(),
       expire: sandbox.stub(),
       zAdd: sandbox.stub(),
@@ -160,6 +162,28 @@ describe('RedisAdapter', () => {
 
       expect(client.zRemRangeByScore).to.have.been.calledOnceWithExactly('sorted-key', 10, 20)
       expect(result).to.equal(3)
+    })
+  })
+
+  describe('removeRangeByRankFromSortedSet', () => {
+    it('calls client.zRemRangeByRank with correct arguments', async () => {
+      client.zRemRangeByRank.resolves(2)
+
+      const result = await adapter.removeRangeByRankFromSortedSet('sorted-key', 0, 5)
+
+      expect(client.zRemRangeByRank).to.have.been.calledOnceWithExactly('sorted-key', 0, 5)
+      expect(result).to.equal(2)
+    })
+  })
+
+  describe('getSortedSetSize', () => {
+    it('calls client.zCard with the key', async () => {
+      client.zCard.resolves(4)
+
+      const result = await adapter.getSortedSetSize('sorted-key')
+
+      expect(client.zCard).to.have.been.calledOnceWithExactly('sorted-key')
+      expect(result).to.equal(4)
     })
   })
 

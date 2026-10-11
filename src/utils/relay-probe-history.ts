@@ -26,7 +26,11 @@ export class RelayProbeHistoryStore {
     await this.trim(retention)
   }
 
-  public async list(limit: number): Promise<RelayProbeRunSnapshot[]> {
+  public async list(limit: number, retention?: RelayProbeHistoryRetention): Promise<RelayProbeRunSnapshot[]> {
+    if (retention) {
+      await this.trim(retention)
+    }
+
     const clamped = Math.min(Math.max(Math.floor(limit), 1), MAX_PROBE_HISTORY_API_LIMIT)
     const raw = await this.cache.getRangeFromSortedSet(RELAY_PROBE_HISTORY_KEY, -clamped, -1)
 
@@ -37,23 +41,10 @@ export class RelayProbeHistoryStore {
 
   private async trim(retention: RelayProbeHistoryRetention): Promise<void> {
     const maxRuns = Math.max(1, Math.floor(retention.maxRuns))
-    const all = await this.cache.getRangeFromSortedSet(RELAY_PROBE_HISTORY_KEY, 0, -1)
+    const size = await this.cache.getSortedSetSize(RELAY_PROBE_HISTORY_KEY)
 
-    if (all.length > maxRuns) {
-      const dropCount = all.length - maxRuns
-      let maxDropScore = 0
-
-      for (let index = 0; index < dropCount; index++) {
-        const entry = JSON.parse(all[index]) as RelayProbeRunSnapshot
-        const entryScore = Date.parse(entry.runAt)
-        if (Number.isFinite(entryScore) && entryScore > maxDropScore) {
-          maxDropScore = entryScore
-        }
-      }
-
-      if (maxDropScore > 0) {
-        await this.cache.removeRangeByScoreFromSortedSet(RELAY_PROBE_HISTORY_KEY, 0, maxDropScore)
-      }
+    if (size > maxRuns) {
+      await this.cache.removeRangeByRankFromSortedSet(RELAY_PROBE_HISTORY_KEY, 0, size - maxRuns - 1)
     }
 
     const maxAgeHours = retention.maxAgeHours
