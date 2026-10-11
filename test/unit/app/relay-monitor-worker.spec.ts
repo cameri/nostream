@@ -28,6 +28,10 @@ describe('RelayMonitorWorker', () => {
     getLatest: Sinon.SinonStub
   }
   let probeRunner: Sinon.SinonStub
+  let historyStore: {
+    append: Sinon.SinonStub
+    list: Sinon.SinonStub
+  }
 
   const probeResult = (): ProbeResult =>
     ({
@@ -77,9 +81,20 @@ describe('RelayMonitorWorker', () => {
       saveLatest: sandbox.stub().resolves(),
       getLatest: sandbox.stub().resolves(null),
     }
+    historyStore = {
+      append: sandbox.stub().resolves(),
+      list: sandbox.stub().resolves([]),
+    }
     probeRunner = sandbox.stub().resolves(probeResult())
 
-    worker = new RelayMonitorWorker(fakeProcess as unknown as NodeJS.Process, settings, snapshotStore, probeRunner)
+    worker = new RelayMonitorWorker(
+      fakeProcess as unknown as NodeJS.Process,
+      settings,
+      snapshotStore,
+      probeRunner,
+      undefined,
+      historyStore as any,
+    )
   })
 
   afterEach(() => {
@@ -102,17 +117,21 @@ describe('RelayMonitorWorker', () => {
 
     worker.run()
     await Promise.resolve()
+    await Promise.resolve()
 
     expect(probeRunner).to.have.been.calledOnceWith('wss://relay.example.com', buildProbeOptions(settingsState))
     expect(snapshotStore.saveLatest).to.have.been.calledOnce
+    expect(historyStore.append).to.have.been.calledOnce
 
     probeRunner.resetHistory()
     snapshotStore.saveLatest.resetHistory()
+    historyStore.append.resetHistory()
 
     await clock.tickAsync(60_000)
 
     expect(probeRunner).to.have.been.calledOnce
     expect(snapshotStore.saveLatest).to.have.been.calledOnce
+    expect(historyStore.append).to.have.been.calledOnce
 
     clock.restore()
   })
@@ -174,6 +193,7 @@ describe('RelayMonitorWorker', () => {
     )
 
     worker.run()
+    await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
 

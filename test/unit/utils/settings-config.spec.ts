@@ -98,6 +98,17 @@ describe('settings-config', () => {
     expect(issues.some((issue) => issue.path === 'network')).to.equal(true)
   })
 
+  it('rejects invalid nip66 history retention settings', () => {
+    const issues = validateSettings({
+      info: { relay_url: 'wss://test.relay', name: 'test' },
+      network: {},
+      nip66: { historyRetentionRuns: 0, historyRetentionHours: 0 },
+    } as any)
+
+    expect(issues.some((issue) => issue.path === 'nip66.historyRetentionRuns')).to.equal(true)
+    expect(issues.some((issue) => issue.path === 'nip66.historyRetentionHours')).to.equal(true)
+  })
+
   describe('adaptive pow settings', () => {
     const baseSettings = () =>
       ({

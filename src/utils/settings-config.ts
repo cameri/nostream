@@ -602,6 +602,14 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
     })
   }
 
+  const nip66 = settings.nip66
+  if (nip66?.historyRetentionRuns !== undefined && !(nip66.historyRetentionRuns >= 1)) {
+    issues.push({ path: 'nip66.historyRetentionRuns', message: 'historyRetentionRuns must be at least 1' })
+  }
+  if (nip66?.historyRetentionHours !== undefined && !(nip66.historyRetentionHours >= 1)) {
+    issues.push({ path: 'nip66.historyRetentionHours', message: 'historyRetentionHours must be at least 1' })
+  }
+
   const pow = settings.limits?.event?.pow
   if (pow?.enabled) {
     if (!(pow.floorBits >= 0) || !(pow.floorBits <= pow.ceilingBits)) {

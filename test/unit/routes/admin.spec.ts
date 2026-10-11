@@ -204,14 +204,18 @@ describe('admin router', () => {
     const healthResponse = await axios.get(`${baseUrl}/health`, { validateStatus: () => true })
     const metricsResponse = await axios.get(`${baseUrl}/metrics`, { validateStatus: () => true })
     const networkHealthResponse = await axios.get(`${baseUrl}/network-health`, { validateStatus: () => true })
+    const networkHealthHistoryResponse = await axios.get(`${baseUrl}/network-health/history`, {
+      validateStatus: () => true,
+    })
     const notificationsResponse = await axios.get(`${baseUrl}/notifications`, { validateStatus: () => true })
 
     expect(sessionResponse.status).to.equal(401)
     expect(healthResponse.status).to.equal(401)
     expect(metricsResponse.status).to.equal(401)
     expect(networkHealthResponse.status).to.equal(401)
+    expect(networkHealthHistoryResponse.status).to.equal(401)
     expect(notificationsResponse.status).to.equal(401)
-    expect(rateLimiterMiddlewareStub.callCount).to.equal(5)
+    expect(rateLimiterMiddlewareStub.callCount).to.equal(6)
   })
 
   it('authenticates a protected route with a signed NIP-98 event', async () => {
