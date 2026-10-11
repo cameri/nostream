@@ -165,6 +165,19 @@ describe('verify-strfry-export', () => {
     })
   })
 
+  describe('a real strfry export', () => {
+    // Exported from strfry 1.1.2-148-g4cd3cf6 (strfry import, then strfry export --fried).
+    it('matches every packed record strfry wrote', async () => {
+      const input = fs.createReadStream(path.join(__dirname, '../data/strfry-fried.jsonl'))
+      const failures: [number, string][] = []
+
+      const stats = await verifyFriedExport(input, true, (lineNumber, reason) => failures.push([lineNumber, reason]))
+
+      expect(failures).to.deep.equal([])
+      expect(stats).to.deep.equal({ checked: 25, failed: 0 })
+    })
+  })
+
   describe('runVerifyStrfryExport', () => {
     let directory: string
 
