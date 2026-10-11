@@ -54,8 +54,8 @@ A second, operator-focused cut in the same visual dialect: **40 s** at 1920×108
 4. **Close** (760–1200): sign-off over the particle planet
 
 ```bash
-pnpm run render:release        # → output/release/nostream-3.3.0-very_high.mp4 (~12 MB)
-pnpm run render:release:small  # → output/release/nostream-3.3.0-low.mp4 (~1.7 MB, for sharing)
+pnpm run render:release        # → output/release/nostream-3.3.0-very_high.mp4 (~14 MB)
+pnpm run render:release:small  # → output/release/nostream-3.3.0-low.mp4 (~2.3 MB, for sharing)
 pnpm run frames:release        # → output/release/frames/f0060.png … (one still per scene + the end card)
 ```
 
