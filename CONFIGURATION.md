@@ -119,6 +119,17 @@ pnpm db:verify-index-impact
 
 The hot-path index migration (`20260420_120000_add_hot_path_indexes.js`) uses `CREATE INDEX CONCURRENTLY`, so it can be applied to a running relay without taking `ACCESS EXCLUSIVE` locks on the `events` or `invoices` tables.
 
+## Checking strfry's storage format
+
+`pnpm strfry:verify-export` checks that nostream reads strfry's packed event records the way strfry writes them. Export with strfry's `--fried` flag, which adds each event's packed record to the dump, and run the check on it:
+
+```sh
+strfry export --fried > export.jsonl
+pnpm strfry:verify-export export.jsonl
+```
+
+Every event's packed record must match the one nostream builds from the event JSON byte for byte, and its id and signature must be valid. `--skip-signatures` skips the slowest check, and `-` reads the export from stdin.
+
 ## Tag filter scope
 
 Subscription filters support single-letter tag filters using the `#<letter>` key syntax (NIP-01). Both lowercase (`#a`–`#z`) and uppercase (`#A`–`#Z`) variants are accepted.

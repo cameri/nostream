@@ -91,6 +91,7 @@
     "test:performance:message-rate-limit": "k6 run test/performance/message-limiting-k6.ts",
     "cover:integration": "nyc --report-dir .coverage/integration pnpm run test:integration -p cover",
     "export": "node --env-file-if-exists=.env -r ts-node/register src/scripts/export-events.ts",
+    "strfry:verify-export": "node -r ts-node/register src/scripts/verify-strfry-export.ts",
     "docker:compose:start": "pnpm run cli -- start",
     "docker:compose:stop": "pnpm run cli -- stop",
     "docker:compose:clean": "pnpm run cli -- clean",
