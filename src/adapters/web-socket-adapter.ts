@@ -8,11 +8,14 @@ import { ContextMetadata, Factory } from '../@types/base'
 import {
   createAuthChallengeMessage,
   createClosedMessage,
+  createNegErrMessage,
   createNoticeMessage,
   createOutgoingEventMessage,
 } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, MessageType, OutgoingMessage } from '../@types/messages'
+import { INegentropySessions } from '../@types/negentropy'
+import { NegentropySessions } from '../utils/negentropy-sessions'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
@@ -42,6 +45,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
   private readonly session: Nip42SessionManager
+  // NIP-77
+  private readonly negentropySessions: NegentropySessions
 
   public constructor(
     private readonly client: WebSocket,
@@ -54,6 +59,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     super()
     this.alive = true
     this.subscriptions = new Map()
+    this.negentropySessions = new NegentropySessions((subscriptionId) =>
+      this.sendMessage(createNegErrMessage(subscriptionId, 'closed: negentropy session timed out')),
+    )
 
     this.clientId = Buffer.from(this.request.headers['sec-websocket-key'] as string, 'base64').toString('hex')
 
@@ -175,9 +183,19 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       this.sendMessage(createClosedMessage(subscriptionId, `error: ${reason}`))
     })
 
+    this.negentropySessions.getSessionIds().forEach((subscriptionId) => {
+      this.sendMessage(createNegErrMessage(subscriptionId, `closed: ${reason}`))
+    })
+    this.negentropySessions.closeAll()
+
     if (this.client.readyState === WebSocket.OPEN) {
       this.client.close(1001, reason)
     }
+  }
+
+  // NIP-77
+  public getNegentropySessions(): INegentropySessions {
+    return this.negentropySessions
   }
 
   // NIP-42
@@ -349,6 +367,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     recordWebsocketConnectionClosed()
     this.alive = false
     this.subscriptions.clear()
+    this.negentropySessions.closeAll()
     this.session.clear()
 
     const handlers = abortableMessageHandlers.get(this.client)
