@@ -109,6 +109,75 @@ describe('settings-config', () => {
     expect(issues.some((issue) => issue.path === 'nip66.historyRetentionHours')).to.equal(false)
   })
 
+  describe('rate limit period validation', () => {
+    const baseSettings = () =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+      }) as any
+
+    const nonPositivePeriodCases: { issuePath: string; limits: Record<string, unknown> }[] = [
+      {
+        issuePath: 'limits.event.rateLimits[0].period',
+        limits: { event: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.message.rateLimits[0].period',
+        limits: { message: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.connection.rateLimits[0].period',
+        limits: { connection: { rateLimits: [{ period: -1, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.invoice.rateLimits[0].period',
+        limits: { invoice: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.admissionCheck.rateLimits[0].period',
+        limits: { admissionCheck: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.invite.rateLimits[0].period',
+        limits: { invite: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.admin.rateLimits[0].period',
+        limits: { admin: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.admin.loginRateLimits[0].period',
+        limits: { admin: { loginRateLimits: [{ period: -1, rate: 1 }] } },
+      },
+    ]
+
+    for (const { issuePath, limits } of nonPositivePeriodCases) {
+      it(`rejects a non-positive period on ${issuePath.replace('[0].period', '')}`, () => {
+        const settings = baseSettings()
+        settings.limits = limits
+
+        const issues = validateSettings(settings)
+        expect(issues.some((issue) => issue.path === issuePath)).to.equal(true)
+      })
+    }
+
+    it('accepts a positive period on limits.event.rateLimits', () => {
+      const settings = baseSettings()
+      settings.limits = { event: { rateLimits: [{ period: 60_000, rate: 10 }] } }
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path.startsWith('limits.event.rateLimits'))).to.equal(false)
+    })
+
+    it('rejects a null entry in limits.event.rateLimits without throwing', () => {
+      const settings = baseSettings()
+      settings.limits = { event: { rateLimits: [null] } }
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.rateLimits[0]')).to.equal(true)
+    })
+  })
+
   describe('adaptive pow settings', () => {
     const baseSettings = () =>
       ({

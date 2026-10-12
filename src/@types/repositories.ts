@@ -31,6 +31,8 @@ export interface EventPurgeCounts {
 
 export type ExposedPromiseKeys = 'then' | 'catch' | 'finally'
 
+export type ReconciliationItem = Pick<DBEvent, 'event_created_at' | 'event_id'>
+
 export interface IQueryResult<T> extends Pick<Promise<T>, keyof Promise<T> & ExposedPromiseKeys> {
   stream(options?: Record<string, any>): PassThrough & AsyncIterable<T>
 }
@@ -42,6 +44,7 @@ export interface IEventRepository {
   upsertMany(events: Event[]): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
   countByFilters(filters: SubscriptionFilter[]): Promise<number>
+  findReconciliationItems(filter: SubscriptionFilter): IQueryResult<ReconciliationItem[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
   deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>
   hasActiveRequestToVanish(pubkey: Pubkey): Promise<boolean>

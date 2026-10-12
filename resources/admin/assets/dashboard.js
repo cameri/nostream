@@ -64,6 +64,7 @@
   const networkHealthHistoryLimit = 24
   let networkHealthHistoryRuns = []
   let selectedNetworkHealthRunAt = null
+  let networkHealthHistoryPinned = false
 
   const statusClasses = ['status-ok', 'status-degraded', 'status-unavailable', 'status-down', 'status-no-data']
 
@@ -455,6 +456,7 @@
       button.textContent = `${label} · ${status} · ${targetCount} target(s)`
 
       button.addEventListener('click', () => {
+        networkHealthHistoryPinned = true
         selectedNetworkHealthRunAt = runAt ?? null
         renderNetworkHealthTimeline(networkHealthHistoryRuns)
         renderNetworkHealthSnapshot(run)
@@ -671,13 +673,14 @@
       const body = await response.json()
       const snapshot = body.snapshot ?? null
       let displaySnapshot = snapshot
-      if (selectedNetworkHealthRunAt && networkHealthHistoryRuns.length > 0) {
+      if (networkHealthHistoryPinned && selectedNetworkHealthRunAt && networkHealthHistoryRuns.length > 0) {
         const selected = networkHealthHistoryRuns.find((run) => run?.runAt === selectedNetworkHealthRunAt)
         if (selected) {
           displaySnapshot = selected
+        } else {
+          networkHealthHistoryPinned = false
+          selectedNetworkHealthRunAt = null
         }
-      } else if (snapshot?.runAt) {
-        selectedNetworkHealthRunAt = snapshot.runAt
       }
       renderNetworkHealthSnapshot(displaySnapshot)
       if (networkHealthHistoryRuns.length > 0) {

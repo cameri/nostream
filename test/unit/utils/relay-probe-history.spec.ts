@@ -56,15 +56,13 @@ describe('relay-probe-history', () => {
       status: 'ok',
     }
 
-    cache.getSortedSetSize.resolves(2)
-
     await store.append(snapshot, { maxRuns: 1 })
 
     expect(cache.addToSortedSet).to.have.been.calledOnce
     expect(cache.removeRangeByRankFromSortedSet).to.have.been.calledOnceWith(
       RELAY_PROBE_HISTORY_KEY,
       0,
-      0,
+      -2,
     )
   })
 
@@ -91,7 +89,6 @@ describe('relay-probe-history', () => {
   })
 
   it('trims expired runs when listing with an age retention limit', async () => {
-    cache.getSortedSetSize.resolves(1)
     cache.getRangeFromSortedSet.resolves([])
 
     await store.list(10, { maxRuns: 168, maxAgeHours: 24 })

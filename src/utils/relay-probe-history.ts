@@ -41,11 +41,12 @@ export class RelayProbeHistoryStore {
 
   private async trim(retention: RelayProbeHistoryRetention): Promise<void> {
     const maxRuns = Math.max(1, Math.floor(retention.maxRuns))
-    const size = await this.cache.getSortedSetSize(RELAY_PROBE_HISTORY_KEY)
-
-    if (size > maxRuns) {
-      await this.cache.removeRangeByRankFromSortedSet(RELAY_PROBE_HISTORY_KEY, 0, size - maxRuns - 1)
-    }
+    // Drop oldest ranks without ZCARD: safe under concurrent trim (idempotent excess removal).
+    await this.cache.removeRangeByRankFromSortedSet(
+      RELAY_PROBE_HISTORY_KEY,
+      0,
+      -(maxRuns + 1),
+    )
 
     const maxAgeHours = retention.maxAgeHours
     if (typeof maxAgeHours === 'number' && maxAgeHours > 0) {
