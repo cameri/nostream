@@ -15,6 +15,9 @@ import { EventMessageHandler } from '../../../src/handlers/event-message-handler
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { messageHandlerFactory } from '../../../src/factories/message-handler-factory'
 import { CountMessageHandler } from '../../../src/handlers/count-message-handler'
+import { NegCloseMessageHandler } from '../../../src/handlers/neg-close-message-handler'
+import { NegMsgMessageHandler } from '../../../src/handlers/neg-msg-message-handler'
+import { NegOpenMessageHandler } from '../../../src/handlers/neg-open-message-handler'
 import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../../../src/handlers/unsubscribe-message-handler'
 import * as cacheModule from '../../../src/cache/client'
@@ -99,6 +102,24 @@ describe('messageHandlerFactory', () => {
     message = [MessageType.AUTH, event] as any
 
     expect(factory([message, adapter])).to.be.an.instanceOf(AuthMessageHandler)
+  })
+
+  it('returns NegOpenMessageHandler when given a NEG-OPEN message', () => {
+    message = [MessageType.NEG_OPEN, 'sync1', {}, '6100000200'] as any
+
+    expect(factory([message, adapter])).to.be.an.instanceOf(NegOpenMessageHandler)
+  })
+
+  it('returns NegMsgMessageHandler when given a NEG-MSG message', () => {
+    message = [MessageType.NEG_MSG, 'sync1', '6100'] as any
+
+    expect(factory([message, adapter])).to.be.an.instanceOf(NegMsgMessageHandler)
+  })
+
+  it('returns NegCloseMessageHandler when given a NEG-CLOSE message', () => {
+    message = [MessageType.NEG_CLOSE, 'sync1'] as any
+
+    expect(factory([message, adapter])).to.be.an.instanceOf(NegCloseMessageHandler)
   })
 
   it('throws when given an invalid message', () => {
