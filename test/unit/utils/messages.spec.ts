@@ -1,6 +1,7 @@
 import { expect } from 'chai'
 
 import {
+  createClosedMessage,
   createCommandResult,
   createEndOfStoredEventsNoticeMessage,
   createNoticeMessage,
@@ -68,6 +69,25 @@ describe('createCommandResult', () => {
       false,
       'rate-limited: slow down',
       '1000',
+    ])
+  })
+})
+
+describe('createClosedMessage', () => {
+  it('returns a CLOSED message without params', () => {
+    expect(createClosedMessage('sub1', 'error: shutting down')).to.deep.equal([
+      MessageType.CLOSED,
+      'sub1',
+      'error: shutting down',
+    ])
+  })
+
+  it('appends optional params as a fourth element', () => {
+    expect(createClosedMessage('sub1', 'rate-limited: slow down', '2500')).to.deep.equal([
+      MessageType.CLOSED,
+      'sub1',
+      'rate-limited: slow down',
+      '2500',
     ])
   })
 })

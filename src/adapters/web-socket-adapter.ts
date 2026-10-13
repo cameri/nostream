@@ -12,7 +12,7 @@ import {
   createOutgoingEventMessage,
 } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
-import { IncomingMessage, OutgoingMessage } from '../@types/messages'
+import { IncomingMessage, MessageType, OutgoingMessage } from '../@types/messages'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
@@ -200,8 +200,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     let abortable = false
     let messageHandler: (IMessageHandler & IAbortable) | undefined = undefined
     try {
-      if (await this.isRateLimited(this.clientAddress.address)) {
-        this.sendMessage(createNoticeMessage('rate limited'))
+      const retryAfterMs = await this.isRateLimited(this.clientAddress.address)
+      if (retryAfterMs) {
+        this.sendMessage(this.createRateLimitedMessage(raw, retryAfterMs))
         return
       }
 
@@ -256,7 +257,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     }
   }
 
-  private async isRateLimited(client: string): Promise<boolean> {
+  /**
+   * Resolves to false when allowed; otherwise to the tripped window's period in ms,
+   * sent as the NIP-01 `rate-limited` backoff.
+   */
+  private async isRateLimited(client: string): Promise<false | number> {
     const { rateLimits, ipWhitelist = [] } = this.settings().limits?.message ?? {}
 
     if (!Array.isArray(rateLimits) || !rateLimits.length || ipWhitelist.includes(client)) {
@@ -273,11 +278,31 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       if (isRateLimited) {
         logger('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
 
-        return true
+        return Math.max(1, Math.ceil(period))
       }
     }
 
     return false
+  }
+
+  // NIP-01: reads (REQ, COUNT) are refused with CLOSED; other messages keep the NOTICE.
+  private createRateLimitedMessage(raw: Buffer, retryAfterMs: number): OutgoingMessage {
+    let message: unknown
+    try {
+      message = JSON.parse(raw.toString('utf8'))
+    } catch {
+      return createNoticeMessage('rate limited')
+    }
+
+    if (
+      Array.isArray(message) &&
+      (message[0] === MessageType.REQ || message[0] === MessageType.COUNT) &&
+      typeof message[1] === 'string'
+    ) {
+      return createClosedMessage(message[1], 'rate-limited: slow down', String(retryAfterMs))
+    }
+
+    return createNoticeMessage('rate limited')
   }
 
   private onClientPong() {
