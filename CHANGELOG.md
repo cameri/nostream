@@ -1,5 +1,25 @@
 # nostream
 
+## 3.4.0
+
+### Minor Changes
+
+- [#821](https://github.com/cameri/nostream/pull/821) [`36d2a30`](https://github.com/cameri/nostream/commit/36d2a3037e7c765d67582172ff81d7905491f49b) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(nip-01): send the `rate-limited` backoff hint on CLOSED
+
+  When the per-IP message rate limit trips on a `REQ` or `COUNT`, the relay now replies `["CLOSED", <id>, "rate-limited: slow down", "<ms>"]` with the tripped window's period as the backoff, instead of a `NOTICE`. Other message types keep the existing `NOTICE`.
+
+- [#768](https://github.com/cameri/nostream/pull/768) [`8a5600b`](https://github.com/cameri/nostream/commit/8a5600b99a2595b6114816f94c8b80ef9ff49c06) Thanks [@Ferryx349](https://github.com/Ferryx349)! - docs(deploy): add deploy runbook and single-relay recreate script
+
+- [#809](https://github.com/cameri/nostream/pull/809) [`4cf419f`](https://github.com/cameri/nostream/commit/4cf419f9df660f2fb26047ebc3ecf0e29e73fc31) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(nip77): add negentropy set-reconciliation core and a sorted event id query
+
+### Patch Changes
+
+- [#810](https://github.com/cameri/nostream/pull/810) [`0133088`](https://github.com/cameri/nostream/commit/013308804d675d5c05935ee67c986c3906081746) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - docs(readme): document Marmot Protocol MIP support
+
+- [#813](https://github.com/cameri/nostream/pull/813) [`c81407d`](https://github.com/cameri/nostream/commit/c81407db3200ed84d9bfdb764916dbc4016d5ee0) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Reject settings where any rateLimits[].period is not greater than 0
+
+- [#812](https://github.com/cameri/nostream/pull/812) [`7e44de1`](https://github.com/cameri/nostream/commit/7e44de1ad7d1f46ecdcd86dd48899d0745f68b39) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - feat(website): add the nostream 3.3.0 release film
+
 ## 3.3.0
 
 ### Minor Changes
