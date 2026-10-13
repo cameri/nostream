@@ -556,31 +556,96 @@ describe('WebSocketAdapter', () => {
       expect(sent[0]).to.equal('NOTICE')
     })
 
-    it('sends rate-limited notice when rate limited', async () => {
-      client.readyState = WebSocket.OPEN
+    describe('when rate limited', () => {
+      let onMessage: (raw: Buffer) => Promise<void>
 
-      // Configure rate limiting to be active
-      settingsFactory.returns({
-        network: { remoteIpHeader: '' },
-        limits: {
-          message: {
-            rateLimits: [{ period: 60000, rate: 1 }],
-            ipWhitelist: [],
+      const sentFrame = () => JSON.parse(client.send.firstCall.args[0])
+
+      beforeEach(() => {
+        client.readyState = WebSocket.OPEN
+
+        settingsFactory.returns({
+          network: { remoteIpHeader: '' },
+          limits: {
+            message: {
+              rateLimits: [{ period: 60000, rate: 1 }],
+              ipWhitelist: [],
+            },
           },
-        },
+        })
+
+        slidingWindowRateLimiter.returns({
+          hit: sandbox.stub().resolves(true),
+        })
+
+        onMessage = client.on.getCalls().find((call: any) => call.args[0] === 'message').args[1]
       })
 
-      slidingWindowRateLimiter.returns({
-        hit: sandbox.stub().resolves(true),
+      it('sends a rate-limited notice for non-read messages', async () => {
+        await onMessage(Buffer.from(JSON.stringify(['EVENT', {}])))
+
+        expect(client.send).to.have.been.calledOnce
+        expect(sentFrame()).to.deep.equal(['NOTICE', 'rate limited'])
       })
 
-      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
-      const onMessage = messageCall.args[1]
+      it('closes a REQ with the tripped window as backoff hint', async () => {
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
 
-      // Valid JSON message that would pass parsing
-      await onMessage(Buffer.from(JSON.stringify(['EVENT', {}])))
+        expect(client.send).to.have.been.calledOnce
+        expect(sentFrame()).to.deep.equal(['CLOSED', 'sub1', 'rate-limited: slow down', '60000'])
+      })
 
-      expect(client.send).to.have.been.called
+      it('ends an active subscription and aborts its in-flight read before CLOSED', async () => {
+        adapter.onSubscribed('sub1', [{ kinds: [1] }])
+
+        const abort = sandbox.stub()
+        let unblockFirstReq!: () => void
+        const firstReqBlocked = new Promise<void>((resolve) => {
+          unblockFirstReq = resolve
+        })
+        const inFlightHandler = {
+          activeSubscriptionId: 'sub1',
+          abort,
+          handleMessage: sandbox.stub().returns(firstReqBlocked),
+        }
+
+        const hitStub = sandbox.stub()
+        hitStub.onFirstCall().resolves(false)
+        hitStub.resolves(true)
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+        createMessageHandler.returns(inFlightHandler)
+
+        const firstReq = onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
+        await Promise.resolve()
+
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [7] }])))
+
+        expect(abort).to.have.been.calledOnce
+        expect(adapter.getSubscriptions().has('sub1')).to.equal(false)
+        expect(JSON.parse(client.send.lastCall.args[0])).to.deep.equal([
+          'CLOSED',
+          'sub1',
+          'rate-limited: slow down',
+          '60000',
+        ])
+
+        unblockFirstReq()
+        await firstReq.catch(() => undefined)
+      })
+
+      it('closes a COUNT with the tripped window as backoff hint', async () => {
+        await onMessage(Buffer.from(JSON.stringify(['COUNT', 'q1', { kinds: [1] }])))
+
+        expect(client.send).to.have.been.calledOnce
+        expect(sentFrame()).to.deep.equal(['CLOSED', 'q1', 'rate-limited: slow down', '60000'])
+      })
+
+      it('falls back to the notice when the frame is not valid JSON', async () => {
+        await onMessage(Buffer.from('not-json'))
+
+        expect(client.send).to.have.been.calledOnce
+        expect(sentFrame()).to.deep.equal(['NOTICE', 'rate limited'])
+      })
     })
 
     it('stops hitting subsequent rate limit windows once one is exceeded', async () => {

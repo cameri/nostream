@@ -40,8 +40,9 @@ export const createCountResultMessage = (queryId: SubscriptionId, payload: Count
   return [MessageType.COUNT, queryId, payload]
 }
 
-export const createClosedMessage = (queryId: SubscriptionId, reason: string): ClosedMessage => {
-  return [MessageType.CLOSED, queryId, reason]
+// NIP-01 optional params (e.g. rate-limited backoff in ms)
+export const createClosedMessage = (queryId: SubscriptionId, reason: string, params?: string): ClosedMessage => {
+  return params === undefined ? [MessageType.CLOSED, queryId, reason] : [MessageType.CLOSED, queryId, reason, params]
 }
 
 // NIP-42

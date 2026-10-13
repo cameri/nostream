@@ -90,6 +90,7 @@ export interface ClosedMessage {
   0: MessageType.CLOSED
   1: SubscriptionId
   2: string
+  3?: string
 }
 
 // NIP-42
