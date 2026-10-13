@@ -595,6 +595,44 @@ describe('WebSocketAdapter', () => {
         expect(sentFrame()).to.deep.equal(['CLOSED', 'sub1', 'rate-limited: slow down', '60000'])
       })
 
+      it('ends an active subscription and aborts its in-flight read before CLOSED', async () => {
+        adapter.onSubscribed('sub1', [{ kinds: [1] }])
+
+        const abort = sandbox.stub()
+        let unblockFirstReq!: () => void
+        const firstReqBlocked = new Promise<void>((resolve) => {
+          unblockFirstReq = resolve
+        })
+        const inFlightHandler = {
+          activeSubscriptionId: 'sub1',
+          abort,
+          handleMessage: sandbox.stub().returns(firstReqBlocked),
+        }
+
+        const hitStub = sandbox.stub()
+        hitStub.onFirstCall().resolves(false)
+        hitStub.resolves(true)
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+        createMessageHandler.returns(inFlightHandler)
+
+        const firstReq = onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
+        await Promise.resolve()
+
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [7] }])))
+
+        expect(abort).to.have.been.calledOnce
+        expect(adapter.getSubscriptions().has('sub1')).to.equal(false)
+        expect(JSON.parse(client.send.lastCall.args[0])).to.deep.equal([
+          'CLOSED',
+          'sub1',
+          'rate-limited: slow down',
+          '60000',
+        ])
+
+        unblockFirstReq()
+        await firstReq.catch(() => undefined)
+      })
+
       it('closes a COUNT with the tripped window as backoff hint', async () => {
         await onMessage(Buffer.from(JSON.stringify(['COUNT', 'q1', { kinds: [1] }])))
 

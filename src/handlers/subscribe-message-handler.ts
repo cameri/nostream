@@ -31,6 +31,9 @@ const logger = createLogger('subscribe-message-handler')
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private readonly abortController: AbortController
 
+  /** Set while `handleMessage` runs; used to abort in-flight reads when the sub is closed early. */
+  public activeSubscriptionId: SubscriptionId | undefined
+
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
@@ -47,6 +50,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   public async handleMessage(message: SubscribeMessage): Promise<void> {
     const subscriptionId = message[1]
+    this.activeSubscriptionId = subscriptionId
     const rawFilters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
 
     // NIP-50: strip search from filters when disabled so isEventMatchingFilter ignores it

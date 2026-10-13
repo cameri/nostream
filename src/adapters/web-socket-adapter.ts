@@ -299,10 +299,39 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       (message[0] === MessageType.REQ || message[0] === MessageType.COUNT) &&
       typeof message[1] === 'string'
     ) {
+      if (message[0] === MessageType.REQ) {
+        this.endSubscription(message[1])
+      }
+
       return createClosedMessage(message[1], 'rate-limited: slow down', String(retryAfterMs))
     }
 
     return createNoticeMessage('rate limited')
+  }
+
+  private endSubscription(subscriptionId: SubscriptionId): void {
+    this.abortInFlightSubscriptionReads(subscriptionId)
+    if (this.subscriptions.has(subscriptionId)) {
+      this.onUnsubscribed(subscriptionId)
+    }
+  }
+
+  private abortInFlightSubscriptionReads(subscriptionId: SubscriptionId): void {
+    const handlers = abortableMessageHandlers.get(this.client)
+    if (!handlers?.length) {
+      return
+    }
+
+    for (const handler of handlers) {
+      const abortable = handler as IAbortable & { activeSubscriptionId?: SubscriptionId }
+      if (abortable.activeSubscriptionId === subscriptionId && typeof abortable.abort === 'function') {
+        try {
+          abortable.abort()
+        } catch (error) {
+          logger.error('Unable to abort subscription handler for %s: %o', subscriptionId, error)
+        }
+      }
+    }
   }
 
   private onClientPong() {
