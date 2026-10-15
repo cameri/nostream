@@ -112,7 +112,8 @@ jobs:
     if: |
       needs.changes.outputs.src == 'true' &&
       needs.lint.result == 'success' &&
-      needs.build-check.result == 'success'
+      needs.build-check.result == 'success' &&
+      github.head_ref != 'changeset-release/main'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -155,7 +156,8 @@ jobs:
     if: |
       needs.changes.outputs.src == 'true' &&
       needs.lint.result == 'success' &&
-      needs.build-check.result == 'success'
+      needs.build-check.result == 'success' &&
+      github.head_ref != 'changeset-release/main'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
