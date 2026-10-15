@@ -1,3 +1,9 @@
 packages:
   - "."
   - website/site
+onlyBuiltDependencies:
+  - esbuild
+  - node-av
+  - sharp
+  - skia-canvas
+  - webgpu

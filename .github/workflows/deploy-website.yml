@@ -28,6 +28,9 @@ concurrency:
 
 jobs:
   deploy:
+    # workflow_dispatch ignores the push-branch filter; a manual run must not
+    # publish a non-main branch to production.
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     name: Build and deploy to Cloudflare Workers
     runs-on: ubuntu-latest
     # Deploy credentials live in this GitHub environment: CLOUDFLARE_API_TOKEN
