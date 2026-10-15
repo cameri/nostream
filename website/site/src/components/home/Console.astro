@@ -1,0 +1,206 @@
+---
+import type { ImageMetadata } from 'astro'
+import { Image } from 'astro:assets'
+import ScreenBar from '../ScreenBar.astro'
+// Drop admin console screenshots into src/assets/screens/ using these names (png, jpg or webp).
+const files = import.meta.glob<{ default: ImageMetadata }>('../../assets/screens/*.{png,jpg,jpeg,webp}', { eager: true })
+const byName = Object.fromEntries(
+  Object.entries(files).map(([file, mod]) => [file.split('/').pop()!.replace(/\.\w+$/, ''), mod.default]),
+)
+
+const shots = [
+  {
+    names: ['metrics', 'metrics-1'],
+    title: 'Live metrics',
+    body: 'Events per second, rejections, connections, CPU and memory, streamed over SSE.',
+    tag: 'SSE',
+    main: true,
+  },
+  {
+    name: 'network-health',
+    title: 'Network health',
+    body: 'NIP-66 probes for DNS, TLS, WebSocket read/write RTT and NIP-11, per target.',
+    tag: 'NIP-66',
+  },
+  {
+    name: 'mismatches',
+    title: 'NIP-11 mismatch warnings',
+    body: 'Flags when what your relay advertises disagrees with what probes measure.',
+    tag: 'NIP-11',
+  },
+  {
+    name: 'settings',
+    title: 'Settings editor',
+    body: 'Guided, validated edits with automatic backups and one-click restore.',
+    tag: 'YAML',
+  },
+  {
+    name: 'notifications',
+    title: 'Notifications',
+    body: 'Outbound alerts with a delivery log, so you hear about trouble first.',
+    tag: 'ALERT',
+  },
+]
+
+const capabilities = [
+  'Login-gated with IP allow lists and rate limits',
+  'Prometheus-compatible metrics and OpenTelemetry hooks',
+  '/readyz for load balancers and blue/green deploys',
+  'Self-hosted probes, labelled as one monitor among many',
+]
+---
+
+<section class="section" id="console">
+  <div class="container">
+    <div class="section-head split">
+      <div>
+        <p class="kicker reveal"><span class="idx">03</span> Admin & observability</p>
+        <h2 class="h2 reveal"><span class="g1">Know what your relay</span> <span class="g3">is actually doing.</span></h2>
+      </div>
+      <div class="reveal">
+        <p class="lead">A built-in console for operators: no SSH, no SQL, no guessing at 3am.</p>
+        <ul class="caps">
+          {capabilities.map((c) => <li>{c}</li>)}
+        </ul>
+      </div>
+    </div>
+
+    <div class="gallery">
+      {
+        shots.map((shot, i) => {
+          const keys = 'names' in shot && shot.names ? shot.names : 'name' in shot && shot.name ? [shot.name] : []
+          const images = keys.map((k) => byName[k]).filter(Boolean)
+          const missingKey = 'name' in shot ? shot.name : keys[0]
+          return (
+            <figure class:list={['shot reveal', { main: shot.main }]} style={`transition-delay:${(i % 2) * 80}ms`}>
+              <div class="frame">
+                <ScreenBar title={`/admin · ${shot.title.toLowerCase()}`} />
+                {images.length > 0 ? (
+                  <div class:list={['shots', { stack: images.length > 1 }]}>
+                    {images.map((src, j) => (
+                      <Image
+                        src={src}
+                        alt={`nostream admin console: ${shot.title}${images.length > 1 ? ` (${j + 1})` : ''}`}
+                        widths={[640, 1280, 1920]}
+                        sizes="(min-width: 900px) 60vw, 100vw"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div class="placeholder mono">
+                    <span class="tag tag-pink">{shot.tag}</span>
+                    <span>screenshot coming soon</span>
+                    <span class="hint">src/assets/screens/{missingKey}.png</span>
+                  </div>
+                )}
+              </div>
+              <figcaption>
+                <h3 class="h3">{shot.title}</h3>
+                <p>{shot.body}</p>
+              </figcaption>
+            </figure>
+          )
+        })
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .caps {
+    display: grid;
+    gap: 8px;
+    margin: 22px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 14px;
+  }
+
+  .caps li {
+    position: relative;
+    padding-left: 20px;
+  }
+
+  .caps li::before {
+    content: '✓';
+    position: absolute;
+    left: 0;
+    color: var(--teal);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .gallery {
+    display: grid;
+    gap: 28px 20px;
+  }
+
+  @media (min-width: 900px) {
+    .gallery {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .main {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .shot {
+    margin: 0;
+  }
+
+  .frame {
+    overflow: hidden;
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    background: var(--panel);
+    transition: border-color 0.25s ease;
+  }
+
+  .shot:hover .frame {
+    border-color: var(--wire);
+  }
+
+  .shots.stack {
+    display: grid;
+    gap: 1px;
+    background: var(--line);
+  }
+
+  .frame :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .placeholder {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 12px;
+    aspect-ratio: 16 / 9;
+    background:
+      linear-gradient(135deg, rgba(255, 46, 136, 0.05), transparent 40%),
+      repeating-linear-gradient(0deg, transparent 0 27px, var(--line) 27px 28px),
+      repeating-linear-gradient(90deg, transparent 0 27px, rgba(38, 38, 42, 0.5) 27px 28px);
+    color: var(--fg-2);
+    font-size: 14px;
+  }
+
+  .main .placeholder {
+    aspect-ratio: 21 / 9;
+  }
+
+  .hint {
+    color: var(--wire);
+    font-size: 12px;
+  }
+
+  figcaption {
+    padding: 16px 4px 0;
+  }
+
+  figcaption p {
+    margin: 0;
+    font-size: 15px;
+  }
+</style>

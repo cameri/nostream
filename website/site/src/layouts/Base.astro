@@ -1,0 +1,106 @@
+---
+import '../styles/global.css'
+import Footer from '../components/Footer.astro'
+import Nav from '../components/Nav.astro'
+
+interface Props {
+  title?: string
+  description?: string
+}
+
+const {
+  title,
+  description = 'nostream is a production-ready Nostr relay written in TypeScript: PostgreSQL + Redis, paid admission over Lightning, Tor & I2P, and a built-in admin console.',
+} = Astro.props
+const fullTitle = title ? `${title} · nostream` : 'nostream: your relay, your rules'
+const canonical = new URL(Astro.url.pathname, Astro.site)
+const ogImage = new URL('/media/hero-poster.webp', Astro.site)
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/webp" href="/favicon.webp" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.webp" />
+    <meta name="theme-color" content="#08080a" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <Nav />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+
+    <script>
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('in')
+              io.unobserve(entry.target)
+            }
+          }
+        },
+        { rootMargin: '0px 0px -40px 0px', threshold: 0.08 },
+      )
+      document.querySelectorAll('.reveal').forEach((el) => io.observe(el))
+
+      // Play film clips only while visible; respect reduced motion.
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const vio = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            const video = entry.target as HTMLVideoElement
+            if (entry.isIntersecting && !reduce) {
+              video.play().catch(() => {})
+            } else {
+              video.pause()
+            }
+          }
+        },
+        { threshold: 0.25 },
+      )
+      document.querySelectorAll<HTMLVideoElement>('video[data-autoplay]').forEach((v) => vio.observe(v))
+
+      document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(button.dataset.copy ?? '')
+          const label = button.textContent
+          button.textContent = 'copied'
+          setTimeout(() => (button.textContent = label), 1400)
+        })
+      })
+    </script>
+    <script>
+      import '../scripts/spark-field.ts'
+    </script>
+
+    <style>
+      .skip {
+        position: absolute;
+        left: 16px;
+        top: -60px;
+        z-index: 100;
+        padding: 10px 14px;
+        border-radius: 6px;
+        background: var(--pink);
+        color: #fff;
+      }
+      .skip:focus {
+        top: 12px;
+      }
+    </style>
+  </body>
+</html>

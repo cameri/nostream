@@ -1,0 +1,165 @@
+---
+import { SUPPORTED_MIPS, SUPPORTED_NIPS } from '../../data/site'
+
+const pillars = [
+  {
+    code: 'NIP',
+    title: 'Protocol breadth',
+    body: `${SUPPORTED_NIPS.length} NIPs implemented relay-side, from basic flow to auth, counts, search and encrypted payloads, plus Marmot MIPs ${SUPPORTED_MIPS[0]}–${SUPPORTED_MIPS[SUPPORTED_MIPS.length - 1]} for E2EE group messaging.`,
+    wide: true,
+  },
+  {
+    code: 'NET',
+    title: 'Tor & I2P built in',
+    body: 'Publish an .onion or .i2p address with a flag. nostream start --tor --i2p, then nostream info --tor-hostname.',
+  },
+  {
+    code: 'OPS',
+    title: 'Admin console',
+    body: 'Live metrics, NIP-66 network health, NIP-11 mismatch warnings and a validated settings editor.',
+  },
+  {
+    code: 'LN',
+    title: 'Paid admission',
+    body: 'Charge to publish. Invoices via ZEBEDEE, Nodeless, OpenNode, LNbits or any LNURL-verify provider.',
+  },
+  {
+    code: 'LIM',
+    title: 'Limits that hold',
+    body: 'Rate limits, adaptive proof-of-work, kind and size rules. Clients get a rate-limited hint with a backoff.',
+  },
+  {
+    code: 'I/O',
+    title: 'Your data, portable',
+    body: 'Import and export events as JSON or JSONL in batches. Back up, migrate, or seed a new relay.',
+    full: true,
+    command: 'nostream export --output backup.jsonl --format jsonl',
+  },
+]
+---
+
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-head split">
+      <div>
+        <p class="kicker reveal"><span class="idx">02</span> Feature pillars</p>
+        <h2 class="h2 reveal"><span class="g1">Everything a relay needs.</span> <span class="g3">Nothing it doesn't.</span></h2>
+      </div>
+      <p class="lead reveal">Protocol breadth, network reach and the ops tooling to keep it healthy, in one codebase you can read.</p>
+    </div>
+
+    <div class="bento">
+      {
+        pillars.map((p, i) => (
+          <article class:list={['cell panel panel-hover reveal', { wide: p.wide, full: p.full }]} style={`transition-delay:${(i % 3) * 80}ms`}>
+            <div class="text">
+              <span class="code mono">{p.code}</span>
+              <h3 class="h3">{p.title}</h3>
+              <p>{p.body}</p>
+            </div>
+            {p.command && (
+              <code class="cmd mono">
+                <span class="g3">$</span> {p.command}
+              </code>
+            )}
+            {p.code === 'NIP' && (
+              <div class="count mono" aria-hidden="true">
+                {String(SUPPORTED_NIPS.length)}
+                <span>NIPs</span>
+              </div>
+            )}
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .bento {
+    display: grid;
+    gap: 16px;
+  }
+
+  @media (min-width: 900px) {
+    .bento {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .wide {
+      grid-column: span 2;
+    }
+    .wide p {
+      max-width: 52%;
+    }
+    .full {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 32px;
+      min-height: 0;
+    }
+  }
+
+  .cell {
+    position: relative;
+    overflow: hidden;
+    min-height: 210px;
+    padding: 26px;
+  }
+
+  .cell p {
+    max-width: 520px;
+    margin: 0;
+    font-size: 15px;
+  }
+
+  .cmd {
+    display: block;
+    overflow-x: auto;
+    flex: none;
+    margin-top: 20px;
+    padding: 12px 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .code {
+    display: inline-block;
+    margin-bottom: 40px;
+    color: var(--pink);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+  }
+
+  .count {
+    position: absolute;
+    top: 14px;
+    right: 26px;
+    color: transparent;
+    font-size: clamp(80px, 9vw, 120px);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.06em;
+    -webkit-text-stroke: 1px var(--wire);
+    pointer-events: none;
+  }
+
+  .count span {
+    margin-left: 8px;
+    font-size: 18px;
+    letter-spacing: 0.1em;
+    -webkit-text-stroke: 0;
+    color: var(--muted);
+  }
+
+  @media (max-width: 899px) {
+    .count {
+      display: none;
+    }
+  }
+</style>

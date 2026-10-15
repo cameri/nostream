@@ -1,0 +1,138 @@
+---
+const audiences = [
+  {
+    code: 'PUB',
+    title: 'Public relay operators',
+    body: 'Serve the open network without getting flattened by it.',
+    points: [
+      'Sliding-window rate limits with backoff hints clients can respect',
+      'Adaptive proof-of-work, event size and created_at limits',
+      'Horizontal workers with Redis fan-out',
+    ],
+  },
+  {
+    code: 'PAID',
+    title: 'Paid relay operators',
+    body: 'Turn a relay into a service. Admission fees settle over Lightning.',
+    points: [
+      'ZEBEDEE, Nodeless, OpenNode, LNbits and LNURL processors',
+      'Admission checks and NIP-43 invite codes',
+      'Admission fee schedules with pubkey whitelists',
+    ],
+  },
+  {
+    code: 'SELF',
+    title: 'Self-hosters',
+    body: 'A relay for you, your family or your community, on your own box.',
+    points: [
+      'One command: nostream start, with Tor, I2P or nginx + certbot',
+      'Import and export events as JSON or JSONL',
+      'Restricted kinds, pubkey allow lists and NIP-42 auth',
+    ],
+  },
+]
+---
+
+<section class="section" id="who">
+  <div class="container">
+    <div class="section-head split">
+      <div>
+        <p class="kicker reveal"><span class="idx">01</span> Who it's for</p>
+        <h2 class="h2 reveal"><span class="g1">One relay.</span> <span class="g2">Three ways to run it.</span></h2>
+      </div>
+      <p class="lead reveal">
+        Whether you are opening a relay to everyone, charging for access, or keeping it private, nostream ships the knobs
+        you need, without forking.
+      </p>
+    </div>
+
+    <div class="rail">
+      {
+        audiences.map((a, i) => (
+          <article class="card panel panel-hover reveal" style={`transition-delay:${i * 90}ms`}>
+            <header>
+              <span class="tag tag-teal">{a.code}</span>
+              <span class="num mono">0{i + 1}</span>
+            </header>
+            <h3 class="h3">{a.title}</h3>
+            <p>{a.body}</p>
+            <ul>
+              {a.points.map((p) => (
+                <li>{p}</li>
+              ))}
+            </ul>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .rail {
+    position: relative;
+    display: grid;
+    gap: 18px;
+  }
+
+  @media (min-width: 900px) {
+    .rail {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .rail::before {
+      content: '';
+      position: absolute;
+      top: 44px;
+      left: 8%;
+      right: 8%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--pink-dim), var(--pink), var(--pink-dim), transparent);
+      z-index: -1;
+    }
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    padding: 26px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 26px;
+  }
+
+  .num {
+    color: var(--wire);
+    font-size: 13px;
+  }
+
+  .card p {
+    margin: 0 0 18px;
+  }
+
+  ul {
+    display: grid;
+    gap: 10px;
+    margin: auto 0 0;
+    padding: 18px 0 0;
+    border-top: 1px dashed var(--line);
+    list-style: none;
+    font-size: 14px;
+  }
+
+  li {
+    position: relative;
+    padding-left: 18px;
+  }
+
+  li::before {
+    content: '›';
+    position: absolute;
+    left: 0;
+    color: var(--pink);
+    font-family: var(--mono);
+  }
+</style>

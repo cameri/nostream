@@ -1,0 +1,300 @@
+---
+import ScreenBar from '../ScreenBar.astro'
+
+const paths = [
+  {
+    id: 'compose',
+    label: 'Docker Compose',
+    who: 'Fastest way to a working relay on a laptop or a VPS.',
+    effort: '~5 min',
+    doc: { href: '/docs/quick-start#quick-start-docker-compose', label: 'Quick start (Docker Compose)' },
+    commands: [
+      '# clone and configure',
+      'git clone https://github.com/cameri/nostream.git && cd nostream',
+      'echo "SECRET=$(openssl rand -hex 128)" > .env',
+      '',
+      '# install the CLI from the checkout and start',
+      'pnpm add -g .',
+      'nostream start',
+      '',
+      '# with TLS via nginx + certbot',
+      'RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com nostream start --nginx',
+    ],
+  },
+  {
+    id: 'production',
+    label: 'Production (GHCR)',
+    who: 'A Linux server running the pre-built image. You keep only .env and optional overrides.',
+    effort: '~15 min',
+    doc: { href: '/docs/deploy', label: 'Production deployment' },
+    commands: [
+      '# copy release-managed files to the host',
+      'chmod +x deploy/bootstrap.sh',
+      './deploy/bootstrap.sh /opt/nostream',
+      '',
+      '# edit /opt/nostream/.env, load ghcr.io/cameri/nostream:main, then',
+      'cd /opt/nostream',
+      'docker compose up -d',
+      '',
+      '# later updates',
+      './deploy/recreate-relay.sh /opt/nostream',
+    ],
+  },
+  {
+    id: 'haproxy',
+    label: 'Blue/green (HAProxy)',
+    who: 'Zero-downtime rollouts: two relays behind HAProxy, replaced one at a time.',
+    effort: '~30 min',
+    doc: { href: '/docs/deploy-runbook#haproxy-bluegreen-deploy', label: 'Deploy runbook & HAProxy' },
+    commands: [
+      '# after the new image is loaded',
+      'cd /opt/nostream',
+      'docker compose -f docker-compose.haproxy.yml run --rm nostream-migrate',
+      './rolling-relay-recreate.sh',
+      '',
+      '# the peer must stay up; wait for /readyz to return 200',
+    ],
+  },
+  {
+    id: 'tor',
+    label: 'Tor & I2P',
+    who: 'Private or censorship-resistant relays with an .onion or .i2p address.',
+    effort: '~5 min',
+    doc: { href: '/docs/cli#common-workflows', label: 'CLI common workflows' },
+    commands: [
+      '# start with hidden services',
+      'nostream start --tor --i2p',
+      '',
+      '# print the addresses to share',
+      'nostream info --tor-hostname',
+      'nostream info --i2p-hostname',
+    ],
+  },
+  {
+    id: 'standalone',
+    label: 'Standalone (Node)',
+    who: 'Bring your own PostgreSQL and Redis, run Node directly. Good for development.',
+    effort: '~20 min',
+    doc: { href: '/docs/quick-start#quick-start-standalone', label: 'Quick start (standalone)' },
+    commands: [
+      '# set DB_* / REDIS_* and SECRET in .env, then',
+      'corepack enable',
+      'pnpm install',
+      'pnpm db:migrate',
+      '',
+      'mkdir .nostr',
+      'cp resources/default-settings.yaml .nostr/settings.yaml',
+      'pnpm start',
+    ],
+  },
+]
+
+const isComment = (line: string) => line.startsWith('#')
+const kindOf = (line: string) => (line === '' ? 'blank' : isComment(line) ? 'c' : 'cmd')
+---
+
+<div class="paths" data-tabs>
+  <div class="tabs" role="tablist" aria-label="Deploy paths">
+    {
+      paths.map((p, i) => (
+        <button
+          type="button"
+          role="tab"
+          id={`tab-${p.id}`}
+          aria-controls={`panel-${p.id}`}
+          aria-selected={i === 0 ? 'true' : 'false'}
+          tabindex={i === 0 ? 0 : -1}
+          class="tab mono"
+        >
+          <span class="n">0{i + 1}</span>
+          {p.label}
+        </button>
+      ))
+    }
+  </div>
+
+  {
+    paths.map((p, i) => (
+      <div class="pane" role="tabpanel" id={`panel-${p.id}`} aria-labelledby={`tab-${p.id}`} hidden={i !== 0}>
+        <div class="meta">
+          <p class="who">{p.who}</p>
+          <span class="tag tag-teal">{p.effort}</span>
+        </div>
+        <div class="term">
+          <ScreenBar title={`~/${p.id}`}>
+            <button class="copy mono" type="button" data-copy={p.commands.filter((l) => l && !isComment(l)).join('\n')}>
+              copy
+            </button>
+          </ScreenBar>
+          <div class="lines mono">
+            {p.commands.map((line) => (
+              <span class={kindOf(line)}>{line}</span>
+            ))}
+          </div>
+        </div>
+        <a class="doc mono" href={p.doc.href}>
+          Read: {p.doc.label} <span>→</span>
+        </a>
+      </div>
+    ))
+  }
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-tabs]').forEach((root) => {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    const select = (tab: HTMLButtonElement) => {
+      for (const t of tabs) {
+        const on = t === tab
+        t.setAttribute('aria-selected', String(on))
+        t.tabIndex = on ? 0 : -1
+        root.querySelector<HTMLElement>(`#${t.getAttribute('aria-controls')}`)!.hidden = !on
+      }
+    }
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => select(tab))
+      tab.addEventListener('keydown', (e) => {
+        const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+        if (step) {
+          const next = tabs[(i + step + tabs.length) % tabs.length]
+          select(next)
+          next.focus()
+        }
+      })
+    })
+  })
+</script>
+
+<style>
+  .tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+    scrollbar-width: none;
+  }
+
+  .tab {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fg-2);
+    font-size: 13px;
+    cursor: pointer;
+    transition:
+      color 0.2s ease,
+      border-color 0.2s ease,
+      background 0.2s ease;
+  }
+
+  .tab:hover {
+    color: var(--fg);
+    border-color: var(--wire);
+  }
+
+  .tab[aria-selected='true'] {
+    border-color: var(--pink);
+    background: rgba(255, 46, 136, 0.08);
+    color: var(--fg);
+  }
+
+  .n {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .tab[aria-selected='true'] .n {
+    color: var(--pink);
+  }
+
+  .pane {
+    padding-top: 22px;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .who {
+    margin: 0;
+    color: var(--fg);
+  }
+
+  .term {
+    overflow: hidden;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    background: var(--panel);
+  }
+
+  .copy {
+    margin-left: auto;
+    height: 24px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .copy:hover {
+    color: var(--fg);
+    border-color: var(--wire);
+  }
+
+  .lines {
+    display: grid;
+    overflow-x: auto;
+    padding: 18px 20px;
+    color: var(--fg);
+    font-size: 13.5px;
+    line-height: 1.8;
+  }
+
+  .lines span {
+    white-space: pre;
+  }
+
+  .blank {
+    height: 1em;
+  }
+
+  .c {
+    color: var(--muted);
+  }
+
+  .cmd::before {
+    content: '$ ';
+    color: var(--pink);
+  }
+
+  .doc {
+    display: inline-flex;
+    gap: 8px;
+    margin-top: 16px;
+    color: var(--teal);
+    font-size: 13px;
+  }
+
+  .doc span {
+    transition: transform 0.2s ease;
+  }
+
+  .doc:hover span {
+    transform: translateX(3px);
+  }
+</style>

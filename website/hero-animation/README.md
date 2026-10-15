@@ -32,8 +32,17 @@ pnpm run preview
 
 ## Export MP4
 
+NIP counts in the film (hero stats, features slide, relay-core checklist) come from the repo root `package.json` → `supportedNips` via `src/repo-meta.ts`. After changing supported NIPs, re-render and refresh site media:
+
 ```bash
-pnpm run render        # → output/nostream-hero.mp4 (very high bitrate, ~45 MB)
+pnpm run render        # → output/nostream-hero.mp4 + output/film.meta.json
+pnpm run frames        # poster frame for the website
+cd ../site && pnpm run media
+```
+
+`pnpm run render` writes `output/film.meta.json` (`nipCount`). The Astro site copies that to `public/media/hero.meta.json` and `pnpm build` runs `check-hero-nips.mjs` so a stale hero video fails CI until you re-export.
+
+```bash
 pnpm run render:small  # → output/nostream-hero-low.mp4 (~4 MB, for sharing / PR previews)
 ```
 
@@ -44,7 +53,7 @@ pnpm run frames
 # → output/frames/f0130.png …
 ```
 
-## Release film — nostream 3.3.0
+## Release film — nostream 3.4.0
 
 A second, operator-focused cut in the same visual dialect: **40 s** at 1920×1080, 30 fps = **1200 frames**, composed in `src/release-film.ts` and rendered headlessly by `src/release-render.ts`.
 
@@ -54,8 +63,8 @@ A second, operator-focused cut in the same visual dialect: **40 s** at 1920×108
 4. **Close** (760–1200): sign-off over the particle planet
 
 ```bash
-pnpm run render:release        # → output/release/nostream-3.3.0-very_high.mp4 (~14 MB)
-pnpm run render:release:small  # → output/release/nostream-3.3.0-low.mp4 (~2.3 MB, for sharing)
+pnpm run render:release        # → output/release/nostream-3.4.0-very_high.mp4 (~14 MB)
+pnpm run render:release:small  # → output/release/nostream-3.4.0-low.mp4 (~2.3 MB, for sharing)
 pnpm run frames:release        # → output/release/frames/f0060.png … (one still per scene + the end card)
 ```
 
