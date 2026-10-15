@@ -100,10 +100,14 @@ describe('settings-config', () => {
 
   it('accepts a relay_url with a valid ws/wss/http/https absolute URL', () => {
     for (const relay_url of [
-      'wss://nostream.example.com',
       'ws://nostream.example.com:8008',
-      'https://nostream.example.com',
+      'wss://nostream.example.com',
       'http://localhost:8008',
+      'http://nostream.example.com',
+      'https://nostream.example.com',
+      'https://nostream.example.com:8443',
+      'ws://[::1]:8008',
+      'wss://127.0.0.1',
     ]) {
       const issues = validateSettings({ info: { relay_url, name: 'test' } } as any)
 
@@ -135,15 +139,22 @@ describe('settings-config', () => {
   })
 
   it('rejects a relay_url whose protocol is not ws/wss/http/https', () => {
-    const issues = validateSettings({ info: { relay_url: 'ftp://nostream.example.com', name: 'test' } } as any)
+    for (const relay_url of [
+      'ftp://nostream.example.com',
+      'gopher://nostream.example.com:70',
+      'whttp://nostream.example.com',
+    ]) {
+      const issues = validateSettings({ info: { relay_url, name: 'test' } } as any)
 
-    expect(
-      issues.some(
-        (issue) =>
-          issue.path === 'info.relay_url' &&
-          issue.message === 'relay_url must use ws, wss, http, or https protocol',
-      ),
-    ).to.equal(true)
+      expect(
+        issues.some(
+          (issue) =>
+            issue.path === 'info.relay_url' &&
+            issue.message === 'relay_url must use ws, wss, http, or https protocol',
+        ),
+        `expected ${relay_url} to be rejected for protocol`,
+      ).to.equal(true)
+    }
   })
 
   describe('rate limit period validation', () => {
