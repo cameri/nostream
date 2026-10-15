@@ -22,6 +22,7 @@ import {
   guidedSettingCategories,
   requireNonEmptySettingValue,
   requireSafeNonNegativeIntegerSettingValue,
+  requireSafePositiveIntegerSettingValue,
 } from '../../../src/utils/settings-guided-schema'
 
 describe('settings-config', () => {
@@ -444,6 +445,26 @@ describe('settings-guided-schema', () => {
     expect(requireSafeNonNegativeIntegerSettingValue('bad')).to.equal('Value must be a non-negative integer')
     expect(requireSafeNonNegativeIntegerSettingValue('2048')).to.equal(undefined)
     expect(requireNonEmptySettingValue(' ')).to.equal('Value is required')
+  })
+
+  it('validates guided positive integer fields', () => {
+    expect(requireSafePositiveIntegerSettingValue('bad')).to.equal('Value must be a positive integer')
+    expect(requireSafePositiveIntegerSettingValue('-1')).to.equal('Value must be a positive integer')
+    expect(requireSafePositiveIntegerSettingValue('0')).to.equal('Value must be a positive integer')
+    expect(requireSafePositiveIntegerSettingValue('9007199254740993')).to.equal('Value must be a safe integer')
+    expect(requireSafePositiveIntegerSettingValue(' 60000 ')).to.equal(undefined)
+  })
+
+  it('exposes the nip77 settings with positive integer validation', () => {
+    const category = 'nip-features'
+
+    expect(getGuidedSettingField(category, 'nip77.enabled')?.type).to.equal('boolean')
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs']) {
+      const field = getGuidedSettingField(category, `nip77.${key}`)
+      expect(field?.type, key).to.equal('number')
+      expect(field?.validate?.('0'), key).to.equal('Value must be a positive integer')
+      expect(field?.validate?.('3'), key).to.equal(undefined)
+    }
   })
 
   it('does not create settings.yaml when ensuring config dir exists', () => {
