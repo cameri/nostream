@@ -1,0 +1,25 @@
+---
+interface Props {
+  kicker: string
+  lead?: string
+}
+const { kicker, lead } = Astro.props
+---
+
+<section class="head">
+  <div class="container">
+    <p class="kicker reveal">{kicker}</p>
+    <h1 class="display reveal"><slot /></h1>
+    {lead && <p class="lead reveal">{lead}</p>}
+  </div>
+</section>
+
+<style>
+  .head {
+    padding: clamp(56px, 8vw, 100px) 0 clamp(40px, 6vw, 64px);
+  }
+  .display {
+    font-size: clamp(38px, 6vw, 68px);
+    margin-bottom: 22px;
+  }
+</style>

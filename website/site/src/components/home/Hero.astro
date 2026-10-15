@@ -1,0 +1,108 @@
+---
+import FilmFrame from '../FilmFrame.astro'
+import { VERSION } from '../../data/site'
+---
+
+<section class="stage" data-spark-host data-spark-mode="stream">
+  <h1 class="sr-only">nostream — a production-ready Nostr relay. Your relay, your rules.</h1>
+  <canvas
+    class="spark-canvas"
+    data-spark-canvas
+    data-max-pool="2600"
+    data-spawn-chance="0.995"
+    data-per-frame="8"
+    aria-hidden="true"></canvas>
+  <FilmFrame
+    class="hero-film"
+    src="/media/hero.mp4"
+    poster="/media/hero-poster.webp"
+    title={`/hero · nostream ${VERSION}`}
+  />
+</section>
+
+<style>
+  .stage {
+    --pad-y: clamp(18px, 3.5vh, 44px);
+    --pad-x: clamp(14px, 3.5vw, 56px);
+    --film-h: calc(100svh - 68px - 2 * var(--pad-y) - 36px);
+
+    position: relative;
+    z-index: 0;
+    box-sizing: border-box;
+    height: calc(100svh - 68px);
+    min-height: 420px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  .spark-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .stage :global(.hero-film) {
+    position: absolute;
+    z-index: 2;
+    top: 50%;
+    right: var(--pad-x);
+    transform: translateY(-50%);
+    width: min(1320px, 86vw, calc(var(--film-h) * 16 / 9));
+    max-width: calc(100% - 2 * var(--pad-x));
+    max-height: calc(var(--film-h) + 36px);
+  }
+
+  .stage :global(.hero-film .film-crisp.screen) {
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.05),
+      0 32px 90px -40px rgba(0, 0, 0, 0.95);
+  }
+
+  .stage :global(.hero-film .film-crisp video) {
+    max-height: var(--film-h);
+    object-fit: contain;
+  }
+
+  @media (max-width: 900px) {
+    .stage {
+      height: auto;
+      min-height: 0;
+      padding: var(--pad-y) var(--pad-x);
+    }
+
+    .stage :global(.hero-film) {
+      position: relative;
+      top: auto;
+      right: auto;
+      transform: none;
+      width: 100%;
+      max-width: 100%;
+      max-height: none;
+    }
+
+    .stage :global(.hero-film .film-crisp video) {
+      max-height: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spark-canvas {
+      display: none;
+    }
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>

@@ -1,0 +1,105 @@
+---
+import { NIP_TITLES, SUPPORTED_MIPS, SUPPORTED_NIPS, nipUrl } from '../../data/site'
+
+const nips = SUPPORTED_NIPS.map((n) => ({ n, label: String(n).padStart(2, '0'), title: NIP_TITLES[n] ?? 'Nostr Implementation Possibility' }))
+---
+
+<section class="section" id="nips">
+  <div class="container">
+    <div class="section-head split">
+      <div>
+        <p class="kicker reveal"><span class="idx">04</span> NIPs supported</p>
+        <h2 class="h2 reveal"><span class="g1">{SUPPORTED_NIPS.length} NIPs,</span> <span class="g2">advertised in NIP-11.</span></h2>
+      </div>
+      <p class="lead reveal">
+        The same list your relay returns as <code class="mono">supported_nips</code>, read straight from the repository at build time.
+      </p>
+    </div>
+
+    <ul class="grid">
+      {
+        nips.map((nip, i) => (
+          <li class="reveal" style={`transition-delay:${(i % 6) * 40}ms`}>
+            <a class="nip panel-hover" href={nipUrl(nip.n)} target="_blank" rel="noopener noreferrer">
+              <span class="num mono">NIP-{nip.label}</span>
+              <span class="title">{nip.title}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+
+    {
+      SUPPORTED_MIPS.length > 0 && (
+        <a class="mips panel panel-hover reveal" href="https://github.com/marmot-protocol/marmot" target="_blank" rel="noopener noreferrer">
+          <span class="tag tag-pink">Marmot</span>
+          <span>
+            MIPs {SUPPORTED_MIPS.map((m) => String(m).padStart(2, '0')).join(', ')}: end-to-end encrypted group messaging
+            over Nostr, advertised as <code class="mono">supported_mips</code>.
+          </span>
+          <span class="arrow mono">→</span>
+        </a>
+      )
+    }
+  </div>
+</section>
+
+<style>
+  .lead code {
+    color: var(--teal);
+    font-size: 0.9em;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .nip {
+    display: grid;
+    gap: 6px;
+    height: 100%;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+  }
+
+  .num {
+    color: var(--pink);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .title {
+    color: var(--fg-2);
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  .nip:hover .title {
+    color: var(--fg);
+  }
+
+  .mips {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 20px;
+    padding: 18px 22px;
+    font-size: 15px;
+  }
+
+  .mips code {
+    color: var(--teal);
+  }
+
+  .mips .arrow {
+    margin-left: auto;
+    color: var(--muted);
+  }
+</style>

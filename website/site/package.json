@@ -1,0 +1,36 @@
+{
+  "name": "nostream-website",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "nostream.dev landing page and docs, built with Astro",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "astro dev",
+    "predev": "node scripts/build-brand.mjs",
+    "prebuild": "node scripts/build-brand.mjs && node scripts/check-hero-nips.mjs",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "media": "node scripts/build-media.mjs"
+  },
+  "engines": {
+    "node": ">=20.3"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5",
+    "@fontsource/jetbrains-mono": "^5.2.5",
+    "astro": "^5.14.0",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "^5.8.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
+  }
+}
