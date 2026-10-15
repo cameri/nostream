@@ -1,0 +1,24 @@
+---
+import ScreenBar from './ScreenBar.astro'
+
+interface Props {
+  src: string
+  poster: string
+  title: string
+  class?: string
+}
+const { src, poster, title, class: className } = Astro.props
+---
+
+<figure class:list={['screen', className]}>
+  <ScreenBar title={title} />
+  <video muted loop playsinline preload="auto" poster={poster} data-autoplay aria-label={title}>
+    <source src={src} type="video/mp4" />
+  </video>
+</figure>
+
+<style>
+  figure {
+    margin: 0;
+  }
+</style>

@@ -1,0 +1,142 @@
+---
+import { getEntry, render } from 'astro:content'
+import PageHead from '../components/PageHead.astro'
+import { REPO, VERSION } from '../data/site'
+import Base from '../layouts/Base.astro'
+
+const entry = await getEntry('changelog', 'changelog')
+if (!entry) {
+  throw new Error('CHANGELOG.md not found')
+}
+const { Content, headings } = await render(entry)
+const releases = headings.filter((h) => h.depth === 2).slice(0, 12)
+---
+
+<Base title="Changelog" description="Every nostream release: new features, fixes and the people who shipped them.">
+  <PageHead kicker="Changelog" lead={`Latest upgrades, newest first. Generated from changesets on every release; currently at v${VERSION}.`}>
+    <span class="g1">What's</span> <span class="g3">new.</span>
+  </PageHead>
+
+  <div class="container layout">
+    <aside class="rail">
+      <p class="mono">Releases</p>
+      <nav aria-label="Releases">
+        {
+          releases.map((r, i) => (
+            <a href={`#${r.slug}`} class="mono">
+              <span class:list={['dot', { latest: i === 0 }]} />v{r.text}
+            </a>
+          ))
+        }
+      </nav>
+      <a class="all mono" href={`${REPO}/releases`} target="_blank" rel="noopener noreferrer">GitHub releases →</a>
+    </aside>
+    <article class="prose changelog">
+      <Content />
+    </article>
+  </div>
+</Base>
+
+<style>
+  .layout {
+    display: grid;
+    gap: 40px;
+    padding-bottom: 100px;
+  }
+
+  @media (min-width: 900px) {
+    .layout {
+      grid-template-columns: 200px minmax(0, 1fr);
+    }
+    .rail {
+      position: sticky;
+      top: 96px;
+      align-self: start;
+    }
+  }
+
+  .rail p {
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .rail nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+  }
+
+  @media (min-width: 900px) {
+    .rail nav {
+      flex-direction: column;
+    }
+  }
+
+  .rail a {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--fg-2);
+    font-size: 14px;
+  }
+
+  .rail a:hover {
+    color: var(--fg);
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--wire);
+    border-radius: 50%;
+  }
+
+  .dot.latest {
+    border-color: var(--pink);
+    background: var(--pink);
+    box-shadow: 0 0 10px var(--pink);
+  }
+
+  .all {
+    display: inline-block;
+    margin-top: 22px;
+    color: var(--teal) !important;
+    font-size: 13px;
+  }
+
+  /* The file's own "# nostream" title duplicates the page head */
+  .changelog :global(h1) {
+    display: none;
+  }
+
+  .changelog :global(h2) {
+    margin-top: 0;
+    margin-bottom: 20px;
+    padding-top: 40px;
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 30px;
+  }
+
+  .changelog :global(h2:first-of-type) {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .changelog :global(h3) {
+    margin-top: 20px;
+    color: var(--teal);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .changelog :global(li) {
+    margin-bottom: 14px;
+  }
+</style>

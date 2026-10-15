@@ -91,7 +91,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
 
 ## Full Guide
 
-- [Set up a Paid Nostr relay with Nostream and ZEBEDEE](https://docs.zebedee.io/docs/guides/nostr-relay) by [André Neves](https://primal.net/andre) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
+- [Set up a Paid Nostr relay with Nostream and ZEBEDEE](https://docs.zbdpay.com/payments/nostr/nostr-relay) by [André Neves](https://primal.net/andre) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 - [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 
 ### Accepting Payments
@@ -119,7 +119,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
      - `payments.processor` to `zebedee`
      - `paymentsProcessors.zebedee.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/zebedee`)
    - Restart Nostream (`nostream stop` followed by `nostream start`)
-   - Read the in-depth guide for more information: [Set Up a Paid Nostr Relay with ZEBEDEE API](https://docs.zebedee.io/docs/guides/nostr-relay)
+   - Read the in-depth guide for more information: [Set Up a Paid Nostr Relay with ZEBEDEE API](https://docs.zbdpay.com/payments/nostr/nostr-relay)
 
 3. [Nodeless](https://nodeless.io/?ref=587f477f-ba1c-4bd3-8986-8302c98f6731)
    - Complete the step "Before you begin"
