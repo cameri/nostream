@@ -10,16 +10,9 @@ on:
       - main
     paths:
       - "website/site/**"
+      - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
-      - "package.json"
-      - "README.md"
-      - "CLI.md"
-      - "CONFIGURATION.md"
-      - "CONTRIBUTING.md"
-      - "SECURITY.md"
-      - "CHANGELOG.md"
-      - "deploy/**"
-      - "docs/**"
+      - ".github/workflows/deploy-website.yml"
   workflow_dispatch:
 
 concurrency:
