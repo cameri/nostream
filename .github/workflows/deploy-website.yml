@@ -1,0 +1,63 @@
+name: Deploy Website
+
+# The marketing site deploys after a release lands on main: the changesets
+# release PR bumps nostream-website, merging it is the deploy trigger. Version
+# the site with a changeset, merge the release PR — never deploy from a branch.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "website/site/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "README.md"
+      - "CLI.md"
+      - "CONFIGURATION.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "CHANGELOG.md"
+      - "deploy/**"
+      - "docs/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-website
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    # Deploy credentials live in this GitHub environment; add
+    # CLOUDFLARE_API_TOKEN there, scoped to Workers Scripts for this account.
+    environment: website-production
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the site
+        working-directory: website/site
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: pnpm run build
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: website/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec wrangler deploy
