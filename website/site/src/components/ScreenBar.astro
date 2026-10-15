@@ -7,9 +7,19 @@ interface Props {
 const { title } = Astro.props
 ---
 
-<div class="screen-bar" aria-hidden="true">
-  <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-  <Logo size={16} word={false} />
+<div class="screen-bar">
+  <div class="screen-bar-decor" aria-hidden="true">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <Logo size={16} word={false} />
+  </div>
   <span class="title">{title}</span>
   <slot />
 </div>
+
+<style>
+  .screen-bar-decor {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+</style>

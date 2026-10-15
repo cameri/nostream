@@ -1,8 +1,8 @@
 // Builds web-sized media in public/ from the Framefields landing film in ../hero-animation.
 // First: pnpm run assets && pnpm run render && pnpm run frames   (src/film.ts → output/nostream-hero.mp4)
-// Usage: pnpm run media   (HERO_SRC=/path/to/nostream-hero.mp4 to override)
+// Usage: pnpm run media   (HERO_SRC=/path/to/nostream-hero.mp4 to override; must ship film.meta.json beside the mp4)
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
@@ -11,9 +11,17 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const HERO_DIR = path.join(ROOT, '..', 'hero-animation')
 const LANDING = path.join(HERO_DIR, 'output')
 const MEDIA = path.join(ROOT, 'public', 'media')
+const HERO_META = path.join(MEDIA, 'hero.meta.json')
 const LANDING_POSTER = 'f0130.png'
 
 mkdirSync(MEDIA, { recursive: true })
+
+/** film.meta.json must live next to the mp4 we encode — never reuse meta from another render. */
+const readFilmMeta = (videoPath) => {
+  const metaPath = path.join(path.dirname(videoPath), 'film.meta.json')
+  if (!existsSync(metaPath)) return null
+  return JSON.parse(readFileSync(metaPath, 'utf8'))
+}
 
 const planet = path.join(HERO_DIR, 'assets', 'gen', 'planet.png')
 if (existsSync(planet)) {
@@ -38,7 +46,15 @@ const landingVideo = [
 ].find((p) => p && existsSync(p))
 
 if (landingVideo) {
-  // Keep native 1920×1080; light sharpen + high CRF for crisp type in the framed hero.
+  const filmMeta = readFilmMeta(landingVideo)
+  if (filmMeta?.nipCount == null) {
+    if (existsSync(HERO_META)) unlinkSync(HERO_META)
+    console.error(
+      `build-media: ${landingVideo} has no film.meta.json beside it — re-render in website/hero-animation (pnpm run render) or pick a source that includes meta.`,
+    )
+    process.exit(1)
+  }
+
   execFileSync(
     'ffmpeg',
     [
@@ -54,18 +70,19 @@ if (landingVideo) {
   )
   console.log('hero.mp4 ← landing film (film.ts)')
 
-  const filmMetaPath = path.join(path.dirname(landingVideo), 'film.meta.json')
-  const filmMeta = existsSync(filmMetaPath) ? JSON.parse(readFileSync(filmMetaPath, 'utf8')) : null
-
-  if (filmMeta?.nipCount != null) {
-    writeFileSync(
-      path.join(MEDIA, 'hero.meta.json'),
-      `${JSON.stringify({ nipCount: filmMeta.nipCount, generatedAt: filmMeta.generatedAt }, null, 2)}\n`,
-    )
-    console.log(`hero.meta.json (${filmMeta.nipCount} NIPs)`)
-  } else {
-    console.warn('skip hero.meta.json: re-render the landing film (`pnpm run render`) so film.meta.json is written')
-  }
+  writeFileSync(
+    HERO_META,
+    `${JSON.stringify(
+      {
+        nipCount: filmMeta.nipCount,
+        generatedAt: filmMeta.generatedAt,
+        sourceVideo: path.relative(HERO_DIR, landingVideo),
+      },
+      null,
+      2,
+    )}\n`,
+  )
+  console.log(`hero.meta.json (${filmMeta.nipCount} NIPs, source ${path.basename(landingVideo)})`)
 } else {
   console.warn('skip hero.mp4: run `pnpm run render` in website/hero-animation first')
 }

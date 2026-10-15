@@ -330,7 +330,13 @@ video {
 
 /* ---------- reveal on scroll ---------- */
 
+/* Visible without JS; hidden starting state only after JS opts in */
 .reveal {
+  opacity: 1;
+  transform: none;
+}
+
+html.reveal-ready .reveal {
   opacity: 0;
   transform: translateY(18px);
   transition:
@@ -338,7 +344,7 @@ video {
     transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-.reveal.in {
+html.reveal-ready .reveal.in {
   opacity: 1;
   transform: none;
 }
@@ -347,7 +353,7 @@ video {
   html {
     scroll-behavior: auto;
   }
-  .reveal {
+  html.reveal-ready .reveal {
     opacity: 1;
     transform: none;
     transition: none;

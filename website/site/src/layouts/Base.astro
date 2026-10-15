@@ -44,6 +44,8 @@ const ogImage = new URL('/media/hero-poster.webp', Astro.site)
     <Footer />
 
     <script>
+      document.documentElement.classList.add('reveal-ready')
+
       const io = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
