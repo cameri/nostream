@@ -7,6 +7,8 @@ import {
   IncomingEventMessage,
   IncomingRelayedEventMessage,
   MessageType,
+  NegErrMessage,
+  NegMsgMessage,
   NoticeMessage,
   OutgoingMessage,
   SubscribeMessage,
@@ -48,6 +50,21 @@ export const createClosedMessage = (queryId: SubscriptionId, reason: string, par
 // NIP-42
 export const createAuthChallengeMessage = (challenge: string): AuthChallengeMessage => {
   return [MessageType.AUTH, challenge]
+}
+
+// NIP-77
+export const createNegMsgMessage = (subscriptionId: SubscriptionId, message: string): NegMsgMessage => {
+  return [MessageType.NEG_MSG, subscriptionId, message]
+}
+
+export const createNegErrMessage = (
+  subscriptionId: SubscriptionId,
+  reason: string,
+  maxRecords?: number,
+): NegErrMessage => {
+  return maxRecords === undefined
+    ? [MessageType.NEG_ERR, subscriptionId, reason]
+    : [MessageType.NEG_ERR, subscriptionId, reason, maxRecords]
 }
 
 export const createSubscriptionMessage = (

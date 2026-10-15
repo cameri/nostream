@@ -44,7 +44,7 @@ export interface IEventRepository {
   upsertMany(events: Event[]): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
   countByFilters(filters: SubscriptionFilter[]): Promise<number>
-  findReconciliationItems(filter: SubscriptionFilter): IQueryResult<ReconciliationItem[]>
+  findReconciliationItems(filter: SubscriptionFilter, limit?: number): IQueryResult<ReconciliationItem[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
   deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>
   hasActiveRequestToVanish(pubkey: Pubkey): Promise<boolean>

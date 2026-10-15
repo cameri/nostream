@@ -13,6 +13,9 @@ import { getCacheClient } from '../cache/client'
 import { AuthMessageHandler } from '../handlers/auth-message-handler'
 import { CountMessageHandler } from '../handlers/count-message-handler'
 import { EventMessageHandler } from '../handlers/event-message-handler'
+import { NegCloseMessageHandler } from '../handlers/neg-close-message-handler'
+import { NegMsgMessageHandler } from '../handlers/neg-msg-message-handler'
+import { NegOpenMessageHandler } from '../handlers/neg-open-message-handler'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
 import { eventStrategyFactory } from './event-strategy-factory'
@@ -74,6 +77,12 @@ export const messageHandlerFactory =
         return new CountMessageHandler(adapter, eventRepository, createSettings)
       case MessageType.AUTH:
         return new AuthMessageHandler(adapter, createSettings)
+      case MessageType.NEG_OPEN:
+        return new NegOpenMessageHandler(adapter, eventRepository, createSettings)
+      case MessageType.NEG_MSG:
+        return new NegMsgMessageHandler(adapter, createSettings)
+      case MessageType.NEG_CLOSE:
+        return new NegCloseMessageHandler(adapter)
       default:
         throw new Error(`Unknown message type: ${String(message[0]).substring(0, 64)}`)
     }
