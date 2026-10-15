@@ -9,7 +9,7 @@ import {
   EventImportService,
   EventImportStats,
 } from './services/event-import-service'
-import { EventRepository } from './repositories/event-repository'
+import { createEventRepository } from './factories/event-repository-factory'
 import { getMasterDbClient } from './database/client'
 
 interface CliOptions {
@@ -218,7 +218,7 @@ export const runImportEvents = async (
   }
 
   const dbClient = getMasterDbClient()
-  const eventRepository = new EventRepository(dbClient, dbClient)
+  const eventRepository = createEventRepository(dbClient, dbClient)
   const importer = new EventImportService(createEventBatchPersister(eventRepository))
 
   let loggedErrors = 0

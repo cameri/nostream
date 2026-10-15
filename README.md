@@ -27,6 +27,9 @@
   <a href='https://github.com/cameri/nostream/actions'>
     <img alt='Build status' src='https://github.com/cameri/nostream/actions/workflows/checks.yml/badge.svg?branch=main&event=push' />
   </a>
+  <a href="https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source">
+    <img alt="Greptile: The War on Bugs" src="https://www.greptile.com/badge.svg" />
+  </a>
 </p>
 
 This is a [nostr](https://github.com/fiatjaf/nostr) relay, written in
@@ -40,7 +43,7 @@ The project master repository is available on [GitHub](https://github.com/cameri
 
 ## Features
 
-NIPs with a relay-specific implementation are listed here.
+NIPs and MIPs with a relay-specific implementation are listed here.
 
 - [x] NIP-01: Basic protocol flow description
 - [x] NIP-02: Contact list and petnames
@@ -65,6 +68,7 @@ NIPs with a relay-specific implementation are listed here.
 - [x] NIP-45: Event Counts
 - [x] NIP-62: Request to Vanish
 - [x] NIP-65: Relay List Metadata
+- [x] Marmot Protocol [MIPs 00–03](https://github.com/marmot-protocol/marmot): E2EE group messaging over Nostr — kinds 443, 444, 445, 10051 and 30443, with `supported_mips` advertised in the NIP-11 relay information document
 
 ## Requirements
 
@@ -87,7 +91,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
 
 ## Full Guide
 
-- [Set up a Paid Nostr relay with Nostream and ZEBEDEE](https://docs.zebedee.io/docs/guides/nostr-relay) by [André Neves](https://primal.net/andre) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
+- [Set up a Paid Nostr relay with Nostream and ZEBEDEE](https://docs.zbdpay.com/payments/nostr/nostr-relay) by [André Neves](https://primal.net/andre) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 - [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
 
 ### Accepting Payments
@@ -115,7 +119,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
      - `payments.processor` to `zebedee`
      - `paymentsProcessors.zebedee.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/zebedee`)
    - Restart Nostream (`nostream stop` followed by `nostream start`)
-   - Read the in-depth guide for more information: [Set Up a Paid Nostr Relay with ZEBEDEE API](https://docs.zebedee.io/docs/guides/nostr-relay)
+   - Read the in-depth guide for more information: [Set Up a Paid Nostr Relay with ZEBEDEE API](https://docs.zbdpay.com/payments/nostr/nostr-relay)
 
 3. [Nodeless](https://nodeless.io/?ref=587f477f-ba1c-4bd3-8986-8302c98f6731)
    - Complete the step "Before you begin"

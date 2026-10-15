@@ -7,6 +7,8 @@ import {
   IncomingEventMessage,
   IncomingRelayedEventMessage,
   MessageType,
+  NegErrMessage,
+  NegMsgMessage,
   NoticeMessage,
   OutgoingMessage,
   SubscribeMessage,
@@ -28,9 +30,11 @@ export const createEndOfStoredEventsNoticeMessage = (subscriptionId: Subscriptio
   return [MessageType.EOSE, subscriptionId]
 }
 
-// NIP-20
-export const createCommandResult = (eventId: EventId, successful: boolean, message: string) => {
-  return [MessageType.OK, eventId, successful, message]
+// NIP-20, NIP-01 optional params (e.g. rate-limited backoff in ms)
+export const createCommandResult = (eventId: EventId, successful: boolean, message: string, params?: string) => {
+  return params === undefined
+    ? [MessageType.OK, eventId, successful, message]
+    : [MessageType.OK, eventId, successful, message, params]
 }
 
 // NIP-45
@@ -38,13 +42,29 @@ export const createCountResultMessage = (queryId: SubscriptionId, payload: Count
   return [MessageType.COUNT, queryId, payload]
 }
 
-export const createClosedMessage = (queryId: SubscriptionId, reason: string): ClosedMessage => {
-  return [MessageType.CLOSED, queryId, reason]
+// NIP-01 optional params (e.g. rate-limited backoff in ms)
+export const createClosedMessage = (queryId: SubscriptionId, reason: string, params?: string): ClosedMessage => {
+  return params === undefined ? [MessageType.CLOSED, queryId, reason] : [MessageType.CLOSED, queryId, reason, params]
 }
 
 // NIP-42
 export const createAuthChallengeMessage = (challenge: string): AuthChallengeMessage => {
   return [MessageType.AUTH, challenge]
+}
+
+// NIP-77
+export const createNegMsgMessage = (subscriptionId: SubscriptionId, message: string): NegMsgMessage => {
+  return [MessageType.NEG_MSG, subscriptionId, message]
+}
+
+export const createNegErrMessage = (
+  subscriptionId: SubscriptionId,
+  reason: string,
+  maxRecords?: number,
+): NegErrMessage => {
+  return maxRecords === undefined
+    ? [MessageType.NEG_ERR, subscriptionId, reason]
+    : [MessageType.NEG_ERR, subscriptionId, reason, maxRecords]
 }
 
 export const createSubscriptionMessage = (

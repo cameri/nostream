@@ -322,4 +322,20 @@ describe('SettingsStatic', () => {
       expect(merged.wot?.refreshIntervalHours).to.equal(24)
     })
   })
+
+  describe('NIP-56 settings defaults', () => {
+    it('default-settings.yaml contains a nip56 block with enabled: false', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
+      expect(defaults).to.have.nested.property('nip56.enabled', false)
+      expect(defaults).to.have.deep.nested.property('nip56.trustedModerators', [])
+    })
+
+    it('user config nip56 block overrides defaults', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
+      const userConfig = { nip56: { enabled: true, trustedModerators: ['a'.repeat(64)] } }
+      const merged = mergeDeepRight(defaults, userConfig) as Settings
+      expect(merged.nip56?.enabled).to.equal(true)
+      expect(merged.nip56?.trustedModerators).to.deep.equal(['a'.repeat(64)])
+    })
+  })
 })

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:stream'
+import { INegentropySessions } from './negentropy'
 import { SubscriptionFilter } from './subscription'
 
 export interface IWebSocketServerAdapter extends EventEmitter, IWebServerAdapter {
@@ -19,6 +20,9 @@ export type IWebSocketAdapter = EventEmitter & {
   getAuthenticatedPubkeys(): ReadonlySet<string>
   /** Returns false if this AUTH event id was already accepted on this socket. */
   addAuthenticatedPubkey(pubkey: string, authEventId: string): boolean
+  drainAndClose(reason?: string): void
+  /** NIP-77 sessions of this connection. */
+  getNegentropySessions(): INegentropySessions
 }
 
 export interface ICacheAdapter {

@@ -1,0 +1,380 @@
+---
+import { Image } from 'astro:assets'
+import abhayPhoto from '../assets/abhay.png'
+import cameriPhoto from '../assets/cameri.jpg'
+import priyanshuPhoto from '../assets/priyanshu.png'
+import PageHead from '../components/PageHead.astro'
+import { REPO } from '../data/site'
+import Base from '../layouts/Base.astro'
+
+const NPUB = 'npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m'
+
+const maintainers = [
+  {
+    id: 'ricardo',
+    name: 'Ricardo Arturo Cabral Mejía',
+    handle: 'cameri',
+    role: 'Creator & maintainer',
+    location: 'Canada',
+    github: 'https://github.com/cameri',
+    photo: cameriPhoto,
+    links: [
+      { label: 'GitHub', value: '@cameri', href: 'https://github.com/cameri' },
+      { label: 'Blog', value: 'blog.ricardocabral.io', href: 'https://blog.ricardocabral.io' },
+      { label: 'Nostr', value: `${NPUB.slice(0, 12)}…${NPUB.slice(-6)}`, href: `https://njump.me/${NPUB}` },
+    ],
+  },
+  {
+    id: 'priyanshu',
+    name: 'Priyanshu Bharti',
+    handle: 'Priyanshubhartistm',
+    role: 'Maintainer',
+    location: 'India',
+    github: 'https://github.com/Priyanshubhartistm',
+    photo: priyanshuPhoto,
+    links: [{ label: 'GitHub', value: '@Priyanshubhartistm', href: 'https://github.com/Priyanshubhartistm' }],
+  },
+  {
+    id: 'abhay',
+    name: 'Abhay Pandey',
+    handle: 'Ferryx349',
+    role: 'Maintainer',
+    location: 'India',
+    github: 'https://github.com/Ferryx349',
+    photo: abhayPhoto,
+    links: [{ label: 'GitHub', value: '@Ferryx349', href: 'https://github.com/Ferryx349' }],
+  },
+]
+
+const channels = [
+  {
+    code: 'SRC',
+    title: 'GitHub',
+    body: 'Source, releases and discussions. Star the repo to follow along.',
+    href: REPO,
+    cta: 'cameri/nostream',
+  },
+  {
+    code: 'BUG',
+    title: 'Issues',
+    body: 'Found a bug or want a feature? Open an issue with steps to reproduce.',
+    href: `${REPO}/issues/new/choose`,
+    cta: 'Open an issue',
+  },
+  {
+    code: 'PR',
+    title: 'Contribute',
+    body: 'Local setup, tests and the changeset workflow for your first pull request.',
+    href: '/docs/contributing',
+    cta: 'Contributing guide',
+  },
+  {
+    code: 'SEC',
+    title: 'Security',
+    body: 'Report vulnerabilities privately. Please do not open public issues for them.',
+    href: '/docs/security',
+    cta: 'Security policy',
+  },
+]
+
+const guides = [
+  {
+    title: 'Set up a paid Nostr relay with nostream and ZEBEDEE',
+    by: 'André Neves',
+    href: 'https://docs.zbdpay.com/payments/nostr/nostr-relay',
+  },
+  {
+    title: 'Set up a Nostr relay in under 5 minutes',
+    by: 'André Neves',
+    href: 'https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under',
+  },
+]
+
+const external = (href: string) => href.startsWith('http')
+---
+
+<Base title="Community" description="Get involved with nostream: GitHub, issues, contributing and community guides.">
+  <PageHead kicker="Community">
+    <span class="g1">Built in the open.</span> <span class="g3">Join in.</span>
+  </PageHead>
+
+  <section class="section maintainer-section">
+    <div class="container">
+      <p class="kicker reveal section-kicker"><span class="idx">01</span> Meet the maintainers</p>
+      <div class="maintainers-stack">
+        {
+          maintainers.map((m, i) => (
+            <article class="maintainer panel reveal" style={`transition-delay:${i * 70}ms`}>
+              <a class="photo" href={m.github} target="_blank" rel="noopener noreferrer">
+                <Image src={m.photo} alt={`${m.name} (@${m.handle})`} widths={[240, 480]} sizes="220px" />
+              </a>
+              <div class="about">
+                <h2 class="h2">{m.name}</h2>
+                <p class="role mono">
+                  <span class="tag tag-pink">{m.role}</span>
+                  <span>@{m.handle} · {m.location}</span>
+                </p>
+                {
+                  m.id === 'ricardo' && (
+                    <p class="bio">
+                      Ricardo started nostream and still leads it, reviewing changes, cutting releases and steering the
+                      roadmap for relay operators. He also created{' '}
+                      <a href="https://schemaformat.ai" target="_blank" rel="noopener noreferrer">
+                        agentic schematics
+                      </a>
+                      , the catalog behind our <a href="/get-started">Get started</a> build spec.
+                    </p>
+                  )
+                }
+                <ul class="links">
+                  {
+                    m.links.map((l) => (
+                      <li>
+                        <a href={l.href} target="_blank" rel="noopener noreferrer">
+                          <span class="label mono">{l.label}</span>
+                          <span class="value mono">{l.value} ↗</span>
+                        </a>
+                      </li>
+                    ))
+                  }
+                </ul>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="cards">
+        {
+          channels.map((c, i) => (
+            <a
+              class="card panel panel-hover reveal"
+              href={c.href}
+              style={`transition-delay:${i * 70}ms`}
+              {...(external(c.href) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+            >
+              <span class="tag tag-pink">{c.code}</span>
+              <h2 class="h3">{c.title}</h2>
+              <p>{c.body}</p>
+              <span class="go mono">{c.cta} →</span>
+            </a>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <p class="kicker reveal"><span class="idx">02</span> Guides from the community</p>
+        <h2 class="h2 reveal"><span class="g1">Written by</span> <span class="g2">people who run relays.</span></h2>
+      </div>
+      <ul class="guides">
+        {
+          guides.map((g) => (
+            <li class="reveal">
+              <a href={g.href} target="_blank" rel="noopener noreferrer">
+                <span class="title">{g.title}</span>
+                <span class="by mono">{g.by}</span>
+                <span class="arrow mono">↗</span>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .maintainer-section {
+    padding-top: 0;
+  }
+
+  .section-kicker {
+    margin: 0 0 22px;
+  }
+
+  .maintainers-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .maintainer {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: clamp(24px, 4vw, 44px);
+    align-items: center;
+    padding: clamp(22px, 3vw, 34px);
+  }
+
+  .photo {
+    display: block;
+    overflow: hidden;
+    aspect-ratio: 1;
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    box-shadow: 0 30px 80px -40px rgba(255, 46, 136, 0.45);
+  }
+
+  .photo :global(img) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: grayscale(0.15) contrast(1.04);
+    transition: transform 0.4s ease;
+  }
+
+  .photo:hover :global(img) {
+    transform: scale(1.03);
+  }
+
+  .about .h2 {
+    margin: 0 0 12px;
+  }
+
+  .role {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 16px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .maintainer:not(:has(.bio)) .role {
+    margin-bottom: 20px;
+  }
+
+  .bio {
+    max-width: 62ch;
+    margin: 0 0 22px;
+    font-size: 16px;
+  }
+
+  .bio a {
+    color: var(--teal);
+  }
+
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    font-size: 13px;
+    transition: border-color 0.2s ease;
+  }
+
+  .links a:hover {
+    border-color: var(--wire);
+  }
+
+  .links .label {
+    color: var(--pink);
+  }
+
+  .links .value {
+    color: var(--fg);
+  }
+
+  @media (max-width: 700px) {
+    .maintainer {
+      grid-template-columns: 1fr;
+    }
+    .photo {
+      max-width: 200px;
+    }
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 26px;
+  }
+
+  .card .h3 {
+    margin-top: 28px;
+  }
+
+  .card p {
+    flex: 1;
+    margin: 0 0 22px;
+    font-size: 15px;
+  }
+
+  .go {
+    color: var(--teal);
+    font-size: 13px;
+  }
+
+  .guides {
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+    list-style: none;
+  }
+
+  .guides a {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 20px;
+    padding: 22px 4px;
+    border-bottom: 1px solid var(--line);
+    transition: padding 0.25s ease;
+  }
+
+  .guides a:hover {
+    padding-left: 14px;
+  }
+
+  .title {
+    color: var(--fg);
+    font-size: 18px;
+  }
+
+  .by {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .arrow {
+    color: var(--pink);
+  }
+
+  @media (max-width: 640px) {
+    .guides a {
+      grid-template-columns: 1fr auto;
+    }
+    .by {
+      display: none;
+    }
+  }
+</style>

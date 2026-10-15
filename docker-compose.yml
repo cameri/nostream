@@ -81,6 +81,7 @@ services:
       otel-collector:
         condition: service_started
     restart: on-failure
+    stop_grace_period: 45s
     networks:
       default:
         ipv4_address: 10.10.10.2

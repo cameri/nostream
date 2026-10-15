@@ -12,6 +12,7 @@ import {
   rootRequestHandler,
 } from '../../../../src/handlers/request-handlers/root-request-handler'
 import { DEFAULT_FILTER_LIMIT } from '../../../../src/constants/base'
+import * as eventStoreUtils from '../../../../src/utils/event-store'
 import * as eventUtils from '../../../../src/utils/event'
 import { toBech32 } from '../../../../src/utils/transform'
 
@@ -119,6 +120,21 @@ describe('rootRequestHandler', () => {
 
       const doc = res.send.firstCall.args[0]
       expect(doc.name).to.equal('Test Relay')
+    })
+
+    it('advertises the configured filter value limit', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          client: { subscription: { maxFilterValues: 500 } },
+        },
+      })
+
+      rootRequestHandler(req, res, next)
+
+      const doc = res.send.firstCall.args[0]
+      expect(doc.limitation.max_filter_values).to.equal(500)
     })
 
     it('does not render the HTML template', () => {
@@ -250,6 +266,47 @@ describe('rootRequestHandler', () => {
       expect(doc.limitation.default_limit).to.equal(DEFAULT_FILTER_LIMIT)
     })
 
+    describe('supported_nips and NIP-77', () => {
+      const advertised = (settings: any) => {
+        createSettingsStub.returns(settings)
+        rootRequestHandler(req, res, next)
+        return res.send.lastCall.args[0].supported_nips
+      }
+
+      it('advertises 77 when NIP-77 is enabled on the PostgreSQL backend', () => {
+        expect(advertised({ ...baseSettings, nip77: { enabled: true } })).to.include(77)
+        expect(
+          advertised({ ...baseSettings, nip77: { enabled: true }, eventStore: { backend: 'postgres' } }),
+        ).to.include(77)
+      })
+
+      it('does not advertise 77 when NIP-77 is disabled or unset', () => {
+        expect(advertised(baseSettings)).to.not.include(77)
+        expect(advertised({ ...baseSettings, nip77: { enabled: false } })).to.not.include(77)
+      })
+
+      it('does not advertise 77 when another event store backend is used', () => {
+        // postgres is the only backend the settings accept today; simulate the strfry backend
+        // that will bring its own negentropy implementation.
+        const backendStub = sinon.stub(eventStoreUtils, 'getEventStoreBackend').returns('strfry' as any)
+        try {
+          expect(advertised({ ...baseSettings, nip77: { enabled: true } })).to.not.include(77)
+        } finally {
+          backendStub.restore()
+        }
+      })
+
+      it('still gates 43 on NIP-43 independently of 77', () => {
+        const both = advertised({ ...baseSettings, nip43: { enabled: true }, nip77: { enabled: true } })
+        expect(both).to.include(43)
+        expect(both).to.include(77)
+
+        const onlyNip77 = advertised({ ...baseSettings, nip77: { enabled: true } })
+        expect(onlyNip77).to.not.include(43)
+        expect(onlyNip77).to.include(77)
+      })
+    })
+
     it('sets limitation.search_supported to false when NIP-50 is disabled', () => {
       rootRequestHandler(req, res, next)
 
@@ -302,6 +359,51 @@ describe('rootRequestHandler', () => {
       createSettingsStub.returns({
         ...baseSettings,
         nip42: { authRequired: true },
+      })
+      rootRequestHandler(req, res, next)
+      expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(true)
+    })
+
+    it('advertises the static minLeadingZeroBits as min_pow_difficulty when adaptive pow is disabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: { ...baseSettings.limits.event, eventId: { minLeadingZeroBits: 12 } },
+        },
+      })
+      rootRequestHandler(req, res, next)
+      expect(res.send.firstCall.args[0].limitation.min_pow_difficulty).to.equal(12)
+    })
+
+    it('advertises the adaptive pow floor as min_pow_difficulty when adaptive pow is enabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: {
+            ...baseSettings.limits.event,
+            eventId: { minLeadingZeroBits: 12 },
+            pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+          },
+        },
+      })
+      rootRequestHandler(req, res, next)
+      // The live requirement can be higher than floorBits under load, but floorBits
+      // is the only number the relay can promise as a static minimum.
+      expect(res.send.firstCall.args[0].limitation.min_pow_difficulty).to.equal(8)
+    })
+
+    it('sets limitation.restricted_writes when adaptive pow is enabled', () => {
+      createSettingsStub.returns({
+        ...baseSettings,
+        limits: {
+          ...baseSettings.limits,
+          event: {
+            ...baseSettings.limits.event,
+            pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+          },
+        },
       })
       rootRequestHandler(req, res, next)
       expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(true)

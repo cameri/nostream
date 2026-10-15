@@ -6,7 +6,7 @@
       "repo": "cameri/nostream"
     }
   ],
-  "commit": true,
+  "commit": ["../scripts/changeset-commit-message.cjs", { "skipCI": false }],
   "privatePackages": {
     "tag": true
   },

@@ -5,9 +5,17 @@ import { WebSocket } from 'ws'
 import { ZodError } from 'zod'
 
 import { ContextMetadata, Factory } from '../@types/base'
-import { createAuthChallengeMessage, createNoticeMessage, createOutgoingEventMessage } from '../utils/messages'
+import {
+  createAuthChallengeMessage,
+  createClosedMessage,
+  createNegErrMessage,
+  createNoticeMessage,
+  createOutgoingEventMessage,
+} from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
-import { IncomingMessage, OutgoingMessage } from '../@types/messages'
+import { IncomingMessage, MessageType, OutgoingMessage } from '../@types/messages'
+import { INegentropySessions } from '../@types/negentropy'
+import { NegentropySessions } from '../utils/negentropy-sessions'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
@@ -21,6 +29,7 @@ import { createReadAuthorizationGuard } from '../utils/nip42'
 import { Nip42SessionManager } from '../utils/nip42-session'
 import { IRateLimiter } from '../@types/utils'
 import { isEventMatchingFilter } from '../utils/event'
+import { isHidden } from '../utils/hidden-content-cache'
 import { messageSchema } from '../schemas/message-schema'
 import { Settings } from '../@types/settings'
 import { SocketAddress } from 'net'
@@ -36,6 +45,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
   private readonly session: Nip42SessionManager
+  // NIP-77
+  private readonly negentropySessions: NegentropySessions
 
   public constructor(
     private readonly client: WebSocket,
@@ -48,6 +59,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     super()
     this.alive = true
     this.subscriptions = new Map()
+    this.negentropySessions = new NegentropySessions((subscriptionId) =>
+      this.sendMessage(createNegErrMessage(subscriptionId, 'closed: negentropy session timed out')),
+    )
 
     this.clientId = Buffer.from(this.request.headers['sec-websocket-key'] as string, 'base64').toString('hex')
 
@@ -125,6 +139,14 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       return
     }
 
+    // NIP-56: keep live subscriptions consistent with what a fresh REQ would
+    // now exclude -- EventRepository's hiding only applies to DB queries, so
+    // this in-memory check covers the broadcast path the same way.
+    const nip56 = this.settings().nip56
+    if (nip56?.enabled && nip56?.hideActionableReports && isHidden(event)) {
+      return
+    }
+
     this.subscriptions.forEach((filters, subscriptionId) => {
       if (filters.map(isEventMatchingFilter).some((isMatch) => isMatch(event))) {
         logger('sending event to client %s: %o', this.clientId, event)
@@ -156,6 +178,26 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     return new Map(this.subscriptions)
   }
 
+  public drainAndClose(reason = 'relay shutting down'): void {
+    this.subscriptions.forEach((_filters, subscriptionId) => {
+      this.sendMessage(createClosedMessage(subscriptionId, `error: ${reason}`))
+    })
+
+    this.negentropySessions.getSessionIds().forEach((subscriptionId) => {
+      this.sendMessage(createNegErrMessage(subscriptionId, `closed: ${reason}`))
+    })
+    this.negentropySessions.closeAll()
+
+    if (this.client.readyState === WebSocket.OPEN) {
+      this.client.close(1001, reason)
+    }
+  }
+
+  // NIP-77
+  public getNegentropySessions(): INegentropySessions {
+    return this.negentropySessions
+  }
+
   // NIP-42
   public getChallenge(): string {
     return this.session.getChallenge()
@@ -176,8 +218,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     let abortable = false
     let messageHandler: (IMessageHandler & IAbortable) | undefined = undefined
     try {
-      if (await this.isRateLimited(this.clientAddress.address)) {
-        this.sendMessage(createNoticeMessage('rate limited'))
+      const retryAfterMs = await this.isRateLimited(this.clientAddress.address)
+      if (retryAfterMs) {
+        this.sendMessage(this.createRateLimitedMessage(raw, retryAfterMs))
         return
       }
 
@@ -232,7 +275,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     }
   }
 
-  private async isRateLimited(client: string): Promise<boolean> {
+  /**
+   * Resolves to false when allowed; otherwise to the tripped window's period in ms,
+   * sent as the NIP-01 `rate-limited` backoff.
+   */
+  private async isRateLimited(client: string): Promise<false | number> {
     const { rateLimits, ipWhitelist = [] } = this.settings().limits?.message ?? {}
 
     if (!Array.isArray(rateLimits) || !rateLimits.length || ipWhitelist.includes(client)) {
@@ -249,11 +296,60 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       if (isRateLimited) {
         logger('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
 
-        return true
+        return Math.max(1, Math.ceil(period))
       }
     }
 
     return false
+  }
+
+  // NIP-01: reads (REQ, COUNT) are refused with CLOSED; other messages keep the NOTICE.
+  private createRateLimitedMessage(raw: Buffer, retryAfterMs: number): OutgoingMessage {
+    let message: unknown
+    try {
+      message = JSON.parse(raw.toString('utf8'))
+    } catch {
+      return createNoticeMessage('rate limited')
+    }
+
+    if (
+      Array.isArray(message) &&
+      (message[0] === MessageType.REQ || message[0] === MessageType.COUNT) &&
+      typeof message[1] === 'string'
+    ) {
+      if (message[0] === MessageType.REQ) {
+        this.endSubscription(message[1])
+      }
+
+      return createClosedMessage(message[1], 'rate-limited: slow down', String(retryAfterMs))
+    }
+
+    return createNoticeMessage('rate limited')
+  }
+
+  private endSubscription(subscriptionId: SubscriptionId): void {
+    this.abortInFlightSubscriptionReads(subscriptionId)
+    if (this.subscriptions.has(subscriptionId)) {
+      this.onUnsubscribed(subscriptionId)
+    }
+  }
+
+  private abortInFlightSubscriptionReads(subscriptionId: SubscriptionId): void {
+    const handlers = abortableMessageHandlers.get(this.client)
+    if (!handlers?.length) {
+      return
+    }
+
+    for (const handler of handlers) {
+      const abortable = handler as IAbortable & { activeSubscriptionId?: SubscriptionId }
+      if (abortable.activeSubscriptionId === subscriptionId && typeof abortable.abort === 'function') {
+        try {
+          abortable.abort()
+        } catch (error) {
+          logger.error('Unable to abort subscription handler for %s: %o', subscriptionId, error)
+        }
+      }
+    }
   }
 
   private onClientPong() {
@@ -271,6 +367,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     recordWebsocketConnectionClosed()
     this.alive = false
     this.subscriptions.clear()
+    this.negentropySessions.closeAll()
     this.session.clear()
 
     const handlers = abortableMessageHandlers.get(this.client)

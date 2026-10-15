@@ -1,0 +1,39 @@
+---
+import FilmScreen from './FilmScreen.astro'
+
+interface Props {
+  src: string
+  poster: string
+  title: string
+  class?: string
+}
+const { src, poster, title, class: className } = Astro.props
+---
+
+<div class:list={['film-frame', className]}>
+  <FilmScreen src={src} poster={poster} title={title} class="film-crisp" />
+</div>
+
+<style>
+  .film-frame {
+    position: relative;
+    z-index: 2;
+    isolation: isolate;
+  }
+
+  .film-frame :global(.film-crisp.screen) {
+    border-radius: 16px;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.04),
+      0 32px 90px -40px rgba(0, 0, 0, 0.95);
+  }
+
+  .film-frame :global(.film-crisp video) {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
+    background: #000;
+    image-rendering: -webkit-optimize-contrast;
+  }
+</style>

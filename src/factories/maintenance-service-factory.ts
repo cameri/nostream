@@ -1,8 +1,8 @@
 import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
+import { createEventRepository } from './event-repository-factory'
 import { createSettings } from './settings-factory'
-import { EventRepository } from '../repositories/event-repository'
 import { MaintenanceService } from '../services/maintenance-service'
 
 export const createMaintenanceService = () => {
-  return new MaintenanceService(new EventRepository(getMasterDbClient(), getReadReplicaDbClient()), createSettings)
+  return new MaintenanceService(createEventRepository(getMasterDbClient(), getReadReplicaDbClient()), createSettings)
 }

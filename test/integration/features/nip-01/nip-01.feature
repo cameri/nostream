@@ -91,3 +91,27 @@ Feature: NIP-01
     And Bob receives a text_note event from Bob with content "Three"
     When Alice subscribes to author Bob with a limit of 2
     Then Alice receives 2 text_note events from Bob and EOSE
+
+  Scenario: Alice gets Bob's stored event that carries two different tags
+    Given someone called Alice
+    And someone called Bob
+    When Bob sends a text_note event with content "both tags" and tags t "nostr" and r "wss://relay.example.com"
+    And Bob sends a text_note event with content "only t" and tag t containing "nostr"
+    And Alice subscribes to events from Bob with tag t "nostr" and tag r "wss://relay.example.com"
+    Then Alice receives 1 stored text_note event from Bob with content "both tags" and EOSE
+
+  Scenario: Alice gets Bob's stored event by ID and tag
+    Given someone called Alice
+    And someone called Bob
+    When Bob sends a text_note event with content "tagged" and tag t containing "nostr"
+    And Alice subscribes to the last event from Bob with tag t "nostr"
+    Then Alice receives 1 stored text_note event from Bob with content "tagged" and EOSE
+
+  Scenario: Alice gets Bob's past events from two filters when the first has a limit
+    Given someone called Alice
+    And someone called Bob
+    When Bob sends a text_note event with content "One"
+    And Bob sends a text_note event with content "Two"
+    And Bob sends a set_metadata event
+    And Alice subscribes to text_note events from Bob with a limit of 1 or set_metadata events from Bob
+    Then Alice receives 2 stored events from Bob and EOSE

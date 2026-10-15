@@ -9,6 +9,7 @@ import Sinon from 'sinon'
 import { hashAdminPassword } from '../../../src/utils/admin-password'
 import * as adminRateLimitMiddleware from '../../../src/handlers/request-handlers/admin-rate-limit-middleware'
 import * as rateLimiterMiddleware from '../../../src/handlers/request-handlers/rate-limiter-middleware'
+import { PatchAdminSettingsController } from '../../../src/controllers/admin/patch-settings-controller'
 import * as settingsFactory from '../../../src/factories/settings-factory'
 import {
   getSettingsAuditLogPath,
@@ -27,6 +28,7 @@ describe('admin settings API', () => {
   let rateLimiterMiddlewareStub: Sinon.SinonStub
   let adminRateLimitMiddlewareStub: Sinon.SinonStub
   let adminLoginRateLimitMiddlewareStub: Sinon.SinonStub
+  let createPatchAdminSettingsControllerStub: Sinon.SinonStub
   let server: any
 
   const loadAdminRouter = () => {
@@ -50,6 +52,21 @@ describe('admin settings API', () => {
     adminLoginRateLimitMiddlewareStub = Sinon.stub(adminRateLimitMiddleware, 'adminLoginRateLimitMiddleware').callsFake(
       passthrough,
     )
+    const patchFactoryPath = require.resolve(
+      '../../../src/factories/controllers/patch-admin-settings-controller-factory',
+    )
+    delete require.cache[patchFactoryPath]
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const patchAdminSettingsControllerFactory = require(patchFactoryPath)
+    createPatchAdminSettingsControllerStub = Sinon.stub(
+      patchAdminSettingsControllerFactory,
+      'createPatchAdminSettingsController',
+    ).callsFake(
+      () =>
+        new PatchAdminSettingsController({
+          enqueue: Sinon.stub().resolves(),
+        } as any),
+    )
     const router = loadAdminRouter()
     const app = express()
     app.use('/admin', router)
@@ -66,7 +83,10 @@ describe('admin settings API', () => {
     rateLimiterMiddlewareStub?.restore()
     adminRateLimitMiddlewareStub?.restore()
     adminLoginRateLimitMiddlewareStub?.restore()
+    createPatchAdminSettingsControllerStub?.restore()
     delete require.cache[require.resolve('../../../src/routes/admin/index')]
+    delete require.cache[require.resolve('../../../src/factories/controllers/patch-admin-settings-controller-factory')]
+    delete require.cache[require.resolve('../../../src/controllers/admin/patch-settings-controller')]
     delete require.cache[require.resolve('../../../src/routes/admin')]
 
     if (server) {

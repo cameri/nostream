@@ -14,5 +14,6 @@ The publish job runs only for `refs/heads/main` and only when `post-tests`
 succeeds. Pull requests and manual workflow runs do not publish images.
 
 Deployment hosts can pull the `main` image as described in
-[`deploy/README.md`](../deploy/README.md). There is no separate manual image
-publishing step.
+[`deploy/README.md`](../deploy/README.md). After the image is on the host, follow
+[`docs/DEPLOY-RUNBOOK.md`](DEPLOY-RUNBOOK.md) to migrate and recreate the relay.
+There is no separate manual image publishing step.

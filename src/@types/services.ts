@@ -1,5 +1,6 @@
-import { Invoice } from './invoice'
 import { Pubkey } from './base'
+import { Invoice } from './invoice'
+import { NotificationOutboxPayload } from './notification-outbox'
 
 export interface IMaintenanceService {
   clearOldEvents(): Promise<void>
@@ -16,6 +17,12 @@ export interface IWotGraphService {
   isTrusted(pubkey: Pubkey): Promise<boolean>
   /** Applies a pubkey's current NIP-02 follow list to the graph. */
   updateFollowList(pubkey: Pubkey, follows: Pubkey[]): Promise<void>
+  /**
+   * Fire-and-forget: kicks off the initial graph build without waiting on it,
+   * so the first real getDistance() call after startup doesn't have to pay
+   * for a cold-start rebuild itself.
+   */
+  warmUp(): void
 }
 
 export interface IPaymentsService {
@@ -26,4 +33,23 @@ export interface IPaymentsService {
   confirmInvoice(invoice: Pick<Invoice, 'id' | 'amountPaid' | 'confirmedAt' | 'status' | 'pubkey'>): Promise<void>
   sendInvoiceUpdateNotification(invoice: Invoice): Promise<void>
   getPendingInvoices(offset?: number): Promise<Invoice[]>
+}
+
+export interface NotificationDispatchContext {
+  outboxId?: string
+  attemptNumber?: number
+}
+
+export interface INotificationDispatcher {
+  dispatch(eventType: string, payload: NotificationOutboxPayload, context?: NotificationDispatchContext): Promise<void>
+}
+
+export interface IOperatorNotificationService extends INotificationDispatcher {
+  dispatchTestTarget(targetId: string): Promise<void>
+  getMaxAttempts(): number
+  getBaseDelayMs(): number
+}
+
+export interface INotificationOutboxService {
+  processBatch(limit?: number): Promise<number>
 }

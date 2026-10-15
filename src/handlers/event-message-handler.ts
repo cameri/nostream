@@ -1,3 +1,8 @@
+import {
+  getCurrentDifficulty as getAdaptivePowDifficulty,
+  recordEvent as recordAdaptivePowEvent,
+} from '../utils/adaptive-pow'
+import { applyWotPowPolicy } from '../utils/wot-pow-policy'
 import { ContextMetadataKey, EventExpirationTimeMetadataKey, EventKinds } from '../constants/base'
 import { attemptValidation } from '../utils/validation'
 import { eventSchema } from '../schemas/event-schema'
@@ -39,6 +44,7 @@ import { ICacheAdapter } from '../@types/adapters'
 import { IncomingEventMessage } from '../@types/messages'
 import { IRateLimiter } from '../@types/utils'
 import { IWebSocketAdapter } from '../@types/adapters'
+import { IWotGraphService } from '../@types/services'
 import { Nip05Verification } from '../@types/nip05'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 
@@ -54,6 +60,7 @@ export class EventMessageHandler implements IMessageHandler {
     private readonly nip05VerificationRepository: INip05VerificationRepository,
     private readonly cache: ICacheAdapter,
     private readonly rateLimiter: Factory<IRateLimiter>,
+    private readonly wotGraphService: IWotGraphService,
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
@@ -76,16 +83,18 @@ export class EventMessageHandler implements IMessageHandler {
 
     event = this.addExpirationMetadata(event)
 
-    if (await this.isRateLimited(event)) {
+    const rateLimited = await this.isRateLimited(event)
+    if (rateLimited) {
       logger('event %s rejected: rate-limited', event.id)
+      const retryAfterMs = typeof rateLimited === 'number' ? String(rateLimited) : undefined
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
-        createEventCommandResult(event.id, false, 'rate-limited: slow down'),
+        createEventCommandResult(event.id, false, 'rate-limited: slow down', retryAfterMs),
       )
       return
     }
 
-    reason = this.canAcceptEvent(event)
+    reason = await this.canAcceptEvent(event)
     if (reason) {
       logger('event %s rejected: %s', event.id, reason)
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, reason))
@@ -127,6 +136,18 @@ export class EventMessageHandler implements IMessageHandler {
       return
     }
 
+    // Recorded here, not inside canAcceptEvent's PoW branch: only events that
+    // clear every admission check up to this point (PoW, blacklist, auth,
+    // NIP-05, ...) should count toward the load signal. Recording earlier
+    // would let cheap, easily-rejected spam (e.g. from rotating pubkeys) push
+    // the difficulty to ceiling for everyone without the attacker ever doing
+    // any real work. Note: a duplicate/no-op write still counts here, since
+    // dedup is decided later inside the event strategy's own execute().
+    const powSettings = this.settings().limits?.event?.pow
+    if (powSettings?.enabled) {
+      recordAdaptivePowEvent(powSettings.periodMs)
+    }
+
     const strategy = this.strategyFactory([event, this.webSocket])
 
     if (typeof strategy?.execute !== 'function') {
@@ -151,7 +172,7 @@ export class EventMessageHandler implements IMessageHandler {
     return getPublicKey(relayPrivkey)
   }
 
-  protected canAcceptEvent(event: Event): string | undefined {
+  protected async canAcceptEvent(event: Event): Promise<string | undefined> {
     if (this.getRelayPublicKey() === event.pubkey) {
       return
     }
@@ -195,7 +216,26 @@ export class EventMessageHandler implements IMessageHandler {
       return `rejected: created_at is more than ${limits.createdAt.maxNegativeDelta} seconds in the past`
     }
 
-    if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
+    // Adaptive PoW applies to the eventId check only: a pubkey requirement is a
+    // one-time, offline identity cost, not a per-event load signal, so it can't
+    // respond to relay load the way an event id's mined-per-submission pow can.
+    // The static pubkey.minLeadingZeroBits knob is left untouched regardless of
+    // pow.enabled -- per maintainer direction on PR #756.
+    if (limits.pow?.enabled) {
+      const computedDifficulty = getAdaptivePowDifficulty(limits.pow)
+      // Only consult the WoT graph when thresholds are actually configured --
+      // a distance lookup is unnecessary work otherwise, and skipping it also
+      // means wot.enabled=false relays never pay for it.
+      const distance = limits.pow.wotThresholds?.length
+        ? await this.wotGraphService.getDistance(event.pubkey)
+        : undefined
+      const requiredBits = applyWotPowPolicy(computedDifficulty, distance, limits.pow.wotThresholds)
+
+      const pow = getEventProofOfWork(event.id)
+      if (pow < requiredBits) {
+        return `pow: difficulty ${pow}<${requiredBits}`
+      }
+    } else if (typeof limits.eventId?.minLeadingZeroBits !== 'undefined' && limits.eventId.minLeadingZeroBits > 0) {
       const pow = getEventProofOfWork(event.id)
       if (pow < limits.eventId.minLeadingZeroBits) {
         return `pow: difficulty ${pow}<${limits.eventId.minLeadingZeroBits}`
@@ -333,7 +373,11 @@ export class EventMessageHandler implements IMessageHandler {
     }
   }
 
-  protected async isRateLimited(event: Event): Promise<boolean> {
+  /**
+   * Resolves to false when allowed; otherwise to the tripped window's period in ms,
+   * sent as the NIP-01 `rate-limited` backoff, or true when no backoff can be given.
+   */
+  protected async isRateLimited(event: Event): Promise<boolean | number> {
     if (this.getRelayPublicKey() === event.pubkey) {
       return false
     }
@@ -391,7 +435,7 @@ export class EventMessageHandler implements IMessageHandler {
       if (isRateLimited) {
         logger('rate limited %s: %d events / %d ms exceeded', event.pubkey, rate, period)
 
-        return true
+        return Math.max(1, Math.ceil(period))
       }
     }
 

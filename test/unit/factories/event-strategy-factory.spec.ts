@@ -4,6 +4,7 @@ import {
   IDvmJobRepository,
   IEventRepository,
   IInviteCodeRepository,
+  IReportRepository,
   IUserRepository,
 } from '../../../src/@types/repositories'
 import { ContactListEventStrategy } from '../../../src/handlers/event-strategies/contact-list-event-strategy'
@@ -24,6 +25,7 @@ import { JoinRequestEventStrategy } from '../../../src/handlers/event-strategies
 import { LeaveRequestEventStrategy } from '../../../src/handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
 import { ReplaceableEventStrategy } from '../../../src/handlers/event-strategies/replaceable-event-strategy'
+import { ReportEventStrategy } from '../../../src/handlers/event-strategies/report-event-strategy'
 import { Settings } from '../../../src/@types/settings'
 import { TimestampEventStrategy } from '../../../src/handlers/event-strategies/timestamp-event-strategy'
 import { VanishEventStrategy } from '../../../src/handlers/event-strategies/vanish-event-strategy'
@@ -33,6 +35,7 @@ describe('eventStrategyFactory', () => {
   let userRepository: IUserRepository
   let inviteCodeRepository: IInviteCodeRepository
   let dvmJobRepository: IDvmJobRepository
+  let reportRepository: IReportRepository
   let cache: ICacheAdapter
   let settings: () => Settings
   let event: Event
@@ -44,6 +47,7 @@ describe('eventStrategyFactory', () => {
     userRepository = {} as any
     inviteCodeRepository = {} as any
     dvmJobRepository = {} as any
+    reportRepository = {} as any
     cache = {} as any
     settings = () => ({ info: { relay_url: 'wss://test.relay' }, wot: { enabled: false } }) as any
     event = {} as any
@@ -54,6 +58,7 @@ describe('eventStrategyFactory', () => {
       userRepository,
       inviteCodeRepository,
       dvmJobRepository,
+      reportRepository,
       cache,
       settings,
     )
@@ -181,5 +186,10 @@ describe('eventStrategyFactory', () => {
   it('returns ParameterizedReplaceableEventStrategy given a handler information event (NIP-89, kind 31990)', () => {
     event.kind = EventKinds.HANDLER_INFORMATION
     expect(factory([event, adapter])).to.be.an.instanceOf(ParameterizedReplaceableEventStrategy)
+  })
+
+  it('returns ReportEventStrategy given a report event (NIP-56, kind 1984)', () => {
+    event.kind = EventKinds.REPORT
+    expect(factory([event, adapter])).to.be.an.instanceOf(ReportEventStrategy)
   })
 })

@@ -2,7 +2,8 @@ import { andThen, otherwise, pipe } from 'ramda'
 import { broadcastEvent, getPublicKey, getRelayPrivateKey, identifyEvent, signEvent } from '../utils/event'
 import { DatabaseClient, Pubkey } from '../@types/base'
 import { FeeSchedule, Settings } from '../@types/settings'
-import { IEventRepository, IInvoiceRepository, IUserRepository } from '../@types/repositories'
+import { IEventRepository, IInvoiceRepository, INotificationOutboxRepository, IUserRepository } from '../@types/repositories'
+import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 
 import { Event, ExpiringEvent, UnidentifiedEvent } from '../@types/event'
@@ -26,6 +27,7 @@ export class PaymentsService implements IPaymentsService {
     private readonly invoiceRepository: IInvoiceRepository,
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
+    private readonly notificationOutboxRepository: INotificationOutboxRepository,
   ) {}
 
   public async getPendingInvoices(offset = 0): Promise<Invoice[]> {
@@ -86,6 +88,17 @@ export class PaymentsService implements IPaymentsService {
           updatedAt: date,
           createdAt: date,
           verifyURL: invoiceResponse.verifyURL,
+        },
+        transaction.transaction,
+      )
+
+      await this.notificationOutboxRepository.enqueue(
+        OperatorNotificationEventType.ADMISSION_INVOICE_CREATED,
+        {
+          invoiceId: invoiceResponse.id,
+          pubkey,
+          amountRequested: invoiceResponse.amountRequested.toString(),
+          unit: invoiceResponse.unit,
         },
         transaction.transaction,
       )
@@ -183,6 +196,18 @@ export class PaymentsService implements IPaymentsService {
         const date = new Date()
         await this.userRepository.admitUser(invoice.pubkey, date, transaction.transaction)
       }
+
+      await this.notificationOutboxRepository.enqueue(
+        OperatorNotificationEventType.ADMISSION_INVOICE_PAID,
+        {
+          invoiceId: invoice.id,
+          pubkey: invoice.pubkey,
+          amountPaid: invoice.amountPaid.toString(),
+          unit: invoice.unit,
+          confirmedAt: invoice.confirmedAt.toISOString(),
+        },
+        transaction.transaction,
+      )
 
       await transaction.commit()
     } catch (error) {

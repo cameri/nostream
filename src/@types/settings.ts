@@ -1,6 +1,7 @@
-import { EventKinds } from '../constants/base'
+import { EventKinds, EventStoreBackend } from '../constants/base'
 import { Pubkey, Secret } from './base'
 import { MessageType } from './messages'
+import { AdminNotificationsSettings } from './operator-notifications'
 import { SubscriptionFilter } from './subscription'
 
 export interface Info {
@@ -92,6 +93,39 @@ export interface EventRetentionLimits {
   pubkey?: EventRetentionPubkeyLimits
 }
 
+export interface WotPowThreshold {
+  /** Reporters at or under this WoT distance get this threshold's reduction. */
+  maxDistance: number
+  /**
+   * Fraction of the computed adaptive difficulty required at this distance:
+   * 0 bypasses eventId PoW entirely, 1 requires the full computed difficulty,
+   * fractional values scale linearly in between.
+   */
+  difficultyFactor: number
+}
+
+export interface AdaptivePowSettings {
+  /** Enables load-aware difficulty scaling on the eventId check, replacing eventId.minLeadingZeroBits while enabled. Does not affect the pubkey check -- pubkey.minLeadingZeroBits stays a static, non-adaptive knob. Defaults to false. */
+  enabled: boolean
+  /** Minimum required difficulty, used at or below approximately targetEventsPerSecond. */
+  floorBits: number
+  /** Maximum required difficulty, reached at approximately 2x targetEventsPerSecond and beyond. */
+  ceilingBits: number
+  /** Event-rate threshold, in real events/sec, above which difficulty starts climbing toward ceilingBits. */
+  targetEventsPerSecond: number
+  /** EWMA half-life in ms used to smooth the observed event rate. */
+  periodMs: number
+  /**
+   * Optional WoT-distance-based reductions layered on top of the computed
+   * adaptive difficulty. The eligible threshold with the smallest maxDistance
+   * applies; a pubkey outside the trust graph (distance undefined) or beyond
+   * every threshold's maxDistance gets the full computed difficulty. Requires
+   * wot.enabled -- otherwise every distance lookup is undefined and this has
+   * no effect.
+   */
+  wotThresholds?: WotPowThreshold[]
+}
+
 export interface EventLimits {
   eventId?: EventIdLimits
   pubkey?: PubkeyLimits
@@ -101,6 +135,7 @@ export interface EventLimits {
   rateLimits?: EventRateLimit[]
   whitelists?: EventWhitelists
   retention?: EventRetentionLimits
+  pow?: AdaptivePowSettings
 }
 
 export interface ClientSubscriptionLimits {
@@ -165,6 +200,11 @@ export interface Limits {
 
 export interface Worker {
   count: number
+}
+
+export interface EventStoreSettings {
+  /** Read once at startup, so changing it needs a restart. Defaults to postgres. */
+  backend: EventStoreBackend
 }
 
 export interface FeeScheduleWhitelists {
@@ -274,6 +314,24 @@ export interface Nip45Settings {
   enabled?: boolean
 }
 
+export interface Nip77Settings {
+  /**
+   * NIP-77 negentropy sync. Defaults to false. Even when true it only answers
+   * if `eventStore.backend` is postgres: other backends (e.g. strfry) bring
+   * their own negentropy implementation.
+   */
+  enabled?: boolean
+  /**
+   * Most events one session may hold in memory; larger queries are rejected
+   * with `NEG-ERR blocked:`. Defaults to 100000.
+   */
+  maxEventsPerSession?: number
+  /** Concurrent negentropy sessions allowed on one connection. Defaults to 3. */
+  maxSessionsPerConnection?: number
+  /** A session with no `NEG-MSG` for this long is closed with `NEG-ERR closed:`. Defaults to 60000. */
+  sessionIdleTimeoutMs?: number
+}
+
 export interface Nip50Settings {
   enabled?: boolean
   language?: string
@@ -312,6 +370,10 @@ export interface Nip66Settings {
    * Defaults to 300.
    */
   dnsCacheTtlSeconds: number
+  /**
+   * Optional NIP-52 geohash describing this monitor's network vantage for kind 10166 events.
+   */
+  geohash?: string
 }
 
 export interface Nip05Settings {
@@ -349,6 +411,7 @@ export interface AdminSettings {
   passwordHash?: string
   sessionTtlSeconds?: number
   nip98?: AdminNip98Settings
+  notifications?: AdminNotificationsSettings
 }
 export interface WoTSettings {
   enabled: boolean
@@ -407,6 +470,27 @@ export interface Nip43Settings {
   inviteRequestWhitelist?: Pubkey[]
 }
 
+export interface Nip56Settings {
+  enabled: boolean
+  /**
+   * Pubkeys (hex) whose kind-1984 reports are treated as coming from a
+   * trusted moderator: their reports get maximum weight and are flagged
+   * actionable, regardless of WoT graph distance. Reports from any other
+   * pubkey are scored purely by WoT distance from `wot.seedPubkey` and are
+   * never actionable on their own -- only stored for manual review.
+   */
+  trustedModerators: Pubkey[]
+  /**
+   * When true, events matching an `actionable` report (a trusted-moderator
+   * report against a valid target) are excluded from REQ/COUNT results.
+   * A pubkey-targeted report hides every event from that pubkey; an
+   * event-targeted report hides just that event. Requires `enabled` to have
+   * any effect. Defaults to false so enabling reporting alone never changes
+   * what existing subscribers see.
+   */
+  hideActionableReports: boolean
+}
+
 export interface Settings {
   info: Info
   admin?: AdminSettings
@@ -414,6 +498,7 @@ export interface Settings {
   paymentsProcessors?: PaymentsProcessors
   network: Network
   workers?: Worker
+  eventStore?: EventStoreSettings
   limits?: Limits
   mirroring?: Mirroring
   dvm?: Dvm
@@ -422,6 +507,8 @@ export interface Settings {
   nip43?: Nip43Settings
   nip45?: Nip45Settings
   nip50?: Nip50Settings
+  nip56?: Nip56Settings
   nip66?: Nip66Settings
+  nip77?: Nip77Settings
   wot?: WoTSettings
 }

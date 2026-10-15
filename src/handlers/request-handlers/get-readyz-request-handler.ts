@@ -1,15 +1,19 @@
 import { NextFunction, Request, Response } from 'express'
 
 import { AdminDependencyHealth, collectAdminHealthSnapshot } from '../../utils/admin-health'
+import { isRelayBroadcastFanoutEnabled } from '../../utils/relay-broadcast-message'
+import { isRelayBroadcastFanoutReady } from '../../utils/relay-broadcast-state'
+import { isDraining } from '../../utils/shutdown-state'
 
 // Public readiness probe for load balancers (e.g. HAProxy blue/green). Unlike /healthz
 // (liveness), /readyz returns non-200 when Postgres or Redis is unavailable.
 const READY_SNAPSHOT_CACHE_TTL_MS = 1000
 
 export interface ReadyzSnapshot {
-  status: 'ok' | 'unavailable'
+  status: 'ok' | 'unavailable' | 'draining'
   database: AdminDependencyHealth
   redis: AdminDependencyHealth
+  relayBroadcast?: { ok: boolean }
 }
 
 interface CachedReadyzSnapshot {
@@ -26,12 +30,15 @@ export const resetReadyzSnapshotCache = (): void => {
 }
 
 export const buildReadyzSnapshot = (database: AdminDependencyHealth, redis: AdminDependencyHealth): ReadyzSnapshot => {
-  const ready = database.ok && redis.ok
+  const fanoutRequired = isRelayBroadcastFanoutEnabled()
+  const relayBroadcastOk = !fanoutRequired || isRelayBroadcastFanoutReady()
+  const ready = database.ok && redis.ok && relayBroadcastOk
 
   return {
     status: ready ? 'ok' : 'unavailable',
     database,
     redis,
+    ...(fanoutRequired ? { relayBroadcast: { ok: relayBroadcastOk } } : {}),
   }
 }
 
@@ -72,6 +79,25 @@ const sendReadyzResponse = (res: Response, statusCode: number, snapshot: ReadyzS
 }
 
 export const getReadyzRequestHandler = async (_req: Request, res: Response, next: NextFunction) => {
+  if (isDraining()) {
+    try {
+      const health = await collectAdminHealthSnapshot()
+      sendReadyzResponse(res, 503, {
+        status: 'draining',
+        database: health.database,
+        redis: health.redis,
+      })
+    } catch {
+      sendReadyzResponse(res, 503, {
+        status: 'draining',
+        database: { ok: false },
+        redis: { ok: false },
+      })
+    }
+    next()
+    return
+  }
+
   try {
     const snapshot = await collectReadyzSnapshot()
     const statusCode = snapshot.status === 'ok' ? 200 : 503

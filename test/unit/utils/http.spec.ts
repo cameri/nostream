@@ -68,6 +68,18 @@ describe('getRemoteAddress', () => {
       getRemoteAddress(arrayRequest, { network: { remoteIpHeader: header, trustedProxies: [socketAddress] } } as any),
     ).to.equal(address)
   })
+
+  it('uses the last forwarded hop from a trusted proxy', () => {
+    expect(
+      getRemoteAddress(
+        {
+          headers: { [header]: 'spoofed-client, 203.0.113.10' },
+          socket: { remoteAddress: socketAddress },
+        } as any,
+        { network: { remoteIpHeader: header, trustedProxies: [socketAddress] } } as any,
+      ),
+    ).to.equal('203.0.113.10')
+  })
 })
 
 describe('getPublicPathPrefix', () => {

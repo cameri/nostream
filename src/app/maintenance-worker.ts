@@ -4,18 +4,26 @@ import {
   Nip05VerificationOutcome,
   verifyNip05Identifier,
 } from '../utils/nip05'
-import { IMaintenanceService, IPaymentsService } from '../@types/services'
+import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../@types/services'
 import { mergeDeepLeft, path, pipe } from 'ramda'
 import { IRunnable } from '../@types/base'
 
 import { createLogger } from '../factories/logger-factory'
 import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
 import { delayMs } from '../utils/misc'
-import { INip05VerificationRepository } from '../@types/repositories'
+import { OperatorNotificationEventType } from '../@types/operator-notifications'
+import {
+  INip05VerificationRepository,
+  INotificationDeliveryLogRepository,
+  INotificationOutboxRepository,
+} from '../@types/repositories'
 import { InvoiceStatus } from '../@types/invoice'
 import { isExpiredInvoice } from '../utils/invoice'
 import { Nip05Verification } from '../@types/nip05'
+import { FSWatcher } from 'fs'
+
 import { Settings } from '../@types/settings'
+import { SettingsStatic } from '../utils/settings'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 
 const UPDATE_INVOICE_INTERVAL = 60000
@@ -74,6 +82,7 @@ export function applyReverificationOutcome(
 export class MaintenanceWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
   private isRunning = false
+  private watchers: FSWatcher[] | undefined
   /**
    * Where the next pass starts. Without it every pass re-reads the oldest ten, so
    * ten invoices that never resolve starve everything behind them.
@@ -86,6 +95,9 @@ export class MaintenanceWorker implements IRunnable {
     private readonly maintenanceService: IMaintenanceService,
     private readonly settings: () => Settings,
     private readonly nip05VerificationRepository: INip05VerificationRepository,
+    private readonly notificationOutboxService: INotificationOutboxService,
+    private readonly notificationDeliveryLogRepository: INotificationDeliveryLogRepository,
+    private readonly notificationOutboxRepository: INotificationOutboxRepository,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -109,6 +121,8 @@ export class MaintenanceWorker implements IRunnable {
   }
 
   public run(): void {
+    this.watchers = SettingsStatic.watchSettings()
+
     this.interval = setInterval(async () => {
       if (this.isRunning) {
         logger('skipping scheduled maintenance run because previous run is still in progress')
@@ -131,6 +145,7 @@ export class MaintenanceWorker implements IRunnable {
     const clearOldEventsPromise = this.clearOldEventsSafely()
 
     await this.processNip05Reverifications(currentSettings)
+    await this.processNotificationOutbox()
 
     if (!path(['payments', 'enabled'], currentSettings)) {
       await clearOldEventsPromise
@@ -188,6 +203,15 @@ export class MaintenanceWorker implements IRunnable {
             id: invoice.id,
             status: InvoiceStatus.EXPIRED,
           })
+          try {
+            await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.ADMISSION_INVOICE_FAILED, {
+              invoiceId: invoice.id,
+              pubkey: invoice.pubkey,
+              reason: 'expired',
+            })
+          } catch (error) {
+            logger.error('Unable to enqueue admission.invoice.failed notification', error)
+          }
           successful++
           continue
         }
@@ -199,6 +223,22 @@ export class MaintenanceWorker implements IRunnable {
     }
 
     await clearOldEventsPromise
+  }
+
+  private async processNotificationOutbox(): Promise<void> {
+    try {
+      const delivered = await this.notificationOutboxService.processBatch()
+      if (delivered > 0) {
+        logger('delivered %d notification outbox message(s)', delivered)
+      }
+
+      const retentionDays = this.settings().admin?.notifications?.deliveryLogRetentionDays ?? 30
+      const cutoff = new Date(Date.now() - retentionDays * 86_400_000)
+      await this.notificationDeliveryLogRepository.deleteOlderThan(cutoff)
+      await this.notificationOutboxRepository.deleteTerminalOlderThan(cutoff)
+    } catch (error) {
+      logger.error('Unable to process notification outbox', error)
+    }
   }
 
   private async processNip05Reverifications(currentSettings: Settings): Promise<void> {
@@ -255,6 +295,11 @@ export class MaintenanceWorker implements IRunnable {
   public close(callback?: () => void) {
     logger('closing')
     clearInterval(this.interval)
+    if (Array.isArray(this.watchers)) {
+      for (const watcher of this.watchers) {
+        watcher.close()
+      }
+    }
     if (typeof callback === 'function') {
       callback()
     }

@@ -17,6 +17,7 @@ import { EventKinds, EventExpirationTimeMetadataKey, EventTags } from '../../../
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { IUserRepository } from '../../../src/@types/repositories'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
+import { getCurrentRate, recordEvent, resetAdaptivePowState } from '../../../src/utils/adaptive-pow'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 
 import * as nip05Utils from '../../../src/utils/nip05'
@@ -74,6 +75,7 @@ describe('EventMessageHandler', () => {
     let isUserAdmitted: Sinon.SinonStub
 
     beforeEach(() => {
+      resetAdaptivePowState()
       canAcceptEventStub = sandbox.stub(EventMessageHandler.prototype, 'canAcceptEvent' as any)
       isEventValidStub = sandbox.stub(EventMessageHandler.prototype, 'isEventValid' as any)
       isUserAdmitted = sandbox.stub(EventMessageHandler.prototype, 'isUserAdmitted' as any)
@@ -102,6 +104,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -121,12 +124,27 @@ describe('EventMessageHandler', () => {
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
-    it('rejects event if rate-limited', async () => {
-      isRateLimitedStub.resolves(true)
+    it('rejects event if rate-limited with the backoff in ms', async () => {
+      isRateLimitedStub.resolves(60000)
 
       await handler.handleMessage(message)
 
       expect(isRateLimitedStub).to.have.been.calledOnceWithExactly(event)
+      expect(onMessageSpy).to.have.been.calledOnceWithExactly([
+        MessageType.OK,
+        event.id,
+        false,
+        'rate-limited: slow down',
+        '60000',
+      ])
+      expect(strategyFactoryStub).not.to.have.been.called
+    })
+
+    it('rejects event if rate-limited without a backoff when none is known', async () => {
+      isRateLimitedStub.resolves(true)
+
+      await handler.handleMessage(message)
+
       expect(onMessageSpy).to.have.been.calledOnceWithExactly([
         MessageType.OK,
         event.id,
@@ -240,6 +258,77 @@ describe('EventMessageHandler', () => {
 
       return expect(handler.handleMessage(message)).to.eventually.be.fulfilled
     })
+
+    describe('adaptive pow load recording', () => {
+      const powSettings = () =>
+        ({
+          info: { relay_url: 'relay_url' },
+          limits: {
+            event: {
+              pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+            },
+          },
+        }) as any
+
+      it('does not record load for an event rejected before acceptance (canAcceptEvent)', async () => {
+        const powHandler = new EventMessageHandler(
+          webSocket as any,
+          strategyFactoryStub,
+          eventRepository,
+          userRepository,
+          powSettings,
+          {} as any,
+          { hasKey: async () => false, setKey: async () => true } as any,
+          () => ({ hit: async () => false }),
+          {} as any,
+        )
+        canAcceptEventStub.returns('rejected: pow')
+
+        await powHandler.handleMessage(message)
+
+        expect(getCurrentRate()).to.equal(0)
+      })
+
+      it('does not record load for an event rejected by rate limiting', async () => {
+        const powHandler = new EventMessageHandler(
+          webSocket as any,
+          strategyFactoryStub,
+          eventRepository,
+          userRepository,
+          powSettings,
+          {} as any,
+          { hasKey: async () => false, setKey: async () => true } as any,
+          () => ({ hit: async () => false }),
+          {} as any,
+        )
+        isRateLimitedStub.resolves(true)
+
+        await powHandler.handleMessage(message)
+
+        expect(getCurrentRate()).to.equal(0)
+      })
+
+      it('records load only once the event clears every check and is dispatched', async () => {
+        const powHandler = new EventMessageHandler(
+          webSocket as any,
+          strategyFactoryStub,
+          eventRepository,
+          userRepository,
+          powSettings,
+          {} as any,
+          { hasKey: async () => false, setKey: async () => true } as any,
+          () => ({ hit: async () => false }),
+          {} as any,
+        )
+        isEventValidStub.returns(undefined)
+        canAcceptEventStub.returns(undefined)
+
+        await powHandler.handleMessage(message)
+
+        expect(getCurrentRate()).to.be.greaterThan(0)
+        expect(strategyExecuteStub).to.have.been.calledOnceWithExactly(event)
+      })
+    })
   })
 
   describe('canAcceptEvent', () => {
@@ -289,6 +378,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -297,43 +387,43 @@ describe('EventMessageHandler', () => {
     })
 
     describe('createdAt', () => {
-      it('returns undefined if event pubkey equals relay public key', () => {
+      it('returns undefined if event pubkey equals relay public key', async () => {
         sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any).returns(event.pubkey)
         eventLimits.createdAt.maxPositiveDelta = 1
         event.created_at += 999
 
-        expect((handler as any).canAcceptEvent(event)).to.be.undefined
+        expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
       })
 
       describe('maxPositiveDelta', () => {
-        it('returns undefined if maxPositiveDelta is zero', () => {
+        it('returns undefined if maxPositiveDelta is zero', async () => {
           eventLimits.createdAt.maxPositiveDelta = 0
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if createdDate is too far in the future', () => {
+        it('returns reason if createdDate is too far in the future', async () => {
           eventLimits.createdAt.maxPositiveDelta = 100
           event.created_at += 101
 
           expect(
-            (handler as any).canAcceptEvent(event)
+            await (handler as any).canAcceptEvent(event)
           ).to.equal('rejected: created_at is more than 100 seconds in the future')
         })
       })
 
       describe('maxNegativeDelta', () => {
-        it('returns undefined if maxNegativeDelta is zero', () => {
+        it('returns undefined if maxNegativeDelta is zero', async () => {
           eventLimits.createdAt.maxNegativeDelta = 0
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if createdDate is too far in the past', () => {
+        it('returns reason if createdDate is too far in the past', async () => {
           eventLimits.createdAt.maxNegativeDelta = 100
           event.created_at -= 101
 
-          expect((handler as any).canAcceptEvent(event)).to.equal(
+          expect(await (handler as any).canAcceptEvent(event)).to.equal(
             'rejected: created_at is more than 100 seconds in the past',
           )
         })
@@ -342,110 +432,110 @@ describe('EventMessageHandler', () => {
 
     describe('content', () => {
       describe('maxLength', () => {
-        it('returns undefined if maxLength is disabled', () => {
+        it('returns undefined if maxLength is disabled', async () => {
           eventLimits.content = [{ maxLength: 0 }]
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefned if content is not too long', () => {
+        it('returns undefned if content is not too long', async () => {
           eventLimits.content = [{ maxLength: 1 }]
           event.content = 'x'.repeat(1)
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if kind does not match', () => {
+        it('returns undefined if kind does not match', async () => {
           eventLimits.content = [{ kinds: [EventKinds.SET_METADATA], maxLength: 1 }]
           event.content = 'x'
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if kind matches but content is short', () => {
+        it('returns undefined if kind matches but content is short', async () => {
           eventLimits.content = [{ kinds: [EventKinds.TEXT_NOTE], maxLength: 1 }]
           event.content = 'x'
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if kind matches but content is too long', () => {
+        it('returns reason if kind matches but content is too long', async () => {
           eventLimits.content = [{ kinds: [EventKinds.TEXT_NOTE], maxLength: 1 }]
           event.content = 'xx'
 
-          expect((handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
         })
 
-        it('returns reason if content is too long', () => {
+        it('returns reason if content is too long', async () => {
           eventLimits.content = [{ maxLength: 1 }]
           event.content = 'x'.repeat(2)
 
-          expect((handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
         })
       })
 
       describe('maxLength (deprecated)', () => {
-        it('returns undefined if maxLength is zero', () => {
+        it('returns undefined if maxLength is zero', async () => {
           eventLimits.content = { maxLength: 0 }
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if content is short', () => {
+        it('returns undefined if content is short', async () => {
           eventLimits.content = { maxLength: 100 }
           event.content = 'x'.repeat(100)
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if content is too long', () => {
+        it('returns reason if content is too long', async () => {
           eventLimits.content = { maxLength: 1 }
           event.content = 'xx'
 
-          expect((handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
         })
 
-        it('returns undefined if kind matches and content is short', () => {
+        it('returns undefined if kind matches and content is short', async () => {
           eventLimits.content = { kinds: [EventKinds.TEXT_NOTE], maxLength: 1 }
           event.content = 'x'
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if kind does not match and content is too long', () => {
+        it('returns undefined if kind does not match and content is too long', async () => {
           eventLimits.content = { kinds: [EventKinds.SET_METADATA], maxLength: 1 }
           event.content = 'xx'
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if content is too long', () => {
+        it('returns reason if content is too long', async () => {
           eventLimits.content = { maxLength: 1 }
           event.content = 'xx'
 
-          expect((handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('rejected: content is longer than 1 bytes')
         })
 
-        it('returns undefined if content is not set', () => {
+        it('returns undefined if content is not set', async () => {
           eventLimits.content = undefined
           event.content = 'xx'
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
       })
 
       describe('maxNegativeDelta', () => {
-        it('returns undefined if maxNegativeDelta is zero', () => {
+        it('returns undefined if maxNegativeDelta is zero', async () => {
           eventLimits.createdAt.maxNegativeDelta = 0
 
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if createdDate is too far in the past', () => {
+        it('returns reason if createdDate is too far in the past', async () => {
           eventLimits.createdAt.maxNegativeDelta = 100
           event.created_at -= 101
 
-          expect((handler as any).canAcceptEvent(event)).to.equal(
+          expect(await (handler as any).canAcceptEvent(event)).to.equal(
             'rejected: created_at is more than 100 seconds in the past',
           )
         })
@@ -454,174 +544,370 @@ describe('EventMessageHandler', () => {
 
     describe('eventId', () => {
       describe('minLeadingZeroBits', () => {
-        it('returns undefined if minLeadingZeroBits is zero', () => {
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+        it('returns undefined if minLeadingZeroBits is zero', async () => {
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if eventId has sufficient proof of work ', () => {
+        it('returns undefined if eventId has sufficient proof of work ', async () => {
           eventLimits.eventId.minLeadingZeroBits = 15
           event.id = '0001' + 'f'.repeat(60)
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if eventId has insufficient proof of work ', () => {
+        it('returns reason if eventId has insufficient proof of work ', async () => {
           eventLimits.eventId.minLeadingZeroBits = 16
           event.id = '00' + 'f'.repeat(62)
-          expect((handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<16')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<16')
         })
       })
     })
 
     describe('pubkey', () => {
       describe('minLeadingZeroBits', () => {
-        it('returns undefined if minLeadingZeroBits is zero', () => {
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+        it('returns undefined if minLeadingZeroBits is zero', async () => {
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if pubkey has sufficient proof of work ', () => {
+        it('returns undefined if pubkey has sufficient proof of work ', async () => {
           eventLimits.pubkey.minLeadingZeroBits = 17
           event.pubkey = '00007' + 'f'.repeat(59)
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if pubkey has insufficient proof of work ', () => {
+        it('returns reason if pubkey has insufficient proof of work ', async () => {
           eventLimits.pubkey.minLeadingZeroBits = 16
           event.pubkey = '0'.repeat(2) + 'f'.repeat(62)
-          expect((handler as any).canAcceptEvent(event)).to.equal('pow: pubkey difficulty 8<16')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('pow: pubkey difficulty 8<16')
+        })
+      })
+
+      describe('pow (adaptive)', () => {
+        beforeEach(() => {
+          resetAdaptivePowState()
+        })
+
+        it('uses the floor difficulty while the observed rate is at or under target', async () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 8,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '00' + 'f'.repeat(62) // 8 leading zero bits
+          event.pubkey = '00001' + 'f'.repeat(59) // irrelevant here: pubkey.minLeadingZeroBits is unset
+
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
+        })
+
+        it('rejects with the floor difficulty when insufficient and under target', async () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 9,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '00' + 'f'.repeat(62) // 8 leading zero bits
+
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<9')
+        })
+
+        it('does not apply the adaptive difficulty to the pubkey check', async () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 9,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '0001' + 'f'.repeat(60) // sufficient eventId pow
+          event.pubkey = '00' + 'f'.repeat(62) // 8 leading zero bits -- below the adaptive floor of 9
+
+          // pubkey.minLeadingZeroBits is unset (0/disabled), so this must pass:
+          // adaptive PoW never gates the pubkey axis, only eventId.
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
+        })
+
+        it('still enforces the static pubkey.minLeadingZeroBits setting while adaptive pow is enabled', async () => {
+          eventLimits.pubkey.minLeadingZeroBits = 16
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 0,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '0001' + 'f'.repeat(60) // sufficient eventId pow (floor is 0 anyway)
+          event.pubkey = '00' + 'f'.repeat(62) // 8 leading zero bits, insufficient against the static 16
+
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('pow: pubkey difficulty 8<16')
+        })
+
+        it('scales the required difficulty up as the sustained recorded rate exceeds target', async () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 8,
+            ceilingBits: 24,
+            targetEventsPerSecond: 2,
+            periodMs: 60000,
+          }
+          event.id = '00' + 'f'.repeat(62) // 8 leading zero bits, passes only the floor
+          event.pubkey = '00001' + 'f'.repeat(59) // irrelevant here: pubkey.minLeadingZeroBits is unset
+
+          // canAcceptEvent only reads the current difficulty -- it no longer records
+          // load itself (that now happens in handleMessage, after full acceptance).
+          // Simulate a real sustained rate of 2.6 events/sec (1.3x the 2/s target,
+          // deliberately not 1.5x -- that ratio sits exactly on ceil()'s integer
+          // boundary, which the EWMA's convergence can overshoot by a hair) by
+          // driving recordEvent() with time-spaced calls until the EWMA converges.
+          const periodMs = 60000
+          const intervalMs = 1000 / 2.6
+          let now = 1000
+          for (let i = 0; i < Math.ceil((periodMs * 20) / intervalMs); i++) {
+            recordEvent(periodMs, now)
+            now += intervalMs
+          }
+
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('pow: difficulty 8<13') // ratio=1.3 -> 8+ceil(0.3*16)=13
+        })
+
+        it('does not record load itself -- repeated calls do not change the observed rate', async () => {
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 8,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+          event.id = '00' + 'f'.repeat(62) // 8 leading zero bits
+          event.pubkey = '00001' + 'f'.repeat(59) // irrelevant here: pubkey.minLeadingZeroBits is unset
+
+          await (handler as any).canAcceptEvent(event)
+          await (handler as any).canAcceptEvent(event)
+          await (handler as any).canAcceptEvent(event)
+
+          expect(getCurrentRate()).to.equal(0)
+        })
+
+        it('ignores the static eventId.minLeadingZeroBits setting while adaptive pow is enabled', async () => {
+          eventLimits.eventId.minLeadingZeroBits = 40
+          eventLimits.pow = {
+            enabled: true,
+            floorBits: 0,
+            ceilingBits: 24,
+            targetEventsPerSecond: 100,
+            periodMs: 60000,
+          }
+
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
+        })
+
+        describe('wotThresholds', () => {
+          let getDistanceStub: Sinon.SinonStub
+          let wotHandler: EventMessageHandler
+
+          beforeEach(() => {
+            getDistanceStub = Sinon.stub()
+            wotHandler = new EventMessageHandler(
+              {} as any,
+              () => null,
+              {} as any,
+              userRepository,
+              () => settings,
+              {} as any,
+              { hasKey: async () => false, setKey: async () => true } as any,
+              () => ({ hit: async () => false }),
+              { getDistance: getDistanceStub } as any,
+            )
+
+            eventLimits.pow = {
+              enabled: true,
+              floorBits: 16,
+              ceilingBits: 24,
+              targetEventsPerSecond: 100,
+              periodMs: 60000,
+              wotThresholds: [
+                { maxDistance: 1, difficultyFactor: 0 },
+                { maxDistance: 2, difficultyFactor: 0.5 },
+              ],
+            }
+            event.id = 'f'.repeat(64) // 0 leading zero bits -- fails any non-zero requirement
+          })
+
+          it('does not consult the WoT graph when no thresholds are configured', async () => {
+            eventLimits.pow!.wotThresholds = undefined
+
+            await (wotHandler as any).canAcceptEvent(event)
+
+            expect(getDistanceStub).not.to.have.been.called
+          })
+
+          it('bypasses eventId PoW entirely for a direct follow (distance 1)', async () => {
+            getDistanceStub.resolves(1)
+
+            expect(await (wotHandler as any).canAcceptEvent(event)).to.be.undefined
+          })
+
+          it('applies a partial reduction at distance 2 (half of the floor of 16 is 8)', async () => {
+            getDistanceStub.resolves(2)
+            event.id = '00' + 'f'.repeat(62) // 8 leading zero bits -- meets the reduced requirement exactly
+
+            expect(await (wotHandler as any).canAcceptEvent(event)).to.be.undefined
+          })
+
+          it('rejects at distance 2 when the event does not meet even the reduced requirement', async () => {
+            getDistanceStub.resolves(2)
+            event.id = '0' + 'f'.repeat(63) // 4 leading zero bits -- below the reduced requirement of 8
+
+            expect(await (wotHandler as any).canAcceptEvent(event)).to.equal('pow: difficulty 4<8')
+          })
+
+          it('requires the full computed difficulty for a pubkey outside the trust graph', async () => {
+            getDistanceStub.resolves(undefined)
+
+            expect(await (wotHandler as any).canAcceptEvent(event)).to.equal('pow: difficulty 0<16')
+          })
+
+          it('requires the full computed difficulty beyond every threshold', async () => {
+            getDistanceStub.resolves(5)
+
+            expect(await (wotHandler as any).canAcceptEvent(event)).to.equal('pow: difficulty 0<16')
+          })
         })
       })
 
       describe('blacklist', () => {
-        it('returns undefined if blacklist is empty', () => {
+        it('returns undefined if blacklist is empty', async () => {
           eventLimits.pubkey.blacklist = []
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if pubkey is not blacklisted', () => {
+        it('returns undefined if pubkey is not blacklisted', async () => {
           eventLimits.pubkey.blacklist = ['aabbcc']
           event.pubkey = 'fffff'
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if pubkey is not an exact match in the blacklist', () => {
+        it('returns undefined if pubkey is not an exact match in the blacklist', async () => {
           eventLimits.pubkey.blacklist = ['aa55']
           event.pubkey = 'aabbcc'
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if pubkey is blacklisted', () => {
+        it('returns reason if pubkey is blacklisted', async () => {
           eventLimits.pubkey.blacklist = ['aabbcc']
           event.pubkey = 'aabbcc'
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
 
-        it('returns undefined if pubkey extends a blacklist entry but is not an exact match', () => {
+        it('returns undefined if pubkey extends a blacklist entry but is not an exact match', async () => {
           eventLimits.pubkey.blacklist = ['aa55']
           event.pubkey = 'aa55ccddeeff'
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
       })
 
       describe('whitelist', () => {
-        it('returns undefined if whitelist is empty', () => {
+        it('returns undefined if whitelist is empty', async () => {
           eventLimits.pubkey.whitelist = []
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if pubkey is whitelisted', () => {
+        it('returns undefined if pubkey is whitelisted', async () => {
           eventLimits.pubkey.whitelist = ['aabbcc']
           event.pubkey = 'aabbcc'
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if pubkey is not an exact match in the whitelist', () => {
+        it('returns reason if pubkey is not an exact match in the whitelist', async () => {
           eventLimits.pubkey.whitelist = ['aa55']
           event.pubkey = 'aa55ccddeeff'
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
 
-        it('returns reason if pubkey is not whitelisted', () => {
+        it('returns reason if pubkey is not whitelisted', async () => {
           eventLimits.pubkey.whitelist = ['ffffff']
           event.pubkey = 'aabbcc'
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
 
-        it('returns reason if pubkey is not whitelisted by exact match', () => {
+        it('returns reason if pubkey is not whitelisted by exact match', async () => {
           eventLimits.pubkey.whitelist = ['aa55']
           event.pubkey = 'aabbccddeeff'
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('blocked: pubkey not allowed')
         })
       })
     })
 
     describe('kind', () => {
       describe('blacklist', () => {
-        it('returns undefined if blacklist is empty', () => {
+        it('returns undefined if blacklist is empty', async () => {
           eventLimits.kind.blacklist = []
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if kind is not blacklisted', () => {
+        it('returns undefined if kind is not blacklisted', async () => {
           eventLimits.kind.blacklist = [5]
           event.kind = 4
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if kind is not blacklisted in range', () => {
+        it('returns undefined if kind is not blacklisted in range', async () => {
           eventLimits.kind.blacklist = [[1, 5]]
           event.kind = EventKinds.REACTION
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if kind is blacklisted in range', () => {
+        it('returns reason if kind is blacklisted in range', async () => {
           eventLimits.kind.blacklist = [[1, 5]]
           event.kind = 4
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 4 not allowed')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 4 not allowed')
         })
       })
 
       describe('whitelist', () => {
-        it('returns undefined if whitelist is empty', () => {
+        it('returns undefined if whitelist is empty', async () => {
           eventLimits.kind.whitelist = []
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if kind is whitelisted', () => {
+        it('returns undefined if kind is whitelisted', async () => {
           eventLimits.kind.whitelist = [5]
           event.kind = 5
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns undefined if kind is whitelisted in range', () => {
+        it('returns undefined if kind is whitelisted in range', async () => {
           eventLimits.kind.whitelist = [[1, 5]]
           event.kind = 3
-          expect((handler as any).canAcceptEvent(event)).to.be.undefined
+          expect(await (handler as any).canAcceptEvent(event)).to.be.undefined
         })
 
-        it('returns reason if kind is blacklisted and whitelisted in range', () => {
+        it('returns reason if kind is blacklisted and whitelisted in range', async () => {
           eventLimits.kind.blacklist = [3]
           eventLimits.kind.whitelist = [[1, 5]]
           event.kind = 3
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 3 not allowed')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 3 not allowed')
         })
 
-        it('returns reason if kind is blacklisted and whitelisted', () => {
+        it('returns reason if kind is blacklisted and whitelisted', async () => {
           eventLimits.kind.blacklist = [3]
           eventLimits.kind.whitelist = [3]
           event.kind = 3
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 3 not allowed')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 3 not allowed')
         })
 
-        it('returns reason if kind is not whitelisted', () => {
+        it('returns reason if kind is not whitelisted', async () => {
           eventLimits.kind.whitelist = [5]
           event.kind = 4
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 4 not allowed')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 4 not allowed')
         })
 
-        it('returns reason if kind is not whitelisted in range', () => {
+        it('returns reason if kind is not whitelisted in range', async () => {
           eventLimits.kind.whitelist = [[1, 5]]
           event.kind = EventKinds.REACTION
-          expect((handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 7 not allowed')
+          expect(await (handler as any).canAcceptEvent(event)).to.equal('blocked: event kind 7 not allowed')
         })
       })
     })
@@ -751,6 +1037,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -804,6 +1091,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: rateLimiterHitStub }),
+        {} as any,
       )
     })
 
@@ -981,7 +1269,7 @@ describe('EventMessageHandler', () => {
       expect(actualResult).to.be.false
     })
 
-    it('fulfills with true if rate limited by second rate limit setting', async () => {
+    it('fulfills with the tripped period if rate limited by second rate limit setting', async () => {
       eventLimits.rateLimits = [
         {
           period: 60000,
@@ -1020,7 +1308,7 @@ describe('EventMessageHandler', () => {
           rate: 3,
         },
       )
-      expect(actualResult).to.be.true
+      expect(actualResult).to.equal(180)
     })
 
     it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
@@ -1040,7 +1328,7 @@ describe('EventMessageHandler', () => {
       const actualResult = await (handler as any).isRateLimited(event)
 
       expect(rateLimiterHitStub).to.have.been.calledOnce
-      expect(actualResult).to.be.true
+      expect(actualResult).to.equal(60000)
     })
 
     it('fails closed when the rate limiter backend is unavailable', async () => {
@@ -1129,6 +1417,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         cacheStub,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -1402,6 +1691,7 @@ describe('EventMessageHandler', () => {
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -1557,6 +1847,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -1607,6 +1898,7 @@ describe('EventMessageHandler', () => {
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -1850,6 +2142,7 @@ describe('EventMessageHandler', () => {
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -2026,6 +2319,7 @@ describe('EventMessageHandler', () => {
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -2224,6 +2518,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
 
       expect((handler as any).isAuthenticationRequired(event)).to.be.undefined
@@ -2239,6 +2534,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
 
       expect((handler as any).isAuthenticationRequired(event)).to.equal(
@@ -2256,6 +2552,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
 
       expect((handler as any).isAuthenticationRequired(event)).to.be.undefined
@@ -2278,6 +2575,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
     })
 
@@ -2310,6 +2608,7 @@ describe('EventMessageHandler', () => {
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
         () => ({ hit: async () => false }),
+        {} as any,
       )
       expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined
     })

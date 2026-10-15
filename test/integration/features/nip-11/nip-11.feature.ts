@@ -67,9 +67,9 @@ Then('the relay information document contains the required fields', function(thi
 
 Then('the supported_nips field matches the NIPs declared in package.json', function(this: World<Record<string, any>>) {
   const doc = this.parameters.httpResponse.data
-  // NIP-43 is only advertised when enabled in settings; the integration
-  // relay runs with NIP-43 disabled, so it is filtered from the document.
-  expect(doc.supported_nips).to.deep.equal(packageJson.supportedNips.filter((nip: number) => nip !== 43))
+  // NIP-43 and NIP-77 are only advertised when enabled in settings; the integration
+  // relay runs with both disabled, so they are filtered from the document.
+  expect(doc.supported_nips).to.deep.equal(packageJson.supportedNips.filter((nip: number) => nip !== 43 && nip !== 77))
 })
 
 Then('the response body is not a relay information document', function(this: World<Record<string, any>>) {
