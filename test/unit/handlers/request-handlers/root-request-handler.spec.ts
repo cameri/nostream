@@ -12,6 +12,7 @@ import {
   rootRequestHandler,
 } from '../../../../src/handlers/request-handlers/root-request-handler'
 import { DEFAULT_FILTER_LIMIT } from '../../../../src/constants/base'
+import * as eventStoreUtils from '../../../../src/utils/event-store'
 import * as eventUtils from '../../../../src/utils/event'
 import { toBech32 } from '../../../../src/utils/transform'
 
@@ -263,6 +264,47 @@ describe('rootRequestHandler', () => {
       expect(doc.limitation.created_at_lower_limit).to.equal(86400)
       expect(doc.limitation.created_at_upper_limit).to.equal(300)
       expect(doc.limitation.default_limit).to.equal(DEFAULT_FILTER_LIMIT)
+    })
+
+    describe('supported_nips and NIP-77', () => {
+      const advertised = (settings: any) => {
+        createSettingsStub.returns(settings)
+        rootRequestHandler(req, res, next)
+        return res.send.lastCall.args[0].supported_nips
+      }
+
+      it('advertises 77 when NIP-77 is enabled on the PostgreSQL backend', () => {
+        expect(advertised({ ...baseSettings, nip77: { enabled: true } })).to.include(77)
+        expect(
+          advertised({ ...baseSettings, nip77: { enabled: true }, eventStore: { backend: 'postgres' } }),
+        ).to.include(77)
+      })
+
+      it('does not advertise 77 when NIP-77 is disabled or unset', () => {
+        expect(advertised(baseSettings)).to.not.include(77)
+        expect(advertised({ ...baseSettings, nip77: { enabled: false } })).to.not.include(77)
+      })
+
+      it('does not advertise 77 when another event store backend is used', () => {
+        // postgres is the only backend the settings accept today; simulate the strfry backend
+        // that will bring its own negentropy implementation.
+        const backendStub = sinon.stub(eventStoreUtils, 'getEventStoreBackend').returns('strfry' as any)
+        try {
+          expect(advertised({ ...baseSettings, nip77: { enabled: true } })).to.not.include(77)
+        } finally {
+          backendStub.restore()
+        }
+      })
+
+      it('still gates 43 on NIP-43 independently of 77', () => {
+        const both = advertised({ ...baseSettings, nip43: { enabled: true }, nip77: { enabled: true } })
+        expect(both).to.include(43)
+        expect(both).to.include(77)
+
+        const onlyNip77 = advertised({ ...baseSettings, nip77: { enabled: true } })
+        expect(onlyNip77).to.not.include(43)
+        expect(onlyNip77).to.include(77)
+      })
     })
 
     it('sets limitation.search_supported to false when NIP-50 is disabled', () => {
