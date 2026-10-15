@@ -1,5 +1,17 @@
 # nostream
 
+## 3.5.0
+
+### Minor Changes
+
+- [#823](https://github.com/cameri/nostream/pull/823) [`82287d4`](https://github.com/cameri/nostream/commit/82287d41bc7228ee0d68961ce535b5e9b52570d4) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(website): add Astro marketing site with landing film, docs, changelog and community pages
+
+  Adds `website/site` (nostream.dev) and updates the landing hero animation to sync NIP count and branding from the repo. Docs, changelog, version label and NIP list are read from the repository at build time.
+
+- [#830](https://github.com/cameri/nostream/pull/830) [`f0bcdcc`](https://github.com/cameri/nostream/commit/f0bcdcc4f53a7fdf5d71ec3013038dce1a779188) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(nip77): advertise NIP-77 in NIP-11 supported_nips while it is active and expose its settings in the admin console
+
+- [#818](https://github.com/cameri/nostream/pull/818) [`7409006`](https://github.com/cameri/nostream/commit/7409006e612cbe209517aa24992af6439cc66d5c) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(nip77): serve NEG-OPEN, NEG-MSG and NEG-CLOSE negentropy sync for the PostgreSQL event store
+
 ## 3.4.1
 
 ### Patch Changes
