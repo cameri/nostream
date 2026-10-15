@@ -1,5 +1,13 @@
 # nostream
 
+## 3.4.1
+
+### Patch Changes
+
+- [#825](https://github.com/cameri/nostream/pull/825) [`48fe9c4`](https://github.com/cameri/nostream/commit/48fe9c46489fb500699675c073a8638da28dfd71) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(settings): validate `info.relay_url` is a usable absolute URL
+
+  `validateSettings()` now rejects a `relay_url` that is not a valid absolute URL, parses with an empty host (scheme-only strings like `localhost:8008`), or uses a protocol other than `ws`/`wss`/`http`/`https`. Previously an invalid value started cleanly and then broke every HTTP request with `500 TypeError: Invalid URL`, including the Admin Console, leaving the bad setting fixable only by editing the file by hand. Found in [#824](https://github.com/cameri/nostream/issues/824).
+
 ## 3.4.0
 
 ### Minor Changes

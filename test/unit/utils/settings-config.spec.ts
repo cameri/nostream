@@ -98,6 +98,65 @@ describe('settings-config', () => {
     expect(issues.some((issue) => issue.path === 'network')).to.equal(true)
   })
 
+  it('accepts a relay_url with a valid ws/wss/http/https absolute URL', () => {
+    for (const relay_url of [
+      'ws://nostream.example.com:8008',
+      'wss://nostream.example.com',
+      'http://localhost:8008',
+      'http://nostream.example.com',
+      'https://nostream.example.com',
+      'https://nostream.example.com:8443',
+      'ws://[::1]:8008',
+      'wss://127.0.0.1',
+    ]) {
+      const issues = validateSettings({ info: { relay_url, name: 'test' } } as any)
+
+      expect(
+        issues.filter((issue) => issue.path === 'info.relay_url'),
+        `expected ${relay_url} to pass`,
+      ).to.be.empty
+    }
+  })
+
+  it('rejects a relay_url that is not a valid absolute URL', () => {
+    const issues = validateSettings({ info: { relay_url: 'nostream.example.com', name: 'test' } } as any)
+
+    expect(
+      issues.some(
+        (issue) => issue.path === 'info.relay_url' && issue.message === 'relay_url must be a valid absolute URL',
+      ),
+    ).to.equal(true)
+  })
+
+  it('rejects a scheme-only relay_url with no host', () => {
+    const issues = validateSettings({ info: { relay_url: 'localhost:8008', name: 'test' } } as any)
+
+    expect(
+      issues.some(
+        (issue) => issue.path === 'info.relay_url' && issue.message === 'relay_url must include a valid host',
+      ),
+    ).to.equal(true)
+  })
+
+  it('rejects a relay_url whose protocol is not ws/wss/http/https', () => {
+    for (const relay_url of [
+      'ftp://nostream.example.com',
+      'gopher://nostream.example.com:70',
+      'whttp://nostream.example.com',
+    ]) {
+      const issues = validateSettings({ info: { relay_url, name: 'test' } } as any)
+
+      expect(
+        issues.some(
+          (issue) =>
+            issue.path === 'info.relay_url' &&
+            issue.message === 'relay_url must use ws, wss, http, or https protocol',
+        ),
+        `expected ${relay_url} to be rejected for protocol`,
+      ).to.equal(true)
+    }
+  })
+
   describe('rate limit period validation', () => {
     const baseSettings = () =>
       ({

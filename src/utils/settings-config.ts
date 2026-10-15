@@ -594,6 +594,21 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
 
   if (!settings.info?.relay_url) {
     issues.push({ path: 'info.relay_url', message: 'relay_url is required' })
+  } else if (typeof settings.info.relay_url === 'string') {
+    try {
+      const parsed = new URL(settings.info.relay_url)
+
+      if (!parsed.host) {
+        issues.push({ path: 'info.relay_url', message: 'relay_url must include a valid host' })
+      } else if (!['ws:', 'wss:', 'http:', 'https:'].includes(parsed.protocol)) {
+        issues.push({
+          path: 'info.relay_url',
+          message: 'relay_url must use ws, wss, http, or https protocol',
+        })
+      }
+    } catch {
+      issues.push({ path: 'info.relay_url', message: 'relay_url must be a valid absolute URL' })
+    }
   }
 
   if (!settings.info?.name) {
