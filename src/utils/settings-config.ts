@@ -636,6 +636,17 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
     })
   }
 
+  const nip77 = settings.nip77
+  if (nip77?.enabled) {
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs'] as const) {
+      const value = nip77[key]
+      // Wrong types (e.g. a string) are already reported against the default settings schema.
+      if (typeof value === 'number' && !(Number.isInteger(value) && value > 0)) {
+        issues.push({ path: `nip77.${key}`, message: `${key} must be a positive integer` })
+      }
+    }
+  }
+
   const pow = settings.limits?.event?.pow
   if (pow?.enabled) {
     if (!(pow.floorBits >= 0) || !(pow.floorBits <= pow.ceilingBits)) {

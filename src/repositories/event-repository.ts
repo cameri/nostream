@@ -138,9 +138,10 @@ export class EventRepository implements IEventRepository {
    * Every live event matching the filter as (created_at, id), oldest first, for NIP-77 set
    * reconciliation. The filter's limit is ignored on purpose: reconciliation compares whole sets, so
    * truncating one side would report the cut-off events as missing. Deleted and expired events are
-   * excluded because they must never be advertised to a peer.
+   * excluded because they must never be advertised to a peer. `limit` is a safety cap for callers
+   * that refuse oversized sets (they ask for one more row than they accept); it is never a window.
    */
-  public findReconciliationItems(filter: SubscriptionFilter): IQueryResult<ReconciliationItem[]> {
+  public findReconciliationItems(filter: SubscriptionFilter, limit?: number): IQueryResult<ReconciliationItem[]> {
     logger('querying reconciliation items for %o', filter)
 
     const now = Math.floor(Date.now() / 1000)
@@ -155,6 +156,10 @@ export class EventRepository implements IEventRepository {
       })
       .orderBy('events.event_created_at', 'asc')
       .orderBy('events.event_id', 'asc')
+
+    if (typeof limit === 'number') {
+      builder.limit(limit)
+    }
 
     return builder as unknown as IQueryResult<ReconciliationItem[]>
   }

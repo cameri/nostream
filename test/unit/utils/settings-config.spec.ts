@@ -226,6 +226,47 @@ describe('settings-config', () => {
     })
   })
 
+  describe('nip77 settings', () => {
+    const baseSettings = (nip77: any) =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+        nip77,
+      }) as any
+
+    const nip77Issues = (nip77: any) =>
+      validateSettings(baseSettings(nip77)).filter((issue) => issue.path.startsWith('nip77'))
+
+    it('accepts the shipped defaults', () => {
+      expect(
+        nip77Issues({
+          enabled: true,
+          maxEventsPerSession: 100000,
+          maxSessionsPerConnection: 3,
+          sessionIdleTimeoutMs: 60000,
+        }),
+      ).to.deep.equal([])
+    })
+
+    it('accepts an enabled section that leaves the limits to their defaults', () => {
+      expect(nip77Issues({ enabled: true })).to.deep.equal([])
+    })
+
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs']) {
+      for (const bad of [0, -1, 1.5, '10', Number.NaN]) {
+        it(`rejects ${key} = ${String(bad)}`, () => {
+          const issues = nip77Issues({ enabled: true, [key]: bad })
+
+          expect(issues.map((issue) => issue.path)).to.deep.equal([`nip77.${key}`])
+        })
+      }
+    }
+
+    it('does not validate the limits while the feature is off', () => {
+      expect(nip77Issues({ enabled: false, maxEventsPerSession: 0 })).to.deep.equal([])
+    })
+  })
+
   describe('adaptive pow settings', () => {
     const baseSettings = () =>
       ({

@@ -13,13 +13,35 @@ export enum MessageType {
   COUNT = 'COUNT',
   CLOSED = 'CLOSED',
   AUTH = 'AUTH',
+  NEG_OPEN = 'NEG-OPEN',
+  NEG_MSG = 'NEG-MSG',
+  NEG_CLOSE = 'NEG-CLOSE',
+  NEG_ERR = 'NEG-ERR',
 }
 
-export type IncomingMessage = (SubscribeMessage | IncomingEventMessage | UnsubscribeMessage | CountMessage | AuthMessage) & {
+export type IncomingMessage = (
+  | SubscribeMessage
+  | IncomingEventMessage
+  | UnsubscribeMessage
+  | CountMessage
+  | AuthMessage
+  | NegOpenMessage
+  | NegMsgMessage
+  | NegCloseMessage
+) & {
   [ContextMetadataKey]?: ContextMetadata
 }
 
-export type OutgoingMessage = OutgoingEventMessage | EndOfStoredEventsNotice | NoticeMessage | CommandResult | CountResultMessage | ClosedMessage | AuthChallengeMessage
+export type OutgoingMessage =
+  | OutgoingEventMessage
+  | EndOfStoredEventsNotice
+  | NoticeMessage
+  | CommandResult
+  | CountResultMessage
+  | ClosedMessage
+  | AuthChallengeMessage
+  | NegMsgMessage
+  | NegErrMessage
 
 export type SubscribeMessage = {
   [index in Range<2, 100>]: SubscriptionFilter
@@ -102,4 +124,33 @@ export interface AuthMessage {
 export interface AuthChallengeMessage {
   0: MessageType.AUTH
   1: string
+}
+
+// NIP-77
+export interface NegOpenMessage {
+  0: MessageType.NEG_OPEN
+  1: SubscriptionId
+  2: SubscriptionFilter
+  /** Hex-encoded initial negentropy message. */
+  3: string
+}
+
+/** Sent in both directions; the payload is a hex-encoded negentropy message. */
+export interface NegMsgMessage {
+  0: MessageType.NEG_MSG
+  1: SubscriptionId
+  2: string
+}
+
+export interface NegCloseMessage {
+  0: MessageType.NEG_CLOSE
+  1: SubscriptionId
+}
+
+export interface NegErrMessage {
+  0: MessageType.NEG_ERR
+  1: SubscriptionId
+  2: string
+  /** For `blocked:` replies, the most records a session may hold. */
+  3?: number
 }
