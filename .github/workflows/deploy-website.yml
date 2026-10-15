@@ -30,9 +30,9 @@ jobs:
   deploy:
     name: Build and deploy to Cloudflare Workers
     runs-on: ubuntu-latest
-    # Deploy credentials live in this GitHub environment; add
-    # CLOUDFLARE_API_TOKEN there, scoped to Workers Scripts for this account.
-    environment: website-production
+    # Deploy credentials live in this GitHub environment: CLOUDFLARE_API_TOKEN
+    # secret (Workers Scripts scope) and CLOUDFLARE_ACCOUNT_ID variable.
+    environment: website
     permissions:
       contents: read
     steps:
@@ -52,7 +52,7 @@ jobs:
       - name: Build the site
         working-directory: website/site
         env:
-          SITE_URL: ${{ vars.SITE_URL }}
+          SITE_URL: https://ema.tnsor.network
         run: pnpm run build
 
       - name: Deploy to Cloudflare Workers
