@@ -12,12 +12,14 @@ on:
       - published
   workflow_dispatch:
 
-concurrency:
-  group: deploy-website
-  cancel-in-progress: false
-
 jobs:
   deploy:
+    # Concurrency lives on the job, not the workflow: a relay release
+    # (v* tag) fails the if below and must not enter this deploy queue,
+    # where it could replace a queued website deploy.
+    concurrency:
+      group: deploy-website
+      cancel-in-progress: false
     if: >-
       ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
       github.event_name == 'workflow_dispatch' }}
