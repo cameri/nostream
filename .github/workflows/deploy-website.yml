@@ -1,25 +1,15 @@
 name: Deploy Website
 
-# The marketing site deploys after a release lands on main: the changesets
-# release PR bumps nostream-website, merging it is the deploy trigger. Version
-# the site with a changeset, merge the release PR — never deploy from a branch.
+# The marketing site deploys when a nostream-website release is published:
+# the changesets release PR bumps the site package, and merging that PR makes
+# the changesets workflow tag + publish nostream-website@X.Y.Z and create the
+# GitHub release — this workflow deploys that tagged build. Merges to main do
+# not deploy; version the site with a changeset and merge the release PR.
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "website/site/**"
-      - "pnpm-lock.yaml"
-      - "package.json"
-      - "README.md"
-      - "CLI.md"
-      - "CONFIGURATION.md"
-      - "CONTRIBUTING.md"
-      - "SECURITY.md"
-      - "CHANGELOG.md"
-      - "deploy/**"
-      - "docs/**"
+  release:
+    types:
+      - published
   workflow_dispatch:
 
 concurrency:
@@ -28,9 +18,9 @@ concurrency:
 
 jobs:
   deploy:
-    # workflow_dispatch ignores the push-branch filter; a manual run must not
-    # publish a non-main branch to production.
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    if: >-
+      ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
+      github.event_name == 'workflow_dispatch' }}
     name: Build and deploy to Cloudflare Workers
     runs-on: ubuntu-latest
     # Deploy credentials live in this GitHub environment: CLOUDFLARE_API_TOKEN
