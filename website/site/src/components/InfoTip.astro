@@ -122,10 +122,11 @@ const id = `tip-${Astro.props['detail'] ? '' : ''}${Math.random().toString(36).s
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeAll(null)
   })
-  // Keep aria-expanded truthful for screen readers.
-  document.querySelectorAll('details.info-tip > summary').forEach((s) => {
-    const sync = () => s.setAttribute('aria-expanded', s.parentElement!.hasAttribute('open') ? 'true' : 'false')
-    s.addEventListener('toggle', sync)
-    s.addEventListener('click', () => setTimeout(sync, 0))
+  // Keep aria-expanded truthful for screen readers: the toggle event fires on
+  // the <details> element (not the summary), including programmatic closes.
+  document.querySelectorAll('details.info-tip').forEach((d) => {
+    d.addEventListener('toggle', () => {
+      d.querySelector('summary')?.setAttribute('aria-expanded', d.hasAttribute('open') ? 'true' : 'false')
+    })
   })
 </script>
