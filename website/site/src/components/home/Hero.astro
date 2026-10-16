@@ -45,16 +45,18 @@ import { VERSION } from '../../data/site'
 
   /* The headline used to live only inside the rendered film — invisible to
      search and screen readers. It is real text now, echoing the film's
-     second scene; the film keeps telling the full story beside it. */
+     second scene; the film keeps telling the full story beside it. The
+     film frame's own chrome starts lower, so the headline sits in the
+     clear above it. */
   .hero-h1 {
     position: absolute;
     z-index: 3;
     left: var(--pad-x);
-    top: clamp(28px, 7vh, 72px);
+    top: clamp(12px, 2.2vh, 26px);
     max-width: min(560px, calc(100% - 2 * var(--pad-x)));
     margin: 0;
-    font-size: clamp(30px, 4.4vw, 54px);
-    line-height: 1.08;
+    font-size: clamp(24px, 3vw, 38px);
+    line-height: 1.12;
     letter-spacing: -0.02em;
     pointer-events: none;
   }
