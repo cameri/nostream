@@ -248,6 +248,13 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.subscriptionPlans[].id             | Unique plan name, for example `basic`. `grandfathered` is reserved: users admitted before plans existed are moved onto it and keep access without a paid period. |
+| payments.subscriptionPlans[].amount         | Price of one period in msats. Must be unique across plans, because the amount paid selects the plan. |
+| payments.subscriptionPlans[].intervalSeconds | Length of one paid period, in seconds. |
+| payments.subscriptionPlans[].graceSeconds   | How long access lasts after a period ends without a renewal, in seconds. `0` ends access straight away. |
+| payments.subscriptionPlans[].description    | Optional text shown to users. |
+| payments.subscriptionPlans[].limits.rateLimits | Optional event rate limits for subscribers on this plan, in the same format as `limits.event.rateLimits`. |
+| payments.subscriptionPlans[].limits.retentionMaxDays | Optional event retention in days for subscribers on this plan. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. |
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
