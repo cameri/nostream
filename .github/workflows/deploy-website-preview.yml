@@ -88,6 +88,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           URL: https://ema.tnsor.network/preview/${{ github.event.pull_request.number }}/
+          WORKER_URL: https://nostream-web-pr-${{ github.event.pull_request.number }}.cameri.workers.dev/preview/${{ github.event.pull_request.number }}/
           MARKER: <!-- site-preview-comment -->
         run: |
           # Flip the single preview comment to a "rendering" state before the
@@ -95,7 +96,7 @@ jobs:
           COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
             --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | tail -1)
           BODY="${MARKER}
-          ⏳ Preview is rendering for the latest push — ${URL} will serve the new build in about a minute."
+          ⏳ Preview is rendering for the latest push — ${WORKER_URL} will serve the new build in about a minute."
           if [ -n "$COMMENT_ID" ]; then
             gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$COMMENT_ID" -f body="$BODY" >/dev/null
             echo "marked comment $COMMENT_ID as rendering"
@@ -120,16 +121,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           URL: https://ema.tnsor.network/preview/${{ github.event.pull_request.number }}/
+          WORKER_URL: https://nostream-web-pr-${{ github.event.pull_request.number }}.cameri.workers.dev/preview/${{ github.event.pull_request.number }}/
           MARKER: <!-- site-preview-comment -->
         run: |
           # One comment per PR, updated in place on every push: find the
-          # existing one by marker, edit it, or create it if absent.
+          # existing one by marker, edit it, or create it if absent. The
+          # direct workers.dev URL works as soon as this deploy lands; the
+          # ema.tnsor.network form starts working once the router ships
+          # (it deploys with this PR's merge).
           COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
             --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | tail -1)
           BODY="${MARKER}
-          🔍 Site preview for this PR: ${URL} (path stays on the production domain).
+          🔍 Site preview for this PR (includes all changes on this branch): ${WORKER_URL}
 
-          It updates with every push to this PR and is deleted when the PR closes."
+          The ${URL} form serves the same build once this PR merges — the production router that proxies /preview/* ships with it.
+
+          Updates with every push to this PR; deleted when the PR closes."
           if [ -n "$COMMENT_ID" ]; then
             gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$COMMENT_ID" -f body="$BODY" >/dev/null
             echo "updated comment $COMMENT_ID"
