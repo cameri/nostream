@@ -12,12 +12,14 @@ on:
       - published
   workflow_dispatch:
 
-concurrency:
-  group: deploy-website
-  cancel-in-progress: false
-
 jobs:
   deploy:
+    # Concurrency lives on the job, not the workflow: a relay release
+    # (v* tag) fails the if below and must not enter this deploy queue,
+    # where it could replace a queued website deploy.
+    concurrency:
+      group: deploy-website
+      cancel-in-progress: false
     if: >-
       ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
       github.event_name == 'workflow_dispatch' }}
@@ -29,8 +31,15 @@ jobs:
     permissions:
       contents: read
     steps:
+      # The release event's ref is the tag (refs/tags/nostream-website@X.Y.Z),
+      # and the website environment's custom branch policy does not admit tag
+      # refs — a tag checkout can never deploy. The release commit is main's
+      # tip by construction (changesets opens the release PR from main), so
+      # check out the branch the policy protects instead.
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          ref: refs/heads/main
 
       - uses: pnpm/action-setup@v4
 
