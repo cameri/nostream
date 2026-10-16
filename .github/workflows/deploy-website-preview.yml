@@ -152,8 +152,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          # A missing worker exits non-zero; treat already-gone as success.
-          npx wrangler delete --config wrangler.preview.jsonc \
+          # --force skips the "would this break dependents" probe, which calls
+          # KV namespaces listing the deploy token's scope (Workers Scripts
+          # only) cannot read — the probe errors with auth 10000 AFTER the
+          # delete has already succeeded. Preview workers are assets-only
+          # (no bindings), so the check is pure overhead. A missing worker
+          # still errors and is caught below.
+          npx wrangler delete --config wrangler.preview.jsonc --force \
             --name nostream-web-pr-${{ github.event.pull_request.number }} \
           || echo "preview worker already absent"
 
