@@ -1,0 +1,80 @@
+---
+// Inline "(i)" affordance: the visible copy stays user-facing; the technical
+// detail lives in a hover/focus/tap tooltip. Progressively enhanced — works
+// without JS (focus + tap toggles via checkbox-free focus/active states).
+interface Props {
+  /** The technical detail shown inside the tooltip. */
+  detail: string
+  /** Accessible label context, e.g. "rate limiting". */
+  label?: string
+}
+const { detail, label = 'more detail' } = Astro.props
+---
+
+<span class="info-tip">
+  <button
+    type="button"
+    class="info-dot mono"
+    aria-label={`Technical detail: ${label}`}
+    aria-describedby={undefined}
+    data-tip={detail}
+  >i</button>
+  <span class="tip-bubble" role="tooltip">{detail}</span>
+</span>
+
+<style>
+  .info-tip {
+    position: relative;
+    display: inline-block;
+    margin-left: 0.35em;
+  }
+  .info-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--fg-2);
+    font-size: 10px;
+    font-style: italic;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    padding: 0;
+    vertical-align: super;
+  }
+  .info-dot:hover,
+  .info-dot:focus-visible {
+    border-color: var(--teal);
+    color: var(--teal);
+  }
+  .tip-bubble {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 260px;
+    padding: 8px 10px;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--fg);
+    font-size: 12.5px;
+    line-height: 1.45;
+    text-align: left;
+    white-space: normal;
+    z-index: 30;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+  .info-tip:hover .tip-bubble,
+  .info-dot:focus-visible + .tip-bubble {
+    opacity: 1;
+  }
+</style>
