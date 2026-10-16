@@ -17,7 +17,8 @@
             ],
             "ignore": [
                 ".nostr/**",
-                "src/utils/relay-probe/**"
+                "src/utils/relay-probe/**",
+                "src/repositories/user-subscription-repository.ts"
             ],
             "commitlint": false,
             "eslint": false,
