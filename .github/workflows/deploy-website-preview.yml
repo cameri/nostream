@@ -33,6 +33,9 @@ permissions:
 jobs:
   preview:
     runs-on: ubuntu-latest
+    # Deploy credentials live in this GitHub environment: CLOUDFLARE_API_TOKEN
+    # secret (Workers Scripts scope) and CLOUDFLARE_ACCOUNT_ID variable.
+    environment: website-preview
     # Guard the environment reference so a missing setup skips rather than fails:
     # the job targets the environment only when it exists.
     steps:
