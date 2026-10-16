@@ -130,11 +130,17 @@ const id = `tip-${Astro.props['detail'] ? '' : ''}${Math.random().toString(36).s
   const clamp = (details: Element) => {
     const bubble = details.querySelector<HTMLElement>('.tip-bubble')
     if (!bubble) return
+    // Measure the UNTRANSFORMED rect (CSS reset), then reason about the
+    // RENDERED position: the stylesheet centers the bubble with
+    // translateX(-50%), so its rendered box spans [anchor - w/2,
+    // anchor + w/2] where anchor is the untransformed rect's left edge.
     bubble.style.transform = ''
     const pad = 12
     const rect = bubble.getBoundingClientRect()
-    const overshootLeft = pad - rect.left
-    const overshootRight = rect.right - (window.innerWidth - pad)
+    const renderedLeft = rect.left - rect.width / 2
+    const renderedRight = rect.left + rect.width / 2
+    const overshootLeft = pad - renderedLeft
+    const overshootRight = renderedRight - (window.innerWidth - pad)
     if (overshootLeft > 0) {
       bubble.style.transform = `translateX(-50%) translateX(${overshootLeft}px)`
     } else if (overshootRight > 0) {
