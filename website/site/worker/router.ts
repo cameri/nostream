@@ -12,7 +12,7 @@ interface Env {
 }
 
 const PREVIEW_RE = /^\/preview\/(\d+)(\/|$)/
-const PR_WORKER = (n: number | string) => `https://nostream-web-pr-${n}.workers.dev`
+const PR_WORKER = (n: number | string) => `https://nostream-web-pr-${n}.cameri.workers.dev`
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
