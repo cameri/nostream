@@ -3,16 +3,17 @@ import ScreenBar from './ScreenBar.astro'
 
 interface Props {
   src: string
+  lowSrc?: string
   poster: string
   title: string
   class?: string
 }
-const { src, poster, title, class: className } = Astro.props
+const { src, lowSrc, poster, title, class: className } = Astro.props
 ---
 
 <figure class:list={['screen', className]}>
   <ScreenBar title={title} />
-  <video muted loop playsinline preload="auto" poster={poster} data-autoplay aria-label={title}>
+  <video muted loop playsinline preload="auto" poster={poster} data-autoplay data-low-src={lowSrc} aria-label={title}>
     <source src={src} type="video/mp4" />
   </video>
 </figure>
@@ -22,3 +23,31 @@ const { src, poster, title, class: className } = Astro.props
     margin: 0;
   }
 </style>
+
+<script>
+  // Quality pick: swap in the low variant for data-saver clients and small
+  // screens before the browser commits to the full download. The full source
+  // stays the default (the <source> above), so the swap only ever goes down.
+  const setup = (video: HTMLVideoElement) => {
+    const lowSrc = video.dataset.lowSrc
+    if (!lowSrc) return
+    const wantsLow =
+      navigator.connection?.saveData === true ||
+      (navigator.connection?.effectiveType ?? '4g') in { 'slow-2g': 1, '2g': 1, '3g': 1 } ||
+      (matchMedia('(max-width: 768px)').matches && window.devicePixelRatio <= 2)
+    if (!wantsLow) return
+    const source = video.querySelector('source')
+    if (!source) return
+    const time = video.currentTime
+    const wasPlaying = !video.paused
+    source.src = lowSrc
+    video.load()
+    video.currentTime = time
+    if (wasPlaying) void video.play()
+    delete video.dataset.lowSrc
+  }
+  document.querySelectorAll<HTMLVideoElement>('video[data-low-src]').forEach((video) => {
+    if (video.dataset.autoplay != null) setup(video)
+    else video.addEventListener('play', () => setup(video), { once: true })
+  })
+</script>
