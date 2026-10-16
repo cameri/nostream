@@ -1,5 +1,17 @@
 import { mkdir, readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import sharp, { type Sharp } from 'sharp'
+
+const SITE_LOGO = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'site',
+  'src',
+  'assets',
+  'logo.png',
+)
 
 const RAW = 'assets/icons-raw'
 const OUT = 'assets/gen'
@@ -64,6 +76,13 @@ async function logos() {
       .toBuffer()
     await save(sharp(tinted), `${OUT}/${name}.png`)
   }
+}
+
+/** Official nostream mark (same file as the Astro site). */
+async function nostreamBrand() {
+  const fit = { fit: 'contain' as const, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+  await sharp(SITE_LOGO).resize(512, 512, fit).png().toFile(`${OUT}/nostream.png`)
+  await sharp(SITE_LOGO).resize(512, 512, fit).grayscale().png().toFile(`${OUT}/nostream-gray.png`)
 }
 
 function rng(seed: number) {
@@ -187,5 +206,5 @@ async function grain() {
 }
 
 await mkdir(OUT, { recursive: true })
-await Promise.all([logos(), planet(), glow(), grain(), grid(), sparkles()])
+await Promise.all([logos(), nostreamBrand(), planet(), glow(), grain(), grid(), sparkles()])
 console.log(`assets written to ${OUT}/`)

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:stream'
+import { INegentropySessions } from './negentropy'
 import { SubscriptionFilter } from './subscription'
 
 export interface IWebSocketServerAdapter extends EventEmitter, IWebServerAdapter {
@@ -20,6 +21,8 @@ export type IWebSocketAdapter = EventEmitter & {
   /** Returns false if this AUTH event id was already accepted on this socket. */
   addAuthenticatedPubkey(pubkey: string, authEventId: string): boolean
   drainAndClose(reason?: string): void
+  /** NIP-77 sessions of this connection. */
+  getNegentropySessions(): INegentropySessions
 }
 
 export interface ICacheAdapter {
@@ -30,7 +33,6 @@ export interface ICacheAdapter {
   addToSortedSet(key: string, set: Record<string, string> | Record<string, string>[]): Promise<number>
   removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number>
   removeRangeByRankFromSortedSet(key: string, start: number, stop: number): Promise<number>
-  getSortedSetSize(key: string): Promise<number>
   getRangeFromSortedSet(key: string, start: number, stop: number): Promise<string[]>
   setKeyExpiry(key: string, expiry: number): Promise<void>
 

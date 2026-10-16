@@ -1,0 +1,216 @@
+---
+import PageHead from '../components/PageHead.astro'
+import { SCHEMATIC } from '../data/site'
+import Base from '../layouts/Base.astro'
+
+// Same shape schemaformat.ai copies from its catalog card.
+const buildCommand = [
+  `build ${SCHEMATIC.name}@cameri/schematics`,
+  '',
+  '# No plugin? Paste this and let the agent fetch the spec:',
+  `# ${SCHEMATIC.spec}`,
+].join('\n')
+
+const covers = [
+  { code: 'P0', title: 'Host prep', body: 'Docker Engine, Compose v2, disk for Postgres, firewall with no public relay port.' },
+  { code: 'P2', title: 'Bootstrap', body: 'Deploy root, .env at mode 600, generated secrets, bundled postgresql.conf.' },
+  { code: 'P4', title: 'Start the stack', body: 'Postgres and Redis healthy, migrations run, then the relay on a pinned GHCR image.' },
+  { code: 'P5', title: 'Verify', body: 'relay-verify.sh checks NIP-11, /healthz, /readyz and the loopback-only bind.' },
+  { code: 'P7', title: 'Expose', body: 'wss:// through Caddy, nginx, Cloudflare Tunnel or a tailnet, never 0.0.0.0.' },
+]
+
+const agents = ['Claude Code', 'Cursor', 'Codex', 'OpenCode', 'Pi']
+---
+
+<Base
+  title="Get started"
+  description="Deploy a production nostream relay with an AI agent: copy one build command from the run-a-decentralized-social-network-relay schematic."
+>
+  <PageHead
+    kicker="Get started"
+    lead="Paste one command into your coding agent. It fetches the schematic and builds a production nostream relay on your server, step by step, with checks at every phase."
+  >
+    <span class="g1">Your relay,</span> <span class="g3">built by your agent.</span>
+  </PageHead>
+
+  <section class="section top">
+    <div class="container">
+      <article class="schematic panel reveal">
+        <div class="head">
+          <h2 class="name mono">{SCHEMATIC.name}</h2>
+          <span class="tag tag-pink">v{SCHEMATIC.version}</span>
+        </div>
+        <p class="desc">{SCHEMATIC.description}</p>
+        <div class="meta mono">
+          <span>{SCHEMATIC.category}</span>
+          <span>{SCHEMATIC.source}</span>
+        </div>
+
+        <div class="cmd">
+          <div class="cmd-bar mono">
+            <span>build command</span>
+            <button class="copy mono" type="button" data-copy={buildCommand}>copy</button>
+          </div>
+          <pre class="mono"><code>{buildCommand}</code></pre>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" type="button" data-copy={buildCommand}>Copy build command</button>
+          <a class="btn" href={SCHEMATIC.spec} target="_blank" rel="noopener noreferrer">Read the schematic ↗</a>
+          <a class="btn" href={SCHEMATIC.github} target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+        </div>
+
+        <p class="works mono">Works in {agents.join(' · ')}</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <p class="kicker reveal"><span class="idx">01</span> What the schematic builds</p>
+        <h2 class="h2 reveal"><span class="g1">The upstream deploy path,</span> <span class="g3">phase by phase.</span></h2>
+      </div>
+      <ol class="phases">
+        {
+          covers.map((c, i) => (
+            <li class="phase panel reveal" style={`transition-delay:${i * 60}ms`}>
+              <span class="tag tag-pink">{c.code}</span>
+              <h3 class="h3">{c.title}</h3>
+              <p>{c.body}</p>
+            </li>
+          ))
+        }
+      </ol>
+      <p class="more reveal">
+        Prefer to do it by hand? <a href="/docs#deploy">Choose a deploy path</a>. Browse other schematics on
+        <a href={SCHEMATIC.catalog} target="_blank" rel="noopener noreferrer">schemaformat.ai ↗</a>.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .top {
+    padding-top: 0;
+  }
+
+  .schematic {
+    max-width: 880px;
+    padding: clamp(22px, 3vw, 32px);
+  }
+
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .name {
+    margin: 0;
+    color: var(--fg);
+    font-size: clamp(16px, 2vw, 20px);
+    font-weight: 600;
+  }
+
+  .desc {
+    margin: 14px 0 12px;
+    font-size: 15px;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .cmd {
+    margin: 24px 0;
+    overflow: hidden;
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    background: #050506;
+  }
+
+  .cmd-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 36px;
+    padding: 0 8px 0 14px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .copy {
+    padding: 4px 10px;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    background: none;
+    color: var(--fg-2);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .copy:hover {
+    border-color: var(--wire);
+    color: var(--fg);
+  }
+
+  .cmd pre {
+    margin: 0;
+    padding: 16px 18px;
+    overflow-x: auto;
+    color: var(--fg);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .works {
+    margin: 20px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .phases {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .phase {
+    padding: 22px;
+  }
+
+  .phase .h3 {
+    margin: 22px 0 8px;
+  }
+
+  .phase p {
+    margin: 0;
+    font-size: 14px;
+  }
+
+  .more {
+    margin-top: 28px;
+    font-size: 15px;
+  }
+
+  .more a {
+    color: var(--teal);
+  }
+</style>

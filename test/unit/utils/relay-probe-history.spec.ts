@@ -1,5 +1,10 @@
-import { expect } from 'chai'
+import chai from 'chai'
 import Sinon from 'sinon'
+import sinonChai from 'sinon-chai'
+
+chai.use(sinonChai)
+
+const { expect } = chai
 
 import { RelayProbeRunSnapshot } from '../../../src/@types/relay-probe-snapshot'
 import {
@@ -13,7 +18,6 @@ describe('relay-probe-history', () => {
   let cache: {
     addToSortedSet: Sinon.SinonStub
     getRangeFromSortedSet: Sinon.SinonStub
-    getSortedSetSize: Sinon.SinonStub
     removeRangeByRankFromSortedSet: Sinon.SinonStub
     removeRangeByScoreFromSortedSet: Sinon.SinonStub
   }
@@ -40,7 +44,6 @@ describe('relay-probe-history', () => {
     cache = {
       addToSortedSet: Sinon.stub().resolves(1),
       getRangeFromSortedSet: Sinon.stub().resolves([]),
-      getSortedSetSize: Sinon.stub().resolves(0),
       removeRangeByRankFromSortedSet: Sinon.stub().resolves(0),
       removeRangeByScoreFromSortedSet: Sinon.stub().resolves(0),
     }

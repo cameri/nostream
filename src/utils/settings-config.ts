@@ -594,6 +594,21 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
 
   if (!settings.info?.relay_url) {
     issues.push({ path: 'info.relay_url', message: 'relay_url is required' })
+  } else if (typeof settings.info.relay_url === 'string') {
+    try {
+      const parsed = new URL(settings.info.relay_url)
+
+      if (!parsed.host) {
+        issues.push({ path: 'info.relay_url', message: 'relay_url must include a valid host' })
+      } else if (!['ws:', 'wss:', 'http:', 'https:'].includes(parsed.protocol)) {
+        issues.push({
+          path: 'info.relay_url',
+          message: 'relay_url must use ws, wss, http, or https protocol',
+        })
+      }
+    } catch {
+      issues.push({ path: 'info.relay_url', message: 'relay_url must be a valid absolute URL' })
+    }
   }
 
   if (!settings.info?.name) {
@@ -622,8 +637,11 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
   }
 
   const nip66 = settings.nip66
-  if (nip66?.historyRetentionRuns !== undefined && !(nip66.historyRetentionRuns >= 1)) {
-    issues.push({ path: 'nip66.historyRetentionRuns', message: 'historyRetentionRuns must be at least 1' })
+  if (nip66?.historyRetentionRuns !== undefined) {
+    const runs = nip66.historyRetentionRuns
+    if (!Number.isFinite(runs) || !(runs >= 1)) {
+      issues.push({ path: 'nip66.historyRetentionRuns', message: 'historyRetentionRuns must be at least 1' })
+    }
   }
   if (
     nip66?.historyRetentionHours !== undefined &&
@@ -633,6 +651,17 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
       path: 'nip66.historyRetentionHours',
       message: 'historyRetentionHours must be 0 (disabled) or at least 1',
     })
+  }
+
+  const nip77 = settings.nip77
+  if (nip77?.enabled) {
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs'] as const) {
+      const value = nip77[key]
+      // Wrong types (e.g. a string) are already reported against the default settings schema.
+      if (typeof value === 'number' && !(Number.isInteger(value) && value > 0)) {
+        issues.push({ path: `nip77.${key}`, message: `${key} must be a positive integer` })
+      }
+    }
   }
 
   const pow = settings.limits?.event?.pow

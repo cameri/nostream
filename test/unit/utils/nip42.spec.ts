@@ -7,6 +7,7 @@ import {
   isAuthRequired,
   isClientAuthorizedToReadMention,
   isCountAuthorized,
+  isReconciliationAuthorized,
   isSubscriptionAuthRequired,
 } from '../../../src/utils/nip42'
 import { Event } from '../../../src/@types/event'
@@ -192,6 +193,64 @@ describe('nip42', () => {
       const filters: SubscriptionFilter[] = [{ kinds: [4] }]
 
       expect(isCountAuthorized(enabledSettings(), filters, () => new Set([author]))).to.be.false
+    })
+  })
+
+  describe('isReconciliationAuthorized', () => {
+    const noOne = () => new Set<string>()
+    const onlyAuthor = () => new Set([author])
+
+    it('allows everything when restricted reads are off', () => {
+      expect(isReconciliationAuthorized(undefined, {}, noOne)).to.be.true
+      expect(isReconciliationAuthorized({} as Settings, { kinds: [4] }, noOne)).to.be.true
+    })
+
+    it('allows a filter whose kinds are all ordinary', () => {
+      expect(isReconciliationAuthorized(enabledSettings(), { kinds: [1, 7] }, noOne)).to.be.true
+    })
+
+    it('allows a filter that matches no kinds', () => {
+      expect(isReconciliationAuthorized(enabledSettings(), { kinds: [] }, noOne)).to.be.true
+    })
+
+    it('rejects a filter with no kinds, which could match a restricted event', () => {
+      expect(isReconciliationAuthorized(enabledSettings(), {}, noOne)).to.be.false
+      expect(isReconciliationAuthorized(enabledSettings(), { authors: [author] }, noOne)).to.be.false
+      expect(isReconciliationAuthorized(enabledSettings(), { since: 1 }, onlyAuthor)).to.be.false
+    })
+
+    it('rejects a filter naming a restricted kind alongside ordinary ones', () => {
+      expect(isReconciliationAuthorized(enabledSettings(), { kinds: [1, 4] }, noOne)).to.be.false
+    })
+
+    it('honours restricted kind ranges', () => {
+      const settings = enabledSettings([[1059, 1060]])
+
+      expect(isReconciliationAuthorized(settings, { kinds: [1060] }, noOne)).to.be.false
+      expect(isReconciliationAuthorized(settings, { kinds: [1061] }, noOne)).to.be.true
+    })
+
+    it('allows a possibly-restricted filter scoped to the authenticated pubkey', () => {
+      expect(isReconciliationAuthorized(enabledSettings(), { authors: [author] }, onlyAuthor)).to.be.true
+      expect(isReconciliationAuthorized(enabledSettings(), { kinds: [4], '#p': [author] }, onlyAuthor)).to.be.true
+    })
+
+    it('rejects a scope that includes a pubkey the client has not authenticated as', () => {
+      expect(isReconciliationAuthorized(enabledSettings(), { authors: [author, stranger] }, onlyAuthor)).to.be.false
+      expect(isReconciliationAuthorized(enabledSettings(), { authors: [stranger] }, onlyAuthor)).to.be.false
+    })
+
+    it('rejects an empty scope', () => {
+      expect(isReconciliationAuthorized(enabledSettings(), { authors: [] }, onlyAuthor)).to.be.false
+    })
+
+    it('reads the authenticated pubkeys when asked, so lapsed auth is noticed', () => {
+      const authenticated = new Set([author])
+      const filter: SubscriptionFilter = { authors: [author] }
+
+      expect(isReconciliationAuthorized(enabledSettings(), filter, () => authenticated)).to.be.true
+      authenticated.clear()
+      expect(isReconciliationAuthorized(enabledSettings(), filter, () => authenticated)).to.be.false
     })
   })
 })

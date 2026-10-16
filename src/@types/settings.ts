@@ -314,6 +314,24 @@ export interface Nip45Settings {
   enabled?: boolean
 }
 
+export interface Nip77Settings {
+  /**
+   * NIP-77 negentropy sync. Defaults to false. Even when true it only answers
+   * if `eventStore.backend` is postgres: other backends (e.g. strfry) bring
+   * their own negentropy implementation.
+   */
+  enabled?: boolean
+  /**
+   * Most events one session may hold in memory; larger queries are rejected
+   * with `NEG-ERR blocked:`. Defaults to 100000.
+   */
+  maxEventsPerSession?: number
+  /** Concurrent negentropy sessions allowed on one connection. Defaults to 3. */
+  maxSessionsPerConnection?: number
+  /** A session with no `NEG-MSG` for this long is closed with `NEG-ERR closed:`. Defaults to 60000. */
+  sessionIdleTimeoutMs?: number
+}
+
 export interface Nip50Settings {
   enabled?: boolean
   language?: string
@@ -493,5 +511,6 @@ export interface Settings {
   nip50?: Nip50Settings
   nip56?: Nip56Settings
   nip66?: Nip66Settings
+  nip77?: Nip77Settings
   wot?: WoTSettings
 }

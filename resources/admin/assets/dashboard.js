@@ -456,6 +456,14 @@
       button.textContent = `${label} · ${status} · ${targetCount} target(s)`
 
       button.addEventListener('click', () => {
+        if (networkHealthHistoryPinned && runAt && runAt === selectedNetworkHealthRunAt) {
+          networkHealthHistoryPinned = false
+          selectedNetworkHealthRunAt = null
+          renderNetworkHealthTimeline(networkHealthHistoryRuns)
+          void refreshNetworkHealth()
+          return
+        }
+
         networkHealthHistoryPinned = true
         selectedNetworkHealthRunAt = runAt ?? null
         renderNetworkHealthTimeline(networkHealthHistoryRuns)

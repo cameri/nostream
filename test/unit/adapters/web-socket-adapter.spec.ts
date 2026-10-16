@@ -13,6 +13,7 @@ const { expect } = chai
 
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 import { IWebSocketServerAdapter } from '../../../src/@types/adapters'
+import { Negentropy, NegentropyStorageVector } from '../../../src/utils/negentropy'
 import { WebSocketAdapter } from '../../../src/adapters/web-socket-adapter'
 import { markActionableTarget, resetHiddenContentCache } from '../../../src/utils/hidden-content-cache'
 
@@ -556,31 +557,96 @@ describe('WebSocketAdapter', () => {
       expect(sent[0]).to.equal('NOTICE')
     })
 
-    it('sends rate-limited notice when rate limited', async () => {
-      client.readyState = WebSocket.OPEN
+    describe('when rate limited', () => {
+      let onMessage: (raw: Buffer) => Promise<void>
 
-      // Configure rate limiting to be active
-      settingsFactory.returns({
-        network: { remoteIpHeader: '' },
-        limits: {
-          message: {
-            rateLimits: [{ period: 60000, rate: 1 }],
-            ipWhitelist: [],
+      const sentFrame = () => JSON.parse(client.send.firstCall.args[0])
+
+      beforeEach(() => {
+        client.readyState = WebSocket.OPEN
+
+        settingsFactory.returns({
+          network: { remoteIpHeader: '' },
+          limits: {
+            message: {
+              rateLimits: [{ period: 60000, rate: 1 }],
+              ipWhitelist: [],
+            },
           },
-        },
+        })
+
+        slidingWindowRateLimiter.returns({
+          hit: sandbox.stub().resolves(true),
+        })
+
+        onMessage = client.on.getCalls().find((call: any) => call.args[0] === 'message').args[1]
       })
 
-      slidingWindowRateLimiter.returns({
-        hit: sandbox.stub().resolves(true),
+      it('sends a rate-limited notice for non-read messages', async () => {
+        await onMessage(Buffer.from(JSON.stringify(['EVENT', {}])))
+
+        expect(client.send).to.have.been.calledOnce
+        expect(sentFrame()).to.deep.equal(['NOTICE', 'rate limited'])
       })
 
-      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
-      const onMessage = messageCall.args[1]
+      it('closes a REQ with the tripped window as backoff hint', async () => {
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
 
-      // Valid JSON message that would pass parsing
-      await onMessage(Buffer.from(JSON.stringify(['EVENT', {}])))
+        expect(client.send).to.have.been.calledOnce
+        expect(sentFrame()).to.deep.equal(['CLOSED', 'sub1', 'rate-limited: slow down', '60000'])
+      })
 
-      expect(client.send).to.have.been.called
+      it('ends an active subscription and aborts its in-flight read before CLOSED', async () => {
+        adapter.onSubscribed('sub1', [{ kinds: [1] }])
+
+        const abort = sandbox.stub()
+        let unblockFirstReq!: () => void
+        const firstReqBlocked = new Promise<void>((resolve) => {
+          unblockFirstReq = resolve
+        })
+        const inFlightHandler = {
+          activeSubscriptionId: 'sub1',
+          abort,
+          handleMessage: sandbox.stub().returns(firstReqBlocked),
+        }
+
+        const hitStub = sandbox.stub()
+        hitStub.onFirstCall().resolves(false)
+        hitStub.resolves(true)
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+        createMessageHandler.returns(inFlightHandler)
+
+        const firstReq = onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
+        await Promise.resolve()
+
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [7] }])))
+
+        expect(abort).to.have.been.calledOnce
+        expect(adapter.getSubscriptions().has('sub1')).to.equal(false)
+        expect(JSON.parse(client.send.lastCall.args[0])).to.deep.equal([
+          'CLOSED',
+          'sub1',
+          'rate-limited: slow down',
+          '60000',
+        ])
+
+        unblockFirstReq()
+        await firstReq.catch(() => undefined)
+      })
+
+      it('closes a COUNT with the tripped window as backoff hint', async () => {
+        await onMessage(Buffer.from(JSON.stringify(['COUNT', 'q1', { kinds: [1] }])))
+
+        expect(client.send).to.have.been.calledOnce
+        expect(sentFrame()).to.deep.equal(['CLOSED', 'q1', 'rate-limited: slow down', '60000'])
+      })
+
+      it('falls back to the notice when the frame is not valid JSON', async () => {
+        await onMessage(Buffer.from('not-json'))
+
+        expect(client.send).to.have.been.calledOnce
+        expect(sentFrame()).to.deep.equal(['NOTICE', 'rate limited'])
+      })
     })
 
     it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
@@ -909,6 +975,93 @@ describe('WebSocketAdapter', () => {
 
       expect(adapter.getChallenge()).not.to.equal(adapter2.getChallenge())
       adapter2.removeAllListeners()
+    })
+  })
+
+  describe('NIP-77 negentropy sessions', () => {
+    const emptyStorage = () => {
+      const storage = new NegentropyStorageVector()
+      storage.seal()
+
+      return new Negentropy(storage)
+    }
+
+    const openSession = (id: string, idleTimeoutMs = 60000) => {
+      const sessions = adapter.getNegentropySessions()
+      sessions.activate(
+        id,
+        sessions.reserve(id, 3) as symbol,
+        { negentropy: emptyStorage(), filter: {} },
+        idleTimeoutMs,
+      )
+    }
+
+    const sentMessages = () => client.send.getCalls().map((call: any) => JSON.parse(call.args[0]))
+
+    const triggerMessage = async (payload: unknown) => {
+      const call = client.on.getCalls().find((c: any) => c.args[0] === 'message')
+      await call.args[1](Buffer.from(JSON.stringify(payload)))
+    }
+
+    it('hands the same sessions to every caller', () => {
+      expect(adapter.getNegentropySessions()).to.equal(adapter.getNegentropySessions())
+    })
+
+    it('dispatches NEG-OPEN, NEG-MSG and NEG-CLOSE to a message handler', async () => {
+      const handleMessage = sandbox.stub().resolves()
+      createMessageHandler.returns({ handleMessage })
+
+      await triggerMessage(['NEG-OPEN', 'sync1', { kinds: [1] }, '6100000200'])
+      await triggerMessage(['NEG-MSG', 'sync1', '6100'])
+      await triggerMessage(['NEG-CLOSE', 'sync1'])
+
+      expect(handleMessage.getCalls().map((call: any) => call.args[0][0])).to.deep.equal([
+        'NEG-OPEN',
+        'NEG-MSG',
+        'NEG-CLOSE',
+      ])
+    })
+
+    it('replies with a NOTICE to a NEG-OPEN whose initial message is not hex', async () => {
+      await triggerMessage(['NEG-OPEN', 'sync1', {}, 'not hex'])
+
+      expect(createMessageHandler).to.not.have.been.called
+      expect(sentMessages()).to.have.lengthOf(1)
+      expect(sentMessages()[0][0]).to.equal('NOTICE')
+      expect(sentMessages()[0][1]).to.match(/^invalid:/)
+    })
+
+    it('tells the client when a session times out', () => {
+      const clock = sandbox.useFakeTimers()
+      openSession('sync1', 1000)
+
+      clock.tick(1000)
+
+      expect(sentMessages()).to.deep.include(['NEG-ERR', 'sync1', 'closed: negentropy session timed out'])
+      expect(adapter.getNegentropySessions().getSessionIds()).to.deep.equal([])
+    })
+
+    it('drops every session and its timer when the client disconnects', () => {
+      const clock = sandbox.useFakeTimers()
+      openSession('sync1', 1000)
+      const onClose = client.on.getCalls().find((call: any) => call.args[0] === 'close').args[1]
+
+      onClose()
+      clock.tick(5000)
+
+      expect(adapter.getNegentropySessions().getSessionIds()).to.deep.equal([])
+      expect(sentMessages().filter((message: any[]) => message[0] === 'NEG-ERR')).to.deep.equal([])
+    })
+
+    it('tells the client its sessions are closed when the relay drains', () => {
+      openSession('a')
+      openSession('b')
+
+      adapter.drainAndClose('relay shutting down')
+
+      expect(sentMessages()).to.deep.include(['NEG-ERR', 'a', 'closed: relay shutting down'])
+      expect(sentMessages()).to.deep.include(['NEG-ERR', 'b', 'closed: relay shutting down'])
+      expect(adapter.getNegentropySessions().getSessionIds()).to.deep.equal([])
     })
   })
 })

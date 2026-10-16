@@ -176,17 +176,6 @@ describe('RedisAdapter', () => {
     })
   })
 
-  describe('getSortedSetSize', () => {
-    it('calls client.zCard with the key', async () => {
-      client.zCard.resolves(4)
-
-      const result = await adapter.getSortedSetSize('sorted-key')
-
-      expect(client.zCard).to.have.been.calledOnceWithExactly('sorted-key')
-      expect(result).to.equal(4)
-    })
-  })
-
   describe('getRangeFromSortedSet', () => {
     it('calls client.zRange with correct arguments', async () => {
       client.zRange.resolves(['a', 'b', 'c'])

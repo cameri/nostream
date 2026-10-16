@@ -7,6 +7,7 @@ import { DEFAULT_FILTER_LIMIT } from '../../constants/base'
 import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
 import { getPublicPathPrefix, joinPathPrefix } from '../../utils/http'
+import { isNip77Active } from '../../utils/nip77'
 import { resolveRelaySelfPubkey } from '../../utils/nip43'
 import packageJson from '../../../package.json'
 
@@ -88,10 +89,11 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       ...(self !== undefined ? { self } : {}),
       contact,
       // NIP-43: clients MUST only send join requests to relays advertising 43,
-      // so only advertise it when the feature is actually enabled
-      supported_nips: settings.nip43?.enabled === true
-        ? packageJson.supportedNips
-        : packageJson.supportedNips.filter((nip: number) => nip !== 43),
+      // so only advertise it when the feature is actually enabled. Likewise 77
+      // only while this relay answers NEG-OPEN itself (enabled, PostgreSQL backend).
+      supported_nips: packageJson.supportedNips.filter(
+        (nip: number) => (nip !== 43 || settings.nip43?.enabled === true) && (nip !== 77 || isNip77Active(settings)),
+      ),
       supported_nip_extensions: packageJson.supportedNipExtensions,
       supported_mips: packageJson.supportedMips,
       software: packageJson.repository.url,

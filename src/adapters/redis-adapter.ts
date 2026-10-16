@@ -90,12 +90,6 @@ export class RedisAdapter implements ICacheAdapter {
     return this.client.zRemRangeByRank(key, start, stop)
   }
 
-  public async getSortedSetSize(key: string): Promise<number> {
-    await this.connection
-    logger('get sorted set size for %s', key)
-    return this.client.zCard(key)
-  }
-
   public async getRangeFromSortedSet(key: string, min: number, max: number): Promise<string[]> {
     await this.connection
     logger('get %d..%d range from sorted set %s', min, max, key)

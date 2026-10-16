@@ -728,6 +728,12 @@ describe('EventRepository', () => {
       expect(query).to.include(ORDER_CLAUSE)
     })
 
+    it('applies a row cap when the caller asks for one, after the ordering', () => {
+      const query = repository.findReconciliationItems({ kinds: [1] }, 101).toString()
+
+      expect(query).to.match(/order by "events"\."event_created_at" asc, "events"\."event_id" asc limit 101$/)
+    })
+
     it('applies tag filters', () => {
       const query = repository.findReconciliationItems({ '#e': ['b'.repeat(64)] } as any).toString()
 

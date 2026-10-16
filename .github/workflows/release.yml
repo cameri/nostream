@@ -6,6 +6,10 @@ on:
 
 jobs:
   build-and-push-image:
+    # Changesets tags each workspace package on publish: relay releases tag
+    # vX.Y.Z, website releases tag nostream-website@X.Y.Z. Only a relay tag
+    # should build the relay container image.
+    if: startsWith(github.event.release.tag_name, 'v')
     name: Build and push container image
     runs-on: ubuntu-latest
     env:

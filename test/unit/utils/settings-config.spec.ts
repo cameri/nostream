@@ -22,6 +22,7 @@ import {
   guidedSettingCategories,
   requireNonEmptySettingValue,
   requireSafeNonNegativeIntegerSettingValue,
+  requireSafePositiveIntegerSettingValue,
 } from '../../../src/utils/settings-guided-schema'
 
 describe('settings-config', () => {
@@ -109,6 +110,75 @@ describe('settings-config', () => {
     expect(issues.some((issue) => issue.path === 'nip66.historyRetentionHours')).to.equal(false)
   })
 
+  it('rejects non-finite nip66 historyRetentionRuns', () => {
+    const issues = validateSettings({
+      info: { relay_url: 'wss://test.relay', name: 'test' },
+      network: {},
+      nip66: { historyRetentionRuns: Number.POSITIVE_INFINITY },
+    } as any)
+
+    expect(issues.some((issue) => issue.path === 'nip66.historyRetentionRuns')).to.equal(true)
+  })
+
+  it('accepts a relay_url with a valid ws/wss/http/https absolute URL', () => {
+    for (const relay_url of [
+      'ws://nostream.example.com:8008',
+      'wss://nostream.example.com',
+      'http://localhost:8008',
+      'http://nostream.example.com',
+      'https://nostream.example.com',
+      'https://nostream.example.com:8443',
+      'ws://[::1]:8008',
+      'wss://127.0.0.1',
+    ]) {
+      const issues = validateSettings({ info: { relay_url, name: 'test' } } as any)
+
+      expect(
+        issues.filter((issue) => issue.path === 'info.relay_url'),
+        `expected ${relay_url} to pass`,
+      ).to.be.empty
+    }
+  })
+
+  it('rejects a relay_url that is not a valid absolute URL', () => {
+    const issues = validateSettings({ info: { relay_url: 'nostream.example.com', name: 'test' } } as any)
+
+    expect(
+      issues.some(
+        (issue) => issue.path === 'info.relay_url' && issue.message === 'relay_url must be a valid absolute URL',
+      ),
+    ).to.equal(true)
+  })
+
+  it('rejects a scheme-only relay_url with no host', () => {
+    const issues = validateSettings({ info: { relay_url: 'localhost:8008', name: 'test' } } as any)
+
+    expect(
+      issues.some(
+        (issue) => issue.path === 'info.relay_url' && issue.message === 'relay_url must include a valid host',
+      ),
+    ).to.equal(true)
+  })
+
+  it('rejects a relay_url whose protocol is not ws/wss/http/https', () => {
+    for (const relay_url of [
+      'ftp://nostream.example.com',
+      'gopher://nostream.example.com:70',
+      'whttp://nostream.example.com',
+    ]) {
+      const issues = validateSettings({ info: { relay_url, name: 'test' } } as any)
+
+      expect(
+        issues.some(
+          (issue) =>
+            issue.path === 'info.relay_url' &&
+            issue.message === 'relay_url must use ws, wss, http, or https protocol',
+        ),
+        `expected ${relay_url} to be rejected for protocol`,
+      ).to.equal(true)
+    }
+  })
+
   describe('rate limit period validation', () => {
     const baseSettings = () =>
       ({
@@ -175,6 +245,47 @@ describe('settings-config', () => {
 
       const issues = validateSettings(settings)
       expect(issues.some((issue) => issue.path === 'limits.event.rateLimits[0]')).to.equal(true)
+    })
+  })
+
+  describe('nip77 settings', () => {
+    const baseSettings = (nip77: any) =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+        nip77,
+      }) as any
+
+    const nip77Issues = (nip77: any) =>
+      validateSettings(baseSettings(nip77)).filter((issue) => issue.path.startsWith('nip77'))
+
+    it('accepts the shipped defaults', () => {
+      expect(
+        nip77Issues({
+          enabled: true,
+          maxEventsPerSession: 100000,
+          maxSessionsPerConnection: 3,
+          sessionIdleTimeoutMs: 60000,
+        }),
+      ).to.deep.equal([])
+    })
+
+    it('accepts an enabled section that leaves the limits to their defaults', () => {
+      expect(nip77Issues({ enabled: true })).to.deep.equal([])
+    })
+
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs']) {
+      for (const bad of [0, -1, 1.5, '10', Number.NaN]) {
+        it(`rejects ${key} = ${String(bad)}`, () => {
+          const issues = nip77Issues({ enabled: true, [key]: bad })
+
+          expect(issues.map((issue) => issue.path)).to.deep.equal([`nip77.${key}`])
+        })
+      }
+    }
+
+    it('does not validate the limits while the feature is off', () => {
+      expect(nip77Issues({ enabled: false, maxEventsPerSession: 0 })).to.deep.equal([])
     })
   })
 
@@ -355,6 +466,26 @@ describe('settings-guided-schema', () => {
     expect(requireSafeNonNegativeIntegerSettingValue('bad')).to.equal('Value must be a non-negative integer')
     expect(requireSafeNonNegativeIntegerSettingValue('2048')).to.equal(undefined)
     expect(requireNonEmptySettingValue(' ')).to.equal('Value is required')
+  })
+
+  it('validates guided positive integer fields', () => {
+    expect(requireSafePositiveIntegerSettingValue('bad')).to.equal('Value must be a positive integer')
+    expect(requireSafePositiveIntegerSettingValue('-1')).to.equal('Value must be a positive integer')
+    expect(requireSafePositiveIntegerSettingValue('0')).to.equal('Value must be a positive integer')
+    expect(requireSafePositiveIntegerSettingValue('9007199254740993')).to.equal('Value must be a safe integer')
+    expect(requireSafePositiveIntegerSettingValue(' 60000 ')).to.equal(undefined)
+  })
+
+  it('exposes the nip77 settings with positive integer validation', () => {
+    const category = 'nip-features'
+
+    expect(getGuidedSettingField(category, 'nip77.enabled')?.type).to.equal('boolean')
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs']) {
+      const field = getGuidedSettingField(category, `nip77.${key}`)
+      expect(field?.type, key).to.equal('number')
+      expect(field?.validate?.('0'), key).to.equal('Value must be a positive integer')
+      expect(field?.validate?.('3'), key).to.equal(undefined)
+    }
   })
 
   it('does not create settings.yaml when ensuring config dir exists', () => {

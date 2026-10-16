@@ -151,6 +151,15 @@ nip56:
   # When true, events matching an actionable report are excluded from
   # REQ/COUNT results. Has no effect unless enabled is also true.
   hideActionableReports: false
+nip77:
+  # NIP-77 negentropy sync. Only answers when eventStore.backend is postgres.
+  enabled: false
+  # Most events a single session may hold in memory.
+  maxEventsPerSession: 100000
+  # Concurrent negentropy sessions per connection.
+  maxSessionsPerConnection: 3
+  # Close a session with no NEG-MSG for this long.
+  sessionIdleTimeoutMs: 60000
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
