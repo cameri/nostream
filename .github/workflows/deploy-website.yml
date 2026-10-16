@@ -55,4 +55,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm exec wrangler deploy
+        # The router worker: serves the production assets itself and proxies
+        # /preview/<n> to per-PR preview workers (deploy-website-preview.yml).
+        run: pnpm exec wrangler deploy --config wrangler.router.jsonc

@@ -1,37 +1,44 @@
 ---
+import InfoTip from '../InfoTip.astro'
 import { SUPPORTED_MIPS, SUPPORTED_NIPS } from '../../data/site'
 
 const pillars = [
   {
     code: 'NIP',
-    title: 'Protocol breadth',
-    body: `${SUPPORTED_NIPS.length} NIPs implemented relay-side, from basic flow to auth, counts, search and encrypted payloads, plus Marmot MIPs ${SUPPORTED_MIPS[0]}–${SUPPORTED_MIPS[SUPPORTED_MIPS.length - 1]} for E2EE group messaging.`,
+    title: 'Speaks the whole protocol',
+    body: 'Works with the Nostr apps your people already use — chat, feeds, search and encrypted groups — with nothing to configure. ',
+    tip: `${SUPPORTED_NIPS.length} NIPs implemented relay-side, from basic flow to auth, counts, search and encrypted payloads, plus Marmot MIPs ${SUPPORTED_MIPS[0]}–${SUPPORTED_MIPS[SUPPORTED_MIPS.length - 1]} for E2EE group messaging.`,
     wide: true,
   },
   {
     code: 'NET',
-    title: 'Tor & I2P built in',
-    body: 'Publish an .onion or .i2p address with a flag. nostream start --tor --i2p, then nostream info --tor-hostname.',
+    title: 'Reachable from anywhere',
+    body: 'Publish an .onion or .i2p address with a flag, so people on censored or privacy-first networks can still reach you.',
+    tip: 'nostream start --tor --i2p, then nostream info --tor-hostname.',
   },
   {
     code: 'OPS',
-    title: 'Admin console',
-    body: 'Live metrics, NIP-66 network health, NIP-11 mismatch warnings and a validated settings editor.',
+    title: 'Stay on top of your relay',
+    body: 'See how your relay is doing at a glance, spot trouble before your users do, and change settings without fear of breaking things.',
+    tip: 'Live metrics, NIP-66 network health, NIP-11 mismatch warnings and a validated settings editor.',
   },
   {
     code: 'LN',
-    title: 'Paid admission',
-    body: 'Charge to publish. Invoices via ZEBEDEE, Nodeless, OpenNode, LNbits or any LNURL-verify provider.',
+    title: 'Charge for admission',
+    body: 'Turn publish access into a service. Invoices settle over Lightning with the provider you already run.',
+    tip: 'Invoices via ZEBEDEE, Nodeless, OpenNode, LNbits or any LNURL-verify provider.',
   },
   {
     code: 'LIM',
-    title: 'Limits that hold',
-    body: 'Rate limits, adaptive proof-of-work, kind and size rules. Clients get a rate-limited hint with a backoff.',
+    title: 'Keeps abusive traffic out',
+    body: 'Keeps spam and abusive traffic from slowing the relay for everyone else, so normal clients stay fast.',
+    tip: 'Rate limits, adaptive proof-of-work, kind and size rules. Clients get a rate-limited hint with a backoff.',
   },
   {
     code: 'I/O',
     title: 'Your data, portable',
-    body: 'Import and export events as JSON or JSONL in batches. Back up, migrate, or seed a new relay.',
+    body: 'Take your events with you. Back up, migrate, or seed a new relay whenever you want.',
+    tip: 'Import and export events as JSON or JSONL in batches.',
     full: true,
     command: 'nostream export --output backup.jsonl --format jsonl',
   },
@@ -55,7 +62,10 @@ const pillars = [
             <div class="text">
               <span class="code mono">{p.code}</span>
               <h3 class="h3">{p.title}</h3>
-              <p>{p.body}</p>
+              <p>
+                {p.body}
+                {p.tip && <InfoTip detail={p.tip} label={p.title} />}
+              </p>
             </div>
             {p.command && (
               <code class="cmd mono">
@@ -103,7 +113,9 @@ const pillars = [
 
   .cell {
     position: relative;
-    overflow: hidden;
+    /* No overflow: hidden — the InfoTip bubble opens upward and must be
+       able to escape the card; the .count watermark is anchored inside
+       (top/right offsets) so it cannot bleed anyway. */
     min-height: 210px;
     padding: 26px;
   }
@@ -147,6 +159,11 @@ const pillars = [
     letter-spacing: -0.06em;
     -webkit-text-stroke: 1px var(--wire);
     pointer-events: none;
+    /* Clip the oversized watermark to the cell's inner box without clipping
+       the whole cell (InfoTip bubbles must be able to escape it). */
+    max-width: calc(100% - 52px);
+    overflow: hidden;
+    white-space: nowrap;
   }
 
   .count span {

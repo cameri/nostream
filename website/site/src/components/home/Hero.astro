@@ -14,9 +14,9 @@ import { VERSION } from '../../data/site'
     aria-hidden="true"></canvas>
   <FilmFrame
     class="hero-film"
-    src="/media/hero.mp4"
-    lowSrc="/media/hero-low.mp4"
-    poster="/media/hero-poster.webp"
+    src={`${import.meta.env.BASE_URL}media/hero.mp4`.replace(/\/\//, '/')}
+    lowSrc={`${import.meta.env.BASE_URL}media/hero-low.mp4`.replace(/\/\//, '/')}
+    poster={`${import.meta.env.BASE_URL}media/hero-poster.webp`.replace(/\/\//, '/')}
     title={`/hero · nostream ${VERSION}`}
   />
 </section>

@@ -1,0 +1,132 @@
+---
+// Inline "(i)" affordance: the visible copy stays user-facing; the technical
+// detail lives in a hover/focus/tap tooltip. Progressively enhanced — works
+// without JS for hover and keyboard; the tap-open state uses the native
+// <details> behavior so touch gets a reliable open/close with no scripts.
+interface Props {
+  /** The technical detail shown inside the tooltip. */
+  detail: string
+  /** Accessible name for the toggle, e.g. "rate limiting". */
+  label?: string
+}
+const { detail, label = 'more detail' } = Astro.props
+const id = `tip-${Astro.props['detail'] ? '' : ''}${Math.random().toString(36).slice(2, 10)}`
+---
+
+<details class="info-tip">
+  <summary
+    class="info-dot mono"
+    aria-label={`Technical detail: ${label}`}
+    aria-expanded="false"
+    aria-controls={id}
+  >i</summary>
+  <span class="tip-bubble" role="tooltip" id={id}>{detail}</span>
+</details>
+
+<style>
+  .info-tip {
+    position: relative;
+    display: inline-block;
+    margin-left: 0.35em;
+  }
+  .info-tip > summary {
+    list-style: none;
+  }
+  .info-tip > summary::-webkit-details-marker {
+    display: none;
+  }
+  .info-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--fg-2);
+    font-size: 10px;
+    font-style: italic;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    padding: 0;
+    vertical-align: super;
+  }
+  .info-dot:hover,
+  .info-tip[open] .info-dot,
+  .info-dot:focus-visible {
+    border-color: var(--teal);
+    color: var(--teal);
+  }
+  .tip-bubble {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: min(260px, calc(100vw - 32px));
+    padding: 8px 10px;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--fg);
+    font-size: 12.5px;
+    line-height: 1.45;
+    text-align: left;
+    white-space: normal;
+    z-index: 30;
+    /* Closed by default; the gap between button and bubble is bridged by a
+       transparent ::after on the OPEN state only, so the bubble can receive
+       pointer events while open and never intercepts clicks when closed. */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+  /* Hover open (desktop): pointer on the toggle or on the open bubble keeps
+     it visible. Tap open (touch/keyboard): the <details> open state. */
+  .info-tip:hover .tip-bubble,
+  .info-tip[open] .tip-bubble {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .info-tip[open] .tip-bubble::after {
+    /* Bridge the 4px gap so moving the pointer from button to bubble does
+       not close it (open-state hover chain). */
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    width: 60%;
+    height: 6px;
+    transform: translateX(-50%);
+  }
+  /* Hover-open without JS on a *closed* details: the native open state also
+     fires on click; JS-free close happens on outside click via the document
+     handler below. */
+</style>
+
+<script>
+  // Close any open tooltip when clicking elsewhere or pressing Escape —
+  // the keyboard/tap dismiss path for the native <details> open state.
+  const closeAll = (except?: Element | null) => {
+    document.querySelectorAll('details.info-tip[open]').forEach((d) => {
+      if (d !== except) d.removeAttribute('open')
+    })
+  }
+  document.addEventListener('click', (e) => {
+    const tip = (e.target as Element | null)?.closest?.('details.info-tip')
+    closeAll(tip)
+  })
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAll(null)
+  })
+  // Keep aria-expanded truthful for screen readers: the toggle event fires on
+  // the <details> element (not the summary), including programmatic closes.
+  document.querySelectorAll('details.info-tip').forEach((d) => {
+    d.addEventListener('toggle', () => {
+      d.querySelector('summary')?.setAttribute('aria-expanded', d.hasAttribute('open') ? 'true' : 'false')
+    })
+  })
+</script>
