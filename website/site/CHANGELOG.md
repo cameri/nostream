@@ -1,5 +1,13 @@
 # nostream-website
 
+## 1.2.2
+
+### Patch Changes
+
+- [#844](https://github.com/cameri/nostream/pull/844) [`c352d72`](https://github.com/cameri/nostream/commit/c352d72249ad44176379a1c15c97115a68828d4e) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Preview cleanup no longer trips the deploy token's missing KV scope: wrangler delete runs with --force, skipping the dependents probe that errored after a successful delete. Preview workers are assets-only, so nothing else changes.
+
+- [#847](https://github.com/cameri/nostream/pull/847) [`1b1ef4f`](https://github.com/cameri/nostream/commit/1b1ef4f8bce745f170a5eb432944a85729ee9de9) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add maintainer bio, social links, and updated profile photo on the community page for Abhay Pandey.
+
 ## 1.2.1
 
 ### Patch Changes
