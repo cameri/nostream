@@ -1,0 +1,122 @@
+name: Deploy Website Preview
+
+# Per-PR preview of the marketing site at https://ema.tnsor.network/preview/<n>/
+# (the production router worker proxies /preview/<n> to this PR's worker,
+# nostream-web-pr-<n>, served from its workers.dev URL). The preview is deleted
+# when the PR closes (merged or not).
+#
+# Requires the `website-preview` GitHub environment to exist with
+# CLOUDFLARE_API_TOKEN (Workers Scripts edit) and CLOUDFLARE_ACCOUNT_ID —
+# one-time setup. While the environment or its secrets are absent, this
+# workflow skips with a notice instead of failing the PR.
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - closed
+    paths:
+      - "website/site/**"
+      - "website/hero-animation/**"
+      - ".github/workflows/deploy-website-preview.yml"
+
+concurrency:
+  group: website-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    # Guard the environment reference so a missing setup skips rather than fails:
+    # the job targets the environment only when it exists.
+    steps:
+      - name: Check preview environment is configured
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if ! gh api repos/${{ github.repository }}/environments/website-preview >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::website-preview environment does not exist yet — PR preview skipped. Create it with CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID to enable previews."
+          elif gh api repos/${{ github.repository }}/environments/website-preview/secrets --jq '.secrets | map(.name)' | grep -q CLOUDFLARE_API_TOKEN; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::website-preview environment lacks CLOUDFLARE_API_TOKEN — PR preview skipped."
+          fi
+
+      - name: Checkout (for cleanup metadata)
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/checkout@v3
+
+      - uses: pnpm/action-setup@v4
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+
+      - uses: actions/setup-node@v3
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the site under the preview base
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        working-directory: website/site
+        env:
+          SITE_URL: https://ema.tnsor.network
+          SITE_BASE: /preview/${{ github.event.pull_request.number }}/
+        run: |
+          pnpm run build
+          node scripts/apply-base.mjs
+
+      - name: Deploy the preview worker
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        working-directory: website/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler deploy \
+            --config wrangler.preview.jsonc \
+            --name nostream-web-pr-${{ github.event.pull_request.number }}
+
+      - name: Link the preview on the PR
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: https://ema.tnsor.network/preview/${{ github.event.pull_request.number }}/
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} \
+            --body "🔍 Site preview for this PR: ${URL} (path stays on the production domain; no CDN caching).
+
+          It updates with every push to this PR and is deleted when the PR closes."
+
+      - name: Delete the preview worker
+        if: steps.guard.outputs.skip == 'false' && github.event.action == 'closed'
+        working-directory: website/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # A missing worker exits non-zero; treat already-gone as success.
+          npx wrangler delete --config wrangler.preview.jsonc \
+            --name nostream-web-pr-${{ github.event.pull_request.number }} \
+          || echo "preview worker already absent"
+
+      - name: Note the cleanup on the PR
+        if: steps.guard.outputs.skip == 'false' && github.event.action == 'closed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} \
+            --body "🧹 Site preview for this PR was deleted (PR closed)." || true

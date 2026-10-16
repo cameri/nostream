@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nostream-website",
+  "main": "worker/router.ts",
+  "compatibility_date": "2026-10-01",
+  "routes": [
+    {
+      "pattern": "ema.tnsor.network",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": false
+  }
+}
