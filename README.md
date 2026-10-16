@@ -42,6 +42,26 @@ The project master repository is available on [GitHub](https://github.com/cameri
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template/Xfk5F7?referralCode=Kfv2ly)
 
+## Table of contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Quick start (Docker Compose)](#quick-start-docker-compose)
+  - [Importing events from JSON Lines or JSON Arrays](#importing-events-from-json-lines-or-json-arrays)
+  - [NIP-43 invite codes](#nip-43-invite-codes)
+- [Quick start (Standalone)](#quick-start-standalone)
+- [Full guide](#full-guide)
+  - [Accepting payments](#accepting-payments)
+- [Running as a Service](#running-as-a-service)
+- [Troubleshooting](#troubleshooting)
+- [Export Events](#export-events)
+- [Benchmark Database Queries](#benchmark-database-queries)
+- [Relay Maintenance](#relay-maintenance)
+- [Configuration](#configuration)
+- [Development & Contributing](#development--contributing)
+- [Dev Channel](#dev-channel)
+- [License](#license)
+
 ## Features
 
 NIPs and MIPs with a relay-specific implementation are listed here.
@@ -61,14 +81,19 @@ NIPs and MIPs with a relay-specific implementation are listed here.
 - [x] NIP-20: Command Results
 - [x] NIP-22: Event `created_at` Limits
 - [x] NIP-25: Reactions
-- [ ] NIP-26: Delegated Event Signing (REMOVED)
+- [ ] NIP-26: Delegated Event Signing (removed upstream; not implemented)
 - [x] NIP-28: Public Chat
 - [x] NIP-33: Parameterized Replaceable Events
 - [x] NIP-40: Expiration Timestamp
+- [x] NIP-42: Authentication of clients to relays
+- [x] NIP-43: Invite codes
 - [x] NIP-44: Encrypted Payloads (Versioned)
 - [x] NIP-45: Event Counts
+- [x] NIP-50: Search capability
 - [x] NIP-62: Request to Vanish
 - [x] NIP-65: Relay List Metadata
+- [x] NIP-77: Negentropy Synchronization
+
 - [x] Marmot Protocol [MIPs 00–03](https://github.com/marmot-protocol/marmot): E2EE group messaging over Nostr — kinds 443, 444, 445, 10051 and 30443, with `supported_mips` advertised in the NIP-11 relay information document
 
 ## Requirements
@@ -90,6 +115,240 @@ NIPs and MIPs with a relay-specific implementation are listed here.
 WARNING: Docker distributions from Snap, Brew or Debian repositories are NOT SUPPORTED and will result in errors.
 Install Docker from their [official guide](https://docs.docker.com/engine/install/) ONLY.
 
+## Quick Start (Docker Compose)
+
+For full command reference and interactive mode documentation, see [CLI.md](CLI.md).
+Non-interactive CLI usage conventions:
+- exit `0` on success
+- exit `1` on runtime/validation errors
+- exit `2` on usage errors (invalid command/options)
+
+Optional global installation from a source checkout:
+```
+pnpm add -g .
+nostream --help
+```
+
+Install Docker following the [official guide](https://docs.docker.com/engine/install/).
+You may have to uninstall Docker if you installed it using a different guide.
+
+Clone repository and enter directory:
+```
+git clone git@github.com:Cameri/nostream.git
+cd nostream
+```
+
+Generate a secret with: `openssl rand -hex 128`
+Copy the output and paste it into an `.env` file:
+
+```
+SECRET=aaabbbccc...dddeeefff
+# Secret shortened for brevity
+```
+
+Start:
+```
+nostream start
+```
+  or
+```
+nostream start --tor
+```
+  or
+```
+nostream start --i2p
+```
+  or
+```
+RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com nostream start --nginx
+```
+
+Stop the server with:
+```
+nostream stop
+```
+
+Print the Tor hostname:
+```
+nostream info --tor-hostname
+```
+
+Print I2P hostname(s):
+```
+nostream info --i2p-hostname
+```
+
+The old shell wrapper scripts are no longer shipped in `scripts/`.
+Use the unified `nostream` CLI directly instead:
+
+```
+scripts/start                -> nostream start
+scripts/start_with_tor       -> nostream start --tor
+scripts/start_with_i2p       -> nostream start --i2p
+scripts/start_with_nginx     -> nostream start --nginx
+scripts/stop                 -> nostream stop
+scripts/print_tor_hostname   -> nostream info --tor-hostname
+scripts/print_i2p_hostname   -> nostream info --i2p-hostname
+scripts/update               -> nostream update
+scripts/clean                -> nostream clean
+```
+
+### Importing events from JSON Lines or JSON Arrays
+
+You can import NIP-01 events from `.jsonl` (JSON Lines) or `.json` (JSON array) files directly into the relay database.
+
+Compressed `.jsonl` files are also supported and decompressed on-the-fly:
+
+- `.jsonl.gz` (Gzip)
+- `.jsonl.xz` (XZ)
+
+Basic import:
+```
+nostream import ./events.jsonl
+```
+
+Equivalent alias form:
+```
+nostream import --file ./events.jsonl
+```
+
+Import from a JSON array file (compatible with `nostream export --format json`):
+```
+nostream import --file ./events.json
+```
+
+Import a compressed backup:
+```
+nostream import ./events.jsonl.gz
+nostream import ./events.jsonl.xz
+```
+
+Set a custom batch size (default: `1000`):
+```
+nostream import ./events.jsonl --batch-size 500
+```
+
+The importer:
+
+- Processes the file line-by-line to keep memory usage bounded.
+- Streams JSON array items one by one to keep memory usage bounded.
+- Validates NIP-01 schema, event id hash, and Schnorr signature before insertion.
+- Inserts in database transactions per batch.
+- Skips duplicates without failing the whole import.
+- Prints progress in the format:
+  `[Processed: 50,000 | Inserted: 45,000 | Skipped: 5,000 | Errors: 0]`
+
+### NIP-43 invite codes
+
+Kind 28934 join requests are implemented. Mint a code and share it out of band:
+
+```
+nostream invite create --json
+docker compose exec nostream node src/cli/index.js invite create
+```
+
+Users can also request a code themselves: the relay answers a `REQ` for kind 28935 by
+minting one on the fly. Off by default — set `nip43.allowInviteRequests` to enable it.
+
+See [CLI.md](CLI.md) for `--uses` / `--expires-in` and Docker vs local Postgres, and
+[CONFIGURATION.md](CONFIGURATION.md) for the invite request settings.
+
+## Quick Start (Standalone)
+
+Set the following environment variables:
+
+```
+DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
+DB_USER=postgres
+```
+  or
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=nostr_ts_relay
+DB_USER=postgres
+DB_PASSWORD=postgres
+```
+
+```
+REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
+
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_USER=default
+REDIS_PASSWORD=nostr_ts_relay
+```
+
+Generate a long random secret and set SECRET:
+You may want to use `openssl rand -hex 128` to generate a secret.
+
+```
+SECRET=aaabbbccc...dddeeefff
+# Secret shortened for brevity
+```
+
+### Initializing the database
+
+Create `nostr_ts_relay` database:
+
+```
+$ psql -h $DB_HOST -p $DB_PORT -U $DB_USER -W
+postgres=# create database nostr_ts_relay;
+postgres=# quit
+```
+
+Start Redis and use `redis-cli` to set the default password and verify:
+```
+$ redis-cli
+127.0.0.1:6379> CONFIG SET requirepass "nostr_ts_relay"
+OK
+127.0.0.1:6379> AUTH nostr_ts_relay
+Ok
+```
+
+Clone repository and enter directory:
+```
+git clone git@github.com:Cameri/nostream.git
+cd nostream
+```
+
+Install dependencies:
+
+```
+corepack enable
+pnpm install
+```
+
+Run migrations (at least once and after pulling new changes):
+
+```
+pnpm db:migrate
+```
+
+Create .nostr folder inside nostream project folder and copy over the settings file:
+
+```
+mkdir .nostr
+cp resources/default-settings.yaml .nostr/settings.yaml
+```
+
+To start in development mode:
+
+```
+pnpm dev
+```
+
+Or, start in production mode:
+
+```
+pnpm start
+```
+
+To clean up the build, coverage and test reports run:
+
+```
+pnpm clean
+```
 ## Full Guide
 
 - [Set up a Paid Nostr relay with Nostream and ZEBEDEE](https://docs.zbdpay.com/payments/nostr/nostr-relay) by [André Neves](https://primal.net/andre) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
@@ -111,9 +370,9 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
    - [Sign up for a ZEBEDEE Developer Dashboard account](https://dashboard.zebedee.io/signup), create a new LIVE Project, and get that Project's API Key
    - Set `ZEBEDEE_API_KEY` environment variable with the API Key above on your `.env` file
 
-    ```
+```
     ZEBEDEE_API_KEY={YOUR_ZEBEDEE_API_KEY_HERE}
-    ```
+```
 
    - Follow the required steps for all payments processors
    - On `.nostr/settings.yaml` file make the following changes:
@@ -129,10 +388,10 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
    - Create a store webhook with your Nodeless callback URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/nodeless`) and make sure to enable all of the events. Grab the generated store webhook secret
    - Set `NODELESS_API_KEY` and `NODELESS_WEBHOOK_SECRET` environment variables with generated API key and webhook secret, respectively
 
-    ```
+```
     NODELESS_API_KEY={YOUR_NODELESS_API_KEY}
     NODELESS_WEBHOOK_SECRET={YOUR_NODELESS_WEBHOOK_SECRET}
-    ```
+```
 
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `nodeless`
@@ -190,7 +449,7 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
 
     - On your `.nostr/settings.yaml` file make the following changes:
       - Set `payments.processor` to `nwc`
-    - Restart Nostream (`./scripts/stop` followed by `./scripts/start`)
+    - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 8. Ensure payments are required for your public key
    - Visit https://{YOUR-DOMAIN}/
@@ -204,337 +463,49 @@ Install Docker from their [official guide](https://docs.docker.com/engine/instal
    - Send the following JSON message: `["REQ", "payment-test", {"authors":["your-pubkey-in-hexadecimal"]}]`
    - You should get back the few notes you sent earlier
 
-## Quick Start (Docker Compose)
-
-For full command reference and interactive mode documentation, see [CLI.md](CLI.md).
-Non-interactive CLI usage conventions:
-- exit `0` on success
-- exit `1` on runtime/validation errors
-- exit `2` on usage errors (invalid command/options)
-
-Optional global installation from a source checkout:
-  ```
-  pnpm add -g .
-  nostream --help
-  ```
-
-Install Docker following the [official guide](https://docs.docker.com/engine/install/).
-You may have to uninstall Docker if you installed it using a different guide.
-
-Clone repository and enter directory:
-  ```
-  git clone git@github.com:Cameri/nostream.git
-  cd nostream
-  ```
-
-Generate a secret with: `openssl rand -hex 128`
-Copy the output and paste it into an `.env` file:
-
-  ```
-  SECRET=aaabbbccc...dddeeefff
-  # Secret shortened for brevity
-  ```
-
-Start:
-  ```
-  nostream start
-  ```
-  or
-  ```
-  nostream start --tor
-  ```
-  or
-  ```
-  nostream start --i2p
-  ```
-  or
-  ```
-  RELAY_DOMAIN=relay.example.com CERTBOT_EMAIL=you@example.com nostream start --nginx
-  ```
-
-Stop the server with:
-  ```
-  nostream stop
-  ```
-
-Print the Tor hostname:
-  ```
-  nostream info --tor-hostname
-  ```
-
-Print I2P hostname(s):
-  ```
-  nostream info --i2p-hostname
-  ```
-
-The old shell wrapper scripts are no longer shipped in `scripts/`.
-Use the unified `nostream` CLI directly instead:
-
-```
-scripts/start                -> nostream start
-scripts/start_with_tor       -> nostream start --tor
-scripts/start_with_i2p       -> nostream start --i2p
-scripts/start_with_nginx     -> nostream start --nginx
-scripts/stop                 -> nostream stop
-scripts/print_tor_hostname   -> nostream info --tor-hostname
-scripts/print_i2p_hostname   -> nostream info --i2p-hostname
-scripts/update               -> nostream update
-scripts/clean                -> nostream clean
-```
-
-### Importing events from JSON Lines or JSON Arrays
-
-You can import NIP-01 events from `.jsonl` (JSON Lines) or `.json` (JSON array) files directly into the relay database.
-
-Compressed `.jsonl` files are also supported and decompressed on-the-fly:
-
-- `.jsonl.gz` (Gzip)
-- `.jsonl.xz` (XZ)
-
-Basic import:
-  ```
-  nostream import ./events.jsonl
-  ```
-
-Equivalent alias form:
-  ```
-  nostream import --file ./events.jsonl
-  ```
-
-Import from a JSON array file (compatible with `nostream export --format json`):
-  ```
-  nostream import --file ./events.json
-  ```
-
-Import a compressed backup:
-  ```
-  nostream import ./events.jsonl.gz
-  nostream import ./events.jsonl.xz
-  ```
-
-Set a custom batch size (default: `1000`):
-  ```
-  nostream import ./events.jsonl --batch-size 500
-  ```
-
-The importer:
-
-- Processes the file line-by-line to keep memory usage bounded.
-- Streams JSON array items one by one to keep memory usage bounded.
-- Validates NIP-01 schema, event id hash, and Schnorr signature before insertion.
-- Inserts in database transactions per batch.
-- Skips duplicates without failing the whole import.
-- Prints progress in the format:
-  `[Processed: 50,000 | Inserted: 45,000 | Skipped: 5,000 | Errors: 0]`
-
-### NIP-43 invite codes
-
-Kind 28934 join requests are implemented. Mint a code and share it out of band:
-
-  ```
-  nostream invite create --json
-  docker compose exec nostream node src/cli/index.js invite create
-  ```
-
-Users can also request a code themselves: the relay answers a `REQ` for kind 28935 by
-minting one on the fly. Off by default — set `nip43.allowInviteRequests` to enable it.
-
-See [CLI.md](CLI.md) for `--uses` / `--expires-in` and Docker vs local Postgres, and
-[CONFIGURATION.md](CONFIGURATION.md) for the invite request settings.
-
-### Running as a Service
+## Running as a Service
 
 By default this server will run continuously until you stop it with Ctrl+C or until the system restarts.
 
 You can [install as a systemd service](https://www.swissrouting.com/nostr.html#installing-as-a-service) if you want the server to run again automatically whenever the system is restarted. For example:
 
-  ```
-  $ nano /etc/systemd/system/nostream.service
+```
+$ nano /etc/systemd/system/nostream.service
 
-  # Note: replace "User=..." with your username, and
-  # "/home/nostr/nostream" with the directory where you cloned the repo.
+# Note: replace "User=..." with your username, and
+# "/home/nostr/nostream" with the directory where you cloned the repo.
 
-  [Unit]
-  Description=Nostr TS Relay
-  After=network.target
-  StartLimitIntervalSec=0
+[Unit]
+Description=Nostr TS Relay
+After=network.target
+StartLimitIntervalSec=0
 
-  [Service]
-  Type=simple
-  Restart=always
-  RestartSec=5
-  User=nostr
-  WorkingDirectory=/home/nostr/nostream
-  ExecStart=/usr/bin/env bash -lc 'cd /home/nostr/nostream && nostream start'
-  ExecStop=/usr/bin/env bash -lc 'cd /home/nostr/nostream && nostream stop'
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=nostr
+WorkingDirectory=/home/nostr/nostream
+ExecStart=/usr/bin/env bash -lc 'cd /home/nostr/nostream && nostream start'
+ExecStop=/usr/bin/env bash -lc 'cd /home/nostr/nostream && nostream stop'
 
-  [Install]
-  WantedBy=multi-user.target
-  ```
+[Install]
+WantedBy=multi-user.target
+```
 
 And then:
 
-  ```
-  systemctl enable nostream
-  systemctl start nostream
-  ```
+```
+systemctl enable nostream
+systemctl start nostream
+```
 
 The logs can be viewed with:
 
-  ```
-  journalctl -u nostream
-  ```
+```
+journalctl -u nostream
+```
 
-## Troubleshooting
-
-### Linux: Docker DNS resolution failures (`EAI_AGAIN`)
-
-On some Linux environments (especially rolling-release distros or setups using
-`systemd-resolved`), `docker compose` builds can fail with DNS errors such as:
-
-- `getaddrinfo EAI_AGAIN registry.npmjs.org`
-- `Temporary failure in name resolution`
-
-To fix this, configure Docker daemon DNS in `/etc/docker/daemon.json`.
-
-1. Create or update `/etc/docker/daemon.json`:
-
-  ```
-  sudo mkdir -p /etc/docker
-  sudo nano /etc/docker/daemon.json
-  ```
-
-  Add or update the file with:
-
-  ```
-  {
-    "dns": ["1.1.1.1", "8.8.8.8"]
-  }
-  ```
-
-  If this file already exists, merge the `dns` key into the existing JSON
-  instead of replacing the entire file.
-
-  If your environment does not allow public resolvers, replace `1.1.1.1` and
-  `8.8.8.8` with DNS servers approved by your network.
-
-2. Restart Docker:
-
-  ```
-  sudo systemctl restart docker
-  ```
-
-3. Verify DNS works inside containers:
-
-  ```
-  docker run --rm busybox nslookup registry.npmjs.org
-  ```
-
-4. Retry starting nostream:
-
-  ```
-  nostream start
-  ```
-
-Note: avoid `127.0.0.53` in Docker DNS settings because it points to the host's
-local resolver stub and is often unreachable from containers.
-
-## Quick Start (Standalone)
-
-Set the following environment variables:
-
-  ```
-  DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
-  DB_USER=postgres
-  ```
-  or
-  ```
-  DB_HOST=localhost
-  DB_PORT=5432
-  DB_NAME=nostr_ts_relay
-  DB_USER=postgres
-  DB_PASSWORD=postgres
-  ```
-
-  ```
-  REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
-
-  REDIS_HOST=localhost
-  REDIS_PORT=6379
-  REDIS_USER=default
-  REDIS_PASSWORD=nostr_ts_relay
-  ```
-
-Generate a long random secret and set SECRET:
-You may want to use `openssl rand -hex 128` to generate a secret.
-
-  ```
-  SECRET=aaabbbccc...dddeeefff
-  # Secret shortened for brevity
-  ```
-
-### Initializing the database
-
-Create `nostr_ts_relay` database:
-
-  ```
-  $ psql -h $DB_HOST -p $DB_PORT -U $DB_USER -W
-  postgres=# create database nostr_ts_relay;
-  postgres=# quit
-  ```
-
-Start Redis and use `redis-cli` to set the default password and verify:
-  ```
-  $ redis-cli
-  127.0.0.1:6379> CONFIG SET requirepass "nostr_ts_relay"
-  OK
-  127.0.0.1:6379> AUTH nostr_ts_relay
-  Ok
-  ```
-
-Clone repository and enter directory:
-  ```
-  git clone git@github.com:Cameri/nostream.git
-  cd nostream
-  ```
-
-Install dependencies:
-
-  ```
-  corepack enable
-  pnpm install
-  ```
-
-Run migrations (at least once and after pulling new changes):
-
-  ```
-  pnpm db:migrate
-  ```
-
-Create .nostr folder inside nostream project folder and copy over the settings file:
-
-  ```
-  mkdir .nostr
-  cp resources/default-settings.yaml .nostr/settings.yaml
-  ```
-
-To start in development mode:
-
-  ```
-  pnpm dev
-  ```
-
-Or, start in production mode:
-
-  ```
-  pnpm start
-  ```
-
-To clean up the build, coverage and test reports run:
-
-  ```
-  pnpm clean
-  ```
 ## Development & Contributing
 
 For development environment setup, testing, linting, load testing, and contribution guidelines
@@ -606,37 +577,91 @@ corresponding data from the derived `event_tags` table when present.
 
 Dry run (no deletion):
 
-  ```
-  nostream dev db:clean --all --dry-run
-  ```
+```
+nostream dev db:clean --all --dry-run
+```
 
 Full wipe:
 
-  ```
-  nostream dev db:clean --all --force
-  ```
+```
+nostream dev db:clean --all --force
+```
 
 Delete events older than N days:
 
-  ```
-  nostream dev db:clean --older-than=30 --force
-  ```
+```
+nostream dev db:clean --older-than=30 --force
+```
 
 Delete only selected kinds:
 
-  ```
-  nostream dev db:clean --kinds=1,7,4 --force
-  ```
+```
+nostream dev db:clean --kinds=1,7,4 --force
+```
 
 Delete only selected kinds older than N days:
 
-  ```
-  nostream dev db:clean --older-than=30 --kinds=1,7,4 --force
-  ```
+```
+nostream dev db:clean --older-than=30 --kinds=1,7,4 --force
+```
 
 By default, the command asks for explicit confirmation (`Type 'DELETE' to confirm`).
 Use `--force` to skip the prompt.
 
+
+## Troubleshooting
+
+### Linux: Docker DNS resolution failures (`EAI_AGAIN`)
+
+On some Linux environments (especially rolling-release distros or setups using
+`systemd-resolved`), `docker compose` builds can fail with DNS errors such as:
+
+- `getaddrinfo EAI_AGAIN registry.npmjs.org`
+- `Temporary failure in name resolution`
+
+To fix this, configure Docker daemon DNS in `/etc/docker/daemon.json`.
+
+1. Create or update `/etc/docker/daemon.json`:
+
+```
+sudo mkdir -p /etc/docker
+sudo nano /etc/docker/daemon.json
+```
+
+  Add or update the file with:
+
+```
+{
+    "dns": ["1.1.1.1", "8.8.8.8"]
+}
+```
+
+  If this file already exists, merge the `dns` key into the existing JSON
+  instead of replacing the entire file.
+
+  If your environment does not allow public resolvers, replace `1.1.1.1` and
+  `8.8.8.8` with DNS servers approved by your network.
+
+2. Restart Docker:
+
+```
+sudo systemctl restart docker
+```
+
+3. Verify DNS works inside containers:
+
+```
+docker run --rm busybox nslookup registry.npmjs.org
+```
+
+4. Retry starting nostream:
+
+```
+nostream start
+```
+
+Note: avoid `127.0.0.53` in Docker DNS settings because it points to the host's
+local resolver stub and is often unreachable from containers.
 
 ## Configuration
 
