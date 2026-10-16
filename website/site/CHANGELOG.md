@@ -1,5 +1,17 @@
 # nostream-website
 
+## 1.2.0
+
+### Minor Changes
+
+- [#839](https://github.com/cameri/nostream/pull/839) [`91a5a7e`](https://github.com/cameri/nostream/commit/91a5a7edf9ebbb04ad749f775b5c3086192bfbc5) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Ship the hero film in two qualities: the page serves a high-res render by default and swaps to a low variant for data-saver clients and small screens (navigator.connection.saveData / effectiveType / viewport + DPR pick). build-media.mjs now emits both variants and records both sources in hero.meta.json.
+
+## 1.1.1
+
+### Patch Changes
+
+- [#835](https://github.com/cameri/nostream/pull/835) [`4642dfd`](https://github.com/cameri/nostream/commit/4642dfd00cf3b8cd60ed4d29af847a1ff6aa3c06) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Soften the hero-film NIP-count guard to a warning while the landing film awaits its GPU re-render (NIP-77 grew the supported list to 25; the film still shows 24).
+
 ## 1.1.0
 
 ### Minor Changes
