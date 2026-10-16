@@ -31,7 +31,7 @@ const pillars = [
   {
     code: 'LIM',
     title: 'Keeps abusive traffic out',
-    body: 'Throttles users with efficient methods to prevent abuse, so your relay stays fast for everyone who plays by the rules. ',
+    body: 'Keeps spam and abusive traffic from slowing the relay for everyone else, so normal clients stay fast.',
     tip: 'Rate limits, adaptive proof-of-work, kind and size rules. Clients get a rate-limited hint with a backoff.',
   },
   {
@@ -113,7 +113,9 @@ const pillars = [
 
   .cell {
     position: relative;
-    overflow: hidden;
+    /* No overflow: hidden — the InfoTip bubble opens upward and must be
+       able to escape the card; the .count watermark is anchored inside
+       (top/right offsets) so it cannot bleed anyway. */
     min-height: 210px;
     padding: 26px;
   }
@@ -157,6 +159,11 @@ const pillars = [
     letter-spacing: -0.06em;
     -webkit-text-stroke: 1px var(--wire);
     pointer-events: none;
+    /* Clip the oversized watermark to the cell's inner box without clipping
+       the whole cell (InfoTip bubbles must be able to escape it). */
+    max-width: calc(100% - 52px);
+    overflow: hidden;
+    white-space: nowrap;
   }
 
   .count span {
