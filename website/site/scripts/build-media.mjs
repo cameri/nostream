@@ -45,6 +45,30 @@ const landingVideo = [
   path.join(LANDING, 'nostream-hero-low.mp4'),
 ].find((p) => p && existsSync(p))
 
+// The low variant ships beside the full one for mobile / Save-Data. It is the
+// previous site video when a fresh high-res render replaces hero.mp4, or the
+// low render when that is all hero-animation has produced.
+const landingLowVideo = [
+  process.env.HERO_LOW_SRC,
+  path.join(LANDING, 'nostream-hero-low.mp4'),
+  landingVideo === path.join(LANDING, 'nostream-hero-low.mp4') ? null : landingVideo,
+].find((p) => p && existsSync(p) && p !== landingVideo)
+
+const encodeHero = (source, outPath, crf) =>
+  execFileSync(
+    'ffmpeg',
+    [
+      '-y', '-loglevel', 'error',
+      '-i', source,
+      '-vf', 'unsharp=5:5:0.85:5:5:0.0',
+      '-an', '-c:v', 'libx264', '-preset', 'slow', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+      '-tune', 'animation',
+      '-crf', String(crf),
+      outPath,
+    ],
+    { stdio: 'inherit' },
+  )
+
 if (landingVideo) {
   const filmMeta = readFilmMeta(landingVideo)
   if (filmMeta?.nipCount == null) {
@@ -55,20 +79,22 @@ if (landingVideo) {
     process.exit(1)
   }
 
-  execFileSync(
-    'ffmpeg',
-    [
-      '-y', '-loglevel', 'error',
-      '-i', landingVideo,
-      '-vf', 'unsharp=5:5:0.85:5:5:0.0',
-      '-an', '-c:v', 'libx264', '-preset', 'slow', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
-      '-tune', 'animation',
-      '-crf', '15',
-      path.join(MEDIA, 'hero.mp4'),
-    ],
-    { stdio: 'inherit' },
-  )
+  encodeHero(landingVideo, path.join(MEDIA, 'hero.mp4'), 15)
   console.log('hero.mp4 ← landing film (film.ts)')
+
+  if (landingLowVideo) {
+    const lowMeta = readFilmMeta(landingLowVideo)
+    if (lowMeta?.nipCount === filmMeta.nipCount) {
+      encodeHero(landingLowVideo, path.join(MEDIA, 'hero-low.mp4'), 22)
+      console.log('hero-low.mp4 ← landing film (low variant)')
+    } else {
+      console.warn(
+        `skip hero-low.mp4: low source meta (${lowMeta?.nipCount}) disagrees with full source (${filmMeta.nipCount}) — regenerate both renders together`,
+      )
+    }
+  } else {
+    console.warn('skip hero-low.mp4: no second source (run `pnpm run render:small` in website/hero-animation)')
+  }
 
   writeFileSync(
     HERO_META,
@@ -77,6 +103,7 @@ if (landingVideo) {
         nipCount: filmMeta.nipCount,
         generatedAt: filmMeta.generatedAt,
         sourceVideo: path.relative(HERO_DIR, landingVideo),
+        ...(landingLowVideo ? { sourceLowVideo: path.relative(HERO_DIR, landingLowVideo) } : {}),
       },
       null,
       2,
