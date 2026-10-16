@@ -63,6 +63,16 @@ const isActive = (href: string) => current === href || current.startsWith(`${hre
     menu.setAttribute('aria-expanded', String(open))
     menu.setAttribute('aria-label', open ? 'Close menu' : 'Open menu')
   })
+
+  // Same-page hash links from the mobile drawer (the Get-started CTA on
+  // /get-started) scroll under the still-open drawer — close it first.
+  document.querySelectorAll<HTMLAnchorElement>('.drawer a[href^="#"]').forEach((a) => {
+    a.addEventListener('click', () => {
+      nav?.classList.remove('open')
+      menu?.setAttribute('aria-expanded', 'false')
+      menu?.setAttribute('aria-label', 'Open menu')
+    })
+  })
 </script>
 
 <style>

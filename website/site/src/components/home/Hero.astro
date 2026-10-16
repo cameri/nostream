@@ -179,28 +179,34 @@ import { VERSION } from '../../data/site'
 <script>
   // The Base layout plays the film only while visible; this adds the manual
   // pause. Base's IntersectionObserver re-plays on scroll, so a deliberately
-  // paused film is kept paused by intercepting the play event.
+  // paused film is kept paused by intercepting the play event. The label is
+  // driven by actual playback state — under prefers-reduced-motion the film
+  // starts paused, so the button must offer Play, not Pause.
   let userPaused = false
-  document.querySelector<HTMLButtonElement>('[data-film-toggle]')?.addEventListener('click', (e) => {
-    const button = e.currentTarget as HTMLButtonElement
-    const video = document.querySelector<HTMLVideoElement>('.hero-film video')
+  const button = document.querySelector<HTMLButtonElement>('[data-film-toggle]')
+  const video = document.querySelector<HTMLVideoElement>('.hero-film video')
+  const sync = () => {
+    if (!button || !video) return
+    const paused = video.paused
+    button.textContent = paused ? 'Play' : 'Pause'
+    button.setAttribute('aria-pressed', String(paused))
+    button.setAttribute('aria-label', paused ? 'Play the hero film' : 'Pause the hero film')
+  }
+  video?.addEventListener('play', sync)
+  video?.addEventListener('pause', () => {
+    // A user pause must survive Base's observer re-play; a scroll-off pause
+    // (userPaused false) just follows the video's own state.
+    sync()
+  })
+  video?.addEventListener('play', () => {
+    if (userPaused) video.pause()
+  })
+  button?.addEventListener('click', () => {
     if (!video) return
     userPaused = !video.paused
-    if (video.paused) {
-      void video.play()
-      button.textContent = 'Pause'
-      button.setAttribute('aria-pressed', 'false')
-      button.setAttribute('aria-label', 'Pause the hero film')
-    } else {
-      video.pause()
-      button.textContent = 'Play'
-      button.setAttribute('aria-pressed', 'true')
-      button.setAttribute('aria-label', 'Play the hero film')
-    }
+    if (video.paused) void video.play()
+    else video.pause()
+    sync()
   })
-  document.querySelectorAll<HTMLVideoElement>('video[data-autoplay]').forEach((v) => {
-    v.addEventListener('play', () => {
-      if (userPaused) v.pause()
-    })
-  })
+  sync()
 </script>
