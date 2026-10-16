@@ -45,14 +45,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          if ! gh api repos/${{ github.repository }}/environments/website-preview >/dev/null 2>&1; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::website-preview environment does not exist yet — PR preview skipped. Create it with CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID to enable previews."
-          elif gh api repos/${{ github.repository }}/environments/website-preview/secrets --jq '.secrets | map(.name)' | grep -q CLOUDFLARE_API_TOKEN; then
+          # Existence is the only check the runner's token can make: listing
+          # environment secrets needs permissions github.token does not carry,
+          # and probing them here once made every run skip with "lacks
+          # CLOUDFLARE_API_TOKEN" even after the secrets were set.
+          if gh api repos/${{ github.repository }}/environments/website-preview >/dev/null 2>&1; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::website-preview environment lacks CLOUDFLARE_API_TOKEN — PR preview skipped."
+            echo "::notice::website-preview environment does not exist yet — PR preview skipped. Create it with CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID to enable previews."
           fi
 
       - name: Checkout (for cleanup metadata)
