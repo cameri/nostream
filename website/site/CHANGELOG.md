@@ -1,5 +1,15 @@
 # nostream-website
 
+## 1.2.1
+
+### Patch Changes
+
+- [#842](https://github.com/cameri/nostream/pull/842) [`72fca58`](https://github.com/cameri/nostream/commit/72fca5893b8b8f7daede8ad9841f124fe5278f53) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Add PR preview deployments: site changes are previewable at ema.tnsor.network/preview/<PR>/ and cleaned up on close. Requires the website-preview environment (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID) to activate.
+
+- [#842](https://github.com/cameri/nostream/pull/842) [`72fca58`](https://github.com/cameri/nostream/commit/72fca5893b8b8f7daede8ad9841f124fe5278f53) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Website copy now leads with what each feature does for the user; the technical detail (NIP numbers, protocol names, command flags) moved into (i) info tooltips on hover, focus or tap.
+
+  Also ships PR previews: every PR touching the site builds under `/preview/<n>/` and deploys its own worker (`nostream-web-pr-<n>`); the production router worker (new) proxies `ema.tnsor.network/preview/<n>/*` to it, so the preview URL stays on the production domain. Previews are deleted when the PR closes. The production deploy switches from the assets-only worker to the router on the next release — same assets, same domain, plus the preview route.
+
 ## 1.2.0
 
 ### Minor Changes
