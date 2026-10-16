@@ -114,6 +114,35 @@ describe('InvoiceRepository', () => {
       expect(result!.amountRequested).to.equal(1000n)
     })
 
+    it('maps the subscription plan and period when the invoice has them', async () => {
+      const periodStart = new Date('2026-02-01T00:00:00.000Z')
+      const periodEnd = new Date('2026-03-03T00:00:00.000Z')
+      const client = sandbox.stub().returns({
+        where: sandbox.stub().returns({
+          select: sandbox
+            .stub()
+            .resolves([{ ...dbInvoiceRow, plan_id: 'basic', period_start: periodStart, period_end: periodEnd }]),
+        }),
+      }) as unknown as DatabaseClient
+
+      const result = await repository.findById('test-invoice-id', client)
+
+      expect(result!.planId).to.equal('basic')
+      expect(result!.periodStart).to.equal(periodStart)
+      expect(result!.periodEnd).to.equal(periodEnd)
+    })
+
+    it('leaves the plan unset for an admission invoice', async () => {
+      const client = sandbox.stub().returns({
+        where: sandbox.stub().returns({ select: sandbox.stub().resolves([dbInvoiceRow]) }),
+      }) as unknown as DatabaseClient
+
+      const result = await repository.findById('test-invoice-id', client)
+
+      expect(result!.planId).to.equal(undefined)
+      expect(result!.periodEnd).to.equal(undefined)
+    })
+
     it('queries invoices table by id', async () => {
       const whereStub = sandbox.stub().returns({ select: sandbox.stub().resolves([]) })
       const client = sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient
@@ -254,6 +283,29 @@ describe('InvoiceRepository', () => {
       const sql = repository.upsert(testInvoice).toString()
 
       expect(sql).to.include(`X'${pubkeyHex}'`)
+    })
+
+    it('stores the subscription plan and period an invoice pays for', () => {
+      const periodStart = new Date('2026-02-01T00:00:00.000Z')
+      const periodEnd = new Date('2026-03-03T00:00:00.000Z')
+      const sql = repository.upsert({ ...testInvoice, planId: 'basic', periodStart, periodEnd }).toString()
+
+      expect(sql).to.include('"plan_id"')
+      expect(sql).to.include(`'basic'`)
+      expect(sql).to.include('"period_start"')
+      expect(sql).to.include('"period_end"')
+    })
+
+    it('never rewrites the plan or period of an existing invoice', () => {
+      const sql = repository
+        .upsert({ ...testInvoice, planId: 'basic', periodStart: fixedDate, periodEnd: fixedDate })
+        .toString()
+      const update = sql.split('do update set')[1]
+
+      expect(update).to.include('"status"')
+      expect(update).to.not.include('"plan_id"')
+      expect(update).to.not.include('"period_start"')
+      expect(update).to.not.include('"period_end"')
     })
 
     it('includes all required invoice fields', () => {

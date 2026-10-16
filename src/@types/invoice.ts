@@ -26,6 +26,10 @@ export interface Invoice {
   updatedAt: Date
   createdAt: Date
   verifyURL?: string
+  /** Subscription plan this invoice pays for, when it is not an admission fee. */
+  planId?: string | null
+  periodStart?: Date | null
+  periodEnd?: Date | null
 }
 
 export interface LnurlInvoice extends Invoice {
@@ -46,4 +50,7 @@ export interface DBInvoice {
   updated_at: Date
   created_at: Date
   verify_url: string
+  plan_id?: string | null
+  period_start?: Date | null
+  period_end?: Date | null
 }
