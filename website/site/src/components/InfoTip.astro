@@ -152,14 +152,19 @@ const id = `tip-${Astro.props['detail'] ? '' : ''}${Math.random().toString(36).s
         // The bubble lays out on the same frame the attribute flips; measure
         // after layout so getBoundingClientRect sees the real rect.
         requestAnimationFrame(() => clamp(d))
+      } else if (d.matches(':hover')) {
+        // Tap-close while the pointer stays over the tooltip: :hover keeps
+        // the bubble visible, so re-clamp instead of clearing the shift.
+        clamp(d)
       } else {
         const bubble = d.querySelector<HTMLElement>('.tip-bubble')
         if (bubble) bubble.style.transform = ''
       }
     })
   })
-  // Re-clamp when the viewport moves under an open bubble (rotation, resize).
+  // Re-clamp when the viewport moves under a visible bubble (rotation,
+  // resize) — hover-opened bubbles have no [open], so match both.
   window.addEventListener('resize', () => {
-    document.querySelectorAll('details.info-tip[open]').forEach(clamp)
+    document.querySelectorAll('details.info-tip[open], details.info-tip:hover').forEach(clamp)
   }, { passive: true })
 </script>
