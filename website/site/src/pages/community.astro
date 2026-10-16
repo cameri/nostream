@@ -1,6 +1,6 @@
 ---
 import { Image } from 'astro:assets'
-import abhayPhoto from '../assets/abhay.png'
+import abhayPhoto from '../assets/Abhay.jpg'
 import cameriPhoto from '../assets/cameri.jpg'
 import priyanshuPhoto from '../assets/priyanshu.png'
 import PageHead from '../components/PageHead.astro'
@@ -42,7 +42,13 @@ const maintainers = [
     location: 'India',
     github: 'https://github.com/Ferryx349',
     photo: abhayPhoto,
-    links: [{ label: 'GitHub', value: '@Ferryx349', href: 'https://github.com/Ferryx349' }],
+    /** Square crop anchor — portrait needs a higher focal point so the top of the head stays in frame. */
+    photoObjectPosition: '50% 22%',
+    bio: 'Abhay is a Bitshala Fellow and committed maintainer on nostream, picking up new ground in Nostr and production relays as he contributes. He’s in it for the long term and focused on doing his part to take nostream further, alongside the team.',
+    links: [
+      { label: 'GitHub', value: '@Ferryx349', href: 'https://github.com/Ferryx349' },
+      { label: 'X', value: '@Ferryx0523', href: 'https://x.com/Ferryx0523' },
+    ],
   },
 ]
 
@@ -106,7 +112,15 @@ const external = (href: string) => href.startsWith('http')
           maintainers.map((m, i) => (
             <article class="maintainer panel reveal" style={`transition-delay:${i * 70}ms`}>
               <a class="photo" href={m.github} target="_blank" rel="noopener noreferrer">
-                <Image src={m.photo} alt={`${m.name} (@${m.handle})`} widths={[240, 480]} sizes="220px" />
+                <Image
+                  src={m.photo}
+                  alt={`${m.name} (@${m.handle})`}
+                  widths={[240, 480]}
+                  sizes="220px"
+                  style={'photoObjectPosition' in m && m.photoObjectPosition
+                    ? `object-position: ${m.photoObjectPosition}`
+                    : undefined}
+                />
               </a>
               <div class="about">
                 <h2 class="h2">{m.name}</h2>
@@ -126,6 +140,7 @@ const external = (href: string) => href.startsWith('http')
                     </p>
                   )
                 }
+                {'bio' in m && m.bio && <p class="bio">{m.bio}</p>}
                 <ul class="links">
                   {
                     m.links.map((l) => (
