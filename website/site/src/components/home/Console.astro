@@ -28,8 +28,8 @@ const shots = [
   {
     name: 'mismatches',
     title: 'Honest advertising',
-    body: 'Catches when your relay promises clients something it does not actually do.',
-    tip: 'NIP-11 mismatch warnings: flags when what your relay advertises disagrees with what probes measure.',
+    body: "Flags the gap between what your relay advertises and what it actually does — in either direction.",
+    tip: 'NIP-11 mismatch warnings: compares what your relay publishes in supported_nips with what probes measure, and flags any disagreement.',
     tag: 'NIP-11',
   },
   {
@@ -68,6 +68,10 @@ const capabilities = [
         <ul class="caps">
           {capabilities.map((c) => <li>{c}</li>)}
         </ul>
+        <p class="demo-note">
+          Screenshots from a real console — this one ran on a laptop catching its first events, rejections and failed
+          alert deliveries included.
+        </p>
       </div>
     </div>
 
@@ -139,9 +143,16 @@ const capabilities = [
     font-size: 12px;
   }
 
+  .demo-note {
+    margin: 16px 0 0;
+    color: var(--fg-2);
+    font-size: 13px;
+  }
+
   .gallery {
     display: grid;
-    gap: 28px 20px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px 16px;
   }
 
   @media (min-width: 900px) {

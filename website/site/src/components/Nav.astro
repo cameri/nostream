@@ -2,7 +2,12 @@
 import Logo from './Logo.astro'
 import { NAV, REPO, VERSION } from '../data/site'
 
-const current = Astro.url.pathname.replace(/\/$/, '') || '/'
+// Astro.url.pathname carries the configured base (preview deploys), so strip
+// it before comparing against the base-relative NAV hrefs.
+const base = import.meta.env.BASE_URL.replace(/\/$/, '')
+const current = base && (Astro.url.pathname.replace(/\/$/, '') || '/').startsWith(base)
+  ? (Astro.url.pathname.replace(/\/$/, '') || '/').slice(base.length) || '/'
+  : Astro.url.pathname.replace(/\/$/, '') || '/'
 const isActive = (href: string) => current === href || current.startsWith(`${href}/`)
 ---
 
@@ -22,7 +27,7 @@ const isActive = (href: string) => current === href || current.startsWith(`${hre
 
     <div class="actions">
       <a class="version mono" href="/changelog">v{VERSION}</a>
-      <a class="btn btn-primary get-started" href="/get-started">Get started</a>
+      <a class:list={['btn btn-primary get-started', { self: isActive('/get-started') }]} href={isActive('/get-started') ? '#build' : '/get-started'}>Get started</a>
       <a class="gh" href={REPO} target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
           ><path
@@ -39,7 +44,7 @@ const isActive = (href: string) => current === href || current.startsWith(`${hre
   </div>
 
   <nav class="drawer" aria-label="Mobile" data-drawer>
-    <a class="drawer-cta" href="/get-started">Get started</a>
+    <a class="drawer-cta" href={isActive('/get-started') ? '#build' : '/get-started'}>Get started</a>
     {NAV.map((item) => <a href={item.href}>{item.label}</a>)}
     <a href={REPO} target="_blank" rel="noopener noreferrer">GitHub</a>
   </nav>
@@ -57,6 +62,16 @@ const isActive = (href: string) => current === href || current.startsWith(`${hre
     const open = nav?.classList.toggle('open') ?? false
     menu.setAttribute('aria-expanded', String(open))
     menu.setAttribute('aria-label', open ? 'Close menu' : 'Open menu')
+  })
+
+  // Same-page hash links from the mobile drawer (the Get-started CTA on
+  // /get-started) scroll under the still-open drawer — close it first.
+  document.querySelectorAll<HTMLAnchorElement>('.drawer a[href^="#"]').forEach((a) => {
+    a.addEventListener('click', () => {
+      nav?.classList.remove('open')
+      menu?.setAttribute('aria-expanded', 'false')
+      menu?.setAttribute('aria-label', 'Open menu')
+    })
   })
 </script>
 
@@ -129,6 +144,14 @@ const isActive = (href: string) => current === href || current.startsWith(`${hre
     height: 36px;
     padding: 0 16px;
     font-size: 13px;
+  }
+
+  /* On /get-started the CTA scrolls to the build block instead of linking
+     to the page you are already on — keep it visible but quiet. */
+  .get-started.self {
+    border: 1px solid var(--panel-border);
+    background: none;
+    color: var(--fg-2);
   }
 
   .gh {

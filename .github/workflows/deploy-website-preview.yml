@@ -82,6 +82,15 @@ jobs:
         run: |
           pnpm run build
           node scripts/apply-base.mjs
+          # The assets manifest is keyed by file path: the worker serves dist/
+          # at the root of its URL, but the preview is requested under
+          # /preview/<n>/... — so the built tree must also EXIST at that path
+          # or every asset request falls through to the SPA-fallback
+          # index.html (text/html for .css/.mp4 requests — the broken preview).
+          # Copy the build into dist/preview/<n>/ (excluding the copy itself).
+          n="${{ github.event.pull_request.number }}"
+          mkdir -p "dist/preview/$n"
+          find dist -mindepth 1 -maxdepth 1 ! -name preview -exec cp -r {} "dist/preview/$n/" \;
 
       - name: Mark the preview comment as rendering
         if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'

@@ -168,7 +168,7 @@ video {
 
 .section {
   position: relative;
-  padding: clamp(80px, 11vw, 140px) 0;
+  padding: clamp(56px, 7vw, 96px) 0;
 }
 
 .section-head {
