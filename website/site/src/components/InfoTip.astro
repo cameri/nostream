@@ -124,9 +124,42 @@ const id = `tip-${Astro.props['detail'] ? '' : ''}${Math.random().toString(36).s
   })
   // Keep aria-expanded truthful for screen readers: the toggle event fires on
   // the <details> element (not the summary), including programmatic closes.
+  // While open, also clamp the bubble inside the viewport: the bubble is
+  // centered on its (i) toggle, so near a viewport edge it would otherwise
+  // clip (CSS max-width bounds the width, not the position).
+  const clamp = (details: Element) => {
+    const bubble = details.querySelector<HTMLElement>('.tip-bubble')
+    if (!bubble) return
+    bubble.style.transform = ''
+    const pad = 12
+    const rect = bubble.getBoundingClientRect()
+    const overshootLeft = pad - rect.left
+    const overshootRight = rect.right - (window.innerWidth - pad)
+    if (overshootLeft > 0) {
+      bubble.style.transform = `translateX(-50%) translateX(${overshootLeft}px)`
+    } else if (overshootRight > 0) {
+      bubble.style.transform = `translateX(-50%) translateX(${-overshootRight}px)`
+    }
+  }
   document.querySelectorAll('details.info-tip').forEach((d) => {
+    // Hover path: the bubble opens via CSS without a toggle event, so clamp
+    // when the pointer reaches the toggle (bubble rect exists before the
+    // opacity transition finishes, so measurement is valid).
+    d.addEventListener('pointerenter', () => clamp(d))
     d.addEventListener('toggle', () => {
       d.querySelector('summary')?.setAttribute('aria-expanded', d.hasAttribute('open') ? 'true' : 'false')
+      if (d.hasAttribute('open')) {
+        // The bubble lays out on the same frame the attribute flips; measure
+        // after layout so getBoundingClientRect sees the real rect.
+        requestAnimationFrame(() => clamp(d))
+      } else {
+        const bubble = d.querySelector<HTMLElement>('.tip-bubble')
+        if (bubble) bubble.style.transform = ''
+      }
     })
   })
+  // Re-clamp when the viewport moves under an open bubble (rotation, resize).
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('details.info-tip[open]').forEach(clamp)
+  }, { passive: true })
 </script>
