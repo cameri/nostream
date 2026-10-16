@@ -83,6 +83,27 @@ jobs:
           pnpm run build
           node scripts/apply-base.mjs
 
+      - name: Mark the preview comment as rendering
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: https://ema.tnsor.network/preview/${{ github.event.pull_request.number }}/
+          MARKER: <!-- site-preview-comment -->
+        run: |
+          # Flip the single preview comment to a "rendering" state before the
+          # deploy starts, so the link always exists but signals staleness.
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
+            --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | tail -1)
+          BODY="${MARKER}
+          ⏳ Preview is rendering for the latest push — ${URL} will serve the new build in about a minute."
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$COMMENT_ID" -f body="$BODY" >/dev/null
+            echo "marked comment $COMMENT_ID as rendering"
+          else
+            gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$BODY" >/dev/null
+            echo "created new preview comment (rendering)"
+          fi
+
       - name: Deploy the preview worker
         if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
         working-directory: website/site
@@ -99,11 +120,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           URL: https://ema.tnsor.network/preview/${{ github.event.pull_request.number }}/
+          MARKER: <!-- site-preview-comment -->
         run: |
-          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} \
-            --body "🔍 Site preview for this PR: ${URL} (path stays on the production domain; no CDN caching).
+          # One comment per PR, updated in place on every push: find the
+          # existing one by marker, edit it, or create it if absent.
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
+            --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | tail -1)
+          BODY="${MARKER}
+          🔍 Site preview for this PR: ${URL} (path stays on the production domain).
 
           It updates with every push to this PR and is deleted when the PR closes."
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$COMMENT_ID" -f body="$BODY" >/dev/null
+            echo "updated comment $COMMENT_ID"
+          else
+            gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$BODY" >/dev/null
+            echo "created new preview comment"
+          fi
 
       - name: Delete the preview worker
         if: steps.guard.outputs.skip == 'false' && github.event.action == 'closed'
@@ -121,6 +154,15 @@ jobs:
         if: steps.guard.outputs.skip == 'false' && github.event.action == 'closed'
         env:
           GH_TOKEN: ${{ github.token }}
+          MARKER: <!-- site-preview-comment -->
         run: |
-          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} \
-            --body "🧹 Site preview for this PR was deleted (PR closed)." || true
+          # Update the SAME single preview comment instead of adding one.
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
+            --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | tail -1)
+          BODY="${MARKER}
+          🧹 Site preview for this PR was deleted (PR closed)."
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$COMMENT_ID" -f body="$BODY" >/dev/null
+          else
+            gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$BODY" >/dev/null || true
+          fi
