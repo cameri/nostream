@@ -24,12 +24,18 @@ if (!existsSync(metaPath)) {
 
 const meta = JSON.parse(readFileSync(metaPath, 'utf8'))
 if (meta.nipCount !== expected) {
-  console.error(
-    `check-hero-nips: hero film shows ${meta.nipCount} NIPs but package.json has ${expected}.`,
+  // SOFTENED 2026-10-16 on Cameri's order: this guard hard-failed the site
+  // build (and with it, releases) because #830 added NIP-77 while the hero
+  // film still renders 24 — the re-render needs the GPU pipeline
+  // (cd website/hero-animation && pnpm run render, then cd ../site && pnpm
+  // run media) and no GPU is currently available. Restore `process.exit(1)`
+  // on this branch once the film is re-rendered.
+  console.warn(
+    `check-hero-nips: STALE FILM — hero film shows ${meta.nipCount} NIPs but package.json has ${expected}. Build continues; re-render before the next site copy refresh.`,
   )
-  console.error('Re-render: cd website/hero-animation && pnpm run render')
-  console.error('Then: cd ../site && pnpm run media')
-  process.exit(1)
+  console.warn('Re-render: cd website/hero-animation && pnpm run render')
+  console.warn('Then: cd ../site && pnpm run media')
+  process.exit(0)
 }
 
 console.log(`check-hero-nips: ok (${expected} NIPs)`)
