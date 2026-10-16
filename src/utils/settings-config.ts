@@ -5,6 +5,7 @@ import { isNil, mergeDeepRight } from 'ramda'
 
 import { createLogger } from '../factories/logger-factory'
 import { EVENT_STORE_BACKENDS, isEventStoreBackend } from './event-store'
+import { GRANDFATHERED_PLAN_ID } from '../@types/user-subscription'
 import { Settings } from '../@types/settings'
 import {
   getConfigBaseDir,
@@ -589,6 +590,69 @@ const validateRateLimitPeriods = (
   })
 }
 
+const isPositiveInteger = (value: unknown): boolean =>
+  (typeof value === 'number' || typeof value === 'bigint') && Number.isInteger(Number(value)) && Number(value) > 0
+
+const validateSubscriptionPlans = (plans: unknown, issues: ValidationIssue[]): void => {
+  // A value that is not a list is already reported against the default settings schema.
+  if (!Array.isArray(plans)) {
+    return
+  }
+
+  const ids = new Set<string>()
+  const amounts = new Set<string>()
+
+  plans.forEach((plan, index) => {
+    const prefix = `payments.subscriptionPlans[${index}]`
+    if (plan === null || typeof plan !== 'object' || Array.isArray(plan)) {
+      issues.push({ path: prefix, message: 'plan must be an object' })
+      return
+    }
+
+    if (typeof plan.id !== 'string' || !plan.id.trim()) {
+      issues.push({ path: `${prefix}.id`, message: 'id is required' })
+    } else if (plan.id === GRANDFATHERED_PLAN_ID) {
+      issues.push({ path: `${prefix}.id`, message: `id "${GRANDFATHERED_PLAN_ID}" is reserved` })
+    } else if (ids.has(plan.id)) {
+      issues.push({ path: `${prefix}.id`, message: `id "${plan.id}" is used by more than one plan` })
+    } else {
+      ids.add(plan.id)
+    }
+
+    // The amount paid selects the plan, so two plans with one price could not be told apart.
+    if (!isPositiveInteger(plan.amount)) {
+      issues.push({ path: `${prefix}.amount`, message: 'amount must be a positive integer (msats)' })
+    } else if (amounts.has(String(plan.amount))) {
+      issues.push({ path: `${prefix}.amount`, message: `amount ${plan.amount} is used by more than one plan` })
+    } else {
+      amounts.add(String(plan.amount))
+    }
+
+    if (!isPositiveInteger(plan.intervalSeconds)) {
+      issues.push({ path: `${prefix}.intervalSeconds`, message: 'intervalSeconds must be a positive integer' })
+    }
+
+    if (!(Number.isInteger(plan.graceSeconds) && plan.graceSeconds >= 0)) {
+      issues.push({ path: `${prefix}.graceSeconds`, message: 'graceSeconds must be a non-negative integer' })
+    }
+
+    const limits = plan.limits
+    if (limits !== undefined && limits !== null) {
+      if (typeof limits !== 'object' || Array.isArray(limits)) {
+        issues.push({ path: `${prefix}.limits`, message: 'limits must be an object' })
+        return
+      }
+      validateRateLimitPeriods(limits.rateLimits, `${prefix}.limits.rateLimits`, issues)
+      if (limits.retentionMaxDays !== undefined && !isPositiveInteger(limits.retentionMaxDays)) {
+        issues.push({
+          path: `${prefix}.limits.retentionMaxDays`,
+          message: 'retentionMaxDays must be a positive integer',
+        })
+      }
+    }
+  })
+}
+
 export const validateSettings = (settings: Settings): ValidationIssue[] => {
   const issues: ValidationIssue[] = []
 
@@ -646,6 +710,8 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
       }
     }
   }
+
+  validateSubscriptionPlans(settings.payments?.subscriptionPlans, issues)
 
   const pow = settings.limits?.event?.pow
   if (pow?.enabled) {

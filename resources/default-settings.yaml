@@ -25,6 +25,14 @@ payments:
             - replace-with-your-pubkey-in-hex
           event_kinds:
             - 9735 # Nip-57 Lightning Zap Receipts
+  # Recurring membership plans. Leave empty to keep the one-time admission fee above.
+  # The amount paid selects the plan, so every plan needs its own amount.
+  # - id: basic
+  #   description: Basic membership, paid every 30 days
+  #   amount: 1000000 # msats per period
+  #   intervalSeconds: 2592000
+  #   graceSeconds: 259200 # access lasts this long after a period ends unrenewed
+  subscriptionPlans: []
   # Applied only when the payments processor does not report an expiry of its own.
   # Without it such invoices can never be retired and stay pending forever.
   # Raise it if your processor issues invoices that stay payable for longer than

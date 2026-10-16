@@ -224,10 +224,31 @@ export interface FeeSchedules {
   publication: FeeSchedule[]
 }
 
+export interface SubscriptionPlanLimits {
+  /** Replaces limits.event.rateLimits for subscribers on this plan. */
+  rateLimits?: EventRateLimit[]
+  /** Replaces limits.event.retention.maxDays for subscribers on this plan. */
+  retentionMaxDays?: number
+}
+
+export interface SubscriptionPlan {
+  /** Unique, and never `grandfathered`, which is reserved. */
+  id: string
+  description?: string
+  /** Price of one period in msats. Unique across plans, since the amount paid selects the plan. */
+  amount: bigint
+  intervalSeconds: number
+  /** How long access lasts after a period ends without a renewal. */
+  graceSeconds: number
+  limits?: SubscriptionPlanLimits
+}
+
 export interface Payments {
   enabled: boolean
   processor: keyof PaymentsProcessors
   feeSchedules: FeeSchedules
+  /** Recurring membership plans. Empty keeps the one-time admission fee. */
+  subscriptionPlans?: SubscriptionPlan[]
   /** Fallback when the processor reports no expiry. A reported one always wins. */
   invoiceExpirySeconds?: number
 }
