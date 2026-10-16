@@ -16,13 +16,17 @@ jobs:
   deploy:
     # Concurrency lives on the job, not the workflow: a relay release
     # (v* tag) fails the if below and must not enter this deploy queue,
-    # where it could replace a queued website deploy.
+    # where it could replace a queued website deploy. Measured: the
+    # nostream@3.5.1 release run (38845857055) was cancelled with zero
+    # jobs at the workflow-level group, before the job if could skip it.
     concurrency:
       group: deploy-website
       cancel-in-progress: false
+    # workflow_dispatch ignores every on: filter — a manual run must not
+    # publish a non-main branch to production, so dispatch stays main-only.
     if: >-
       ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
-      github.event_name == 'workflow_dispatch' }}
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
     name: Build and deploy to Cloudflare Workers
     runs-on: ubuntu-latest
     # Deploy credentials live in this GitHub environment: CLOUDFLARE_API_TOKEN

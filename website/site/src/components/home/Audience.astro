@@ -1,13 +1,15 @@
 ---
+import InfoTip from '../InfoTip.astro'
+
 const audiences = [
   {
     code: 'PUB',
     title: 'Public relay operators',
     body: 'Serve the open network without getting flattened by it.',
     points: [
-      'Sliding-window rate limits with backoff hints clients can respect',
-      'Adaptive proof-of-work, event size and created_at limits',
-      'Horizontal workers with Redis fan-out',
+      { text: 'Handles floods of traffic without slowing everyone else down', tip: 'Sliding-window rate limits with backoff hints clients can respect' },
+      { text: 'Blocks spam before it lands, without turning people away', tip: 'Adaptive proof-of-work, event size and created_at limits' },
+      { text: 'Grows with your audience by adding more machines', tip: 'Horizontal workers with Redis fan-out' },
     ],
   },
   {
@@ -15,9 +17,9 @@ const audiences = [
     title: 'Paid relay operators',
     body: 'Turn a relay into a service. Admission fees settle over Lightning.',
     points: [
-      'ZEBEDEE, Nodeless, OpenNode, LNbits and LNURL processors',
-      'Admission checks and NIP-43 invite codes',
-      'Admission fee schedules with pubkey whitelists',
+      { text: 'Get paid the way you already do', tip: 'ZEBEDEE, Nodeless, OpenNode, LNbits and LNURL processors' },
+      { text: 'Invite-only groups and member checks, built in', tip: 'Admission checks and NIP-43 invite codes' },
+      { text: 'Set your own prices and member lists', tip: 'Admission fee schedules with pubkey whitelists' },
     ],
   },
   {
@@ -25,9 +27,9 @@ const audiences = [
     title: 'Self-hosters',
     body: 'A relay for you, your family or your community, on your own box.',
     points: [
-      'One command: nostream start, with Tor, I2P or nginx + certbot',
-      'Import and export events as JSON or JSONL',
-      'Restricted kinds, pubkey allow lists and NIP-42 auth',
+      { text: 'One command and you are running', tip: 'nostream start, with Tor, I2P or nginx + certbot' },
+      { text: 'Your posts stay yours — copy them out any time', tip: 'Import and export events as JSON or JSONL' },
+      { text: 'You decide who can post and who can read', tip: 'Restricted kinds, pubkey allow lists and NIP-42 auth' },
     ],
   },
 ]
@@ -58,7 +60,10 @@ const audiences = [
             <p>{a.body}</p>
             <ul>
               {a.points.map((p) => (
-                <li>{p}</li>
+                <li>
+                  {p.text}
+                  <InfoTip detail={p.tip} label={a.title} />
+                </li>
               ))}
             </ul>
           </article>
@@ -72,6 +77,7 @@ const audiences = [
   .rail {
     position: relative;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 18px;
   }
 
