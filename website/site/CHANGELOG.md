@@ -1,5 +1,11 @@
 # nostream-website
 
+## 1.2.4
+
+### Patch Changes
+
+- [#837](https://github.com/cameri/nostream/pull/837) [`ee7e06b`](https://github.com/cameri/nostream/commit/ee7e06b72284f07aacfd427128e99eefaab9cf84) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Website deploy workflow fix: the deploy queue is job-scoped so relay releases can't displace a pending website deploy (measured: the nostream@3.5.1 release run was cancelled with zero jobs at the workflow-level concurrency group, before its job-level `if` could skip it). The checkout stays on the triggering `nostream-website@` tag, which the `website` environment's branch policy admits — the deployed build is exactly the released commit.
+
 ## 1.2.3
 
 ### Patch Changes
