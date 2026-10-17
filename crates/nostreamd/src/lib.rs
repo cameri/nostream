@@ -17,8 +17,9 @@
 //!   `dvm-orchestrator-worker-factory`
 //!
 //! Runtime decision (ADR `0001-runtime-and-telemetry.md`): a single acceptor task, no
-//! `SO_REUSEPORT` sharding — the capture's cluster fan-out (primary + `cpus().length`
-//! client workers all listening, IPC into each adapter) is the model Phase 2 decides
+//! `SO_REUSEPORT` sharding — the capture's cluster fan-out (a primary forking
+//! `cpus().length` client workers that each `listen()` the same port, IPC into each
+//! worker's own adapter; the primary itself never listens) is the model Phase 2 decides
 //! against. Phase 1 binds, accepts, drains on SIGINT/SIGTERM through
 //! `nostream_core::lifecycle::ShutdownState` and drops sockets with a debug line; the relay
 //! wire takes the socket in Phase 2.

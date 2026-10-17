@@ -67,16 +67,29 @@ pub fn load_document(path: &Path) -> Result<Value, ConfigError> {
 /// a read probe reports `Ok(None)` for an absent directory instead of materialising one —
 /// `nostreamd --check` runs this and must not write.
 pub fn load_user_settings(config_base_dir: &Path) -> Result<Option<Value>, ConfigError> {
-    // A path that exists but is not a directory (a file, a broken symlink) is a finding,
-    // not silence: the operator configured a location the daemon cannot read. Absence
-    // stays `Ok(None)`.
-    if config_base_dir.exists() && !config_base_dir.is_dir() {
-        return Err(ConfigError::NotADirectory {
-            path: config_base_dir.to_path_buf(),
-        });
-    }
-    if !config_base_dir.is_dir() {
-        return Ok(None);
+    // The probe is symlink-aware: `Path::exists` follows links, so a dangling link (or an
+    // unreadable parent — EACCES, ELOOP) would fall through to `Ok(None)` and `--check`
+    // would print a clean bill for a location the daemon cannot read. `symlink_metadata`
+    // does not follow the final component: an entry that cannot be stat-ed at all, link or
+    // not, is a finding; a stat-able non-directory (file, dangling link, fifo, …) is a
+    // finding; only true absence is `Ok(None)`.
+    match std::fs::symlink_metadata(config_base_dir) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => {
+            return Err(ConfigError::NotADirectory {
+                path: config_base_dir.to_path_buf(),
+            });
+        }
+        // Plain absence stays `Ok(None)` — the read-only probe contract. Any other stat
+        // failure (EACCES on a parent, ELOOP, ENOTDIR) is loud: the operator named a
+        // location the daemon cannot even inspect.
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(ConfigError::StatSettingsPath {
+                path: config_base_dir.to_path_buf(),
+                source,
+            });
+        }
     }
 
     let settings_file = config_base_dir.join("settings.yaml");

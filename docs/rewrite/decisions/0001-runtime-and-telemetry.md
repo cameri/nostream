@@ -7,11 +7,11 @@
 ## Context
 
 The Rust rewrite replaces a Node.js relay whose process model is **cluster-based**:
-`src/index.ts` boots `App` in the primary; `src/app/app.ts:102-125` forks
+`src/index.ts` boots `App` in the primary; `app.ts:103-120` forks
 `WORKER_COUNT`-else-`workers.count`-else-`cpus().length` client workers
-(`WORKER_TYPE=worker`), and `app.ts:127-155` forks the specialist workers — one
-maintenance, one static-mirroring per configured mirror, one relay-monitor when
-`nip66.enabled`, and `dvm.workers.length` DVM orchestrators. **Only `AppWorker` listens**:
+(`WORKER_TYPE=worker`), `app.ts:122-125` forks one maintenance worker, and
+`app.ts:127-155` forks the rest — one static-mirroring per configured mirror, one
+relay-monitor when `nip66.enabled`, and `dvm.workers.length` DVM orchestrators. **Only `AppWorker` listens**:
 `src/app/worker.ts:32` computes the port (`PORT` || `RELAY_PORT` || 8008) and `:33` calls
 `adapter.listen(port)`, so the capture runs one listener per client worker (the
 specialists never touch the adapter) — the OS queues the connections and each client

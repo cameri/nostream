@@ -218,3 +218,33 @@ fn a_config_path_that_is_a_file_is_a_finding_not_silence() {
     assert_eq!(outcome.issues.len(), 1);
     assert!(outcome.issues[0].to_string().contains("not a directory"));
 }
+
+#[test]
+fn a_dangling_config_symlink_is_a_finding_not_silence() {
+    // Round 4 item 1: `Path::exists` follows links, so a dangling `--config-dir` link used
+    // to fall through to `Ok(None)` and `--check` printed a clean bill.
+    let outer = TempDir::new().expect("tempdir");
+    let link = outer.path().join("dangling");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(outer.path().join("never-created"), &link)
+        .expect("create the dangling link");
+
+    let outcome = load(&paths(&link)).expect("the loader never refuses");
+    assert!(outcome.used_defaults);
+    assert_eq!(outcome.issues.len(), 1);
+    assert!(outcome.issues[0].to_string().contains("not a directory"));
+}
+
+#[test]
+fn a_config_dir_behind_an_unreadable_parent_is_a_finding() {
+    // A stat error on the path itself (here: a parent that is a file, EACCES/ENOTDIR on
+    // most systems) is a sibling finding, not silent absence.
+    let outer = TempDir::new().expect("tempdir");
+    let file_parent = outer.path().join("a-file");
+    std::fs::write(&file_parent, "x").expect("write");
+    let beneath = file_parent.join("settings");
+
+    let outcome = load(&paths(&beneath)).expect("the loader never refuses");
+    assert!(outcome.used_defaults);
+    assert_eq!(outcome.issues.len(), 1);
+}

@@ -60,9 +60,13 @@ impl std::fmt::Display for Backend {
 ///   only `create_dir_all` before mapping; the Phase-2 backend factory must refuse a remote
 ///   location before this slice is wired into settings.
 /// - **`NO_LOCK` requires self-managed concurrency; a broken lock file means
-///   synchronization issues and possible UB** — upheld by the code: no env flags are passed
-///   (`EnvOpenOptions::new()` only), so LMDB's own locking runs and the lock file is owned
-///   by LMDB, never touched by this crate.
+///   synchronization issues and possible UB** — split responsibility. The code guarantees
+///   its half: no env flags are passed (`EnvOpenOptions::new()` only), so `NO_LOCK` is
+///   never in play and this crate never reads, writes or removes the lock file. The
+///   operator must supply the rest: the data directory's lock file must not be broken
+///   (stale locks left by a crashed process on a filesystem without proper flock support,
+///   manual deletion, two processes on different hosts sharing a volume — LMDB cannot
+///   recover from any of those, per heed's contract).
 /// - **One `map_size` per path for the life of the process** — upheld by heed + propagated:
 ///   heed's per-process `OPENED_ENV` registry returns the same `Env` for a second open with
 ///   equal options and `Error::BadOpenOptions` when they differ, and `open` surfaces that

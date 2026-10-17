@@ -44,6 +44,15 @@ pub enum ConfigError {
     #[error("settings path {path} exists but is not a directory")]
     NotADirectory { path: std::path::PathBuf },
 
+    /// The configured settings location could not be stat-ed (unreadable parent, symlink
+    /// loop, permission denied) — treated as a finding, not as absence.
+    #[error("settings path {path} could not be inspected: {source}")]
+    StatSettingsPath {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     /// The defaults document is not a mapping.
     #[error("{path} does not contain a settings mapping")]
     NotAMapping { path: PathBuf },
