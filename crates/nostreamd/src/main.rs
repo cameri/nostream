@@ -62,6 +62,9 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
     let outcome =
         nostream_config::load(&paths).map_err(|error| DaemonError::Setup(error.to_string()))?;
     settings_gate::apply_settings_gate(&outcome, cli.check)?;
+    if cli.check {
+        return Ok(ExitCode::SUCCESS);
+    }
 
     telemetry::init(
         &outcome.settings,
