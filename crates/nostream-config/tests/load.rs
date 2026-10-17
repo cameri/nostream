@@ -5,9 +5,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use nostream_config::SettingsPaths;
 use nostream_config::load::{load, load_user_settings, merge};
 use nostream_config::path::get_by_path;
-use nostream_config::SettingsPaths;
 use serde_yaml::Value;
 use tempfile::TempDir;
 
@@ -62,8 +62,7 @@ fn a_yaml_override_is_deep_merged() {
     assert!(!outcome.used_defaults);
     assert_eq!(outcome.settings.info.name, "my-relay");
     assert_eq!(
-        outcome.settings.info.relay_url,
-        "wss://nostream.your-domain.com",
+        outcome.settings.info.relay_url, "wss://nostream.your-domain.com",
         "unmentioned fields keep their defaults"
     );
     assert_eq!(
@@ -106,7 +105,11 @@ fn a_broken_yaml_file_falls_back_with_an_issue() {
     assert!(outcome.used_defaults);
     assert_eq!(outcome.issues.len(), 1);
     assert_eq!(outcome.issues[0].path, "$");
-    assert!(outcome.issues[0].message.contains("failed to load user settings"));
+    assert!(
+        outcome.issues[0]
+            .message
+            .contains("failed to load user settings")
+    );
 }
 
 #[test]
@@ -134,7 +137,11 @@ fn yaml_takes_precedence_over_the_deprecated_json_file() {
         "settings.json",
         "{\"info\": {\"name\": \"legacy\"}}",
     );
-    write(config_dir.path(), "settings.yaml", "info:\n  name: current\n");
+    write(
+        config_dir.path(),
+        "settings.yaml",
+        "info:\n  name: current\n",
+    );
 
     let user = load_user_settings(config_dir.path())
         .expect("the file loads")
@@ -174,7 +181,10 @@ fn a_config_dir_override_wins_over_the_environment() {
     let config_dir = TempDir::new().expect("tempdir");
     let resolved = SettingsPaths::from_config_dir(Path::new("/srv/relay"), config_dir.path());
     assert_eq!(resolved.config_base_dir, config_dir.path());
-    assert_eq!(resolved.settings_file, config_dir.path().join("settings.yaml"));
+    assert_eq!(
+        resolved.settings_file,
+        config_dir.path().join("settings.yaml")
+    );
     assert_eq!(
         resolved.legacy_settings_file,
         config_dir.path().join("settings.json")

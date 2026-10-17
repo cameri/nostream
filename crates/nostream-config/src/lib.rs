@@ -33,7 +33,7 @@ pub mod value;
 
 pub use error::ConfigError;
 pub use issue::Issue;
-pub use load::{load, load_defaults, load_user_settings, merge, LoadOutcome};
+pub use load::{LoadOutcome, load, load_defaults, load_user_settings, merge};
 pub use paths::SettingsPaths;
 pub use settings::Settings;
 pub use validate::{validate, validate_document};

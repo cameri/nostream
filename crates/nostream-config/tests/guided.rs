@@ -21,8 +21,8 @@ fn exports_guided_categories_for_admin_and_cli_use() {
 
 #[test]
 fn looks_up_a_field_by_category_and_path() {
-    let field = get_guided_setting_field("limits", "limits.rateLimiter.strategy")
-        .expect("strategy field");
+    let field =
+        get_guided_setting_field("limits", "limits.rateLimiter.strategy").expect("strategy field");
     assert_eq!(field.field_type, GuidedSettingFieldType::Select);
     assert_eq!(field.options, vec!["ewma", "sliding_window"]);
 }
@@ -52,12 +52,18 @@ fn validates_guided_numeric_fields() {
         require_safe_non_negative_integer_setting_value("bad"),
         Some("Value must be a non-negative integer")
     );
-    assert_eq!(require_safe_non_negative_integer_setting_value("2048"), None);
+    assert_eq!(
+        require_safe_non_negative_integer_setting_value("2048"),
+        None
+    );
     assert_eq!(
         require_safe_non_negative_integer_setting_value("9007199254740992"),
         Some("Value must be a safe integer")
     );
-    assert_eq!(require_non_empty_setting_value(" "), Some("Value is required"));
+    assert_eq!(
+        require_non_empty_setting_value(" "),
+        Some("Value is required")
+    );
     assert_eq!(require_non_empty_setting_value("relay.example.com"), None);
 }
 
@@ -71,7 +77,10 @@ fn validators_are_reachable_from_the_field() {
         Some("Value must be a non-negative integer")
     );
     assert_eq!(validator.validate("524288"), None);
-    assert_eq!(GuidedSettingValidator::NonEmpty.validate("  "), Some("Value is required"));
+    assert_eq!(
+        GuidedSettingValidator::NonEmpty.validate("  "),
+        Some("Value is required")
+    );
 }
 
 #[test]

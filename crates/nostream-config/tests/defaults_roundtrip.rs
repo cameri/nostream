@@ -22,7 +22,11 @@ fn defaults() -> Value {
 fn the_shipped_defaults_validate_with_no_issues() {
     let defaults = defaults();
     let issues = validate_document(&defaults, &defaults);
-    assert_eq!(issues, Vec::new(), "the shipped defaults must validate clean");
+    assert_eq!(
+        issues,
+        Vec::new(),
+        "the shipped defaults must validate clean"
+    );
 }
 
 #[test]

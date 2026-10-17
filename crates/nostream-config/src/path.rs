@@ -253,7 +253,10 @@ fn path_exists_in_schema(schema: &Value, tokens: &[PathToken]) -> bool {
 }
 
 /// Checks a path against the defaults document used as schema.
-pub fn validate_path_against_defaults(defaults: &Value, path: &str) -> Result<Vec<Issue>, PathError> {
+pub fn validate_path_against_defaults(
+    defaults: &Value,
+    path: &str,
+) -> Result<Vec<Issue>, PathError> {
     let tokens = parse_path(path)?;
     if path_exists_in_schema(defaults, &tokens) {
         return Ok(Vec::new());

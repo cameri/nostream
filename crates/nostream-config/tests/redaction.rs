@@ -37,7 +37,8 @@ fn redacts_password_hashes_and_nested_secrets() {
 
 #[test]
 fn leaves_empty_secret_values_unchanged() {
-    let input = document("mirroring:\n  static:\n    - address: wss://mirror.example\n      secret: ''\n");
+    let input =
+        document("mirroring:\n  static:\n    - address: wss://mirror.example\n      secret: ''\n");
     let redacted = redact_settings_secrets(&input);
     assert_eq!(
         get_by_path(&redacted, "mirroring.static[0].secret")
@@ -53,7 +54,9 @@ fn identifies_sensitive_and_write_protected_paths() {
     assert!(is_sensitive_settings_path("mirroring.static[0].secret"));
     assert!(!is_sensitive_settings_path("payments.enabled"));
     assert!(is_write_protected_settings_path("admin.passwordHash"));
-    assert!(!is_write_protected_settings_path("mirroring.static[0].secret"));
+    assert!(!is_write_protected_settings_path(
+        "mirroring.static[0].secret"
+    ));
 }
 
 #[test]

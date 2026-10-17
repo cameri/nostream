@@ -17,7 +17,13 @@ pub struct HttpAuth {
 ///
 /// Phase 1 stub — job 005; will verify the event, the URL/method tags and the replay window;
 /// see `src/utils/nip98.ts`.
-pub fn verify(_header: &str, _url: &str, _method: &str, _body: &[u8], _max_skew_seconds: i64) -> Result<HttpAuth, CoreError> {
+pub fn verify(
+    _header: &str,
+    _url: &str,
+    _method: &str,
+    _body: &[u8],
+    _max_skew_seconds: i64,
+) -> Result<HttpAuth, CoreError> {
     Err(CoreError::NotImplemented {
         module: "core::nip98::verify",
     })

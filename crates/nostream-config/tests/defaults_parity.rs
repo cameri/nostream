@@ -19,7 +19,7 @@ fn defaults() -> Value {
 fn value(document: &Value, path: &str) -> Value {
     get_by_path(document, path)
         .expect("the path parses")
-        .unwrap_or_else(|| panic!("{path} exists")) 
+        .unwrap_or_else(|| panic!("{path} exists"))
         .clone()
 }
 
@@ -42,7 +42,11 @@ fn nip43_defaults_are_the_capture_mint_defaults() {
     assert_value(&defaults, "nip43.inviteCodeExpirySeconds", number(600));
     assert_value(&defaults, "nip43.defaultMaxUses", number(1));
     assert_value(&defaults, "nip43.allowInviteRequests", boolean(false));
-    assert_value(&defaults, "nip43.inviteRequestWhitelist", Value::Sequence(vec![]));
+    assert_value(
+        &defaults,
+        "nip43.inviteRequestWhitelist",
+        Value::Sequence(vec![]),
+    );
 }
 
 #[test]
@@ -55,7 +59,11 @@ fn nip43_invite_rate_limit_is_per_pubkey() {
         panic!("limits.invite.rateLimits is a sequence");
     };
     assert_eq!(entries.len(), 1);
-    assert_value(&defaults, "limits.invite.rateLimits[0].period", number(3_600_000));
+    assert_value(
+        &defaults,
+        "limits.invite.rateLimits[0].period",
+        number(3_600_000),
+    );
     assert_value(&defaults, "limits.invite.rateLimits[0].rate", number(5));
 }
 
@@ -96,7 +104,11 @@ fn wot_defaults_are_disabled() {
 fn nip56_defaults_are_disabled() {
     let defaults = defaults();
     assert_value(&defaults, "nip56.enabled", boolean(false));
-    assert_value(&defaults, "nip56.trustedModerators", Value::Sequence(vec![]));
+    assert_value(
+        &defaults,
+        "nip56.trustedModerators",
+        Value::Sequence(vec![]),
+    );
 }
 
 #[test]
@@ -134,12 +146,17 @@ fn a_nip66_user_block_overrides_only_what_it_names() {
 #[test]
 fn a_wot_user_block_keeps_unmentioned_fields() {
     let defaults = defaults();
-    let user: Value =
-        serde_yaml::from_str("wot:\n  enabled: true\n  seedPubkey: abc123\n  minimumFollowers: 3\n")
-            .expect("user document parses");
+    let user: Value = serde_yaml::from_str(
+        "wot:\n  enabled: true\n  seedPubkey: abc123\n  minimumFollowers: 3\n",
+    )
+    .expect("user document parses");
     let merged = merge(&defaults, &user);
     assert_value(&merged, "wot.enabled", boolean(true));
-    assert_value(&merged, "wot.seedPubkey", Value::String("abc123".to_owned()));
+    assert_value(
+        &merged,
+        "wot.seedPubkey",
+        Value::String("abc123".to_owned()),
+    );
     assert_value(&merged, "wot.minimumFollowers", number(3));
     assert_value(&merged, "wot.refreshIntervalHours", number(24));
 }

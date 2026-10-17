@@ -14,7 +14,10 @@ pub enum ReportWeight {
 /// Scores a reporter against the relay's trust graph.
 ///
 /// Phase 1 stub — job 005; will score a kind-1984 report by WoT distance; see `src/utils/report-scoring.ts`.
-pub fn score_reporter(_distance: Option<u32>, _is_trusted_moderator: bool) -> Result<ReportWeight, crate::error::CoreError> {
+pub fn score_reporter(
+    _distance: Option<u32>,
+    _is_trusted_moderator: bool,
+) -> Result<ReportWeight, crate::error::CoreError> {
     Err(crate::error::CoreError::NotImplemented {
         module: "core::report_scoring::score_reporter",
     })

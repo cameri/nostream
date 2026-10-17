@@ -18,7 +18,9 @@ pub fn truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(boolean) => *boolean,
-        Value::Number(number) => number.as_f64().is_some_and(|float| float != 0.0 && !float.is_nan()),
+        Value::Number(number) => number
+            .as_f64()
+            .is_some_and(|float| float != 0.0 && !float.is_nan()),
         Value::String(string) => !string.is_empty(),
         Value::Sequence(_) | Value::Mapping(_) | Value::Tagged(_) => true,
     }
@@ -65,12 +67,16 @@ pub fn to_number(value: &Value) -> Option<f64> {
 
 /// `value >= bound`, with `undefined` and non-numeric values comparing false.
 pub fn number_ge(value: Option<&Value>, bound: f64) -> bool {
-    value.and_then(to_number).is_some_and(|number| number >= bound)
+    value
+        .and_then(to_number)
+        .is_some_and(|number| number >= bound)
 }
 
 /// `value <= bound`, with `undefined` and non-numeric values comparing false.
 pub fn number_le(value: Option<&Value>, bound: f64) -> bool {
-    value.and_then(to_number).is_some_and(|number| number <= bound)
+    value
+        .and_then(to_number)
+        .is_some_and(|number| number <= bound)
 }
 
 /// `left >= right`, with either side missing or non-numeric comparing false.
@@ -91,7 +97,9 @@ pub fn compare_le(left: Option<&Value>, right: Option<&Value>) -> bool {
 
 /// `value < bound`.
 pub fn number_lt(value: Option<&Value>, bound: f64) -> bool {
-    value.and_then(to_number).is_some_and(|number| number < bound)
+    value
+        .and_then(to_number)
+        .is_some_and(|number| number < bound)
 }
 
 /// A property read (`value.name`); `None` means `undefined`.

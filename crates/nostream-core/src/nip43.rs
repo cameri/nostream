@@ -16,7 +16,11 @@ pub struct InviteCode {
 /// Mints a kind-28935 invite code for an authenticated requester.
 ///
 /// Phase 1 stub — job 005; will mint and persist an invite code; see `src/utils/nip43-invites.ts`.
-pub fn mint_invite(_requester: &Pubkey, _max_uses: u32, _expiry_seconds: u64) -> Result<Event, CoreError> {
+pub fn mint_invite(
+    _requester: &Pubkey,
+    _max_uses: u32,
+    _expiry_seconds: u64,
+) -> Result<Event, CoreError> {
     Err(CoreError::NotImplemented {
         module: "core::nip43::mint_invite",
     })

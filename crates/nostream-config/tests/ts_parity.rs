@@ -100,7 +100,9 @@ fn delete_by_path(document: &Value, path: &str) -> Value {
     for token in &tokens[..tokens.len() - 1] {
         current = match token {
             PathToken::Key(key) => match current {
-                Value::Mapping(mapping) => mapping.get_mut(key.as_str()).expect("parent key exists"),
+                Value::Mapping(mapping) => {
+                    mapping.get_mut(key.as_str()).expect("parent key exists")
+                }
                 _ => panic!("parent of {path} is not a mapping"),
             },
             PathToken::Index(index) => match current {
@@ -131,7 +133,10 @@ fn apply_case(case: &Case, defaults: &Value) -> Vec<IssueDto> {
             "set" => set_by_path(
                 &document,
                 &mutation.path,
-                mutation.value.clone().expect("a set mutation carries a value"),
+                mutation
+                    .value
+                    .clone()
+                    .expect("a set mutation carries a value"),
             )
             .expect("set mutation applies"),
             "delete" => delete_by_path(&document, &mutation.path),
@@ -191,7 +196,13 @@ fn fixture_metadata_names_the_capture() {
     assert_eq!(fixture.deferred.diff, "+212/-0");
     assert_eq!(fixture.deferred.files.len(), 5);
     assert!(!fixture.subject.generated.is_empty());
-    assert!(fixture.subject.files.iter().any(|file| file == "src/utils/settings-config.ts"));
+    assert!(
+        fixture
+            .subject
+            .files
+            .iter()
+            .any(|file| file == "src/utils/settings-config.ts")
+    );
 }
 
 #[test]
@@ -202,7 +213,11 @@ fn case_names_are_unique() {
         .iter()
         .map(|case| case.name.as_str())
         .collect::<BTreeSet<_>>();
-    assert_eq!(names.len(), fixture.cases.len(), "duplicate case names in the fixture");
+    assert_eq!(
+        names.len(),
+        fixture.cases.len(),
+        "duplicate case names in the fixture"
+    );
 }
 
 #[test]
@@ -276,10 +291,16 @@ fn the_only_exempt_path_is_event_store_backend() {
 
     for case in &fixture.cases {
         if case.rust_exempt_paths.is_empty() {
-            assert!(case.exempt_reason.is_none(), "`{}` has a reason but no exemption", case.name);
+            assert!(
+                case.exempt_reason.is_none(),
+                "`{}` has a reason but no exemption",
+                case.name
+            );
         } else {
             assert!(
-                case.exempt_reason.as_deref().is_some_and(|reason| !reason.is_empty()),
+                case.exempt_reason
+                    .as_deref()
+                    .is_some_and(|reason| !reason.is_empty()),
                 "`{}` exempts a path without recording why",
                 case.name
             );

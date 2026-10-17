@@ -47,7 +47,10 @@ pub struct OperatorNotificationEventToggles {
         skip_serializing_if = "Option::is_none"
     )]
     pub admission_invoice_created: Option<bool>,
-    #[serde(rename = "admission.invoice.paid", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "admission.invoice.paid",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub admission_invoice_paid: Option<bool>,
     #[serde(
         rename = "admission.invoice.failed",
@@ -232,7 +235,9 @@ fn merge_target_secrets(
     if is_redacted_secret(incoming.bot_token.as_deref()) {
         merged.bot_token = existing.and_then(|target| target.bot_token.clone());
     } else if incoming.bot_token.is_none()
-        && existing.and_then(|target| target.bot_token.clone()).is_some()
+        && existing
+            .and_then(|target| target.bot_token.clone())
+            .is_some()
     {
         merged.bot_token = existing.and_then(|target| target.bot_token.clone());
     }

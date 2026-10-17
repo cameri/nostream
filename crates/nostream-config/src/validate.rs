@@ -47,7 +47,8 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
     }
 
     let strategy = key_path(candidate, &["limits", "rateLimiter", "strategy"]);
-    if truthy_opt(strategy) && !matches!(strategy, Some(Value::String(name)) if name == "ewma" || name == "sliding_window")
+    if truthy_opt(strategy)
+        && !matches!(strategy, Some(Value::String(name)) if name == "ewma" || name == "sliding_window")
     {
         issues.push(Issue::new(
             "limits.rateLimiter.strategy",
@@ -126,17 +127,41 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
     }
 
     if let Some(limits) = key(candidate, "limits") {
-        validate_rate_limit_periods(key_path(limits, &["event", "rateLimits"]), "limits.event.rateLimits", &mut issues);
-        validate_rate_limit_periods(key_path(limits, &["message", "rateLimits"]), "limits.message.rateLimits", &mut issues);
-        validate_rate_limit_periods(key_path(limits, &["connection", "rateLimits"]), "limits.connection.rateLimits", &mut issues);
-        validate_rate_limit_periods(key_path(limits, &["invoice", "rateLimits"]), "limits.invoice.rateLimits", &mut issues);
+        validate_rate_limit_periods(
+            key_path(limits, &["event", "rateLimits"]),
+            "limits.event.rateLimits",
+            &mut issues,
+        );
+        validate_rate_limit_periods(
+            key_path(limits, &["message", "rateLimits"]),
+            "limits.message.rateLimits",
+            &mut issues,
+        );
+        validate_rate_limit_periods(
+            key_path(limits, &["connection", "rateLimits"]),
+            "limits.connection.rateLimits",
+            &mut issues,
+        );
+        validate_rate_limit_periods(
+            key_path(limits, &["invoice", "rateLimits"]),
+            "limits.invoice.rateLimits",
+            &mut issues,
+        );
         validate_rate_limit_periods(
             key_path(limits, &["admissionCheck", "rateLimits"]),
             "limits.admissionCheck.rateLimits",
             &mut issues,
         );
-        validate_rate_limit_periods(key_path(limits, &["invite", "rateLimits"]), "limits.invite.rateLimits", &mut issues);
-        validate_rate_limit_periods(key_path(limits, &["admin", "rateLimits"]), "limits.admin.rateLimits", &mut issues);
+        validate_rate_limit_periods(
+            key_path(limits, &["invite", "rateLimits"]),
+            "limits.invite.rateLimits",
+            &mut issues,
+        );
+        validate_rate_limit_periods(
+            key_path(limits, &["admin", "rateLimits"]),
+            "limits.admin.rateLimits",
+            &mut issues,
+        );
         validate_rate_limit_periods(
             key_path(limits, &["admin", "loginRateLimits"]),
             "limits.admin.loginRateLimits",
@@ -158,7 +183,11 @@ fn is_event_store_backend(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::String(name)) if EventStoreBackend::parse(name).is_some())
 }
 
-fn validate_rate_limit_periods(rate_limits: Option<&Value>, path_prefix: &str, issues: &mut Vec<Issue>) {
+fn validate_rate_limit_periods(
+    rate_limits: Option<&Value>,
+    path_prefix: &str,
+    issues: &mut Vec<Issue>,
+) {
     let Some(Value::Sequence(entries)) = rate_limits else {
         return;
     };
@@ -218,7 +247,12 @@ fn validate_shape(
                     let mut local_issues = Vec::new();
                     let mut local_path = path.clone();
                     local_path.push(PathToken::Index(index));
-                    validate_shape(schema_entry, Some(entry), &mut local_path, &mut local_issues);
+                    validate_shape(
+                        schema_entry,
+                        Some(entry),
+                        &mut local_path,
+                        &mut local_issues,
+                    );
                     local_issues.is_empty()
                 });
 
@@ -251,7 +285,10 @@ fn validate_shape(
                 if !schema_mapping.contains_key(key) {
                     let mut issue_path = path.clone();
                     issue_path.push(PathToken::Key(key.to_owned()));
-                    issues.push(Issue::new(format_path_tokens(&issue_path), "Unknown setting key"));
+                    issues.push(Issue::new(
+                        format_path_tokens(&issue_path),
+                        "Unknown setting key",
+                    ));
                 }
             }
 
@@ -275,7 +312,11 @@ fn validate_shape(
             if !matches!(schema, Value::Null) && js_typeof(schema) != js_typeof(candidate) {
                 issues.push(Issue::new(
                     rendered,
-                    format!("Expected {}, got {}", js_typeof(schema), js_typeof(candidate)),
+                    format!(
+                        "Expected {}, got {}",
+                        js_typeof(schema),
+                        js_typeof(candidate)
+                    ),
                 ));
             }
         }
@@ -341,7 +382,10 @@ fn validate_admin_notifications(candidate: &Value) -> Vec<Issue> {
         match key(target, "id") {
             Some(Value::String(id)) if !id.trim().is_empty() => {
                 if target_ids.iter().any(|existing| existing == id) {
-                    issues.push(Issue::new(format!("{prefix}.id"), "target id must be unique"));
+                    issues.push(Issue::new(
+                        format!("{prefix}.id"),
+                        "target id must be unique",
+                    ));
                 } else {
                     target_ids.push(id.clone());
                 }
@@ -367,7 +411,10 @@ fn validate_admin_notifications(candidate: &Value) -> Vec<Issue> {
         if let Some(enabled) = key(target, "enabled")
             && !matches!(enabled, Value::Bool(_))
         {
-            issues.push(Issue::new(format!("{prefix}.enabled"), "enabled must be a boolean"));
+            issues.push(Issue::new(
+                format!("{prefix}.enabled"),
+                "enabled must be a boolean",
+            ));
         }
 
         match target_type {
@@ -393,9 +440,10 @@ fn validate_admin_notifications(candidate: &Value) -> Vec<Issue> {
                             format!("{prefix}.url"),
                             "url must use http or https",
                         )),
-                        UrlCheck::Invalid => {
-                            issues.push(Issue::new(format!("{prefix}.url"), "url must be a valid URL"))
-                        }
+                        UrlCheck::Invalid => issues.push(Issue::new(
+                            format!("{prefix}.url"),
+                            "url must be a valid URL",
+                        )),
                     }
                 }
                 _ => issues.push(Issue::new(
@@ -443,10 +491,7 @@ fn check_webhook_url(raw: &str) -> UrlCheck {
     let Some(authority) = trimmed[colon + 1..].strip_prefix("//") else {
         return UrlCheck::Invalid;
     };
-    let host = authority
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or_default();
+    let host = authority.split(['/', '?', '#']).next().unwrap_or_default();
     if host.is_empty() {
         return UrlCheck::Invalid;
     }

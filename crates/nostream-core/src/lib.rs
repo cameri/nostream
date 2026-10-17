@@ -63,5 +63,5 @@ pub use event::{Event, EventId, Kind, KindSelector, Pubkey};
 pub use event_store::EventStoreBackend;
 pub use filter::Filter;
 pub use lifecycle::ShutdownState;
-pub use secret::Secret;
 pub use messages::{ClientMessage, RelayMessage};
+pub use secret::Secret;

@@ -29,7 +29,9 @@ impl EventStoreBackend {
 
     /// Parses a settings value. A non-string or unknown value is `None`.
     pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|backend| backend.as_str() == value)
+        Self::ALL
+            .into_iter()
+            .find(|backend| backend.as_str() == value)
     }
 }
 

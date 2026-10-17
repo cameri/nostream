@@ -61,7 +61,8 @@ fn basic_required_fields_are_reported() {
 
 #[test]
 fn rejects_a_non_positive_period_on_limits_event_rate_limits() {
-    let document = patched("limits:\n  event:\n    rateLimits:\n      - period: 0\n        rate: 1\n");
+    let document =
+        patched("limits:\n  event:\n    rateLimits:\n      - period: 0\n        rate: 1\n");
     assert_eq!(
         paths(&document),
         vec!["limits.event.rateLimits[0].period".to_owned()]
@@ -100,8 +101,9 @@ fn rejects_a_non_positive_period_on_limits_invoice_rate_limits() {
 
 #[test]
 fn rejects_a_non_positive_period_on_limits_admission_check_rate_limits() {
-    let document =
-        patched("limits:\n  admissionCheck:\n    rateLimits:\n      - period: 0\n        rate: 1\n");
+    let document = patched(
+        "limits:\n  admissionCheck:\n    rateLimits:\n      - period: 0\n        rate: 1\n",
+    );
     assert_eq!(
         paths(&document),
         vec!["limits.admissionCheck.rateLimits[0].period".to_owned()]
@@ -110,7 +112,8 @@ fn rejects_a_non_positive_period_on_limits_admission_check_rate_limits() {
 
 #[test]
 fn rejects_a_non_positive_period_on_limits_invite_rate_limits() {
-    let document = patched("limits:\n  invite:\n    rateLimits:\n      - period: 0\n        rate: 1\n");
+    let document =
+        patched("limits:\n  invite:\n    rateLimits:\n      - period: 0\n        rate: 1\n");
     assert_eq!(
         paths(&document),
         vec!["limits.invite.rateLimits[0].period".to_owned()]
@@ -119,7 +122,8 @@ fn rejects_a_non_positive_period_on_limits_invite_rate_limits() {
 
 #[test]
 fn rejects_a_non_positive_period_on_limits_admin_rate_limits() {
-    let document = patched("limits:\n  admin:\n    rateLimits:\n      - period: 0\n        rate: 1\n");
+    let document =
+        patched("limits:\n  admin:\n    rateLimits:\n      - period: 0\n        rate: 1\n");
     assert_eq!(
         paths(&document),
         vec!["limits.admin.rateLimits[0].period".to_owned()]
@@ -147,9 +151,15 @@ fn accepts_a_positive_period() {
 fn rejects_a_null_entry_in_a_rate_limit_array_without_throwing() {
     let document = patched("limits:\n  event:\n    rateLimits:\n      - null\n");
     let reported = issues(&document);
-    assert!(reported.contains(&"limits.event.rateLimits[0]: rateLimits entry must be an object".to_owned()));
     assert!(
-        reported.contains(&"limits.event.rateLimits[0]: Array element does not match expected schema shape".to_owned()),
+        reported
+            .contains(&"limits.event.rateLimits[0]: rateLimits entry must be an object".to_owned())
+    );
+    assert!(
+        reported.contains(
+            &"limits.event.rateLimits[0]: Array element does not match expected schema shape"
+                .to_owned()
+        ),
         "the shape walk also rejects the entry, as the capture's does"
     );
 }
@@ -158,9 +168,15 @@ fn rejects_a_null_entry_in_a_rate_limit_array_without_throwing() {
 fn rejects_a_scalar_entry_in_a_rate_limit_array() {
     let document = patched("limits:\n  event:\n    rateLimits:\n      - 42\n");
     let reported = issues(&document);
-    assert!(reported.contains(&"limits.event.rateLimits[0]: rateLimits entry must be an object".to_owned()));
     assert!(
-        reported.contains(&"limits.event.rateLimits[0]: Array element does not match expected schema shape".to_owned())
+        reported
+            .contains(&"limits.event.rateLimits[0]: rateLimits entry must be an object".to_owned())
+    );
+    assert!(
+        reported.contains(
+            &"limits.event.rateLimits[0]: Array element does not match expected schema shape"
+                .to_owned()
+        )
     );
 }
 
@@ -371,7 +387,10 @@ fn rejects_an_unknown_top_level_key() {
 #[test]
 fn rejects_an_unknown_nested_key() {
     let document = patched("info:\n  unknownKey: 1\n");
-    assert_eq!(issues(&document), vec!["info.unknownKey: Unknown setting key"]);
+    assert_eq!(
+        issues(&document),
+        vec!["info.unknownKey: Unknown setting key"]
+    );
 }
 
 #[test]
@@ -458,7 +477,9 @@ fn rejects_a_retention_below_one_day() {
     let document = notifications("    deliveryLogRetentionDays: 0\n");
     assert_eq!(
         issues(&document),
-        vec!["admin.notifications.deliveryLogRetentionDays: deliveryLogRetentionDays must be at least 1"]
+        vec![
+            "admin.notifications.deliveryLogRetentionDays: deliveryLogRetentionDays must be at least 1"
+        ]
     );
 }
 
@@ -485,7 +506,8 @@ fn rejects_a_target_that_is_not_an_object() {
 
 #[test]
 fn rejects_a_target_without_an_id() {
-    let document = notifications("    targets:\n      - type: http\n        url: https://a.example\n");
+    let document =
+        notifications("    targets:\n      - type: http\n        url: https://a.example\n");
     assert_eq!(
         issues(&document),
         vec!["admin.notifications.targets[0].id: target id is required"]
@@ -514,8 +536,9 @@ fn rejects_an_unknown_target_type() {
 
 #[test]
 fn rejects_a_non_boolean_enabled_flag() {
-    let document =
-        notifications("    targets:\n      - id: a\n        type: telegram\n        enabled: yes-please\n        botToken: t\n        chatId: c\n");
+    let document = notifications(
+        "    targets:\n      - id: a\n        type: telegram\n        enabled: yes-please\n        botToken: t\n        chatId: c\n",
+    );
     assert_eq!(
         issues(&document),
         vec!["admin.notifications.targets[0].enabled: enabled must be a boolean"]
@@ -556,8 +579,9 @@ fn rejects_a_webhook_url_with_a_non_http_protocol() {
 
 #[test]
 fn rejects_a_url_that_does_not_parse() {
-    let document =
-        notifications("    targets:\n      - id: w1\n        type: slack\n        url: not a url\n");
+    let document = notifications(
+        "    targets:\n      - id: w1\n        type: slack\n        url: not a url\n",
+    );
     assert_eq!(
         issues(&document),
         vec!["admin.notifications.targets[0].url: url must be a valid URL"]
@@ -579,15 +603,21 @@ fn merge_deep_right_replaces_arrays_and_null() {
     let user: Value = serde_yaml::from_str("a:\n  list:\n    - 9\n  keep: null\n").expect("doc");
     let merged = merge_deep_right(&defaults, &user);
     assert_eq!(
-        nostream_config::path::get_by_path(&merged, "a.list").expect("path").cloned(),
+        nostream_config::path::get_by_path(&merged, "a.list")
+            .expect("path")
+            .cloned(),
         Some(serde_yaml::from_str::<Value>("[9]").expect("seq"))
     );
     assert_eq!(
-        nostream_config::path::get_by_path(&merged, "a.keep").expect("path").cloned(),
+        nostream_config::path::get_by_path(&merged, "a.keep")
+            .expect("path")
+            .cloned(),
         Some(Value::Null)
     );
     assert_eq!(
-        nostream_config::path::get_by_path(&merged, "a.b").expect("path").cloned(),
+        nostream_config::path::get_by_path(&merged, "a.b")
+            .expect("path")
+            .cloned(),
         Some(Value::Number(1.into()))
     );
 }

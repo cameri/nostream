@@ -41,7 +41,10 @@ pub fn load_document(path: &Path) -> Result<Value, ConfigError> {
         path: path.to_path_buf(),
         source,
     })?;
-    if path.extension().is_some_and(|extension| extension == "json") {
+    if path
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
         let document: Value =
             serde_json::from_str(&raw).map_err(|source| ConfigError::ParseJson {
                 path: path.to_path_buf(),

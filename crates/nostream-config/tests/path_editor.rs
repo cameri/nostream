@@ -3,7 +3,7 @@
 use std::fs;
 
 use nostream_config::path::{
-    PathError, ParsedValue, get_by_path, parse_path, parse_typed_json, parse_value, set_by_path,
+    ParsedValue, PathError, get_by_path, parse_path, parse_typed_json, parse_value, set_by_path,
     validate_path_against_defaults,
 };
 use serde_yaml::Value;
@@ -24,7 +24,10 @@ fn parses_primitive_values() {
     assert_eq!(parse_value("42"), ParsedValue::Number(42));
     assert_eq!(parse_value("42n"), ParsedValue::BigInt("42".to_owned()));
     assert_eq!(parse_value("null"), ParsedValue::Null);
-    assert_eq!(parse_value("hello"), ParsedValue::String("hello".to_owned()));
+    assert_eq!(
+        parse_value("hello"),
+        ParsedValue::String("hello".to_owned())
+    );
 }
 
 #[test]
@@ -59,15 +62,17 @@ fn sets_and_gets_dot_path_values() {
         get_by_path(&updated, "payments.enabled").expect("get"),
         Some(&Value::Bool(true))
     );
-    assert_eq!(get_by_path(&updated, "payments.processor").expect("get"), None);
+    assert_eq!(
+        get_by_path(&updated, "payments.processor").expect("get"),
+        None
+    );
 }
 
 #[test]
 fn supports_indexed_path_syntax() {
-    let document: Value = serde_yaml::from_str(
-        "limits:\n  event:\n    content:\n      - maxLength: 100\n",
-    )
-    .expect("doc");
+    let document: Value =
+        serde_yaml::from_str("limits:\n  event:\n    content:\n      - maxLength: 100\n")
+            .expect("doc");
     let updated = set_by_path(
         &document,
         "limits.event.content[0].maxLength",
@@ -92,7 +97,11 @@ fn rejects_malformed_path_syntax() {
 #[test]
 fn rejects_reserved_prototype_keys() {
     let document: Value = serde_yaml::from_str("payments:\n  enabled: false\n").expect("doc");
-    for path in ["__proto__.enabled", "constructor.enabled", "prototype.enabled"] {
+    for path in [
+        "__proto__.enabled",
+        "constructor.enabled",
+        "prototype.enabled",
+    ] {
         let key = path.split('.').next().expect("key");
         assert_eq!(
             set_by_path(&document, path, Value::Bool(true)),
@@ -188,7 +197,13 @@ fn a_key_followed_by_an_index_becomes_an_array() {
 #[test]
 fn reading_a_missing_path_is_none() {
     let document: Value = serde_yaml::from_str("info:\n  name: relay\n").expect("doc");
-    assert_eq!(get_by_path(&document, "info.relay_url").expect("path"), None);
-    assert_eq!(get_by_path(&document, "network.maxPayloadSize").expect("path"), None);
+    assert_eq!(
+        get_by_path(&document, "info.relay_url").expect("path"),
+        None
+    );
+    assert_eq!(
+        get_by_path(&document, "network.maxPayloadSize").expect("path"),
+        None
+    );
     assert_eq!(get_by_path(&document, "info[0]").expect("path"), None);
 }

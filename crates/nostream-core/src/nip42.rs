@@ -15,7 +15,11 @@ pub struct AuthState {
 /// Checks that a kind-22242 event answers this challenge and is signed by its author.
 ///
 /// Phase 1 stub — job 005; will verify the challenge tag, relay tag and signature; see `src/utils/nip42.ts`.
-pub fn authenticate(_event: &Event, _challenge: &str, _relay_url: &str) -> Result<Pubkey, CoreError> {
+pub fn authenticate(
+    _event: &Event,
+    _challenge: &str,
+    _relay_url: &str,
+) -> Result<Pubkey, CoreError> {
     Err(CoreError::NotImplemented {
         module: "core::nip42::authenticate",
     })

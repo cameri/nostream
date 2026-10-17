@@ -153,7 +153,12 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
             "relay-info",
             "Relay Info",
             vec![
-                validated_text("Relay URL", "info.relay_url", "wss://relay.example.com", NonEmpty),
+                validated_text(
+                    "Relay URL",
+                    "info.relay_url",
+                    "wss://relay.example.com",
+                    NonEmpty,
+                ),
                 validated_text("Relay name", "info.name", "relay.example.com", NonEmpty),
                 text(
                     "Description",
@@ -161,7 +166,11 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                     "A nostr relay written in Typescript.",
                 ),
                 text("Contact", "info.contact", "mailto:operator@your-domain.com"),
-                text("Relay pubkey (hex)", "info.pubkey", "replace-with-your-pubkey-in-hex"),
+                text(
+                    "Relay pubkey (hex)",
+                    "info.pubkey",
+                    "replace-with-your-pubkey-in-hex",
+                ),
             ],
         ),
         category(
@@ -197,7 +206,12 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                     Number,
                     SafeNonNegativeInteger,
                 ),
-                validated("Worker count", "workers.count", Number, SafeNonNegativeInteger),
+                validated(
+                    "Worker count",
+                    "workers.count",
+                    Number,
+                    SafeNonNegativeInteger,
+                ),
             ],
         ),
         category(
@@ -272,13 +286,21 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
         category(
             "retention",
             "Retention",
-            vec![field("Event retention (days)", "limits.event.retention.maxDays", Number)],
+            vec![field(
+                "Event retention (days)",
+                "limits.event.retention.maxDays",
+                Number,
+            )],
         ),
         category(
             "nip-features",
             "NIP Features",
             vec![
-                select("NIP-05 mode", "nip05.mode", &["enabled", "passive", "disabled"]),
+                select(
+                    "NIP-05 mode",
+                    "nip05.mode",
+                    &["enabled", "passive", "disabled"],
+                ),
                 string_array(
                     "NIP-05 domain whitelist",
                     "nip05.domainWhitelist",
@@ -298,7 +320,11 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                     SafeNonNegativeInteger,
                 ),
                 field("Enable Web of Trust", "wot.enabled", Boolean),
-                text("WoT seed pubkey (hex)", "wot.seedPubkey", "Relay owner pubkey in hex"),
+                text(
+                    "WoT seed pubkey (hex)",
+                    "wot.seedPubkey",
+                    "Relay owner pubkey in hex",
+                ),
                 validated(
                     "WoT minimum followers",
                     "wot.minimumFollowers",

@@ -25,7 +25,9 @@ fn merges_patch_values_and_preserves_redacted_webhook_secrets() {
     let current = current_with_discord();
     let next = merge_admin_notifications_patch(
         &current,
-        &patch("targets:\n  - id: discord-1\n    type: discord\n    enabled: false\n    url: '***'\n"),
+        &patch(
+            "targets:\n  - id: discord-1\n    type: discord\n    enabled: false\n    url: '***'\n",
+        ),
     );
 
     assert_eq!(next.targets[0].enabled, Some(false));
@@ -42,7 +44,9 @@ fn does_not_persist_redacted_placeholders_for_new_targets() {
     );
     let next = merge_admin_notifications_patch(
         &current,
-        &patch("targets:\n  - id: telegram-new\n    type: telegram\n    enabled: true\n    botToken: '***'\n    chatId: '123'\n"),
+        &patch(
+            "targets:\n  - id: telegram-new\n    type: telegram\n    enabled: true\n    botToken: '***'\n    chatId: '123'\n",
+        ),
     );
 
     assert_eq!(next.targets[0].bot_token, None);
@@ -67,7 +71,9 @@ fn a_patch_merges_events_and_retry_and_replaces_scalars() {
     let current = current_with_discord();
     let next = merge_admin_notifications_patch(
         &current,
-        &patch("enabled: false\nevents:\n  relay.restarted: true\nretry:\n  maxAttempts: 9\ndeliveryLogRetentionDays: 7\n"),
+        &patch(
+            "enabled: false\nevents:\n  relay.restarted: true\nretry:\n  maxAttempts: 9\ndeliveryLogRetentionDays: 7\n",
+        ),
     );
 
     assert!(!next.enabled);
@@ -76,7 +82,11 @@ fn a_patch_merges_events_and_retry_and_replaces_scalars() {
     assert_eq!(next.retry.max_attempts, Some(9));
     assert_eq!(next.retry.base_delay_ms, Some(1000));
     assert_eq!(next.delivery_log_retention_days, Some(7));
-    assert_eq!(next.targets.len(), 1, "a patch without targets keeps the current ones");
+    assert_eq!(
+        next.targets.len(),
+        1,
+        "a patch without targets keeps the current ones"
+    );
 }
 
 #[test]
@@ -84,7 +94,9 @@ fn a_patch_replaces_targets_wholesale() {
     let current = current_with_discord();
     let next = merge_admin_notifications_patch(
         &current,
-        &patch("targets:\n  - id: replacement\n    type: http\n    enabled: true\n    url: https://a.example/hook\n"),
+        &patch(
+            "targets:\n  - id: replacement\n    type: http\n    enabled: true\n    url: https://a.example/hook\n",
+        ),
     );
 
     assert_eq!(next.targets.len(), 1);

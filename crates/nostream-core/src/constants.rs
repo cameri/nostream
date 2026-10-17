@@ -7,4 +7,5 @@ pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 pub const SUPPORTED_NIPS: [u16; 4] = [11, 42, 45, 50];
 
 /// The payment processors the settings surface names (`src/constants/base.ts` `PaymentsProcessors`).
-pub const PAYMENTS_PROCESSORS: [&str; 6] = ["lnurl", "zebedee", "lnbits", "nodeless", "opennode", "nwc"];
+pub const PAYMENTS_PROCESSORS: [&str; 6] =
+    ["lnurl", "zebedee", "lnbits", "nodeless", "opennode", "nwc"];
