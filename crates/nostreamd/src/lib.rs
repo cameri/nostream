@@ -18,6 +18,7 @@
 
 pub mod acceptor;
 pub mod error;
+pub mod settings_gate;
 pub mod telemetry;
 pub mod workers;
 

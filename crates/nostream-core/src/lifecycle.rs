@@ -26,8 +26,13 @@ impl ShutdownState {
     }
 
     /// Marks the process as draining. Safe to call more than once.
+    ///
+    /// `send_replace` rather than `send`: the value must be stored even when no receiver is
+    /// subscribed yet (`Sender::send` short-circuits and drops the value at
+    /// `receiver_count() == 0`), or a drain that starts before the first subscriber would
+    /// be lost and a later `wait_for_drain` would hang.
     pub fn begin_draining(&self) {
-        let _ = self.sender.send(true);
+        self.sender.send_replace(true);
     }
 
     /// Whether draining has begun.

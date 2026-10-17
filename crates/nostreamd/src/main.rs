@@ -10,7 +10,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use nostream_config::SettingsPaths;
 use nostream_core::lifecycle::ShutdownState;
-use nostreamd::{DaemonError, telemetry};
+use nostreamd::{DaemonError, settings_gate, telemetry};
 
 #[derive(Debug, Parser)]
 #[command(name = "nostreamd", about = "The nostream relay daemon")]
@@ -61,21 +61,13 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
 
     let outcome =
         nostream_config::load(&paths).map_err(|error| DaemonError::Setup(error.to_string()))?;
-    if !outcome.issues.is_empty() {
-        for issue in &outcome.issues {
-            eprintln!("{issue}");
-        }
-        return Err(DaemonError::InvalidSettings {
-            count: outcome.issues.len(),
-        });
-    }
+    settings_gate::apply_settings_gate(&outcome, cli.check)?;
 
-    if cli.check {
-        println!("settings valid: 0 issues");
-        return Ok(ExitCode::SUCCESS);
-    }
-
-    telemetry::init(&outcome.settings).map_err(|error| DaemonError::Setup(error.to_string()))?;
+    telemetry::init(
+        &outcome.settings,
+        telemetry::resolve_filter(cli.log_level.as_deref()),
+    )
+    .map_err(|error| DaemonError::Setup(error.to_string()))?;
 
     let port = cli
         .listen_port
@@ -115,9 +107,27 @@ async fn serve(listen: SocketAddr) -> Result<ExitCode, DaemonError> {
     tracing::info!("signal received; draining");
 
     shutdown.begin_draining();
-    let _ = accept_task.await;
-    let _ = workers_task.await;
-    let _ = tor_task.await;
+    let accept_result = accept_task
+        .await
+        .map_err(|error| DaemonError::Setup(format!("acceptor task: {error}")))
+        .and_then(std::convert::identity);
+    let workers_result = workers_task
+        .await
+        .map_err(|error| DaemonError::Setup(format!("workers task: {error}")))
+        .and_then(std::convert::identity);
+    let tor_result = tor_task
+        .await
+        .map_err(|error| DaemonError::Setup(format!("tor task: {error}")))
+        .and_then(std::convert::identity);
+    for (name, result) in [
+        ("acceptor", accept_result),
+        ("workers", workers_result),
+        ("tor", tor_result),
+    ] {
+        if let Err(error) = result {
+            tracing::warn!(task = name, error = %error, "background task ended with an error");
+        }
+    }
 
     tracing::info!("drained; exiting");
     Ok(ExitCode::SUCCESS)
