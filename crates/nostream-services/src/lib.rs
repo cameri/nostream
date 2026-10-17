@@ -11,7 +11,8 @@
 //! - the NIP-66 monitor: `src/utils/relay-probe/**` (10 files),
 //!   `src/utils/{relay-probe-snapshot,relay-probe-targets,monitor-identity,
 //!   network-health-mismatches,invoice,operator-notification-enqueue}.ts`
-//! - `src/@types/{services,dvm,operator-notifications}.ts`
+//! - `src/@types/{services,dvm}.ts` (`src/@types/operator-notifications.ts` belongs to
+//!   `nostream-config` alongside the settings types it joins)
 //! - `src/factories/{payments-processors/*,maintenance-service-factory,
 //!   notification-outbox-service-factory,payments-service-factory,wot-graph-service-factory}.ts`
 //!

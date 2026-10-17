@@ -32,4 +32,9 @@ pub enum StorageError {
         #[source]
         source: std::io::Error,
     },
+
+    /// An inherited backend env var named a backend that does not exist
+    /// (`src/utils/event-store.ts` `Unsupported ${source} "${value}"`).
+    #[error("Unsupported {env} \"{value}\". Supported backends: postgres, lmdb")]
+    UnsupportedBackend { value: String, env: &'static str },
 }

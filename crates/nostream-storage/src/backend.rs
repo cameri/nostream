@@ -43,9 +43,20 @@ impl std::fmt::Display for Backend {
 
 /// An opened LMDB environment with one named database of string keys and values.
 ///
-/// The constructor is the crate's single `unsafe` boundary: LMDB requires that an environment
-/// is not opened twice in the same process (heed 0.20.5's `EnvOpenOptions::open` is an
-/// `unsafe fn` for exactly that reason), and `LmdbEnv` guarantees one `Env` per path.
+/// The constructor is the crate's single `unsafe` boundary. heed 0.20.5 marks
+/// `EnvOpenOptions::open` unsafe because an LMDB environment memory-maps a file shared with
+/// other processes and its guarantees collapse if the caller breaks the locking protocol.
+/// heed itself upholds the in-process part: it canonicalizes the path, deduplicates through
+/// a process-global registry, returns the *same* `Env` for a second open with equal options
+/// and `Error::BadOpenOptions` when they differ (heed-0.20.5 `src/env.rs`, `OPENED_ENV`).
+/// What this crate must therefore uphold — heed's documented preconditions, unchanged here:
+///
+/// - never open an environment with `NO_LOCK` (concurrent access becomes the caller's job),
+///   `NO_SYNC` or `NO_META_SYNC` (durability is silently dropped) — none is used;
+/// - never point an environment at a network filesystem — the lock file semantics do not
+///   survive it; the Phase-2 backend factory must refuse one;
+/// - keep one `map_size` per path for the life of the process — a second open with a
+///   different size surfaces as `Error::BadOpenOptions`, which `open` propagates.
 #[derive(Debug, Clone)]
 pub struct LmdbEnv {
     env: Env,
@@ -76,8 +87,10 @@ impl LmdbEnv {
             source,
         })?;
 
-        // # Safety: LMDB forbids two environments over one data directory in the same
-        // process; this type owns the only `Env` and is never constructed elsewhere.
+        // # Safety: upheld by the preconditions on `LmdbEnv` above — no NO_LOCK/NO_SYNC
+        // flags, a local (non-network) path, and heed's own per-process dedup making a
+        // second open with the same options return the same environment rather than a
+        // second one. See heed-0.20.5's documented safety contract (`src/env.rs`).
         #[allow(unsafe_code)]
         let env =
             unsafe { EnvOpenOptions::new().map_size(map_size).open(&path) }.map_err(|source| {

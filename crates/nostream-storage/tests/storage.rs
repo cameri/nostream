@@ -35,3 +35,76 @@ async fn the_postgres_backend_is_a_labelled_stub() {
     );
     assert!(matches!(error, StorageError::NotImplemented { .. }));
 }
+
+#[test]
+fn the_repository_traits_are_dyn_compatible() {
+    // The seam exists so a backend can be picked at runtime: the trait objects must compile.
+    // A boxed stub proves the vtable exists without touching a database.
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use nostream_core::{Event, EventId, Pubkey};
+    use nostream_storage::StorageError;
+    use nostream_storage::repositories::{
+        EventPurgeCounts, EventRepository, Report, ReportRepository,
+    };
+
+    struct Noop;
+
+    impl EventRepository for Noop {
+        fn create(
+            &self,
+            _event: &Event,
+        ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>> {
+            Box::pin(async { Err(StorageError::NotImplemented { module: "noop" }) })
+        }
+
+        fn count_by_filters(
+            &self,
+            _filters: &[nostream_core::Filter],
+        ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>> {
+            Box::pin(async { Err(StorageError::NotImplemented { module: "noop" }) })
+        }
+
+        fn delete_by_pubkey_and_ids(
+            &self,
+            _pubkey: &Pubkey,
+            _ids: &[EventId],
+        ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>> {
+            Box::pin(async { Err(StorageError::NotImplemented { module: "noop" }) })
+        }
+
+        fn delete_expired_and_retained(
+            &self,
+            _options: &nostream_storage::repositories::EventRetentionOptions,
+        ) -> Pin<Box<dyn Future<Output = Result<EventPurgeCounts, StorageError>> + Send>> {
+            Box::pin(async { Err(StorageError::NotImplemented { module: "noop" }) })
+        }
+    }
+
+    impl ReportRepository for Noop {
+        fn create(
+            &self,
+            _report: &Report,
+        ) -> Pin<Box<dyn Future<Output = Result<Report, StorageError>> + Send>> {
+            Box::pin(async { Err(StorageError::NotImplemented { module: "noop" }) })
+        }
+
+        fn find_by_event_id(
+            &self,
+            _event_id: &EventId,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<Report>, StorageError>> + Send>> {
+            Box::pin(async { Err(StorageError::NotImplemented { module: "noop" }) })
+        }
+
+        fn find_actionable(
+            &self,
+            _limit: u64,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<Report>, StorageError>> + Send>> {
+            Box::pin(async { Err(StorageError::NotImplemented { module: "noop" }) })
+        }
+    }
+
+    let _event_repository: std::sync::Arc<dyn EventRepository> = std::sync::Arc::new(Noop);
+    let _report_repository: Box<dyn ReportRepository> = Box::new(Noop);
+}

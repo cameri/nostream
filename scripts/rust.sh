@@ -43,8 +43,11 @@ if [ -n "${NOSTREAM_HOST_DIR:-}" ]; then
 else
     checked_root=$local_root
 fi
-if [ ! -f "$checked_root/Cargo.toml" ]; then
-    echo "scripts/rust.sh: no Cargo.toml at $checked_root (set NOSTREAM_HOST_DIR)" >&2
+# The host path is invisible from inside the sandbox, so an explicit NOSTREAM_HOST_DIR does
+# not prove anything here; fall back to the local tree (the bind source the script itself
+# hands to the daemon) before refusing.
+if [ ! -f "$checked_root/Cargo.toml" ] && [ ! -f "$local_root/Cargo.toml" ]; then
+    echo "scripts/rust.sh: no Cargo.toml at $checked_root or $local_root (set NOSTREAM_HOST_DIR)" >&2
     exit 66
 fi
 

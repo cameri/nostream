@@ -1,5 +1,6 @@
-//! NIP-77 negentropy set reconciliation. Mirrors `src/utils/negentropy.ts` and
-//! `src/utils/negentropy-sessions.ts`.
+//! NIP-77 negentropy set reconciliation. Mirrors `src/utils/negentropy.ts` (the session
+//! bookkeeping named `negentropy-sessions.ts` lives only at the oracle `041fe34e`, not at
+//! this branch's capture; the session seam here is this port's own shape).
 
 use crate::error::CoreError;
 

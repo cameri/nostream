@@ -3,6 +3,8 @@
 
 use std::env;
 
+use crate::error::StorageError;
+
 use nostream_config::Settings;
 
 /// The environment variable the primary sets on every worker it forks
@@ -27,7 +29,7 @@ pub fn configured_backend(settings: &Settings) -> nostream_core::EventStoreBacke
 pub fn resolved_backend(
     settings: &Settings,
     is_worker: bool,
-) -> Result<nostream_core::EventStoreBackend, String> {
+) -> Result<nostream_core::EventStoreBackend, StorageError> {
     let inherited = if is_worker {
         env::var(EVENT_STORE_BACKEND_ENV).ok()
     } else {
@@ -35,11 +37,11 @@ pub fn resolved_backend(
     };
     match inherited {
         None => Ok(configured_backend(settings)),
-        Some(name) => nostream_core::EventStoreBackend::parse(&name)
-            .ok_or_else(|| {
-                format!(
-                    "Unsupported {EVENT_STORE_BACKEND_ENV} \"{name}\". Supported backends: postgres, lmdb"
-                )
-            }),
+        Some(name) => nostream_core::EventStoreBackend::parse(&name).ok_or_else(|| {
+            StorageError::UnsupportedBackend {
+                value: name,
+                env: EVENT_STORE_BACKEND_ENV,
+            }
+        }),
     }
 }

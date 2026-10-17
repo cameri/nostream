@@ -22,7 +22,10 @@ pub fn parse_discovery(_event: &Event) -> Result<RelayDiscovery, CoreError> {
     })
 }
 
-/// Whether a kind belongs to the NIP-66 monitor family.
+/// Whether a kind belongs to the NIP-66 monitor family: the capture names exactly two
+/// NIP-66 kinds — `RELAY_MONITOR_ANNOUNCEMENT = 10166` and `RELAY_DISCOVERY = 30166`
+/// (`src/constants/base.ts:57,77`); nothing on this branch's tree or in the NIP defines a
+/// third.
 pub fn is_monitor_kind(kind: Kind) -> bool {
-    matches!(kind.0, 10_166 | 30_166 | 50_166)
+    matches!(kind.0, 10_166 | 30_166)
 }

@@ -1,8 +1,9 @@
-//! NIP-77: negentropy sync. Mirrors `src/utils/nip77.ts`.
+//! NIP-77: negentropy sync. The protocol types port `src/utils/negentropy.ts` (the
+//! reference-implementation port that exists at the capture).
 //!
-//! Phase 1 has the types only. The `neg-open`/`neg-msg`/`neg-close` wire handlers exist at
-//! the porting oracle (`041fe34e`) but not at this branch's capture commit, so no handler
-//! module is named here.
+//! Phase 1 has the types only. The `src/utils/nip77.ts` file and the `neg-open`/`neg-msg`/
+//! `neg-close` wire handlers exist at the porting oracle (`041fe34e`) but not at this
+//! branch's capture commit, so no handler module or TS path is claimed for them here.
 
 use crate::error::CoreError;
 

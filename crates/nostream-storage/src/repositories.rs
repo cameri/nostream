@@ -8,6 +8,9 @@
 
 use nostream_core::{EventId, Kind, Pubkey};
 
+use std::future::Future;
+use std::pin::Pin;
+
 use crate::error::StorageError;
 
 /// The rows a retention pass deleted, expired and kept (`src/@types/repositories.ts`
@@ -35,7 +38,7 @@ pub trait EventRepository: Send + Sync {
     fn create(
         &self,
         _event: &nostream_core::Event,
-    ) -> impl Future<Output = Result<u64, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>>;
 
     /// Counts events matching the filters.
     ///
@@ -43,7 +46,7 @@ pub trait EventRepository: Send + Sync {
     fn count_by_filters(
         &self,
         _filters: &[nostream_core::Filter],
-    ) -> impl Future<Output = Result<u64, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>>;
 
     /// Deletes events by pubkey and ids.
     ///
@@ -52,7 +55,7 @@ pub trait EventRepository: Send + Sync {
         &self,
         _pubkey: &Pubkey,
         _ids: &[EventId],
-    ) -> impl Future<Output = Result<u64, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>>;
 
     /// Runs the retention pass.
     ///
@@ -60,7 +63,7 @@ pub trait EventRepository: Send + Sync {
     fn delete_expired_and_retained(
         &self,
         _options: &EventRetentionOptions,
-    ) -> impl Future<Output = Result<EventPurgeCounts, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<EventPurgeCounts, StorageError>> + Send>>;
 }
 
 /// Invoice storage (`src/@types/repositories.ts` `IInvoiceRepository`).
@@ -71,12 +74,15 @@ pub trait InvoiceRepository: Send + Sync {
     fn find_by_id(
         &self,
         _id: &str,
-    ) -> impl Future<Output = Result<Option<Invoice>, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Invoice>, StorageError>> + Send>>;
 
     /// Upserts an invoice, returning its row id.
     ///
     /// Phase 1 stub — job 005; will insert or update an invoice; see `src/repositories/invoice-repository.ts`.
-    fn upsert(&self, _invoice: &Invoice) -> impl Future<Output = Result<u64, StorageError>> + Send;
+    fn upsert(
+        &self,
+        _invoice: &Invoice,
+    ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>>;
 
     /// Loads pending invoices with pagination.
     ///
@@ -85,7 +91,7 @@ pub trait InvoiceRepository: Send + Sync {
         &self,
         _offset: u64,
         _limit: u64,
-    ) -> impl Future<Output = Result<Vec<Invoice>, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<Invoice>, StorageError>> + Send>>;
 }
 
 /// One payment invoice row (`src/@types/invoice.ts`).
@@ -105,7 +111,7 @@ pub trait UserRepository: Send + Sync {
     fn find_by_pubkey(
         &self,
         _pubkey: &Pubkey,
-    ) -> impl Future<Output = Result<Option<User>, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<Option<User>, StorageError>> + Send>>;
 
     /// Reads the balance of a pubkey.
     ///
@@ -113,7 +119,7 @@ pub trait UserRepository: Send + Sync {
     fn get_balance_by_pubkey(
         &self,
         _pubkey: &Pubkey,
-    ) -> impl Future<Output = Result<i64, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<i64, StorageError>> + Send>>;
 
     /// Marks a pubkey admitted.
     ///
@@ -122,7 +128,7 @@ pub trait UserRepository: Send + Sync {
         &self,
         _pubkey: &Pubkey,
         _admitted_at: i64,
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<(), StorageError>> + Send>>;
 }
 
 /// One user row (`src/@types/user.ts`).
@@ -141,7 +147,7 @@ pub trait Nip05VerificationRepository: Send + Sync {
     fn find_by_pubkey(
         &self,
         _pubkey: &Pubkey,
-    ) -> impl Future<Output = Result<Option<Nip05Verification>, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Nip05Verification>, StorageError>> + Send>>;
 
     /// Upserts a verification record.
     ///
@@ -149,7 +155,7 @@ pub trait Nip05VerificationRepository: Send + Sync {
     fn upsert(
         &self,
         _verification: &Nip05Verification,
-    ) -> impl Future<Output = Result<u64, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>>;
 }
 
 /// One NIP-05 verification row (`src/@types/nip05.ts`).
@@ -170,7 +176,7 @@ pub trait InviteCodeRepository: Send + Sync {
         _code: &str,
         _max_uses: u32,
         _expiry_seconds: u64,
-    ) -> impl Future<Output = Result<InviteCode, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<InviteCode, StorageError>> + Send>>;
 
     /// Claims a code for a pubkey, returning whether the claim succeeded.
     ///
@@ -179,12 +185,14 @@ pub trait InviteCodeRepository: Send + Sync {
         &self,
         _code: &str,
         _pubkey: &Pubkey,
-    ) -> impl Future<Output = Result<bool, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<bool, StorageError>> + Send>>;
 
     /// Deletes expired codes, returning the count.
     ///
     /// Phase 1 stub — job 005; will delete expired codes; see `src/repositories/invite-code-repository.ts`.
-    fn delete_expired_codes(&self) -> impl Future<Output = Result<u64, StorageError>> + Send;
+    fn delete_expired_codes(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>>;
 }
 
 /// One invite code (`src/@types/invite-code.ts`).
@@ -205,7 +213,7 @@ pub trait DvmJobRepository: Send + Sync {
         _id: &EventId,
         _requester: &Pubkey,
         _kind: Kind,
-    ) -> impl Future<Output = Result<DvmJob, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<DvmJob, StorageError>> + Send>>;
 
     /// Assigns a worker to a job.
     ///
@@ -214,7 +222,7 @@ pub trait DvmJobRepository: Send + Sync {
         &self,
         _id: &EventId,
         _worker_index: u32,
-    ) -> impl Future<Output = Result<bool, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<bool, StorageError>> + Send>>;
 
     /// Loads pending jobs, optionally by kind.
     ///
@@ -223,7 +231,7 @@ pub trait DvmJobRepository: Send + Sync {
         &self,
         _limit: u64,
         _kinds: &[Kind],
-    ) -> impl Future<Output = Result<Vec<DvmJob>, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<DvmJob>, StorageError>> + Send>>;
 }
 
 /// One DVM job row (`src/@types/dvm.ts`).
@@ -241,8 +249,10 @@ pub trait ReportRepository: Send + Sync {
     /// Creates one report row.
     ///
     /// Phase 1 stub — job 005; will persist a kind-1984 report; see `src/repositories/report-repository.ts`.
-    fn create(&self, _report: &Report)
-    -> impl Future<Output = Result<Report, StorageError>> + Send;
+    fn create(
+        &self,
+        _report: &Report,
+    ) -> Pin<Box<dyn Future<Output = Result<Report, StorageError>> + Send>>;
 
     /// Loads the reports against one event.
     ///
@@ -250,7 +260,7 @@ pub trait ReportRepository: Send + Sync {
     fn find_by_event_id(
         &self,
         _event_id: &EventId,
-    ) -> impl Future<Output = Result<Vec<Report>, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<Report>, StorageError>> + Send>>;
 
     /// Loads actionable reports, up to `limit`.
     ///
@@ -258,7 +268,7 @@ pub trait ReportRepository: Send + Sync {
     fn find_actionable(
         &self,
         _limit: u64,
-    ) -> impl Future<Output = Result<Vec<Report>, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<Report>, StorageError>> + Send>>;
 }
 
 /// One report row (`src/@types/report.ts`).
@@ -280,7 +290,7 @@ pub trait NotificationDeliveryLogRepository: Send + Sync {
     fn append(
         &self,
         _entry: &DeliveryLogEntry,
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<(), StorageError>> + Send>>;
 
     /// Loads the recent log, newest first.
     ///
@@ -288,7 +298,7 @@ pub trait NotificationDeliveryLogRepository: Send + Sync {
     fn find_recent(
         &self,
         _limit: u64,
-    ) -> impl Future<Output = Result<Vec<DeliveryLogEntry>, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<DeliveryLogEntry>, StorageError>> + Send>>;
 
     /// Deletes entries older than the cutoff, returning the count.
     ///
@@ -296,7 +306,7 @@ pub trait NotificationDeliveryLogRepository: Send + Sync {
     fn delete_older_than(
         &self,
         _cutoff: i64,
-    ) -> impl Future<Output = Result<u64, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<u64, StorageError>> + Send>>;
 }
 
 /// One delivery attempt (`src/@types/operator-notifications.ts`).
@@ -320,7 +330,7 @@ pub trait NotificationOutboxRepository: Send + Sync {
         &self,
         _event_type: &str,
         _payload: &str,
-    ) -> impl Future<Output = Result<OutboxMessage, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<OutboxMessage, StorageError>> + Send>>;
 
     /// Claims a batch for delivery.
     ///
@@ -328,12 +338,15 @@ pub trait NotificationOutboxRepository: Send + Sync {
     fn claim_batch(
         &self,
         _limit: u64,
-    ) -> impl Future<Output = Result<Vec<OutboxMessage>, StorageError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<OutboxMessage>, StorageError>> + Send>>;
 
     /// Marks a message delivered.
     ///
     /// Phase 1 stub — job 005; will mark delivery success; see `src/repositories/notification-outbox-repository.ts`.
-    fn mark_delivered(&self, _id: &str) -> impl Future<Output = Result<(), StorageError>> + Send;
+    fn mark_delivered(
+        &self,
+        _id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), StorageError>> + Send>>;
 }
 
 /// One outbox message (`src/@types/notification-outbox.ts`).
