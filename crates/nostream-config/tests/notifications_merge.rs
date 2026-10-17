@@ -32,7 +32,7 @@ fn merges_patch_values_and_preserves_redacted_webhook_secrets() {
 
     assert_eq!(next.targets[0].enabled, Some(false));
     assert_eq!(
-        next.targets[0].url.as_deref(),
+        next.targets[0].url.as_ref().map(|secret| secret.expose()),
         Some("https://discord.com/api/webhooks/secret")
     );
 }
@@ -102,7 +102,7 @@ fn a_patch_replaces_targets_wholesale() {
     assert_eq!(next.targets.len(), 1);
     assert_eq!(next.targets[0].id, "replacement");
     assert_eq!(
-        next.targets[0].url.as_deref(),
+        next.targets[0].url.as_ref().map(|secret| secret.expose()),
         Some("https://a.example/hook")
     );
 }

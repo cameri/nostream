@@ -31,10 +31,11 @@ pub struct OperatorNotificationTarget {
     pub target_type: OperatorNotificationChannelType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    /// Typed `Secret` (the webhook URL embeds a token); see `Secret`'s doc comment.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
+    pub url: Option<nostream_core::Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub bot_token: Option<String>,
+    pub bot_token: Option<nostream_core::Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_id: Option<String>,
 }
@@ -97,10 +98,11 @@ pub struct NotificationTargetPatch {
     pub target_type: OperatorNotificationChannelType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    /// Typed `Secret` (the webhook URL embeds a token); see `Secret`'s doc comment.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
+    pub url: Option<nostream_core::Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub bot_token: Option<String>,
+    pub bot_token: Option<nostream_core::Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_id: Option<String>,
 }
@@ -226,13 +228,13 @@ fn merge_target_secrets(
             .or_else(|| existing.and_then(|target| target.chat_id.clone())),
     };
 
-    if is_redacted_secret(incoming.url.as_deref()) {
+    if is_redacted_secret(incoming.url.as_ref().map(|secret| secret.expose())) {
         merged.url = existing.and_then(|target| target.url.clone());
     } else if incoming.url.is_none() && existing.and_then(|target| target.url.clone()).is_some() {
         merged.url = existing.and_then(|target| target.url.clone());
     }
 
-    if is_redacted_secret(incoming.bot_token.as_deref()) {
+    if is_redacted_secret(incoming.bot_token.as_ref().map(|secret| secret.expose())) {
         merged.bot_token = existing.and_then(|target| target.bot_token.clone());
     } else if incoming.bot_token.is_none()
         && existing

@@ -631,8 +631,10 @@ pub struct AdminNip98Settings {
 #[serde(rename_all = "camelCase")]
 pub struct AdminSettings {
     pub enabled: bool,
+    /// Typed `Secret` so a `Debug` of the settings tree redacts it; the capture types it
+    /// `string`, and serde's transparent passthrough keeps the document byte-identical.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub password_hash: Option<String>,
+    pub password_hash: Option<nostream_core::Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_ttl_seconds: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]

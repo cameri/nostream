@@ -2,9 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A hex-encoded secret key.
+/// A value that must not reach a log or an error message.
 ///
-/// `Debug` never prints the value, so a logged settings struct cannot leak it.
+/// `Debug` and `Display` redact, so a field typed `Secret` cannot leak through a `{:?}` or
+/// `{}` of the settings struct that carries it. The guarantee is per-field: a field left a
+/// plain `String` prints in the clear, and the document-level `redact_settings_secrets`
+/// helper in `nostream-config` covers the document surface instead.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Secret(pub String);
