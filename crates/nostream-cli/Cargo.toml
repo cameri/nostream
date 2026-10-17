@@ -1,0 +1,27 @@
+[package]
+name = "nostream-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The operator command line"
+
+[[bin]]
+name = "nostream-cli"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+anyhow = { workspace = true }
+nostream-config.workspace = true
+nostream-core.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
