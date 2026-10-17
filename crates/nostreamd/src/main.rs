@@ -127,12 +127,19 @@ async fn wait_for_signal() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
-        let mut sigint = signal(SignalKind::interrupt()).expect("SIGINT stream");
-        let mut sigterm = signal(SignalKind::terminate()).expect("SIGTERM stream");
-        tokio::select! {
-            _ = sigint.recv() => {}
-            _ = sigterm.recv() => {}
+        // A failing signal registration is a process setup failure, not a runtime event:
+        // warn and fall back to a plain ctrl-c wait so the daemon still drains.
+        let sigint = signal(SignalKind::interrupt());
+        let sigterm = signal(SignalKind::terminate());
+        if let (Ok(mut sigint), Ok(mut sigterm)) = (sigint, sigterm) {
+            tokio::select! {
+                _ = sigint.recv() => {}
+                _ = sigterm.recv() => {}
+            }
+            return;
         }
+        tracing::warn!("signal registration failed; falling back to ctrl-c");
+        let _ = tokio::signal::ctrl_c().await;
     }
     #[cfg(not(unix))]
     {
