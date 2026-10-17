@@ -20,6 +20,7 @@ jobs:
       pull-requests: read
     outputs:
       src: ${{ steps.filter.outputs.src }}
+      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +40,15 @@ jobs:
               - 'Dockerfile*'
               - 'docker-compose*.yml'
               - '.nvmrc'
+              - 'resources/default-settings.yaml'
+              - '.github/workflows/checks.yml'
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'resources/default-settings.yaml'
+              - 'scripts/rust.sh'
               - '.github/workflows/checks.yml'
 
   commit-lint:
@@ -206,6 +216,34 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           parallel-finished: true
+
+  rust-checks:
+    name: Rust Checks
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain-file: rust-toolchain.toml
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Clippy (all targets)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Clippy (strict, lib+bins)
+        run: >-
+          cargo clippy --workspace --lib --bins --all-features --
+          -D warnings -D clippy::unwrap_used -D clippy::expect_used
+          -D clippy::todo -D clippy::unimplemented -D clippy::panic
+      - name: Tests
+        run: cargo test --workspace --all-features
+      - name: Release build
+        run: cargo build --workspace --all-features --release
 
   changeset-check:
     name: Changeset Required

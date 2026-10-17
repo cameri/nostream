@@ -52,3 +52,6 @@ docker-compose.overrides.yml
 
 # Code coverage report output
 coverage-report/
+
+# Rust
+/target/
