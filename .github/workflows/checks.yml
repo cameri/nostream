@@ -226,8 +226,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      # SHA-pinned (v4.4.0) with the workflow token not persisted into the clone — the
+      # other two Rust actions are pinned the same way; the pre-existing Node jobs keep
+      # their own checkout lines.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       # rust-toolchain.toml is read automatically by the action's discovery (no toolchain-file
       # input exists; passing one only warns). Both actions are SHA-pinned per the house
       # convention the docker/* actions below already follow.

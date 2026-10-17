@@ -49,14 +49,24 @@ impl std::fmt::Display for Backend {
 /// heed itself upholds the in-process part: it canonicalizes the path, deduplicates through
 /// a process-global registry, returns the *same* `Env` for a second open with equal options
 /// and `Error::BadOpenOptions` when they differ (heed-0.20.5 `src/env.rs`, `OPENED_ENV`).
-/// What this crate must therefore uphold — heed's documented preconditions, unchanged here:
+/// heed's documented preconditions, and where each stands today:
 ///
-/// - never open an environment with `NO_LOCK` (concurrent access becomes the caller's job),
-///   `NO_SYNC` or `NO_META_SYNC` (durability is silently dropped) — none is used;
-/// - never point an environment at a network filesystem — the lock file semantics do not
-///   survive it; the Phase-2 backend factory must refuse one;
-/// - keep one `map_size` per path for the life of the process — a second open with a
-///   different size surfaces as `Error::BadOpenOptions`, which `open` propagates.
+/// - **No long-lived transactions** — upheld by the code: `put`/`get` open a transaction,
+///   use it, and commit/drop it before returning; nothing holds one across an await.
+/// - **No aborting the process with an active transaction** — relied on the operator for
+///   SIGKILL-class exits; the Phase-2 daemon drain path must ensure a clean shutdown
+///   (SIGINT/SIGTERM drain through `ShutdownState` does not abort mid-transaction).
+/// - **No network filesystems** — relied on the operator today: `open` accepts any path and
+///   only `create_dir_all` before mapping; the Phase-2 backend factory must refuse a remote
+///   location before this slice is wired into settings.
+/// - **`NO_LOCK` requires self-managed concurrency; a broken lock file means
+///   synchronization issues and possible UB** — upheld by the code: no env flags are passed
+///   (`EnvOpenOptions::new()` only), so LMDB's own locking runs and the lock file is owned
+///   by LMDB, never touched by this crate.
+/// - **One `map_size` per path for the life of the process** — upheld by heed + propagated:
+///   heed's per-process `OPENED_ENV` registry returns the same `Env` for a second open with
+///   equal options and `Error::BadOpenOptions` when they differ, and `open` surfaces that
+///   error to the caller rather than opening a second environment.
 #[derive(Debug, Clone)]
 pub struct LmdbEnv {
     env: Env,
@@ -87,10 +97,11 @@ impl LmdbEnv {
             source,
         })?;
 
-        // # Safety: upheld by the preconditions on `LmdbEnv` above — no NO_LOCK/NO_SYNC
-        // flags, a local (non-network) path, and heed's own per-process dedup making a
-        // second open with the same options return the same environment rather than a
-        // second one. See heed-0.20.5's documented safety contract (`src/env.rs`).
+        // # Safety: the preconditions on `LmdbEnv` above, each marked upheld or relied-on:
+        // no env flags (LMDB's locking runs), transactions never escape the call, and
+        // heed's per-process dedup turns a second open into the same Env or
+        // BadOpenOptions. The network-filesystem precondition rests on the operator
+        // passing a local path; see the list above.
         #[allow(unsafe_code)]
         let env =
             unsafe { EnvOpenOptions::new().map_size(map_size).open(&path) }.map_err(|source| {
