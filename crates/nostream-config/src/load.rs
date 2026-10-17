@@ -5,7 +5,10 @@
 //! validate never aborts the process. It is reported as [`Issue`] values and the caller gets
 //! the shipped defaults, so a broken `settings.yaml` cannot stop a relay from starting.
 
+use std::ffi::OsStr;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use serde_yaml::Value;
@@ -59,22 +62,37 @@ pub fn load_document(path: &Path) -> Result<Value, ConfigError> {
     Ok(document)
 }
 
-/// Trims trailing `/` (and `\` on Windows) from a path for lstat: POSIX resolves a trailing
-/// slash through a symlink, so `…/link/` on a dangling link reports ENOENT rather than the
-/// link itself; trimming is what lets the second probe see the entry.
+/// Trims trailing separators from a path for lstat: POSIX resolves a trailing slash through
+/// a symlink, so `…/link/` on a dangling link reports ENOENT rather than the link itself;
+/// trimming is what lets the second probe see the entry.
+///
+/// The trim removes separator *bytes from the path's own text* — not components: `…/config/`
+/// must become `…/config`, not `…`. Root `/` is left as `/` (a root has nothing to probe),
+/// and non-UTF-8 paths are handled because the work is on `OsStr` bytes, not a `to_str`.
+#[cfg(unix)]
 fn trim_trailing_separators(path: &Path) -> &Path {
-    let mut path = path;
-    while let Some(last) = path.to_str().and_then(|text| text.chars().last()) {
-        if last == '/' || (cfg!(windows) && last == '\\') {
-            match path.parent() {
-                Some(parent) if parent != path => path = parent,
-                _ => break,
-            }
-        } else {
-            break;
-        }
+    use std::os::unix::ffi::OsStrExt;
+
+    let bytes = path.as_os_str().as_bytes();
+    let mut end = bytes.len();
+    while end > 1 && bytes[end - 1] == b'/' {
+        end -= 1;
     }
-    path
+    OsStr::from_bytes(&bytes[..end]).as_ref()
+}
+
+/// Windows twin of the unix trim: drop trailing `\` bytes, never the last one (a bare
+/// `C:\` root stays itself).
+#[cfg(windows)]
+fn trim_trailing_separators(path: &Path) -> &Path {
+    use std::os::windows::ffi::OsStrExt;
+
+    let bytes = path.as_os_str().as_encoded_bytes();
+    let mut end = bytes.len();
+    while end > 1 && bytes[end - 1] == b'\\' {
+        end -= 1;
+    }
+    OsStr::from_encoded_bytes_unchecked(&bytes[..end]).as_ref()
 }
 
 /// Reads the user's overrides: `settings.yaml` first, then the deprecated `settings.json`.

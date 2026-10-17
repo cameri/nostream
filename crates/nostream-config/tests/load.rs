@@ -290,3 +290,39 @@ fn a_dangling_link_with_a_trailing_separator_is_a_finding() {
     assert_eq!(outcome.issues.len(), 1);
     assert!(outcome.issues[0].to_string().contains("not a directory"));
 }
+
+#[test]
+fn an_absent_config_dir_with_a_trailing_separator_is_clean_absence() {
+    // Round 6: the old trim used Path::parent, so `/srv/relay/config/` landed on
+    // `/srv/relay` — a real directory — and produced a bogus NotADirectory finding on a
+    // fresh host. The trim must remove the separator bytes, not the component. (Fails
+    // against bb659c0.)
+    let outer = TempDir::new().expect("tempdir");
+    let absent = outer.path().join("never-created");
+    let with_separator = PathBuf::from(format!("{}/", absent.display()));
+
+    let outcome = load(&paths(&with_separator)).expect("the loader never refuses");
+    assert!(!outcome.used_defaults, "clean absence is not a fallback");
+    assert!(outcome.issues.is_empty());
+}
+
+#[test]
+fn a_relative_single_component_dangling_link_with_a_trailing_separator_is_a_finding() {
+    // The other measured consequence: `dangling/` trimmed to `""` under Path::parent, and
+    // lstat on "" is ENOENT, which took Ok(None) — silent absence where the comment
+    // promises a finding. (Fails against bb659c0.)
+    let outer = TempDir::new().expect("tempdir");
+    let previous = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(outer.path()).expect("chdir into the tempdir");
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("never-created", "dangling").expect("create the link");
+
+    let outcome = load(&paths(Path::new("dangling/")));
+    std::env::set_current_dir(previous).expect("restore the cwd");
+
+    let outcome = outcome.expect("the loader never refuses");
+    assert!(outcome.used_defaults);
+    assert_eq!(outcome.issues.len(), 1);
+    assert!(outcome.issues[0].to_string().contains("not a directory"));
+}
