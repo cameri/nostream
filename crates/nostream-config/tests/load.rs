@@ -66,7 +66,7 @@ fn a_yaml_override_is_deep_merged() {
         "unmentioned fields keep their defaults"
     );
     assert_eq!(
-        outcome.settings.nip43.and_then(|nip43| Some(nip43.enabled)),
+        outcome.settings.nip43.map(|nip43| nip43.enabled),
         Some(true)
     );
 }

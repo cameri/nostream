@@ -206,10 +206,6 @@ fn pow_with(overrides: &[(&str, Value)]) -> Value {
     document
 }
 
-fn boolean(boolean: bool) -> Value {
-    Value::Bool(boolean)
-}
-
 fn number(number: u64) -> Value {
     Value::Number(number.into())
 }

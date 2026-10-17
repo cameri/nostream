@@ -169,7 +169,7 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
         );
     }
 
-    validate_shape(defaults, Some(candidate), &mut Vec::new(), &mut issues);
+    validate_shape(defaults, Some(candidate), &[], &mut issues);
     issues.extend(validate_admin_notifications(candidate));
 
     issues
@@ -212,7 +212,7 @@ fn validate_rate_limit_periods(
 fn validate_shape(
     schema: &Value,
     candidate: Option<&Value>,
-    path: &mut Vec<PathToken>,
+    path: &[PathToken],
     issues: &mut Vec<Issue>,
 ) {
     let Some(candidate) = candidate else {
@@ -245,19 +245,14 @@ fn validate_shape(
             for (index, entry) in candidates.iter().enumerate() {
                 let matches_any = schema_entries.iter().any(|schema_entry| {
                     let mut local_issues = Vec::new();
-                    let mut local_path = path.clone();
+                    let mut local_path = path.to_vec();
                     local_path.push(PathToken::Index(index));
-                    validate_shape(
-                        schema_entry,
-                        Some(entry),
-                        &mut local_path,
-                        &mut local_issues,
-                    );
+                    validate_shape(schema_entry, Some(entry), &local_path, &mut local_issues);
                     local_issues.is_empty()
                 });
 
                 if !matches_any {
-                    let mut issue_path = path.clone();
+                    let mut issue_path = path.to_vec();
                     issue_path.push(PathToken::Index(index));
                     issues.push(Issue::new(
                         format_path_tokens(&issue_path),
@@ -283,7 +278,7 @@ fn validate_shape(
                     continue;
                 }
                 if !schema_mapping.contains_key(key) {
-                    let mut issue_path = path.clone();
+                    let mut issue_path = path.to_vec();
                     issue_path.push(PathToken::Key(key.to_owned()));
                     issues.push(Issue::new(
                         format_path_tokens(&issue_path),
@@ -296,9 +291,9 @@ fn validate_shape(
                 let Some(key) = key.as_str() else {
                     continue;
                 };
-                let mut child_path = path.clone();
+                let mut child_path = path.to_vec();
                 child_path.push(PathToken::Key(key.to_owned()));
-                validate_shape(schema_value, candidates.get(key), &mut child_path, issues);
+                validate_shape(schema_value, candidates.get(key), &child_path, issues);
             }
         }
         _ => {
