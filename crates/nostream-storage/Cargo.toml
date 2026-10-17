@@ -1,0 +1,21 @@
+[package]
+name = "nostream-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Repository traits, backend selection and the LMDB environment slice"
+
+[dependencies]
+nostream-config.workspace = true
+nostream-core.workspace = true
+heed.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true
