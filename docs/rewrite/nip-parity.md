@@ -94,7 +94,7 @@ lexicographic, so the hex ids (`5A`, `7D`, `A0`…) sit among the decimal ones.
 | 06 | draft, unrecommended | Derives a Nostr keypair from a BIP39 mnemonic seed phrase. | no | absent | none | out-of-scope |
 | 07 | draft | Defines the window.nostr object browsers and extensions expose for signing. | no | absent | none | out-of-scope |
 | 08 | final, unrecommended | Standardizes how clients render inline mentions inside text note content. | no | absent | none | out-of-scope |
-| 09 | draft | Kind 5 deletion request: e and a tags naming events the author asks relays to delete. | yes | implemented | none | must-have |
+| 09 | draft | Kind 5 deletion request: e and a tags naming events the author asks relays to delete. | yes | partial | `DeleteEventStrategy` collects valid `e` tags only and calls `deleteByPubkeyAndIds`; an `a`-only request leaves its targets untouched (`src/handlers/event-strategies/delete-event-strategy.ts:22-31`) | must-have |
 | 10 | draft | Kind 1 text notes, with e and p tag conventions for replies and threads. | no | absent | none | out-of-scope |
 | 11 | draft | Relay information document: a JSON capabilities document served over HTTP at the relay URI. | yes | implemented | four non-spec limitation keys (two removed from 11.md) plus two non-standard top-level keys | must-have |
 | 12 | final | Tombstone: generic tag queries moved to NIP-01. | yes | implemented | none | must-have |
@@ -313,6 +313,21 @@ keep the subscription active") — is **met**: the filter schema allows `0`
 (`src/repositories/event-repository.ts:88`), knex emits `limit 0` rather than omitting
 the clause, and `isEventMatchingFilter` never consults `limit` (`src/utils/event.ts:39-125`),
 so the subscription still receives new matching events after the `EOSE`.
+
+### NIP-09
+
+`09.md` requires a kind-5 deletion request to name its targets with `e` tags (events)
+and `a` tags (addressable events), and says the relay should refuse or ignore requests
+that do not match the author. nostream implements the `e` half only:
+`DeleteEventStrategy` filters for a valid 64-hex `e` tag and then calls
+`eventRepository.deleteByPubkeyAndIds`, and `deleteByPubkeyAndIds` takes event ids —
+there is no addressable path
+(`src/handlers/event-strategies/delete-event-strategy.ts:22-31`,
+`src/@types/repositories.ts:45-46`). An `a`-only request therefore deletes nothing and
+is acknowledged like any other kind-5 event, so a client that follows the spec's
+addressable branch gets a success response and no deletion. The registry text did not
+change (the June commit was a fence-language sweep); the gap is nostream's, and Phase 2
+carries it as item 12 in §9.
 
 ### NIP-11
 
@@ -578,8 +593,10 @@ none of the changes reaches a relay. Rows here carry `Delta: none`.
   across 45 files; no requirement changed, so nostream's admission-time verification
   (`src/handlers/event-message-handler.ts:543-590`) is unaffected.
 - **NIP-09** — 2026-06-13, *```` ```jsonc -> ```yaml everywhere. ````* Formatting only;
-  deletion semantics are unchanged, and nostream's `DeleteEventStrategy` still
-  satisfies them.
+  deletion semantics are unchanged. nostream's `DeleteEventStrategy` implements the
+  `e`-tag half only — it collects valid `e` tags and calls `deleteByPubkeyAndIds`
+  (`src/handlers/event-strategies/delete-event-strategy.ts:22-31`), so an `a`-only
+  request leaves its targets untouched. That gap is a Phase 2 item (§9.12).
 - **NIP-13** — 2025-12-23, *"add relay tag (#2173)"*. Registry annotation only;
   proof-of-work is still defined by leading zero bits on the id.
 - **NIP-17** — 2026-06-13, *```` ```jsonc -> ```yaml everywhere. ````* Formatting only; the
@@ -660,7 +677,7 @@ and NIP-15:
 | 04 | kind constant `src/constants/base.ts:6`; in `DEFAULT_RESTRICTED_READ_KINDS` `src/utils/nip42.ts:10-13` | encryption is client-side; the relay stores and serves kind 4. The only relay-visible behaviour is the restricted-read default, and that default applies only when `nip42.restrictedReads.enabled` is on — off by default (§4) |
 | 14 | tag constant `src/constants/base.ts:92` | a `subject` tag is stored with the event; no code path reads it |
 | 22 | `created_at` bounds `src/handlers/event-message-handler.ts:204-216`, advertised at `src/handlers/request-handlers/root-request-handler.ts:138-139` | the number now means Comment (§4); the limits are NIP-11's behaviour, moved there before `22.md` was deleted (§4) |
-| 28 | kinds 40-49 `src/constants/base.ts:20-26` | `grep -rl 'NIP-28' src/` returns nothing, `event-strategy-factory.ts` has no channel branch, and kinds 40-49 fall to `DefaultEventStrategy` |
+| 28 | kinds 40-49 `src/constants/base.ts:20-26`; kind 41 is in `isReplaceableEvent` (`src/utils/event.ts:203-210`) | `grep -rl 'NIP-28' src/` returns nothing and `event-strategy-factory.ts` has no channel branch, but kind 41 (channel metadata) is routed to `ReplaceableEventStrategy` by that predicate; kinds 40 and 42-49 fall to `DefaultEventStrategy` |
 | 15 | `// NIP-15` on the EOSE builder, `src/utils/messages.ts:27-30` | the registry's 15 is Marketplace (§4); the comment names the old EOSE NIP |
 
 Four advertised NIPs are **tombstones** whose text moved into NIP-01: NIP-12, NIP-16
@@ -836,5 +853,15 @@ turns them into work. The items, in the order they affect the rewrite:
     against `supported_nips` so the document stops saying both "50 is supported" and
     "search is off" (§8). Decide `limitation.max_event_tags` too: `2500` is advertised
     and not enforced. `min_prefix` follows item 8's answer: keep it only if prefix
-    matching is kept. Whatever survives needs a test: none of these keys, nor NIP-78's
-    two kinds, has one under `test/` today (§1), and item 7 carries the NIP-78 pair.
+    matching is kept. Whatever survives needs a test. `max_filters` is checked by the
+    NIP-11 integration feature (`test/integration/features/nip-11/nip-11.feature:30-33`),
+    and `max_filter_values` and both `search_supported` cases by the root-handler unit
+    tests (`test/unit/handlers/request-handlers/root-request-handler.spec.ts:137,310-326`);
+    the four untested keys are `min_prefix`, `supported_nip_extensions`, `supported_mips`
+    and `max_event_tags` (§1). NIP-78's two kinds have no test either, and item 7
+    carries that pair.
+12. **NIP-09 `a`-tag deletion.** `DeleteEventStrategy` accepts only `e` tags
+    (`src/handlers/event-strategies/delete-event-strategy.ts:22-31`); a kind-5 event
+    whose tags are `a`-only deletes nothing. The rewrite either implements
+    addressable-event deletion or records the omission deliberately — but §5 and the
+    §7 row now say so, and Phase 2 must not inherit the silence.
