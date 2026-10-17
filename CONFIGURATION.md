@@ -228,6 +228,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Defaults to 3600. |
 | nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. Addresses from `mirroring.static[]` are probed for the admin snapshot but are not published as kind `30166` discovery events. |
 | nip66.geohash                               | Optional NIP-52 geohash describing this monitor's network vantage. Published on kind `10166` monitor announcements when set. |
+| nip66.historyRetentionRuns                  | Maximum probe run snapshots kept for the admin Network Health history API and timeline. Defaults to 168. |
+| nip66.historyRetentionHours                 | Optional maximum age in hours for retained probe history. When unset, history is trimmed by run count only. |
 | nip66.timeouts.dnsMs                        | DNS probe timeout in milliseconds. Defaults to 10000. |
 | nip66.timeouts.nip11Ms                      | NIP-11 fetch timeout in milliseconds. Defaults to 10000. |
 | nip66.timeouts.tlsMs                        | TLS probe timeout in milliseconds. Defaults to 10000. |

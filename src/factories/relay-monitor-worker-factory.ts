@@ -5,14 +5,16 @@ import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
 import { createEventRepository } from './event-repository-factory'
 import { createSettings } from './settings-factory'
 import { Nip66EventPublisher } from '../services/nip66-event-publisher'
+import { RelayProbeHistoryStore } from '../utils/relay-probe-history'
 import { RelayProbeSnapshotStore } from '../utils/relay-probe-snapshot'
 import { runProbe } from '../utils/relay-probe'
 
 export const relayMonitorWorkerFactory = () => {
   const cache = new RedisAdapter(getCacheClient())
   const snapshotStore = new RelayProbeSnapshotStore(cache)
+  const historyStore = new RelayProbeHistoryStore(cache)
   const eventRepository = createEventRepository(getMasterDbClient(), getReadReplicaDbClient())
   const eventPublisher = new Nip66EventPublisher(eventRepository, cache)
 
-  return new RelayMonitorWorker(process, createSettings, snapshotStore, runProbe, eventPublisher)
+  return new RelayMonitorWorker(process, createSettings, snapshotStore, runProbe, eventPublisher, historyStore)
 }

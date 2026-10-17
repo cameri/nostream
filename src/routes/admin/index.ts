@@ -6,6 +6,7 @@ import { createPatchAdminNotificationsController } from '../../factories/control
 import { createGetAdminHealthController } from '../../factories/controllers/get-admin-health-controller-factory'
 import { createGetAdminMetricsController } from '../../factories/controllers/get-admin-metrics-controller-factory'
 import { createGetAdminNetworkHealthController } from '../../factories/controllers/get-admin-network-health-controller-factory'
+import { createGetAdminNetworkHealthHistoryController } from '../../factories/controllers/get-admin-network-health-history-controller-factory'
 import { createGetAdminSessionController } from '../../factories/controllers/get-admin-session-controller-factory'
 import { createGetAdminSettingsBackupsController } from '../../factories/controllers/get-admin-settings-backups-controller-factory'
 import { createGetAdminSettingsController } from '../../factories/controllers/get-admin-settings-controller-factory'
@@ -66,6 +67,12 @@ router.get(
   adminRateLimitMiddleware,
   adminAuthMiddleware,
   withAdminController(createGetAdminNetworkHealthController),
+)
+router.get(
+  '/network-health/history',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminNetworkHealthHistoryController),
 )
 router.get(
   '/settings',

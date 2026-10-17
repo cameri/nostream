@@ -31,7 +31,8 @@
             "entry": [
                 "astro.config.mjs",
                 "src/**/*.{astro,ts,mjs}",
-                "scripts/*.mjs"
+                "scripts/*.mjs",
+                "worker/**/*.ts"
             ],
             "ignoreDependencies": [
                 "@fontsource-variable/inter",
