@@ -50,6 +50,8 @@ function rehypeRepoLinks() {
 
 export default defineConfig({
   site: process.env.SITE_URL ?? 'https://nostream.dev',
+  // PR previews build under /preview/<n>; empty when unset (production).
+  base: process.env.SITE_BASE || undefined,
   markdown: {
     rehypePlugins: [rehypeRepoLinks],
     shikiConfig: { theme: 'github-dark-default', wrap: false },

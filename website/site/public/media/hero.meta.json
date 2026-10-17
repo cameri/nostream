@@ -1,4 +1,6 @@
 {
-  "nipCount": 24,
-  "generatedAt": "2026-10-15T07:03:58.735Z"
+  "nipCount": 25,
+  "generatedAt": "2026-10-16T21:15:11.228Z",
+  "sourceVideo": "output/nostream-hero.mp4",
+  "sourceLowVideo": "output/nostream-hero-low.mp4"
 }

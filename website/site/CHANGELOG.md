@@ -1,5 +1,45 @@
 # nostream-website
 
+## 1.2.4
+
+### Patch Changes
+
+- [#837](https://github.com/cameri/nostream/pull/837) [`ee7e06b`](https://github.com/cameri/nostream/commit/ee7e06b72284f07aacfd427128e99eefaab9cf84) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Website deploy workflow fix: the deploy queue is job-scoped so relay releases can't displace a pending website deploy (measured: the nostream@3.5.1 release run was cancelled with zero jobs at the workflow-level concurrency group, before its job-level `if` could skip it). The checkout stays on the triggering `nostream-website@` tag, which the `website` environment's branch policy admits — the deployed build is exactly the released commit.
+
+## 1.2.3
+
+### Patch Changes
+
+- [#845](https://github.com/cameri/nostream/pull/845) [`2234a25`](https://github.com/cameri/nostream/commit/2234a25ad8e82401f7e48946317e29939954c52e) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Info-tip bubbles no longer clip at the viewport edge: the tooltip is centered on its (i) toggle, so near an edge it overflowed. On open (hover, tap or keyboard) the bubble now shifts horizontally to stay inside the viewport, and re-clamps on resize.
+
+  Tooltip behavior is delegated at the document level, so every tip is covered even when its per-element listeners would have silently failed to attach.
+
+  Site polish from an external review: the community participate cards have their own section heading, the hero headline is real DOM text with a pause control on the film, the console screenshots are labeled as real first-run console data, the honest-advertising copy matches what its warning shows, the nav's active-path comparison strips the deploy base, the get-started phase list explains the skipped numbers, and single-column grids no longer let nowrap content push the page wider than a phone viewport. The hero film is re-rendered at 1080p for the current 25-NIP list.
+
+## 1.2.2
+
+### Patch Changes
+
+- [#844](https://github.com/cameri/nostream/pull/844) [`c352d72`](https://github.com/cameri/nostream/commit/c352d72249ad44176379a1c15c97115a68828d4e) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Preview cleanup no longer trips the deploy token's missing KV scope: wrangler delete runs with --force, skipping the dependents probe that errored after a successful delete. Preview workers are assets-only, so nothing else changes.
+
+- [#847](https://github.com/cameri/nostream/pull/847) [`1b1ef4f`](https://github.com/cameri/nostream/commit/1b1ef4f8bce745f170a5eb432944a85729ee9de9) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add maintainer bio, social links, and updated profile photo on the community page for Abhay Pandey.
+
+## 1.2.1
+
+### Patch Changes
+
+- [#842](https://github.com/cameri/nostream/pull/842) [`72fca58`](https://github.com/cameri/nostream/commit/72fca5893b8b8f7daede8ad9841f124fe5278f53) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Add PR preview deployments: site changes are previewable at ema.tnsor.network/preview/<PR>/ and cleaned up on close. Requires the website-preview environment (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID) to activate.
+
+- [#842](https://github.com/cameri/nostream/pull/842) [`72fca58`](https://github.com/cameri/nostream/commit/72fca5893b8b8f7daede8ad9841f124fe5278f53) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Website copy now leads with what each feature does for the user; the technical detail (NIP numbers, protocol names, command flags) moved into (i) info tooltips on hover, focus or tap.
+
+  Also ships PR previews: every PR touching the site builds under `/preview/<n>/` and deploys its own worker (`nostream-web-pr-<n>`); the production router worker (new) proxies `ema.tnsor.network/preview/<n>/*` to it, so the preview URL stays on the production domain. Previews are deleted when the PR closes. The production deploy switches from the assets-only worker to the router on the next release — same assets, same domain, plus the preview route.
+
+## 1.2.0
+
+### Minor Changes
+
+- [#839](https://github.com/cameri/nostream/pull/839) [`91a5a7e`](https://github.com/cameri/nostream/commit/91a5a7edf9ebbb04ad749f775b5c3086192bfbc5) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Ship the hero film in two qualities: the page serves a high-res render by default and swaps to a low variant for data-saver clients and small screens (navigator.connection.saveData / effectiveType / viewport + DPR pick). build-media.mjs now emits both variants and records both sources in hero.meta.json.
+
 ## 1.1.1
 
 ### Patch Changes

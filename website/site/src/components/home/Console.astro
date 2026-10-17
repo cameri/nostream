@@ -2,6 +2,7 @@
 import type { ImageMetadata } from 'astro'
 import { Image } from 'astro:assets'
 import ScreenBar from '../ScreenBar.astro'
+import InfoTip from '../InfoTip.astro'
 // Drop admin console screenshots into src/assets/screens/ using these names (png, jpg or webp).
 const files = import.meta.glob<{ default: ImageMetadata }>('../../assets/screens/*.{png,jpg,jpeg,webp}', { eager: true })
 const byName = Object.fromEntries(
@@ -12,40 +13,45 @@ const shots = [
   {
     names: ['metrics', 'metrics-1'],
     title: 'Live metrics',
-    body: 'Events per second, rejections, connections, CPU and memory, streamed over SSE.',
+    body: 'Watch traffic and load as it happens, so you catch problems while they are small.',
+    tip: 'Events per second, rejections, connections, CPU and memory, streamed over SSE.',
     tag: 'SSE',
     main: true,
   },
   {
     name: 'network-health',
     title: 'Network health',
-    body: 'NIP-66 probes for DNS, TLS, WebSocket read/write RTT and NIP-11, per target.',
+    body: 'Know your relay is reachable and fast from the outside, not just from your own machine.',
+    tip: 'NIP-66 probes for DNS, TLS, WebSocket read/write RTT and NIP-11, per target.',
     tag: 'NIP-66',
   },
   {
     name: 'mismatches',
-    title: 'NIP-11 mismatch warnings',
-    body: 'Flags when what your relay advertises disagrees with what probes measure.',
+    title: 'Honest advertising',
+    body: "Flags the gap between what your relay advertises and what it actually does — in either direction.",
+    tip: 'NIP-11 mismatch warnings: compares what your relay publishes in supported_nips with what probes measure, and flags any disagreement.',
     tag: 'NIP-11',
   },
   {
     name: 'settings',
     title: 'Settings editor',
-    body: 'Guided, validated edits with automatic backups and one-click restore.',
+    body: 'Change settings confidently — mistakes are caught before they ship, and undo is one click.',
+    tip: 'Guided, validated edits with automatic backups and one-click restore.',
     tag: 'YAML',
   },
   {
     name: 'notifications',
     title: 'Notifications',
-    body: 'Outbound alerts with a delivery log, so you hear about trouble first.',
+    body: 'Hear about trouble first, before your users notice.',
+    tip: 'Outbound alerts with a delivery log, so nothing gets lost silently.',
     tag: 'ALERT',
   },
 ]
 
 const capabilities = [
-  'Login-gated with IP allow lists and rate limits',
-  'Prometheus-compatible metrics and OpenTelemetry hooks',
-  '/readyz for load balancers and blue/green deploys',
+  'Login-gated so only you can reach it',
+  'Plugs into the monitoring you already run',
+  'Health endpoint for load balancers and zero-downtime deploys',
   'Self-hosted probes, labelled as one monitor among many',
 ]
 ---
@@ -62,6 +68,10 @@ const capabilities = [
         <ul class="caps">
           {capabilities.map((c) => <li>{c}</li>)}
         </ul>
+        <p class="demo-note">
+          Screenshots from a real console — this one ran on a laptop catching its first events, rejections and failed
+          alert deliveries included.
+        </p>
       </div>
     </div>
 
@@ -96,7 +106,10 @@ const capabilities = [
               </div>
               <figcaption>
                 <h3 class="h3">{shot.title}</h3>
-                <p>{shot.body}</p>
+                <p>
+                  {shot.body}
+                  {shot.tip && <InfoTip detail={shot.tip} label={shot.title} />}
+                </p>
               </figcaption>
             </figure>
           )
@@ -130,9 +143,16 @@ const capabilities = [
     font-size: 12px;
   }
 
+  .demo-note {
+    margin: 16px 0 0;
+    color: var(--fg-2);
+    font-size: 13px;
+  }
+
   .gallery {
     display: grid;
-    gap: 28px 20px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px 16px;
   }
 
   @media (min-width: 900px) {

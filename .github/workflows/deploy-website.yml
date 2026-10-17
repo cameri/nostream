@@ -12,15 +12,21 @@ on:
       - published
   workflow_dispatch:
 
-concurrency:
-  group: deploy-website
-  cancel-in-progress: false
-
 jobs:
   deploy:
+    # Concurrency lives on the job, not the workflow: a relay release
+    # (v* tag) fails the if below and must not enter this deploy queue,
+    # where it could replace a queued website deploy. Measured: the
+    # nostream@3.5.1 release run (38845857055) was cancelled with zero
+    # jobs at the workflow-level group, before the job if could skip it.
+    concurrency:
+      group: deploy-website
+      cancel-in-progress: false
+    # workflow_dispatch ignores every on: filter — a manual run must not
+    # publish a non-main branch to production, so dispatch stays main-only.
     if: >-
       ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
-      github.event_name == 'workflow_dispatch' }}
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
     name: Build and deploy to Cloudflare Workers
     runs-on: ubuntu-latest
     # Deploy credentials live in this GitHub environment: CLOUDFLARE_API_TOKEN
@@ -29,6 +35,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Checkout gets the release event's default: the tag that triggered the
+      # run (refs/tags/nostream-website@X.Y.Z). The website environment's
+      # branch policy admits nostream-website@* — every release deploy since
+      # 1.1.1 has run on the tag ref — so the build is exactly the released
+      # commit, even if main has advanced by the time the job starts.
       - name: Checkout
         uses: actions/checkout@v3
 
@@ -53,4 +64,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm exec wrangler deploy
+        # The router worker: serves the production assets itself and proxies
+        # /preview/<n> to per-PR preview workers (deploy-website-preview.yml).
+        run: pnpm exec wrangler deploy --config wrangler.router.jsonc

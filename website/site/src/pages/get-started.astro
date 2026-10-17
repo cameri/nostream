@@ -33,7 +33,7 @@ const agents = ['Claude Code', 'Cursor', 'Codex', 'OpenCode', 'Pi']
     <span class="g1">Your relay,</span> <span class="g3">built by your agent.</span>
   </PageHead>
 
-  <section class="section top">
+  <section class="section top" id="build">
     <div class="container">
       <article class="schematic panel reveal">
         <div class="head">
@@ -70,6 +70,10 @@ const agents = ['Claude Code', 'Cursor', 'Codex', 'OpenCode', 'Pi']
       <div class="section-head">
         <p class="kicker reveal"><span class="idx">01</span> What the schematic builds</p>
         <h2 class="h2 reveal"><span class="g1">The upstream deploy path,</span> <span class="g3">phase by phase.</span></h2>
+        <p class="phase-note reveal">
+          Numbered as in the schematic: it also runs P1 (image discovery), P3 (optional settings overrides) and P6
+          (optional WebSocket smoke test) — checks and choices your agent makes on its own.
+        </p>
       </div>
       <ol class="phases">
         {
@@ -202,6 +206,13 @@ const agents = ['Claude Code', 'Cursor', 'Codex', 'OpenCode', 'Pi']
 
   .phase p {
     margin: 0;
+    font-size: 14px;
+  }
+
+  .phase-note {
+    max-width: 640px;
+    margin: 0;
+    color: var(--fg-2);
     font-size: 14px;
   }
 
