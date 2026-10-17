@@ -13,6 +13,7 @@ use serde_yaml::Value;
 
 use crate::error::ConfigError;
 use crate::issue::Issue;
+use crate::path::{PathToken, format_path_tokens};
 use crate::paths::SettingsPaths;
 use crate::settings::Settings;
 use crate::validate::validate_document;
@@ -109,6 +110,9 @@ fn trim_trailing_separators_lossy(path: &Path) -> PathBuf {
 /// Reads the user's overrides: `settings.yaml` first, then the deprecated `settings.json`.
 ///
 /// Returns `None` when neither file exists. An empty YAML file is an empty override set.
+/// A path that exists but is not a regular file is an error ([`ConfigError::NotAFile`]),
+/// not absence: falling through would hide an unusable `settings.yaml` behind the legacy
+/// file or the defaults.
 ///
 /// The directory is created only by the mutating callers (the guided editor, the save path);
 /// a read probe reports `Ok(None)` for an absent directory instead of materialising one —
@@ -162,7 +166,7 @@ pub fn load_user_settings(config_base_dir: &Path) -> Result<Option<Value>, Confi
     }
 
     let settings_file = config_base_dir.join("settings.yaml");
-    if settings_file.is_file() {
+    if probe_settings_file(&settings_file)? {
         let document = load_document(&settings_file)?;
         return Ok(Some(if document.is_null() {
             Value::Mapping(serde_yaml::Mapping::new())
@@ -172,7 +176,7 @@ pub fn load_user_settings(config_base_dir: &Path) -> Result<Option<Value>, Confi
     }
 
     let legacy_file = config_base_dir.join("settings.json");
-    if legacy_file.is_file() {
+    if probe_settings_file(&legacy_file)? {
         let document = load_document(&legacy_file)?;
         return Ok(Some(if document.is_null() {
             Value::Mapping(serde_yaml::Mapping::new())
@@ -184,9 +188,132 @@ pub fn load_user_settings(config_base_dir: &Path) -> Result<Option<Value>, Confi
     Ok(None)
 }
 
+/// Classifies one settings file path: `true` reads it, `false` moves to the next candidate.
+///
+/// The capture decides with `fs.existsSync(settingsPath)` and then reads unconditionally, so
+/// a path that exists but is not a regular file (a directory named `settings.yaml`, a FIFO)
+/// is a *failure*, not absence — treating it as absent would fall through to the deprecated
+/// `settings.json` or to the shipped defaults and let `--check` report a clean config while
+/// the operator's real file is unusable. Only a path that does not exist falls through; a
+/// dangling symlink reports `existsSync` false in the capture too, so it also falls through.
+/// An inspection the process cannot perform at all (EACCES on the parent, ELOOP) is loud.
+fn probe_settings_file(path: &Path) -> Result<bool, ConfigError> {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(true),
+        Ok(_) => Err(ConfigError::NotAFile {
+            path: path.to_path_buf(),
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(ConfigError::StatSettingsPath {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 /// Deep-merges user overrides over the defaults (`mergeDeepRight`).
 pub fn merge(defaults: &Value, user: &Value) -> Value {
     merge_deep_right(defaults, user)
+}
+
+/// Narrows a validated document to [`Settings`], naming the field a value cannot fit.
+///
+/// `validate_document` grades a document the way the capture does, where every number is a
+/// JavaScript `number`; the typed schema distinguishes `u64`, `i64` and `f64`. A rate-limit
+/// `period` of `1000.5` is therefore a positive number to the validator and unrepresentable
+/// to [`crate::settings::RateLimit::period`], so validating alone could approve a document
+/// the daemon then refuses — and the refusal replaces the operator's whole configuration
+/// with the shipped defaults. Both the daemon and `config validate` call this, so neither
+/// can approve what the other cannot load.
+///
+/// The schema walk runs only when the conversion fails: the typed defaults are serialized
+/// back to a document — where a `u64` stays an integer and an `f64` becomes a float — and
+/// the first leaf whose number the candidate cannot represent names the field. Messages
+/// carry the class, never the operator's value.
+pub fn fit(candidate: &Value, defaults: &Value) -> Result<Settings, Issue> {
+    match serde_yaml::from_value::<Settings>(candidate.clone()) {
+        Ok(settings) => Ok(settings),
+        Err(error) => {
+            let projection = serde_yaml::from_value::<Settings>(defaults.clone())
+                .ok()
+                .and_then(|typed| serde_yaml::to_value(typed).ok());
+            if let Some(projection) = projection
+                && let Some(issue) = find_misfit(&projection, candidate, &mut Vec::new())
+            {
+                return Err(issue);
+            }
+            // Nothing the numeric walk can name: report the class, and the parse location
+            // when serde exposes one — never the value, which would echo into logs.
+            let location = error.location().map_or_else(String::new, |location| {
+                format!(" at line {} column {}", location.line(), location.column())
+            });
+            Err(Issue::new(
+                "$",
+                format!("settings do not fit the typed schema{location}"),
+            ))
+        }
+    }
+}
+
+/// Walks the typed projection against the candidate, returning the first leaf whose number
+/// the field's type cannot represent. Only numbers are compared: every other mismatch is
+/// already an issue from `validate_document`'s shape walk.
+///
+/// The projection cannot tell a `u32` field from an `i64` one — serde_yaml marks any
+/// non-negative integer as a positive integer — so a value too large for an `i64` field falls
+/// through to [`fit`]'s class-level finding rather than being named here.
+fn find_misfit(schema: &Value, candidate: &Value, path: &mut Vec<PathToken>) -> Option<Issue> {
+    match (schema, candidate) {
+        (Value::Mapping(schema), Value::Mapping(candidate)) => {
+            for (key, candidate_value) in candidate {
+                let Some(key) = key.as_str() else {
+                    continue;
+                };
+                let Some(schema_value) = schema.get(key) else {
+                    continue;
+                };
+                path.push(PathToken::Key(key.to_owned()));
+                let misfit = find_misfit(schema_value, candidate_value, path);
+                path.pop();
+                if misfit.is_some() {
+                    return misfit;
+                }
+            }
+            None
+        }
+        (Value::Sequence(schema), Value::Sequence(candidate)) => {
+            // A `Vec<T>` has one element type, so the first default entry is the schema for
+            // every element; a user's list may be longer or shorter than the defaults'.
+            let schema_entry = schema.first()?;
+            for (index, candidate_value) in candidate.iter().enumerate() {
+                path.push(PathToken::Index(index));
+                let misfit = find_misfit(schema_entry, candidate_value, path);
+                path.pop();
+                if misfit.is_some() {
+                    return misfit;
+                }
+            }
+            None
+        }
+        (Value::Number(schema_number), Value::Number(candidate_number)) => {
+            let message = if schema_number.is_f64() {
+                // Any number the document can carry fits an `f64` field.
+                return None;
+            } else if schema_number.is_u64() && !candidate_number.is_u64() {
+                if candidate_number.as_i64().is_some() {
+                    "must not be negative"
+                } else {
+                    "must be a whole number"
+                }
+            } else if schema_number.is_i64() && candidate_number.as_i64().is_none() {
+                "must fit a signed 64-bit integer"
+            } else {
+                return None;
+            };
+            Some(Issue::new(format_path_tokens(path), message))
+        }
+        _ => None,
+    }
 }
 
 /// The result of loading the effective settings.
@@ -238,29 +365,17 @@ pub fn load(paths: &SettingsPaths) -> Result<LoadOutcome, ConfigError> {
         });
     }
 
-    match serde_yaml::from_value::<Settings>(merged) {
+    match fit(&merged, &defaults) {
         Ok(settings) => Ok(LoadOutcome {
             settings,
             issues,
             used_defaults: false,
         }),
-        Err(error) => {
-            // serde's message renders the offending scalar (e.g. an out-of-i64 integer the
-            // shape walk cannot see), which would echo an operator-supplied value into
-            // stderr and logs. Report the class, not the value; the parse location rides
-            // along when serde exposes one.
-            let location = error.location().map_or_else(String::new, |location| {
-                format!(" at line {} column {}", location.line(), location.column())
-            });
-            Ok(LoadOutcome {
-                settings: defaults_settings,
-                issues: vec![Issue::new(
-                    "$",
-                    format!("settings do not fit the typed schema{location}"),
-                )],
-                used_defaults: true,
-            })
-        }
+        Err(issue) => Ok(LoadOutcome {
+            settings: defaults_settings,
+            issues: vec![issue],
+            used_defaults: true,
+        }),
     }
 }
 

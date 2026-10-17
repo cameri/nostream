@@ -8,7 +8,8 @@ use std::process::ExitCode;
 
 use nostream_config::path::get_by_path;
 use nostream_config::{
-    SettingsPaths, load, load_defaults, load_document, load_user_settings, merge, validate_document,
+    SettingsPaths, fit, load, load_defaults, load_document, load_user_settings, merge,
+    validate_document,
 };
 use serde_yaml::Value;
 
@@ -55,7 +56,16 @@ pub fn validate(
         None => defaults.clone(),
     };
 
-    let issues = validate_document(&merged, &defaults);
+    let mut issues = validate_document(&merged, &defaults);
+    if issues.is_empty() {
+        // The document walk grades JavaScript types; the typed schema is stricter. A document
+        // the walk approves but the daemon cannot load (a fractional integer, for one) is
+        // refused here, with the field named, so `config validate` never blesses a config the
+        // daemon will discard.
+        if let Err(issue) = fit(&merged, &defaults) {
+            issues.push(issue);
+        }
+    }
     if issues.is_empty() {
         return Ok(CommandOutput {
             lines: vec!["settings valid: 0 issues".to_owned()],

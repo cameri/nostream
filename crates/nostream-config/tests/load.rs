@@ -5,9 +5,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use nostream_config::SettingsPaths;
-use nostream_config::load::{load, load_user_settings, merge};
+use nostream_config::load::{fit, load, load_user_settings, merge};
 use nostream_config::path::get_by_path;
+use nostream_config::{ConfigError, SettingsPaths, load_defaults, validate_document};
 use serde_yaml::Value;
 use tempfile::TempDir;
 
@@ -325,4 +325,90 @@ fn a_relative_single_component_dangling_link_with_a_trailing_separator_is_a_find
     assert!(outcome.used_defaults);
     assert_eq!(outcome.issues.len(), 1);
     assert!(outcome.issues[0].to_string().contains("not a directory"));
+}
+
+#[test]
+fn a_fractional_integer_field_is_refused_by_validation_and_by_the_daemon_alike() {
+    // R8's agreement rule, and the finding that produced it: `period` is a JavaScript number
+    // to the capture's validator (positive, therefore fine) and a `u64` to the typed schema,
+    // so approving on the walk alone let `config validate` bless a document the daemon then
+    // rejected — replacing the operator's whole configuration with the shipped defaults.
+    let config_dir = TempDir::new().expect("tempdir");
+    write(
+        config_dir.path(),
+        "settings.yaml",
+        "limits:\n  event:\n    pow:\n      periodMs: 1000.5\n",
+    );
+    let settings_paths = paths(config_dir.path());
+
+    // Path 1, the daemon's: `load` reports the field and substitutes the defaults.
+    let outcome = load(&settings_paths).expect("the loader never refuses");
+    assert!(outcome.used_defaults);
+    assert_eq!(
+        outcome
+            .issues
+            .iter()
+            .map(|issue| issue.to_string())
+            .collect::<Vec<_>>(),
+        vec!["limits.event.pow.periodMs: must be a whole number"],
+    );
+
+    // Path 2, `config validate`'s: the document walk on its own still approves (it mirrors
+    // the capture), and `fit` — which the CLI now runs — rejects the same document at the
+    // same field, so the two paths agree.
+    let defaults = load_defaults(&settings_paths.default_settings_file).expect("defaults");
+    let user = load_user_settings(config_dir.path())
+        .expect("read")
+        .expect("present");
+    let merged = merge(&defaults, &user);
+    assert_eq!(validate_document(&merged, &defaults), Vec::new());
+    let issue = fit(&merged, &defaults).expect_err("the typed schema refuses");
+    assert_eq!(
+        issue.to_string(),
+        "limits.event.pow.periodMs: must be a whole number"
+    );
+}
+
+#[test]
+fn a_negative_integer_field_names_the_field() {
+    // No semantic rule covers `workers.count`, so the document walk is silent and only the
+    // typed fit can refuse it — which is the point: the field is named rather than the whole
+    // document being reported at `$`.
+    let defaults: Value =
+        load_defaults(&repo_root().join("resources/default-settings.yaml")).expect("defaults");
+    let merged = merge(
+        &defaults,
+        &serde_yaml::from_str::<Value>("workers:\n  count: -1\n").expect("document"),
+    );
+    assert_eq!(validate_document(&merged, &defaults), Vec::new());
+    let issue = fit(&merged, &defaults).expect_err("the typed schema refuses");
+    assert_eq!(issue.to_string(), "workers.count: must not be negative");
+}
+
+#[test]
+fn a_settings_yaml_directory_is_a_finding_not_absence() {
+    // `is_file()` used to answer false here, so the loader fell through to the deprecated
+    // `settings.json` or the defaults and `--check` reported a clean config while the
+    // operator's real file was unusable.
+    let config_dir = TempDir::new().expect("tempdir");
+    fs::create_dir(config_dir.path().join("settings.yaml")).expect("a directory at the path");
+
+    let error = load_user_settings(config_dir.path()).expect_err("a directory is reported");
+    assert!(matches!(error, ConfigError::NotAFile { .. }));
+    assert!(error.to_string().contains("not a regular file"));
+
+    let outcome = load(&paths(config_dir.path())).expect("the defaults still load");
+    assert!(outcome.used_defaults);
+    assert_eq!(outcome.issues.len(), 1);
+    assert_eq!(outcome.issues[0].path, "$");
+    assert!(outcome.issues[0].message.contains("settings.yaml"));
+}
+
+#[test]
+fn a_legacy_json_directory_is_reported_the_same_way() {
+    let config_dir = TempDir::new().expect("tempdir");
+    fs::create_dir(config_dir.path().join("settings.json")).expect("a directory at the path");
+
+    let error = load_user_settings(config_dir.path()).expect_err("a directory is reported");
+    assert!(matches!(error, ConfigError::NotAFile { .. }));
 }

@@ -44,6 +44,11 @@ pub enum ConfigError {
     #[error("settings path {path} exists but is not a directory")]
     NotADirectory { path: std::path::PathBuf },
 
+    /// A settings file path exists but is not a regular file (a directory, a FIFO, a device).
+    /// A finding, not absence: the capture `existsSync`-es the path and then fails on the read.
+    #[error("settings file {path} exists but is not a regular file")]
+    NotAFile { path: std::path::PathBuf },
+
     /// The configured settings location could not be stat-ed (unreadable parent, symlink
     /// loop, permission denied) — treated as a finding, not as absence.
     #[error("settings path {path} could not be inspected: {source}")]

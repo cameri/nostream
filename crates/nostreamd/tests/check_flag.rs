@@ -84,3 +84,43 @@ fn check_exits_two_on_an_invalid_config() {
     assert_eq!(code, Some(2), "exit code");
     assert!(stderr.contains("strategy must be ewma or sliding_window"));
 }
+
+#[test]
+fn check_exits_two_on_a_value_the_typed_schema_cannot_hold() {
+    // `config validate` and the daemon must agree: a fractional integer is a positive number
+    // to the document walk and unrepresentable to the typed schema, so it is refused with the
+    // field named instead of being approved here and discarded at load.
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "limits:\n  event:\n    pow:\n      periodMs: 1000.5\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, _stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(2), "exit code");
+    assert!(
+        stderr.contains("limits.event.pow.periodMs"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn check_refuses_a_settings_yaml_that_is_a_directory() {
+    // A path that exists but is not a regular file used to read as absence, so `--check`
+    // approved the defaults while the operator's real file was unusable.
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir(directory.path().join("settings.yaml")).expect("a directory at the path");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, _stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_ne!(code, Some(0), "a directory must not read as a clean config");
+    assert!(stderr.contains("not a regular file"), "stderr: {stderr}");
+}
