@@ -7,8 +7,6 @@
 
 use std::ffi::OsStr;
 use std::fs;
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use serde_yaml::Value;
