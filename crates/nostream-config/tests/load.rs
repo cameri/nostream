@@ -40,12 +40,15 @@ fn the_shipped_defaults_load_clean() {
 }
 
 #[test]
-fn the_loader_creates_the_config_directory() {
+fn the_loader_does_not_create_the_config_directory() {
+    // The read probe is read-only: `nostreamd --check` on a fresh host must not materialise
+    // `.nostr/`. Directory creation belongs to the mutating callers (the guided editor, the
+    // save path).
     let config_dir = TempDir::new().expect("tempdir");
     let target = config_dir.path().join("nested").join("config");
-    let user = load_user_settings(&target).expect("the directory is created");
+    let user = load_user_settings(&target).expect("an absent directory is not an error");
     assert!(user.is_none());
-    assert!(target.is_dir());
+    assert!(!target.exists());
 }
 
 #[test]

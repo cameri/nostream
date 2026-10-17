@@ -62,11 +62,14 @@ pub fn load_document(path: &Path) -> Result<Value, ConfigError> {
 /// Reads the user's overrides: `settings.yaml` first, then the deprecated `settings.json`.
 ///
 /// Returns `None` when neither file exists. An empty YAML file is an empty override set.
+///
+/// The directory is created only by the mutating callers (the guided editor, the save path);
+/// a read probe reports `Ok(None)` for an absent directory instead of materialising one —
+/// `nostreamd --check` runs this and must not write.
 pub fn load_user_settings(config_base_dir: &Path) -> Result<Option<Value>, ConfigError> {
-    fs::create_dir_all(config_base_dir).map_err(|source| ConfigError::Read {
-        path: config_base_dir.to_path_buf(),
-        source,
-    })?;
+    if !config_base_dir.is_dir() {
+        return Ok(None);
+    }
 
     let settings_file = config_base_dir.join("settings.yaml");
     if settings_file.is_file() {
@@ -151,13 +154,22 @@ pub fn load(paths: &SettingsPaths) -> Result<LoadOutcome, ConfigError> {
             issues,
             used_defaults: false,
         }),
-        Err(error) => Ok(LoadOutcome {
-            settings: defaults_settings,
-            issues: vec![Issue::new(
-                "$",
-                format!("settings do not fit the typed schema: {error}"),
-            )],
-            used_defaults: true,
-        }),
+        Err(error) => {
+            // serde's message renders the offending scalar (e.g. an out-of-i64 integer the
+            // shape walk cannot see), which would echo an operator-supplied value into
+            // stderr and logs. Report the class, not the value; the parse location rides
+            // along when serde exposes one.
+            let location = error.location().map_or_else(String::new, |location| {
+                format!(" at line {} column {}", location.line(), location.column())
+            });
+            Ok(LoadOutcome {
+                settings: defaults_settings,
+                issues: vec![Issue::new(
+                    "$",
+                    format!("settings do not fit the typed schema{location}"),
+                )],
+                used_defaults: true,
+            })
+        }
     }
 }
