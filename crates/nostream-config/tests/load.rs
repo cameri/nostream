@@ -204,3 +204,17 @@ fn a_config_dir_override_wins_over_the_environment() {
             .join("default-settings.yaml")
     );
 }
+
+#[test]
+fn a_config_path_that_is_a_file_is_a_finding_not_silence() {
+    // Round 3 item 5: a location that exists but is not a directory must warn and fall
+    // back, exactly like any other unreadable user configuration.
+    let outer = TempDir::new().expect("tempdir");
+    let impostor = outer.path().join("impostor");
+    std::fs::write(&impostor, "not a directory").expect("write the file");
+
+    let outcome = load(&paths(&impostor)).expect("the loader never refuses");
+    assert!(outcome.used_defaults);
+    assert_eq!(outcome.issues.len(), 1);
+    assert!(outcome.issues[0].to_string().contains("not a directory"));
+}

@@ -22,6 +22,12 @@ impl std::fmt::Debug for Secret {
     }
 }
 
+impl std::fmt::Display for Secret {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("***")
+    }
+}
+
 impl Secret {
     /// The raw value. Callers must not log it.
     pub fn expose(&self) -> &str {

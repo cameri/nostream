@@ -100,3 +100,47 @@ fn a_non_secret_url_somewhere_else_is_left_alone() {
     assert!(!is_sensitive_settings_path("info.relay_url"));
     assert!(!is_sensitive_settings_path("mirroring.static[0].address"));
 }
+
+#[test]
+fn the_subtree_root_still_redacts_webhook_urls() {
+    // Regression for round 3 item 4: every earlier redaction test rooted the walk at the
+    // full settings document, so paths carried `admin.notifications.`; the admin
+    // notifications getter roots it at the notifications subtree, and the bare-subtree
+    // serialization produced `targets[0].url`, which the `url` rule did not match —
+    // while botToken (a sensitive key anywhere) redacted, hiding the gap.
+    use nostream_config::notifications::{
+        AdminNotificationsSettings, OperatorNotificationChannelType,
+        OperatorNotificationEventToggles, OperatorNotificationRetrySettings,
+        OperatorNotificationTarget, get_redacted_admin_notifications,
+    };
+
+    let settings = AdminNotificationsSettings {
+        enabled: true,
+        targets: vec![OperatorNotificationTarget {
+            id: "t1".to_owned(),
+            target_type: OperatorNotificationChannelType::Discord,
+            enabled: Some(true),
+            url: Some(nostream_core::Secret(
+                "https://discord.com/api/webhooks/token-value".to_owned(),
+            )),
+            bot_token: Some(nostream_core::Secret("bot-token-value".to_owned())),
+            chat_id: None,
+        }],
+        events: OperatorNotificationEventToggles::default(),
+        retry: OperatorNotificationRetrySettings::default(),
+        delivery_log_retention_days: None,
+    };
+
+    let redacted = get_redacted_admin_notifications(&settings, None).expect("redacts");
+    let url = redacted.targets[0]
+        .url
+        .as_ref()
+        .map(|secret| secret.expose());
+    let bot = redacted.targets[0]
+        .bot_token
+        .as_ref()
+        .map(|secret| secret.expose());
+    assert_eq!(url, Some("***"), "the webhook url must redact");
+    assert_eq!(bot, Some("***"));
+    assert!(!format!("{redacted:?}").contains("token-value"));
+}

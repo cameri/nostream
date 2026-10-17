@@ -36,6 +36,14 @@ pub enum ConfigError {
     #[error("settings do not fit the typed schema: {0}")]
     Typed(#[from] serde_yaml::Error),
 
+    /// The redaction walk dropped a subtree it was handed; never expected.
+    #[error("redaction dropped the notifications subtree")]
+    RedactionDroppedSubtree,
+
+    /// The configured settings location exists but is not a directory.
+    #[error("settings path {path} exists but is not a directory")]
+    NotADirectory { path: std::path::PathBuf },
+
     /// The defaults document is not a mapping.
     #[error("{path} does not contain a settings mapping")]
     NotAMapping { path: PathBuf },

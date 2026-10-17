@@ -67,6 +67,14 @@ pub fn load_document(path: &Path) -> Result<Value, ConfigError> {
 /// a read probe reports `Ok(None)` for an absent directory instead of materialising one —
 /// `nostreamd --check` runs this and must not write.
 pub fn load_user_settings(config_base_dir: &Path) -> Result<Option<Value>, ConfigError> {
+    // A path that exists but is not a directory (a file, a broken symlink) is a finding,
+    // not silence: the operator configured a location the daemon cannot read. Absence
+    // stays `Ok(None)`.
+    if config_base_dir.exists() && !config_base_dir.is_dir() {
+        return Err(ConfigError::NotADirectory {
+            path: config_base_dir.to_path_buf(),
+        });
+    }
     if !config_base_dir.is_dir() {
         return Ok(None);
     }

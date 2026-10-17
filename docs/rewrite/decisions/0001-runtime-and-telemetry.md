@@ -7,13 +7,16 @@
 ## Context
 
 The Rust rewrite replaces a Node.js relay whose process model is **cluster-based**:
-`src/index.ts` boots `App` in the primary, `src/app/app.ts:102-125` forks
-`cpus().length` client workers (`WORKER_TYPE=worker`) plus dedicated
-maintenance / static-mirroring / relay-monitor / DVM workers, and **every worker calls
-`adapter.listen(port)`** (`src/app/worker.ts:32`) — the OS queues the connections and each
-worker accepts, with cluster IPC re-emitting messages into the adapter
-(`worker.ts:36-37`). The worker count comes from `WORKER_COUNT`, else
-`workers.count`, else `cpus().length`. The primary resolves the event-store backend once
+`src/index.ts` boots `App` in the primary; `src/app/app.ts:102-125` forks
+`WORKER_COUNT`-else-`workers.count`-else-`cpus().length` client workers
+(`WORKER_TYPE=worker`), and `app.ts:127-155` forks the specialist workers — one
+maintenance, one static-mirroring per configured mirror, one relay-monitor when
+`nip66.enabled`, and `dvm.workers.length` DVM orchestrators. **Only `AppWorker` listens**:
+`src/app/worker.ts:32` computes the port (`PORT` || `RELAY_PORT` || 8008) and `:33` calls
+`adapter.listen(port)`, so the capture runs one listener per client worker (the
+specialists never touch the adapter) — the OS queues the connections and each client
+worker accepts, with cluster IPC re-emitting messages into its adapter
+(`worker.ts:36-37`). The primary resolves the event-store backend once
 (`app.ts:92-95`) and stamps `EVENT_STORE_BACKEND` into every fork's env. Drain runs on
 SIGINT/SIGTERM through `src/utils/shutdown-state.ts`. The telemetry section of the
 original spec named a `tracing-otlp` crate.
@@ -25,13 +28,13 @@ original spec named a `tracing-otlp` crate.
 1. **tokio multi-thread runtime** for the daemon (`nostreamd`), with `enable_all`.
 2. **A single acceptor task** owns the listener. No `SO_REUSEPORT`, no per-core
    acceptor sharding in Phase 1. The capture's model — a cluster primary forking
-   `cpus().length` client workers that all `listen()` the same port, plus the IPC hop
-   that re-emits cluster messages into each worker's adapter — is what Phase 2 decides
-   **against** or reproduces, on measurements, not upfront. (Round-1 correction: the
-   capture is not cluster-less; the original wording here inverted it.) Phase 1 keeps
-   the tokio equivalent of *one* worker: `Connection::accept` and the relay wire take
-   the socket in Phase 2; until then sockets are accepted and dropped with a `debug!`
-   line.
+   `cpus().length` client workers that each `listen()` the same port (only client
+   workers listen; the specialist workers do not), plus the IPC hop that re-emits
+   cluster messages into each worker's adapter — is what Phase 2 decides **against**
+   or reproduces, on measurements, not upfront. (Round-1 correction: the capture is
+   not cluster-less; the original wording here inverted it.) Phase 1 keeps the tokio
+   equivalent of *one* worker: `Connection::accept` and the relay wire take the socket
+   in Phase 2; until then sockets are accepted and dropped with a `debug!` line.
 3. The listen port resolves as `--listen-port`, then `PORT`, then `RELAY_PORT`,
    then `8008` — the capture's rule, in order (`src/app/worker.ts:32`).
 4. Drain: SIGINT/SIGTERM set `nostream_core::lifecycle::ShutdownState`

@@ -2,6 +2,7 @@
 //! `src/@types/operator-notifications.ts`.
 
 use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
 
 use crate::redaction::redact_settings_secrets;
 
@@ -193,13 +194,28 @@ pub fn get_merged_admin_notifications(
 }
 
 /// The merged block with secrets replaced by `***`, for the admin UI.
+///
+/// The subtree is wrapped in `{ admin: { notifications } }` exactly as the capture's caller
+/// does (`src/utils/admin-notifications-settings.ts:28`): `redact_settings_secrets` classifies
+/// by path, and the `url` rule matches `admin.notifications.targets[…]` — a bare
+/// `targets[0].url` would sail through while `botToken` (a sensitive key anywhere) still
+/// redacted, hiding the gap.
 pub fn get_redacted_admin_notifications(
     merged: &AdminNotificationsSettings,
     defaults: Option<&AdminNotificationsSettings>,
 ) -> Result<AdminNotificationsSettings, crate::ConfigError> {
-    let document = serde_yaml::to_value(merged)?;
-    let redacted = redact_settings_secrets(&document);
-    let settings: AdminNotificationsSettings = serde_yaml::from_value(redacted)?;
+    let notifications = serde_yaml::to_value(merged)?;
+    let mut wrapper = serde_yaml::Mapping::new();
+    let mut admin = serde_yaml::Mapping::new();
+    admin.insert(Value::String("notifications".to_owned()), notifications);
+    wrapper.insert(Value::String("admin".to_owned()), Value::Mapping(admin));
+    let redacted = redact_settings_secrets(&Value::Mapping(wrapper));
+    let redacted_notifications = redacted
+        .get("admin")
+        .and_then(|admin| admin.get("notifications"))
+        .cloned()
+        .ok_or(crate::ConfigError::RedactionDroppedSubtree)?;
+    let settings: AdminNotificationsSettings = serde_yaml::from_value(redacted_notifications)?;
     Ok(get_merged_admin_notifications(Some(&settings), defaults))
 }
 
