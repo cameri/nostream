@@ -26,7 +26,10 @@ if (!existsSync(settingsModule) || !existsSync(path.join(cwd, 'resources/default
   process.exit(2)
 }
 
-const require = createRequire(import.meta.url)
+// Resolve ts-node from the capture tree, not from this script's own directory: the setup
+// above installs the dependencies in `cwd`, and a rewrite checkout with no `node_modules` of
+// its own has nothing beside this file to resolve.
+const require = createRequire(path.join(cwd, 'package.json'))
 require('ts-node/register/transpile-only')
 const { loadDefaults, setByPath, validateSettings } = require(settingsModule)
 
@@ -107,7 +110,7 @@ const EXEMPT = {
   backend_lmdb: {
     paths: ['eventStore.backend'],
     reason:
-      'D7: the rewrite targets LMDB, so the Rust validator accepts lmdb and rejects values outside {postgres, lmdb}. Path-scoped, not case-scoped.',
+      "D7: the rewrite's target backend is LMDB, so the Rust validator accepts lmdb and rejects only values outside {postgres, lmdb}. Path-scoped, not case-scoped.",
   },
 }
 
