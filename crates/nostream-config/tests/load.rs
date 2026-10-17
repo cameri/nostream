@@ -248,3 +248,45 @@ fn a_config_dir_behind_an_unreadable_parent_is_a_finding() {
     assert!(outcome.used_defaults);
     assert_eq!(outcome.issues.len(), 1);
 }
+
+#[test]
+fn a_symlink_to_a_real_directory_is_accepted() {
+    // Round 5 regression: the round-4 probe used lstat, which does not resolve the final
+    // component, so a config dir that is a symlink to a real directory — a location the
+    // capture accepts (existsSync follows links) — substituted the defaults. (Fails
+    // against 1be80b2.)
+    let outer = TempDir::new().expect("tempdir");
+    let real = outer.path().join("real-config");
+    std::fs::create_dir_all(&real).expect("create the real directory");
+    std::fs::write(real.join("settings.yaml"), "info:\n  name: linked-relay\n")
+        .expect("write the override");
+
+    let link = outer.path().join("config-link");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&real, &link).expect("create the link");
+    #[cfg(not(unix))]
+    std::os::windows::fs::symlink_dir(&real, &link).expect("create the link");
+
+    let outcome = load(&paths(&link)).expect("the loader never refuses");
+    assert!(!outcome.used_defaults, "the symlinked dir must load");
+    assert!(outcome.issues.is_empty());
+    assert_eq!(outcome.settings.info.name, "linked-relay");
+}
+
+#[test]
+fn a_dangling_link_with_a_trailing_separator_is_a_finding() {
+    // POSIX resolves a trailing slash through the link, so `…/link/` on a dangling link
+    // stats as ENOENT; the probe trims the separators so the second probe sees the link
+    // entry and reports the finding instead of silence.
+    let outer = TempDir::new().expect("tempdir");
+    let link = outer.path().join("dangling");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(outer.path().join("never-created"), &link)
+        .expect("create the dangling link");
+
+    let with_separator = PathBuf::from(format!("{}/", link.display()));
+    let outcome = load(&paths(&with_separator)).expect("the loader never refuses");
+    assert!(outcome.used_defaults);
+    assert_eq!(outcome.issues.len(), 1);
+    assert!(outcome.issues[0].to_string().contains("not a directory"));
+}

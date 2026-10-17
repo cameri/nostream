@@ -59,6 +59,24 @@ pub fn load_document(path: &Path) -> Result<Value, ConfigError> {
     Ok(document)
 }
 
+/// Trims trailing `/` (and `\` on Windows) from a path for lstat: POSIX resolves a trailing
+/// slash through a symlink, so `…/link/` on a dangling link reports ENOENT rather than the
+/// link itself; trimming is what lets the second probe see the entry.
+fn trim_trailing_separators(path: &Path) -> &Path {
+    let mut path = path;
+    while let Some(last) = path.to_str().and_then(|text| text.chars().last()) {
+        if last == '/' || (cfg!(windows) && last == '\\') {
+            match path.parent() {
+                Some(parent) if parent != path => path = parent,
+                _ => break,
+            }
+        } else {
+            break;
+        }
+    }
+    path
+}
+
 /// Reads the user's overrides: `settings.yaml` first, then the deprecated `settings.json`.
 ///
 /// Returns `None` when neither file exists. An empty YAML file is an empty override set.
@@ -67,23 +85,42 @@ pub fn load_document(path: &Path) -> Result<Value, ConfigError> {
 /// a read probe reports `Ok(None)` for an absent directory instead of materialising one —
 /// `nostreamd --check` runs this and must not write.
 pub fn load_user_settings(config_base_dir: &Path) -> Result<Option<Value>, ConfigError> {
-    // The probe is symlink-aware: `Path::exists` follows links, so a dangling link (or an
-    // unreadable parent — EACCES, ELOOP) would fall through to `Ok(None)` and `--check`
-    // would print a clean bill for a location the daemon cannot read. `symlink_metadata`
-    // does not follow the final component: an entry that cannot be stat-ed at all, link or
-    // not, is a finding; a stat-able non-directory (file, dangling link, fifo, …) is a
-    // finding; only true absence is `Ok(None)`.
-    match std::fs::symlink_metadata(config_base_dir) {
+    // The probe is symlink-aware, in the capture's direction: `fs::metadata` follows the
+    // final component (the capture's `existsSync` does too), so a config dir that is a
+    // symlink to a real directory is accepted and its target is used. When the followed
+    // stat reports NotFound, `symlink_metadata` (lstat, trailing separators trimmed —
+    // POSIX resolves a trailing slash through the link) distinguishes a dangling link
+    // entry (`NotADirectory`) from true absence (`Ok(None)`); any other followed-stat
+    // error (EACCES on a parent, ELOOP, ENOTDIR) is loud: the operator named a location
+    // the daemon cannot even inspect.
+    match std::fs::metadata(config_base_dir) {
         Ok(metadata) if metadata.is_dir() => {}
         Ok(_) => {
             return Err(ConfigError::NotADirectory {
                 path: config_base_dir.to_path_buf(),
             });
         }
-        // Plain absence stays `Ok(None)` — the read-only probe contract. Any other stat
-        // failure (EACCES on a parent, ELOOP, ENOTDIR) is loud: the operator named a
-        // location the daemon cannot even inspect.
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(followed) if followed.kind() == std::io::ErrorKind::NotFound => {
+            let without_trailing = trim_trailing_separators(config_base_dir);
+            match std::fs::symlink_metadata(without_trailing) {
+                Ok(_) => {
+                    // The entry itself exists (a dangling link, or a link with trailing
+                    // separators that POSIX forced us to resolve): a finding, not silence.
+                    return Err(ConfigError::NotADirectory {
+                        path: config_base_dir.to_path_buf(),
+                    });
+                }
+                Err(link_error) if link_error.kind() == std::io::ErrorKind::NotFound => {
+                    return Ok(None);
+                }
+                Err(source) => {
+                    return Err(ConfigError::StatSettingsPath {
+                        path: config_base_dir.to_path_buf(),
+                        source,
+                    });
+                }
+            }
+        }
         Err(source) => {
             return Err(ConfigError::StatSettingsPath {
                 path: config_base_dir.to_path_buf(),
