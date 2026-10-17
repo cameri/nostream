@@ -4,8 +4,11 @@
 //! It owns these TypeScript paths from the capture commit
 //! (`242a3001d77149e4d70151ec03060c4ef44a1547`):
 //!
-//! - `src/handlers/request-handlers/` (14 files, HTTP rather than Nostr wire)
-//! - `src/controllers/admin/` (16) and `src/routes/admin/index.ts`
+//! - `src/handlers/request-handlers/` (all 14 files — the eight HTTP document/health
+//!   handlers and the six middlewares/wrappers, including `admin-enabled-middleware`,
+//!   `rate-limiter-middleware`, `with-admin-controller-request-handler` and
+//!   `with-controller-request-handler`)
+//! - `src/controllers/admin/` (all 16) and `src/routes/admin/index.ts` (all 18 routes)
 //! - `src/schemas/admin-*.ts` (3)
 //! - `src/utils/admin-*.ts` (7 files, except `admin-notifications-settings.ts`, which belongs
 //!   to `nostream-config`)

@@ -1,8 +1,9 @@
 //! The acceptor: one task owning the listener, accepting sockets, handing each to the relay.
 //!
 //! This is the Phase-1 runtime decision (ADR 0001): a **single acceptor task**, no
-//! `SO_REUSEPORT`, no per-core acceptor sharding — the TS relay is a single Node process, and
-//! the multi-worker fan-out is a Phase-2 decision to take against measurements, not upfront.
+//! `SO_REUSEPORT`, no per-core acceptor sharding. The capture's model is a cluster primary
+//! forking `cpus().length` client workers that all `listen()` the same port plus an IPC hop;
+//! Phase 2 decides against or reproduces that fan-out on measurements.
 
 use std::net::SocketAddr;
 
