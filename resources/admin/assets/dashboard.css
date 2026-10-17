@@ -754,6 +754,30 @@
   }
 }
 
+.network-health-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.network-health-timeline-item {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+  width: 100%;
+}
+
+.network-health-timeline-item.is-selected {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .network-health-results {
   display: grid;
   gap: 0.75rem;

@@ -40,6 +40,8 @@
   const networkHealthSummary = document.getElementById('network-health-summary')
   const networkHealthResults = document.getElementById('network-health-results')
   const networkHealthRunAt = document.getElementById('network-health-run-at')
+  const networkHealthTimelineWrap = document.getElementById('network-health-timeline-wrap')
+  const networkHealthTimeline = document.getElementById('network-health-timeline')
 
   let settingsLoaded = false
   let settingsLoading = false
@@ -59,6 +61,10 @@
   const staleThresholdMs = 15000
   let networkHealthPollTimer
   const networkHealthPollIntervalMs = 60000
+  const networkHealthHistoryLimit = 24
+  let networkHealthHistoryRuns = []
+  let selectedNetworkHealthRunAt = null
+  let networkHealthHistoryPinned = false
 
   const statusClasses = ['status-ok', 'status-degraded', 'status-unavailable', 'status-down', 'status-no-data']
 
@@ -360,6 +366,7 @@
 
     startMetricsStream()
     void refreshNetworkHealth()
+    void refreshNetworkHealthHistory()
     startNetworkHealthPolling()
   }
 
@@ -374,6 +381,7 @@
     stopNetworkHealthPolling()
     networkHealthPollTimer = setInterval(() => {
       void refreshNetworkHealth()
+      void refreshNetworkHealthHistory()
     }, networkHealthPollIntervalMs)
   }
 
@@ -412,6 +420,60 @@
     }
   }
 
+  const renderNetworkHealthTimeline = (runs) => {
+    if (!networkHealthTimeline || !networkHealthTimelineWrap) {
+      return
+    }
+
+    networkHealthTimeline.replaceChildren()
+
+    if (!Array.isArray(runs) || runs.length === 0) {
+      networkHealthTimelineWrap.classList.add('d-none')
+      return
+    }
+
+    networkHealthTimelineWrap.classList.remove('d-none')
+
+    runs.forEach((run) => {
+      const runAt = run?.runAt
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'network-health-timeline-item'
+      button.setAttribute('role', 'listitem')
+
+      const status = run?.status ?? 'failed'
+      const statusClass =
+        status === 'ok' ? 'status-ok' : status === 'partial' ? 'status-degraded' : 'status-down'
+      button.classList.add(statusClass)
+
+      if (runAt && runAt === selectedNetworkHealthRunAt) {
+        button.classList.add('is-selected')
+      }
+
+      const runAtMs = Date.parse(runAt ?? '')
+      const label = Number.isFinite(runAtMs) ? new Date(runAtMs).toISOString() : 'Unknown run'
+      const targetCount = Array.isArray(run?.results) ? run.results.length : 0
+      button.textContent = `${label} · ${status} · ${targetCount} target(s)`
+
+      button.addEventListener('click', () => {
+        if (networkHealthHistoryPinned && runAt && runAt === selectedNetworkHealthRunAt) {
+          networkHealthHistoryPinned = false
+          selectedNetworkHealthRunAt = null
+          renderNetworkHealthTimeline(networkHealthHistoryRuns)
+          void refreshNetworkHealth()
+          return
+        }
+
+        networkHealthHistoryPinned = true
+        selectedNetworkHealthRunAt = runAt ?? null
+        renderNetworkHealthTimeline(networkHealthHistoryRuns)
+        renderNetworkHealthSnapshot(run)
+      })
+
+      networkHealthTimeline.appendChild(button)
+    })
+  }
+
   const renderNetworkHealthSnapshot = (snapshot) => {
     if (!networkHealthEmpty || !networkHealthSummary || !networkHealthResults) {
       return
@@ -422,6 +484,9 @@
       networkHealthSummary.classList.add('d-none')
       networkHealthResults.classList.add('d-none')
       networkHealthResults.replaceChildren()
+      if (networkHealthTimelineWrap) {
+        networkHealthTimelineWrap.classList.add('d-none')
+      }
       setNetworkHealthSyncLine('no probe snapshot available')
       return
     }
@@ -614,9 +679,50 @@
       }
 
       const body = await response.json()
-      renderNetworkHealthSnapshot(body.snapshot ?? null)
+      const snapshot = body.snapshot ?? null
+      let displaySnapshot = snapshot
+      if (networkHealthHistoryPinned && selectedNetworkHealthRunAt && networkHealthHistoryRuns.length > 0) {
+        const selected = networkHealthHistoryRuns.find((run) => run?.runAt === selectedNetworkHealthRunAt)
+        if (selected) {
+          displaySnapshot = selected
+        } else {
+          networkHealthHistoryPinned = false
+          selectedNetworkHealthRunAt = null
+        }
+      }
+      renderNetworkHealthSnapshot(displaySnapshot)
+      if (networkHealthHistoryRuns.length > 0) {
+        renderNetworkHealthTimeline(networkHealthHistoryRuns)
+      }
     } catch {
       setNetworkHealthSyncLine('network error while loading probes')
+    }
+  }
+
+  const refreshNetworkHealthHistory = async () => {
+    if (!networkHealthTimeline) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${adminBase}/network-health/history?limit=${networkHealthHistoryLimit}`, {
+        credentials: 'include',
+      })
+
+      if (response.status === 401) {
+        showLogin()
+        return
+      }
+
+      if (!response.ok) {
+        return
+      }
+
+      const body = await response.json()
+      networkHealthHistoryRuns = Array.isArray(body.runs) ? body.runs : []
+      renderNetworkHealthTimeline(networkHealthHistoryRuns)
+    } catch {
+      // Timeline is optional; keep the latest snapshot panel usable.
     }
   }
 
