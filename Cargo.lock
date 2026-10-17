@@ -768,6 +768,7 @@ dependencies = [
  "serde_yaml",
  "tempfile",
  "thiserror",
+ "url",
 ]
 
 [[package]]

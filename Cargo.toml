@@ -33,6 +33,7 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal
 tracing = "0.1"
 tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2"
 
 [workspace.lints.rust]
 # `deny` rather than `forbid`: heed's LMDB `EnvOpenOptions::open` is an `unsafe fn`

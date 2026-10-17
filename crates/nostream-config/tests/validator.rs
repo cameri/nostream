@@ -585,6 +585,39 @@ fn rejects_a_url_that_does_not_parse() {
 }
 
 #[test]
+fn rejects_a_webhook_url_with_an_out_of_range_port() {
+    // The capture parses with `new URL()`, which refuses a port above 65535; a check that
+    // only required something after `//` used to accept this address.
+    let document = notifications(
+        "    targets:\n      - id: w1\n        type: http\n        url: https://hooks.example:99999/hook\n",
+    );
+    assert_eq!(
+        issues(&document),
+        vec!["admin.notifications.targets[0].url: url must be a valid URL"]
+    );
+}
+
+#[test]
+fn rejects_a_webhook_url_with_a_space_in_the_host() {
+    let document = notifications(
+        "    targets:\n      - id: w1\n        type: discord\n        url: https://bad host/hook\n",
+    );
+    assert_eq!(
+        issues(&document),
+        vec!["admin.notifications.targets[0].url: url must be a valid URL"]
+    );
+}
+
+#[test]
+fn accepts_a_webhook_url_with_a_high_but_valid_port() {
+    // The boundary the previous case sits just outside of: 65535 parses.
+    let document = notifications(
+        "    targets:\n      - id: w1\n        type: http\n        url: https://hooks.example:65535/hook\n",
+    );
+    assert_eq!(issues(&document), Vec::<String>::new());
+}
+
+#[test]
 fn accepts_a_well_formed_http_target() {
     let document = notifications(
         "    targets:\n      - id: w1\n        type: http\n        enabled: true\n        url: https://a.example/hook\n",

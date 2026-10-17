@@ -180,6 +180,52 @@
       "rust_exempt_paths": []
     },
     {
+      "name": "target_url_bad_port",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "admin.notifications.targets",
+          "value": [
+            {
+              "id": "w1",
+              "type": "http",
+              "url": "https://hooks.example:99999/hook"
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "admin.notifications.targets[0].url",
+          "message": "url must be a valid URL"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "target_url_bad_host",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "admin.notifications.targets",
+          "value": [
+            {
+              "id": "w1",
+              "type": "discord",
+              "url": "https://bad host/hook"
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "admin.notifications.targets[0].url",
+          "message": "url must be a valid URL"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
       "name": "unknown_top_level",
       "mutations": [{ "op": "set", "path": "bogusSection", "value": {} }],
       "ts_issues": [

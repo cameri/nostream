@@ -96,6 +96,14 @@ const CASES = [
     name: 'target_bad_url',
     mutations: [{ op: 'set', path: 'admin.notifications.targets', value: [{ id: 'w1', type: 'http', url: 'ftp://bad.example' }] }],
   },
+  {
+    name: 'target_url_bad_port',
+    mutations: [{ op: 'set', path: 'admin.notifications.targets', value: [{ id: 'w1', type: 'http', url: 'https://hooks.example:99999/hook' }] }],
+  },
+  {
+    name: 'target_url_bad_host',
+    mutations: [{ op: 'set', path: 'admin.notifications.targets', value: [{ id: 'w1', type: 'discord', url: 'https://bad host/hook' }] }],
+  },
   { name: 'unknown_top_level', mutations: [{ op: 'set', path: 'bogusSection', value: {} }] },
   { name: 'unknown_nested_key', mutations: [{ op: 'set', path: 'info.unknownKey', value: 1 }] },
   { name: 'wrong_type_workers_count', mutations: [{ op: 'set', path: 'workers.count', value: 'four' }] },

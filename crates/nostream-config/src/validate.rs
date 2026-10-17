@@ -8,6 +8,7 @@
 
 use nostream_core::EventStoreBackend;
 use serde_yaml::Value;
+use url::Url;
 
 use crate::error::ConfigError;
 use crate::issue::Issue;
@@ -463,35 +464,20 @@ enum UrlCheck {
     Invalid,
 }
 
+/// Classifies one notification URL the way the capture does: `new URL(target.url)` inside
+/// `try`, then the protocol check on the parsed result.
+///
+/// The parse is the WHATWG parser rather than a hand-rolled scan, so the check refuses what
+/// the capture refuses — a port outside 1–65535 (`https://hooks.example:99999/hook`), a space
+/// in the host (`https://bad host/hook`) — instead of only requiring something after `//`.
+/// The parser also strips leading and trailing C0 controls and spaces, as `new URL()` does,
+/// so the raw text is passed through untrimmed.
 fn check_webhook_url(raw: &str) -> UrlCheck {
-    let trimmed = raw.trim();
-    let Some(colon) = trimmed.find(':') else {
-        return UrlCheck::Invalid;
-    };
-    let scheme = &trimmed[..colon];
-    let mut characters = scheme.chars();
-    let valid_scheme = matches!(characters.next(), Some(first) if first.is_ascii_alphabetic())
-        && characters.all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
-        });
-    if !valid_scheme {
-        return UrlCheck::Invalid;
+    match Url::parse(raw) {
+        Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => UrlCheck::Ok,
+        Ok(_) => UrlCheck::BadProtocol,
+        Err(_) => UrlCheck::Invalid,
     }
-
-    let scheme = scheme.to_ascii_lowercase();
-    if scheme != "http" && scheme != "https" {
-        return UrlCheck::BadProtocol;
-    }
-
-    let Some(authority) = trimmed[colon + 1..].strip_prefix("//") else {
-        return UrlCheck::Invalid;
-    };
-    let host = authority.split(['/', '?', '#']).next().unwrap_or_default();
-    if host.is_empty() {
-        return UrlCheck::Invalid;
-    }
-
-    UrlCheck::Ok
 }
 
 /// Validates the typed settings by serializing them back to a document, so there is exactly
