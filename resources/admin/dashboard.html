@@ -4,13 +4,21 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{name}} Admin</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.2.5/index.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.2.5/400.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.2.5/600.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
-    <link rel="stylesheet" href="{{path_prefix}}/admin/assets/dashboard.css">
+    <link rel="stylesheet" href="{{path_prefix}}/admin/assets/dashboard.css?v=site-5">
   </head>
-  <body class="admin-dashboard console-theme" data-theme="light">
+  <body class="admin-dashboard console-theme" data-theme="dark" data-spark-host data-spark-mode="stream">
+    <canvas
+      class="admin-spark-canvas"
+      data-spark-canvas
+      data-max-pool="1800"
+      data-spawn-chance="0.995"
+      data-per-frame="6"
+      aria-hidden="true"
+    ></canvas>
     <main class="container-fluid py-4 px-3 px-lg-4">
       <header class="admin-header d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
         <div class="d-flex align-items-center gap-2">
@@ -21,7 +29,6 @@
           </div>
         </div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
-          <button id="theme-toggle" type="button" class="btn btn-console btn-sm" aria-label="Toggle theme (T)">Light</button>
           <div class="clock-wrap">
             <p id="live-clock" class="clock-value mb-0">--:--:--</p>
             <p class="clock-label mb-0">UTC</p>
@@ -47,7 +54,7 @@
                 <input id="password" name="password" type="password" class="form-control console-input" autocomplete="current-password" required>
               </div>
               <div id="login-error" class="alert alert-danger d-none small" role="alert"></div>
-              <button id="login-button" type="submit" class="btn btn-console w-100">Execute</button>
+              <button id="login-button" type="submit" class="btn btn-console w-100">Sign in</button>
             </form>
           </div>
         </div>
@@ -382,6 +389,7 @@
         grafanaDashboardUid: '{{grafana_dashboard_uid}}',
       }
     </script>
+    <script src="{{path_prefix}}/admin/assets/spark-field.js" nonce="{{nonce}}"></script>
     <script src="{{path_prefix}}/admin/assets/dashboard.js" nonce="{{nonce}}"></script>
     <script src="{{path_prefix}}/admin/assets/notifications.js" nonce="{{nonce}}"></script>
   </body>
