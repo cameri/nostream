@@ -7,7 +7,7 @@
 
 use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_yaml::Value;
 
@@ -79,18 +79,31 @@ fn trim_trailing_separators(path: &Path) -> &Path {
     OsStr::from_bytes(&bytes[..end]).as_ref()
 }
 
-/// Windows twin of the unix trim: drop trailing `\` bytes, never the last one (a bare
-/// `C:\` root stays itself).
+/// Windows twin of the unix trim: drop trailing `\` (and `/`) separators, never the last
+/// character (a bare `C:\` root stays itself).
+///
+/// Safe on purpose: the unix arm can slice `OsStr` bytes, but `OsStr::from_encoded_bytes_unchecked`
+/// is `unsafe`, which the workspace denies. A lossy round-trip is honest here — the result is only
+/// ever `lstat`-ed, and a Windows path that is not valid UTF-8 has no `settings.yaml` we can read.
 #[cfg(windows)]
-fn trim_trailing_separators(path: &Path) -> &Path {
-    use std::os::windows::ffi::OsStrExt;
+fn trim_trailing_separators(path: &Path) -> PathBuf {
+    trim_trailing_separators_lossy(path)
+}
 
-    let bytes = path.as_os_str().as_encoded_bytes();
-    let mut end = bytes.len();
-    while end > 1 && bytes[end - 1] == b'\\' {
-        end -= 1;
+/// The Windows half, compiled and tested on every platform so it cannot rot unseen: the
+/// `#[cfg(windows)]` arm above is the only caller in a Windows build, and this makes the
+/// body reachable from a unix test.
+#[cfg_attr(not(windows), allow(dead_code))] // compiled on every platform so a test covers it
+fn trim_trailing_separators_lossy(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    let trimmed = text.trim_end_matches(['\\', '/']);
+    // A root has nothing to probe: `/`, a bare `C:` after its separator is trimmed, or a
+    // relative path that is all separators.
+    if trimmed.is_empty() || trimmed.ends_with(':') {
+        PathBuf::from(text.as_ref())
+    } else {
+        PathBuf::from(trimmed)
     }
-    OsStr::from_encoded_bytes_unchecked(&bytes[..end]).as_ref()
 }
 
 /// Reads the user's overrides: `settings.yaml` first, then the deprecated `settings.json`.
@@ -117,7 +130,10 @@ pub fn load_user_settings(config_base_dir: &Path) -> Result<Option<Value>, Confi
             });
         }
         Err(followed) if followed.kind() == std::io::ErrorKind::NotFound => {
-            let without_trailing = trim_trailing_separators(config_base_dir);
+            #[cfg(unix)]
+            let without_trailing: &Path = trim_trailing_separators(config_base_dir);
+            #[cfg(windows)]
+            let without_trailing: PathBuf = trim_trailing_separators(config_base_dir);
             match std::fs::symlink_metadata(without_trailing) {
                 Ok(_) => {
                     // The entry itself exists (a dangling link, or a link with trailing
@@ -245,5 +261,36 @@ pub fn load(paths: &SettingsPaths) -> Result<LoadOutcome, ConfigError> {
                 used_defaults: true,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod trim_tests {
+    use super::trim_trailing_separators_lossy;
+    use std::path::{Path, PathBuf};
+
+    /// The Windows arm's body, exercised on every platform so it cannot rot unseen.
+    #[test]
+    fn the_lossy_trim_drops_only_trailing_separators() {
+        assert_eq!(
+            trim_trailing_separators_lossy(Path::new("/srv/relay/config/")),
+            PathBuf::from("/srv/relay/config")
+        );
+        assert_eq!(
+            trim_trailing_separators_lossy(Path::new("dangling/")),
+            PathBuf::from("dangling")
+        );
+        assert_eq!(
+            trim_trailing_separators_lossy(Path::new("/")),
+            PathBuf::from("/")
+        );
+        assert_eq!(
+            trim_trailing_separators_lossy(Path::new(r"C:\")),
+            PathBuf::from(r"C:\")
+        );
+        assert_eq!(
+            trim_trailing_separators_lossy(Path::new("/srv/relay")),
+            PathBuf::from("/srv/relay")
+        );
     }
 }
