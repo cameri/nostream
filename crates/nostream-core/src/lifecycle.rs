@@ -35,6 +35,11 @@ impl ShutdownState {
         *self.sender.borrow()
     }
 
+    /// A receiver for the drain flag, for tasks that select on it.
+    pub fn watch(&self) -> watch::Receiver<bool> {
+        self.sender.subscribe()
+    }
+
     /// Resolves once `begin_draining` has been called (immediately if it already has).
     pub async fn wait_for_drain(&self) {
         let mut receiver = self.sender.subscribe();

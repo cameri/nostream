@@ -1,0 +1,39 @@
+[package]
+name = "nostreamd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The relay daemon: runtime, acceptor, telemetry and signals"
+
+[[bin]]
+name = "nostreamd"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+nostream-config.workspace = true
+nostream-core.workspace = true
+nostream-relay.workspace = true
+nostream-storage.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(not(target_env = "musl"))'.dependencies]
+opentelemetry = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+
+[features]
+default = []
+otlp = ["dep:opentelemetry", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
