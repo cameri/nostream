@@ -13,6 +13,7 @@ fn debug_and_display_redact() {
 #[test]
 fn a_struct_carrying_a_secret_redacts() {
     #[derive(Debug)]
+    #[allow(dead_code)] // the fields exist to be formatted; only the rendering is asserted
     struct Carrier {
         name: String,
         token: Secret,
