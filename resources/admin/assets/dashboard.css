@@ -1,45 +1,4 @@
-.admin-dashboard.console-theme {
-  --bg: #ece6dc;
-  --panel: #f6f2ec;
-  --panel-border: #b8aa98;
-  --text: #2c241c;
-  --text-muted: #6b5f52;
-  --label: #5a4f44;
-  --accent: #6b5344;
-  --prompt: #8a5a12;
-  --ok: #2f6b4f;
-  --warn: #8a5a12;
-  --danger: #8f3a3a;
-  --no-data: #5a6270;
-  min-height: 100vh;
-  background: var(--bg);
-  color: var(--text);
-  font-family: "IBM Plex Mono", "Courier New", monospace;
-  font-size: 0.875rem;
-}
-
-.admin-dashboard.console-theme[data-theme="dark"] {
-  --bg: #0e120e;
-  --panel: #141a14;
-  --panel-border: #2e3e2e;
-  --text: #b8d8b8;
-  --text-muted: #6a906a;
-  --label: #8cb08c;
-  --accent: #7ecf7e;
-  --prompt: #9ecf6a;
-  --ok: #6ecf8a;
-  --warn: #d4b04a;
-  --danger: #e07a7a;
-  --no-data: #8aa4c8;
-  background-color: var(--bg);
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(110, 207, 138, 0.02) 2px,
-    rgba(110, 207, 138, 0.02) 3px
-  );
-}
+/* Admin console styles (nostream.dev black + pink). Edit resources/admin/assets/dashboard.css directly. */
 
 .prompt-char {
   color: var(--prompt);
@@ -430,15 +389,11 @@
 }
 
 .admin-dashboard .grafana-frame {
-  background: #141814;
+  background: var(--panel);
   border: 0;
   display: block;
   height: 380px;
   width: 100%;
-}
-
-.admin-dashboard[data-theme="light"] .grafana-frame {
-  background: #1a1814;
 }
 
 .dashboard-view {
@@ -457,27 +412,27 @@
 }
 
 .admin-dashboard .btn-settings-validate {
-  border-color: #5a8fd4;
-  color: #5a8fd4;
+  border-color: var(--teal);
+  color: var(--teal);
 }
 
 .admin-dashboard .btn-settings-validate:hover,
 .admin-dashboard .btn-settings-validate:focus {
-  background: color-mix(in srgb, #5a8fd4 12%, var(--panel));
-  border-color: #5a8fd4;
-  color: #5a8fd4;
+  background: color-mix(in srgb, var(--teal) 12%, var(--panel));
+  border-color: var(--teal);
+  color: var(--teal);
 }
 
 .admin-dashboard .btn-settings-preview {
-  border-color: #7eb8d4;
-  color: #7eb8d4;
+  border-color: var(--fg-2);
+  color: var(--fg-2);
 }
 
 .admin-dashboard .btn-settings-preview:hover,
 .admin-dashboard .btn-settings-preview:focus {
-  background: color-mix(in srgb, #7eb8d4 12%, var(--panel));
-  border-color: #7eb8d4;
-  color: #7eb8d4;
+  background: color-mix(in srgb, var(--fg-2) 12%, var(--panel));
+  border-color: var(--fg-2);
+  color: var(--fg-2);
 }
 
 .admin-dashboard .btn-settings-apply:not(:disabled) {
@@ -821,11 +776,13 @@
 .network-health-checks {
   display: grid;
   gap: 0.45rem;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14.5rem), 1fr));
 }
 
 .network-health-check {
   border: 1px solid var(--panel-border);
+  min-width: 0;
+  overflow: hidden;
   padding: 0.45rem 0.55rem;
 }
 
@@ -841,6 +798,9 @@
 .network-health-check-value {
   font-size: 0.78rem;
   margin-bottom: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .network-health-mismatches {
@@ -870,7 +830,7 @@
 }
 
 .network-health-mismatch-warning {
-  color: var(--status-degraded, #c9a227);
+  color: var(--status-degraded);
 }
 
 .network-health-mismatch-info {
@@ -926,5 +886,947 @@
 
   .admin-dashboard .grafana-frame {
     height: 300px;
+  }
+}
+
+/* ===== theme: website/site/src/styles/admin-console-theme.css ===== */
+
+/*
+ * nostream.dev admin console — black + pink only.
+ * Palette matches website/site/src/styles/global.css (#08080a / #ff2e88).
+ * Appended last by `pnpm sync:admin-theme` so these rules win.
+ */
+
+.admin-dashboard.console-theme,
+.admin-dashboard.console-theme[data-theme='light'],
+.admin-dashboard.console-theme[data-theme='dark'] {
+  --bg: #08080a;
+  --bg-deep: #050506;
+  --panel: #0e0e11;
+  --panel-2: #111115;
+  --line: #26262a;
+  --panel-border: #2e2e33;
+  --wire: #48484f;
+
+  --fg: #f7f7f7;
+  --fg-2: #a8a8a8;
+  --body: #b0b0b0;
+  --muted: #808080;
+
+  --pink: #ff2e88;
+  --pink-hi: #ff4f9c;
+  --pink-soft: #ff8fc0;
+  --pink-dim: #6a1a3f;
+  --pink-wash: rgba(255, 46, 136, 0.1);
+  --pink-glow: rgba(255, 46, 136, 0.28);
+
+  --text: var(--fg);
+  --text-muted: var(--muted);
+  --label: var(--fg-2);
+  --accent: var(--pink);
+  --prompt: var(--pink);
+  --ok: var(--fg);
+  --warn: var(--pink-soft);
+  --danger: var(--pink);
+  --no-data: var(--muted);
+  --status-degraded: var(--pink-soft);
+  --teal: var(--pink);
+
+  --sans: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-mono: var(--mono);
+  --radius: 10px;
+  --radius-sm: 8px;
+
+  --bs-body-bg: var(--bg);
+  --bs-body-color: var(--body);
+  --bs-border-color: var(--panel-border);
+  --bs-link-color: var(--fg);
+  --bs-link-hover-color: var(--pink);
+  --bs-primary: var(--pink);
+  --bs-success: var(--fg);
+  --bs-warning: var(--pink);
+  --bs-danger: var(--pink);
+  --bs-info: var(--pink);
+
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  color-scheme: dark;
+}
+
+.admin-dashboard.console-theme::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.07) 1px, transparent 0);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse 120% 80% at 50% 0%, #000 40%, transparent 100%);
+}
+
+.admin-dashboard.console-theme > main {
+  max-width: 1320px;
+  margin-inline: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.admin-dashboard.console-theme .admin-spark-canvas {
+  display: block;
+  height: 100%;
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  width: 100%;
+  z-index: 0;
+}
+
+.admin-dashboard.console-theme.sparks-off .admin-spark-canvas {
+  display: none;
+}
+
+.admin-dashboard.console-theme ::selection {
+  background: var(--pink);
+  color: #fff;
+}
+
+.admin-dashboard.console-theme :focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.admin-dashboard.console-theme * {
+  scrollbar-color: var(--panel-border) transparent;
+  scrollbar-width: thin;
+}
+
+/* ---------- type ---------- */
+
+.admin-dashboard.console-theme .admin-kicker,
+.admin-dashboard.console-theme .terminal-line,
+.admin-dashboard.console-theme .module-code,
+.admin-dashboard.console-theme .section-title,
+.admin-dashboard.console-theme .metric-label,
+.admin-dashboard.console-theme .field-label,
+.admin-dashboard.console-theme .clock-value,
+.admin-dashboard.console-theme .clock-label,
+.admin-dashboard.console-theme .status-badge,
+.admin-dashboard.console-theme .sync-line,
+.admin-dashboard.console-theme .panel-header,
+.admin-dashboard.console-theme .btn-console,
+.admin-dashboard.console-theme .nav-item,
+.admin-dashboard.console-theme .settings-category-button,
+.admin-dashboard.console-theme .settings-diff-content,
+.admin-dashboard.console-theme .network-health-timeline-item,
+.admin-dashboard.console-theme code {
+  font-family: var(--mono);
+}
+
+.admin-dashboard.console-theme .prompt-char {
+  color: var(--pink);
+}
+
+.admin-dashboard.console-theme .admin-muted {
+  color: var(--muted);
+}
+
+.admin-dashboard.console-theme code {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--pink);
+  font-size: 0.86em;
+  padding: 1px 6px;
+}
+
+/* ---------- header (website nav) ---------- */
+
+.admin-dashboard.console-theme .admin-header {
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  margin: -1.5rem -0.75rem 2rem;
+  padding: 1.15rem 1.25rem;
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+}
+
+@media (min-width: 992px) {
+  .admin-dashboard.console-theme .admin-header {
+    margin-inline: -1.5rem;
+    padding-inline: 1.75rem;
+  }
+}
+
+.admin-dashboard.console-theme .admin-kicker {
+  align-items: center;
+  color: var(--pink);
+  display: inline-flex;
+  font-size: 0.68rem;
+  font-weight: 600;
+  gap: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.admin-dashboard.console-theme .admin-kicker .prompt-char {
+  display: none;
+}
+
+.admin-dashboard.console-theme .admin-kicker::before {
+  background: var(--pink);
+  content: '';
+  height: 1px;
+  opacity: 0.7;
+  width: 22px;
+}
+
+.admin-dashboard.console-theme .admin-title {
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.admin-dashboard.console-theme .clock-wrap {
+  align-items: baseline;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 0.5rem;
+  padding: 0.35rem 0.9rem;
+}
+
+.admin-dashboard.console-theme .clock-value {
+  color: var(--fg);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-dashboard.console-theme .clock-label {
+  color: var(--pink);
+  font-size: 0.58rem;
+  letter-spacing: 0.16em;
+}
+
+/* ---------- section titles (website kickers) ---------- */
+
+.admin-dashboard.console-theme .dashboard-section {
+  margin-bottom: 2.5rem;
+}
+
+.admin-dashboard.console-theme .section-title {
+  align-items: center;
+  border-bottom: 0;
+  color: var(--fg-2);
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 600;
+  gap: 12px;
+  letter-spacing: 0.16em;
+  margin-bottom: 1.1rem;
+  padding-bottom: 0;
+  text-transform: uppercase;
+}
+
+.admin-dashboard.console-theme .section-title::before {
+  background: var(--pink);
+  content: '';
+  flex: none;
+  height: 1px;
+  opacity: 0.7;
+  width: 22px;
+}
+
+.admin-dashboard.console-theme .section-title::after {
+  background: linear-gradient(90deg, var(--line), transparent);
+  content: '';
+  flex: 1;
+  height: 1px;
+}
+
+.admin-dashboard.console-theme .settings-diff-heading::before {
+  color: var(--pink);
+}
+
+.admin-dashboard.console-theme .sync-line {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.admin-dashboard.console-theme .sync-cursor {
+  background: var(--pink);
+  border-radius: 1px;
+  box-shadow: 0 0 8px var(--pink-glow);
+}
+
+/* ---------- surfaces (website panels / screens) ---------- */
+
+.admin-dashboard.console-theme .panel-card,
+.admin-dashboard.console-theme .metric-card,
+.admin-dashboard.console-theme .network-health-target,
+.admin-dashboard.console-theme .dashboard-nav {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 28px 70px -40px rgba(0, 0, 0, 0.85);
+}
+
+.admin-dashboard.console-theme .panel-card,
+.admin-dashboard.console-theme .network-health-target {
+  padding: 1.15rem 1.25rem;
+}
+
+.admin-dashboard.console-theme .metric-card {
+  min-height: 6.25rem;
+  overflow: hidden;
+  padding: 1.1rem 1.2rem;
+  position: relative;
+  transition:
+    border-color 0.25s ease,
+    transform 0.25s ease,
+    background 0.25s ease;
+}
+
+.admin-dashboard.console-theme .metric-card::before {
+  background: var(--pink);
+  content: '';
+  height: 1px;
+  left: 12%;
+  opacity: 0;
+  position: absolute;
+  right: 12%;
+  top: 0;
+  transition: opacity 0.3s ease;
+}
+
+.admin-dashboard.console-theme .metric-card:hover {
+  background: #111115;
+  border-color: var(--wire);
+  transform: translateY(-2px);
+}
+
+.admin-dashboard.console-theme .metric-card:hover::before,
+.admin-dashboard.console-theme .metric-card.updated::before {
+  opacity: 0.85;
+}
+
+.admin-dashboard.console-theme .metric-card.updated {
+  border-color: var(--pink-dim);
+}
+
+.admin-dashboard.console-theme .metric-label {
+  align-items: center;
+  color: var(--fg-2);
+  display: flex;
+  font-size: 0.68rem;
+  gap: 0.5rem;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.75rem;
+}
+
+.admin-dashboard.console-theme .module-code {
+  background: transparent;
+  border: 1px solid var(--pink-dim);
+  border-radius: 999px;
+  color: var(--pink);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  margin-right: 0;
+  padding: 0.14rem 0.5rem;
+}
+
+.admin-dashboard.console-theme .metric-value {
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 1.55rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.admin-dashboard.console-theme .metric-unit {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.admin-dashboard.console-theme .panel-title {
+  color: var(--fg);
+  font-family: var(--sans);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.admin-dashboard.console-theme .panel-header {
+  align-items: center;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  font-size: 0.68rem;
+  gap: 0.5rem;
+  letter-spacing: 0.08em;
+  padding: 0.7rem 1rem;
+}
+
+.admin-dashboard.console-theme .chart-panel {
+  overflow: hidden;
+  padding: 0;
+}
+
+.admin-dashboard.console-theme .grafana-frame {
+  background: #000;
+}
+
+/* ---------- status: pink intensity only ---------- */
+
+.admin-dashboard.console-theme .status-led {
+  background: var(--wire);
+  height: 0.48rem;
+  margin-right: 0.5rem;
+  width: 0.48rem;
+}
+
+.admin-dashboard.console-theme .status-ok,
+.admin-dashboard.console-theme .settings-field-message.success,
+.admin-dashboard.console-theme .notifications-status-ok {
+  color: var(--fg);
+}
+
+.admin-dashboard.console-theme .status-ok .status-led,
+.admin-dashboard.console-theme .status-badge.live .status-led {
+  animation: site-pulse 2.2s ease-in-out infinite;
+  background: var(--pink);
+  box-shadow: 0 0 0 3px var(--pink-wash), 0 0 10px var(--pink-glow);
+}
+
+.admin-dashboard.console-theme .status-degraded,
+.admin-dashboard.console-theme .settings-field-reload.restart,
+.admin-dashboard.console-theme .network-health-mismatch-warning {
+  color: var(--pink-soft);
+}
+
+.admin-dashboard.console-theme .status-degraded .status-led,
+.admin-dashboard.console-theme .status-badge.warn .status-led {
+  animation: none;
+  background: var(--pink-soft);
+  box-shadow: none;
+}
+
+.admin-dashboard.console-theme .status-unavailable,
+.admin-dashboard.console-theme .status-down,
+.admin-dashboard.console-theme .notifications-status-failed {
+  color: var(--pink);
+  font-weight: 650;
+}
+
+.admin-dashboard.console-theme .status-unavailable .status-led,
+.admin-dashboard.console-theme .status-down .status-led,
+.admin-dashboard.console-theme .status-badge.error .status-led {
+  animation: none;
+  background: var(--pink);
+  box-shadow: 0 0 0 3px var(--pink-wash);
+}
+
+.admin-dashboard.console-theme .metric-card:has(.status-unavailable),
+.admin-dashboard.console-theme .metric-card:has(.status-down) {
+  background: linear-gradient(180deg, rgba(255, 46, 136, 0.08), var(--panel));
+  border-color: var(--pink-dim);
+}
+
+.admin-dashboard.console-theme .status-no-data {
+  color: var(--muted);
+}
+
+.admin-dashboard.console-theme .status-no-data .status-led,
+.admin-dashboard.console-theme .status-badge:not(.live):not(.warn):not(.error) .status-led {
+  animation: none;
+  background: var(--wire);
+  box-shadow: none;
+}
+
+@keyframes site-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.admin-dashboard.console-theme .status-badge {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  color: var(--fg-2);
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
+  padding: 0.35rem 0.8rem;
+}
+
+.admin-dashboard.console-theme .status-badge.live {
+  border-color: var(--pink-dim);
+  color: var(--pink);
+}
+
+.admin-dashboard.console-theme .status-badge.warn {
+  border-color: var(--pink-dim);
+  color: var(--pink-soft);
+}
+
+.admin-dashboard.console-theme .status-badge.error {
+  background: var(--pink-wash);
+  border-color: var(--pink);
+  color: var(--pink);
+}
+
+/* ---------- alerts ---------- */
+
+.admin-dashboard.console-theme .system-alert,
+.admin-dashboard.console-theme .alert-danger,
+.admin-dashboard.console-theme .settings-validation {
+  background: linear-gradient(90deg, rgba(255, 46, 136, 0.12), transparent);
+  border: 1px solid var(--pink-dim);
+  border-left: 2px solid var(--pink);
+  border-radius: var(--radius-sm);
+  color: var(--pink-soft);
+  font-size: 0.82rem;
+  padding: 0.75rem 1rem;
+}
+
+.admin-dashboard.console-theme .system-alert.unavailable,
+.admin-dashboard.console-theme .alert-danger {
+  color: var(--pink);
+}
+
+.admin-dashboard.console-theme .settings-success,
+.admin-dashboard.console-theme .settings-validation.valid {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-left: 2px solid var(--pink);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+}
+
+.admin-dashboard.console-theme .text-success {
+  color: var(--fg) !important;
+}
+
+.admin-dashboard.console-theme .text-danger,
+.admin-dashboard.console-theme .text-warning,
+.admin-dashboard.console-theme .text-info,
+.admin-dashboard.console-theme .text-primary {
+  color: var(--pink) !important;
+}
+
+/* ---------- buttons (website .btn / .btn-primary) ---------- */
+
+.admin-dashboard.console-theme .btn-console {
+  --bs-btn-padding-y: 0.45rem;
+  --bs-btn-padding-x: 0.95rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.admin-dashboard.console-theme .btn-console:hover,
+.admin-dashboard.console-theme .btn-console:focus-visible {
+  background: var(--panel-2);
+  border-color: var(--wire);
+  color: var(--fg);
+  transform: translateY(-1px);
+}
+
+.admin-dashboard.console-theme .btn-console:active {
+  transform: none;
+}
+
+.admin-dashboard.console-theme .btn-console:disabled {
+  border-color: var(--line);
+  color: var(--muted);
+  opacity: 0.55;
+  transform: none;
+}
+
+.admin-dashboard.console-theme .btn-console.copied {
+  border-color: var(--pink);
+  color: var(--pink);
+}
+
+.admin-dashboard.console-theme #login-button,
+.admin-dashboard.console-theme .btn-settings-apply:not(:disabled),
+.admin-dashboard.console-theme #notifications-save-button {
+  background: var(--pink);
+  border-color: var(--pink);
+  box-shadow: 0 12px 32px -14px var(--pink-glow);
+  color: #fff;
+}
+
+.admin-dashboard.console-theme #login-button:hover,
+.admin-dashboard.console-theme .btn-settings-apply:not(:disabled):hover,
+.admin-dashboard.console-theme #notifications-save-button:hover {
+  background: var(--pink-hi);
+  border-color: var(--pink-hi);
+  color: #fff;
+}
+
+.admin-dashboard.console-theme #login-button {
+  height: 46px;
+  font-size: 0.82rem;
+}
+
+.admin-dashboard.console-theme .btn-settings-validate,
+.admin-dashboard.console-theme .btn-settings-preview,
+.admin-dashboard.console-theme .btn-settings-restore,
+.admin-dashboard.console-theme .btn-settings-reload {
+  border-color: var(--panel-border);
+  color: var(--fg);
+}
+
+.admin-dashboard.console-theme .btn-settings-validate:hover,
+.admin-dashboard.console-theme .btn-settings-preview:hover,
+.admin-dashboard.console-theme .btn-settings-restore:hover,
+.admin-dashboard.console-theme .btn-settings-reload:hover {
+  background: var(--panel-2);
+  border-color: var(--wire);
+  color: var(--fg);
+}
+
+.admin-dashboard.console-theme .btn-settings-discard:not(:disabled) {
+  background: transparent;
+  border-color: var(--pink-dim);
+  color: var(--pink);
+}
+
+.admin-dashboard.console-theme .btn-settings-discard:not(:disabled):hover {
+  background: var(--pink-wash);
+  border-color: var(--pink);
+  color: var(--pink);
+}
+
+/* ---------- forms ---------- */
+
+.admin-dashboard.console-theme .field-label {
+  color: var(--fg-2);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+}
+
+.admin-dashboard.console-theme .console-input,
+.admin-dashboard.console-theme .form-control,
+.admin-dashboard.console-theme .form-select {
+  background-color: #000;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.86rem;
+}
+
+.admin-dashboard.console-theme .console-input::placeholder,
+.admin-dashboard.console-theme .form-control::placeholder {
+  color: var(--muted);
+}
+
+.admin-dashboard.console-theme .console-input:focus,
+.admin-dashboard.console-theme .form-control:focus,
+.admin-dashboard.console-theme .form-select:focus {
+  background-color: #000;
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px rgba(255, 46, 136, 0.16);
+  color: var(--fg);
+}
+
+.admin-dashboard.console-theme .form-select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23a8a8a8' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+}
+
+.admin-dashboard.console-theme .form-select option {
+  background: var(--panel);
+  color: var(--fg);
+}
+
+.admin-dashboard.console-theme .form-check-input {
+  background-color: #000;
+  border: 1px solid var(--wire);
+}
+
+.admin-dashboard.console-theme .form-check-input:focus {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px rgba(255, 46, 136, 0.16);
+}
+
+.admin-dashboard.console-theme .form-check-input:checked {
+  background-color: var(--pink);
+  border-color: var(--pink);
+}
+
+.admin-dashboard.console-theme .form-switch .form-check-input {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23808080'/%3e%3c/svg%3e");
+}
+
+.admin-dashboard.console-theme .form-switch .form-check-input:focus:not(:checked) {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23ff2e88'/%3e%3c/svg%3e");
+}
+
+.admin-dashboard.console-theme .form-switch .form-check-input:checked {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23fff'/%3e%3c/svg%3e");
+}
+
+.admin-dashboard.console-theme .form-check-label {
+  color: var(--body);
+}
+
+/* ---------- login ---------- */
+
+.admin-dashboard.console-theme .login-box {
+  border-radius: 14px;
+  box-shadow: none;
+  margin-top: 4.5rem;
+  overflow: hidden;
+  padding: 2.1rem 2rem 1.9rem;
+  position: relative;
+}
+
+.admin-dashboard.console-theme .login-box .panel-title {
+  font-size: 1.55rem;
+}
+
+.admin-dashboard.console-theme .terminal-line {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- navigation ---------- */
+
+.admin-dashboard.console-theme .dashboard-nav {
+  background: var(--panel);
+  border-radius: 14px;
+  min-width: 14rem;
+  padding: 1rem;
+  top: 5.4rem;
+}
+
+.admin-dashboard.console-theme .nav-overlay {
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.admin-dashboard.console-theme .nav-item,
+.admin-dashboard.console-theme .settings-category-button,
+.admin-dashboard.console-theme .network-health-timeline-item {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--fg-2);
+  font-size: 0.78rem;
+  padding: 0.55rem 0.8rem;
+  position: relative;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.admin-dashboard.console-theme .nav-item:hover,
+.admin-dashboard.console-theme .settings-category-button:hover,
+.admin-dashboard.console-theme .network-health-timeline-item:hover {
+  background: var(--panel);
+  color: var(--fg);
+}
+
+.admin-dashboard.console-theme .nav-item.active,
+.admin-dashboard.console-theme .settings-category-button.active,
+.admin-dashboard.console-theme .network-health-timeline-item.is-selected {
+  background: var(--panel);
+  border-color: transparent;
+  box-shadow: inset 0 -1px 0 var(--pink);
+  color: var(--fg);
+}
+
+.admin-dashboard.console-theme .nav-item.active::before,
+.admin-dashboard.console-theme .settings-category-button.active::before,
+.admin-dashboard.console-theme .network-health-timeline-item.is-selected::before {
+  display: none;
+}
+
+.admin-dashboard.console-theme .network-health-timeline {
+  gap: 0.25rem;
+}
+
+.admin-dashboard.console-theme .settings-category-button.has-changes::after {
+  color: var(--pink);
+}
+
+/* ---------- network health ---------- */
+
+.admin-dashboard.console-theme .network-health-target-url {
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.86rem;
+}
+
+.admin-dashboard.console-theme .network-health-network-type {
+  border: 1px solid var(--pink-dim);
+  border-radius: 999px;
+  color: var(--pink);
+  padding: 0.16rem 0.6rem;
+}
+
+.admin-dashboard.console-theme .network-health-checks {
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+}
+
+.admin-dashboard.console-theme .network-health-check {
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.75rem 0.85rem;
+}
+
+.admin-dashboard.console-theme .network-health-check-label {
+  color: var(--muted);
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+}
+
+.admin-dashboard.console-theme .network-health-check-value {
+  color: var(--body);
+  display: -webkit-box;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  word-break: break-word;
+}
+
+.admin-dashboard.console-theme .network-health-mismatches {
+  border-top: 1px solid var(--line);
+}
+
+.admin-dashboard.console-theme .network-health-mismatch-heading {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+/* ---------- settings ---------- */
+
+.admin-dashboard.console-theme .settings-toolbar {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1rem;
+}
+
+.admin-dashboard.console-theme .settings-field {
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-dashboard.console-theme .settings-field.changed {
+  border-left: 2px solid var(--pink);
+}
+
+.admin-dashboard.console-theme .settings-field-path {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.admin-dashboard.console-theme .settings-field-was,
+.admin-dashboard.console-theme .settings-field-message.error {
+  color: var(--pink);
+}
+
+.admin-dashboard.console-theme .settings-diff-header.highlight {
+  border-color: var(--pink);
+}
+
+.admin-dashboard.console-theme .settings-diff-content {
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+}
+
+.admin-dashboard.console-theme .settings-diff-line.added {
+  color: var(--fg);
+}
+
+.admin-dashboard.console-theme .settings-diff-line.removed {
+  color: var(--pink);
+}
+
+.admin-dashboard.console-theme .settings-diff-line.meta,
+.admin-dashboard.console-theme .settings-diff-summary,
+.admin-dashboard.console-theme .settings-diff-note {
+  color: var(--muted);
+}
+
+/* ---------- tables ---------- */
+
+.admin-dashboard.console-theme .table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--body);
+  --bs-table-border-color: var(--line);
+  --bs-table-hover-bg: var(--pink-wash);
+  --bs-table-hover-color: var(--fg);
+}
+
+.admin-dashboard.console-theme .notifications-log-table thead th {
+  border-bottom-color: var(--panel-border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.admin-dashboard.console-theme .notifications-log-table td,
+.admin-dashboard.console-theme .notifications-log-table th {
+  border-color: var(--line);
+  padding: 0.65rem 0.8rem;
+}
+
+.admin-dashboard.console-theme .notifications-advanced summary {
+  color: var(--fg-2);
+}
+
+.admin-dashboard.console-theme .notifications-advanced[open] summary {
+  color: var(--pink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-dashboard.console-theme *,
+  .admin-dashboard.console-theme *::before {
+    animation: none !important;
+    transition: none !important;
   }
 }
