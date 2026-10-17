@@ -311,7 +311,38 @@
     return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable
   }
 
+  const grafanaPanelUrl = (panelId) => {
+    const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:7777').replace(/\/+$/, '')
+    const dashboardUid = config.grafanaDashboardUid || 'nostream-overview'
+    const params = new URLSearchParams({
+      orgId: '1',
+      panelId: String(panelId),
+      from: 'now-15m',
+      to: 'now',
+      refresh: '5s',
+      theme: 'dark',
+      kiosk: '1',
+    })
+    return `${baseUrl}/d-solo/${dashboardUid}/nostream-overview?${params.toString()}`
+  }
+
+  const loadGrafanaFrames = () => {
+    document.querySelectorAll('.grafana-frame').forEach((frame) => {
+      if (!frame.dataset.panelId || frame.src) {
+        return
+      }
+      frame.src = grafanaPanelUrl(frame.dataset.panelId)
+    })
+  }
+
+  const unloadGrafanaFrames = () => {
+    document.querySelectorAll('.grafana-frame').forEach((frame) => {
+      frame.removeAttribute('src')
+    })
+  }
+
   const showLogin = () => {
+    unloadGrafanaFrames()
     stopMetricsStream()
     stopNetworkHealthPolling()
     setNavOpen(false)
@@ -341,6 +372,7 @@
       item.classList.toggle('active', item.dataset.view === 'metrics-view')
     })
 
+    loadGrafanaFrames()
     startMetricsStream()
     void refreshNetworkHealth()
     void refreshNetworkHealthHistory()
@@ -437,11 +469,14 @@
     const detail = check?.status === 'error' ? summarizeProbeError(fullDetail) : fullDetail
     const className = probeCheckStatusClass(check?.status, options)
 
+    const needsFullDetailTitle =
+      fullDetail && (fullDetail !== detail || fullDetail.length > 80)
+
     return {
       label,
       className,
       detail,
-      title: fullDetail && fullDetail !== detail ? fullDetail : '',
+      title: needsFullDetailTitle ? fullDetail : '',
     }
   }
 
