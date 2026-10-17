@@ -1,0 +1,17 @@
+[package]
+name = "nostream-admin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Admin controllers, routes, middleware and authentication"
+
+[dependencies]
+nostream-config.workspace = true
+nostream-core.workspace = true
+nostream-storage.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
