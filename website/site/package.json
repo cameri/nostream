@@ -1,9 +1,9 @@
 {
   "name": "nostream-website",
-  "version": "1.2.5",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
-  "description": "ema.tnsor.network landing page and docs, built with Astro",
+  "description": "nostream.dev landing page and docs, built with Astro",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "astro dev",
