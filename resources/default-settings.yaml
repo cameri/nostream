@@ -130,6 +130,9 @@ nip66:
   # Public WebSocket URLs to probe. Empty list defaults to info.relay_url.
   targets: []
   dnsCacheTtlSeconds: 300
+  historyRetentionRuns: 168
+  # Optional max age in hours for probe history; 0 disables age-based trimming (run count only).
+  historyRetentionHours: 0
 wot:
   # Web of Trust graph. When enabled, the relay builds a trust graph rooted
   # at seedPubkey from NIP-02 contact lists, updated in real time as kind-3

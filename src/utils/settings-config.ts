@@ -724,6 +724,23 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
     })
   }
 
+  const nip66 = settings.nip66
+  if (nip66?.historyRetentionRuns !== undefined) {
+    const runs = nip66.historyRetentionRuns
+    if (!Number.isFinite(runs) || !(runs >= 1)) {
+      issues.push({ path: 'nip66.historyRetentionRuns', message: 'historyRetentionRuns must be at least 1' })
+    }
+  }
+  if (
+    nip66?.historyRetentionHours !== undefined &&
+    !(nip66.historyRetentionHours === 0 || nip66.historyRetentionHours >= 1)
+  ) {
+    issues.push({
+      path: 'nip66.historyRetentionHours',
+      message: 'historyRetentionHours must be 0 (disabled) or at least 1',
+    })
+  }
+
   const nip77 = settings.nip77
   if (nip77?.enabled) {
     for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs'] as const) {

@@ -12,12 +12,16 @@ on:
       - published
   workflow_dispatch:
 
-concurrency:
-  group: deploy-website
-  cancel-in-progress: false
-
 jobs:
   deploy:
+    # Concurrency lives on the job, not the workflow: a relay release
+    # (v* tag) fails the if below and must not enter this deploy queue,
+    # where it could replace a queued website deploy. Measured: the
+    # nostream@3.5.1 release run (38845857055) was cancelled with zero
+    # jobs at the workflow-level group, before the job if could skip it.
+    concurrency:
+      group: deploy-website
+      cancel-in-progress: false
     # workflow_dispatch ignores every on: filter — a manual run must not
     # publish a non-main branch to production, so dispatch stays main-only.
     if: >-
@@ -31,6 +35,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Checkout gets the release event's default: the tag that triggered the
+      # run (refs/tags/nostream-website@X.Y.Z). The website environment's
+      # branch policy admits nostream-website@* — every release deploy since
+      # 1.1.1 has run on the tag ref — so the build is exactly the released
+      # commit, even if main has advanced by the time the job starts.
       - name: Checkout
         uses: actions/checkout@v3
 

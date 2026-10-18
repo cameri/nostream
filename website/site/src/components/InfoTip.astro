@@ -108,13 +108,63 @@ const id = `tip-${Astro.props['detail'] ? '' : ''}${Math.random().toString(36).s
 </style>
 
 <script>
-  // Close any open tooltip when clicking elsewhere or pressing Escape —
-  // the keyboard/tap dismiss path for the native <details> open state.
+  // All behavior is DELEGATED at the document level: per-element listeners
+  // proved fragile (one tip ended up unhooked in a real-browser trace, with
+  // no error and no way to see it from markup). Delegation covers every
+  // current and future .info-tip regardless of node replacement.
   const closeAll = (except?: Element | null) => {
     document.querySelectorAll('details.info-tip[open]').forEach((d) => {
       if (d !== except) d.removeAttribute('open')
     })
   }
+  // Keep aria-expanded truthful and clamp the bubble inside the viewport.
+  // The bubble is centered on its (i) toggle by the stylesheet's
+  // translateX(-50%); near a viewport edge the centered box overflows and
+  // clips (CSS max-width bounds the width, not the position).
+  const clamp = (details: Element) => {
+    const bubble = details.querySelector<HTMLElement>('.tip-bubble')
+    if (!bubble) return
+    // Clear only any PREVIOUS inline shift; the stylesheet's own
+    // translateX(-50%) stays applied, so the measured rect IS the rendered
+    // (centered) box — no half-width arithmetic.
+    bubble.style.transform = ''
+    const pad = 12
+    const rect = bubble.getBoundingClientRect()
+    const overshootLeft = pad - rect.left
+    const overshootRight = rect.right - (window.innerWidth - pad)
+    if (overshootLeft > 0) {
+      bubble.style.transform = `translateX(-50%) translateX(${overshootLeft}px)`
+    } else if (overshootRight > 0) {
+      bubble.style.transform = `translateX(-50%) translateX(${-overshootRight}px)`
+    }
+  }
+  // toggle does not bubble; capture at the document sees every details.
+  document.addEventListener(
+    'toggle',
+    (e) => {
+      const d = (e.target as Element | null)?.closest?.('details.info-tip')
+      if (!d) return
+      d.querySelector('summary')?.setAttribute('aria-expanded', d.hasAttribute('open') ? 'true' : 'false')
+      if (d.hasAttribute('open')) {
+        // Measure after layout so getBoundingClientRect sees the real rect.
+        requestAnimationFrame(() => clamp(d))
+      } else if (d.matches(':hover')) {
+        // Tap-close while the pointer stays over the tooltip: :hover keeps
+        // the bubble visible, so re-clamp instead of clearing the shift.
+        clamp(d)
+      } else {
+        const bubble = d.querySelector<HTMLElement>('.tip-bubble')
+        if (bubble) bubble.style.transform = ''
+      }
+    },
+    true,
+  )
+  // Hover path: the bubble opens via CSS without a toggle event. pointerenter
+  // does not bubble either — use pointerover delegation on the toggle/summary.
+  document.addEventListener('pointerover', (e) => {
+    const d = (e.target as Element | null)?.closest?.('details.info-tip')
+    if (d) clamp(d)
+  })
   document.addEventListener('click', (e) => {
     const tip = (e.target as Element | null)?.closest?.('details.info-tip')
     closeAll(tip)
@@ -122,11 +172,9 @@ const id = `tip-${Astro.props['detail'] ? '' : ''}${Math.random().toString(36).s
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeAll(null)
   })
-  // Keep aria-expanded truthful for screen readers: the toggle event fires on
-  // the <details> element (not the summary), including programmatic closes.
-  document.querySelectorAll('details.info-tip').forEach((d) => {
-    d.addEventListener('toggle', () => {
-      d.querySelector('summary')?.setAttribute('aria-expanded', d.hasAttribute('open') ? 'true' : 'false')
-    })
-  })
+  // Re-clamp when the viewport moves under a visible bubble (rotation,
+  // resize) — hover-opened bubbles have no [open], so match both.
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('details.info-tip[open], details.info-tip:hover').forEach(clamp)
+  }, { passive: true })
 </script>

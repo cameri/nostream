@@ -84,6 +84,12 @@ export class RedisAdapter implements ICacheAdapter {
     return this.client.zRemRangeByScore(key, min, max)
   }
 
+  public async removeRangeByRankFromSortedSet(key: string, start: number, stop: number): Promise<number> {
+    await this.connection
+    logger('remove rank %d..%d from sorted set %s', start, stop, key)
+    return this.client.zRemRangeByRank(key, start, stop)
+  }
+
   public async getRangeFromSortedSet(key: string, min: number, max: number): Promise<string[]> {
     await this.connection
     logger('get %d..%d range from sorted set %s', min, max, key)

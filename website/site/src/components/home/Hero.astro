@@ -4,7 +4,13 @@ import { VERSION } from '../../data/site'
 ---
 
 <section class="stage" data-spark-host data-spark-mode="stream">
-  <h1 class="sr-only">nostream — a production-ready Nostr relay. Your relay, your rules.</h1>
+  <h1 class="hero-h1">
+    <span class="g1">Nostr runs on relays.</span>
+    <span class="g2">nostream is the one you own.</span>
+  </h1>
+  <p class="hero-sub sr-only">
+    A production-ready Nostr relay you deploy and control — self-hosted and open source.
+  </p>
   <canvas
     class="spark-canvas"
     data-spark-canvas
@@ -19,6 +25,7 @@ import { VERSION } from '../../data/site'
     poster={`${import.meta.env.BASE_URL}media/hero-poster.webp`.replace(/\/\//, '/')}
     title={`/hero · nostream ${VERSION}`}
   />
+  <button class="film-toggle mono" type="button" data-film-toggle aria-pressed="false" aria-label="Pause the hero film">Pause</button>
 </section>
 
 <style>
@@ -34,6 +41,53 @@ import { VERSION } from '../../data/site'
     min-height: 420px;
     overflow: hidden;
     background: var(--bg);
+  }
+
+  /* The headline used to live only inside the rendered film — invisible to
+     search and screen readers. It is real text now, echoing the film's
+     second scene; the film keeps telling the full story beside it. The
+     film frame's own chrome starts lower, so the headline sits in the
+     clear above it. */
+  .hero-h1 {
+    position: absolute;
+    z-index: 3;
+    left: var(--pad-x);
+    top: clamp(12px, 2.2vh, 26px);
+    max-width: min(560px, calc(100% - 2 * var(--pad-x)));
+    margin: 0;
+    font-size: clamp(24px, 3vw, 38px);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    pointer-events: none;
+  }
+
+  .hero-h1 span {
+    display: block;
+  }
+
+  .hero-h1 .g2 {
+    color: var(--pink);
+  }
+
+  .film-toggle {
+    position: absolute;
+    z-index: 4;
+    left: var(--pad-x);
+    bottom: clamp(18px, 3.5vh, 44px);
+    padding: 8px 14px;
+    border: 1px solid var(--panel-border);
+    border-radius: 7px;
+    background: rgba(14, 14, 17, 0.8);
+    color: var(--fg-2);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+
+  .film-toggle:hover {
+    border-color: var(--wire);
+    color: var(--fg);
   }
 
   .spark-canvas {
@@ -74,6 +128,20 @@ import { VERSION } from '../../data/site'
       padding: var(--pad-y) var(--pad-x);
     }
 
+    /* Headline becomes normal flow above the film; the pause control stays
+       pinned to the stage's bottom-left. */
+    .hero-h1 {
+      position: static;
+      max-width: none;
+      margin-bottom: 18px;
+      pointer-events: auto;
+    }
+
+    .film-toggle {
+      position: static;
+      margin-top: 14px;
+    }
+
     .stage :global(.hero-film) {
       position: relative;
       top: auto;
@@ -107,3 +175,38 @@ import { VERSION } from '../../data/site'
     border: 0;
   }
 </style>
+
+<script>
+  // The Base layout plays the film only while visible; this adds the manual
+  // pause. Base's IntersectionObserver re-plays on scroll, so a deliberately
+  // paused film is kept paused by intercepting the play event. The label is
+  // driven by actual playback state — under prefers-reduced-motion the film
+  // starts paused, so the button must offer Play, not Pause.
+  let userPaused = false
+  const button = document.querySelector<HTMLButtonElement>('[data-film-toggle]')
+  const video = document.querySelector<HTMLVideoElement>('.hero-film video')
+  const sync = () => {
+    if (!button || !video) return
+    const paused = video.paused
+    button.textContent = paused ? 'Play' : 'Pause'
+    button.setAttribute('aria-pressed', String(paused))
+    button.setAttribute('aria-label', paused ? 'Play the hero film' : 'Pause the hero film')
+  }
+  video?.addEventListener('play', sync)
+  video?.addEventListener('pause', () => {
+    // A user pause must survive Base's observer re-play; a scroll-off pause
+    // (userPaused false) just follows the video's own state.
+    sync()
+  })
+  video?.addEventListener('play', () => {
+    if (userPaused) video.pause()
+  })
+  button?.addEventListener('click', () => {
+    if (!video) return
+    userPaused = !video.paused
+    if (video.paused) void video.play()
+    else video.pause()
+    sync()
+  })
+  sync()
+</script>

@@ -89,6 +89,10 @@ const pillars = [
   .bento {
     display: grid;
     gap: 16px;
+    /* Grid tracks default to min-width:auto, so the nowrap .cmd in the I/O
+       cell forces the track (and the page) wider than the viewport on
+       mobile. Floor the track at 0 and let the cmd scroll inside itself. */
+    grid-template-columns: minmax(0, 1fr);
   }
 
   @media (min-width: 900px) {

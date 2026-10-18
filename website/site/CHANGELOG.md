@@ -1,5 +1,27 @@
 # nostream-website
 
+## 1.2.5
+
+### Patch Changes
+
+- [#858](https://github.com/cameri/nostream/pull/858) [`a0915b8`](https://github.com/cameri/nostream/commit/a0915b8c8b63d4a9b821d47b8bac9c88b1eb22b5) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - The nostream mark is now the site's pink (#ff2e88) instead of purple: logo asset recolored, favicon and apple-touch-icon regenerated, hero film's brand mark re-rendered.
+
+## 1.2.4
+
+### Patch Changes
+
+- [#837](https://github.com/cameri/nostream/pull/837) [`ee7e06b`](https://github.com/cameri/nostream/commit/ee7e06b72284f07aacfd427128e99eefaab9cf84) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Website deploy workflow fix: the deploy queue is job-scoped so relay releases can't displace a pending website deploy (measured: the nostream@3.5.1 release run was cancelled with zero jobs at the workflow-level concurrency group, before its job-level `if` could skip it). The checkout stays on the triggering `nostream-website@` tag, which the `website` environment's branch policy admits — the deployed build is exactly the released commit.
+
+## 1.2.3
+
+### Patch Changes
+
+- [#845](https://github.com/cameri/nostream/pull/845) [`2234a25`](https://github.com/cameri/nostream/commit/2234a25ad8e82401f7e48946317e29939954c52e) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Info-tip bubbles no longer clip at the viewport edge: the tooltip is centered on its (i) toggle, so near an edge it overflowed. On open (hover, tap or keyboard) the bubble now shifts horizontally to stay inside the viewport, and re-clamps on resize.
+
+  Tooltip behavior is delegated at the document level, so every tip is covered even when its per-element listeners would have silently failed to attach.
+
+  Site polish from an external review: the community participate cards have their own section heading, the hero headline is real DOM text with a pause control on the film, the console screenshots are labeled as real first-run console data, the honest-advertising copy matches what its warning shows, the nav's active-path comparison strips the deploy base, the get-started phase list explains the skipped numbers, and single-column grids no longer let nowrap content push the page wider than a phone viewport. The hero film is re-rendered at 1080p for the current 25-NIP list.
+
 ## 1.2.2
 
 ### Patch Changes

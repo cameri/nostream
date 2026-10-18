@@ -7,7 +7,8 @@ import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 import { filterValidProbeTargets, resolveProbeTargets } from '../utils/relay-probe-targets'
 import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
 import { resolvePublicProbeTargetKeys } from '../utils/relay-probe-targets'
-import { getEffectiveProbeIntervalSeconds, getProbeIntervalMs } from '../utils/nip66-schedule'
+import { RelayProbeHistoryStore } from '../utils/relay-probe-history'
+import { getEffectiveProbeIntervalSeconds, getNip66HistoryRetention, getProbeIntervalMs } from '../utils/nip66-schedule'
 import { getMonitorPrivateKey } from '../utils/monitor-identity'
 import { runProbe } from '../utils/relay-probe'
 import { ProbeOptions, ProbeResult } from '../utils/relay-probe/types'
@@ -39,6 +40,7 @@ export class RelayMonitorWorker implements IRunnable {
     private readonly snapshotStore: IRelayProbeSnapshotStore,
     private readonly probeRunner: RunProbeFn = runProbe,
     private readonly eventPublisher?: INip66EventPublisher,
+    private readonly historyStore?: RelayProbeHistoryStore,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -136,6 +138,13 @@ export class RelayMonitorWorker implements IRunnable {
     const expirySeconds = getEffectiveProbeIntervalSeconds(currentSettings) * 2
 
     await this.snapshotStore.saveLatest(snapshot, expirySeconds)
+    if (this.historyStore) {
+      try {
+        await this.historyStore.append(snapshot, getNip66HistoryRetention(currentSettings))
+      } catch (error) {
+        logger.error('failed to save probe history: %o', error)
+      }
+    }
     logger('saved probe snapshot for %d target(s) with status %s', valid.length, snapshot.status)
 
     if (this.eventPublisher) {

@@ -395,6 +395,8 @@ export interface Nip66Settings {
    * Optional NIP-52 geohash describing this monitor's network vantage for kind 10166 events.
    */
   geohash?: string
+  historyRetentionRuns?: number
+  historyRetentionHours?: number
 }
 
 export interface Nip05Settings {

@@ -13,7 +13,6 @@
   const copySnapshotButton = document.getElementById('copy-snapshot-button')
   const streamStatus = document.getElementById('stream-status')
   const passwordInput = document.getElementById('password')
-  const themeToggle = document.getElementById('theme-toggle')
   const liveClock = document.getElementById('live-clock')
   const menuToggle = document.getElementById('menu-toggle')
   const navOverlay = document.getElementById('nav-overlay')
@@ -40,6 +39,8 @@
   const networkHealthSummary = document.getElementById('network-health-summary')
   const networkHealthResults = document.getElementById('network-health-results')
   const networkHealthRunAt = document.getElementById('network-health-run-at')
+  const networkHealthTimelineWrap = document.getElementById('network-health-timeline-wrap')
+  const networkHealthTimeline = document.getElementById('network-health-timeline')
 
   let settingsLoaded = false
   let settingsLoading = false
@@ -59,6 +60,10 @@
   const staleThresholdMs = 15000
   let networkHealthPollTimer
   const networkHealthPollIntervalMs = 60000
+  const networkHealthHistoryLimit = 24
+  let networkHealthHistoryRuns = []
+  let selectedNetworkHealthRunAt = null
+  let networkHealthHistoryPinned = false
 
   const statusClasses = ['status-ok', 'status-degraded', 'status-unavailable', 'status-down', 'status-no-data']
 
@@ -100,20 +105,11 @@
     },
   }
 
-  const getTheme = () => {
-    const stored = localStorage.getItem('admin_theme')
-    if (stored === 'light' || stored === 'dark') {
-      return stored
-    }
+  // The console only ships the nostream.dev dark (black + pink) theme.
+  const getTheme = () => 'dark'
 
-    return 'light'
-  }
-
-  const applyTheme = (theme) => {
-    document.body.setAttribute('data-theme', theme)
-    if (themeToggle) {
-      themeToggle.textContent = theme === 'dark' ? 'Dark' : 'Light'
-    }
+  const applyTheme = () => {
+    document.body.setAttribute('data-theme', 'dark')
   }
 
   const formatClock = () => {
@@ -315,7 +311,38 @@
     return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable
   }
 
+  const grafanaPanelUrl = (panelId) => {
+    const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:7777').replace(/\/+$/, '')
+    const dashboardUid = config.grafanaDashboardUid || 'nostream-overview'
+    const params = new URLSearchParams({
+      orgId: '1',
+      panelId: String(panelId),
+      from: 'now-15m',
+      to: 'now',
+      refresh: '5s',
+      theme: 'dark',
+      kiosk: '1',
+    })
+    return `${baseUrl}/d-solo/${dashboardUid}/nostream-overview?${params.toString()}`
+  }
+
+  const loadGrafanaFrames = () => {
+    document.querySelectorAll('.grafana-frame').forEach((frame) => {
+      if (!frame.dataset.panelId || frame.src) {
+        return
+      }
+      frame.src = grafanaPanelUrl(frame.dataset.panelId)
+    })
+  }
+
+  const unloadGrafanaFrames = () => {
+    document.querySelectorAll('.grafana-frame').forEach((frame) => {
+      frame.removeAttribute('src')
+    })
+  }
+
   const showLogin = () => {
+    unloadGrafanaFrames()
     stopMetricsStream()
     stopNetworkHealthPolling()
     setNavOpen(false)
@@ -327,6 +354,7 @@
     loginError.classList.add('d-none')
     passwordInput.value = ''
     lastSnapshot = undefined
+    window.startAdminSparks?.()
   }
 
   const showDashboard = () => {
@@ -335,6 +363,7 @@
     dashboardActions.classList.remove('d-none')
     dashboardActions.classList.add('d-flex')
     menuToggle?.classList.remove('d-none')
+    window.stopAdminSparks?.()
 
     dashboardViews.forEach((view) => {
       view.classList.toggle('d-none', view.id !== 'metrics-view')
@@ -343,23 +372,10 @@
       item.classList.toggle('active', item.dataset.view === 'metrics-view')
     })
 
-    document.querySelectorAll('.grafana-frame').forEach((frame) => {
-      if (!frame.src && frame.dataset.panelId) {
-        const theme = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-        const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:7777').replace(/\/+$/, '')
-        const dashboardUid = config.grafanaDashboardUid || 'nostream-overview'
-        const params = new URLSearchParams({
-          orgId: '1',
-          panelId: frame.dataset.panelId,
-          refresh: '5s',
-          theme,
-        })
-        frame.src = `${baseUrl}/d-solo/${dashboardUid}?${params.toString()}`
-      }
-    })
-
+    loadGrafanaFrames()
     startMetricsStream()
     void refreshNetworkHealth()
+    void refreshNetworkHealthHistory()
     startNetworkHealthPolling()
   }
 
@@ -374,6 +390,7 @@
     stopNetworkHealthPolling()
     networkHealthPollTimer = setInterval(() => {
       void refreshNetworkHealth()
+      void refreshNetworkHealthHistory()
     }, networkHealthPollIntervalMs)
   }
 
@@ -400,16 +417,121 @@
     return 'status-no-data'
   }
 
+  const summarizeProbeError = (error) => {
+    const raw = String(error ?? '').replace(/\s+/g, ' ').trim()
+    if (!raw) {
+      return ''
+    }
+
+    const lowered = raw.toLowerCase()
+    if (lowered.includes('wrong version number')) {
+      return 'wrong TLS version'
+    }
+    if (lowered.includes('certificate has expired')) {
+      return 'certificate expired'
+    }
+    if (lowered.includes('self-signed')) {
+      return 'self-signed certificate'
+    }
+    if (lowered.includes('unable to verify')) {
+      return 'certificate unverified'
+    }
+    if (lowered.includes('econnrefused')) {
+      return 'connection refused'
+    }
+    if (lowered.includes('etimedout') || lowered.includes('timeout')) {
+      return 'timed out'
+    }
+    if (lowered.includes('enotfound')) {
+      return 'host not found'
+    }
+    if (lowered.includes('cert') && lowered.includes('expired')) {
+      return 'certificate expired'
+    }
+
+    const opensslReason = raw.match(/SSL routines:[^:]+:([^:\s]+(?:\s[^:]+)*)/i)
+    if (opensslReason?.[1]) {
+      return opensslReason[1].replace(/_/g, ' ')
+    }
+
+    const lastSegment = raw.split(':').map((part) => part.trim()).filter(Boolean).at(-1)
+    if (lastSegment && lastSegment.length < 80 && !/^[0-9A-F]{6,}$/i.test(lastSegment)) {
+      return lastSegment
+    }
+
+    return raw.length > 72 ? `${raw.slice(0, 69)}…` : raw
+  }
+
   const formatProbeCheckDetail = (check, formatter, options = {}) => {
     const label = statusLabels.probeCheck[check?.status] ?? statusLabels.probeCheck.skipped
-    const detail = typeof formatter === 'function' && check?.status === 'ok' ? formatter(check.data) : check?.error
+    const rawDetail = typeof formatter === 'function' && check?.status === 'ok' ? formatter(check.data) : check?.error
+    const fullDetail = rawDetail ? String(rawDetail) : ''
+    const detail = check?.status === 'error' ? summarizeProbeError(fullDetail) : fullDetail
     const className = probeCheckStatusClass(check?.status, options)
+
+    const needsFullDetailTitle =
+      fullDetail && (fullDetail !== detail || fullDetail.length > 80)
 
     return {
       label,
       className,
-      detail: detail ? String(detail) : '',
+      detail,
+      title: needsFullDetailTitle ? fullDetail : '',
     }
+  }
+
+  const renderNetworkHealthTimeline = (runs) => {
+    if (!networkHealthTimeline || !networkHealthTimelineWrap) {
+      return
+    }
+
+    networkHealthTimeline.replaceChildren()
+
+    if (!Array.isArray(runs) || runs.length === 0) {
+      networkHealthTimelineWrap.classList.add('d-none')
+      return
+    }
+
+    networkHealthTimelineWrap.classList.remove('d-none')
+
+    runs.forEach((run) => {
+      const runAt = run?.runAt
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'network-health-timeline-item'
+      button.setAttribute('role', 'listitem')
+
+      const status = run?.status ?? 'failed'
+      const statusClass =
+        status === 'ok' ? 'status-ok' : status === 'partial' ? 'status-degraded' : 'status-down'
+      button.classList.add(statusClass)
+
+      if (runAt && runAt === selectedNetworkHealthRunAt) {
+        button.classList.add('is-selected')
+      }
+
+      const runAtMs = Date.parse(runAt ?? '')
+      const label = Number.isFinite(runAtMs) ? new Date(runAtMs).toISOString() : 'Unknown run'
+      const targetCount = Array.isArray(run?.results) ? run.results.length : 0
+      button.textContent = `${label} · ${status} · ${targetCount} target(s)`
+
+      button.addEventListener('click', () => {
+        if (networkHealthHistoryPinned && runAt && runAt === selectedNetworkHealthRunAt) {
+          networkHealthHistoryPinned = false
+          selectedNetworkHealthRunAt = null
+          renderNetworkHealthTimeline(networkHealthHistoryRuns)
+          void refreshNetworkHealth()
+          return
+        }
+
+        networkHealthHistoryPinned = true
+        selectedNetworkHealthRunAt = runAt ?? null
+        renderNetworkHealthTimeline(networkHealthHistoryRuns)
+        renderNetworkHealthSnapshot(run)
+      })
+
+      networkHealthTimeline.appendChild(button)
+    })
   }
 
   const renderNetworkHealthSnapshot = (snapshot) => {
@@ -422,6 +544,9 @@
       networkHealthSummary.classList.add('d-none')
       networkHealthResults.classList.add('d-none')
       networkHealthResults.replaceChildren()
+      if (networkHealthTimelineWrap) {
+        networkHealthTimelineWrap.classList.add('d-none')
+      }
       setNetworkHealthSyncLine('no probe snapshot available')
       return
     }
@@ -563,6 +688,9 @@
         const value = document.createElement('p')
         value.className = `network-health-check-value ${check.className} mb-0`
         value.textContent = check.detail ? `${check.label} · ${check.detail}` : check.label
+        if (check.title) {
+          value.title = check.title
+        }
 
         item.appendChild(label)
         item.appendChild(value)
@@ -614,9 +742,50 @@
       }
 
       const body = await response.json()
-      renderNetworkHealthSnapshot(body.snapshot ?? null)
+      const snapshot = body.snapshot ?? null
+      let displaySnapshot = snapshot
+      if (networkHealthHistoryPinned && selectedNetworkHealthRunAt && networkHealthHistoryRuns.length > 0) {
+        const selected = networkHealthHistoryRuns.find((run) => run?.runAt === selectedNetworkHealthRunAt)
+        if (selected) {
+          displaySnapshot = selected
+        } else {
+          networkHealthHistoryPinned = false
+          selectedNetworkHealthRunAt = null
+        }
+      }
+      renderNetworkHealthSnapshot(displaySnapshot)
+      if (networkHealthHistoryRuns.length > 0) {
+        renderNetworkHealthTimeline(networkHealthHistoryRuns)
+      }
     } catch {
       setNetworkHealthSyncLine('network error while loading probes')
+    }
+  }
+
+  const refreshNetworkHealthHistory = async () => {
+    if (!networkHealthTimeline) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${adminBase}/network-health/history?limit=${networkHealthHistoryLimit}`, {
+        credentials: 'include',
+      })
+
+      if (response.status === 401) {
+        showLogin()
+        return
+      }
+
+      if (!response.ok) {
+        return
+      }
+
+      const body = await response.json()
+      networkHealthHistoryRuns = Array.isArray(body.runs) ? body.runs : []
+      renderNetworkHealthTimeline(networkHealthHistoryRuns)
+    } catch {
+      // Timeline is optional; keep the latest snapshot panel usable.
     }
   }
 
@@ -1335,26 +1504,6 @@
     loginError.classList.remove('d-none')
   }
 
-  const refreshGrafanaFrames = () => {
-    const currentTheme = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-    const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:7777').replace(/\/+$/, '')
-    const dashboardUid = config.grafanaDashboardUid || 'nostream-overview'
-
-    document.querySelectorAll('.grafana-frame').forEach((frame) => {
-      if (!frame.src || !frame.dataset.panelId) {
-        return
-      }
-
-      const params = new URLSearchParams({
-        orgId: '1',
-        panelId: frame.dataset.panelId,
-        refresh: '5s',
-        theme: currentTheme,
-      })
-      frame.src = `${baseUrl}/d-solo/${dashboardUid}?${params.toString()}`
-    })
-  }
-
   const updateSnapshot = (snapshot) => {
     lastSnapshot = snapshot
 
@@ -1587,14 +1736,6 @@
       return
     }
 
-    if (event.key === 't' || event.key === 'T') {
-      const current = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-      const nextTheme = current === 'dark' ? 'light' : 'dark'
-      localStorage.setItem('admin_theme', nextTheme)
-      applyTheme(nextTheme)
-      refreshGrafanaFrames()
-    }
-
     if ((event.key === 'l' || event.key === 'L') && !dashboardPanel.classList.contains('d-none')) {
       logoutButton?.click()
     }
@@ -1638,16 +1779,6 @@
     settingsLoaded = false
     void loadSettingsData(true)
   })
-
-  if (themeToggle) {
-    themeToggle.addEventListener('click', () => {
-      const current = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-      const nextTheme = current === 'dark' ? 'light' : 'dark'
-      localStorage.setItem('admin_theme', nextTheme)
-      applyTheme(nextTheme)
-      refreshGrafanaFrames()
-    })
-  }
 
   if (liveClock) {
     liveClock.textContent = formatClock()

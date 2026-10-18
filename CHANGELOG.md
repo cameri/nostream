@@ -1,5 +1,17 @@
 # nostream
 
+## 3.6.1
+
+### Patch Changes
+
+- [#875](https://github.com/cameri/nostream/pull/875) [`59c5ebf`](https://github.com/cameri/nostream/commit/59c5ebfcf1aaf81b4235d59e0724c27d2a98fa14) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Restyle the admin console to match nostream.dev (dark black-and-pink theme, login spark field) and fix Grafana solo-panel embed URLs so in-dashboard charts load reliably.
+
+## 3.6.0
+
+### Minor Changes
+
+- [#814](https://github.com/cameri/nostream/pull/814) [`d11faf4`](https://github.com/cameri/nostream/commit/d11faf4a077f7871cb4548dc84e758c5df07e752) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add bounded NIP-66 probe history API and Network Health dashboard timeline
+
 ## 3.5.1
 
 ### Patch Changes
