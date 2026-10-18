@@ -250,8 +250,9 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.subscriptionPlans                  | Recurring membership plans. Leave empty to keep the one-time admission fee. With plans and `payments.enabled`, `POST /invoices` takes a `planId` instead of a fee schedule, a payment of at least the plan price starts or extends a period (from the period end while access is still running, otherwise from now), and writes need an active subscription or grace period. Admitted users with no subscription keep access. About three days before a period ends the relay creates a renewal invoice; it moves the subscription through grace to expired once the period and grace pass without payment. Users still have to pay renewal invoices themselves, since Lightning cannot be charged automatically. |
 | payments.subscriptionPlans[].id             | Unique plan name, for example `basic`. `grandfathered` is reserved: users admitted before plans existed are moved onto it and keep access without a paid period. |
-| payments.subscriptionPlans[].amount         | Price of one period in msats. Must be unique across plans, because the amount paid selects the plan. |
+| payments.subscriptionPlans[].amount         | Price of one period in msats. Must be unique across plans. A payment below it does not start or extend a period. |
 | payments.subscriptionPlans[].intervalSeconds | Length of one paid period, in seconds. |
 | payments.subscriptionPlans[].graceSeconds   | How long access lasts after a period ends without a renewal, in seconds. `0` ends access straight away. |
 | payments.subscriptionPlans[].description    | Optional text shown to users. |

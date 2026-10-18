@@ -17,6 +17,7 @@ import { EventKinds, EventExpirationTimeMetadataKey, EventTags } from '../../../
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { IUserRepository } from '../../../src/@types/repositories'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
+import { SubscriptionStatus, UserSubscription } from '../../../src/@types/user-subscription'
 import { getCurrentRate, recordEvent, resetAdaptivePowState } from '../../../src/utils/adaptive-pow'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 
@@ -1643,6 +1644,149 @@ describe('EventMessageHandler', () => {
           CacheAdmissionState.ADMITTED,
           300,
         )
+      })
+    })
+
+    describe('subscriptions', () => {
+      const DAY = 86_400_000
+      let subscriptionFindByPubkeyStub: SinonStub
+
+      const subscription = (overrides: Partial<UserSubscription> = {}): UserSubscription => ({
+        pubkey: 'f'.repeat(64),
+        planId: 'basic',
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodStart: new Date(Date.now() - 10 * DAY),
+        currentPeriodEnd: new Date(Date.now() + 20 * DAY),
+        graceEndsAt: null,
+        cancelAtPeriodEnd: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...overrides,
+      })
+
+      beforeEach(() => {
+        settings.payments.subscriptionPlans = [
+          { id: 'basic', amount: 1000n, intervalSeconds: 2_592_000, graceSeconds: 259_200 },
+        ]
+        userRepositoryFindByPubkeyStub.resolves({ isAdmitted: true, balance: 0n })
+        subscriptionFindByPubkeyStub = sandbox.stub()
+        handler = new EventMessageHandler(
+          webSocket,
+          () => null,
+          {} as any,
+          userRepository,
+          () => settings,
+          {} as any,
+          cacheStub,
+          () => ({ hit: async () => false }),
+          {} as any,
+          { findByPubkey: subscriptionFindByPubkeyStub } as any,
+        )
+      })
+
+      it('admits a user with an active subscription', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription())
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
+      it('admits an admitted user who has no subscription row, so enabling plans locks nobody out', async () => {
+        subscriptionFindByPubkeyStub.resolves(undefined)
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
+      it('admits a user in the grace period', async () => {
+        subscriptionFindByPubkeyStub.resolves(
+          subscription({
+            status: SubscriptionStatus.PAST_DUE,
+            currentPeriodEnd: new Date(Date.now() - DAY),
+            graceEndsAt: new Date(Date.now() + DAY),
+          }),
+        )
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
+      it('blocks an expired subscription and caches the block for 60s', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription({ status: SubscriptionStatus.EXPIRED }))
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: subscription expired')
+
+        expect(cacheStub.setKey).to.have.been.calledWith(
+          `${event.pubkey}:is-admitted`,
+          CacheAdmissionState.BLOCKED_NOT_ADMITTED,
+          60,
+        )
+      })
+
+      it('blocks a lapsed subscription before the sweep has moved it on', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription({ currentPeriodEnd: new Date(Date.now() - 1000) }))
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: subscription expired')
+      })
+
+      it('blocks a user who was never admitted, without looking at subscriptions', async () => {
+        userRepositoryFindByPubkeyStub.resolves(undefined)
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: pubkey not admitted')
+
+        expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+      })
+
+      it('caches admission no longer than the access lasts', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription({ currentPeriodEnd: new Date(Date.now() + 40_000) }))
+
+        await (handler as any).isUserAdmitted(event)
+
+        const [, , ttl] = cacheStub.setKey.lastCall.args
+        expect(ttl).to.be.within(39, 41)
+      })
+
+      it('caches admission for the usual 300s when access lasts longer', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription())
+
+        await (handler as any).isUserAdmitted(event)
+
+        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:is-admitted`, CacheAdmissionState.ADMITTED, 300)
+      })
+
+      it('uses the cache without reading subscriptions', async () => {
+        cacheStub.getKey.resolves(CacheAdmissionState.ADMITTED)
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+
+        expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+      })
+
+      it('gates on the plan when no admission fee is configured', async () => {
+        settings.payments.feeSchedules.admission = []
+        subscriptionFindByPubkeyStub.resolves(subscription({ status: SubscriptionStatus.EXPIRED }))
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: subscription expired')
+      })
+
+      it('lets a pubkey whitelisted on the only admission fee through without a subscription', async () => {
+        settings.payments.feeSchedules.admission[0].whitelists.pubkeys = [event.pubkey]
+        subscriptionFindByPubkeyStub.resolves(subscription({ status: SubscriptionStatus.EXPIRED }))
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
+      it('ignores subscriptions while payments are off', async () => {
+        settings.payments.enabled = false
+        subscriptionFindByPubkeyStub.resolves(subscription({ status: SubscriptionStatus.EXPIRED }))
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
+      it('ignores subscriptions when no plan is configured', async () => {
+        settings.payments.subscriptionPlans = []
+        subscriptionFindByPubkeyStub.resolves(subscription({ status: SubscriptionStatus.EXPIRED }))
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+
+        expect(subscriptionFindByPubkeyStub).not.to.have.been.called
       })
     })
   })

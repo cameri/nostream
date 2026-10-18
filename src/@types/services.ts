@@ -27,12 +27,22 @@ export interface IWotGraphService {
 
 export interface IPaymentsService {
   getInvoiceFromPaymentsProcessor(invoice: string | Invoice): Promise<Partial<Invoice>>
-  createInvoice(pubkey: Pubkey, amount: bigint, description: string): Promise<Invoice>
+  createInvoice(pubkey: Pubkey, amount: bigint, description: string, planId?: string): Promise<Invoice>
   updateInvoice(invoice: Partial<Invoice>): Promise<void>
   updateInvoiceStatus(invoice: Pick<Invoice, 'id' | 'status'>): Promise<Invoice>
-  confirmInvoice(invoice: Pick<Invoice, 'id' | 'amountPaid' | 'confirmedAt' | 'status' | 'pubkey'>): Promise<void>
+  confirmInvoice(
+    invoice: Pick<Invoice, 'id' | 'amountPaid' | 'confirmedAt' | 'status' | 'pubkey'> &
+      Partial<Pick<Invoice, 'planId'>>,
+  ): Promise<void>
   sendInvoiceUpdateNotification(invoice: Invoice): Promise<void>
   getPendingInvoices(offset?: number): Promise<Invoice[]>
+}
+
+export interface ISubscriptionService {
+  /** One pass of renewal invoices, period ends and grace expiries. Returns how many subscriptions changed. */
+  processLifecycle(now?: Date): Promise<number>
+  /** Stops renewal; access lasts until the paid period ends. Returns false when there is nothing to cancel. */
+  cancel(pubkey: Pubkey): Promise<boolean>
 }
 
 export interface NotificationDispatchContext {

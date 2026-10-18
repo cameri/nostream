@@ -19,6 +19,8 @@ import { NegOpenMessageHandler } from '../handlers/neg-open-message-handler'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
 import { eventStrategyFactory } from './event-strategy-factory'
+import { getMasterDbClient } from '../database/client'
+import { UserSubscriptionRepository } from '../repositories/user-subscription-repository'
 import { rateLimiterFactory } from './rate-limiter-factory'
 import { createSettings } from './settings-factory'
 import { wotGraphServiceFactory } from './wot-graph-service-factory'
@@ -29,6 +31,14 @@ export const getCache = (): ICacheAdapter => {
     cacheAdapter = new RedisAdapter(getCacheClient())
   }
   return cacheAdapter
+}
+
+let userSubscriptionRepository: UserSubscriptionRepository | undefined = undefined
+const getUserSubscriptionRepository = (): UserSubscriptionRepository => {
+  if (!userSubscriptionRepository) {
+    userSubscriptionRepository = new UserSubscriptionRepository(getMasterDbClient())
+  }
+  return userSubscriptionRepository
 }
 
 export const messageHandlerFactory =
@@ -61,6 +71,7 @@ export const messageHandlerFactory =
           getCache(),
           rateLimiterFactory,
           wotGraphServiceFactory(getCache(), eventRepository, createSettings),
+          getUserSubscriptionRepository(),
         )
       }
       case MessageType.REQ:

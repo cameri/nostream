@@ -2,7 +2,13 @@ import { andThen, otherwise, pipe } from 'ramda'
 import { broadcastEvent, getPublicKey, getRelayPrivateKey, identifyEvent, signEvent } from '../utils/event'
 import { DatabaseClient, Pubkey } from '../@types/base'
 import { FeeSchedule, Settings } from '../@types/settings'
-import { IEventRepository, IInvoiceRepository, INotificationOutboxRepository, IUserRepository } from '../@types/repositories'
+import {
+  IEventRepository,
+  IInvoiceRepository,
+  INotificationOutboxRepository,
+  IUserRepository,
+  IUserSubscriptionRepository,
+} from '../@types/repositories'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 
@@ -12,6 +18,7 @@ import { createLogger } from '../factories/logger-factory'
 import { IPaymentsProcessor } from '../@types/clients'
 import { IPaymentsService } from '../@types/services'
 import { Transaction } from '../database/transaction'
+import { applyPayment, areSubscriptionsEnabled, findSubscriptionPlan } from '../utils/subscription'
 import { resolveInvoiceExpiry } from '../utils/invoice'
 
 const logger = createLogger('payments-service')
@@ -28,6 +35,7 @@ export class PaymentsService implements IPaymentsService {
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
     private readonly notificationOutboxRepository: INotificationOutboxRepository,
+    private readonly userSubscriptionRepository?: IUserSubscriptionRepository,
   ) {}
 
   public async getPendingInvoices(offset = 0): Promise<Invoice[]> {
@@ -53,7 +61,7 @@ export class PaymentsService implements IPaymentsService {
     }
   }
 
-  public async createInvoice(pubkey: Pubkey, amount: bigint, description: string): Promise<Invoice> {
+  public async createInvoice(pubkey: Pubkey, amount: bigint, description: string, planId?: string): Promise<Invoice> {
     logger('create invoice for %s for %s: %s', pubkey, amount.toString(), description)
     const transaction = new Transaction(this.dbClient)
 
@@ -88,6 +96,7 @@ export class PaymentsService implements IPaymentsService {
           updatedAt: date,
           createdAt: date,
           verifyURL: invoiceResponse.verifyURL,
+          planId,
         },
         transaction.transaction,
       )
@@ -117,6 +126,7 @@ export class PaymentsService implements IPaymentsService {
         updatedAt: date,
         createdAt: invoiceResponse.createdAt,
         verifyURL: invoiceResponse.verifyURL,
+        planId,
       }
     } catch (error) {
       await transaction.rollback()
@@ -192,7 +202,26 @@ export class PaymentsService implements IPaymentsService {
         return sum + (isApplicableFee(feeSchedule) ? BigInt(feeSchedule.amount) : 0n)
       }, 0n)
 
-      if (admissionFeeAmount > 0n && amountPaidMsat >= admissionFeeAmount) {
+      // The callbacks only pass what their processor reports, so the plan comes from the stored invoice.
+      const subscriptionsEnabled = areSubscriptionsEnabled(currentSettings)
+      const planId = subscriptionsEnabled
+        ? (invoice.planId ?? (await this.invoiceRepository.findById(invoice.id, transaction.transaction))?.planId)
+        : undefined
+      const plan = findSubscriptionPlan(currentSettings, planId)
+
+      if (plan && this.userSubscriptionRepository) {
+        if (amountPaidMsat >= BigInt(plan.amount)) {
+          const date = new Date()
+          const existing = await this.userSubscriptionRepository.findByPubkey(invoice.pubkey, transaction.transaction)
+          await this.userSubscriptionRepository.upsert(
+            applyPayment(invoice.pubkey, existing, plan, date),
+            transaction.transaction,
+          )
+          await this.userRepository.admitUser(invoice.pubkey, date, transaction.transaction)
+        } else {
+          logger('invoice %s paid %s msats, below plan %s price %s', invoice.id, amountPaidMsat, plan.id, plan.amount)
+        }
+      } else if (admissionFeeAmount > 0n && amountPaidMsat >= admissionFeeAmount) {
         const date = new Date()
         await this.userRepository.admitUser(invoice.pubkey, date, transaction.transaction)
       }
