@@ -370,6 +370,86 @@ fn a_fractional_integer_field_is_refused_by_validation_and_by_the_daemon_alike()
 }
 
 #[test]
+fn a_fractional_rate_blames_the_period_not_the_rate() {
+    // `targetEventsPerSecond` is an `f64` and `periodMs` a `u64`, and the walk reads the
+    // field's type off the serialized projection - where `serialize_js_number` writes the
+    // default rate `50` as the integer `50`, because JavaScript has one number type. So the
+    // valid rate was taken for an integer field and named first, sending the operator to a
+    // setting that is fine while the bad period went unreported.
+    let defaults: Value =
+        load_defaults(&repo_root().join("resources/default-settings.yaml")).expect("defaults");
+    let merged = merge(
+        &defaults,
+        &serde_yaml::from_str::<Value>("limits:\n  event:\n    pow:\n      targetEventsPerSecond: 10.5\n      periodMs: 1000.5\n")
+            .expect("document"),
+    );
+    assert_eq!(validate_document(&merged, &defaults), Vec::new());
+    let issue = fit(&merged, &defaults).expect_err("the typed schema refuses");
+    assert_eq!(
+        issue.to_string(),
+        "limits.event.pow.periodMs: must be a whole number"
+    );
+}
+
+#[test]
+fn a_fractional_difficulty_factor_is_not_mistaken_for_an_integer_field() {
+    // `difficultyFactor` is an `f64` inside a list, and `serialize_js_number` writes a `0`
+    // default as the integer `0` - so the element type has to survive the walk too, not just
+    // the top-level scalars.
+    let defaults: Value =
+        load_defaults(&repo_root().join("resources/default-settings.yaml")).expect("defaults");
+    let merged = merge(
+        &defaults,
+        &serde_yaml::from_str::<Value>(
+            "limits:\n  event:\n    pow:\n      targetEventsPerSecond: 10.5\n      wotThresholds:\n        - maxDistance: 1\n          difficultyFactor: 0.25\n",
+        )
+        .expect("document"),
+    );
+    assert_eq!(validate_document(&merged, &defaults), Vec::new());
+    let settings = fit(&merged, &defaults).expect("a fractional factor and rate both fit");
+    let pow = settings
+        .limits
+        .expect("limits")
+        .event
+        .expect("event limits")
+        .pow
+        .expect("pow");
+    assert_eq!(pow.target_events_per_second, 10.5);
+    assert_eq!(
+        pow.wot_thresholds.expect("thresholds")[0].difficulty_factor,
+        0.25
+    );
+}
+
+#[test]
+fn a_fractional_rate_is_accepted() {
+    // The other half of the same confusion: a legitimate `f64` value must not be refused,
+    // and only the explicit `f64` leaves say so once the projection writes it as an integer.
+    let defaults: Value =
+        load_defaults(&repo_root().join("resources/default-settings.yaml")).expect("defaults");
+    let merged = merge(
+        &defaults,
+        &serde_yaml::from_str::<Value>(
+            "limits:\n  event:\n    pow:\n      targetEventsPerSecond: 10.5\n",
+        )
+        .expect("document"),
+    );
+    assert_eq!(validate_document(&merged, &defaults), Vec::new());
+    let settings = fit(&merged, &defaults).expect("a fractional rate fits");
+    assert_eq!(
+        settings
+            .limits
+            .expect("limits")
+            .event
+            .expect("event limits")
+            .pow
+            .expect("pow")
+            .target_events_per_second,
+        10.5
+    );
+}
+
+#[test]
 fn a_negative_integer_field_names_the_field() {
     // No semantic rule covers `workers.count`, so the document walk is silent and only the
     // typed fit can refuse it — which is the point: the field is named rather than the whole
@@ -411,4 +491,49 @@ fn a_legacy_json_directory_is_reported_the_same_way() {
 
     let error = load_user_settings(config_dir.path()).expect_err("a directory is reported");
     assert!(matches!(error, ConfigError::NotAFile { .. }));
+}
+
+#[test]
+fn every_float_field_is_declared_to_the_numeric_walk() {
+    // The walk reads a field's type off the serialized defaults, where `serialize_js_number`
+    // has already turned an integral `f64` into an integer - so a new `f64` that does not
+    // join `FLOAT_FIELDS` is silently treated as an integer field, and a valid fractional
+    // value beside it is what gets blamed. This is the list's only guard: the schema cannot
+    // be asked for the types, because the document has none.
+    let defaults: Value =
+        load_defaults(&repo_root().join("resources/default-settings.yaml")).expect("defaults");
+    // A path the shipped defaults do not carry cannot be checked here - `wotThresholds` is
+    // absent, so its element type rests on the list alone. Those paths are named, not skipped
+    // silently, so the gap is visible instead of reading as coverage.
+    let unverified: Vec<_> = nostream_config::settings::FLOAT_FIELDS
+        .iter()
+        .filter(|path| resolve(&defaults, path).is_none())
+        .collect();
+    assert_eq!(
+        unverified,
+        vec![&"limits.event.pow.wotThresholds[].difficultyFactor"],
+        "an unreachable FLOAT_FIELDS path is a stale entry, and a newly added one has no default to check against"
+    );
+    assert_eq!(
+        nostream_config::settings::FLOAT_FIELDS.len(),
+        2,
+        "a new `f64` field in `settings.rs` needs a path in `FLOAT_FIELDS` and this count"
+    );
+}
+
+/// Resolves a dotted path whose `[]` segment means "the first element", the same convention
+/// `FLOAT_FIELDS` uses.
+fn resolve<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+    path.split('.').try_fold(value, |node, segment| {
+        let (key, element) = match segment.strip_suffix("[]") {
+            Some(key) => (key, true),
+            None => (segment, false),
+        };
+        let node = node.get(key)?;
+        if element {
+            node.as_sequence().and_then(|sequence| sequence.first())
+        } else {
+            Some(node)
+        }
+    })
 }

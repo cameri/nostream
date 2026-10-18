@@ -16,6 +16,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::notifications::AdminNotificationsSettings;
 
+/// The paths [`Settings`] declares as `f64`.
+///
+/// A serialized document cannot say which leaves are floats: [`serialize_js_number`] writes
+/// an integral `f64` as the integer `50`, which is the right encoding and loses the type. The
+/// loader's numeric walk needs the type to name the field a value does not fit, so every
+/// `f64` in this module is listed here and a test walks the schema to keep the list complete.
+pub const FLOAT_FIELDS: &[&str] = &[
+    "limits.event.pow.targetEventsPerSecond",
+    "limits.event.pow.wotThresholds[].difficultyFactor",
+];
+
 /// Serializes a JavaScript `number` as an integer when it is integral, so a document that
 /// wrote `50` round-trips as `50` rather than `50.0`. YAML distinguishes the two even though
 /// JavaScript does not.

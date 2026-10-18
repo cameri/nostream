@@ -230,6 +230,12 @@ pub fn merge(defaults: &Value, user: &Value) -> Value {
 /// back to a document — where a `u64` stays an integer and an `f64` becomes a float — and
 /// the first leaf whose number the candidate cannot represent names the field. Messages
 /// carry the class, never the operator's value.
+///
+/// The serialized projection cannot say what type an `f64` field *is*: `serialize_js_number`
+/// writes an integral `f64` as the integer `50`, because that is how JavaScript represents
+/// it and how the document reads back. So every leaf [`crate::settings::FLOAT_FIELDS`] names
+/// is restored to `f64` before the walk runs, which is what stops a valid
+/// `targetEventsPerSecond: 10.5` beside a fractional `periodMs` from blaming the rate.
 pub fn fit(candidate: &Value, defaults: &Value) -> Result<Settings, Issue> {
     match serde_yaml::from_value::<Settings>(candidate.clone()) {
         Ok(settings) => Ok(settings),
@@ -237,10 +243,12 @@ pub fn fit(candidate: &Value, defaults: &Value) -> Result<Settings, Issue> {
             let projection = serde_yaml::from_value::<Settings>(defaults.clone())
                 .ok()
                 .and_then(|typed| serde_yaml::to_value(typed).ok());
-            if let Some(projection) = projection
-                && let Some(issue) = find_misfit(&projection, candidate, &mut Vec::new())
-            {
-                return Err(issue);
+            if let Some(projection) = projection {
+                let mut schema = projection.clone();
+                force_floats(&mut schema, &projection);
+                if let Some(issue) = find_misfit(&schema, candidate, &mut Vec::new()) {
+                    return Err(issue);
+                }
             }
             // Nothing the numeric walk can name: report the class, and the parse location
             // when serde exposes one — never the value, which would echo into logs.
@@ -253,6 +261,57 @@ pub fn fit(candidate: &Value, defaults: &Value) -> Result<Settings, Issue> {
             ))
         }
     }
+}
+
+/// Restores the declared type of every `f64` leaf the projection lost to [`serialize_js_number`].
+///
+/// Each path in [`crate::settings::FLOAT_FIELDS`] that the projection carries is replaced by
+/// the default's own `f64` value, so [`find_misfit`] sees the field's type rather than the
+/// type its default happened to serialize as. Paths the projection does not reach — a list
+/// shorter than the defaults' — are left alone; the walk reads a list's schema from its first
+/// default element, so the element type survives either way.
+fn force_floats(schema: &mut Value, projection: &Value) {
+    for path in crate::settings::FLOAT_FIELDS {
+        let Some(default) = lookup(projection, path).and_then(Value::as_f64) else {
+            continue;
+        };
+        if let Some(leaf) = lookup_mut(schema, path) {
+            *leaf = Value::from(default);
+        }
+    }
+}
+
+/// Resolves a dotted path through mappings. A segment ending in `[]` (`wotThresholds[]`)
+/// descends into its first element, since [`find_misfit`] reads a list's schema from there.
+fn lookup<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+    path.split('.').try_fold(value, |node, segment| {
+        let (key, element) = match segment.strip_suffix("[]") {
+            Some(key) => (key, true),
+            None => (segment, false),
+        };
+        let node = node.get(key)?;
+        if element {
+            node.as_sequence().and_then(|sequence| sequence.first())
+        } else {
+            Some(node)
+        }
+    })
+}
+
+fn lookup_mut<'a>(value: &'a mut Value, path: &str) -> Option<&'a mut Value> {
+    path.split('.').try_fold(value, |node, segment| {
+        let (key, element) = match segment.strip_suffix("[]") {
+            Some(key) => (key, true),
+            None => (segment, false),
+        };
+        let node = node.get_mut(key)?;
+        if element {
+            node.as_sequence_mut()
+                .and_then(|sequence| sequence.first_mut())
+        } else {
+            Some(node)
+        }
+    })
 }
 
 /// Walks the typed projection against the candidate, returning the first leaf whose number
