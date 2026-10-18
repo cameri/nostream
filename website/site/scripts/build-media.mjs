@@ -13,6 +13,8 @@ const LANDING = path.join(HERO_DIR, 'output')
 const MEDIA = path.join(ROOT, 'public', 'media')
 const HERO_META = path.join(MEDIA, 'hero.meta.json')
 const LANDING_POSTER = 'f0130.png'
+const ADMIN_LANDING = path.join(LANDING, 'admin')
+const ADMIN_POSTER = 'f0050.png'
 
 mkdirSync(MEDIA, { recursive: true })
 
@@ -112,6 +114,23 @@ if (landingVideo) {
   console.log(`hero.meta.json (${filmMeta.nipCount} NIPs, source ${path.basename(landingVideo)})`)
 } else {
   console.warn('skip hero.mp4: run `pnpm run render` in website/hero-animation first')
+}
+
+const adminPoster = path.join(ADMIN_LANDING, 'frames', ADMIN_POSTER)
+if (existsSync(adminPoster)) {
+  await sharp(adminPoster).resize(1920).webp({ quality: 90 }).toFile(path.join(MEDIA, 'admin-poster.webp'))
+  console.log('admin poster → public/media')
+} else {
+  console.warn(`skip admin poster: run \`pnpm run frames:admin\` in website/hero-animation (need frames/${ADMIN_POSTER})`)
+}
+
+const adminVideo = [process.env.ADMIN_SRC, path.join(ADMIN_LANDING, 'nostream-admin.mp4')].find((p) => p && existsSync(p))
+
+if (adminVideo) {
+  encodeHero(adminVideo, path.join(MEDIA, 'admin.mp4'), 15)
+  console.log('admin.mp4 ← admin film (re-encoded for site / Workers asset limit)')
+} else {
+  console.warn('skip admin.mp4: run `pnpm run render:admin` in website/hero-animation first')
 }
 
 console.log('done → public/media/')

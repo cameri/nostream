@@ -1,58 +1,37 @@
 ---
-import type { ImageMetadata } from 'astro'
-import { Image } from 'astro:assets'
-import ScreenBar from '../ScreenBar.astro'
+import FilmFrame from '../FilmFrame.astro'
 import InfoTip from '../InfoTip.astro'
-// Drop admin console screenshots into src/assets/screens/ using these names (png, jpg or webp).
-const files = import.meta.glob<{ default: ImageMetadata }>('../../assets/screens/*.{png,jpg,jpeg,webp}', { eager: true })
-const byName = Object.fromEntries(
-  Object.entries(files).map(([file, mod]) => [file.split('/').pop()!.replace(/\.\w+$/, ''), mod.default]),
-)
 
-const shots = [
-  {
-    names: ['metrics', 'metrics-1'],
-    title: 'Live metrics',
-    body: 'Watch traffic and load as it happens, so you catch problems while they are small.',
-    tip: 'Events per second, rejections, connections, CPU and memory, streamed over SSE.',
-    tag: 'SSE',
-    main: true,
-  },
-  {
-    name: 'network-health',
-    title: 'Network health',
-    body: 'Know your relay is reachable and fast from the outside, not just from your own machine.',
-    tip: 'NIP-66 probes for DNS, TLS, WebSocket read/write RTT and NIP-11, per target.',
-    tag: 'NIP-66',
-  },
-  {
-    name: 'mismatches',
-    title: 'Honest advertising',
-    body: "Flags the gap between what your relay advertises and what it actually does — in either direction.",
-    tip: 'NIP-11 mismatch warnings: compares what your relay publishes in supported_nips with what probes measure, and flags any disagreement.',
-    tag: 'NIP-11',
-  },
-  {
-    name: 'settings',
-    title: 'Settings editor',
-    body: 'Change settings confidently — mistakes are caught before they ship, and undo is one click.',
-    tip: 'Guided, validated edits with automatic backups and one-click restore.',
-    tag: 'YAML',
-  },
-  {
-    name: 'notifications',
-    title: 'Notifications',
-    body: 'Hear about trouble first, before your users notice.',
-    tip: 'Outbound alerts with a delivery log, so nothing gets lost silently.',
-    tag: 'ALERT',
-  },
-]
+const media = (file: string) => `${import.meta.env.BASE_URL}media/${file}`.replace(/\/\//, '/')
 
 const capabilities = [
   'Login-gated so only you can reach it',
   'Plugs into the monitoring you already run',
   'Health endpoint for load balancers and zero-downtime deploys',
   'Self-hosted probes, labelled as one monitor among many',
+]
+
+const features = [
+  {
+    title: 'Live metrics',
+    body: 'Watch traffic and load as it happens, so you catch problems while they are small.',
+    tip: 'Events per second, rejections, connections, CPU and memory, streamed over SSE.',
+  },
+  {
+    title: 'Network health',
+    body: 'Know your relay is reachable and fast from the outside, not just from your own machine.',
+    tip: 'NIP-66 probes for DNS, TLS, WebSocket read/write RTT and NIP-11, per target.',
+  },
+  {
+    title: 'Settings editor',
+    body: 'Change settings confidently — mistakes are caught before they ship, and undo is one click.',
+    tip: 'Guided, validated edits with automatic backups and one-click restore.',
+  },
+  {
+    title: 'Notifications',
+    body: 'Hear about trouble first, before your users notice.',
+    tip: 'Outbound alerts with a delivery log, so nothing gets lost silently.',
+  },
 ]
 ---
 
@@ -68,54 +47,38 @@ const capabilities = [
         <ul class="caps">
           {capabilities.map((c) => <li>{c}</li>)}
         </ul>
-        <p class="demo-note">
-          Screenshots from a real console — this one ran on a laptop catching its first events, rejections and failed
-          alert deliveries included.
-        </p>
       </div>
     </div>
 
-    <div class="gallery">
-      {
-        shots.map((shot, i) => {
-          const keys = 'names' in shot && shot.names ? shot.names : 'name' in shot && shot.name ? [shot.name] : []
-          const images = keys.map((k) => byName[k]).filter(Boolean)
-          const missingKey = 'name' in shot ? shot.name : keys[0]
-          return (
-            <figure class:list={['shot reveal', { main: shot.main }]} style={`transition-delay:${(i % 2) * 80}ms`}>
-              <div class="frame">
-                <ScreenBar title={`/admin · ${shot.title.toLowerCase()}`} />
-                {images.length > 0 ? (
-                  <div class:list={['shots', { stack: images.length > 1 }]}>
-                    {images.map((src, j) => (
-                      <Image
-                        src={src}
-                        alt={`nostream admin console: ${shot.title}${images.length > 1 ? ` (${j + 1})` : ''}`}
-                        widths={[640, 1280, 1920]}
-                        sizes="(min-width: 900px) 60vw, 100vw"
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div class="placeholder mono">
-                    <span class="tag tag-pink">{shot.tag}</span>
-                    <span>screenshot coming soon</span>
-                    <span class="hint">src/assets/screens/{missingKey}.png</span>
-                  </div>
-                )}
-              </div>
-              <figcaption>
-                <h3 class="h3">{shot.title}</h3>
-                <p>
-                  {shot.body}
-                  {shot.tip && <InfoTip detail={shot.tip} label={shot.title} />}
-                </p>
-              </figcaption>
-            </figure>
-          )
-        })
-      }
+    <div class="reveal film-wrap">
+      <p class="sr-only">
+        Silent looping video walkthrough of the /admin operator console: live metrics over SSE, the settings editor
+        with validated YAML and restore, NIP-66 network health probes, and alert notifications with a delivery log.
+        Use the pause control to stop playback. The sections below describe each beat in text.
+      </p>
+      <FilmFrame
+        src={media('admin.mp4')}
+        poster={media('admin-poster.webp')}
+        title="/admin · operator console"
+      />
+      <button class="film-toggle mono" type="button" data-console-film-toggle aria-pressed="false" aria-label="Pause the console film">
+        Pause
+      </button>
     </div>
+
+    <ul class="feature-list reveal">
+      {
+        features.map((feature, i) => (
+          <li class="feature" style={`transition-delay:${(i % 2) * 80}ms`}>
+            <h3 class="h3">{feature.title}</h3>
+            <p>
+              {feature.body}
+              {feature.tip && <InfoTip detail={feature.tip} label={feature.title} />}
+            </p>
+          </li>
+        ))
+      }
+    </ul>
   </div>
 </section>
 
@@ -143,84 +106,93 @@ const capabilities = [
     font-size: 12px;
   }
 
-  .demo-note {
-    margin: 16px 0 0;
-    color: var(--fg-2);
-    font-size: 13px;
+  .film-wrap {
+    position: relative;
+    margin-top: 8px;
   }
 
-  .gallery {
+  .film-wrap :global(.film-frame) {
+    width: 100%;
+  }
+
+  .film-toggle {
+    position: absolute;
+    z-index: 4;
+    left: 16px;
+    bottom: 16px;
+    padding: 8px 14px;
+    border: 1px solid var(--panel-border);
+    border-radius: 7px;
+    background: rgba(14, 14, 17, 0.8);
+    color: var(--fg-2);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+
+  .film-toggle:hover {
+    border-color: var(--wire);
+    color: var(--fg);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .feature-list {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 20px 16px;
+    margin: 20px 0 0;
+    padding: 0;
+    list-style: none;
   }
 
   @media (min-width: 900px) {
-    .gallery {
+    .feature-list {
       grid-template-columns: repeat(2, 1fr);
     }
-    .main {
-      grid-column: 1 / -1;
-    }
   }
 
-  .shot {
-    margin: 0;
-  }
-
-  .frame {
-    overflow: hidden;
-    border: 1px solid var(--panel-border);
-    border-radius: 12px;
-    background: var(--panel);
-    transition: border-color 0.25s ease;
-  }
-
-  .shot:hover .frame {
-    border-color: var(--wire);
-  }
-
-  .shots.stack {
-    display: grid;
-    gap: 1px;
-    background: var(--line);
-  }
-
-  .frame :global(img) {
-    display: block;
-    width: 100%;
-    height: auto;
-  }
-
-  .placeholder {
-    display: grid;
-    place-content: center;
-    justify-items: center;
-    gap: 12px;
-    aspect-ratio: 16 / 9;
-    background:
-      linear-gradient(135deg, rgba(255, 46, 136, 0.05), transparent 40%),
-      repeating-linear-gradient(0deg, transparent 0 27px, var(--line) 27px 28px),
-      repeating-linear-gradient(90deg, transparent 0 27px, rgba(38, 38, 42, 0.5) 27px 28px);
-    color: var(--fg-2);
-    font-size: 14px;
-  }
-
-  .main .placeholder {
-    aspect-ratio: 21 / 9;
-  }
-
-  .hint {
-    color: var(--wire);
-    font-size: 12px;
-  }
-
-  figcaption {
-    padding: 16px 4px 0;
-  }
-
-  figcaption p {
+  .feature p {
     margin: 0;
     font-size: 15px;
   }
 </style>
+
+<script>
+  // Same pause behaviour as the hero film. Base replays a visible clip on
+  // scroll, so a deliberate pause has to cancel that play event.
+  let userPaused = false
+  const button = document.querySelector<HTMLButtonElement>('[data-console-film-toggle]')
+  const video = document.querySelector<HTMLVideoElement>('#console video')
+  const sync = () => {
+    if (!button || !video) return
+    const paused = video.paused
+    button.textContent = paused ? 'Play' : 'Pause'
+    button.setAttribute('aria-pressed', String(paused))
+    button.setAttribute('aria-label', paused ? 'Play the console film' : 'Pause the console film')
+  }
+  video?.addEventListener('pause', sync)
+  video?.addEventListener('play', () => {
+    if (userPaused) video.pause()
+    else sync()
+  })
+  button?.addEventListener('click', () => {
+    if (!video) return
+    userPaused = !video.paused
+    if (video.paused) void video.play()
+    else video.pause()
+    sync()
+  })
+  sync()
+</script>
