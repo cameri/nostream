@@ -289,6 +289,132 @@ describe('settings-config', () => {
     })
   })
 
+  describe('subscription plan settings', () => {
+    const settingsWith = (subscriptionPlans: any) =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+        payments: { enabled: true, processor: 'lnbits', subscriptionPlans },
+      }) as any
+
+    const planIssues = (subscriptionPlans: any) =>
+      validateSettings(settingsWith(subscriptionPlans)).filter((issue) =>
+        issue.path.startsWith('payments.subscriptionPlans'),
+      )
+
+    const basic = { id: 'basic', amount: 1000000, intervalSeconds: 2592000, graceSeconds: 259200 }
+    const premium = { id: 'premium', amount: 5000000, intervalSeconds: 2592000, graceSeconds: 0 }
+
+    it('accepts no plans, an empty list and valid plans', () => {
+      expect(planIssues(undefined)).to.deep.equal([])
+      expect(planIssues([])).to.deep.equal([])
+      expect(planIssues([basic, premium])).to.deep.equal([])
+    })
+
+    it('accepts per-plan limits', () => {
+      const plan = { ...basic, limits: { rateLimits: [{ period: 60000, rate: 120 }], retentionMaxDays: 90 } }
+
+      expect(planIssues([plan])).to.deep.equal([])
+    })
+
+    it('reports a value that is not a list once, through the settings schema', () => {
+      expect(planIssues({ basic }).map((issue) => issue.path)).to.deep.equal(['payments.subscriptionPlans'])
+    })
+
+    it('rejects a plan that is not an object', () => {
+      expect(planIssues(['basic']).map((issue) => issue.path)).to.deep.equal(['payments.subscriptionPlans[0]'])
+    })
+
+    it('rejects a missing, empty, reserved or repeated id', () => {
+      expect(planIssues([{ ...basic, id: undefined }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].id',
+      ])
+      expect(planIssues([{ ...basic, id: '  ' }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].id',
+      ])
+      expect(planIssues([{ ...basic, id: 'grandfathered' }]).map((issue) => issue.message)).to.deep.equal([
+        'id "grandfathered" is reserved',
+      ])
+      expect(planIssues([basic, { ...premium, id: 'basic' }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[1].id',
+      ])
+    })
+
+    for (const bad of [0, -1, 1.5, '1000', undefined]) {
+      it(`rejects amount = ${String(bad)}`, () => {
+        expect(planIssues([{ ...basic, amount: bad }]).map((issue) => issue.path)).to.deep.equal([
+          'payments.subscriptionPlans[0].amount',
+        ])
+      })
+
+      it(`rejects intervalSeconds = ${String(bad)}`, () => {
+        expect(planIssues([{ ...basic, intervalSeconds: bad }]).map((issue) => issue.path)).to.deep.equal([
+          'payments.subscriptionPlans[0].intervalSeconds',
+        ])
+      })
+    }
+
+    it('rejects two plans with the same amount, since the amount selects the plan', () => {
+      const issues = planIssues([basic, { ...premium, amount: basic.amount }])
+
+      expect(issues.map((issue) => issue.path)).to.deep.equal(['payments.subscriptionPlans[1].amount'])
+    })
+
+    it('accepts a bigint amount', () => {
+      expect(planIssues([{ ...basic, amount: 1000000n }])).to.deep.equal([])
+    })
+
+    it('allows a zero grace period but not a negative or fractional one', () => {
+      expect(planIssues([{ ...basic, graceSeconds: 0 }])).to.deep.equal([])
+      for (const bad of [-1, 0.5, '60', undefined]) {
+        expect(planIssues([{ ...basic, graceSeconds: bad }]).map((issue) => issue.path)).to.deep.equal([
+          'payments.subscriptionPlans[0].graceSeconds',
+        ])
+      }
+    })
+
+    it('rejects invalid per-plan limits', () => {
+      expect(planIssues([{ ...basic, limits: 'fast' }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].limits',
+      ])
+      expect(
+        planIssues([{ ...basic, limits: { rateLimits: [{ period: 0, rate: 1 }] } }]).map((issue) => issue.path),
+      ).to.deep.equal(['payments.subscriptionPlans[0].limits.rateLimits[0].period'])
+      expect(planIssues([{ ...basic, limits: { rateLimits: 'fast' } }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].limits.rateLimits',
+      ])
+      expect(
+        planIssues([{ ...basic, limits: { rateLimits: [{ period: 60000, rate: 'fast' }] } }]).map(
+          (issue) => issue.path,
+        ),
+      ).to.deep.equal(['payments.subscriptionPlans[0].limits.rateLimits[0].rate'])
+      expect(
+        planIssues([{ ...basic, limits: { rateLimits: [{ period: '60000', rate: 5 }] } }]).map((issue) => issue.path),
+      ).to.deep.equal(['payments.subscriptionPlans[0].limits.rateLimits[0].period'])
+      expect(
+        planIssues([{ ...basic, limits: { rateLimits: [{ period: 60000 }] } }]).map((issue) => issue.path),
+      ).to.deep.equal(['payments.subscriptionPlans[0].limits.rateLimits[0].rate'])
+      expect(planIssues([{ ...basic, limits: { rateLimits: ['x'] } }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].limits.rateLimits[0]',
+      ])
+      expect(planIssues([{ ...basic, limits: { retentionMaxDays: 0 } }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].limits.retentionMaxDays',
+      ])
+    })
+
+    it('reports a problem in each plan', () => {
+      const issues = planIssues([
+        { ...basic, intervalSeconds: 0 },
+        { ...premium, graceSeconds: -1 },
+      ])
+
+      expect(issues.map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].intervalSeconds',
+        'payments.subscriptionPlans[1].graceSeconds',
+      ])
+    })
+  })
+
   describe('adaptive pow settings', () => {
     const baseSettings = () =>
       ({
