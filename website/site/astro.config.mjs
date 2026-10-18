@@ -49,7 +49,7 @@ function rehypeRepoLinks() {
 }
 
 export default defineConfig({
-  site: process.env.SITE_URL ?? 'https://nostream.dev',
+  site: process.env.SITE_URL ?? 'https://ema.tnsor.network',
   // PR previews build under /preview/<n>; empty when unset (production).
   base: process.env.SITE_BASE || undefined,
   markdown: {

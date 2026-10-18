@@ -7,7 +7,6 @@ import {
   BODY,
   DURATION,
   FG,
-  FG_2,
   FONT_MONO,
   FONT_SANS,
   FPS,
@@ -211,16 +210,17 @@ export async function buildFilm(): Promise<Composition> {
 
   const planetSize = 1700
   const haloSize = planetSize * (2000 / 1600)
+  const planetX = 1210
   const planetY: Key[] = [
-    [0, 1100],
-    [60, 520, 'power3.out'],
-    [HERO.end - 10, 505],
-    [WHAT.start + 25, 700, 'power2.inOut'],
-    [WHAT.end - 20, 710],
-    [FLOW.start + 20, 790, 'power2.inOut'],
-    [FEATURES.end - 20, 820],
-    [DEPLOY.start + 30, 500, 'power3.out'],
-    [LAST, 480],
+    [0, 1210],
+    [60, 640, 'power3.out'],
+    [HERO.end - 10, 625],
+    [WHAT.start + 25, 790, 'power2.inOut'],
+    [WHAT.end - 20, 800],
+    [FLOW.start + 20, 870, 'power2.inOut'],
+    [FEATURES.end - 20, 900],
+    [DEPLOY.start + 30, 580, 'power3.out'],
+    [LAST, 560],
   ]
   const planetOpacity: Key[] = [
     [0, 0],
@@ -235,7 +235,7 @@ export async function buildFilm(): Promise<Composition> {
   add(
     Layer.image(asset('planet'), {
       position: 'absolute',
-      x: 1000,
+      x: planetX,
       y: 1100,
       width: planetSize,
       height: planetSize,
@@ -250,7 +250,7 @@ export async function buildFilm(): Promise<Composition> {
   add(
     Layer.image(asset('sparkles'), {
       position: 'absolute',
-      x: 1000 - haloOffset,
+      x: planetX - haloOffset,
       y: 1100 - haloOffset,
       width: haloSize,
       height: haloSize,
@@ -365,43 +365,31 @@ export async function buildFilm(): Promise<Composition> {
   light('nostream', 24, heroOut)
   sceneLabel('NOSTREAM  ·  OPEN-SOURCE NOSTR RELAY', 196, 6, heroOut)
   const headline: [string, string][] = [
-    ['Your relay.', FG],
-    ['Your rules.', FG_2],
-    ['Nostr, wired in.', PINK],
+    ['A social network', FG],
+    ['nobody can', PINK],
+    ['switch off.', PINK],
   ]
   headline.forEach(([text, fill], i) => {
-    const y = 228 + i * 112
+    const y = 216 + i * 96
     add(
-      sans(text, hx - 6, y, 108, { fill, letterSpacing: -4, fontWeight: 800 }),
+      sans(text, hx - 6, y, 92, { fill, letterSpacing: -4, fontWeight: 800 }),
       show(y, { start: 12 + i * 9, end: heroOut, dy: 40, inF: 18 }),
     )
   })
 
-  const bodyY1 = 606
-  const bodyY2 = 640
+  const bodyY1 = 540
+  const bodyY2 = 574
   add(
-    mono('A production-ready Nostr relay, written in TypeScript.', hx, bodyY1, 21, { fill: BODY }),
+    mono('Own your posts, your followers and your reach.', hx, bodyY1, 21, { fill: BODY }),
     show(bodyY1, { start: 42, end: heroOut, dy: 14 }),
   )
-  const prefix = 'Your server. Your data. No '
-  const struck = 'middleman'
-  const strikeX = hx + monoWidth(prefix, 21)
-  add(mono(prefix, hx, bodyY2, 21, { fill: BODY }), show(bodyY2, { start: 48, end: heroOut, dy: 14 }))
-  add(mono(struck, strikeX, bodyY2, 21, { fill: MUTED }), show(bodyY2, { start: 48, end: heroOut, dy: 14 }))
   add(
-    mono('.', strikeX + monoWidth(struck, 21), bodyY2, 21, { fill: BODY }),
+    mono('A production-ready Nostr relay, written in TypeScript.', hx, bodyY2, 21, { fill: BODY }),
     show(bodyY2, { start: 48, end: heroOut, dy: 14 }),
   )
-  add(
-    rect(strikeX - 2, bodyY2 + 14, 0, 2, { background: PINK }),
-    show(bodyY2 + 14, { start: 66, end: heroOut }).keys('width', [
-      [66, 0],
-      [80, monoWidth(struck, 21) + 4, 'power2.out'],
-    ]),
-  )
 
-  tabs(708, 62, heroOut)
-  const heroTerm = { y: 744, w: 780 }
+  tabs(628, 62, heroOut)
+  const heroTerm = { y: 664, w: 780 }
   add(
     rect(hx, heroTerm.y, heroTerm.w, 70, {
       background: PANEL,
@@ -438,12 +426,11 @@ export async function buildFilm(): Promise<Composition> {
   copyButton(hx + heroTerm.w - 18, heroTerm.y + 18, 74, heroOut)
 
   const stats: [string, string][] = [
-    [NIP_COUNT, 'NIPS SUPPORTED'],
-    ['6', 'LIGHTNING PROCESSORS'],
-    ['MIT', 'OPEN SOURCE'],
+    ['Nostr + Marmot', 'PROTOCOL SUPPORT'],
+    ['MIT', 'LICENSE'],
   ]
   stats.forEach(([value, label], i) => {
-    const x = hx + i * 270
+    const x = hx + i * 460
     const s = 96 + i * 8
     add(rect(x, 868, 1, 62, { background: LINE }), show(868, { start: s, end: heroOut }))
     add(
@@ -483,7 +470,7 @@ export async function buildFilm(): Promise<Composition> {
       num: '03',
       title: 'nostream',
       body: 'A production-ready relay\nin TypeScript that you\ndeploy and control.',
-      tag: 'self-hosted  ·  open source',
+      tag: 'self-hosted  ·  MIT license',
     },
   ]
   const wc = { y: 430, w: 440, h: 330, gap: 140 }
