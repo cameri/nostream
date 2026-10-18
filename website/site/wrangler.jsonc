@@ -4,7 +4,7 @@
   "compatibility_date": "2026-10-01",
   "routes": [
     {
-      "pattern": "ema.tnsor.network",
+      "pattern": "nostream.dev",
       "custom_domain": true
     }
   ],
