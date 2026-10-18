@@ -1,0 +1,17 @@
+[package]
+name = "nostream-relay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Nostr wire handlers, event strategies, connection state and rate limiters"
+
+[dependencies]
+nostream-config.workspace = true
+nostream-core.workspace = true
+nostream-storage.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

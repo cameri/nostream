@@ -18,3 +18,7 @@ postgresql.conf
 test/integration/docker-compose.yml
 # website tooling (not part of the relay image)
 website
+
+# Rust workspace (not part of the relay image)
+crates
+target

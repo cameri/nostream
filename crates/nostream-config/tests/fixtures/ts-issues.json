@@ -1,0 +1,304 @@
+{
+  "subject": {
+    "repo": "cameri/nostream",
+    "commit": "242a3001d77149e4d70151ec03060c4ef44a1547",
+    "files": [
+      "resources/default-settings.yaml",
+      "src/@types/settings.ts",
+      "src/utils/settings-config.ts",
+      "src/utils/settings.ts",
+      "test/unit/utils/settings-config.spec.ts"
+    ],
+    "node": "v24.22.0",
+    "generated": "2026-10-17",
+    "command": "cd <capture tree> && node -r ts-node/register/transpile-only <branch>/crates/nostream-config/tests/capture/gen-ts-issues.mjs",
+    "expected_test_counts": {
+      "source_it": 34,
+      "executed": 41
+    }
+  },
+  "deferred": {
+    "commit": "041fe34e66b9bb433f1ff3383aee7030fdd3bb8f",
+    "files": [
+      "resources/default-settings.yaml",
+      "src/@types/settings.ts",
+      "src/utils/settings-config.ts",
+      "src/utils/settings-guided-schema.ts",
+      "test/unit/utils/settings-config.spec.ts"
+    ],
+    "diff": "+212/-0"
+  },
+  "cases": [
+    {
+      "name": "defaults",
+      "mutations": [],
+      "ts_issues": [],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "backend_lmdb",
+      "mutations": [
+        { "op": "set", "path": "eventStore.backend", "value": "lmdb" }
+      ],
+      "ts_issues": [
+        {
+          "path": "eventStore.backend",
+          "message": "backend must be one of: postgres"
+        }
+      ],
+      "rust_exempt_paths": ["eventStore.backend"],
+      "exempt_reason": "D7: the rewrite's target backend is LMDB, so the Rust validator accepts lmdb and rejects only values outside {postgres, lmdb}. Path-scoped, not case-scoped."
+    },
+    {
+      "name": "pow_floor_gt_ceiling",
+      "mutations": [
+        { "op": "set", "path": "limits.event.pow.enabled", "value": true },
+        { "op": "set", "path": "limits.event.pow.floorBits", "value": 16 },
+        { "op": "set", "path": "limits.event.pow.ceilingBits", "value": 8 }
+      ],
+      "ts_issues": [
+        {
+          "path": "limits.event.pow.floorBits",
+          "message": "floorBits must be >= 0 and <= ceilingBits"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "pow_period_zero",
+      "mutations": [
+        { "op": "set", "path": "limits.event.pow.enabled", "value": true },
+        { "op": "set", "path": "limits.event.pow.periodMs", "value": 0 }
+      ],
+      "ts_issues": [
+        {
+          "path": "limits.event.pow.periodMs",
+          "message": "periodMs must be greater than 0"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "pow_target_zero",
+      "mutations": [
+        { "op": "set", "path": "limits.event.pow.enabled", "value": true },
+        { "op": "set", "path": "limits.event.pow.targetEventsPerSecond", "value": 0 }
+      ],
+      "ts_issues": [
+        {
+          "path": "limits.event.pow.targetEventsPerSecond",
+          "message": "targetEventsPerSecond must be greater than 0"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "conn_rate_limit_period_zero",
+      "mutations": [
+        { "op": "set", "path": "limits.connection.rateLimits[0].period", "value": 0 }
+      ],
+      "ts_issues": [
+        {
+          "path": "limits.connection.rateLimits[0].period",
+          "message": "period must be greater than 0"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "telegram_missing_creds",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "admin.notifications.targets",
+          "value": [{ "id": "t1", "type": "telegram", "enabled": true }]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "admin.notifications.targets[0].botToken",
+          "message": "botToken is required for telegram targets"
+        },
+        {
+          "path": "admin.notifications.targets[0].chatId",
+          "message": "chatId is required for telegram targets"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "duplicate_target_id",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "admin.notifications.targets",
+          "value": [
+            {
+              "id": "dup",
+              "type": "http",
+              "enabled": true,
+              "url": "https://a.example"
+            },
+            {
+              "id": "dup",
+              "type": "http",
+              "enabled": true,
+              "url": "https://b.example"
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "admin.notifications.targets[1].id",
+          "message": "target id must be unique"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "target_bad_url",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "admin.notifications.targets",
+          "value": [
+            {
+              "id": "w1",
+              "type": "http",
+              "url": "ftp://bad.example"
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "admin.notifications.targets[0].url",
+          "message": "url must use http or https"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "target_url_bad_port",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "admin.notifications.targets",
+          "value": [
+            {
+              "id": "w1",
+              "type": "http",
+              "url": "https://hooks.example:99999/hook"
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "admin.notifications.targets[0].url",
+          "message": "url must be a valid URL"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "target_url_bad_host",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "admin.notifications.targets",
+          "value": [
+            {
+              "id": "w1",
+              "type": "discord",
+              "url": "https://bad host/hook"
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "admin.notifications.targets[0].url",
+          "message": "url must be a valid URL"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "unknown_top_level",
+      "mutations": [{ "op": "set", "path": "bogusSection", "value": {} }],
+      "ts_issues": [
+        { "path": "bogusSection", "message": "Unknown setting key" }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "unknown_nested_key",
+      "mutations": [{ "op": "set", "path": "info.unknownKey", "value": 1 }],
+      "ts_issues": [
+        { "path": "info.unknownKey", "message": "Unknown setting key" }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "wrong_type_workers_count",
+      "mutations": [
+        { "op": "set", "path": "workers.count", "value": "four" }
+      ],
+      "ts_issues": [
+        { "path": "workers.count", "message": "Expected number, got string" }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "missing_name",
+      "mutations": [{ "op": "delete", "path": "info.name" }],
+      "ts_issues": [{ "path": "info.name", "message": "name is required" }],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "missing_relay_url",
+      "mutations": [{ "op": "delete", "path": "info.relay_url" }],
+      "ts_issues": [
+        { "path": "info.relay_url", "message": "relay_url is required" }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "bad_strategy",
+      "mutations": [
+        { "op": "set", "path": "limits.rateLimiter.strategy", "value": "random" }
+      ],
+      "ts_issues": [
+        {
+          "path": "limits.rateLimiter.strategy",
+          "message": "strategy must be ewma or sliding_window"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "nip77_present",
+      "mutations": [
+        { "op": "set", "path": "nip77", "value": { "enabled": true } }
+      ],
+      "ts_issues": [
+        { "path": "nip77", "message": "Unknown setting key" }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "relay_url_ftp",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "info.relay_url",
+          "value": "ftp://relay.example.com"
+        }
+      ],
+      "ts_issues": [],
+      "rust_exempt_paths": []
+    }
+  ]
+}
