@@ -2,12 +2,13 @@
 import { Image } from 'astro:assets'
 import abhayPhoto from '../assets/Abhay.jpg'
 import cameriPhoto from '../assets/cameri.jpg'
-import priyanshuPhoto from '../assets/priyanshu.png'
+import priyanshuPhoto from '../assets/priyanshu.jpg'
 import PageHead from '../components/PageHead.astro'
 import { REPO } from '../data/site'
 import Base from '../layouts/Base.astro'
 
 const NPUB = 'npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m'
+const PRIYANSHU_NPUB = 'npub1mt3ezhzerxdjqp3sdnk68zz2ldx8wkvrq49qrqlexkdkqqwu5tjsfcw5vl'
 
 const maintainers = [
   {
@@ -32,7 +33,22 @@ const maintainers = [
     location: 'India',
     github: 'https://github.com/Priyanshubhartistm',
     photo: priyanshuPhoto,
-    links: [{ label: 'GitHub', value: '@Priyanshubhartistm', href: 'https://github.com/Priyanshubhartistm' }],
+    bio: 'Priyanshu is a Web3 developer and a Bitshala Fellow with a keen interest in the whole blockchain space, from Bitcoin and Ethereum to Solana. Priyanshu also builds Reelstr, an open-source Pocket FM on Nostr with forkable AI scenes and per-episode payments in sats.',
+    links: [
+      { label: 'GitHub', value: '@Priyanshubhartistm', href: 'https://github.com/Priyanshubhartistm' },
+      { label: 'Portfolio', value: 'pb-portfolio-black.vercel.app', href: 'https://pb-portfolio-black.vercel.app/' },
+      { label: 'X', value: '@0xAarohi', href: 'https://x.com/0xAarohi' },
+      {
+        label: 'Nostr',
+        value: `${PRIYANSHU_NPUB.slice(0, 12)}…${PRIYANSHU_NPUB.slice(-6)}`,
+        href: `https://njump.me/${PRIYANSHU_NPUB}`,
+      },
+      {
+        label: 'LinkedIn',
+        value: 'Priyanshu Bharti',
+        href: 'https://www.linkedin.com/in/priyanshu-bharti-441823229/',
+      },
+    ],
   },
   {
     id: 'abhay',
