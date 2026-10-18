@@ -63,7 +63,7 @@ const SHOT = {
   metrices: { w: 2046, h: 1434, file: 'metrices.png' },
   nip66: { w: 2102, h: 1294, file: 'nip66.png' },
   settingsEditor: { w: 2046, h: 906, file: 'settings-editor.png' },
-  notification: { w: 2086, h: 1466, file: 'notification.png' },
+  notification: { w: 2366, h: 1476, file: 'notification.png' },
 } as const
 
 type ShotKey = keyof typeof SHOT
