@@ -1,5 +1,10 @@
 //! End-to-end tests for the `config` subcommands.
 
+// This integration-test target may unwrap: a failing assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::fs;
 use std::path::PathBuf;
 

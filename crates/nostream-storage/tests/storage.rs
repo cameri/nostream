@@ -1,5 +1,10 @@
 //! The LMDB environment slice and the backend stubs.
 
+// This integration-test target may unwrap: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::path::Path;
 
 use nostream_storage::{Backend, LmdbEnv, StorageError};

@@ -1,5 +1,10 @@
 //! Redaction, ported from `test/unit/utils/settings-redaction.spec.ts`.
 
+// This integration-test target may unwrap: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use nostream_config::path::get_by_path;
 use nostream_config::redaction::{
     is_sensitive_settings_path, is_write_protected_settings_path, redact_settings_secrets,

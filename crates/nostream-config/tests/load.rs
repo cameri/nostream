@@ -2,6 +2,11 @@
 //! from `test/unit/utils/settings.spec.ts` and the precedence block of
 //! `test/unit/utils/settings-config.spec.ts`.
 
+// This integration-test target may unwrap: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

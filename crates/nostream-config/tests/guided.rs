@@ -1,6 +1,11 @@
 //! The guided settings catalogue, ported from the `settings-guided-schema` block of
 //! `test/unit/utils/settings-config.spec.ts`.
 
+// This integration-test target may unwrap: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use nostream_config::guided::{
     GuidedSettingFieldType, GuidedSettingValidator, get_guided_setting_category,
     get_guided_setting_field, guided_setting_categories, require_non_empty_setting_value,
