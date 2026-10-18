@@ -107,6 +107,12 @@ jobs:
         if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
         working-directory: website/site
         env:
+          # Previews are built under the preview domain, not the production
+          # one: a preview's absolute links and canonical tags must not claim
+          # nostream.dev, or a crawler reaching a preview caches the wrong
+          # origin. Not a repo variable - previews are our own infrastructure,
+          # and a variable someone forgets to set would silently point them
+          # at production.
           SITE_URL: https://ema.tnsor.network
           SITE_BASE: /preview/${{ github.event.pull_request.number }}/
         run: |
