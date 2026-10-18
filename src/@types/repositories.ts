@@ -16,6 +16,7 @@ import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
+import { UserSubscription } from './user-subscription'
 
 export interface EventRetentionOptions {
   maxDays?: number
@@ -57,6 +58,17 @@ export interface IInvoiceRepository {
   updateStatus(invoice: Pick<Invoice, 'id' | 'status'>, client?: DatabaseClient): Promise<Invoice | undefined>
   confirmInvoice(invoiceId: string, amountReceived: bigint, confirmedAt: Date, client?: DatabaseClient): Promise<void>
   findPendingInvoices(offset?: number, limit?: number, client?: DatabaseClient): Promise<Invoice[]>
+}
+
+export interface IUserSubscriptionRepository {
+  findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<UserSubscription | undefined>
+  upsert(subscription: Omit<UserSubscription, 'createdAt' | 'updatedAt'>, client?: DatabaseClient): Promise<number>
+  /** Active subscriptions whose period ends by `before` and that are not set to cancel. */
+  findDueForRenewal(before: Date, limit?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  /** Active or renewal-pending subscriptions whose period has ended by `now`. */
+  findPeriodEnded(now: Date, limit?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  /** Past-due subscriptions whose grace period has ended by `now`. */
+  findGraceEnded(now: Date, limit?: number, client?: DatabaseClient): Promise<UserSubscription[]>
 }
 
 export interface IUserRepository {

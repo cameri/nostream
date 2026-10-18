@@ -92,6 +92,9 @@ export class InvoiceRepository implements IInvoiceRepository {
       updated_at: always(new Date()),
       created_at: prop('createdAt'),
       verify_url: prop('verifyURL'),
+      plan_id: prop('planId'),
+      period_start: prop('periodStart'),
+      period_end: prop('periodEnd'),
     })(invoice)
 
     logger('row: %o', row)
@@ -110,6 +113,9 @@ export class InvoiceRepository implements IInvoiceRepository {
           'expires_at',
           'created_at',
           'verify_url',
+          'plan_id',
+          'period_start',
+          'period_end',
         ])(row),
       )
 
