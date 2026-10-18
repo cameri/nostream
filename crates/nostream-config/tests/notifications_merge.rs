@@ -1,6 +1,11 @@
 //! Admin-notification merge and patch semantics, ported from
 //! `test/unit/utils/admin-notifications-settings.spec.ts`.
 
+// This integration-test target may unwrap: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use nostream_config::notifications::{
     AdminNotificationsPatch, AdminNotificationsSettings, get_merged_admin_notifications,
     merge_admin_notifications_patch,

@@ -1,6 +1,11 @@
 //! `eventStore.backend` accepts the rewrite's LMDB backend (spec D7) and still rejects
 //! anything outside the two-member set, with the two-member message.
 
+// This integration-test target may unwrap: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::fs;
 
 use nostream_config::path::set_by_path;

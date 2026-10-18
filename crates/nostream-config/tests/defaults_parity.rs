@@ -1,6 +1,11 @@
 //! Defaults parity with `test/unit/utils/settings.spec.ts:226-341` at the capture commit:
 //! six defaults assertions and four override cases, value for value.
 
+// This integration-test target may unwrap and panic: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::fs;
 
 use nostream_config::load::merge;

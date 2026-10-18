@@ -2,6 +2,11 @@
 //! adaptive-pow matrix, the event-store cases, the shape rules and the admin-notification
 //! rules. Each test names what `test/unit/utils/settings-config.spec.ts` asserted.
 
+// This integration-test target may unwrap: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::fs;
 
 use nostream_config::load::merge;

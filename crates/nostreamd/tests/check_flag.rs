@@ -2,6 +2,11 @@
 //! waits for a signal. Regression test for round 3's P0: the gate alone passed while `run()`
 //! fell through into `serve`.
 
+// This integration-test target may unwrap and panic: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};

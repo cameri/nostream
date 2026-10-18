@@ -45,3 +45,12 @@ unsafe_code = "deny"
 todo = "deny"
 unimplemented = "deny"
 dbg_macro = "deny"
+# Carried here as well as on the strict `--lib --bins` command line in CI. Without them
+# a crate that inherits `[lints] workspace = true` passes a local `cargo clippy` and is
+# then rejected by the gate, which is the one thing a lint configuration must never do.
+# Tests still opt out per crate with `#![allow(clippy::unwrap_used, clippy::expect_used)]`
+# in the test target, which is narrower than a command-line flag: it names the files that
+# may unwrap instead of exempting every target in the workspace.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

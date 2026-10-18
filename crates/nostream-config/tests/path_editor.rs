@@ -1,5 +1,10 @@
 //! The dot-path editor and value parser, ported from `test/unit/utils/settings-config.spec.ts`.
 
+// This integration-test target may unwrap and panic: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::fs;
 
 use nostream_config::path::{

@@ -40,9 +40,13 @@ cargo build --workspace --all-features --release
   about a workspace lint that another member trips.
 - **`--all-features` is not optional.** `nostreamd`'s `otlp` feature gates three
   dependencies; a change that only compiles without it is broken.
-- **Two clippy passes, and both are required.** The strict pass is `--lib --bins` only,
-  so `unwrap`/`expect` stay legal in tests without `#[allow]` attributes whose
-  precedence against a command-line `-D` nobody should bet on.
+- **Two clippy passes, and both are required.** The lints `unwrap_used`, `expect_used`
+  and `panic` are declared in `[workspace.lints.clippy]` as well as passed on the strict
+  command line, so a local `cargo clippy` fails on the same code CI rejects. An
+  integration-test target that needs them carries
+  `#![allow(clippy::unwrap_used, clippy::expect_used)]` (plus `clippy::panic` where it
+  asserts by panicking) at the top of the file — naming the file that may unwrap, not
+  exempting test targets workspace-wide. A new test file therefore has to ask.
 - The `#[allow(unsafe_code)]` carve-out is in `crates/nostream-storage/src/backend.rs`
   around heed's `EnvOpenOptions::open`. Do not add a second one; do not widen
   `[workspace.lints.rust] unsafe_code` from `deny` to `forbid` (it would reject that
