@@ -16,11 +16,10 @@ here.
   changed only when the TypeScript package itself changes.
 - Commits are commitlint-checked (`Lint commits`); conventional-commit form is required.
 - **The husky `pre-commit` hook runs the TypeScript suite**
-  (`pnpm run lint`, `build:check`, `test:unit`). A Rust-only change can wait minutes on
-  hooks that cannot fail because of it, and the same commands are `Lint code`,
-  `Build check` and `Unit Tests And Coverage` in CI. Commit Rust-only work with
-  `--no-verify` and let those three CI jobs carry the proof; never use `--no-verify` on a
-  commit that touches `src/`, `test/` or a JS manifest.
+  (`pnpm run lint`, `build:check`, `test:unit`) on every commit. A Rust-only change
+  cannot fail those, and CI runs the same three as `Lint code`, `Build check` and
+  `Unit Tests And Coverage` against the same change — so `--no-verify` is reasonable for
+  a Rust-only commit and never for one that touches `src/`, `test/` or a JS manifest.
 
 ## Validation — the exact commands
 
@@ -49,19 +48,16 @@ cargo build --workspace --all-features --release
   `[workspace.lints.rust] unsafe_code` from `deny` to `forbid` (it would reject that
   audited call).
 
-### Running Rust here
+### The toolchain
 
-This sandbox has no host Rust toolchain. `scripts/rust.sh <command>` runs it in the
-`containers-rust-builder:latest` image, as create → start → wait → logs → rm:
+`rust-toolchain.toml` pins it — channel `1.99.1`, `rustfmt` + `clippy`, `minimal` — and
+every `cargo` invocation picks it up from the working directory. **Never pass a
+version or `+stable` to a command**; edit the pin file if the toolchain must move, so
+CI, contributors and build agents all move together.
 
-```
-scripts/rust.sh cargo test --workspace --all-features
-scripts/rust.sh cargo clippy --workspace --lib --bins --all-features -- -D warnings
-```
-
-The image pins nothing itself — `rust-toolchain.toml` (channel `1.99.1`, `rustfmt` +
-`clippy`, `minimal`) selects the toolchain. Never pass a version to a command; edit the
-pin file if the toolchain must move.
+`scripts/rust.sh <command>` is the one wrapper some environments provide for running a
+`cargo` command in an isolated builder image. It takes the same arguments as `cargo`
+and is optional — where a working toolchain is on `PATH`, plain `cargo` is equivalent.
 
 ## Crate layout
 
