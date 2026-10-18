@@ -33,7 +33,13 @@
     "directory": "./dist",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "single-page-application",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Serving assets first would let a matching page (every built route is one)
+    // answer before this worker runs, so the http->https and non-canonical-host
+    // redirects below would never fire on exactly the requests that matter:
+    // the pages. The worker is the router for a reason - it must see every
+    // request, then hand it to the assets binding itself.
+    "run_worker_first": true
   },
   "observability": {
     "enabled": false
