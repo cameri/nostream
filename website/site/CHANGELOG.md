@@ -1,5 +1,13 @@
 # nostream-website
 
+## 1.3.1
+
+### Patch Changes
+
+- [#899](https://github.com/cameri/nostream/pull/899) [`3ed70e4`](https://github.com/cameri/nostream/commit/3ed70e4233b210cdb382af55522933d0932d30b5) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Prevent the home hero headline from overlapping the hero film on wide viewports by slightly reducing headline and film scale and reserving space above the frame.
+
+- [#896](https://github.com/cameri/nostream/pull/896) [`bb69376`](https://github.com/cameri/nostream/commit/bb69376a475a184013ade51dfca825c31019254f) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - Add the official Nostream Telegram channel and development chat to the community page, and a Telegram link to the footer.
+
 ## 1.3.0
 
 ### Minor Changes
