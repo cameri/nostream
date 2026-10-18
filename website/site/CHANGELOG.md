@@ -1,5 +1,11 @@
 # nostream-website
 
+## 1.2.5
+
+### Patch Changes
+
+- [#858](https://github.com/cameri/nostream/pull/858) [`a0915b8`](https://github.com/cameri/nostream/commit/a0915b8c8b63d4a9b821d47b8bac9c88b1eb22b5) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - The nostream mark is now the site's pink (#ff2e88) instead of purple: logo asset recolored, favicon and apple-touch-icon regenerated, hero film's brand mark re-rendered.
+
 ## 1.2.4
 
 ### Patch Changes
