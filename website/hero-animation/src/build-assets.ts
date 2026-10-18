@@ -100,7 +100,7 @@ async function planet() {
   const rand = rng(7)
   const dots: string[] = []
 
-  for (let i = 0; i < 5200; i++) {
+  for (let i = 0; i < 1800; i++) {
     const a = rand() * Math.PI * 2
     const d = Math.sqrt(rand()) ** 0.55 * r
     const x = c + Math.cos(a) * d
@@ -176,7 +176,7 @@ async function sparkles() {
   const c = S / 2
   const rand = rng(11)
   const dots: string[] = []
-  for (let i = 0; i < 1400; i++) {
+  for (let i = 0; i < 380; i++) {
     const a = rand() * Math.PI * 2
     const d = 700 + rand() ** 1.6 * 280
     const x = c + Math.cos(a) * d
