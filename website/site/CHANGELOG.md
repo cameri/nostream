@@ -1,5 +1,72 @@
 # nostream-website
 
+## 1.3.0
+
+### Minor Changes
+
+- [#884](https://github.com/cameri/nostream/pull/884) [`e654852`](https://github.com/cameri/nostream/commit/e65485297bf4d9a20ccf8f78a4aae638a22655e1) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Add a social preview card generated from source.
+
+  `website/site/scripts/build-social-card.mjs` renders one composition at two sizes:
+  `public/media/social-card.png` (1200×630, the site's `og:image`) and
+  `public/media/github-social-preview.png` (1280×640, the GitHub repository preview).
+  `Base.astro` now emits the full preview set — `og:image:width`, `og:image:height`,
+  `og:image:alt`, `twitter:image`, `twitter:title`, `twitter:description`,
+  `og:site_name`, `og:locale` — and takes an `ogImage` prop that defaults to the card;
+  `hero-poster.webp` stays the film's poster.
+
+  The GitHub preview is uploaded by hand: **Settings → Social preview** in the
+  repository, which no workflow can set.
+
+### Patch Changes
+
+- [#882](https://github.com/cameri/nostream/pull/882) [`9146fd3`](https://github.com/cameri/nostream/commit/9146fd311cf88fe36818eae3d29c809c99c634fb) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Replace the home page admin screenshot gallery with an operator console film (explain beats on the hero backdrop, full-frame UI shots) and a pause control; add Framefields sources and ship `admin.mp4` in site media.
+
+- [#889](https://github.com/cameri/nostream/pull/889) [`eb68475`](https://github.com/cameri/nostream/commit/eb68475eb324f319f23f64670d331faa3f684c83) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - The site now lives at **https://nostream.dev**, and every other host redirects to it over https.
+
+  The router worker answers on `nostream.dev` and `www.nostream.dev` as well as the preview
+  domain, and `CANONICAL_HOST` decides which one serves content: any other host the routes
+  catch — `www`, or `ema.tnsor.network` for a non-preview path — gets a `301` to the canonical
+  host, and `http` gets a `301` to the same URL over `https`. One origin serving means one
+  canonical URL, so `www` and the apex cannot split search ranking by both answering `200`.
+
+  Previews deliberately stay on `ema.tnsor.network/preview/<n>/`: that is why the domain
+  remains bound. A preview build must never sit on the production domain, and a preview's own
+  `SITE_URL` stays the preview origin so its absolute links and canonical tags cannot claim
+  `nostream.dev`.
+
+  The domain is an input now, not a constant: `SITE_URL` for the build, `CANONICAL_HOST` for
+  the worker, both set in `deploy-website.yml`. Moving again is two lines rather than a search
+  through the source, the social card and the README.
+
+  **Cloudflare-side setup this needs before it takes effect**: the `nostream.dev` zone must
+  exist, and both `nostream.dev` and `www.nostream.dev` resolve through the worker's
+  declared custom domains on the next deploy. Turning on the zone's _Always Use HTTPS_
+  setting makes the upgrade happen at the edge, before the worker; the worker's own `301`
+  covers the case where that setting is off.
+
+- [#888](https://github.com/cameri/nostream/pull/888) [`07dc215`](https://github.com/cameri/nostream/commit/07dc2153d1d18e1641c8f0a079c542ab8187bcdc) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - A pull request's site preview now deploys even when the comment cannot be
+  written, and the CDN cache is purged after a deploy so a fresh preview is not
+  served the previous build.
+
+  **A comment can no longer prevent a deploy.** The preview workflow's comment
+  steps ran before the deploy, so a pull request opened from a fork — whose
+  `GITHUB_TOKEN` is read-only whatever the `permissions:` block grants — failed at
+  `GraphQL: Resource not accessible by integration (addComment)` and skipped the
+  deploy entirely ([run 39134047965](https://github.com/cameri/nostream/actions/runs/39134047965)).
+  The deploy now runs first, every comment step is `continue-on-error`, and the
+  job grants `issues: write` (PR conversation comments are issue comments;
+  `pull-requests: write` alone does not cover them).
+
+  **The cache is purged after deploying**, scoped to `https://ema.tnsor.network/preview/<n>/`
+  via the `prefixes` purge, so a stale window cannot be served — on 2026-10-18
+  `/preview/885/` returned production HTML for about three minutes after the
+  build landed. The production workflow purges the whole zone after its router
+  deploy. Both purges skip with a notice when `CLOUDFLARE_ZONE_ID` is not set for
+  their environment, so an unconfigured environment deploys normally instead of
+  failing.
+
+- [#885](https://github.com/cameri/nostream/pull/885) [`f88a563`](https://github.com/cameri/nostream/commit/f88a5631f57b9f5a802b642688836271d4b67ec1) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - Add maintainer bio and social links on the community page for Priyanshu Bharti.
+
 ## 1.2.5
 
 ### Patch Changes
