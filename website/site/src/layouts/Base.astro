@@ -20,7 +20,7 @@ const {
   ogImage = '/media/social-card.png',
   ogImageAlt = 'nostream — a social network nobody can switch off. Own your posts, your followers and your reach.',
 } = Astro.props
-const fullTitle = title ? `${title} · nostream` : 'nostream: your relay, your rules'
+const fullTitle = title ? `${title} · nostream` : 'nostream: a social network nobody can switch off'
 const canonical = new URL(Astro.url.pathname, Astro.site)
 const ogImageUrl = new URL(ogImage, Astro.site)
 // Only the generated card is known to be 1200x630. A caller passing a different image

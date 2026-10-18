@@ -137,7 +137,7 @@ const text = () => `
   <text x="${TEXT_X}" y="486" font-family="${MONO_STACK}" font-size="21" font-weight="400"
         fill="${MUTED}" letter-spacing="0.4">Nostr &amp; Marmot protocol support</text>
   <text x="${TEXT_X}" y="522" font-family="${MONO_STACK}" font-size="21" font-weight="400"
-        fill="${MUTED}" letter-spacing="0.4">MIT licensed</text>
+        fill="${MUTED}" letter-spacing="0.4">MIT license</text>
   <!-- Where to find it. -->
   <text x="${TEXT_X}" y="${H - 52}" font-family="${MONO_STACK}" font-size="20" font-weight="400"
         fill="${MUTED}" letter-spacing="0.6">ema.tnsor.network</text>
@@ -163,8 +163,10 @@ const build = async (width, filename) => {
   const card = await sharp(base)
     .composite([
       // Planet low and right, behind the empty half of the card: the copy runs down the
-      // left, so nothing pink is ever read over it.
-      { input: planetBuf, left: W - 470, top: H - 440 },
+      // left, so nothing pink is ever read over it. Placed fully into the corner — at
+      // left: W-470 its disc reached x≈766 while the copy runs to 1196, which put the
+      // rim under the licence lines (Cameri, 2026-10-18: the pink sat behind the copy).
+      { input: planetBuf, left: W - 330, top: H - 300 },
       { input: logoBuf, left: MARK_X, top: MARK_TOP },
       { input: Buffer.from(text()) },
     ])
