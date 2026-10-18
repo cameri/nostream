@@ -86,6 +86,8 @@ pnpm run render:admin:small    # → output/admin/nostream-admin-low.mp4
 pnpm run frames:admin          # stills for review / posters
 ```
 
+After changing the admin film, run `pnpm run media` in `website/site` to re-encode `public/media/admin.mp4` (Cloudflare Workers assets must stay under 25 MiB — do not copy the raw Framefields mp4 into `public/`).
+
 ## Edit the story
 
 - Timeline & layout: `src/film.ts` (scene windows `HERO`, `WHAT`, `FLOW`, `FEATURES`, `DEPLOY`)
