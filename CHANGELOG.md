@@ -1,5 +1,11 @@
 # nostream
 
+## 3.6.2
+
+### Patch Changes
+
+- [#892](https://github.com/cameri/nostream/pull/892) [`ff53a73`](https://github.com/cameri/nostream/commit/ff53a7384974b405bc2ec7b00075702be3482603) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Fix the operator notifications target type dropdown so the select chevron renders once on the right instead of tiling across the field when `console-input` and `form-select` share the same control.
+
 ## 3.6.1
 
 ### Patch Changes

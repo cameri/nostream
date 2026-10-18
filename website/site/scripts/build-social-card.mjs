@@ -140,7 +140,7 @@ const text = (w, h) => `
         fill="${MUTED}" letter-spacing="0.4">MIT licensed</text>
   <!-- Where to find it. -->
   <text x="${TEXT_X}" y="${H - 52}" font-family="${MONO_STACK}" font-size="20" font-weight="400"
-        fill="${MUTED}" letter-spacing="0.6">ema.tnsor.network</text>
+        fill="${MUTED}" letter-spacing="0.6">nostream.dev</text>
 </svg>
 `
 
