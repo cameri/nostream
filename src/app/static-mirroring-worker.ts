@@ -20,7 +20,10 @@ import {
   isFileMessageEvent,
   isSealEvent,
 } from '../utils/event'
+import { ICacheAdapter } from '../@types/adapters'
+import { AdminOpsConnectionState } from '../@types/admin-ops'
 import { IEventRepository, IUserRepository } from '../@types/repositories'
+import { publishAdminOpsMirrorHeartbeat, publishAdminOpsWorkerHeartbeat } from '../utils/admin-ops-store'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
 import { EventExpirationTimeMetadataKey } from '../constants/base'
@@ -35,13 +38,20 @@ const logger = createLogger('static-mirror-worker')
 export class StaticMirroringWorker implements IRunnable {
   private client: WebSocket | undefined
   private config: Mirror
+  private connectionState: AdminOpsConnectionState = 'connecting'
+  private reconnectCount = 0
+  private lastError: string | undefined
+  private lastEventAt: string | undefined
+  private readonly mirrorIndex: string
 
   public constructor(
     private readonly eventRepository: IEventRepository,
     private readonly userRepository: IUserRepository,
     private readonly process: NodeJS.Process,
     private readonly settings: () => Settings,
+    private readonly opsCache?: ICacheAdapter,
   ) {
+    this.mirrorIndex = process.env.MIRROR_INDEX ?? '0'
     this.process
       .on('message', this.onMessage.bind(this))
       .on('SIGINT', this.onExit.bind(this))
@@ -49,6 +59,29 @@ export class StaticMirroringWorker implements IRunnable {
       .on('SIGTERM', this.onExit.bind(this))
       .on('uncaughtException', this.onError.bind(this))
       .on('unhandledRejection', this.onError.bind(this))
+  }
+
+  private async publishOpsHeartbeats(): Promise<void> {
+    if (!this.opsCache || !this.config) {
+      return
+    }
+
+    const updatedAt = new Date().toISOString()
+    await publishAdminOpsMirrorHeartbeat(this.opsCache, {
+      index: this.mirrorIndex,
+      targetUrl: this.config.address,
+      connectionState: this.connectionState,
+      reconnectCount: this.reconnectCount,
+      lastError: this.lastError,
+      lastEventAt: this.lastEventAt,
+      updatedAt,
+    })
+    await publishAdminOpsWorkerHeartbeat(this.opsCache, {
+      type: 'static-mirroring',
+      index: this.mirrorIndex,
+      lastRunFinishedAt: updatedAt,
+      updatedAt,
+    })
   }
 
   public run(): void {
@@ -60,21 +93,29 @@ export class StaticMirroringWorker implements IRunnable {
 
     let since = Math.floor(Date.now() / 1000) - 60 * 10
 
+    void this.publishOpsHeartbeats()
+
     const createMirror = (config: Mirror) => {
       const subscriptionId = `mirror-${randomUUID()}`
 
       logger('connecting to %s', config.address)
+      this.connectionState = 'connecting'
+      void this.publishOpsHeartbeats()
 
-      return new WebSocket(config.address, { timeout: 5000 })
-        .on('open', function () {
+      const client = new WebSocket(config.address, { timeout: 5000 })
+
+      client
+        .on('open', () => {
           logger('connected to %s', config.address)
+          this.connectionState = 'open'
+          void this.publishOpsHeartbeats()
 
           if (Array.isArray(config.filters) && config.filters?.length) {
             const filters = config.filters.map((filter) => ({ ...filter, since }))
 
             logger('subscribing with %s: %o', subscriptionId, filters)
 
-            this.send(JSON.stringify(createSubscriptionMessage(subscriptionId, filters)))
+            client.send(JSON.stringify(createSubscriptionMessage(subscriptionId, filters)))
           }
         })
         .on('message', async (raw: RawData) => {
@@ -126,6 +167,8 @@ export class StaticMirroringWorker implements IRunnable {
             }
 
             since = Math.floor(Date.now() / 1000) - 30
+            this.lastEventAt = new Date().toISOString()
+            void this.publishOpsHeartbeats()
 
             logger('%s >> local: %s', config.address, event.id)
 
@@ -144,15 +187,22 @@ export class StaticMirroringWorker implements IRunnable {
         })
         .on('close', (code, reason) => {
           logger(`disconnected (${code}): ${reason.toString()}`)
+          this.connectionState = 'closed'
+          this.reconnectCount += 1
+          void this.publishOpsHeartbeats()
 
           setTimeout(() => {
             this.client.removeAllListeners()
             this.client = createMirror(config)
           }, 5000)
         })
-        .on('error', function (error) {
+        .on('error', (error) => {
           logger('connection error: %o', error)
+          this.lastError = error instanceof Error ? error.message : String(error)
+          void this.publishOpsHeartbeats()
         })
+
+      return client
     }
 
     this.client = createMirror(this.config)

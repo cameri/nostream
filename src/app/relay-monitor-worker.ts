@@ -1,4 +1,6 @@
+import { ICacheAdapter } from '../@types/adapters'
 import { IRunnable } from '../@types/base'
+import { publishAdminOpsWorkerHeartbeat } from '../utils/admin-ops-store'
 import { IRelayProbeSnapshotStore, RelayProbeRunSnapshot } from '../@types/relay-probe-snapshot'
 import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
@@ -41,6 +43,7 @@ export class RelayMonitorWorker implements IRunnable {
     private readonly probeRunner: RunProbeFn = runProbe,
     private readonly eventPublisher?: INip66EventPublisher,
     private readonly historyStore?: RelayProbeHistoryStore,
+    private readonly opsCache?: ICacheAdapter,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -85,7 +88,26 @@ export class RelayMonitorWorker implements IRunnable {
     }
   }
 
+  private async publishOpsHeartbeat(partial: {
+    lastRunStartedAt?: string
+    lastRunFinishedAt?: string
+    lastError?: string
+  }): Promise<void> {
+    if (!this.opsCache) {
+      return
+    }
+
+    await publishAdminOpsWorkerHeartbeat(this.opsCache, {
+      type: 'relay-monitor',
+      updatedAt: new Date().toISOString(),
+      ...partial,
+    })
+  }
+
   private async onSchedule(): Promise<void> {
+    const lastRunStartedAt = new Date().toISOString()
+    await this.publishOpsHeartbeat({ lastRunStartedAt })
+
     const currentSettings = this.settings()
 
     if (!currentSettings.nip66?.enabled) {
@@ -103,6 +125,11 @@ export class RelayMonitorWorker implements IRunnable {
 
     if (valid.length === 0) {
       logger.warn('no valid probe targets configured; skipping probe run')
+      await this.publishOpsHeartbeat({
+        lastRunStartedAt,
+        lastRunFinishedAt: new Date().toISOString(),
+        lastError: 'No valid probe targets configured',
+      })
       return
     }
 
@@ -119,6 +146,11 @@ export class RelayMonitorWorker implements IRunnable {
 
     if (results.length === 0) {
       logger.warn('probe run produced no results')
+      await this.publishOpsHeartbeat({
+        lastRunStartedAt,
+        lastRunFinishedAt: new Date().toISOString(),
+        lastError: 'Probe run produced no results',
+      })
       return
     }
 
@@ -154,6 +186,11 @@ export class RelayMonitorWorker implements IRunnable {
         logger.error('failed to publish NIP-66 events: %o', error)
       }
     }
+
+    await this.publishOpsHeartbeat({
+      lastRunStartedAt,
+      lastRunFinishedAt: new Date().toISOString(),
+    })
   }
 
   private onError(error: Error) {

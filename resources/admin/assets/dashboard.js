@@ -374,9 +374,8 @@
 
     loadGrafanaFrames()
     startMetricsStream()
-    void refreshNetworkHealth()
-    void refreshNetworkHealthHistory()
-    startNetworkHealthPolling()
+    stopNetworkHealthPolling()
+    window.__ADMIN_OPS__?.stop?.()
   }
 
   const stopNetworkHealthPolling = () => {
@@ -1485,16 +1484,33 @@
     })
 
     if (viewId === 'settings-view') {
+      stopNetworkHealthPolling()
+      window.__ADMIN_OPS__?.stop?.()
+      stopMetricsStream()
       void loadSettingsData()
       return
     }
 
     if (viewId === 'notifications-view') {
+      stopNetworkHealthPolling()
+      window.__ADMIN_OPS__?.stop?.()
+      stopMetricsStream()
       window.__ADMIN_NOTIFICATIONS__?.load?.()
       return
     }
 
+    if (viewId === 'operations-view') {
+      stopMetricsStream()
+      void refreshNetworkHealth()
+      void refreshNetworkHealthHistory()
+      startNetworkHealthPolling()
+      window.__ADMIN_OPS__?.load?.()
+      return
+    }
+
     if (viewId === 'metrics-view') {
+      stopNetworkHealthPolling()
+      window.__ADMIN_OPS__?.stop?.()
       startMetricsStream()
     }
   }

@@ -17,6 +17,8 @@ chai.use(sinonChai)
 
 const { expect } = chai
 
+const flushAsyncWork = () => new Promise<void>((resolve) => setImmediate(resolve))
+
 describe('RelayMonitorWorker', () => {
   let sandbox: Sinon.SinonSandbox
   let worker: RelayMonitorWorker
@@ -116,8 +118,8 @@ describe('RelayMonitorWorker', () => {
     const clock = sandbox.useFakeTimers()
 
     worker.run()
-    await Promise.resolve()
-    await Promise.resolve()
+    await clock.tickAsync(0)
+    await clock.tickAsync(0)
 
     expect(probeRunner).to.have.been.calledOnceWith('wss://relay.example.com', buildProbeOptions(settingsState))
     expect(snapshotStore.saveLatest).to.have.been.calledOnce
@@ -128,6 +130,7 @@ describe('RelayMonitorWorker', () => {
     historyStore.append.resetHistory()
 
     await clock.tickAsync(60_000)
+    await clock.tickAsync(0)
 
     expect(probeRunner).to.have.been.calledOnce
     expect(snapshotStore.saveLatest).to.have.been.calledOnce
@@ -193,9 +196,8 @@ describe('RelayMonitorWorker', () => {
     )
 
     worker.run()
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushAsyncWork()
+    await flushAsyncWork()
 
     expect(eventPublisher.publishAfterProbe).to.have.been.calledOnce
     expect(eventPublisher.publishAfterProbe.firstCall.args[0].status).to.equal('ok')
@@ -218,9 +220,8 @@ describe('RelayMonitorWorker', () => {
     )
 
     worker.run()
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushAsyncWork()
+    await flushAsyncWork()
 
     expect(eventPublisher.publishAfterProbe).to.have.been.calledOnce
   })

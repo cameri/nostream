@@ -17,6 +17,11 @@ import { createPostAdminLoginController } from '../../factories/controllers/post
 import { createPostAdminLogoutController } from '../../factories/controllers/post-admin-logout-controller-factory'
 import { createPostAdminSettingsRestoreController } from '../../factories/controllers/post-admin-settings-restore-controller-factory'
 import { createPostAdminSettingsValidateController } from '../../factories/controllers/post-admin-settings-validate-controller-factory'
+import { createGetAdminOpsMirrorsController } from '../../factories/controllers/get-admin-ops-mirrors-controller-factory'
+import { createGetAdminOpsWorkersController } from '../../factories/controllers/get-admin-ops-workers-controller-factory'
+import { createGetAdminOpsNip05VerificationsController } from '../../factories/controllers/get-admin-ops-nip05-verifications-controller-factory'
+import { createGetAdminOpsStorageCountsController } from '../../factories/controllers/get-admin-ops-storage-counts-controller-factory'
+import { createPostAdminOpsNip05ReverifyController } from '../../factories/controllers/post-admin-ops-nip05-reverify-controller-factory'
 import { adminAuthGateMiddleware, adminAuthMiddleware } from '../../handlers/request-handlers/admin-auth-middleware'
 import { adminEnabledMiddleware } from '../../handlers/request-handlers/admin-enabled-middleware'
 import { adminJsonBodyMiddleware } from '../../handlers/request-handlers/admin-json-body-middleware'
@@ -142,6 +147,36 @@ router.post(
   adminJsonBodyMiddleware,
   adminAuthMiddleware,
   withAdminController(createPostAdminNotificationTestController),
+)
+router.get(
+  '/ops/mirrors',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminOpsMirrorsController),
+)
+router.get(
+  '/ops/workers',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminOpsWorkersController),
+)
+router.get(
+  '/ops/nip05-verifications',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminOpsNip05VerificationsController),
+)
+router.post(
+  '/ops/nip05-verifications/:pubkey/reverify',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPostAdminOpsNip05ReverifyController),
+)
+router.get(
+  '/ops/storage/counts',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminOpsStorageCountsController),
 )
 
 export default router

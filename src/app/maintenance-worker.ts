@@ -12,11 +12,13 @@ import { createLogger } from '../factories/logger-factory'
 import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
 import { delayMs } from '../utils/misc'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
+import { ICacheAdapter } from '../@types/adapters'
 import {
   INip05VerificationRepository,
   INotificationDeliveryLogRepository,
   INotificationOutboxRepository,
 } from '../@types/repositories'
+import { publishAdminOpsWorkerHeartbeat } from '../utils/admin-ops-store'
 import { InvoiceStatus } from '../@types/invoice'
 import { isExpiredInvoice } from '../utils/invoice'
 import { Nip05Verification } from '../@types/nip05'
@@ -98,6 +100,7 @@ export class MaintenanceWorker implements IRunnable {
     private readonly notificationOutboxService: INotificationOutboxService,
     private readonly notificationDeliveryLogRepository: INotificationDeliveryLogRepository,
     private readonly notificationOutboxRepository: INotificationOutboxRepository,
+    private readonly opsCache?: ICacheAdapter,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -133,6 +136,10 @@ export class MaintenanceWorker implements IRunnable {
       try {
         await this.onSchedule()
       } catch (error) {
+        await this.publishOpsHeartbeat({
+          lastRunFinishedAt: new Date().toISOString(),
+          lastError: error instanceof Error ? error.message : String(error),
+        })
         this.onError(error as Error)
       } finally {
         this.isRunning = false
@@ -140,7 +147,26 @@ export class MaintenanceWorker implements IRunnable {
     }, UPDATE_INVOICE_INTERVAL)
   }
 
+  private async publishOpsHeartbeat(partial: {
+    lastRunStartedAt?: string
+    lastRunFinishedAt?: string
+    lastError?: string
+  }): Promise<void> {
+    if (!this.opsCache) {
+      return
+    }
+
+    await publishAdminOpsWorkerHeartbeat(this.opsCache, {
+      type: 'maintenance',
+      updatedAt: new Date().toISOString(),
+      ...partial,
+    })
+  }
+
   private async onSchedule(): Promise<void> {
+    const lastRunStartedAt = new Date().toISOString()
+    await this.publishOpsHeartbeat({ lastRunStartedAt })
+
     const currentSettings = this.settings()
     const clearOldEventsPromise = this.clearOldEventsSafely()
 
@@ -149,6 +175,10 @@ export class MaintenanceWorker implements IRunnable {
 
     if (!path(['payments', 'enabled'], currentSettings)) {
       await clearOldEventsPromise
+      await this.publishOpsHeartbeat({
+        lastRunStartedAt,
+        lastRunFinishedAt: new Date().toISOString(),
+      })
       return
     }
 
@@ -223,6 +253,10 @@ export class MaintenanceWorker implements IRunnable {
     }
 
     await clearOldEventsPromise
+    await this.publishOpsHeartbeat({
+      lastRunStartedAt,
+      lastRunFinishedAt: new Date().toISOString(),
+    })
   }
 
   private async processNotificationOutbox(): Promise<void> {

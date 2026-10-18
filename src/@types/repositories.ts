@@ -69,10 +69,21 @@ export interface IUserRepository {
   revokeAdmission(pubkey: Pubkey, client?: DatabaseClient): Promise<number>
 }
 
+export interface Nip05VerificationAdminListQuery {
+  domain?: string
+  verified?: boolean
+  stale?: boolean
+  minFailures?: number
+  verifyExpirationMs: number
+  limit: number
+  offset: number
+}
+
 export interface INip05VerificationRepository {
   findByPubkey(pubkey: Pubkey): Promise<Nip05Verification | undefined>
   upsert(verification: Nip05Verification): Promise<number>
   findPendingVerifications(updateFrequencyMs: number, maxFailures: number, limit: number): Promise<Nip05Verification[]>
+  listForAdmin(query: Nip05VerificationAdminListQuery): Promise<{ rows: Nip05Verification[]; total: number }>
   deleteByPubkey(pubkey: Pubkey): Promise<number>
 }
 

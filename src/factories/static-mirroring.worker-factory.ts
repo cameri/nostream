@@ -1,4 +1,5 @@
 import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
+import { createAdminOpsCacheAdapter } from './admin-ops-cache-adapter-factory'
 import { createEventRepository } from './event-repository-factory'
 import { createSettings } from './settings-factory'
 import { StaticMirroringWorker } from '../app/static-mirroring-worker'
@@ -9,6 +10,11 @@ export const staticMirroringWorkerFactory = () => {
   const readReplicaDbClient = getReadReplicaDbClient()
   const eventRepository = createEventRepository(dbClient, readReplicaDbClient)
   const userRepository = new UserRepository(dbClient, eventRepository)
-
-  return new StaticMirroringWorker(eventRepository, userRepository, process, createSettings)
+  return new StaticMirroringWorker(
+    eventRepository,
+    userRepository,
+    process,
+    createSettings,
+    createAdminOpsCacheAdapter(),
+  )
 }
