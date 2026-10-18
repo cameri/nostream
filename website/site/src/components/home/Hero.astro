@@ -3,7 +3,7 @@ import FilmFrame from '../FilmFrame.astro'
 import { VERSION } from '../../data/site'
 ---
 
-<section class="stage" data-spark-host data-spark-mode="stream">
+<section class="stage">
   <h1 class="hero-h1">
     <span class="g1">Nostr runs on relays.</span>
     <span class="g2">nostream is the one you own.</span>
@@ -11,13 +11,6 @@ import { VERSION } from '../../data/site'
   <p class="hero-sub sr-only">
     A production-ready Nostr relay you deploy and control — self-hosted and open source.
   </p>
-  <canvas
-    class="spark-canvas"
-    data-spark-canvas
-    data-max-pool="2600"
-    data-spawn-chance="0.995"
-    data-per-frame="8"
-    aria-hidden="true"></canvas>
   <FilmFrame
     class="hero-film"
     src={`${import.meta.env.BASE_URL}media/hero.mp4`.replace(/\/\//, '/')}
@@ -32,7 +25,9 @@ import { VERSION } from '../../data/site'
   .stage {
     --pad-y: clamp(18px, 3.5vh, 44px);
     --pad-x: clamp(14px, 3.5vw, 56px);
-    --film-h: calc(100svh - 68px - 2 * var(--pad-y) - 36px);
+    /* Headline band keeps the film from creeping under the h1 on wide layouts. */
+    --hero-headline-band: clamp(72px, 11vh, 96px);
+    --film-h: calc(100svh - 68px - 2 * var(--pad-y) - 36px - var(--hero-headline-band));
 
     position: relative;
     z-index: 0;
@@ -52,10 +47,10 @@ import { VERSION } from '../../data/site'
     position: absolute;
     z-index: 3;
     left: var(--pad-x);
-    top: clamp(12px, 2.2vh, 26px);
-    max-width: min(560px, calc(100% - 2 * var(--pad-x)));
+    top: clamp(12px, 2.2vh, 22px);
+    max-width: min(520px, calc(100% - 2 * var(--pad-x)));
     margin: 0;
-    font-size: clamp(24px, 3vw, 38px);
+    font-size: clamp(22px, 2.65vw, 34px);
     line-height: 1.12;
     letter-spacing: -0.02em;
     pointer-events: none;
@@ -90,24 +85,15 @@ import { VERSION } from '../../data/site'
     color: var(--fg);
   }
 
-  .spark-canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 1;
-  }
-
   .stage :global(.hero-film) {
     position: absolute;
     z-index: 2;
-    top: 50%;
+    top: calc(50% + var(--hero-headline-band) * 0.22);
     right: var(--pad-x);
     transform: translateY(-50%);
-    width: min(1320px, 86vw, calc(var(--film-h) * 16 / 9));
+    width: min(1180px, 80vw, calc(var(--film-h) * 16 / 9));
     max-width: calc(100% - 2 * var(--pad-x));
-    max-height: calc(var(--film-h) + 36px);
+    max-height: var(--film-h);
   }
 
   .stage :global(.hero-film .film-crisp.screen) {
@@ -154,12 +140,6 @@ import { VERSION } from '../../data/site'
 
     .stage :global(.hero-film .film-crisp video) {
       max-height: none;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .spark-canvas {
-      display: none;
     }
   }
 

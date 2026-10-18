@@ -1,13 +1,17 @@
 # Admin console screenshots
 
-Drop screenshots here (png, jpg or webp). They are picked up by name on the home page and optimised at build time:
+Source stills for the operator-console film (`website/hero-animation/src/admin-film.ts`). After replacing one, re-render the film and publish site media (Workers preview deploy requires every asset under 25 MiB — `pnpm run media` re-encodes the mp4 for `public/`).
 
-| File | Panel |
+```bash
+cd website/hero-animation
+pnpm run render:admin && pnpm run frames:admin   # → output/admin/nostream-admin.mp4 (+ frames/)
+cd ../site
+pnpm run media                                   # → public/media/admin.mp4, admin-poster.webp
+```
+
+| File | Scene |
 |------|-------|
-| `metrics.png`, `metrics-1.png` | Live metrics (both shown full width, stacked) |
-| `network-health.png` | Network Health |
-| `mismatches.png` | NIP-11 mismatch warnings |
-| `settings.png` | Settings editor |
-| `notifications.png` | Notifications |
-
-Missing files render a placeholder. 16:9 crops at 1920 px wide look best.
+| `metrices.png` | Live metrics |
+| `nip66.png` | Network health (NIP-66) |
+| `settings-editor.png` | Settings editor |
+| `notification.png` | Notifications |

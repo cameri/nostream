@@ -56,7 +56,7 @@ jobs:
       - name: Build the site
         working-directory: website/site
         env:
-          SITE_URL: https://ema.tnsor.network
+          SITE_URL: https://nostream.dev
         run: pnpm run build
 
       - name: Deploy to Cloudflare Workers
@@ -64,6 +64,39 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CANONICAL_HOST: nostream.dev
         # The router worker: serves the production assets itself and proxies
         # /preview/<n> to per-PR preview workers (deploy-website-preview.yml).
-        run: pnpm exec wrangler deploy --config wrangler.router.jsonc
+        # The site answers on one host. Every other host the routes catch,
+        # http included, 301s to it, so www/apex cannot serve a second copy
+        # and split search ranking. --var keeps the deployed value from
+        # drifting away from the SITE_URL the build above baked in.
+        run: pnpm exec wrangler deploy --config wrangler.router.jsonc --var CANONICAL_HOST:"$CANONICAL_HOST"
+
+      - name: Purge the site's CDN cache
+        # Same reason as the preview workflow's purge: a request that lands
+        # mid-deploy can keep being served the previous build after the new
+        # one is live. Production deploys the router, so everything changes
+        # and the purge is unfiltered (`purge_everything`). Guarded on the
+        # variable so an unconfigured environment skips instead of POSTing to
+        # a zone id of "" and the notice says what is missing.
+        if: vars.CLOUDFLARE_ZONE_ID != ''
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+        run: |
+          code=$(curl -sS -o /tmp/purge.json -w '%{http_code}' \
+            -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
+            -H "authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'content-type: application/json' \
+            --data '{"purge_everything":true}')
+          if [ "$code" = "200" ]; then
+            echo "purged the whole nostream.dev cache"
+          else
+            echo "::warning::cache purge answered HTTP $code — $(head -c 400 /tmp/purge.json)"
+          fi
+
+      - name: Note a skipped purge
+        if: vars.CLOUDFLARE_ZONE_ID == ''
+        run: echo "::notice::CLOUDFLARE_ZONE_ID is not set for the website environment — deployed, cache purge skipped. Add it as an environment VARIABLE to enable purging."

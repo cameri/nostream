@@ -1,6 +1,6 @@
 {
   "name": "nostream-website",
-  "version": "1.2.5",
+  "version": "1.3.1",
   "private": true,
   "type": "module",
   "description": "nostream.dev landing page and docs, built with Astro",
@@ -12,7 +12,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "media": "node scripts/build-media.mjs"
+    "media": "node scripts/build-media.mjs && node scripts/build-social-card.mjs",
+    "social": "node scripts/build-social-card.mjs"
   },
   "engines": {
     "node": ">=20.3"

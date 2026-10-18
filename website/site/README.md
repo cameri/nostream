@@ -28,13 +28,15 @@ Media comes from the landing film in `../hero-animation` (needs `ffmpeg` for `pn
 
 | Asset | Source |
 |-------|--------|
-| `hero.mp4`, `hero-poster.webp`, `hero.meta.json` | Landing film — `src/film.ts` (`pnpm run render`, `pnpm run frames`) |
+| `hero.mp4`, `hero-low.mp4`, `hero-poster.webp`, `hero.meta.json` | Landing film — `src/film.ts` (`pnpm run render`, `pnpm run frames`) |
+| `admin.mp4`, `admin-poster.webp` | Operator console film — `src/admin-film.ts` (`pnpm run render:admin`, `pnpm run frames:admin`) |
 | `planet.webp` | Particle planet — `src/build-assets.ts` (`pnpm run assets`) |
 
 ```bash
 cd website/hero-animation
 pnpm run assets
 pnpm run render && pnpm run frames
+pnpm run render:admin && pnpm run frames:admin   # when the admin film or screenshots change
 cd ../site
 pnpm run media
 ```
@@ -45,4 +47,4 @@ Official logo: `src/assets/logo.png`. Used in nav/footer, favicon (`pnpm run` / 
 
 ## Admin console screenshots
 
-Drop them into `src/assets/screens/` (see the README there). Missing ones render a placeholder.
+Still PNGs for the home-page console film live in `src/assets/screens/` (see the README there). The marketing section plays `public/media/admin.mp4`, not the gallery of static shots.
