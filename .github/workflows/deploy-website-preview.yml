@@ -69,7 +69,17 @@ jobs:
           # environment secrets needs permissions github.token does not carry,
           # and probing them here once made every run skip with "lacks
           # CLOUDFLARE_API_TOKEN" even after the secrets were set.
-          if gh api repos/${{ github.repository }}/environments/website-preview >/dev/null 2>&1; then
+          # A pull_request run from a fork gets no repository secrets at all -
+          # GitHub does not hand them to code the PR author controls, whatever
+          # the environment says. Such a run can never deploy a preview, so it
+          # must stop here rather than reach `wrangler deploy` with an empty
+          # token and fail there. The fix that would serve forks is a
+          # workflow_run deployment on a trusted branch; this workflow does
+          # not implement one, so it skips instead of pretending.
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::pull request is from a fork — preview skipped (fork runs receive no repository secrets). The site deploy runs on main after merge."
+          elif gh api repos/${{ github.repository }}/environments/website-preview >/dev/null 2>&1; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -147,7 +157,8 @@ jobs:
             echo "::notice::CLOUDFLARE_ZONE_ID is not set for the website-preview environment — preview deployed, cache purge skipped. Add it as an environment VARIABLE (the zone id is on the ema.tnsor.network zone Overview page) to enable purging."
             exit 0
           fi
-          body="{\"prefixes\":[\"https://ema.tnsor.network/preview/$n/\"]}"
+          # Hostname and path only: a scheme-prefixed value is rejected outright.
+          body="{\"prefixes\":[\"ema.tnsor.network/preview/$n/\"]}"
           code=$(curl -sS -o /tmp/purge.json -w '%{http_code}' \
             -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
             -H "authorization: Bearer $CLOUDFLARE_API_TOKEN" \
@@ -159,36 +170,11 @@ jobs:
             echo "::warning::cache purge answered HTTP $code — $(head -c 400 /tmp/purge.json)"
           fi
 
-      # Everything below is cosmetic and runs AFTER the deploy, so a token
-      # that cannot comment (a fork PR's read-only GITHUB_TOKEN) costs the
-      # comment, never the preview.
-      - name: Mark the preview comment as rendering
-        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          URL: https://ema.tnsor.network/preview/${{ github.event.pull_request.number }}/
-          WORKER_URL: https://nostream-web-pr-${{ github.event.pull_request.number }}.cameri.workers.dev/preview/${{ github.event.pull_request.number }}/
-          MARKER: <!-- site-preview-comment -->
-        run: |
-          # Tidy the single preview comment's stale "rendering" state. It runs
-          # after the deploy, so on a fork PR, where this write is refused, the
-          # comment keeps whatever state it had: a fork-only PR whose preview
-          # comment has never been written simply has no comment, which is the
-          # cosmetic cost this ordering buys. The link is only lost from the
-          # conversation, never the preview.
-          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
-            --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | tail -1)
-          BODY="${MARKER}
-          ⏳ Preview is rendering for the latest push — ${WORKER_URL} will serve the new build in about a minute."
-          if [ -n "$COMMENT_ID" ]; then
-            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$COMMENT_ID" -f body="$BODY" >/dev/null
-            echo "marked comment $COMMENT_ID as rendering"
-          else
-            gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$BODY" >/dev/null
-            echo "created new preview comment (rendering)"
-          fi
-
+      # The comment is written ONCE, after the deploy, in its final state. A
+      # separate "rendering" write that a later step has to undo would leave a
+      # finished preview reading as unfinished whenever the second write failed
+      # or the run was cancelled - and it no longer signals anything useful now
+      # that it runs after the deploy rather than before it.
       - name: Link the preview on the PR
         if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
         continue-on-error: true
