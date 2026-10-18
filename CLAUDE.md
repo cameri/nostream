@@ -55,10 +55,6 @@ every `cargo` invocation picks it up from the working directory. **Never pass a
 version or `+stable` to a command**; edit the pin file if the toolchain must move, so
 CI, contributors and build agents all move together.
 
-`scripts/rust.sh <command>` is the one wrapper some environments provide for running a
-`cargo` command in an isolated builder image. It takes the same arguments as `cargo`
-and is optional — where a working toolchain is on `PATH`, plain `cargo` is equivalent.
-
 ## Crate layout
 
 `crates/*`, one crate per module family, `edition = "2024"`, `rust-version = "1.99"`,
