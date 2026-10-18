@@ -34,7 +34,7 @@
 
 This is a [nostr](https://github.com/fiatjaf/nostr) relay, written in
 Typescript. Documentation, features and guides live on the project website:
-**[ema.tnsor.network](https://ema.tnsor.network)**.
+**[nostream.dev](https://nostream.dev)**.
 
 This implementation is production-ready. See below for supported features.
 

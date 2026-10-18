@@ -68,9 +68,31 @@ pnpm run render:release:small  # → output/release/nostream-3.4.0-low.mp4 (~2.3
 pnpm run frames:release        # → output/release/frames/f0060.png … (one still per scene + the end card)
 ```
 
+## Admin console film
+
+**35 s** at 1920×1080. Opens on “Operator Console”, then each feature is a short explanation on the landing-hero backdrop (dot grid, planet, sparkle halo) followed by that screenshot full frame: metrics, settings, NIP-66, notifications.
+
+1. **Title** — “Operator Console”
+2. **Metrics** — explanation, then `metrices.png` full frame
+3. **Settings** — explanation, then `settings-editor.png` full frame
+4. **NIP-66** — explanation, then `nip66.png` full frame
+5. **Alerts** — explanation, then `notification.png` full frame
+6. **Close** — back on the hero backdrop
+
+```bash
+pnpm run preview:admin         # live preview
+pnpm run render:admin          # → output/admin/nostream-admin.mp4
+pnpm run render:admin:small    # → output/admin/nostream-admin-low.mp4
+pnpm run frames:admin          # stills for review / posters
+```
+
+After changing the admin film, run `pnpm run media` in `website/site` to re-encode `public/media/admin.mp4` (Cloudflare Workers assets must stay under 25 MiB — do not copy the raw Framefields mp4 into `public/`).
+
 ## Edit the story
 
 - Timeline & layout: `src/film.ts` (scene windows `HERO`, `WHAT`, `FLOW`, `FEATURES`, `DEPLOY`)
 - Release film: `src/release-film.ts` (scene windows `PROBLEM`, `WAIT`, `DOCS`, `CLOSE`), rendered by `src/release-render.ts`
+- Admin film: `src/admin-film.ts`, rendered by `src/admin-render.ts`
 - Palette & fonts: `src/theme.ts`
 - Logos / planet / grid: `src/build-assets.ts` (source SVGs in `assets/icons-raw/`, Nostr PNG in `assets/logos/`)
+- Admin screenshots: `website/site/src/assets/screens/*.png`

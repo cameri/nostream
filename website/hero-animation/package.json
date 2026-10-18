@@ -16,6 +16,10 @@
     "render:release": "tsx src/release-render.ts video very_high",
     "render:release:small": "tsx src/release-render.ts video low",
     "frames:release": "tsx src/release-render.ts frames 60 300 650 1000 1199",
+    "preview:admin": "tsx src/admin-render.ts preview --open",
+    "render:admin": "tsx src/admin-render.ts video very_high",
+    "render:admin:small": "tsx src/admin-render.ts video low",
+    "frames:admin": "tsx src/admin-render.ts frames 50 140 250 450 670 860 1040",
     "typecheck": "tsc -p ."
   },
   "engines": {
