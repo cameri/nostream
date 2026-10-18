@@ -67,7 +67,11 @@ export default {
         // site's own address, with its own links.
         return redirect(new URL(`${url.protocol}//${PREVIEW_HOST}${url.pathname}${url.search}`))
       }
-      if (!onCanonical) {
+      // A preview on PREVIEW_HOST is served HERE, by the proxy branch below.
+      // Bouncing it to the canonical host would only send it back again: that
+      // host redirects every preview to PREVIEW_HOST, so the pair of rules is
+      // a loop rather than a redirect.
+      if (!onCanonical && !(m && url.host.toLowerCase() === PREVIEW_HOST)) {
         // Every other authority converges on the canonical one, preview paths
         // included: only PREVIEW_HOST serves a preview, and it is reached
         // through the canonical origin like everything else.
