@@ -27,9 +27,6 @@ const PR_WORKER = (n: number | string) => `https://nostream-web-pr-${n}.cameri.w
 
 /** A bare host, without port: the value an env var can realistically carry. */
 const bareHost = (host: string) => host.split(':')[0].toLowerCase()
-/** The origin form the request is being redirected TO. */
-const originHost = (host: string) => host.split(':')[0].toLowerCase() + (host.includes(':') ? `:${host.split(':').pop()}` : '')
-
 /**
  * A 301 to `url`, written by hand rather than with `Response.redirect`.
  *
@@ -52,25 +49,32 @@ export default {
       url.protocol = 'https:'
       return redirect(url)
     }
-    const host = bareHost(url.hostname)
     const canonical = env.CANONICAL_HOST?.trim()
-    const onCanonical = canonical ? host === bareHost(canonical) : true
+    // The canonical host is the one origin the site answers on. Unset disables
+    // this whole layer: without a host to name there is nothing to redirect
+    // toward, and treating every host as canonical is the opposite.
+    if (canonical) {
+      // The authority is host AND port - `nostream.dev:8443` serves the same
+      // pages, so comparing hostnames alone would let a second origin through.
+      const target = canonical.includes(':')
+        ? bareHost(canonical) + `:${canonical.split(':').pop()}`
+        : bareHost(canonical)
+      const onCanonical = url.host.toLowerCase() === target
+      const m = PREVIEW_RE.exec(url.pathname)
+      if (onCanonical && m) {
+        // A preview belongs to PREVIEW_HOST and only that host: serving one
+        // from the production domain would put a pull request's build - on the
+        // site's own address, with its own links.
+        return redirect(new URL(`${url.protocol}//${PREVIEW_HOST}${url.pathname}${url.search}`))
+      }
+      if (!onCanonical) {
+        // Every other authority converges on the canonical one, preview paths
+        // included: only PREVIEW_HOST serves a preview, and it is reached
+        // through the canonical origin like everything else.
+        return redirect(new URL(`${url.protocol}//${target}${url.pathname}${url.search}`))
+      }
+    }
     const m = PREVIEW_RE.exec(url.pathname)
-    // Previews belong to one host and only that one. Serving them from the
-    // production domain would put a pull request's build - whatever the PR
-    // author wrote - on the site's own address, so a production-host preview
-    // request is redirected to the preview host rather than proxied here.
-    if (m && onCanonical) {
-      const target = `${url.protocol}//${bareHost(PREVIEW_HOST)}${url.pathname}${url.search}`
-      return redirect(new URL(target))
-    }
-    // Every other non-canonical host converges on the canonical one. Preview
-    // paths that reach a non-canonical host are proxied from there, which the
-    // rule above already permits: the preview host is not the canonical one.
-    if (!m && !onCanonical) {
-      url.host = originHost(canonical!)
-      return redirect(url)
-    }
     if (m) {
       const n = m[1]
       const inner = new URL(request.url)
