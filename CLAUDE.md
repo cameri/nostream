@@ -90,11 +90,24 @@ resolver 3:
 
 - **One error enum per crate, named `<Crate>Error`** (`CoreError`, `ConfigError`,
   `StorageError`, `DaemonError`, `CliError`), `thiserror::Error`, one variant per
-  failure class, and a message written for an operator.
+  failure class, and a message written for an operator. **Every library module returns its
+  own crate's type** — `nostream-config` returns `ConfigError`, and the CLI's library
+  modules (`crates/nostream-cli/src/`) return `CliError`. A library never returns another
+  crate's error type, so no crate has to depend on `nostream-cli` to name a failure.
 - **`anyhow` appears only in `crates/nostreamd/src/main.rs` and
-  `crates/nostream-cli/src/main.rs`.** Everything else, including the CLI's own modules,
-  returns `CliError`. The check CI's reviewers use:
-  `grep -rn 'anyhow' crates/*/src/lib.rs` → empty.
+  `crates/nostream-cli/src/main.rs`.** The binaries compose, log and exit; they are not
+  part of any library's contract. The check CI's reviewers use — it searches **every**
+  source file, not just the `lib.rs` roots, and skips comment lines that merely name the
+  crate:
+
+  ```
+  grep -rn 'anyhow' crates --include=*.rs \
+    | grep -vE 'crates/nostreamd/src/main\.rs|crates/nostream-cli/src/main\.rs' \
+    | grep -vE '^[^:]+:[0-9]+:\s*(//|///|//!)'
+  ```
+
+  → no output. Re-proven 2026-10-18 by adding `fn probe() -> anyhow::Result<()>` to
+  `crates/nostream-config/src/load.rs`, which the check printed.
 - **A subsystem that is not implemented returns
   `Error::NotImplemented { module: "path::to::call" }` — never `todo!()`,
   `unimplemented!()` or `panic!()`.** The daemon's `main` maps that variant to exit code
