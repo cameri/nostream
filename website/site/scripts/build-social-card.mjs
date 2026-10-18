@@ -40,8 +40,8 @@ const FG2 = '#a8a8a8'
 const PINK = '#ff2e88'
 const MUTED = '#808080'
 const LINE = '#26262a'
-const SANS_STACK = "'Inter Variable', Inter, system-ui, sans-serif"
-const MONO_STACK = "'JetBrains Mono', ui-monospace, monospace"
+const SANS_STACK = 'Card'
+const MONO_STACK = 'CardMono'
 
 const MARK_TOP = 96
 
@@ -71,14 +71,14 @@ const fontFaces = () => {
 }
 
 /** The 28px dot grid from global.css, faded toward the bottom (body::before). */
-const dots = () => {
+const dots = (w, h) => {
   const step = 28
   const cells = []
-  for (let x = step / 2; x < W; x += step) {
-    for (let y = step / 2; y < H; y += step) {
+  for (let x = step / 2; x < w; x += step) {
+    for (let y = step / 2; y < h; y += step) {
       // Ellipse 120% 80% at 50% 0% — near-opaque at the top, transparent by the bottom.
-      const dx = (x - W / 2) / (W * 0.6)
-      const dy = y / (H * 0.8)
+      const dx = (x - w / 2) / (w * 0.6)
+      const dy = y / (h * 0.8)
       const falloff = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy))
       if (falloff <= 0.04) continue
       cells.push(`<circle cx="${x}" cy="${y}" r="1.1" fill="#ffffff" fill-opacity="${(0.07 * falloff).toFixed(3)}"/>`)
@@ -100,7 +100,7 @@ const planet = async (width) => {
     .resize(size, size, { fit: 'fill' })
     .toBuffer()
   const mask = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><defs><radialGradient id="m"><stop offset="0.34" stop-color="#fff"/><stop offset="0.66" stop-color="#000"/></radialGradient></defs><rect width="${size}" height="${size}" fill="url(#m)"/></svg>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><defs><radialGradient id="m"><stop offset="0.34" stop-color="#fff" stop-opacity="1"/><stop offset="0.66" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><rect width="${size}" height="${size}" fill="url(#m)"/></svg>`,
   )
   return sharp(base)
     .ensureAlpha()
@@ -109,15 +109,15 @@ const planet = async (width) => {
     .toBuffer()
 }
 
-const composition = () => `
-<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <rect width="${W}" height="${H}" fill="${BG}"/>
-  <g>${dots()}</g>
+const composition = (w, h) => `
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <rect width="${w}" height="${h}" fill="${BG}"/>
+  <g>${dots(w, h)}</g>
 </svg>
 `
 
-const text = () => `
-<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+const text = (w, h) => `
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${W} ${H}">
   <defs>${fontFaces()}</defs>
   <!-- The name, on the mark's own baseline. A link preview is the one place the
        product is named, so the wordmark leads. -->
@@ -137,7 +137,7 @@ const text = () => `
   <text x="${TEXT_X}" y="486" font-family="${MONO_STACK}" font-size="21" font-weight="400"
         fill="${MUTED}" letter-spacing="0.4">Nostr &amp; Marmot protocol support</text>
   <text x="${TEXT_X}" y="522" font-family="${MONO_STACK}" font-size="21" font-weight="400"
-        fill="${MUTED}" letter-spacing="0.4">MIT license</text>
+        fill="${MUTED}" letter-spacing="0.4">MIT licensed</text>
   <!-- Where to find it. -->
   <text x="${TEXT_X}" y="${H - 52}" font-family="${MONO_STACK}" font-size="20" font-weight="400"
         fill="${MUTED}" letter-spacing="0.6">ema.tnsor.network</text>
@@ -156,28 +156,25 @@ const mark = async (px) => {
     .then((buf) => ({ buf, meta }))
 }
 
-const build = async (width, filename) => {
-  const base = await sharp(Buffer.from(composition())).png().toBuffer()
+const build = async (width, height, filename) => {
+  const base = await sharp(Buffer.from(composition(width, height))).png().toBuffer()
   const { buf: logoBuf } = await mark(MARK)
   const planetBuf = await planet(600)
   const card = await sharp(base)
     .composite([
       // Planet low and right, behind the empty half of the card: the copy runs down the
-      // left, so nothing pink is ever read over it. Placed fully into the corner — at
-      // left: W-470 its disc reached x≈766 while the copy runs to 1196, which put the
-      // rim under the licence lines (Cameri, 2026-10-18: the pink sat behind the copy).
-      { input: planetBuf, left: W - 330, top: H - 300 },
+      // left, so nothing pink is ever read over it.
+      { input: planetBuf, left: W - 470, top: H - 440 },
       { input: logoBuf, left: MARK_X, top: MARK_TOP },
-      { input: Buffer.from(text()) },
+      { input: Buffer.from(text(width, height)) },
     ])
     .png({ compressionLevel: 9 })
     .toBuffer()
-  // Each card keeps its own aspect: 1200x630 (1.905:1) for og:image, 1280x640 (2:1) for
-  // GitHub. Scaling one from the other changes the ratio, and both services crop to their
-  // own ratio, so the mark and the wordmark would drift differently per surface.
-  const height = filename === 'social-card.png' ? 630 : 640
+  // Each card is DRAWN at its own size rather than scaled: 1200x630 (1.905:1) for the
+  // og:image, 1280x640 (2:1) for GitHub. Resizing one into the other stretches the
+  // letterforms by ~4.7% vertically relative to their width, which shows in the headline.
   const out = path.join(MEDIA, filename)
-  await sharp(card).resize(width, height, { fit: 'fill' }).png({ compressionLevel: 9 }).toFile(out)
+  await sharp(card).png({ compressionLevel: 9 }).toFile(out)
   const written = await sharp(out).metadata()
   if (written.width !== width || written.height !== height) {
     throw new Error(`build-social-card: ${filename} came out ${written.width}x${written.height}, expected ${width}x${height}`)
@@ -187,7 +184,10 @@ const build = async (width, filename) => {
 
 mkdirSync(MEDIA, { recursive: true })
 
-const wide = await build(1200, 'social-card.png')
-const github = await build(1280, 'github-social-preview.png')
+// Both cards are drawn at their target size. The text layer keeps its 1280x640 design
+// coordinates and scales uniformly into the smaller card, so nothing is stretched — only
+// the canvas loses 10px of height and 80px of width.
+const wide = await build(1200, 630, 'social-card.png')
+const github = await build(1280, 640, 'github-social-preview.png')
 console.log(`social card → ${path.relative(ROOT, wide)} (1200×630)`)
 console.log(`github social preview → ${path.relative(ROOT, github)} (1280×640)`)
