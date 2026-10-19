@@ -163,17 +163,21 @@ a second implementation.
 `QueryStream` is `Send`-bounded, which matches how the relay consumes it. A stream that
 owns an LMDB read transaction can only satisfy that bound with heed's `read-txn-no-tls`
 feature (heed 0.20.5 `src/txn.rs`: `RoTxn: Send` under that feature), so the workspace
-enables it. The feature changes no LMDB behaviour; it declares that read transactions may
-cross threads. The cost the LMDB backend inherits: a `QueryStream` holds a read transaction
-for its whole life, which delays reuse of pages freed by writers. That is deliberate for
-reconciliation (a materialised `Vec` of 10M pairs is worse), and revisit 1 below says when to
-change it.
+enables it. The feature is not free of behaviour: `EnvOpenOptions::open` ORs
+`EnvFlags::NO_TLS` (LMDB's `MDB_NOTLS`) into every environment the crate opens, so reader
+slots move to the transaction instead of thread-local storage — that forced flag is what
+makes moving a read transaction across threads sound. The LMDB backend inherits it for
+every environment it creates and must reason about it in revisit 1: a held read transaction
+prevents reuse of pages freed by writers for as long as the stream lives. That is
+deliberate for reconciliation (a materialised `Vec` of 10M pairs is worse), and revisit 1
+says when to change it.
 
 ## The harness's limits
 
 `scripts/storage-parity.sh` is the oracle: the 37 migrations apply from empty and match
-the knex catalogue; 110 recorded operations covering all 51 methods replay with an empty
-diff; and the unmodified TypeScript relay's 118 Cucumber scenarios run against the
+the knex catalogue; the fixture's 115 script entries — 112 direct method calls, 2
+serializable transaction groups holding 7 nested calls, and one direct-column probe
+(`user.tos_accepted_at`), covering all 51 methods — replay with an empty diff; and the unmodified TypeScript relay's 118 Cucumber scenarios run against the
 sqlx-migrated database. What it does not judge: the 192 SQL-text unit tests (they are
 Postgres-implementation assertions), read-replica *behaviour* (only URL selection is
 tested), LMDB, and NIP-50 ranking beyond "same hits, same deterministic order" — the
@@ -199,6 +203,9 @@ the script remains the local, complete run.
   does not compare `remote_address` or `row_id`; a backend that stored a wrong address
   would pass the oracle. If the address becomes part of the row contract, add it to the
   projection (the corpus already carries one).
+- `EventRecord` is `Serialize + Deserialize` with no version tag and no `#[serde(default)]`.
+  An LMDB store that writes it must decide its encoding version before the first field is
+  added, or existing rows stop decoding; that decision belongs to follow-up 3 (trigger 6).
 - The harness publishes its ports on `PARITY_BIND` (default `127.0.0.1`) with per-run
   generated Postgres and Redis passwords; no host address or credential is committed.
 - 43 new non-database tests (records, env resolution, SQL composition, error mapping) keep
@@ -236,8 +243,16 @@ schema or SQL; the hunt for them belongs to the benchmark rig (follow-up 6).
 3. **A NIP-40 expiry past 2038 becomes reachable.** If a client can publish one, the
    `events.expires_at integer` limit reopens: either widen the column (knex-identical? no —
    the schema is the capture's) or clamp and record the divergence in the fixture.
-4. **The NIP-50 language changes at runtime.** The index is built with `simple`; changing
-   `nip50.language` without rebuilding the index silently drops the planner to a scan and
-   the migrations target's plan assertion is the alarm (it EXPLAINs with `simple`).
+4. **The NIP-50 language changes at runtime.** The index is built with `simple`. The
+   migrations target EXPLAINs the *composer's* statement at the fixture's settings, so a
+   composer or schema change that stops matching the index fails that target; it cannot
+   see a deployment that runs a different `nip50.language`, because the harness loads the
+   fixture's settings. That deployment's alarm is the same EXPLAIN run with its settings —
+   i.e. regenerate the fixture (or run the target with the deployed settings) after
+   changing the language, and rebuild `events_content_fts_idx` with it.
 5. **The capture's own FTS miss is fixed upstream.** If the TypeScript starts inlining the
-   configuration, the divergence above disappears and the fixture regenerates unchanged.
+   configuration, the divergence above disappears; the fixture's compared values do not
+   change (its `subject` block is regenerated, so the file itself does).
+6. **The LMDB row encoding gains a field.** Before `EventRecord` is persisted by a second
+   backend, version the encoding (a header tag or `#[serde(default)]` on new fields), or
+   decoding an existing store breaks on the first schema change.
