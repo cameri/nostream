@@ -20,6 +20,11 @@
 //! dependency, no transport. The NIP-77 `neg-*` handlers exist at the porting oracle
 //! (`041fe34e`) and are deliberately absent here. Phase 2+ areas this crate does not own: the
 //! HTTP surface (nostream-admin) and the probe family (nostream-services).
+//!
+//! The event acceptance gate this crate will build owns the *policy*: the kind-specific tag
+//! rules, which `created_at` deltas the settings supply, and where the check runs. The pure
+//! predicate it calls — `nostream_core::time::check_created_at` — is core's, along with the
+//! rest of the reference-time arithmetic; do not re-implement it here.
 
 pub mod broadcast;
 pub mod connection;

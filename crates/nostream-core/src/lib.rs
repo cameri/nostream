@@ -39,8 +39,11 @@
 //! transport exists — the file those frames are described in, `src/utils/nip77.ts`, does
 //! not exist at the capture (it appears at the porting oracle `041fe34e`), and neither does
 //! `src/utils/negentropy-sessions.ts`; the stored-query path (Postgres full-text search and
-//! `EXISTS`-per-tag SQL) is `nostream-storage`'s; the event acceptance gate's kind-specific
-//! tag rules and `created_at` bounds are the gate's, not this crate's.
+//! `EXISTS`-per-tag SQL) is `nostream-storage`'s. The event acceptance gate's *policy* is
+//! `nostream-relay`'s — the kind-specific tag rules, which `created_at` deltas apply, and
+//! where the check is called; the pure predicate those rules call,
+//! [`time::check_created_at`], is this crate's, and so is the `created_at` window arithmetic
+//! it carries.
 
 pub mod adaptive_pow;
 pub mod constants;
