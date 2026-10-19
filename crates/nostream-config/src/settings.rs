@@ -512,12 +512,18 @@ pub struct PaymentsProcessors {
 }
 
 /// A mirror's subscription filter (`src/@types/settings.ts` `mirroring.static[].filters`,
-/// typed there as `SubscriptionFilter`, whose `kinds` admits `EventKinds | EventKindsRange`).
+/// typed there as `SubscriptionFilter`).
 ///
-/// The capture never validates a mirror filter (`src/utils/settings-config.ts` has no filter
-/// rule), so a document such as `kinds: [[10000, 19999]]` loads there and loaded here before
-/// the wire `Filter` narrowed `kinds` to numbers (spec D4). This type keeps that acceptance
-/// at the settings edge; [`SettingsFilter::into_filter`] crosses to the wire type at use.
+/// The declared type is numbers-only — `kinds?: (EventKinds | number)[]`
+/// (`src/@types/subscription.ts:8`); `EventKindsRange` belongs to the *rate-limit* criteria,
+/// not to a subscription filter. What keeps `KindSelector` here is that the capture never
+/// validates a mirror filter: `validateShape` returns when the schema for a sequence is empty
+/// (`src/utils/settings-config.ts:202-204`) and the shipped defaults carry
+/// `mirroring.static: []` (`resources/default-settings.yaml:168-169`), so a document such as
+/// `kinds: [[10000, 19999]]` is an unvalidated runtime value that loads. The wire `Filter`
+/// narrowed `kinds` to numbers (spec D4); this type keeps the loader's acceptance, and the
+/// two paths a mirror filter takes are spelled out on
+/// [`SettingsFilter::into_matcher_filter`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettingsFilter {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -539,12 +545,20 @@ pub struct SettingsFilter {
 }
 
 impl SettingsFilter {
-    /// The wire [`Filter`] this settings entry stands for.
+    /// The crossing for **local matching only**: the wire [`Filter`] that `Filter::matches`
+    /// takes.
     ///
-    /// A range element is dropped rather than widened: the capture's in-memory matcher
-    /// compared kinds with `Array.includes` on numbers (`src/utils/event.ts:64`), so a range
-    /// element never matched an event there either, and the wire type cannot hold one.
-    pub fn into_filter(self) -> Filter {
+    /// A range element is dropped rather than widened, because the capture's in-memory
+    /// matcher compared kinds with `Array.includes` on numbers (`src/utils/event.ts:64`), so a
+    /// range element never matched an event there either.
+    ///
+    /// This is **not** the crossing for the outbound subscription. The mirror worker forwards
+    /// the settings filter verbatim, injecting only `since`
+    /// (`src/app/static-mirroring-worker.ts:72-77`), and `createSubscriptionMessage`
+    /// serialises it without validating (`src/utils/messages.ts:53-58`), so a range element
+    /// reaches the peer as `kinds: [[10000, 19999]]`. Serialising `Filter` there would send
+    /// `kinds: []` instead, which the capture never sends; that path serialises this type.
+    pub fn into_matcher_filter(self) -> Filter {
         Filter {
             ids: self.ids,
             kinds: self.kinds.map(|kinds| {

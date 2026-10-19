@@ -1,10 +1,13 @@
-//! A mirror filter keeps the capture's acceptance at the settings edge.
+//! A mirror filter keeps the loader's acceptance at the settings edge.
 //!
-//! `mirroring.static[].filters` is the capture's `SubscriptionFilter`, whose `kinds` admits a
-//! range (`EventKinds | EventKindsRange`), and the capture never validates a mirror filter
-//! (`src/utils/settings-config.ts` has no filter rule). The wire `Filter` narrowed `kinds` to
-//! numbers (spec D4), so the settings type keeps `KindSelector` and crosses over at use
-//! (round-2 architecture finding 1).
+//! The declared type is numbers-only (`src/@types/subscription.ts:8`, `kinds?: (EventKinds |
+//! number)[]`), but the capture never validates a mirror filter: `validateShape` returns when
+//! the sequence's schema is empty (`src/utils/settings-config.ts:202-204`) and the shipped
+//! defaults carry `mirroring.static: []`. So `kinds: [[10000, 19999]]` is an unvalidated
+//! runtime value the capture loads and its matcher ignores, and this branch loads it too. The
+//! wire `Filter` narrowed `kinds` to numbers (spec D4), so the settings type keeps
+//! `KindSelector` and crosses over for local matching only (round-2 finding 4, round-3
+//! finding 2).
 
 // This integration-test target may unwrap: a failed assertion here is a failed test,
 // which is the point. The allowance names this file rather than exempting test targets
@@ -89,7 +92,7 @@ fn the_wire_filter_drops_a_range_element_and_keeps_the_numbers() {
         .unwrap()
         .clone()
         .into_iter()
-        .map(|filter| filter.into_filter())
+        .map(|filter| filter.into_matcher_filter())
         .collect();
 
     // The capture's matcher used `Array.includes` on numbers, so a range element never
