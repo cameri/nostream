@@ -62,8 +62,17 @@ fail() {
     exit 1
 }
 
-is_loopback() {
+# Docker accepts a bracketed IPv6 address in `-p`; strip one bracket pair so the loopback
+# and wildcard tests see the address itself.
+unbracket() {
     case "$1" in
+        \[*\]) address=${1#\[}; printf '%s' "${address%\]}" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+is_loopback() {
+    case "$(unbracket "$1")" in
         127.*|localhost|::1) return 0 ;;
         *) return 1 ;;
     esac
@@ -88,8 +97,8 @@ is_remote_daemon() {
 
 # Preflight, before any container exists. A wildcard bind is never right, and a loopback
 # bind is right only for a daemon on this machine. No default guesses a daemon's address.
-case "$PARITY_BIND" in
-    0.0.0.0|'::'|'*')
+case "$(unbracket "$PARITY_BIND")" in
+    0.0.0.0|'::'|'::0'|'0:0:0:0:0:0:0:0'|'*')
         fail "PARITY_BIND=$PARITY_BIND is a wildcard: publish on one address (127.0.0.1 for a local daemon, or the daemon host's reachable address)"
         ;;
 esac
@@ -107,7 +116,7 @@ redaction_output=$(./scripts/rust.sh cargo test -p nostream-storage --test migra
     printf '%s\n' "$redaction_output"
     fail "the connection-failure log echoed a credential"
 }
-printf '%s\n' "$redaction_output" | grep -q '1 passed' || {
+printf '%s\n' "$redaction_output" | grep -q 'test result: ok. 1 passed' || {
     printf '%s\n' "$redaction_output"
     fail "the credential-redaction test did not run (renamed?)"
 }

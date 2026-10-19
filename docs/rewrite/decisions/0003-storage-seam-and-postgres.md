@@ -142,8 +142,8 @@ inlined SQL.
 ## Batching — the bind limit, and its partial-commit window
 
 `create_many`/`upsert_many` split their input at PostgreSQL's 65 535-bind limit
-(7 281 rows at nine binds each, 5 957 at eleven), so up to one batch is the capture's
-single statement. Above one batch, a mid-batch error returns `Err` after the earlier
+(7 281 rows at nine binds each, 6 553 at ten — an upsert row's `deleted_at` is the literal
+NULL, so it costs no parameter), so up to one batch is the capture's single statement. Above one batch, a mid-batch error returns `Err` after the earlier
 batches committed: the rows already written stay written. The capture's single statement
 would instead fail wholesale (or, past the same limit, be swallowed into `0` by its
 `catch`). Callers that need all-or-nothing semantics for more than one batch must own a
@@ -175,9 +175,10 @@ says when to change it.
 ## The harness's limits
 
 `scripts/storage-parity.sh` is the oracle: the 37 migrations apply from empty and match
-the knex catalogue; the fixture's 115 script entries — 112 direct method calls, 2
-serializable transaction groups holding 7 nested calls, and one direct-column probe
-(`user.tos_accepted_at`), covering all 51 methods — replay with an empty diff; and the unmodified TypeScript relay's 118 Cucumber scenarios run against the
+the knex catalogue; the fixture's 115 script entries — 111 direct method calls, 2
+serializable transaction groups holding 7 nested calls, and two probe calls of one
+direct-column op (`user.tos_accepted_at`) — covering all 51 methods replay with an empty
+diff; and the unmodified TypeScript relay's 118 Cucumber scenarios run against the
 sqlx-migrated database. What it does not judge: the 192 SQL-text unit tests (they are
 Postgres-implementation assertions), read-replica *behaviour* (only URL selection is
 tested), LMDB, and NIP-50 ranking beyond "same hits, same deterministic order" — the
@@ -245,11 +246,12 @@ schema or SQL; the hunt for them belongs to the benchmark rig (follow-up 6).
    the schema is the capture's) or clamp and record the divergence in the fixture.
 4. **The NIP-50 language changes at runtime.** The index is built with `simple`. The
    migrations target EXPLAINs the *composer's* statement at the fixture's settings, so a
-   composer or schema change that stops matching the index fails that target; it cannot
-   see a deployment that runs a different `nip50.language`, because the harness loads the
-   fixture's settings. That deployment's alarm is the same EXPLAIN run with its settings —
-   i.e. regenerate the fixture (or run the target with the deployed settings) after
-   changing the language, and rebuild `events_content_fts_idx` with it.
+   composer or schema change that stops matching the index fails that target. A deployment
+   that runs a different `nip50.language` is covered by the same guard through
+   `PARITY_NIP50_LANGUAGE`: `PARITY_NIP50_LANGUAGE=english cargo test -p nostream-storage
+   --test migrations -- --ignored` composes at that language and fails unless the index was
+   rebuilt with it. The switch is in `tests/common/mod.rs::settings_from_fixture`; editing
+   the fixture's override is the equivalent path.
 5. **The capture's own FTS miss is fixed upstream.** If the TypeScript starts inlining the
    configuration, the divergence above disappears; the fixture's compared values do not
    change (its `subject` block is regenerated, so the file itself does).
