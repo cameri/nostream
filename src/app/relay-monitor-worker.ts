@@ -126,6 +126,9 @@ export class RelayMonitorWorker implements IRunnable {
       ...this.lastOpsWorkerHeartbeat,
       ...partial,
     }
+    if ('lastError' in partial && partial.lastError === undefined) {
+      delete this.lastOpsWorkerHeartbeat.lastError
+    }
 
     await publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
       type: 'relay-monitor',
@@ -220,6 +223,7 @@ export class RelayMonitorWorker implements IRunnable {
     await this.publishOpsHeartbeat({
       lastRunStartedAt,
       lastRunFinishedAt: new Date().toISOString(),
+      lastError: undefined,
     })
   }
 
