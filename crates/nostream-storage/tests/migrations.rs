@@ -382,3 +382,23 @@ fn a_scratch_url_replaces_only_the_database() {
         "postgres://u:p@host:5432/scratch?sslmode=disable"
     );
 }
+
+/// The failure path must not echo the credentials: sqlx redacts the connection string in
+/// its `Display`/`Debug`, and this test is the guard. A panicking test that formatted the
+/// environment value itself would leak, so the assertion runs on the error, not the URL.
+#[tokio::test]
+async fn a_failed_connection_does_not_echo_the_password() {
+    let password = "leak-marker-9f3a1c";
+    let url = format!("postgres://postgres:{password}@127.0.0.1:1/postgres");
+    // A refused connection retries until the acquire timeout; keep the probe short.
+    let error = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_secs(2))
+        .connect(&url)
+        .await
+        .expect_err("nothing listens on port 1");
+    let rendered = format!("{error}\n{error:?}");
+    assert!(
+        !rendered.contains(password),
+        "the connection error echoed the password: {rendered}"
+    );
+}

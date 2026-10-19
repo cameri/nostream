@@ -18,6 +18,11 @@
 #                         CUCUMBER_BIN is set
 #   CUCUMBER_BIN          cucumber-js binary (default $NODE_PATH/.bin/cucumber-js)
 #
+# Preflight: with a local Docker daemon, PARITY_BIND=127.0.0.1 is right; with a remote
+# daemon (DOCKER_HOST=tcp://…) it refuses, because the daemon's loopback is not this
+# machine's. The published port is then probed with a three-second timeout, and the
+# connection-failure redaction test runs before any container exists.
+#
 # Both containers carry the `org.testcontainers=true` label the sandbox's Docker policy
 # requires, publish their port on PARITY_BIND only (never a wildcard), use per-run
 # credentials, and are removed by the exit trap. Nothing is written outside the worktree.
@@ -57,6 +62,38 @@ fail() {
     exit 1
 }
 
+is_loopback() {
+    case "$1" in
+        127.*|localhost|::1) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Preflight, before any container exists. A loopback bind is right for a daemon on this
+# machine and wrong for a remote one: the daemon would publish on its own loopback, which
+# this machine cannot dial. No default guesses the daemon host's address.
+if is_loopback "$PARITY_BIND" && [ -n "${DOCKER_HOST:-}" ]; then
+    daemon=${DOCKER_HOST#*://}
+    daemon=${daemon%%:*}
+    if ! is_loopback "$daemon"; then
+        fail "PARITY_BIND=$PARITY_BIND is this machine's loopback, but the Docker daemon is remote (DOCKER_HOST=$DOCKER_HOST): set PARITY_BIND and PARITY_HOST to an address the daemon host accepts and this machine can reach"
+    fi
+fi
+docker version >/dev/null 2>&1 \
+    || fail "the Docker daemon at ${DOCKER_HOST:-/var/run/docker.sock} is not reachable"
+
+# A forced connection failure must not echo the credential; the test fails if it does.
+echo "== credential redaction"
+./scripts/rust.sh cargo test -p nostream-storage --test migrations \
+    a_failed_connection_does_not_echo_the_password -- --exact \
+    || fail "the connection-failure log echoed a credential"
+
+# The dialed address, probed with a three-second timeout: a refusal here names the two
+# variables instead of surfacing as a sqlx timeout later.
+probe_dial() {
+    node -e 'const net = require("net"); const s = net.connect({ host: process.argv[1], port: Number(process.argv[2]) }); s.setTimeout(3000); s.on("connect", () => { s.destroy(); process.exit(0) }); s.on("timeout", () => { s.destroy(); process.exit(1) }); s.on("error", () => process.exit(1))' "$PARITY_HOST" "$PARITY_PG_PORT"
+}
+
 wait_for_log() {
     container=$1
     pattern=$2
@@ -79,6 +116,12 @@ docker create --name "$redis_container" --label org.testcontainers=true \
 docker start "$pg_container" "$redis_container" >/dev/null
 wait_for_log "$pg_container" "database system is ready to accept connections"
 wait_for_log "$redis_container" "Ready to accept connections"
+attempts=0
+until probe_dial; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -ge 5 ] && fail "the published Postgres port is not reachable at $PARITY_HOST:$PARITY_PG_PORT: set PARITY_BIND and PARITY_HOST to an address this machine can dial (127.0.0.1 on the daemon host; the daemon host's reachable address from elsewhere)"
+    sleep 1
+done
 echo "   postgres and redis are accepting connections on $PARITY_HOST"
 
 echo "== migrations and schema parity"
