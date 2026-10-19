@@ -69,24 +69,48 @@ is_loopback() {
     esac
 }
 
-# Preflight, before any container exists. A loopback bind is right for a daemon on this
-# machine and wrong for a remote one: the daemon would publish on its own loopback, which
-# this machine cannot dial. No default guesses the daemon host's address.
-if is_loopback "$PARITY_BIND" && [ -n "${DOCKER_HOST:-}" ]; then
-    daemon=${DOCKER_HOST#*://}
-    daemon=${daemon%%:*}
-    if ! is_loopback "$daemon"; then
-        fail "PARITY_BIND=$PARITY_BIND is this machine's loopback, but the Docker daemon is remote (DOCKER_HOST=$DOCKER_HOST): set PARITY_BIND and PARITY_HOST to an address the daemon host accepts and this machine can reach"
-    fi
+# Only a TCP (or SSH) daemon endpoint can be on another machine. A unix socket, a bare
+# socket path, fd:// and npipe:// all name a daemon on this machine, and tcp://[::1] is the
+# local loopback spelled in brackets.
+is_remote_daemon() {
+    case "${DOCKER_HOST:-}" in
+        tcp://*|ssh://*)
+            daemon=${DOCKER_HOST#*://}
+            case "$daemon" in
+                \[*) daemon=${daemon#\[}; daemon=${daemon%%\]*} ;;
+                *) daemon=${daemon%%:*} ;;
+            esac
+            ! is_loopback "$daemon"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# Preflight, before any container exists. A wildcard bind is never right, and a loopback
+# bind is right only for a daemon on this machine. No default guesses a daemon's address.
+case "$PARITY_BIND" in
+    0.0.0.0|'::'|'*')
+        fail "PARITY_BIND=$PARITY_BIND is a wildcard: publish on one address (127.0.0.1 for a local daemon, or the daemon host's reachable address)"
+        ;;
+esac
+if is_loopback "$PARITY_BIND" && is_remote_daemon; then
+    fail "PARITY_BIND=$PARITY_BIND is this machine's loopback, but the Docker daemon is remote (DOCKER_HOST=$DOCKER_HOST): set PARITY_BIND and PARITY_HOST to an address the daemon host accepts and this machine can reach"
 fi
 docker version >/dev/null 2>&1 \
     || fail "the Docker daemon at ${DOCKER_HOST:-/var/run/docker.sock} is not reachable"
 
-# A forced connection failure must not echo the credential; the test fails if it does.
+# A forced connection failure must not echo the credential; the test fails if it does, and
+# the run fails if the test was renamed away instead of passing.
 echo "== credential redaction"
-./scripts/rust.sh cargo test -p nostream-storage --test migrations \
-    a_failed_connection_does_not_echo_the_password -- --exact \
-    || fail "the connection-failure log echoed a credential"
+redaction_output=$(./scripts/rust.sh cargo test -p nostream-storage --test migrations \
+    a_failed_connection_does_not_echo_the_password -- --exact 2>&1) || {
+    printf '%s\n' "$redaction_output"
+    fail "the connection-failure log echoed a credential"
+}
+printf '%s\n' "$redaction_output" | grep -q '1 passed' || {
+    printf '%s\n' "$redaction_output"
+    fail "the credential-redaction test did not run (renamed?)"
+}
 
 # The dialed address, probed with a three-second timeout: a refusal here names the two
 # variables instead of surfacing as a sqlx timeout later.
