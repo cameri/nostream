@@ -83,8 +83,8 @@ export const applyPayment = (
 }
 
 /**
- * Where a subscription whose period has ended goes next: straight to expired if the user
- * cancelled or the grace window has already passed, otherwise into grace.
+ * Where a subscription whose period has ended goes next: straight to expired if the plan has
+ * no grace or the grace window has already passed, otherwise into grace.
  */
 export const endPeriod = (
   subscription: UserSubscription,
@@ -94,7 +94,7 @@ export const endPeriod = (
   const periodEnd = subscription.currentPeriodEnd as Date
   const graceEndsAt = new Date(periodEnd.getTime() + plan.graceSeconds * 1000)
 
-  if (subscription.cancelAtPeriodEnd || plan.graceSeconds <= 0 || graceEndsAt.getTime() <= now.getTime()) {
+  if (plan.graceSeconds <= 0 || graceEndsAt.getTime() <= now.getTime()) {
     return { status: SubscriptionStatus.EXPIRED, graceEndsAt: null }
   }
 

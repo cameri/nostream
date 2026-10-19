@@ -41,8 +41,6 @@ export interface IPaymentsService {
 export interface ISubscriptionService {
   /** One pass of renewal invoices, period ends and grace expiries. Returns how many subscriptions changed. */
   processLifecycle(now?: Date): Promise<number>
-  /** Stops renewal; access lasts until the paid period ends. Returns false when there is nothing to cancel. */
-  cancel(pubkey: Pubkey): Promise<boolean>
 }
 
 export interface NotificationDispatchContext {

@@ -1,4 +1,3 @@
-import { Pubkey } from '../@types/base'
 import { IUserSubscriptionRepository } from '../@types/repositories'
 import { IPaymentsService, ISubscriptionService } from '../@types/services'
 import { Settings } from '../@types/settings'
@@ -46,17 +45,6 @@ export class SubscriptionService implements ISubscriptionService {
       ))
 
     return changed
-  }
-
-  public async cancel(pubkey: Pubkey): Promise<boolean> {
-    const subscription = await this.userSubscriptionRepository.findByPubkey(pubkey)
-    if (!subscription || subscription.status === SubscriptionStatus.EXPIRED || !subscription.currentPeriodEnd) {
-      return false
-    }
-
-    await this.userSubscriptionRepository.upsert({ ...subscription, cancelAtPeriodEnd: true })
-
-    return true
   }
 
   /**

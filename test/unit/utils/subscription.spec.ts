@@ -185,12 +185,6 @@ describe('subscription utils', () => {
       expect(result.currentPeriodEnd).to.deep.equal(at(30 * DAY))
     })
 
-    it('clears a cancellation, since paying again means staying', () => {
-      const cancelled = subscription({ cancelAtPeriodEnd: true })
-
-      expect(applyPayment(pubkey, cancelled, plan, NOW).cancelAtPeriodEnd).to.equal(false)
-    })
-
     it('uses the paid plan, so a plan change takes effect on payment', () => {
       const premium = { ...plan, id: 'premium', intervalSeconds: 7 * 86_400 }
 
@@ -208,13 +202,6 @@ describe('subscription utils', () => {
       expect(endPeriod(ended, plan, NOW)).to.deep.equal({
         status: SubscriptionStatus.PAST_DUE,
         graceEndsAt: at(2 * DAY),
-      })
-    })
-
-    it('expires straight away when the user cancelled', () => {
-      expect(endPeriod({ ...ended, cancelAtPeriodEnd: true }, plan, NOW)).to.deep.equal({
-        status: SubscriptionStatus.EXPIRED,
-        graceEndsAt: null,
       })
     })
 

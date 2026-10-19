@@ -156,19 +156,6 @@ describe('SubscriptionService', () => {
         expect(repository.upsert.firstCall.args[0].status).to.equal(SubscriptionStatus.PAST_DUE)
       })
 
-      it('expires a cancelled subscription without grace', async () => {
-        repository.findPeriodEnded
-          .onFirstCall()
-          .resolves([subscription({ currentPeriodEnd: at(-DAY), cancelAtPeriodEnd: true })])
-
-        await service.processLifecycle(NOW)
-
-        expect(repository.upsert.firstCall.args[0]).to.include({
-          status: SubscriptionStatus.EXPIRED,
-          graceEndsAt: null,
-        })
-      })
-
       it('leaves a subscription whose plan was removed from the settings alone', async () => {
         repository.findPeriodEnded.onFirstCall().resolves([subscription({ planId: 'retired' })])
 
@@ -179,15 +166,13 @@ describe('SubscriptionService', () => {
 
     describe('grace expiry', () => {
       it('expires a subscription whose grace period is over', async () => {
-        repository.findGraceEnded
-          .onFirstCall()
-          .resolves([
-            subscription({
-              status: SubscriptionStatus.PAST_DUE,
-              currentPeriodEnd: at(-5 * DAY),
-              graceEndsAt: at(-DAY),
-            }),
-          ])
+        repository.findGraceEnded.onFirstCall().resolves([
+          subscription({
+            status: SubscriptionStatus.PAST_DUE,
+            currentPeriodEnd: at(-5 * DAY),
+            graceEndsAt: at(-DAY),
+          }),
+        ])
 
         expect(await service.processLifecycle(NOW)).to.equal(1)
 
@@ -262,36 +247,6 @@ describe('SubscriptionService', () => {
       await service.processLifecycle(NOW)
 
       expect(calls).to.deep.equal(['ended', 'grace', 'renewal'])
-    })
-  })
-
-  describe('cancel', () => {
-    it('stops renewal and keeps the status, since access lasts to the period end', async () => {
-      repository.findByPubkey.resolves(subscription())
-
-      expect(await service.cancel(PUBKEY)).to.equal(true)
-
-      expect(repository.upsert.firstCall.args[0]).to.include({
-        status: SubscriptionStatus.ACTIVE,
-        cancelAtPeriodEnd: true,
-      })
-    })
-
-    it('returns false when the user has no subscription', async () => {
-      expect(await service.cancel(PUBKEY)).to.equal(false)
-      expect(repository.upsert).not.to.have.been.called
-    })
-
-    it('returns false for an expired subscription', async () => {
-      repository.findByPubkey.resolves(subscription({ status: SubscriptionStatus.EXPIRED }))
-
-      expect(await service.cancel(PUBKEY)).to.equal(false)
-    })
-
-    it('returns false for a subscription that never ends, since there is nothing to stop', async () => {
-      repository.findByPubkey.resolves(subscription({ planId: 'grandfathered', currentPeriodEnd: null }))
-
-      expect(await service.cancel(PUBKEY)).to.equal(false)
     })
   })
 })
