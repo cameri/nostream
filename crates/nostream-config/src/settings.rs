@@ -11,6 +11,8 @@
 //! rejecting unknown keys is the shape validator's job (`crate::validate`), and the typed
 //! parse runs only after validation.
 
+use std::collections::BTreeMap;
+
 use nostream_core::{EventStoreBackend, Filter, KindSelector, Secret, SettingsPubkey};
 use serde::{Deserialize, Serialize};
 
@@ -509,13 +511,68 @@ pub struct PaymentsProcessors {
     pub nwc: Option<NwcPaymentsProcessor>,
 }
 
+/// A mirror's subscription filter (`src/@types/settings.ts` `mirroring.static[].filters`,
+/// typed there as `SubscriptionFilter`, whose `kinds` admits `EventKinds | EventKindsRange`).
+///
+/// The capture never validates a mirror filter (`src/utils/settings-config.ts` has no filter
+/// rule), so a document such as `kinds: [[10000, 19999]]` loads there and loaded here before
+/// the wire `Filter` narrowed `kinds` to numbers (spec D4). This type keeps that acceptance
+/// at the settings edge; [`SettingsFilter::into_filter`] crosses to the wire type at use.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsFilter {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kinds: Option<Vec<KindSelector>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,
+    #[serde(flatten)]
+    pub tags: BTreeMap<String, Vec<String>>,
+}
+
+impl SettingsFilter {
+    /// The wire [`Filter`] this settings entry stands for.
+    ///
+    /// A range element is dropped rather than widened: the capture's in-memory matcher
+    /// compared kinds with `Array.includes` on numbers (`src/utils/event.ts:64`), so a range
+    /// element never matched an event there either, and the wire type cannot hold one.
+    pub fn into_filter(self) -> Filter {
+        Filter {
+            ids: self.ids,
+            kinds: self.kinds.map(|kinds| {
+                kinds
+                    .into_iter()
+                    .filter_map(|selector| match selector {
+                        KindSelector::Single(kind) => Some(kind),
+                        KindSelector::Range(_) => None,
+                    })
+                    .collect()
+            }),
+            since: self.since,
+            until: self.until,
+            authors: self.authors,
+            limit: self.limit,
+            search: self.search,
+            tags: self.tags,
+        }
+    }
+}
+
 /// A mirror whose events are replicated (`src/@types/settings.ts` `Mirror`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Mirror {
     pub address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub filters: Option<Vec<Filter>>,
+    pub filters: Option<Vec<SettingsFilter>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret: Option<Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
