@@ -9,6 +9,33 @@ pub enum StorageError {
     #[error("not implemented in Phase 1 (job 005): {module}")]
     NotImplemented { module: &'static str },
 
+    /// A database operation failed. The driver's message names the statement class for an
+    /// operator; callers must not match on its text.
+    #[error("database operation failed: {0}")]
+    Database(#[from] sqlx::Error),
+
+    /// The embedded migrator could not apply the schema.
+    #[error("database migration failed: {0}")]
+    Migration(#[from] sqlx::migrate::MigrateError),
+
+    /// A caller violated a repository precondition.
+    #[error("invalid argument: {message}")]
+    InvalidArgument { message: &'static str },
+
+    /// A column held a value the row type cannot represent, such as an unknown enum
+    /// spelling or a malformed tag document.
+    #[error("{table}.{column} holds a value the row type cannot represent: {value}")]
+    InvalidRow {
+        table: &'static str,
+        column: &'static str,
+        value: String,
+    },
+
+    /// An integer column held a value outside its Rust range (a negative kind, an id that
+    /// is not 32 bytes).
+    #[error("{column} is out of range: {value}")]
+    ValueOutOfRange { column: &'static str, value: String },
+
     /// An LMDB environment or transaction failed.
     #[error("lmdb operation failed: {0}")]
     Lmdb(#[from] heed::Error),
@@ -37,4 +64,53 @@ pub enum StorageError {
     /// (`src/utils/event-store.ts` `Unsupported ${source} "${value}"`).
     #[error("Unsupported {env} \"{value}\". Supported backends: postgres, lmdb")]
     UnsupportedBackend { value: String, env: &'static str },
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::panic)]
+
+    use super::*;
+
+    #[test]
+    fn an_invalid_row_names_its_column_and_value() {
+        let error = StorageError::InvalidRow {
+            table: "invoices",
+            column: "status",
+            value: "refunded".to_owned(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "invoices.status holds a value the row type cannot represent: refunded"
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_value_names_the_column() {
+        let error = StorageError::ValueOutOfRange {
+            column: "event_kind",
+            value: "-1".to_owned(),
+        };
+        assert_eq!(error.to_string(), "event_kind is out of range: -1");
+    }
+
+    #[test]
+    fn an_invalid_argument_carries_the_capture_message() {
+        let error = StorageError::InvalidArgument {
+            message: "Filters cannot be empty",
+        };
+        assert_eq!(
+            error.to_string(),
+            "invalid argument: Filters cannot be empty"
+        );
+    }
+
+    #[test]
+    fn a_database_error_keeps_the_drivers_message() {
+        let error = StorageError::from(sqlx::Error::RowNotFound);
+        assert_eq!(
+            error.to_string(),
+            "database operation failed: no rows returned by a query that expected to return at least one row"
+        );
+    }
 }
