@@ -13,6 +13,30 @@ pub enum CoreError {
     #[error("invalid event: {0}")]
     InvalidEvent(String),
 
+    /// The event's signature does not verify over its id.
+    #[error("invalid signature")]
+    InvalidSignature,
+
+    /// `created_at` is farther ahead of the reference time than the relay allows
+    /// (`src/handlers/event-message-handler.ts:204-212`).
+    #[error("rejected: created_at is more than {delta} seconds in the future")]
+    CreatedAtInFuture { delta: i64 },
+
+    /// `created_at` is farther behind the reference time than the relay allows
+    /// (`src/handlers/event-message-handler.ts:214-218`).
+    #[error("rejected: created_at is more than {delta} seconds in the past")]
+    CreatedAtInPast { delta: i64 },
+
+    /// A NIP-44 payload failed its version, size, padding or MAC check. The message is
+    /// the capture's, verbatim (`src/utils/nip44.ts:116-150`).
+    #[error("{0}")]
+    InvalidNip44(String),
+
+    /// NIP-77 storage could not be built from the items offered (negative or
+    /// out-of-range `created_at`, or a set the storage refused).
+    #[error("invalid negentropy storage: {0}")]
+    InvalidNegentropyStorage(String),
+
     /// A wire frame could not be decoded into a known message.
     #[error("invalid message: {0}")]
     InvalidMessage(String),

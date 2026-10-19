@@ -11,7 +11,9 @@
 //! rejecting unknown keys is the shape validator's job (`crate::validate`), and the typed
 //! parse runs only after validation.
 
-use nostream_core::{EventStoreBackend, Filter, KindSelector, Pubkey, Secret};
+use std::collections::BTreeMap;
+
+use nostream_core::{EventStoreBackend, Filter, KindSelector, Secret, SettingsPubkey};
 use serde::{Deserialize, Serialize};
 
 use crate::notifications::AdminNotificationsSettings;
@@ -110,9 +112,9 @@ pub struct PubkeyLimits {
     pub min_balance: i64,
     pub min_leading_zero_bits: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub whitelist: Option<Vec<Pubkey>>,
+    pub whitelist: Option<Vec<SettingsPubkey>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub blacklist: Option<Vec<Pubkey>>,
+    pub blacklist: Option<Vec<SettingsPubkey>>,
 }
 
 /// A rate limit with kind selectors (`src/@types/settings.ts` `EventRateLimit`).
@@ -170,7 +172,7 @@ pub enum ContentLimitsOrVec {
 #[serde(rename_all = "camelCase")]
 pub struct EventWhitelists {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pubkeys: Option<Vec<Pubkey>>,
+    pub pubkeys: Option<Vec<SettingsPubkey>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip_addresses: Option<Vec<String>>,
 }
@@ -186,7 +188,7 @@ pub struct EventRetentionKindLimits {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventRetentionPubkeyLimits {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub whitelist: Option<Vec<Pubkey>>,
+    pub whitelist: Option<Vec<SettingsPubkey>>,
 }
 
 /// `limits.event.retention` (`src/@types/settings.ts` `EventRetentionLimits`).
@@ -385,7 +387,7 @@ pub struct EventStoreSettings {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeeScheduleWhitelists {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pubkeys: Option<Vec<Pubkey>>,
+    pub pubkeys: Option<Vec<SettingsPubkey>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_kinds: Option<Vec<KindSelector>>,
 }
@@ -509,13 +511,83 @@ pub struct PaymentsProcessors {
     pub nwc: Option<NwcPaymentsProcessor>,
 }
 
+/// A mirror's subscription filter (`src/@types/settings.ts` `mirroring.static[].filters`,
+/// typed there as `SubscriptionFilter`).
+///
+/// The declared type is numbers-only — `kinds?: (EventKinds | number)[]`
+/// (`src/@types/subscription.ts:8`); `EventKindsRange` types the *settings* criteria instead
+/// (limit and NIP-42 among them, `src/@types/settings.ts:46,49,83,429`). What keeps
+/// `KindSelector` here is that the capture never
+/// validates a mirror filter: `validateShape` returns when the schema for a sequence is empty
+/// (`src/utils/settings-config.ts:202-204`) and the shipped defaults carry
+/// `mirroring.static: []` (`resources/default-settings.yaml:168-169`), so a document such as
+/// `kinds: [[10000, 19999]]` is an unvalidated runtime value that loads. The wire `Filter`
+/// narrowed `kinds` to numbers (spec D4); this type keeps the loader's acceptance, and the
+/// two paths a mirror filter takes are spelled out on
+/// [`SettingsFilter::into_matcher_filter`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsFilter {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kinds: Option<Vec<KindSelector>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,
+    #[serde(flatten)]
+    pub tags: BTreeMap<String, Vec<String>>,
+}
+
+impl SettingsFilter {
+    /// The crossing for **local matching only**: the wire [`Filter`] that `Filter::matches`
+    /// takes.
+    ///
+    /// A range element is dropped rather than widened, because the capture's in-memory
+    /// matcher compared kinds with `Array.includes` on numbers (`src/utils/event.ts:64`), so a
+    /// range element never matched an event there either.
+    ///
+    /// This is **not** the crossing for the outbound subscription. The mirror worker forwards
+    /// the settings filter verbatim, injecting only `since`
+    /// (`src/app/static-mirroring-worker.ts:72-77`), and `createSubscriptionMessage`
+    /// serialises it without validating (`src/utils/messages.ts:53-58`), so a range element
+    /// reaches the peer as `kinds: [[10000, 19999]]`. Serialising `Filter` there would send
+    /// `kinds: []` instead, which the capture never sends; that path serialises this type.
+    pub fn into_matcher_filter(self) -> Filter {
+        Filter {
+            ids: self.ids,
+            kinds: self.kinds.map(|kinds| {
+                kinds
+                    .into_iter()
+                    .filter_map(|selector| match selector {
+                        KindSelector::Single(kind) => Some(kind),
+                        KindSelector::Range(_) => None,
+                    })
+                    .collect()
+            }),
+            since: self.since,
+            until: self.until,
+            authors: self.authors,
+            limit: self.limit,
+            search: self.search,
+            tags: self.tags,
+        }
+    }
+}
+
 /// A mirror whose events are replicated (`src/@types/settings.ts` `Mirror`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Mirror {
     pub address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub filters: Option<Vec<Filter>>,
+    pub filters: Option<Vec<SettingsFilter>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret: Option<Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -632,7 +704,7 @@ pub struct Nip05Settings {
 pub struct AdminNip98Settings {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub allowed_pubkeys: Option<Vec<Pubkey>>,
+    pub allowed_pubkeys: Option<Vec<SettingsPubkey>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_skew_seconds: Option<i64>,
 }
@@ -659,7 +731,7 @@ pub struct AdminSettings {
 #[serde(rename_all = "camelCase")]
 pub struct WotSettings {
     pub enabled: bool,
-    pub seed_pubkey: Pubkey,
+    pub seed_pubkey: SettingsPubkey,
     pub minimum_followers: u32,
     pub max_depth: u32,
     pub refresh_interval_hours: u64,
@@ -697,7 +769,7 @@ pub struct Nip43Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_invite_requests: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub invite_request_whitelist: Option<Vec<Pubkey>>,
+    pub invite_request_whitelist: Option<Vec<SettingsPubkey>>,
 }
 
 /// `nip56` (`src/@types/settings.ts` `Nip56Settings`).
@@ -705,7 +777,7 @@ pub struct Nip43Settings {
 #[serde(rename_all = "camelCase")]
 pub struct Nip56Settings {
     pub enabled: bool,
-    pub trusted_moderators: Vec<Pubkey>,
+    pub trusted_moderators: Vec<SettingsPubkey>,
     pub hide_actionable_reports: bool,
 }
 

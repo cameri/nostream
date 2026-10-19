@@ -6,7 +6,7 @@
 //! here. Methods are async and return `Result<_, StorageError>`, which is the one part of the
 //! TS boundary (`IQueryResult` extends `Promise`) that ports cleanly to tokio.
 
-use nostream_core::{EventId, Kind, Pubkey};
+use nostream_core::{EventId, Kind, Pubkey, SettingsPubkey};
 
 use std::future::Future;
 use std::pin::Pin;
@@ -27,7 +27,7 @@ pub struct EventPurgeCounts {
 pub struct EventRetentionOptions {
     pub max_days: Option<i64>,
     pub kind_whitelist: Option<Vec<Kind>>,
-    pub pubkey_whitelist: Option<Vec<Pubkey>>,
+    pub pubkey_whitelist: Option<Vec<SettingsPubkey>>,
 }
 
 /// Event storage (`src/@types/repositories.ts` `IEventRepository`).

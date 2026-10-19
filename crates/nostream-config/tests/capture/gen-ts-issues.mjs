@@ -21,8 +21,15 @@ import path from 'node:path'
 
 const cwd = process.cwd()
 const settingsModule = path.join(cwd, 'src/utils/settings-config.ts')
-if (!existsSync(settingsModule) || !existsSync(path.join(cwd, 'resources/default-settings.yaml'))) {
-  console.error(`run this from the capture tree (cwd=${cwd}); src/utils/settings-config.ts or resources/default-settings.yaml is missing`)
+// A capture tree is the TypeScript-only tree at `242a3001`; `crates/` arrives with the Rust
+// workspace, so its presence means this is the rewrite checkout. Both files below exist in
+// that checkout too, and measuring it would grade the rewrite against itself.
+const isCaptureTree =
+  existsSync(settingsModule) &&
+  existsSync(path.join(cwd, 'resources/default-settings.yaml')) &&
+  !existsSync(path.join(cwd, 'crates'))
+if (!isCaptureTree) {
+  console.error(`run this from the capture tree (cwd=${cwd}); src/utils/settings-config.ts and resources/default-settings.yaml must exist, and crates/ must not`)
   process.exit(2)
 }
 

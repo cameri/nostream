@@ -12,24 +12,38 @@
 //! - `src/utils/adaptive-pow.ts`, `src/utils/compression.ts`, `src/utils/event.ts`,
 //!   `src/utils/filter.ts`, `src/utils/geohash.ts`, `src/utils/html.ts`,
 //!   `src/utils/http.ts`, `src/utils/messages.ts`, `src/utils/misc.ts`,
-//!   `src/utils/negentropy.ts`, `src/utils/negentropy-sessions.ts`, `src/utils/nip03.ts`,
+//!   `src/utils/negentropy.ts`, `src/utils/nip03.ts`,
 //!   `src/utils/nip05.ts`, `src/utils/nip25.ts`, `src/utils/nip42.ts`,
 //!   `src/utils/nip42-session.ts`, `src/utils/nip43.ts`, `src/utils/nip43-invites.ts`,
 //!   `src/utils/nip44.ts`, `src/utils/nip56.ts`, `src/utils/nip65.ts`,
 //!   `src/utils/nip66-events.ts`, `src/utils/nip66-nip11-tags.ts`,
-//!   `src/utils/nip66-schedule.ts`, `src/utils/nip77.ts`, `src/utils/nip98.ts`,
+//!   `src/utils/nip66-schedule.ts`, `src/utils/nip98.ts`,
 //!   `src/utils/nip98-replay.ts`, `src/utils/proof-of-work.ts`,
 //!   `src/utils/report-scoring.ts`, `src/utils/secret.ts`, `src/utils/shutdown-state.ts`,
 //!   `src/utils/stream.ts`, `src/utils/template-cache.ts`, `src/utils/transform.ts`,
 //!   `src/utils/validation.ts`, `src/utils/wot-pow-policy.ts`
 //!
-//! Phase 1 (job 005) carries the type surfaces and labelled stubs only. Every function that
-//! needs real behaviour returns `CoreError::NotImplemented`; nothing here is a partial port.
+//! Implemented here, against those files: the 32-byte `EventId`/`Pubkey` and 64-byte
+//! `Signature` with the schema's hex rules in the type, the canonical serialization and
+//! SHA-256 event id, BIP-340 Schnorr verification and signing, the NIP-01 filter matcher
+//! and the zod filter schema's rules, subscription normalisation, NIP-13 difficulty,
+//! NIP-40 expiration, NIP-44 v2, and the NIP-77 reconciliation engine (over the
+//! `negentropy` crate; see `negentropy.rs` for the seam and its divergences).
 //!
-//! Phase 2+ areas this crate deliberately does not own: signature verification and event-id
-//! hashing stay stubs until the crypto dependency choice (`secp256k1` vs `k256`, schnorr) is
-//! recorded; the negentropy protocol engine and the NIP-77 wire state machine belong to
-//! `nostream-relay` once a real transport exists.
+//! What is still a stub is marked as such on the item and returns
+//! `CoreError::NotImplemented`: the NIP frames, the event acceptance gate's validator, and
+//! the adaptive-difficulty policy.
+//!
+//! Phase 2+ areas this crate deliberately does not own: the NIP-77 wire state machine and
+//! its `NEG-OPEN`/`NEG-MSG`/`NEG-CLOSE` frame encoder belong to `nostream-relay` once a real
+//! transport exists — the file those frames are described in, `src/utils/nip77.ts`, does
+//! not exist at the capture (it appears at the porting oracle `041fe34e`), and neither does
+//! `src/utils/negentropy-sessions.ts`; the stored-query path (Postgres full-text search and
+//! `EXISTS`-per-tag SQL) is `nostream-storage`'s. The event acceptance gate's *policy* is
+//! `nostream-relay`'s — the kind-specific tag rules, which `created_at` deltas apply, and
+//! where the check is called; the pure predicate those rules call,
+//! [`time::check_created_at`], is this crate's, and so is the `created_at` window arithmetic
+//! it carries.
 
 pub mod adaptive_pow;
 pub mod constants;
@@ -37,6 +51,7 @@ pub mod crypto;
 pub mod error;
 pub mod event;
 pub mod event_store;
+pub mod expiration;
 pub mod filter;
 pub mod geohash;
 pub mod lifecycle;
@@ -54,14 +69,18 @@ pub mod nip66;
 pub mod nip77;
 pub mod nip98;
 pub mod pow;
+pub mod replaceable;
 pub mod report_scoring;
 pub mod secret;
+pub mod time;
 pub mod validation;
 
 pub use error::CoreError;
-pub use event::{Event, EventId, Kind, KindSelector, Pubkey};
+pub use event::{
+    CanonicalEvent, Event, EventId, Kind, KindSelector, Pubkey, SettingsPubkey, Signature, Tag,
+};
 pub use event_store::EventStoreBackend;
-pub use filter::Filter;
+pub use filter::{Filter, FilterIssue};
 pub use lifecycle::ShutdownState;
 pub use messages::{ClientMessage, RelayMessage};
 pub use secret::Secret;
