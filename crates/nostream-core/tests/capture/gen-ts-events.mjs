@@ -33,10 +33,20 @@ const NEGATIVE_COUNT = 50
 const BASE_TIMESTAMP = 1700000000
 const WINDOW = 1000000
 
+// A capture tree is the TypeScript-only tree at `242a3001`: the Rust workspace does not
+// exist there yet (`crates/` arrives at `ed31da2`), so its presence means this is the
+// rewrite checkout, whose `src/` is a different tree and whose decisions would be graded
+// as the capture's.
 const cwd = process.cwd()
 const eventModule = path.join(cwd, 'src/utils/event.ts')
-if (!existsSync(eventModule) || !existsSync(path.join(cwd, 'package.json'))) {
-  console.error(`run this from the capture tree (cwd=${cwd}); src/utils/event.ts is missing`)
+const isCaptureTree =
+  existsSync(eventModule) &&
+  existsSync(path.join(cwd, 'package.json')) &&
+  !existsSync(path.join(cwd, 'crates'))
+if (!isCaptureTree) {
+  console.error(
+    `run this from a capture tree (cwd=${cwd}); src/utils/event.ts must exist and crates/ must not`,
+  )
   process.exit(2)
 }
 
