@@ -9,9 +9,11 @@
 //   git archive 242a3001 | tar -x -C /tmp/nostream-capture-006
 //   cd /tmp/nostream-capture-006 && pnpm install --frozen-lockfile
 //
-// Run, from the capture tree, with this file's absolute path:
+// Run, from the capture tree, with this file's absolute path and an absolute output path —
+// relative paths would resolve against the capture tree, not the worktree:
 //   cd /tmp/nostream-capture-006
-//   node <this file> > ../fixtures/ts-events.json
+//   node /path/to/nostream/crates/nostream-core/tests/capture/gen-ts-events.mjs \
+//     > /path/to/nostream/crates/nostream-core/tests/fixtures/ts-events.json
 //
 // The measurement is deterministic: the sample comes from a fixed PRNG seed, and every
 // signature uses `aux = sha256("nostream-006:" + index)` rather than the capture's
