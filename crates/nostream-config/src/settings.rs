@@ -11,7 +11,7 @@
 //! rejecting unknown keys is the shape validator's job (`crate::validate`), and the typed
 //! parse runs only after validation.
 
-use nostream_core::{EventStoreBackend, Filter, KindSelector, Pubkey, Secret};
+use nostream_core::{EventStoreBackend, Filter, KindSelector, Secret, SettingsPubkey};
 use serde::{Deserialize, Serialize};
 
 use crate::notifications::AdminNotificationsSettings;
@@ -110,9 +110,9 @@ pub struct PubkeyLimits {
     pub min_balance: i64,
     pub min_leading_zero_bits: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub whitelist: Option<Vec<Pubkey>>,
+    pub whitelist: Option<Vec<SettingsPubkey>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub blacklist: Option<Vec<Pubkey>>,
+    pub blacklist: Option<Vec<SettingsPubkey>>,
 }
 
 /// A rate limit with kind selectors (`src/@types/settings.ts` `EventRateLimit`).
@@ -170,7 +170,7 @@ pub enum ContentLimitsOrVec {
 #[serde(rename_all = "camelCase")]
 pub struct EventWhitelists {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pubkeys: Option<Vec<Pubkey>>,
+    pub pubkeys: Option<Vec<SettingsPubkey>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip_addresses: Option<Vec<String>>,
 }
@@ -186,7 +186,7 @@ pub struct EventRetentionKindLimits {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventRetentionPubkeyLimits {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub whitelist: Option<Vec<Pubkey>>,
+    pub whitelist: Option<Vec<SettingsPubkey>>,
 }
 
 /// `limits.event.retention` (`src/@types/settings.ts` `EventRetentionLimits`).
@@ -385,7 +385,7 @@ pub struct EventStoreSettings {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeeScheduleWhitelists {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pubkeys: Option<Vec<Pubkey>>,
+    pub pubkeys: Option<Vec<SettingsPubkey>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_kinds: Option<Vec<KindSelector>>,
 }
@@ -632,7 +632,7 @@ pub struct Nip05Settings {
 pub struct AdminNip98Settings {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub allowed_pubkeys: Option<Vec<Pubkey>>,
+    pub allowed_pubkeys: Option<Vec<SettingsPubkey>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_skew_seconds: Option<i64>,
 }
@@ -659,7 +659,7 @@ pub struct AdminSettings {
 #[serde(rename_all = "camelCase")]
 pub struct WotSettings {
     pub enabled: bool,
-    pub seed_pubkey: Pubkey,
+    pub seed_pubkey: SettingsPubkey,
     pub minimum_followers: u32,
     pub max_depth: u32,
     pub refresh_interval_hours: u64,
@@ -697,7 +697,7 @@ pub struct Nip43Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_invite_requests: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub invite_request_whitelist: Option<Vec<Pubkey>>,
+    pub invite_request_whitelist: Option<Vec<SettingsPubkey>>,
 }
 
 /// `nip56` (`src/@types/settings.ts` `Nip56Settings`).
@@ -705,7 +705,7 @@ pub struct Nip43Settings {
 #[serde(rename_all = "camelCase")]
 pub struct Nip56Settings {
     pub enabled: bool,
-    pub trusted_moderators: Vec<Pubkey>,
+    pub trusted_moderators: Vec<SettingsPubkey>,
     pub hide_actionable_reports: bool,
 }
 
