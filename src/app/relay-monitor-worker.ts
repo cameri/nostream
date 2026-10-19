@@ -1,4 +1,5 @@
 import { ICacheAdapter } from '../@types/adapters'
+import { AdminOpsWorkerHeartbeat } from '../@types/admin-ops'
 import { IRunnable } from '../@types/base'
 import { IRelayProbeSnapshotStore, RelayProbeRunSnapshot } from '../@types/relay-probe-snapshot'
 import { Settings } from '../@types/settings'
@@ -35,10 +36,16 @@ export const buildProbeOptions = (settings: Settings): ProbeOptions => {
 
 export { getProbeIntervalMs } from '../utils/nip66-schedule'
 
+type RelayMonitorOpsHeartbeatFields = Pick<
+  AdminOpsWorkerHeartbeat,
+  'lastRunStartedAt' | 'lastRunFinishedAt' | 'lastError'
+>
+
 export class RelayMonitorWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
   private opsKeepaliveInterval: NodeJS.Timeout | undefined
   private isRunning = false
+  private lastOpsWorkerHeartbeat: RelayMonitorOpsHeartbeatFields = {}
 
   public constructor(
     private readonly process: NodeJS.Process,
@@ -76,12 +83,21 @@ export class RelayMonitorWorker implements IRunnable {
 
     if (this.opsCache) {
       this.opsKeepaliveInterval = setInterval(() => {
-        void publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
-          type: 'relay-monitor',
-          updatedAt: new Date().toISOString(),
-        })
+        this.publishOpsKeepalive()
       }, ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS)
     }
+  }
+
+  private publishOpsKeepalive(): void {
+    if (!this.opsCache || this.lastOpsWorkerHeartbeat.lastRunStartedAt === undefined) {
+      return
+    }
+
+    void publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
+      type: 'relay-monitor',
+      updatedAt: new Date().toISOString(),
+      ...this.lastOpsWorkerHeartbeat,
+    })
   }
 
   private async runScheduledProbes(): Promise<void> {
@@ -101,19 +117,20 @@ export class RelayMonitorWorker implements IRunnable {
     }
   }
 
-  private async publishOpsHeartbeat(partial: {
-    lastRunStartedAt?: string
-    lastRunFinishedAt?: string
-    lastError?: string
-  }): Promise<void> {
+  private async publishOpsHeartbeat(partial: RelayMonitorOpsHeartbeatFields): Promise<void> {
     if (!this.opsCache) {
       return
+    }
+
+    this.lastOpsWorkerHeartbeat = {
+      ...this.lastOpsWorkerHeartbeat,
+      ...partial,
     }
 
     await publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
       type: 'relay-monitor',
       updatedAt: new Date().toISOString(),
-      ...partial,
+      ...this.lastOpsWorkerHeartbeat,
     })
   }
 
