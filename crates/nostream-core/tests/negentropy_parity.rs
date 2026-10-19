@@ -31,9 +31,14 @@
 //!    range`** — not in D8's table. The capture's port tracks `writtenUpTo`
 //!    (`src/utils/negentropy.ts:313-317`) and answers `fingerprint(120, 160)`; the crate
 //!    passes the *current range's* `upper` to the trailing fingerprint
-//!    (`lib.rs`, `reconcile_aux`), so it answers `fingerprint(160, 160)`. The session still
-//!    converges, in an extra round; `src/utils/negentropy.ts`'s own comment says why the
-//!    capture changed this. Recorded in ADR 0002 and build.md as a revisit trigger.
+//!    (`lib.rs`, `reconcile_aux`), so it answers `fingerprint(160, 160)`. The trailing
+//!    fingerprint is the input to the peer's next comparison, so the range is re-offered and
+//!    the session can still converge; what is pinned here is the *difference* in that
+//!    fingerprint, and what is pinned next door
+//!    (`still_converges_when_several_mismatched_ranges_are_cut_by_the_frame_limit`) is a
+//!    different frame shape converging under the same limit. No test drives this exact
+//!    message to convergence. `src/utils/negentropy.ts`'s own comment says why the capture
+//!    changed this; recorded in ADR 0002 and build.md as a revisit trigger.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
