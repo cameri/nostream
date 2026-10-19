@@ -45,6 +45,32 @@ fn payload_len(payload: &str) -> usize {
     STANDARD.decode(payload).unwrap().len()
 }
 
+/// Re-encodes a payload so that the last base64 data character differs only in the bits the
+/// final group does not carry, as a lenient decoder permits (`Buffer.from` ignores them).
+fn flip_unused_trailing_bits(payload: &str) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let mut characters: Vec<u8> = payload.bytes().collect();
+    let padding = characters
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'=')
+        .count();
+    assert!(
+        padding == 1 || padding == 2,
+        "a final group with unused bits"
+    );
+    let index = characters.len() - padding - 1;
+    let value = ALPHABET
+        .iter()
+        .position(|byte| *byte == characters[index])
+        .expect("a base64 data character");
+
+    characters[index] = ALPHABET[value ^ 1];
+
+    String::from_utf8(characters).expect("the alphabet is ASCII")
+}
+
 // --- getConversationKey (3) --------------------------------------------------------------
 
 #[test]
@@ -305,6 +331,21 @@ fn returns_error_string_for_a_lenient_base64_payload_the_strict_engine_refuses()
         validate_payload(&canonical),
         Some("invalid decoded payload size".to_owned())
     );
+}
+
+#[test]
+fn decrypts_a_non_canonical_re_encoding_the_capture_decrypts() {
+    // Round-3 finding 1: the capture's `Buffer.from` is lenient on both sides, so a payload
+    // whose final group differs only in pad bits still validates *and* decrypts. `decrypt`
+    // must use the same engine as `validate_payload` or this answers `invalid data size`.
+    let key = conversation_key(1, 2);
+    let plaintext = "a".repeat(33);
+    let payload = encrypt(&plaintext, &key, &nonce(0)).unwrap();
+    let re_encoded = flip_unused_trailing_bits(&payload);
+
+    assert_ne!(re_encoded, payload);
+    assert_eq!(validate_payload(&re_encoded), None);
+    assert_eq!(decrypt(&re_encoded, &key).unwrap(), plaintext);
 }
 
 /// The capture's observation: layout is 1 (version) + 32 (nonce) + padded length + 2 that

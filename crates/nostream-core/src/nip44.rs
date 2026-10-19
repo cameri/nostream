@@ -100,7 +100,10 @@ pub fn decrypt(payload: &str, conversation_key: &[u8; 32]) -> Result<String, Cor
         return Err(invalid("invalid payload size"));
     }
 
-    let data = STANDARD
+    // The same engine `validate_payload` uses: the capture decodes both with Node's lenient
+    // `Buffer.from`, so this must not refuse a payload the validator accepts. The MAC is
+    // verified over the decoded bytes below, so the leniency cannot weaken it.
+    let data = LENIENT
         .decode(payload)
         .map_err(|_| invalid("invalid data size"))?;
 
