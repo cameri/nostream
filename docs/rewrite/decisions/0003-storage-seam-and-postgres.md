@@ -244,14 +244,18 @@ schema or SQL; the hunt for them belongs to the benchmark rig (follow-up 6).
 3. **A NIP-40 expiry past 2038 becomes reachable.** If a client can publish one, the
    `events.expires_at integer` limit reopens: either widen the column (knex-identical? no —
    the schema is the capture's) or clamp and record the divergence in the fixture.
-4. **The NIP-50 language changes at runtime.** The index is built with `simple`. The
-   migrations target EXPLAINs the *composer's* statement at the fixture's settings, so a
-   composer or schema change that stops matching the index fails that target. A deployment
-   that runs a different `nip50.language` is covered by the same guard through
-   `PARITY_NIP50_LANGUAGE`: `PARITY_NIP50_LANGUAGE=english cargo test -p nostream-storage
-   --test migrations -- --ignored` composes at that language and fails unless the index was
-   rebuilt with it. The switch is in `tests/common/mod.rs::settings_from_fixture`; editing
-   the fixture's override is the equivalent path.
+4. **The NIP-50 language changes at runtime.** The shipped index is built on
+   `to_tsvector('simple', event_content)`, and the migrations target asserts that the
+   composer's predicate is that exact expression before it EXPLAINs it. To see the
+   deployment's language, export it:
+   `PARITY_ADMIN_URL=postgres://…/postgres PARITY_NIP50_LANGUAGE=english cargo test -p
+   nostream-storage --test migrations -- --ignored --test-threads=1`. That run fails at the
+   indexed-expression assertion, naming the language it composed (`english`), because the
+   assertion names the shipped `simple` expression. A deployment that rebuilds
+   `events_content_fts_idx` for another language must re-run this guard against *its*
+   database and index; this target recreates and migrates its own scratch database, so it
+   cannot certify a rebuilt index. Do not derive the assertion from the settings: the
+   scratch index is `simple`, so a derived assertion would only move the failure.
 5. **The capture's own FTS miss is fixed upstream.** If the TypeScript starts inlining the
    configuration, the divergence above disappears; the fixture's compared values do not
    change (its `subject` block is regenerated, so the file itself does).

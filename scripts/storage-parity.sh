@@ -49,7 +49,6 @@ fi
 
 pg_container="nostream-parity-pg-$$"
 redis_container="nostream-parity-redis-$$"
-admin_url="postgres://postgres:$PARITY_PG_PASSWORD@$PARITY_HOST:$PARITY_PG_PORT/postgres"
 
 cleanup() {
     docker rm -f "$pg_container" "$redis_container" >/dev/null 2>&1 || true
@@ -71,11 +70,50 @@ unbracket() {
     esac
 }
 
-is_loopback() {
-    case "$(unbracket "$1")" in
-        127.*|localhost|::1) return 0 ;;
-        *) return 1 ;;
-    esac
+# Address parsing for both the bind and the daemon endpoint. Character matching cannot
+# decide this: Docker accepts dotted, shorthand (`0x7f.1`, `2130706433`) and IPv4-mapped
+# (`::ffff:0:0`) spellings. WHATWG URL canonicalises all of them (bracketing IPv6 first,
+# which the parser requires), so classify the canonical text. Prints
+# "<class> <url-host> <plain-host>"; class is wildcard, loopback, host or invalid.
+address_info() {
+    node -e '
+const net = require("node:net");
+const raw = process.argv[1];
+if (raw.toLowerCase() === "localhost") {
+  process.stdout.write("loopback localhost localhost");
+  process.exit(0);
+}
+const bare = raw.replace(/^\[|\]$/g, "");
+let host;
+try {
+  host = new URL("http://" + (bare.includes(":") ? "[" + bare + "]" : bare) + "/").hostname;
+} catch {
+  process.stdout.write("invalid - -");
+  process.exit(0);
+}
+const plain = host.replace(/^\[|\]$/g, "");
+const family = net.isIP(plain);
+if (family === 0) {
+  process.stdout.write("invalid - -");
+  process.exit(0);
+}
+const urlHost = family === 6 ? "[" + plain + "]" : plain;
+// An IPv4-mapped address is loopback when its first mapped octet is 127, i.e. the first
+// group after `::ffff:` is 0x7f00..0x7fff. A string prefix would also match 0x7f0/0x7ff.
+const mappedLoopback = (() => {
+  const match = /^::ffff:([0-9a-f]{1,4}):[0-9a-f]{1,4}$/.exec(plain);
+  if (!match) return false;
+  const group = parseInt(match[1], 16);
+  return group >= 0x7f00 && group <= 0x7fff;
+})();
+let cls = "host";
+if (plain === "::" || plain === "::ffff:0:0" || plain === "0.0.0.0") {
+  cls = "wildcard";
+} else if (plain === "::1" || mappedLoopback || plain.startsWith("127.")) {
+  cls = "loopback";
+}
+process.stdout.write(cls + " " + urlHost + " " + plain);
+' "$1"
 }
 
 # Only a TCP (or SSH) daemon endpoint can be on another machine. A unix socket, a bare
@@ -89,7 +127,7 @@ is_remote_daemon() {
                 \[*) daemon=${daemon#\[}; daemon=${daemon%%\]*} ;;
                 *) daemon=${daemon%%:*} ;;
             esac
-            ! is_loopback "$daemon"
+            [ "$(address_info "$daemon" | cut -d' ' -f1)" != "loopback" ]
             ;;
         *) return 1 ;;
     esac
@@ -97,25 +135,34 @@ is_remote_daemon() {
 
 # Preflight, before any container exists. A wildcard bind is never right, and a loopback
 # bind is right only for a daemon on this machine. No default guesses a daemon's address.
-bind_address=$(unbracket "$PARITY_BIND")
-case "$bind_address" in
-    0.0.0.0|'*')
+bind_info=$(address_info "$PARITY_BIND") \
+    || fail "PARITY_BIND=$PARITY_BIND could not be classified (node is required)"
+bind_class=${bind_info%% *}
+case "$bind_class" in
+    wildcard)
         fail "PARITY_BIND=$PARITY_BIND is a wildcard: publish on one address (127.0.0.1 for a local daemon, or the daemon host's reachable address)"
         ;;
-    *:*)
-        # Every spelling of the IPv6 wildcard is all-zero groups: `::`, `0::`, `::0000`,
-        # `0:0:0:0:0:0:0:0`. Any digit other than 0 (or a hex letter) means a real address.
-        case "$bind_address" in
-            *[!0:]*) ;;
-            *)
-                fail "PARITY_BIND=$PARITY_BIND is a wildcard: publish on one address (127.0.0.1 for a local daemon, or the daemon host's reachable address)"
-                ;;
-        esac
+    invalid)
+        fail "PARITY_BIND=$PARITY_BIND is not an IP address or localhost: publish on one address (127.0.0.1 for a local daemon, or the daemon host's reachable address)"
         ;;
 esac
-if is_loopback "$PARITY_BIND" && is_remote_daemon; then
+if [ "$bind_class" = "loopback" ] && is_remote_daemon; then
     fail "PARITY_BIND=$PARITY_BIND is this machine's loopback, but the Docker daemon is remote (DOCKER_HOST=$DOCKER_HOST): set PARITY_BIND and PARITY_HOST to an address the daemon host accepts and this machine can reach"
 fi
+
+# The dial host is canonicalised too: `admin_url` splices it raw, and an unbracketed IPv6 or
+# a shorthand IPv4 would not survive there. A hostname is used as written.
+host_info=$(address_info "$PARITY_HOST") \
+    || fail "PARITY_HOST=$PARITY_HOST could not be parsed (node is required)"
+host_class=${host_info%% *}
+if [ "$host_class" = "invalid" ]; then
+    host_url=$PARITY_HOST
+    host_plain=$(unbracket "$PARITY_HOST")
+else
+    host_url=$(printf '%s' "$host_info" | cut -d' ' -f2)
+    host_plain=$(printf '%s' "$host_info" | cut -d' ' -f3)
+fi
+admin_url="postgres://postgres:$PARITY_PG_PASSWORD@$host_url:$PARITY_PG_PORT/postgres"
 docker version >/dev/null 2>&1 \
     || fail "the Docker daemon at ${DOCKER_HOST:-/var/run/docker.sock} is not reachable"
 
@@ -136,7 +183,7 @@ printf '%s\n' "$redaction_output" | grep -q 'test result: ok. 1 passed' || {
 # variables instead of surfacing as a sqlx timeout later.
 probe_dial() {
     # The probe wants the address itself; URLs keep the bracketed IPv6 spelling.
-    node -e 'const net = require("net"); const s = net.connect({ host: process.argv[1], port: Number(process.argv[2]) }); s.setTimeout(3000); s.on("connect", () => { s.destroy(); process.exit(0) }); s.on("timeout", () => { s.destroy(); process.exit(1) }); s.on("error", () => process.exit(1))' "$(unbracket "$PARITY_HOST")" "$PARITY_PG_PORT"
+    node -e 'const net = require("net"); const s = net.connect({ host: process.argv[1], port: Number(process.argv[2]) }); s.setTimeout(3000); s.on("connect", () => { s.destroy(); process.exit(0) }); s.on("timeout", () => { s.destroy(); process.exit(1) }); s.on("error", () => process.exit(1))' "$host_plain" "$PARITY_PG_PORT"
 }
 
 wait_for_log() {
@@ -182,8 +229,8 @@ echo "== behavioural parity"
 echo "== cucumber on the sqlx-migrated schema"
 [ -x "$CUCUMBER_BIN" ] || fail "cucumber-js not found at $CUCUMBER_BIN"
 mkdir -p .test-reports/integration
-DB_URI="postgres://postgres:$PARITY_PG_PASSWORD@$PARITY_HOST:$PARITY_PG_PORT/nostream_parity_cucumber" \
-REDIS_URI="redis://:$PARITY_REDIS_PASSWORD@$PARITY_HOST:$PARITY_REDIS_PORT" \
+DB_URI="postgres://postgres:$PARITY_PG_PASSWORD@$host_url:$PARITY_PG_PORT/nostream_parity_cucumber" \
+REDIS_URI="redis://:$PARITY_REDIS_PASSWORD@$host_url:$PARITY_REDIS_PORT" \
 NODE_PATH="${NODE_PATH:-}" \
 TS_NODE_TRANSPILE_ONLY=true \
 NODE_OPTIONS=--no-experimental-strip-types \
