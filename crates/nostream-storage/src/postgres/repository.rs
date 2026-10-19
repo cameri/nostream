@@ -539,7 +539,7 @@ impl NotificationOutboxRepository for PostgresTransaction {
     fn claim_batch<'a>(&'a self, limit: u64) -> StorageFuture<'a, Vec<OutboxMessage>> {
         Box::pin(async move {
             with_transaction!(self, |transaction| {
-                notifications::claim_batch_in(&mut **transaction, limit).await
+                notifications::claim_batch_in(transaction, limit).await
             })
         })
     }

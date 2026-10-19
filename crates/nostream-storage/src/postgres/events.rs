@@ -394,7 +394,9 @@ fn push_upsert_values(args: &mut Args, record: &EventRecord) -> Result<String, S
         })?;
     let deduplication = args.push(Arg::Text(deduplication));
 
-    Ok(format!("{insert}, {deduplication}::jsonb, NULL"))
+    let insert = insert.strip_suffix(')').unwrap_or(&insert);
+    // The upsert tuple carries two more columns than the insert tuple.
+    Ok(format!("{insert}, {deduplication}::jsonb, NULL)"))
 }
 
 fn tags_json(record: &EventRecord) -> Result<String, StorageError> {

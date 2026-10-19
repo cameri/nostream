@@ -14,7 +14,7 @@ use crate::error::StorageError;
 const EVENT_COLUMNS: &str = "events.id::text AS id, events.event_id, events.event_pubkey, \
 events.event_kind, events.event_created_at, events.event_content, events.event_tags, \
 events.event_signature, events.first_seen, events.deleted_at, events.event_deduplication, \
-events.remote_address::text AS remote_address, events.expires_at";
+host(events.remote_address) AS remote_address, events.expires_at";
 
 /// One bind value. Values are owned by the query, so the stream that drains it borrows only
 /// the pool.

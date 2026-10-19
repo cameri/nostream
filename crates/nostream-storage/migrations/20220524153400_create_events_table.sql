@@ -1,6 +1,6 @@
 CREATE TABLE events (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    event_id bytea NOT NULL UNIQUE,
+    event_id bytea NOT NULL CONSTRAINT events_event_id_unique UNIQUE,
     event_pubkey bytea NOT NULL,
     event_kind integer NOT NULL,
     event_created_at integer NOT NULL,
