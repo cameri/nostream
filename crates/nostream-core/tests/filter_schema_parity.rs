@@ -471,3 +471,59 @@ fn nip12_rejects_multiple_wildcards() {
         &["#g[0]: Invalid geohash filter"],
     );
 }
+
+// --- round-2 findings: UTF-16 length units and the u64 representability edge -------------
+
+#[test]
+fn nip50_rejects_an_astral_search_string_longer_than_1024_utf16_units() {
+    // 600 emoji are 600 scalar values but 1200 UTF-16 code units, which is what zod counts.
+    assert_issues(
+        &json!({"search": "😀".repeat(600)}),
+        &["search: String must contain at most 1024 character(s)"],
+    );
+}
+
+#[test]
+fn accepts_an_astral_search_string_at_exactly_1024_utf16_units() {
+    assert_matches_input(&json!({"search": "😀".repeat(512)}));
+}
+
+#[test]
+fn rejects_an_astral_tag_criterion_longer_than_1024_utf16_units() {
+    assert_issues(
+        &json!({"#e": ["😀".repeat(513)]}),
+        &["#e[0]: String must contain at most 1024 character(s)"],
+    );
+}
+
+#[test]
+fn rejects_an_astral_prefix_longer_than_64_utf16_units() {
+    // 33 emoji are 66 UTF-16 units, over the 64-unit bound and under it in scalar values
+    // (33). They are not hex, so the regex issue comes first, as it does in zod.
+    assert_issues(
+        &json!({"ids": ["😀".repeat(33)]}),
+        &[
+            "ids[0]: Invalid",
+            "ids[0]: String must contain at most 64 character(s)",
+        ],
+    );
+}
+
+#[test]
+fn kinds_beyond_u64_are_refused_as_a_representability_divergence() {
+    // The capture accepts `kinds: [1e20]` (a JavaScript number); `Kind` is a `u64`, so the
+    // value cannot be held. This is a recorded divergence (ADR 0002), not a zod rule, and the
+    // message says so in its own words rather than imitating zod's phrasing.
+    let issues = issue_lines(&json!({"kinds": [1e20]}));
+
+    assert_eq!(issues, vec!["kinds[0]: kind value does not fit in 64 bits"]);
+    assert!(issue_lines(&json!({"kinds": [1e19]})).is_empty());
+}
+
+#[test]
+fn limit_beyond_u64_is_refused_as_a_representability_divergence() {
+    let issues = issue_lines(&json!({"limit": 1e20}));
+
+    assert_eq!(issues, vec!["limit: limit does not fit in 64 bits"]);
+    assert!(issue_lines(&json!({"limit": 1e19})).is_empty());
+}

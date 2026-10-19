@@ -211,7 +211,11 @@ impl fmt::Display for FilterIssue {
 ///
 /// The raw document is the input because the schema reports type errors ("Expected array,
 /// received null") against a path, which a serde deserialisation deeper in a frame parser
-/// cannot phrase. Every message is the one the capture's zod 3 schema emits, verbatim.
+/// cannot phrase. Every message is the one the capture's zod 3 schema emits, verbatim, with
+/// two exceptions that are representability, not validation: a `kinds` element or a `limit`
+/// above `u64::MAX` is accepted by the capture (JavaScript numbers) and cannot be held here,
+/// so those two messages say so in their own words (`kind value does not fit in 64 bits`,
+/// `limit does not fit in 64 bits`). Recorded in ADR 0002.
 pub fn validate_filter(value: &Value) -> Result<Filter, Vec<FilterIssue>> {
     let Some(object) = value.as_object() else {
         return Err(vec![FilterIssue {
@@ -354,7 +358,9 @@ fn validate_prefixes(
             valid = false;
         }
 
-        let length = text.chars().count();
+        // zod's `.min()`/`.max()` count UTF-16 code units, as `String.prototype.length` does:
+        // an astral character is two of them.
+        let length = text.encode_utf16().count();
 
         if length < 4 {
             issue(
@@ -418,14 +424,11 @@ fn validate_kinds(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
             continue;
         }
 
-        // The capture holds kinds as JavaScript numbers; `Kind` is a `u64`, so a value
-        // beyond it is refused here rather than silently saturated.
+        // Representability, not a zod rule: the capture holds kinds as JavaScript numbers
+        // and accepts any non-negative integer, while `Kind` is a `u64`. Refusing rather than
+        // saturating is a recorded divergence (ADR 0002), so the message says what it is.
         if number > u64::MAX as f64 {
-            issue(
-                &element,
-                "Number must be less than or equal to 18446744073709551615",
-                issues,
-            );
+            issue(&element, "kind value does not fit in 64 bits", issues);
         } else {
             kinds.push(Kind(number as u64));
         }
@@ -487,12 +490,10 @@ fn validate_limit(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
         return None;
     }
 
+    // See `validate_kinds`: `limit` is a `u64` here, while the capture accepts any
+    // non-negative integer. A recorded divergence, worded as such.
     if number > u64::MAX as f64 {
-        issue(
-            path,
-            "Number must be less than or equal to 18446744073709551615",
-            issues,
-        );
+        issue(path, "limit does not fit in 64 bits", issues);
         return None;
     }
 
@@ -506,7 +507,7 @@ fn validate_search(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> 
         return None;
     };
 
-    let length = text.chars().count();
+    let length = text.encode_utf16().count();
     let mut valid = true;
 
     if length < 1 {
@@ -546,7 +547,7 @@ fn validate_string_array(
             continue;
         };
 
-        if text.chars().count() > 1024 {
+        if text.encode_utf16().count() > 1024 {
             issue(
                 &element,
                 "String must contain at most 1024 character(s)",
