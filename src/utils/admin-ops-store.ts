@@ -87,12 +87,19 @@ export class AdminOpsStore {
 }
 
 let sharedStore: AdminOpsStore | undefined
+let sharedStoreCache: ICacheAdapter | undefined
 
 export const getAdminOpsStore = (cache: ICacheAdapter): AdminOpsStore => {
-  if (!sharedStore) {
+  if (!sharedStore || sharedStoreCache !== cache) {
     sharedStore = new AdminOpsStore(cache)
+    sharedStoreCache = cache
   }
   return sharedStore
+}
+
+export const resetAdminOpsStore = (): void => {
+  sharedStore = undefined
+  sharedStoreCache = undefined
 }
 
 const sanitizeMirrorHeartbeat = (state: AdminOpsMirrorHeartbeat): AdminOpsMirrorHeartbeat => ({

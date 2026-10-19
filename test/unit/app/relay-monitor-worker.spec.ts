@@ -11,7 +11,7 @@ import {
 } from '../../../src/app/relay-monitor-worker'
 import { ICacheAdapter } from '../../../src/@types/adapters'
 import { Settings } from '../../../src/@types/settings'
-import { ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS } from '../../../src/utils/admin-ops-store'
+import { ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS, resetAdminOpsStore } from '../../../src/utils/admin-ops-store'
 import * as metricsTelemetry from '../../../src/telemetry/metrics'
 import { ProbeResult } from '../../../src/utils/relay-probe/types'
 
@@ -55,6 +55,7 @@ describe('RelayMonitorWorker', () => {
     }) as ProbeResult
 
   beforeEach(() => {
+    resetAdminOpsStore()
     sandbox = Sinon.createSandbox()
     sandbox.stub(metricsTelemetry, 'shutdownMetricsTelemetry').resolves()
 
@@ -308,12 +309,14 @@ describe('RelayMonitorWorker', () => {
     await clock.tickAsync(0)
     await clock.tickAsync(0)
 
+    expect(workerPayloads.length).to.be.greaterThan(0)
     const afterFailure = JSON.parse(workerPayloads[workerPayloads.length - 1]!)
     expect(afterFailure.lastError).to.equal('Probe run produced no results')
 
     await clock.tickAsync(60_000)
     await clock.tickAsync(0)
 
+    expect(workerPayloads.length).to.be.greaterThan(1)
     const afterSuccess = JSON.parse(workerPayloads[workerPayloads.length - 1]!)
     expect(afterSuccess.lastError).to.equal(undefined)
     expect(afterSuccess.lastRunFinishedAt).to.be.a('string')
