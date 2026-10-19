@@ -283,6 +283,30 @@ fn pads_1024_bytes_to_1024_bytes() {
     assert_padded(1024, 1024);
 }
 
+// --- the lenient-base64 gap (round-2 finding 1) ------------------------------------------
+
+#[test]
+fn returns_error_string_for_a_lenient_base64_payload_the_strict_engine_refuses() {
+    // The capture's `Buffer.from(payload, 'base64')` decodes this to 97 bytes (non-canonical
+    // trailing bits in the final group), so `validateNip44Payload` answers
+    // `invalid decoded payload size`. The strict engine refuses it outright; the validating
+    // path must still refuse rather than answer `None` ("the format looks valid").
+    let lenient = format!("{}AB==", "A".repeat(128));
+
+    assert_eq!(lenient.len(), 132);
+    assert_eq!(
+        validate_payload(&lenient),
+        Some("invalid decoded payload size".to_owned())
+    );
+
+    // The control case decodes canonically to the same 97 bytes.
+    let canonical = format!("{}AA==", "A".repeat(128));
+    assert_eq!(
+        validate_payload(&canonical),
+        Some("invalid decoded payload size".to_owned())
+    );
+}
+
 /// The capture's observation: layout is 1 (version) + 32 (nonce) + padded length + 2 that
 /// the padded buffer occupies, 32 (MAC) last (`nip44.spec.ts:193-204`).
 fn assert_padded(unpadded_len: usize, expected_padded_len: usize) {

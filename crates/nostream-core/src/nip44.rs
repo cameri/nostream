@@ -8,7 +8,8 @@
 //! randomness is the relay's to supply (spec D13 for the clock, the same reasoning here).
 
 use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
+use base64::alphabet;
+use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig, STANDARD};
 use chacha20::ChaCha20;
 use chacha20::cipher::{KeyIvInit, StreamCipher};
 use hkdf::Hkdf;
@@ -36,6 +37,14 @@ const MAX_PAYLOAD_LENGTH: usize = 87_472;
 /// (`src/utils/nip44.ts:125-127`).
 const MIN_DATA_LENGTH: usize = 99;
 const MAX_DATA_LENGTH: usize = 65_603;
+
+/// The capture decodes with Node's lenient `Buffer.from(payload, 'base64')`, which ignores
+/// non-canonical trailing bits (`src/utils/nip44.ts:124`). The strict `STANDARD` engine
+/// refuses such a payload, and a refusal must never be read as "the format looks valid".
+const LENIENT: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+);
 
 /// Derives the conversation key (`getConversationKey`, `src/utils/nip44.ts:36-42`):
 /// HKDF-extract with the salt `nip44-v2` over the ECDH x-coordinate. The result is the same
@@ -143,7 +152,12 @@ pub fn validate_payload(payload: &str) -> Option<String> {
         return Some("payload is not valid base64".to_owned());
     }
 
-    let data = STANDARD.decode(payload).ok()?;
+    let data = match LENIENT.decode(payload) {
+        Ok(data) => data,
+        // Unreachable once the charset and length checks pass, but a decode failure must
+        // still be a refusal: `None` from this function means "the format looks valid".
+        Err(_) => return Some("payload is not valid base64".to_owned()),
+    };
 
     if data.len() < MIN_DATA_LENGTH || data.len() > MAX_DATA_LENGTH {
         return Some("invalid decoded payload size".to_owned());
