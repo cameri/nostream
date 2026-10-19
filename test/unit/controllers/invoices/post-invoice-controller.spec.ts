@@ -230,7 +230,9 @@ describe('PostInvoiceController', () => {
     })
     const planBody = { ...validBody, planId: 'basic' }
     const stubbedPaymentsService = () => ({
-      createInvoice: sinon.stub().resolves({ id: 'inv-ref-123', bolt11: 'lnbc1...', expiresAt: new Date('2030-01-01') }),
+      createInvoice: sinon
+        .stub()
+        .resolves({ id: 'inv-ref-123', bolt11: 'lnbc1...', expiresAt: new Date('2030-01-01') }),
     })
 
     it('creates an invoice for the plan price and tags it with the plan', async () => {
@@ -246,6 +248,26 @@ describe('PostInvoiceController', () => {
       expect(amount).to.equal(5000000n)
       expect(description).to.contain('basic')
       expect(planId).to.equal('basic')
+    })
+
+    it('keeps the chosen plan in the retry form of an expired invoice', async () => {
+      getTemplateStub.returns('{{plan_id_html}}')
+      const controller = makeController({ settings: plansSettings })
+      const res = makeRes()
+
+      await controller.handleRequest({ body: { ...validBody, planId: 'premium' } } as any, res)
+
+      expect(res.send).to.have.been.calledWith('premium')
+    })
+
+    it('leaves the plan empty in the retry form when no plan is configured', async () => {
+      getTemplateStub.returns('[{{plan_id_html}}]')
+      const controller = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest({ body: validBody } as any, res)
+
+      expect(res.send).to.have.been.calledWith('[]')
     })
 
     it('charges the price of the chosen plan', async () => {

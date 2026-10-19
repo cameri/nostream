@@ -1720,8 +1720,21 @@ describe('EventMessageHandler', () => {
         )
       })
 
+      it('admits a subscription that lapsed but is still within its grace, before the sweep has moved it on', async () => {
+        subscriptionFindByPubkeyStub.resolves(
+          subscription({
+            currentPeriodEnd: new Date(Date.now() - 1000),
+            graceEndsAt: new Date(Date.now() + 2 * DAY),
+          }),
+        )
+
+        await expect((handler as any).isUserAdmitted(event)).to.eventually.be.undefined
+      })
+
       it('blocks a lapsed subscription before the sweep has moved it on', async () => {
-        subscriptionFindByPubkeyStub.resolves(subscription({ currentPeriodEnd: new Date(Date.now() - 1000) }))
+        subscriptionFindByPubkeyStub.resolves(
+          subscription({ currentPeriodEnd: new Date(Date.now() - 1000), graceEndsAt: null }),
+        )
 
         await expect((handler as any).isUserAdmitted(event)).to.eventually.equal('blocked: subscription expired')
       })

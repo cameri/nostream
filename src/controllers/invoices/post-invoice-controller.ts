@@ -150,6 +150,7 @@ export class PostInvoiceController implements IController {
       .replaceAll('{{relay_url_html}}', escapeHtml(relayUrl))
       .replaceAll('{{invoice_html}}', escapeHtml(invoice.bolt11))
       .replaceAll('{{pubkey_html}}', escapeHtml(pubkey))
+      .replaceAll('{{plan_id_html}}', escapeHtml(plan?.id ?? ''))
       .replaceAll('{{path_prefix}}', escapeHtml(pathPrefix))
       .replaceAll('{{amount}}', (amount / 1000n).toString())
       // JS contexts — safeJsonForScript serializes and escapes < to prevent </script> injection

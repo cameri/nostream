@@ -121,9 +121,67 @@ describe('UserSubscriptionRepository', () => {
     })
   })
 
+  describe('.updateIfCurrent', () => {
+    const current = {
+      pubkey: pubkeyHex,
+      planId: 'basic',
+      status: SubscriptionStatus.ACTIVE,
+      currentPeriodStart: start,
+      currentPeriodEnd: end,
+      graceEndsAt: null,
+      cancelAtPeriodEnd: false,
+      createdAt: start,
+      updatedAt: start,
+    }
+
+    it('updates only the row that still matches the state that was read', async () => {
+      await repository.updateIfCurrent(current, { status: SubscriptionStatus.RENEWAL_PENDING }, clientReturning(1))
+
+      expect(sql[0]).to.include('update "user_subscriptions" set')
+      expect(sql[0]).to.include(`"status" = 'renewal_pending'`)
+      expect(sql[0]).to.include(`"pubkey" = X'${pubkeyHex}'`)
+      expect(sql[0]).to.include(`"status" = 'active'`)
+      expect(sql[0]).to.include(`"plan_id" = 'basic'`)
+      expect(sql[0]).to.include(`current_period_end IS NOT DISTINCT FROM '2026-01-31`)
+      expect(sql[0]).to.include('grace_ends_at IS NOT DISTINCT FROM NULL')
+    })
+
+    it('matches a grace end that was set', async () => {
+      const graceEndsAt = new Date('2026-02-03T00:00:00.000Z')
+
+      await repository.updateIfCurrent(
+        { ...current, status: SubscriptionStatus.PAST_DUE, graceEndsAt },
+        { status: SubscriptionStatus.EXPIRED, graceEndsAt: null },
+        clientReturning(1),
+      )
+
+      expect(sql[0]).to.include(`"status" = 'past_due'`)
+      expect(sql[0]).to.include(`grace_ends_at IS NOT DISTINCT FROM '2026-02-03`)
+      expect(sql[0]).to.include('"grace_ends_at" = NULL')
+    })
+
+    it('never changes the plan or the period, and leaves untouched fields out', async () => {
+      await repository.updateIfCurrent(current, { status: SubscriptionStatus.EXPIRED }, clientReturning(1))
+
+      expect(sql[0]).to.not.match(/set[^w]*"plan_id"/)
+      expect(sql[0]).to.not.match(/set[^w]*"current_period_end"/)
+      expect(sql[0]).to.not.match(/set[^w]*"grace_ends_at"/)
+      expect(sql[0]).to.include('"updated_at" =')
+    })
+
+    it('reports whether a row was updated', async () => {
+      expect(
+        await repository.updateIfCurrent(current, { status: SubscriptionStatus.EXPIRED }, clientReturning(1)),
+      ).to.equal(true)
+      expect(
+        await repository.updateIfCurrent(current, { status: SubscriptionStatus.EXPIRED }, clientReturning(0)),
+      ).to.equal(false)
+    })
+  })
+
   describe('.findDueForRenewal', () => {
     it('selects active subscriptions that are not cancelling and end by the cut-off', async () => {
-      const subscriptions = await repository.findDueForRenewal(end, undefined, clientReturning([row]))
+      const subscriptions = await repository.findDueForRenewal(end, undefined, undefined, clientReturning([row]))
 
       expect(subscriptions).to.have.length(1)
       expect(sql[0]).to.include(`"status" = 'active'`)
@@ -134,21 +192,39 @@ describe('UserSubscriptionRepository', () => {
       expect(sql[0]).to.include('limit 10')
     })
 
-    it('honours the limit', async () => {
-      await repository.findDueForRenewal(end, 3, clientReturning([]))
+    it('also selects renewal-pending subscriptions whose renewal invoice is no longer payable', async () => {
+      await repository.findDueForRenewal(end, undefined, undefined, clientReturning([]))
+
+      expect(sql[0]).to.include(`"status" = 'renewal_pending'`)
+      expect(sql[0]).to.include('not exists (select "invoices"."id" from "invoices"')
+      expect(sql[0]).to.include('invoices.pubkey = user_subscriptions.pubkey')
+      expect(sql[0]).to.include('invoices.plan_id = user_subscriptions.plan_id')
+      expect(sql[0]).to.include(`"invoices"."status" = 'pending'`)
+      expect(sql[0]).to.include('"invoices"."expires_at" is null or "invoices"."expires_at" >')
+    })
+
+    it('honours the limit and the offset', async () => {
+      await repository.findDueForRenewal(end, 3, 6, clientReturning([]))
 
       expect(sql[0]).to.include('limit 3')
+      expect(sql[0]).to.include('offset 6')
     })
   })
 
   describe('.findPeriodEnded', () => {
     it('selects active and renewal-pending subscriptions whose period has ended', async () => {
-      await repository.findPeriodEnded(end, undefined, clientReturning([row]))
+      await repository.findPeriodEnded(end, undefined, undefined, clientReturning([row]))
 
       expect(sql[0]).to.include(`"status" in ('active', 'renewal_pending')`)
       expect(sql[0]).to.include('"current_period_end" is not null')
       expect(sql[0]).to.include(`"current_period_end" <= '2026-01-31`)
       expect(sql[0]).to.include('limit 10')
+    })
+
+    it('honours the offset', async () => {
+      await repository.findPeriodEnded(end, 10, 4, clientReturning([]))
+
+      expect(sql[0]).to.include('offset 4')
     })
   })
 
@@ -157,6 +233,7 @@ describe('UserSubscriptionRepository', () => {
       await repository.findGraceEnded(
         end,
         undefined,
+        undefined,
         clientReturning([{ ...row, status: SubscriptionStatus.PAST_DUE }]),
       )
 
@@ -164,6 +241,12 @@ describe('UserSubscriptionRepository', () => {
       expect(sql[0]).to.include('"grace_ends_at" is not null')
       expect(sql[0]).to.include(`"grace_ends_at" <= '2026-01-31`)
       expect(sql[0]).to.include('order by "grace_ends_at" asc')
+    })
+
+    it('honours the offset', async () => {
+      await repository.findGraceEnded(end, 10, 2, clientReturning([]))
+
+      expect(sql[0]).to.include('offset 2')
     })
   })
 })

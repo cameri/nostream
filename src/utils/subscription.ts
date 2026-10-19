@@ -19,7 +19,8 @@ export const findSubscriptionPlan = (settings: Settings, planId: string | null |
  * When access ends, or undefined if it never does.
  *
  * Judged from the dates rather than the stored status, so a user is not locked out or kept
- * in by a sweep that has not run yet.
+ * in by a sweep that has not run yet. A paid period carries its grace end from the payment,
+ * so access runs on through grace even before the sweep marks the subscription past due.
  */
 export const getAccessEndsAt = (subscription: UserSubscription): Date | undefined => {
   if (subscription.status === SubscriptionStatus.EXPIRED) {
@@ -30,11 +31,7 @@ export const getAccessEndsAt = (subscription: UserSubscription): Date | undefine
     return undefined
   }
 
-  if (subscription.status === SubscriptionStatus.PAST_DUE && subscription.graceEndsAt) {
-    return subscription.graceEndsAt
-  }
-
-  return subscription.currentPeriodEnd
+  return subscription.graceEndsAt ?? subscription.currentPeriodEnd
 }
 
 /**
@@ -70,14 +67,15 @@ export const applyPayment = (
     existing.currentPeriodEnd.getTime() > now.getTime()
 
   const periodStart = stillRunning ? (existing.currentPeriodEnd as Date) : now
+  const periodEnd = new Date(periodStart.getTime() + plan.intervalSeconds * 1000)
 
   return {
     pubkey,
     planId: plan.id,
     status: SubscriptionStatus.ACTIVE,
     currentPeriodStart: periodStart,
-    currentPeriodEnd: new Date(periodStart.getTime() + plan.intervalSeconds * 1000),
-    graceEndsAt: null,
+    currentPeriodEnd: periodEnd,
+    graceEndsAt: plan.graceSeconds > 0 ? new Date(periodEnd.getTime() + plan.graceSeconds * 1000) : null,
     cancelAtPeriodEnd: false,
   }
 }

@@ -35,6 +35,8 @@ export interface IPaymentsService {
       Partial<Pick<Invoice, 'planId'>>,
   ): Promise<void>
   sendInvoiceUpdateNotification(invoice: Invoice): Promise<void>
+  /** Tells the subscriber, with a kind 402 event, that their renewal invoice can be paid. */
+  sendRenewalNotification(invoice: Invoice): Promise<void>
   getPendingInvoices(offset?: number): Promise<Invoice[]>
 }
 

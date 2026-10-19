@@ -178,6 +178,14 @@ export class PaymentsService implements IPaymentsService {
 
       await transaction.begin()
 
+      const currentSettings = this.settings()
+      const subscriptionsEnabled = areSubscriptionsEnabled(currentSettings)
+      // The callbacks only pass what their processor reports, so the plan, the unit and whether the
+      // invoice was already confirmed come from the stored invoice, read before it is confirmed.
+      const stored = subscriptionsEnabled
+        ? await this.invoiceRepository.findById(invoice.id, transaction.transaction)
+        : undefined
+
       await this.invoiceRepository.confirmInvoice(
         invoice.id,
         invoice.amountPaid,
@@ -185,13 +193,12 @@ export class PaymentsService implements IPaymentsService {
         transaction.transaction,
       )
 
-      const currentSettings = this.settings()
-
       let amountPaidMsat = invoice.amountPaid
 
-      if (invoice.unit === InvoiceUnit.SATS) {
+      const unit = invoice.unit ?? stored?.unit
+      if (unit === InvoiceUnit.SATS) {
         amountPaidMsat *= 1000n
-      } else if (invoice.unit === InvoiceUnit.BTC) {
+      } else if (unit === InvoiceUnit.BTC) {
         amountPaidMsat *= 1000n * 100000000n
       }
 
@@ -202,15 +209,13 @@ export class PaymentsService implements IPaymentsService {
         return sum + (isApplicableFee(feeSchedule) ? BigInt(feeSchedule.amount) : 0n)
       }, 0n)
 
-      // The callbacks only pass what their processor reports, so the plan comes from the stored invoice.
-      const subscriptionsEnabled = areSubscriptionsEnabled(currentSettings)
-      const planId = subscriptionsEnabled
-        ? (invoice.planId ?? (await this.invoiceRepository.findById(invoice.id, transaction.transaction))?.planId)
-        : undefined
-      const plan = findSubscriptionPlan(currentSettings, planId)
+      const plan = findSubscriptionPlan(currentSettings, invoice.planId ?? stored?.planId)
 
       if (plan && this.userSubscriptionRepository) {
-        if (amountPaidMsat >= BigInt(plan.amount)) {
+        if (stored?.confirmedAt) {
+          // A repeated callback must not grant another period.
+          logger('invoice %s was already confirmed, not extending the subscription again', invoice.id)
+        } else if (amountPaidMsat >= BigInt(plan.amount)) {
           const date = new Date()
           const existing = await this.userSubscriptionRepository.findByPubkey(invoice.pubkey, transaction.transaction)
           await this.userSubscriptionRepository.upsert(
@@ -249,14 +254,6 @@ export class PaymentsService implements IPaymentsService {
 
   public async sendInvoiceUpdateNotification(invoice: Invoice): Promise<void> {
     logger('invoice updated notification %s: %o', invoice.id, invoice)
-    const currentSettings = this.settings()
-
-    const {
-      info: { relay_url: relayUrl },
-    } = currentSettings
-
-    const relayPrivkey = getRelayPrivateKey(relayUrl)
-    const relayPubkey = getPublicKey(relayPrivkey)
 
     let unit: string = invoice.unit
     let amount: bigint | undefined = invoice.amountPaid
@@ -274,11 +271,40 @@ export class PaymentsService implements IPaymentsService {
     const now = new Date()
     const expiration = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate())
 
+    await this.publishInvoiceNotification(invoice, `Invoice paid: ${amount.toString()} ${unit}`, expiration)
+  }
+
+  public async sendRenewalNotification(invoice: Invoice): Promise<void> {
+    logger('subscription renewal notification %s: %o', invoice.id, invoice)
+
+    let unit: string = invoice.unit
+    let amount = invoice.amountRequested
+    if (invoice.unit === InvoiceUnit.MSATS) {
+      amount /= 1000n
+      unit = InvoiceUnit.SATS
+    }
+
+    // The notice is only useful while the invoice can still be paid.
+    const expiration = invoice.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+    await this.publishInvoiceNotification(invoice, `Subscription renewal due: ${amount.toString()} ${unit}`, expiration)
+  }
+
+  private async publishInvoiceNotification(invoice: Invoice, content: string, expiration: Date): Promise<void> {
+    const {
+      info: { relay_url: relayUrl },
+    } = this.settings()
+
+    const relayPrivkey = getRelayPrivateKey(relayUrl)
+    const relayPubkey = getPublicKey(relayPrivkey)
+
+    const now = new Date()
+
     const unsignedInvoiceEvent: UnidentifiedEvent & Pick<ExpiringEvent, typeof EventExpirationTimeMetadataKey> = {
       pubkey: relayPubkey,
       kind: EventKinds.INVOICE_UPDATE,
       created_at: Math.floor(now.getTime() / 1000),
-      content: `Invoice paid: ${amount.toString()} ${unit}`,
+      content,
       tags: [
         [EventTags.Pubkey, invoice.pubkey],
         [EventTags.Invoice, invoice.bolt11],

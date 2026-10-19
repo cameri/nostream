@@ -104,8 +104,28 @@ describe('subscription utils', () => {
       expect(hasSubscriptionAccess(expired, NOW)).to.equal(false)
     })
 
-    it('does not give a lapsed active subscription grace before the sweep has put it into grace', () => {
-      const lapsed = subscription({ status: SubscriptionStatus.ACTIVE, currentPeriodEnd: at(-DAY) })
+    it('keeps access through grace before the sweep has put a lapsed subscription into it', () => {
+      const lapsed = subscription({
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodEnd: at(-DAY),
+        graceEndsAt: at(2 * DAY),
+      })
+
+      expect(hasSubscriptionAccess(lapsed, NOW)).to.equal(true)
+    })
+
+    it('loses access when a lapsed subscription has no grace', () => {
+      const lapsed = subscription({ status: SubscriptionStatus.ACTIVE, currentPeriodEnd: at(-DAY), graceEndsAt: null })
+
+      expect(hasSubscriptionAccess(lapsed, NOW)).to.equal(false)
+    })
+
+    it('loses access once the grace end has passed, even if the sweep has not run', () => {
+      const lapsed = subscription({
+        status: SubscriptionStatus.RENEWAL_PENDING,
+        currentPeriodEnd: at(-5 * DAY),
+        graceEndsAt: at(-DAY),
+      })
 
       expect(hasSubscriptionAccess(lapsed, NOW)).to.equal(false)
     })
@@ -138,7 +158,7 @@ describe('subscription utils', () => {
         status: SubscriptionStatus.ACTIVE,
         currentPeriodStart: NOW,
         currentPeriodEnd: at(30 * DAY),
-        graceEndsAt: null,
+        graceEndsAt: at(33 * DAY),
         cancelAtPeriodEnd: false,
       })
     })
@@ -171,7 +191,7 @@ describe('subscription utils', () => {
         const result = applyPayment(pubkey, existing, plan, NOW)
 
         expect(result.currentPeriodStart).to.deep.equal(NOW)
-        expect(result.graceEndsAt).to.equal(null)
+        expect(result.graceEndsAt).to.deep.equal(at(33 * DAY))
         expect(result.status).to.equal(SubscriptionStatus.ACTIVE)
       }
     })
@@ -183,6 +203,12 @@ describe('subscription utils', () => {
 
       expect(result.currentPeriodStart).to.deep.equal(NOW)
       expect(result.currentPeriodEnd).to.deep.equal(at(30 * DAY))
+    })
+
+    it('gives a plan with no grace no grace end', () => {
+      const result = applyPayment(pubkey, undefined, { ...plan, graceSeconds: 0 }, NOW)
+
+      expect(result.graceEndsAt).to.equal(null)
     })
 
     it('uses the paid plan, so a plan change takes effect on payment', () => {

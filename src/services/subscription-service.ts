@@ -1,9 +1,9 @@
-import { IUserSubscriptionRepository } from '../@types/repositories'
 import { IPaymentsService, ISubscriptionService } from '../@types/services'
 import { Settings } from '../@types/settings'
 import { SubscriptionStatus, UserSubscription } from '../@types/user-subscription'
-import { createLogger } from '../factories/logger-factory'
+import { IUserSubscriptionRepository } from '../@types/repositories'
 import { areSubscriptionsEnabled, endPeriod, findSubscriptionPlan, RENEWAL_LEAD_SECONDS } from '../utils/subscription'
+import { createLogger } from '../factories/logger-factory'
 import { toBech32 } from '../utils/transform'
 
 const logger = createLogger('subscription-service')
@@ -28,18 +28,19 @@ export class SubscriptionService implements ISubscriptionService {
     // Ends first, so a subscription that lapsed is not also sent a renewal invoice.
     const changed =
       (await this.sweep(
-        (limit) => this.userSubscriptionRepository.findPeriodEnded(now, limit),
+        (limit, offset) => this.userSubscriptionRepository.findPeriodEnded(now, limit, offset),
         (subscription) => this.endPeriod(subscription, currentSettings, now),
       )) +
       (await this.sweep(
-        (limit) => this.userSubscriptionRepository.findGraceEnded(now, limit),
+        (limit, offset) => this.userSubscriptionRepository.findGraceEnded(now, limit, offset),
         (subscription) => this.expire(subscription),
       )) +
       (await this.sweep(
-        (limit) =>
+        (limit, offset) =>
           this.userSubscriptionRepository.findDueForRenewal(
             new Date(now.getTime() + RENEWAL_LEAD_SECONDS * 1000),
             limit,
+            offset,
           ),
         (subscription) => this.requestRenewal(subscription, currentSettings),
       ))
@@ -48,32 +49,37 @@ export class SubscriptionService implements ISubscriptionService {
   }
 
   /**
-   * Each handled subscription leaves the query that found it, so asking again moves on.
-   * One that cannot be handled would come back every time, so a pass stops as soon as
-   * a page makes no progress.
+   * Each handled subscription leaves the query that found it, so the next page starts where the
+   * unhandled ones end: skipping them with an offset keeps a subscription that cannot be handled,
+   * such as one on a plan the operator removed, from blocking the ones behind it. The work of one
+   * pass is bounded.
    */
   private async sweep(
-    find: (limit: number) => Promise<UserSubscription[]>,
+    find: (limit: number, offset: number) => Promise<UserSubscription[]>,
     handle: (subscription: UserSubscription) => Promise<boolean>,
   ): Promise<number> {
     let changed = 0
+    let skipped = 0
 
     for (let page = 0; page < SWEEP_MAX_PAGES; page++) {
-      const subscriptions = await find(SWEEP_PAGE_SIZE)
+      const subscriptions = await find(SWEEP_PAGE_SIZE, skipped)
 
-      let handled = 0
       for (const subscription of subscriptions) {
+        let handled = false
         try {
-          if (await handle(subscription)) {
-            handled++
-          }
+          handled = await handle(subscription)
         } catch (error) {
           logger.error('Unable to process subscription for %s. Reason:', subscription.pubkey, error)
         }
+
+        if (handled) {
+          changed++
+        } else {
+          skipped++
+        }
       }
 
-      changed += handled
-      if (!handled || subscriptions.length < SWEEP_PAGE_SIZE) {
+      if (subscriptions.length < SWEEP_PAGE_SIZE) {
         break
       }
     }
@@ -89,8 +95,21 @@ export class SubscriptionService implements ISubscriptionService {
     }
 
     const description = `${settings.info.name} ${plan.id} subscription renewal for ${toBech32('npub')(subscription.pubkey)}`
-    await this.paymentsService.createInvoice(subscription.pubkey, BigInt(plan.amount), description, plan.id)
-    await this.userSubscriptionRepository.upsert({ ...subscription, status: SubscriptionStatus.RENEWAL_PENDING })
+    const invoice = await this.paymentsService.createInvoice(
+      subscription.pubkey,
+      BigInt(plan.amount),
+      description,
+      plan.id,
+    )
+
+    // The subscriber is told about the invoice either way: it can be paid whatever the status says.
+    await this.paymentsService.sendRenewalNotification(invoice)
+
+    if (subscription.status === SubscriptionStatus.ACTIVE) {
+      return this.userSubscriptionRepository.updateIfCurrent(subscription, {
+        status: SubscriptionStatus.RENEWAL_PENDING,
+      })
+    }
 
     return true
   }
@@ -102,18 +121,13 @@ export class SubscriptionService implements ISubscriptionService {
       return false
     }
 
-    await this.userSubscriptionRepository.upsert({ ...subscription, ...endPeriod(subscription, plan, now) })
-
-    return true
+    return this.userSubscriptionRepository.updateIfCurrent(subscription, endPeriod(subscription, plan, now))
   }
 
   private async expire(subscription: UserSubscription): Promise<boolean> {
-    await this.userSubscriptionRepository.upsert({
-      ...subscription,
+    return this.userSubscriptionRepository.updateIfCurrent(subscription, {
       status: SubscriptionStatus.EXPIRED,
       graceEndsAt: null,
     })
-
-    return true
   }
 }

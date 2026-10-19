@@ -24,7 +24,7 @@ const subscription = (overrides: Partial<UserSubscription> = {}): UserSubscripti
   status: SubscriptionStatus.ACTIVE,
   currentPeriodStart: at(-28 * DAY),
   currentPeriodEnd: at(2 * DAY),
-  graceEndsAt: null,
+  graceEndsAt: at(5 * DAY),
   cancelAtPeriodEnd: false,
   createdAt: at(-28 * DAY),
   updatedAt: at(-28 * DAY),
@@ -34,7 +34,7 @@ const subscription = (overrides: Partial<UserSubscription> = {}): UserSubscripti
 describe('SubscriptionService', () => {
   let sandbox: Sinon.SinonSandbox
   let repository: Record<string, Sinon.SinonStub>
-  let paymentsService: { createInvoice: Sinon.SinonStub }
+  let paymentsService: { createInvoice: Sinon.SinonStub; sendRenewalNotification: Sinon.SinonStub }
   let currentSettings: Settings
   let service: SubscriptionService
 
@@ -43,11 +43,15 @@ describe('SubscriptionService', () => {
     repository = {
       findByPubkey: sandbox.stub().resolves(undefined),
       upsert: sandbox.stub().resolves(1),
+      updateIfCurrent: sandbox.stub().resolves(true),
       findDueForRenewal: sandbox.stub().resolves([]),
       findPeriodEnded: sandbox.stub().resolves([]),
       findGraceEnded: sandbox.stub().resolves([]),
     }
-    paymentsService = { createInvoice: sandbox.stub().resolves({ id: 'invoice-id' }) }
+    paymentsService = {
+      createInvoice: sandbox.stub().resolves({ id: 'invoice-id', bolt11: 'lnbc1...' }),
+      sendRenewalNotification: sandbox.stub().resolves(),
+    }
     currentSettings = {
       info: { name: 'test relay' },
       payments: {
@@ -96,8 +100,9 @@ describe('SubscriptionService', () => {
         )
       })
 
-      it('issues an invoice for the plan price and waits for payment', async () => {
-        repository.findDueForRenewal.onFirstCall().resolves([subscription()])
+      it('issues an invoice for the plan price, tells the subscriber and waits for payment', async () => {
+        const due = subscription()
+        repository.findDueForRenewal.onFirstCall().resolves([due])
 
         expect(await service.processLifecycle(NOW)).to.equal(1)
 
@@ -107,11 +112,25 @@ describe('SubscriptionService', () => {
         expect(amount).to.equal(1_000_000n)
         expect(description).to.contain('test relay').and.contain('basic')
         expect(planId).to.equal('basic')
-        expect(repository.upsert).to.have.been.calledOnce
-        expect(repository.upsert.firstCall.args[0]).to.include({
-          pubkey: PUBKEY,
+        expect(paymentsService.sendRenewalNotification).to.have.been.calledOnceWithExactly({
+          id: 'invoice-id',
+          bolt11: 'lnbc1...',
+        })
+        expect(repository.updateIfCurrent).to.have.been.calledOnceWithExactly(due, {
           status: SubscriptionStatus.RENEWAL_PENDING,
         })
+      })
+
+      it('replaces an expired renewal invoice without touching the status, which is already renewal pending', async () => {
+        repository.findDueForRenewal
+          .onFirstCall()
+          .resolves([subscription({ status: SubscriptionStatus.RENEWAL_PENDING })])
+
+        expect(await service.processLifecycle(NOW)).to.equal(1)
+
+        expect(paymentsService.createInvoice).to.have.been.calledOnce
+        expect(paymentsService.sendRenewalNotification).to.have.been.calledOnce
+        expect(repository.updateIfCurrent).not.to.have.been.called
       })
 
       it('does not change the status when the invoice cannot be created, so the next pass retries', async () => {
@@ -120,7 +139,15 @@ describe('SubscriptionService', () => {
 
         expect(await service.processLifecycle(NOW)).to.equal(0)
 
-        expect(repository.upsert).not.to.have.been.called
+        expect(paymentsService.sendRenewalNotification).not.to.have.been.called
+        expect(repository.updateIfCurrent).not.to.have.been.called
+      })
+
+      it('does not count a renewal whose subscription was paid in the meantime', async () => {
+        repository.findDueForRenewal.onFirstCall().resolves([subscription()])
+        repository.updateIfCurrent.resolves(false)
+
+        expect(await service.processLifecycle(NOW)).to.equal(0)
       })
 
       it('skips a subscription whose plan was removed from the settings', async () => {
@@ -129,21 +156,23 @@ describe('SubscriptionService', () => {
         expect(await service.processLifecycle(NOW)).to.equal(0)
 
         expect(paymentsService.createInvoice).not.to.have.been.called
-        expect(repository.upsert).not.to.have.been.called
+        expect(repository.updateIfCurrent).not.to.have.been.called
       })
     })
 
     describe('ended periods', () => {
       it('moves a lapsed subscription into grace counted from the period end', async () => {
         const periodEnd = at(-DAY)
-        repository.findPeriodEnded.onFirstCall().resolves([subscription({ currentPeriodEnd: periodEnd })])
+        const lapsed = subscription({ currentPeriodEnd: periodEnd })
+        repository.findPeriodEnded.onFirstCall().resolves([lapsed])
 
         expect(await service.processLifecycle(NOW)).to.equal(1)
 
-        expect(repository.upsert.firstCall.args[0]).to.include({
-          status: SubscriptionStatus.PAST_DUE,
-        })
-        expect(repository.upsert.firstCall.args[0].graceEndsAt).to.deep.equal(new Date(periodEnd.getTime() + 3 * DAY))
+        expect(repository.updateIfCurrent).to.have.been.calledOnce
+        const [expected, changes] = repository.updateIfCurrent.firstCall.args
+        expect(expected).to.equal(lapsed)
+        expect(changes.status).to.equal(SubscriptionStatus.PAST_DUE)
+        expect(changes.graceEndsAt).to.deep.equal(new Date(periodEnd.getTime() + 3 * DAY))
       })
 
       it('also ends a period whose renewal invoice was never paid', async () => {
@@ -153,30 +182,48 @@ describe('SubscriptionService', () => {
 
         await service.processLifecycle(NOW)
 
-        expect(repository.upsert.firstCall.args[0].status).to.equal(SubscriptionStatus.PAST_DUE)
+        expect(repository.updateIfCurrent.firstCall.args[1].status).to.equal(SubscriptionStatus.PAST_DUE)
+      })
+
+      it('expires a lapsed subscription straight away when the plan has no grace', async () => {
+        currentSettings.payments.subscriptionPlans[0].graceSeconds = 0
+        repository.findPeriodEnded.onFirstCall().resolves([subscription({ currentPeriodEnd: at(-DAY) })])
+
+        await service.processLifecycle(NOW)
+
+        expect(repository.updateIfCurrent.firstCall.args[1]).to.deep.equal({
+          status: SubscriptionStatus.EXPIRED,
+          graceEndsAt: null,
+        })
       })
 
       it('leaves a subscription whose plan was removed from the settings alone', async () => {
         repository.findPeriodEnded.onFirstCall().resolves([subscription({ planId: 'retired' })])
 
         expect(await service.processLifecycle(NOW)).to.equal(0)
-        expect(repository.upsert).not.to.have.been.called
+        expect(repository.updateIfCurrent).not.to.have.been.called
+      })
+
+      it('does not overwrite a subscription that was paid after it was read', async () => {
+        repository.findPeriodEnded.onFirstCall().resolves([subscription({ currentPeriodEnd: at(-DAY) })])
+        repository.updateIfCurrent.resolves(false)
+
+        expect(await service.processLifecycle(NOW)).to.equal(0)
       })
     })
 
     describe('grace expiry', () => {
       it('expires a subscription whose grace period is over', async () => {
-        repository.findGraceEnded.onFirstCall().resolves([
-          subscription({
-            status: SubscriptionStatus.PAST_DUE,
-            currentPeriodEnd: at(-5 * DAY),
-            graceEndsAt: at(-DAY),
-          }),
-        ])
+        const pastDue = subscription({
+          status: SubscriptionStatus.PAST_DUE,
+          currentPeriodEnd: at(-5 * DAY),
+          graceEndsAt: at(-DAY),
+        })
+        repository.findGraceEnded.onFirstCall().resolves([pastDue])
 
         expect(await service.processLifecycle(NOW)).to.equal(1)
 
-        expect(repository.upsert.firstCall.args[0]).to.include({
+        expect(repository.updateIfCurrent).to.have.been.calledOnceWithExactly(pastDue, {
           status: SubscriptionStatus.EXPIRED,
           graceEndsAt: null,
         })
@@ -189,10 +236,18 @@ describe('SubscriptionService', () => {
 
         expect(await service.processLifecycle(NOW)).to.equal(1)
       })
+
+      it('does not expire a subscription that was paid after it was read', async () => {
+        repository.findGraceEnded.onFirstCall().resolves([subscription({ status: SubscriptionStatus.PAST_DUE })])
+        repository.updateIfCurrent.resolves(false)
+
+        expect(await service.processLifecycle(NOW)).to.equal(0)
+      })
     })
 
     describe('paging', () => {
-      const page = (count: number) => Array.from({ length: count }, () => subscription({ currentPeriodEnd: at(-DAY) }))
+      const page = (count: number, overrides: Partial<UserSubscription> = {}) =>
+        Array.from({ length: count }, () => subscription({ currentPeriodEnd: at(-DAY), ...overrides }))
 
       it('asks again while pages come back full, then stops on a short one', async () => {
         repository.findPeriodEnded.onCall(0).resolves(page(10))
@@ -203,21 +258,35 @@ describe('SubscriptionService', () => {
         expect(repository.findPeriodEnded).to.have.been.calledTwice
       })
 
-      it('stops when a full page makes no progress, so a stuck row cannot loop the pass', async () => {
-        repository.findPeriodEnded.resolves(page(10).map((s) => ({ ...s, planId: 'retired' })))
+      it('moves past rows it cannot handle, so they do not block the ones behind them', async () => {
+        const stuck = page(10, { planId: 'retired' })
+        const fine = page(3)
+        repository.findPeriodEnded.onCall(0).resolves(stuck)
+        repository.findPeriodEnded.onCall(1).resolves(fine)
 
-        expect(await service.processLifecycle(NOW)).to.equal(0)
+        expect(await service.processLifecycle(NOW)).to.equal(3)
 
-        expect(repository.findPeriodEnded).to.have.been.calledOnce
+        expect(repository.findPeriodEnded.firstCall.args.slice(1)).to.deep.equal([10, 0])
+        expect(repository.findPeriodEnded.secondCall.args.slice(1)).to.deep.equal([10, 10])
+      })
+
+      it('counts only the rows left behind when handled ones drop out of the next query', async () => {
+        const mixed = [...page(7), ...page(3, { planId: 'retired' })]
+        repository.findPeriodEnded.onCall(0).resolves(mixed)
+        repository.findPeriodEnded.onCall(1).resolves([])
+
+        await service.processLifecycle(NOW)
+
+        expect(repository.findPeriodEnded.secondCall.args.slice(1)).to.deep.equal([10, 3])
       })
 
       it('keeps going after one subscription fails', async () => {
         repository.findPeriodEnded.onFirstCall().resolves([subscription(), subscription({ pubkey: 'b'.repeat(64) })])
-        repository.upsert.onFirstCall().rejects(new Error('db error'))
+        repository.updateIfCurrent.onFirstCall().rejects(new Error('db error'))
 
         expect(await service.processLifecycle(NOW)).to.equal(1)
 
-        expect(repository.upsert).to.have.been.calledTwice
+        expect(repository.updateIfCurrent).to.have.been.calledTwice
       })
 
       it('caps the work of one pass', async () => {
