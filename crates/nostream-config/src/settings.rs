@@ -515,8 +515,9 @@ pub struct PaymentsProcessors {
 /// typed there as `SubscriptionFilter`).
 ///
 /// The declared type is numbers-only — `kinds?: (EventKinds | number)[]`
-/// (`src/@types/subscription.ts:8`); `EventKindsRange` belongs to the *rate-limit* criteria,
-/// not to a subscription filter. What keeps `KindSelector` here is that the capture never
+/// (`src/@types/subscription.ts:8`); `EventKindsRange` types the *settings* criteria instead
+/// (limit and NIP-42 among them, `src/@types/settings.ts:46,49,83,429`). What keeps
+/// `KindSelector` here is that the capture never
 /// validates a mirror filter: `validateShape` returns when the schema for a sequence is empty
 /// (`src/utils/settings-config.ts:202-204`) and the shipped defaults carry
 /// `mirroring.static: []` (`resources/default-settings.yaml:168-169`), so a document such as
