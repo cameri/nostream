@@ -55,11 +55,14 @@ pub fn is_expired_event(event: &Event, now: i64) -> bool {
 }
 
 /// The subset of JavaScript's `Number(primitive)` a tag value can reach: `String.prototype`
-/// trimming, the three radix prefixes, the empty string as zero, and the decimal grammar
-/// `f64::from_str` shares with it. Anything JavaScript would read as `NaN` (or as a value
-/// this cannot represent) is `None`, which every caller treats as "no usable expiration".
+/// trimming (which also removes a leading U+FEFF), the three radix prefixes, the empty string
+/// as zero, and the decimal grammar `f64::from_str` shares with it. Anything JavaScript would
+/// read as `NaN` (or as a value this cannot represent) is `None`, which every caller treats
+/// as "no usable expiration".
 fn js_number(text: &str) -> Option<f64> {
-    let trimmed = text.trim();
+    // `char::is_whitespace` is Unicode `White_Space`; JS `trim()` additionally strips U+FEFF.
+    let trimmed =
+        text.trim_matches(|character: char| character.is_whitespace() || character == '\u{feff}');
 
     if trimmed.is_empty() {
         return Some(0.0);
@@ -75,6 +78,13 @@ fn js_number(text: &str) -> Option<f64> {
         } else {
             return trimmed.parse::<f64>().ok();
         };
+
+    // `from_str_radix` accepts a leading sign after the prefix (`"0x+10"` → 16); JavaScript
+    // reads `Number("0x+10")` as NaN, and accepting it here would expire an event the
+    // capture retains.
+    if digits.starts_with(['+', '-']) {
+        return None;
+    }
 
     u64::from_str_radix(digits, radix)
         .ok()
@@ -262,6 +272,27 @@ mod tests {
         assert_eq!(
             get_event_expiration(&event_with(vec![vec!["expiration", "0x"]])),
             None
+        );
+    }
+
+    #[test]
+    fn expiration_rejects_a_sign_after_the_radix_prefix() {
+        // `Number("0x+10")` is NaN in JavaScript; `from_str_radix` alone would read 16 and
+        // expire an event the capture retains.
+        for value in ["0x+10", "0o+10", "0b+101", "0x-10"] {
+            assert_eq!(
+                get_event_expiration(&event_with(vec![vec!["expiration", value]])),
+                None,
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn expiration_strips_a_byte_order_mark_like_javascript_trim() {
+        assert_eq!(
+            get_event_expiration(&event_with(vec![vec!["expiration", "\u{feff}160000000"]])),
+            Some(160_000_000)
         );
     }
 }
