@@ -58,6 +58,19 @@ and a user value like `abc123` must survive — `crates/nostream-config/tests/de
 pins both, and it stays green. One type cannot be both lenient and 32 bytes; the split is
 the only shape that keeps both contracts.
 
+`mirroring.static[].filters` is the same capture type (`SubscriptionFilter`) but a different
+consumer, and it does **not** narrow with the wire type: `crates/nostream-config`'s
+`SettingsFilter` keeps `kinds: Option<Vec<KindSelector>>` and crosses to `Filter` through
+`into_filter()` at use, dropping a range element because the capture's matcher compared
+kinds with `Array.includes` on numbers, so a range never matched there either. The capture
+never validates a mirror filter, so a document with `kinds: [[10000, 19999]]` must keep
+loading; `crates/nostream-config/tests/mirror_filters.rs` pins the load, the round-trip and
+the crossing.
+
+Signing sets the author: `sign_event` writes `pubkey` from the key before hashing the id,
+because the id is hashed over the pubkey and a returned event has to verify. The capture's
+`signEvent` leaves the pubkey alone and would let a caller pair a key with the wrong author.
+
 `Event` is `#[serde(deny_unknown_fields)]`, matching `eventSchema.strict()`
 (`src/schemas/event-schema.ts:41`).
 
@@ -92,6 +105,21 @@ measurement, so the Rust messages are the measured ones; each parity test keeps 
 mocha case name and asserts the measured string as well as `is_err`. Job 006's spec
 (D11) listed the case names as if they were messages; the deviation is recorded here and
 in `build.md`.
+
+Two messages are **not** the capture's, and they say so in their own words:
+`kind value does not fit in 64 bits` and `limit does not fit in 64 bits`. The capture accepts
+`{"kinds":[1e20]}` and `{"limit":1e20}` (JavaScript numbers, no ceiling in `kindSchema` or
+`limit`); `Kind` is a `u64` and `Filter.limit` a `u64`, so those values are unrepresentable
+here. That is a representability divergence, not a validation rule, so imitating zod's
+phrasing would be the fabrication this section forbids. The boundary cell of the two types is
+`u64::MAX`: `1e19` and `9007199254740992` are accepted by both paths.
+
+Length bounds count **UTF-16 code units**, as zod's `.min()`/`.max()` do through
+`String.prototype.length`: `text.encode_utf16().count()`, not `chars().count()`. An astral
+character is two units, so 600 emoji are 1200 units and are rejected by both paths. The
+`Unknown key` second pass also runs over every key, including one whose value already failed
+the catchall type check, where zod's `superRefine` only sees parsed keys: the Rust output can
+be a superset of zod's on a document that is invalid either way, never on a valid one.
 
 ## Decision — negentropy crate and its divergences
 
@@ -137,7 +165,9 @@ envelope with the subscription id — `nostream-relay`'s Phase 2.
   session will converge with any reference peer, and the one that costs a round is
   recorded rather than papered over.
 - Two crates changed shape: `nostream-config`'s settings and `nostream-storage`'s
-  retention options now hold `SettingsPubkey`, and nothing else moved.
+  retention options now hold `SettingsPubkey`; `mirroring.static[].filters` holds
+  `SettingsFilter` so the settings edge keeps the capture's kind-range acceptance. Nothing
+  else moved, and no consumer outside those two crates names a filter differently.
 
 ## Revisit triggers
 
@@ -150,3 +180,9 @@ envelope with the subscription id — `nostream-relay`'s Phase 2.
   `shared_secret_point`; D7's three call sites are in `crypto.rs`.
 - **If the acceptance gate finds a message contract** (an operator-facing string built
   from `validate_filter`), align it with the measured strings here before changing them.
+- **If the settings editor or a wire parser ever hands `Filter` a kind range or an integer
+  above `u64::MAX`**, decide there: the two refusals are representability, and a surface
+  that can hold the JavaScript value may want to keep it instead.
+- **If NIP-40 retention is ever measured against the capture** on non-decimal `expiration`
+  tag values, `expiration::js_number` is the seam that already covers `0x`/`0o`/`0b`,
+  trimmed and exponential forms; extend it there rather than in the tag walk.
