@@ -108,11 +108,66 @@ knex schema, so a different index definition fails.
 
 ## Session time zone — UTC on every connection
 
-Every connection sets `timezone=UTC`, so `timestamp` columns round-trip
-deterministically and the capture's server-default assumption holds. The capture's
-generator must run with `TZ=UTC` as well: `node-postgres` parses a `timestamp without
-time zone` column in the process's local zone, so any other host zone records shifted
-`confirmed_at`/`expires_at` values that no correct backend would match.
+Every constructor (`from_env`, `connect`, `connect_lazy`) sets `timezone=UTC`, so
+`timestamp` columns round-trip deterministically and the capture's server-default
+assumption holds. The capture's generator must run with `TZ=UTC` as well:
+`node-postgres` parses a `timestamp without time zone` column in the process's local
+zone, so any other host zone records shifted `confirmed_at`/`expires_at` values that no
+correct backend would match.
+
+## Read replicas — one pool until a replica is configured
+
+With `READ_REPLICA_ENABLED` unset the reader is the master pool itself (a clone of the
+same `PgPool`), exactly as `src/database/client.ts:97-100` returns the write client; a
+second pool is opened only when a replica is configured. `users::is_vanished`'s vanish
+probe reads through the reader, because the capture's `hasActiveRequestToVanish` has no
+client parameter and therefore reads the replica.
+
+## NIP-50 — the text-search configuration is SQL text, not a bind
+
+The capture binds the configuration (`?::regconfig`,
+`src/repositories/event-repository.ts:203-206`); a driver bind makes the expression
+non-constant, so PostgreSQL cannot match the GIN index built on
+`to_tsvector('simple', event_content)` — the capture misses its own index too (measured
+by the performance lens: 444.8-671.3 ms per execution through a `text`-typed bind versus
+0.088 ms through the index). This port deliberately diverges: `nip50.language` is
+validated against `^[a-z_][a-z0-9_]*$` (an invalid value is
+`StorageError::InvalidArgument`, never SQL) and inlined as
+`to_tsvector('<language>'::regconfig, …)`, the exact indexed expression; the search term
+stays a bind. Hits and their order are unchanged (same `ts_rank` over the same predicate);
+only the plan changes. `tests/migrations.rs` EXPLAINs the predicate with sequential scans
+disabled and fails unless the plan names `events_content_fts_idx`; the unit tests pin the
+inlined SQL.
+
+## Batching — the bind limit, and its partial-commit window
+
+`create_many`/`upsert_many` split their input at PostgreSQL's 65 535-bind limit
+(7 281 rows at nine binds each, 5 957 at eleven), so up to one batch is the capture's
+single statement. Above one batch, a mid-batch error returns `Err` after the earlier
+batches committed: the rows already written stay written. The capture's single statement
+would instead fail wholesale (or, past the same limit, be swallowed into `0` by its
+`catch`). Callers that need all-or-nothing semantics for more than one batch must own a
+transaction.
+
+## Backend coupling — sqlx behind a feature
+
+The `postgres` feature (default on) owns the `sqlx` dependency, the `postgres` module and
+the two driver error variants (`Database`, `Migration`); a build with
+`--no-default-features` compiles the trait seam with no Postgres driver linked, which is
+what the LMDB follow-up will use. `heed` is not optional yet, because `LmdbEnv` is part of
+this crate's Phase-1 slice; the LMDB backend decides whether to keep it when the seam gains
+a second implementation.
+
+## The seam's stream is `Send` — heed's `read-txn-no-tls` is required
+
+`QueryStream` is `Send`-bounded, which matches how the relay consumes it. A stream that
+owns an LMDB read transaction can only satisfy that bound with heed's `read-txn-no-tls`
+feature (heed 0.20.5 `src/txn.rs`: `RoTxn: Send` under that feature), so the workspace
+enables it. The feature changes no LMDB behaviour; it declares that read transactions may
+cross threads. The cost the LMDB backend inherits: a `QueryStream` holds a read transaction
+for its whole life, which delays reuse of pages freed by writers. That is deliberate for
+reconciliation (a materialised `Vec` of 10M pairs is worse), and revisit 1 below says when to
+change it.
 
 ## The harness's limits
 
@@ -127,3 +182,43 @@ backend is a recorded divergence, not a bug. Cucumber stays out of CI: the TS
 integration job has no Rust toolchain, so the Rust half
 (`tests/migrations.rs`, `tests/parity.rs`) runs there against a `postgres` service and
 the script remains the local, complete run.
+
+## Consequences
+
+- The Postgres backend is the reference implementation; every later backend is judged by
+  the differential fixture. `EventRecord::row_id` is Postgres's `events.id` and is
+  backend-defined: an LMDB store may leave it `None` on read, and the doc says so.
+- `events.expires_at` is a PostgreSQL `integer`, so a NIP-40 expiry beyond `i32::MAX`
+  (2038-01-19) is `StorageError::ValueOutOfRange` here. An LMDB store would accept it,
+  which is a future parity question, not an error to paper over.
+- `PostgresBackend::begin()` and `PostgresTransaction` are the only transaction entry
+  point. A backend-agnostic caller (the payments service) cannot be written against two
+  backends until a trait-level transaction abstraction exists; that is follow-up work.
+- The parity projection compares `(event_id, created_at, expires_at,
+  deleted_at.is_some(), event_deduplication)` and drops call-generated timestamps. It
+  does not compare `remote_address` or `row_id`; a backend that stored a wrong address
+  would pass the oracle. If the address becomes part of the row contract, add it to the
+  projection (the corpus already carries one).
+- The harness publishes its ports on `PARITY_BIND` (default `127.0.0.1`) with per-run
+  generated Postgres and Redis passwords; no host address or credential is committed.
+- 43 new non-database tests (records, env resolution, SQL composition, error mapping) keep
+  `cargo test --workspace` meaningful without a database; the two database targets stay
+  `#[ignore]`d and run in CI against a `postgres:16-alpine` service.
+
+## Revisit triggers
+
+1. **A long-lived LMDB read transaction hurts writes.** If the benchmark follow-up measures
+   write stalls caused by an open `find_reconciliation_items` stream, change the seam to a
+   bounded stream (or batched reads) and re-record the `QueryStream` decision; the `Send`
+   bound and heed's feature stay.
+2. **A second backend needs a transaction abstraction.** The first caller that must run
+   against both backends inside one transaction reopens the transaction-shape decision:
+   either a trait-level transaction or a backend-specific payments service.
+3. **A NIP-40 expiry past 2038 becomes reachable.** If a client can publish one, the
+   `events.expires_at integer` limit reopens: either widen the column (knex-identical? no —
+   the schema is the capture's) or clamp and record the divergence in the fixture.
+4. **The NIP-50 language changes at runtime.** The index is built with `simple`; changing
+   `nip50.language` without rebuilding the index silently drops the planner to a scan and
+   the migrations target's plan assertion is the alarm (it EXPLAINs with `simple`).
+5. **The capture's own FTS miss is fixed upstream.** If the TypeScript starts inlining the
+   configuration, the divergence above disappears and the fixture regenerates unchanged.

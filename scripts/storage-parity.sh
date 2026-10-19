@@ -4,36 +4,53 @@
 #
 # Usage: scripts/storage-parity.sh
 #
-# Environment:
-#   PARITY_PG_PORT     published Postgres port (default 18776)
-#   PARITY_REDIS_PORT  published Redis port (default 18777)
-#   PARITY_HOST        host the published ports are reached on (default 100.106.134.5)
-#   NODE_PATH          node_modules with cucumber-js and ts-node (default the primary checkout)
-#   CUCUMBER_BIN       cucumber-js binary (default $NODE_PATH/.bin/cucumber-js)
+# Environment (no host address or private path is committed; set these per host):
+#   PARITY_BIND           host address the published ports bind to. Default 127.0.0.1, so
+#                         nothing is reachable off-host. On a host where the harness runs
+#                         from another machine (this workspace's sandbox talks to the daemon
+#                         host) set the address that machine reaches, e.g. the tailnet one.
+#   PARITY_HOST           host the harness dials. Default $PARITY_BIND.
+#   PARITY_PG_PORT        published Postgres port (default 18776)
+#   PARITY_REDIS_PORT     published Redis port (default 18777)
+#   PARITY_PG_PASSWORD    Postgres password; generated per run (openssl rand -hex 16) if unset
+#   PARITY_REDIS_PASSWORD Redis password; generated per run if unset
+#   NODE_PATH             node_modules with cucumber-js and ts-node; required unless
+#                         CUCUMBER_BIN is set
+#   CUCUMBER_BIN          cucumber-js binary (default $NODE_PATH/.bin/cucumber-js)
 #
 # Both containers carry the `org.testcontainers=true` label the sandbox's Docker policy
-# requires, publish their port instead of bind-mounting (the policy denies a /workspace
-# source), and are removed by the exit trap. Nothing is written outside the worktree.
+# requires, publish their port on PARITY_BIND only (never a wildcard), use per-run
+# credentials, and are removed by the exit trap. Nothing is written outside the worktree.
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 cd "$root"
 
+PARITY_BIND=${PARITY_BIND:-127.0.0.1}
+PARITY_HOST=${PARITY_HOST:-$PARITY_BIND}
 PARITY_PG_PORT=${PARITY_PG_PORT:-18776}
 PARITY_REDIS_PORT=${PARITY_REDIS_PORT:-18777}
-PARITY_HOST=${PARITY_HOST:-100.106.134.5}
-NODE_ROOT=${NODE_PATH:-/workspace/projects/nostream/node_modules}
-CUCUMBER_BIN=${CUCUMBER_BIN:-$NODE_ROOT/.bin/cucumber-js}
+PARITY_PG_PASSWORD=${PARITY_PG_PASSWORD:-$(openssl rand -hex 16)}
+PARITY_REDIS_PASSWORD=${PARITY_REDIS_PASSWORD:-$(openssl rand -hex 16)}
+
+if [ -z "${CUCUMBER_BIN:-}" ]; then
+    if [ -z "${NODE_PATH:-}" ]; then
+        echo "storage-parity: set CUCUMBER_BIN or NODE_PATH to a node_modules with cucumber-js" >&2
+        exit 64
+    fi
+    CUCUMBER_BIN="$NODE_PATH/.bin/cucumber-js"
+fi
 
 pg_container="nostream-parity-pg-$$"
 redis_container="nostream-parity-redis-$$"
-admin_url="postgres://postgres:postgres@$PARITY_HOST:$PARITY_PG_PORT/postgres"
+admin_url="postgres://postgres:$PARITY_PG_PASSWORD@$PARITY_HOST:$PARITY_PG_PORT/postgres"
 
 cleanup() {
     docker rm -f "$pg_container" "$redis_container" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT INT HUP TERM
+trap cleanup EXIT
+trap 'exit 130' INT HUP TERM
 
 fail() {
     echo "storage-parity: $1" >&2
@@ -51,13 +68,14 @@ wait_for_log() {
     done
 }
 
-echo "== containers"
+echo "== containers (bound to $PARITY_BIND, per-run credentials)"
 docker rm -f "$pg_container" "$redis_container" >/dev/null 2>&1 || true
 docker create --name "$pg_container" --label org.testcontainers=true \
-    -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres \
-    -p "$PARITY_PG_PORT:5432" postgres:16-alpine >/dev/null
+    -e POSTGRES_PASSWORD="$PARITY_PG_PASSWORD" -e POSTGRES_DB=postgres \
+    -p "$PARITY_BIND:$PARITY_PG_PORT:5432" postgres:16-alpine >/dev/null
 docker create --name "$redis_container" --label org.testcontainers=true \
-    -p "$PARITY_REDIS_PORT:6379" redis:7-alpine >/dev/null
+    -p "$PARITY_BIND:$PARITY_REDIS_PORT:6379" redis:7-alpine \
+    redis-server --requirepass "$PARITY_REDIS_PASSWORD" >/dev/null
 docker start "$pg_container" "$redis_container" >/dev/null
 wait_for_log "$pg_container" "database system is ready to accept connections"
 wait_for_log "$redis_container" "Ready to accept connections"
@@ -74,11 +92,11 @@ echo "== behavioural parity"
     || fail "the parity target failed"
 
 echo "== cucumber on the sqlx-migrated schema"
-[ -x "$CUCUMBER_BIN" ] || fail "cucumber-js not found at $CUCUMBER_BIN (set CUCUMBER_BIN or NODE_PATH)"
+[ -x "$CUCUMBER_BIN" ] || fail "cucumber-js not found at $CUCUMBER_BIN"
 mkdir -p .test-reports/integration
-DB_URI="postgres://postgres:postgres@$PARITY_HOST:$PARITY_PG_PORT/nostream_parity_cucumber" \
-REDIS_URI="redis://$PARITY_HOST:$PARITY_REDIS_PORT" \
-NODE_PATH="$NODE_ROOT" \
+DB_URI="postgres://postgres:$PARITY_PG_PASSWORD@$PARITY_HOST:$PARITY_PG_PORT/nostream_parity_cucumber" \
+REDIS_URI="redis://:$PARITY_REDIS_PASSWORD@$PARITY_HOST:$PARITY_REDIS_PORT" \
+NODE_PATH="${NODE_PATH:-}" \
 TS_NODE_TRANSPILE_ONLY=true \
 NODE_OPTIONS=--no-experimental-strip-types \
     "$CUCUMBER_BIN" --format summary \
