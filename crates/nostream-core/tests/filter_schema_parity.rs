@@ -13,6 +13,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use nostream_core::Kind;
 use nostream_core::filter::{Filter, validate_filter};
 use serde_json::{Value, json};
 
@@ -518,19 +519,34 @@ fn kinds_beyond_u64_are_refused_as_a_representability_divergence() {
         issue_lines(&json!({"kinds": [1e20]})),
         vec!["kinds[0]: kind value does not fit in 64 bits"]
     );
-    // The boundary in both directions: `2^64` is the first unrepresentable value, and the
-    // largest `f64` below it (`2^64 - 2048`) is representable. `u64::MAX` itself is not a
-    // usable cell here because serde reads that JSON integer as `2^64`, as JavaScript does.
     assert_eq!(
         issue_lines(&json!({"kinds": [1.8446744073709552e19]})),
         vec!["kinds[0]: kind value does not fit in 64 bits"]
     );
+    // An integer literal above `u64::MAX` is a float to serde, and is refused the same way.
+    assert_eq!(
+        issue_lines(&serde_json::from_str(r#"{"kinds":[18446744073709551616]}"#).unwrap()),
+        vec!["kinds[0]: kind value does not fit in 64 bits"]
+    );
+}
+
+#[test]
+fn kinds_at_the_u64_boundary_are_carried_exactly() {
+    // The exact integer `u64::MAX` is representable and the capture accepts it; reading it
+    // through `as_f64` would round it up to `2^64` and refuse a value `Kind` can hold.
+    let filter = validate_filter(&json!({"kinds": [u64::MAX]})).unwrap();
+
+    assert_eq!(filter.kinds, Some(vec![Kind(u64::MAX)]));
+
+    // The largest `f64` below `2^64` and a plain large float are accepted too.
     assert!(issue_lines(&json!({"kinds": [18_446_744_073_709_549_568_u64]})).is_empty());
     assert!(issue_lines(&json!({"kinds": [1e19]})).is_empty());
 }
 
 #[test]
-fn limit_beyond_u64_is_refused_as_a_representability_divergence() {
+fn limit_at_and_above_the_u64_boundary() {
+    let filter = validate_filter(&json!({"limit": u64::MAX})).unwrap();
+    assert_eq!(filter.limit, Some(u64::MAX));
     assert_eq!(
         issue_lines(&json!({"limit": 1e20})),
         vec!["limit: limit does not fit in 64 bits"]
@@ -539,6 +555,15 @@ fn limit_beyond_u64_is_refused_as_a_representability_divergence() {
         issue_lines(&json!({"limit": 1.8446744073709552e19})),
         vec!["limit: limit does not fit in 64 bits"]
     );
-    assert!(issue_lines(&json!({"limit": 18_446_744_073_709_549_568_u64})).is_empty());
+    assert_eq!(
+        issue_lines(&serde_json::from_str(r#"{"limit":18446744073709551616}"#).unwrap()),
+        vec!["limit: limit does not fit in 64 bits"]
+    );
+    assert_eq!(
+        validate_filter(&json!({"limit": 18_446_744_073_709_549_568_u64}))
+            .unwrap()
+            .limit,
+        Some(18_446_744_073_709_549_568)
+    );
     assert!(issue_lines(&json!({"limit": 1e19})).is_empty());
 }

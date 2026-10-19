@@ -217,10 +217,11 @@ impl fmt::Display for FilterIssue {
 /// The raw document is the input because the schema reports type errors ("Expected array,
 /// received null") against a path, which a serde deserialisation deeper in a frame parser
 /// cannot phrase. Every message is the one the capture's zod 3 schema emits, verbatim, with
-/// two exceptions that are representability, not validation: a `kinds` element or a `limit`
-/// above `u64::MAX` is accepted by the capture (JavaScript numbers) and cannot be held here,
-/// so those two messages say so in their own words (`kind value does not fit in 64 bits`,
-/// `limit does not fit in 64 bits`). Recorded in ADR 0002.
+/// two exceptions that are representability, not validation: the capture accepts a `kinds`
+/// element or a `limit` that no `u64` can hold, and those two messages say so in their own
+/// words (`kind value does not fit in 64 bits`, `limit does not fit in 64 bits`). A JSON
+/// integer up to `u64::MAX` is carried exactly; the refused cell is an integer above
+/// `u64::MAX` or a float at or above `2^64`. Recorded in ADR 0002.
 pub fn validate_filter(value: &Value) -> Result<Filter, Vec<FilterIssue>> {
     let Some(object) = value.as_object() else {
         return Err(vec![FilterIssue {
@@ -429,13 +430,16 @@ fn validate_kinds(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
             continue;
         }
 
-        // Representability, not a zod rule: the capture holds kinds as JavaScript numbers
-        // and accepts any non-negative integer, while `Kind` is a `u64`. Refusing rather than
-        // saturating is a recorded divergence (ADR 0002), so the message says what it is.
-        if number >= U64_RANGE_END {
-            issue(&element, "kind value does not fit in 64 bits", issues);
-        } else {
-            kinds.push(Kind(number as u64));
+        // Representability, not a zod rule: the capture holds kinds as JavaScript numbers.
+        // A JSON integer that fits `u64` is carried exactly — `as_f64` would round
+        // `u64::MAX` up to `2^64` and refuse a value this can hold — and only a value no
+        // `u64` can hold is refused rather than saturated (ADR 0002).
+        match item.as_u64() {
+            Some(kind) => kinds.push(Kind(kind)),
+            None if number >= U64_RANGE_END => {
+                issue(&element, "kind value does not fit in 64 bits", issues);
+            }
+            None => kinds.push(Kind(number as u64)),
         }
     }
 
@@ -495,14 +499,16 @@ fn validate_limit(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
         return None;
     }
 
-    // See `validate_kinds`: `limit` is a `u64` here, while the capture accepts any
-    // non-negative integer. A recorded divergence, worded as such.
-    if number >= U64_RANGE_END {
-        issue(path, "limit does not fit in 64 bits", issues);
-        return None;
+    // See `validate_kinds`: a JSON integer that fits `u64` is carried exactly, and only a
+    // value no `u64` can hold is refused rather than saturated.
+    match value.as_u64() {
+        Some(limit) => Some(limit),
+        None if number >= U64_RANGE_END => {
+            issue(path, "limit does not fit in 64 bits", issues);
+            None
+        }
+        None => Some(number as u64),
     }
-
-    Some(number as u64)
 }
 
 /// `z.string().min(1).max(1024)` for the NIP-50 query.
