@@ -1,4 +1,13 @@
 {
+  "subject": {
+    "repo": "cameri/nostream",
+    "capture_commit": "242a3001d77149e4d70151ec03060c4ef44a1547",
+    "generator": "crates/nostream-storage/tests/capture/gen-storage-parity.mjs",
+    "generated_on": "2026-10-19",
+    "server_image": "postgres:16-alpine (PostgreSQL 16.15)",
+    "migration_command": "knex migrate:latest",
+    "migration_count": 37
+  },
   "columns": [
     [
       "dvm_jobs",

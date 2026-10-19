@@ -74,6 +74,33 @@ async fn applied_migrations(pool: &PgPool) -> Vec<(i64, bool)> {
         .collect()
 }
 
+async fn search_plan(pool: &PgPool) -> String {
+    let mut transaction = pool.begin().await.expect("a transaction");
+    sqlx::query("SET LOCAL enable_seqscan = off")
+        .execute(&mut *transaction)
+        .await
+        .expect("sequential scans can be disabled");
+    let rows = sqlx::query(
+        "EXPLAIN (ANALYZE, BUFFERS) SELECT event_id FROM events \
+         WHERE to_tsvector('simple'::regconfig, event_content) @@ \
+         plainto_tsquery('simple'::regconfig, $1)",
+    )
+    .bind("bitcoin lightning")
+    .fetch_all(&mut *transaction)
+    .await
+    .expect("the search plan is explainable");
+    let plan = rows
+        .iter()
+        .map(|row| row.get::<String, _>("QUERY PLAN"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    transaction
+        .rollback()
+        .await
+        .expect("the plan transaction rolls back");
+    plan
+}
+
 async fn catalogue(pool: &PgPool) -> Value {
     let excluded = "'knex_migrations','knex_migrations_lock','_sqlx_migrations'";
 
@@ -316,6 +343,17 @@ async fn the_migrations_apply_from_empty_are_idempotent_and_match_the_capture_sc
 
     let actual = catalogue(backend.master()).await;
     assert_same(&actual, &fixture());
+
+    // The NIP-50 predicate must be able to use the GIN index: the configuration is inlined
+    // as a constant (not a `text` bind, which would make the expression non-constant). With
+    // sequential scans disabled, the only way to answer the search is that index; a
+    // rewritten predicate that no longer matches the index expression shows up here as a
+    // Seq Scan (or no plan at all) rather than as a slower search.
+    let plan = search_plan(backend.master()).await;
+    assert!(
+        plan.contains("events_content_fts_idx"),
+        "the NIP-50 predicate does not use the FTS index:\n{plan}"
+    );
 
     // The Cucumber target needs the migrated schema too; this target owns that database.
     let cucumber = PgPool::connect(&with_database(&admin_url(), CUCUMBER_DATABASE))

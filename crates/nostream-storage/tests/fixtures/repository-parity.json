@@ -10081,36 +10081,6 @@
       "op": "events.delete_expired_and_retained",
       "request": {
         "options": {
-          "max_days": 1
-        }
-      },
-      "result": {
-        "compare": {
-          "deleted": 2,
-          "expired": 1,
-          "retained": 486
-        }
-      }
-    },
-    {
-      "op": "events.delete_expired_and_retained",
-      "request": {
-        "options": {
-          "max_days": 0
-        }
-      },
-      "result": {
-        "compare": {
-          "deleted": 0,
-          "expired": 0,
-          "retained": 0
-        }
-      }
-    },
-    {
-      "op": "events.delete_expired_and_retained",
-      "request": {
-        "options": {
           "max_days": 1,
           "kind_whitelist": [
             [
@@ -10121,6 +10091,36 @@
           "pubkey_whitelist": [
             "a100000000000000000000000000000000000000000000000000000000000000"
           ]
+        }
+      },
+      "result": {
+        "compare": {
+          "deleted": 1,
+          "expired": 0,
+          "retained": 326
+        }
+      }
+    },
+    {
+      "op": "events.delete_expired_and_retained",
+      "request": {
+        "options": {
+          "max_days": 1
+        }
+      },
+      "result": {
+        "compare": {
+          "deleted": 1,
+          "expired": 1,
+          "retained": 160
+        }
+      }
+    },
+    {
+      "op": "events.delete_expired_and_retained",
+      "request": {
+        "options": {
+          "max_days": 0
         }
       },
       "result": {
@@ -10259,6 +10259,36 @@
           "is_admitted": true,
           "is_vanished": false,
           "tos_accepted_at": {
+            "kind": "set",
+            "value": "2024-06-01T00:00:00Z"
+          }
+        }
+      },
+      "result": {
+        "compare": {
+          "count": 1
+        }
+      }
+    },
+    {
+      "op": "user.tos_accepted_at",
+      "request": {
+        "pubkey": "a200000000000000000000000000000000000000000000000000000000000000"
+      },
+      "result": {
+        "compare": {
+          "value": "2024-06-01T00:00:00.000Z"
+        }
+      }
+    },
+    {
+      "op": "user.upsert",
+      "request": {
+        "patch": {
+          "pubkey": "a200000000000000000000000000000000000000000000000000000000000000",
+          "is_admitted": true,
+          "is_vanished": false,
+          "tos_accepted_at": {
             "kind": "clear"
           }
         }
@@ -10266,6 +10296,17 @@
       "result": {
         "compare": {
           "count": 1
+        }
+      }
+    },
+    {
+      "op": "user.tos_accepted_at",
+      "request": {
+        "pubkey": "a200000000000000000000000000000000000000000000000000000000000000"
+      },
+      "result": {
+        "compare": {
+          "value": null
         }
       }
     },
@@ -11276,7 +11317,7 @@
           }
         },
         "ref": {
-          "id": "df411304-0744-4ca4-a7a4-84d8f32990e2"
+          "id": "d05eb04a-9e3b-4fee-9226-57efc47138c2"
         }
       }
     },
@@ -11305,7 +11346,7 @@
           }
         },
         "ref": {
-          "id": "8a0f84e0-63b0-4ea3-a479-e7f8c3bb2f00"
+          "id": "78642867-7c9f-4628-8dab-89a15adf2fe1"
         }
       }
     },
@@ -11398,6 +11439,38 @@
       "result": {
         "compare": {
           "messages": []
+        }
+      }
+    },
+    {
+      "op": "delivery_log.append",
+      "request": {
+        "entry": {
+          "outbox_id_from": "settings.changed",
+          "event_type": "settings.changed",
+          "target_id": "target-slack",
+          "target_type": "slack",
+          "status": "success",
+          "attempt_number": 1,
+          "error_snippet": null
+        }
+      },
+      "result": {
+        "compare": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "op": "delivery_log.find_successful_target_ids",
+      "request": {
+        "outbox_id_from": "settings.changed"
+      },
+      "result": {
+        "compare": {
+          "target_ids": [
+            "target-slack"
+          ]
         }
       }
     },

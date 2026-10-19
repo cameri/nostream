@@ -493,6 +493,24 @@ async fn run_op(
                 .await?;
             Ok(json!({ "ok": true }))
         }
+        "user.tos_accepted_at" => {
+            let pubkey = parse_pubkey(&request["pubkey"]);
+            let row = sqlx::query("SELECT tos_accepted_at FROM users WHERE pubkey = $1")
+                .bind(pubkey.as_bytes().to_vec())
+                .fetch_optional(backend.master())
+                .await?;
+            let value = match row {
+                None => Value::Null,
+                Some(row) => {
+                    let value: Option<chrono::NaiveDateTime> =
+                        sqlx::Row::try_get(&row, "tos_accepted_at")?;
+                    value
+                        .map(|value| iso(&value.and_utc()))
+                        .unwrap_or(Value::Null)
+                }
+            };
+            Ok(json!({ "value": value }))
+        }
         "user.revoke_admission" => {
             let pubkey = parse_pubkey(&request["pubkey"]);
             Ok(json!({ "count": client.users().revoke_admission(&pubkey).await? }))
@@ -781,8 +799,12 @@ async fn run_op(
         }
         "delivery_log.append" => {
             let entry = &request["entry"];
+            let outbox_id = match entry.get("outbox_id_from") {
+                Some(_) => Some(resolve_ref(refs, entry)?),
+                None => optional_text(entry, "outbox_id"),
+            };
             let new_entry = NewDeliveryLogEntry {
-                outbox_id: optional_text(entry, "outbox_id"),
+                outbox_id,
                 event_type: text(entry, "event_type"),
                 target_id: text(entry, "target_id"),
                 target_type: entry["target_type"]
@@ -824,7 +846,10 @@ async fn run_op(
             Ok(json!({ "entries": entries.iter().map(delivery_view).collect::<Vec<_>>() }))
         }
         "delivery_log.find_successful_target_ids" => {
-            let outbox_id = text(request, "outbox_id");
+            let outbox_id = match request.get("outbox_id_from") {
+                Some(_) => resolve_ref(refs, request)?,
+                None => text(request, "outbox_id"),
+            };
             let mut ids =
                 NotificationDeliveryLogRepository::find_successful_target_ids(backend, &outbox_id)
                     .await?;
@@ -884,8 +909,12 @@ fn resolve_ref(
     refs: &HashMap<String, String>,
     request: &Value,
 ) -> Result<String, nostream_storage::StorageError> {
-    let event_type = text(request, "enqueue_event_type");
-    refs.get(&event_type)
+    let event_type = request
+        .get("enqueue_event_type")
+        .or_else(|| request.get("outbox_id_from"))
+        .and_then(Value::as_str)
+        .expect("an enqueue reference");
+    refs.get(event_type)
         .cloned()
         .ok_or(nostream_storage::StorageError::InvalidArgument {
             message: "no enqueued row to address",

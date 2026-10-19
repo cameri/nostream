@@ -495,6 +495,14 @@ const script = [
   },
 
   // ---- events: retention (last, because it removes rows) ---------------------------
+  // The whitelisted pass runs first, while its excluded rows still exist, so a broken
+  // whitelist cannot hide behind an already-empty candidate set.
+  {
+    op: 'events.delete_expired_and_retained',
+    request: {
+      options: { max_days: 1, kind_whitelist: [[1, 1]], pubkey_whitelist: [PK_A] },
+    },
+  },
   {
     op: 'events.delete_expired_and_retained',
     request: { options: { max_days: 1 } },
@@ -502,12 +510,6 @@ const script = [
   {
     op: 'events.delete_expired_and_retained',
     request: { options: { max_days: 0 } },
-  },
-  {
-    op: 'events.delete_expired_and_retained',
-    request: {
-      options: { max_days: 1, kind_whitelist: [[1, 1]], pubkey_whitelist: [PK_A] },
-    },
   },
 
   // ---- users ----------------------------------------------------------------------
@@ -538,8 +540,14 @@ const script = [
   },
   {
     op: 'user.upsert',
+    request: { patch: { pubkey: PK_B, is_admitted: true, is_vanished: false, tos_accepted_at: { kind: 'set', value: '2024-06-01T00:00:00Z' } } },
+  },
+  { op: 'user.tos_accepted_at', request: { pubkey: PK_B } },
+  {
+    op: 'user.upsert',
     request: { patch: { pubkey: PK_B, is_admitted: true, is_vanished: false, tos_accepted_at: { kind: 'clear' } } },
   },
+  { op: 'user.tos_accepted_at', request: { pubkey: PK_B } },
   { op: 'user.revoke_admission', request: { pubkey: PK_B } },
   { op: 'user.find_by_pubkey', request: { pubkey: PK_C } },
 
@@ -785,6 +793,24 @@ const script = [
   { op: 'outbox.claim_batch', request: { limit: 10 } },
   { op: 'outbox.delete_terminal_older_than', request: { cutoff: '2100-01-01T00:00:00Z' } },
   { op: 'outbox.claim_batch', request: { limit: 10 } },
+  {
+    op: 'delivery_log.append',
+    request: {
+      entry: {
+        outbox_id_from: 'settings.changed',
+        event_type: 'settings.changed',
+        target_id: 'target-slack',
+        target_type: 'slack',
+        status: 'success',
+        attempt_number: 1,
+        error_snippet: null,
+      },
+    },
+  },
+  {
+    op: 'delivery_log.find_successful_target_ids',
+    request: { outbox_id_from: 'settings.changed' },
+  },
 
   // ---- serializable transaction groups --------------------------------------------
   {
@@ -933,6 +959,13 @@ const run = async (op, client, inTransaction = false) => {
             .then(() => true),
         },
       }
+    case 'user.tos_accepted_at': {
+      const [row] = await client('users')
+        .select('tos_accepted_at')
+        .where('pubkey', Buffer.from(request.pubkey, 'hex'))
+        .limit(1)
+      return { compare: { value: iso(row?.tos_accepted_at) } }
+    }
     case 'user.revoke_admission':
       return { compare: { count: await repository.user.revokeAdmission(request.pubkey) } }
     case 'invoice.find_by_id':
@@ -1139,7 +1172,9 @@ const run = async (op, client, inTransaction = false) => {
         compare: {
           ok: await repository.delivery
             .append({
-              outboxId: request.entry.outbox_id,
+              outboxId: request.entry.outbox_id_from
+                ? resolveId({ enqueue_event_type: request.entry.outbox_id_from })
+                : request.entry.outbox_id,
               eventType: request.entry.event_type,
               targetId: request.entry.target_id,
               targetType: request.entry.target_type,
@@ -1162,14 +1197,16 @@ const run = async (op, client, inTransaction = false) => {
         },
       }
     }
-    case 'delivery_log.find_successful_target_ids':
+    case 'delivery_log.find_successful_target_ids': {
+      const outboxId = request.outbox_id_from
+        ? resolveId({ enqueue_event_type: request.outbox_id_from })
+        : request.outbox_id
       return {
         compare: {
-          target_ids: (
-            await repository.delivery.findSuccessfulTargetIds(request.outbox_id)
-          ).sort(),
+          target_ids: (await repository.delivery.findSuccessfulTargetIds(outboxId)).sort(),
         },
       }
+    }
     case 'delivery_log.delete_older_than':
       return {
         compare: {
@@ -1354,7 +1391,16 @@ const main = async () => {
       'cycle_option',
     ],
   }
-  const schema = {}
+  const subject = {
+    repo: 'cameri/nostream',
+    capture_commit: '242a3001d77149e4d70151ec03060c4ef44a1547',
+    generator: 'crates/nostream-storage/tests/capture/gen-storage-parity.mjs',
+    generated_on: new Date().toISOString().slice(0, 10),
+    server_image: 'postgres:16-alpine (PostgreSQL 16.15)',
+    migration_command: 'knex migrate:latest',
+    migration_count: applied.length,
+  }
+  const schema = { subject }
   for (const [key, sql] of Object.entries(queries)) {
     schema[key] = (await db.raw(sql)).rows.map((row) =>
       shapes[key].map((field) => (row[field] === undefined ? null : row[field])),
