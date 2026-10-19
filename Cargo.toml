@@ -11,8 +11,14 @@ repository = "https://github.com/cameri/nostream"
 
 [workspace.dependencies]
 anyhow = "1"
+base64 = "0.22.1"
+chacha20 = "0.10.2"
 clap = { version = "4", features = ["derive"] }
 heed = "0.20"
+hex = "0.4.3"
+hkdf = "0.13.0"
+hmac = "0.13.0"
+negentropy = "0.5.2"
 nostream-admin = { path = "crates/nostream-admin" }
 nostream-cli = { path = "crates/nostream-cli" }
 nostream-config = { path = "crates/nostream-config" }
@@ -24,9 +30,11 @@ nostreamd = { path = "crates/nostreamd" }
 opentelemetry = "0.33.1"
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["trace", "grpc-tonic"] }
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace", "rt-tokio"] }
+secp256k1 = "0.33.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+sha2 = "0.11.1"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
