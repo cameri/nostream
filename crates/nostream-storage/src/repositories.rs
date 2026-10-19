@@ -53,7 +53,8 @@ pub struct EventRetentionOptions {
 /// Symbols in `src/constants/base.ts`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EventRecord {
-    /// `events.id` (uuid, DB-generated). `None` on a write; populated on every read.
+    /// `events.id` (uuid, DB-generated). `None` on a write; the Postgres backend populates
+    /// it on every read, while another backend may leave it `None` (it is backend-defined).
     pub row_id: Option<String>,
     /// The seven wire fields (`nostream_core::Event`), unchanged.
     pub event: nostream_core::Event,

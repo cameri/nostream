@@ -128,14 +128,14 @@ pub(crate) fn find_by_filters(
 
     let mut builder = Builder::default();
     if filters.len() == 1 {
-        push_event_branch(&mut builder, &filters[0], gates);
+        push_event_branch(&mut builder, &filters[0], gates)?;
     } else {
         for (index, filter) in filters.iter().enumerate() {
             if index > 0 {
                 builder.push(" UNION ");
             }
             builder.push("(");
-            push_event_branch(&mut builder, filter, gates);
+            push_event_branch(&mut builder, filter, gates)?;
             builder.push(")");
         }
         push_order(&mut builder, &filters[0], is_search(&filters[0], gates));
@@ -159,14 +159,14 @@ pub(crate) fn count_by_filters(
     let mut builder = Builder::default();
     builder.push("SELECT count(*) AS count FROM (");
     if filters.len() == 1 {
-        push_id_branch(&mut builder, &filters[0], gates, now);
+        push_id_branch(&mut builder, &filters[0], gates, now)?;
     } else {
         for (index, filter) in filters.iter().enumerate() {
             if index > 0 {
                 builder.push(" UNION ");
             }
             builder.push("(");
-            push_id_branch(&mut builder, filter, gates, now);
+            push_id_branch(&mut builder, filter, gates, now)?;
             builder.push(")");
         }
     }
@@ -184,7 +184,7 @@ pub(crate) fn find_reconciliation_items(
 ) -> Result<EventQuery, StorageError> {
     let mut builder = Builder::default();
     builder.push("SELECT events.event_created_at, events.event_id FROM events WHERE 1 = 1");
-    push_conditions(&mut builder, filter, gates);
+    push_conditions(&mut builder, filter, gates)?;
     push_live_only(&mut builder, now);
     builder.push(" ORDER BY event_created_at ASC, event_id ASC");
 
@@ -214,40 +214,49 @@ impl Builder {
     }
 }
 
-fn push_event_branch(builder: &mut Builder, filter: &Filter, gates: &Gates) {
+fn push_event_branch(
+    builder: &mut Builder,
+    filter: &Filter,
+    gates: &Gates,
+) -> Result<(), StorageError> {
     builder.push("SELECT ");
     builder.push(EVENT_COLUMNS);
 
     let search = is_search(filter, gates);
     if search {
-        let (language, query) = search_binding(filter, gates);
-        let language_slot = builder.arg(Arg::Text(language.clone()));
-        let query_language_slot = builder.arg(Arg::Text(language));
-        let query_slot = builder.arg(Arg::Text(query));
+        let config = search_config(gates)?;
+        let query_slot = builder.arg(Arg::Text(search_query(filter, gates)));
         builder.push(&format!(
-            ", ts_rank(to_tsvector({language_slot}::regconfig, events.event_content), \
-plainto_tsquery({query_language_slot}::regconfig, {query_slot})) AS search_rank"
+            ", ts_rank(to_tsvector('{config}'::regconfig, events.event_content), \
+plainto_tsquery('{config}'::regconfig, {query_slot})) AS search_rank"
         ));
     }
 
     builder.push(" FROM events WHERE 1 = 1");
-    push_conditions(builder, filter, gates);
+    push_conditions(builder, filter, gates)?;
 
     let limit = filter.limit.unwrap_or(DEFAULT_FILTER_LIMIT);
     push_order(builder, filter, search);
-    let limit_slot = builder.arg(Arg::BigInt(limit as i64));
+    let limit_slot = builder.arg(Arg::BigInt(i64::try_from(limit).unwrap_or(i64::MAX)));
     builder.push(&format!(" LIMIT {limit_slot}"));
+    Ok(())
 }
 
-fn push_id_branch(builder: &mut Builder, filter: &Filter, gates: &Gates, now: i64) {
+fn push_id_branch(
+    builder: &mut Builder,
+    filter: &Filter,
+    gates: &Gates,
+    now: i64,
+) -> Result<(), StorageError> {
     builder.push("SELECT events.event_id FROM events WHERE 1 = 1");
-    push_conditions(builder, filter, gates);
+    push_conditions(builder, filter, gates)?;
     push_live_only(builder, now);
-    if filter.limit.is_some() {
+    if let Some(limit) = filter.limit {
         push_order(builder, filter, false);
-        let limit_slot = builder.arg(Arg::BigInt(filter.limit.unwrap_or_default() as i64));
+        let limit_slot = builder.arg(Arg::BigInt(i64::try_from(limit).unwrap_or(i64::MAX)));
         builder.push(&format!(" LIMIT {limit_slot}"));
     }
+    Ok(())
 }
 
 fn push_live_only(builder: &mut Builder, now: i64) {
@@ -267,7 +276,11 @@ fn push_order(builder: &mut Builder, filter: &Filter, search: bool) {
     }
 }
 
-fn push_conditions(builder: &mut Builder, filter: &Filter, gates: &Gates) {
+fn push_conditions(
+    builder: &mut Builder,
+    filter: &Filter,
+    gates: &Gates,
+) -> Result<(), StorageError> {
     if let Some(authors) = &filter.authors {
         push_hex_criteria(builder, "events.event_pubkey", authors);
     }
@@ -302,13 +315,11 @@ fn push_conditions(builder: &mut Builder, filter: &Filter, gates: &Gates) {
     }
 
     if is_search(filter, gates) {
-        let (language, query) = search_binding(filter, gates);
-        let language_slot = builder.arg(Arg::Text(language.clone()));
-        let query_language_slot = builder.arg(Arg::Text(language));
-        let query_slot = builder.arg(Arg::Text(query));
+        let config = search_config(gates)?;
+        let query_slot = builder.arg(Arg::Text(search_query(filter, gates)));
         builder.push(&format!(
-            " AND (to_tsvector({language_slot}::regconfig, events.event_content) @@ \
-plainto_tsquery({query_language_slot}::regconfig, {query_slot}))"
+            " AND (to_tsvector('{config}'::regconfig, events.event_content) @@ \
+plainto_tsquery('{config}'::regconfig, {query_slot}))"
         ));
     }
 
@@ -349,6 +360,8 @@ AND event_tags.tag_name = {name_slot} AND ("
         builder.push(&parts.join(" OR "));
         builder.push("))");
     }
+
+    Ok(())
 }
 
 /// One hex criterion family: 64 characters compare exactly, an even-length prefix compares
@@ -427,16 +440,44 @@ fn is_search(filter: &Filter, gates: &Gates) -> bool {
             .is_some_and(|search| !search.trim().is_empty())
 }
 
-fn search_binding(filter: &Filter, gates: &Gates) -> (String, String) {
-    let Some(gate) = &gates.nip50 else {
-        return (DEFAULT_TS_CONFIG.to_owned(), String::new());
-    };
+/// The text-search configuration, inlined into the SQL as a literal.
+///
+/// The capture binds `?::regconfig` (`src/repositories/event-repository.ts:203-206`), and a
+/// driver bind makes the expression non-constant, so PostgreSQL cannot match the GIN index
+/// built on `to_tsvector('simple', event_content)` — the capture misses its own index too.
+/// This port inlines the settings value instead, which is the indexed expression; the value
+/// is settings text, so it is checked against the identifier shape first.
+fn search_config(gates: &Gates) -> Result<String, StorageError> {
+    let language = gates
+        .nip50
+        .as_ref()
+        .map(|gate| gate.language.as_str())
+        .unwrap_or(DEFAULT_TS_CONFIG);
+    let valid = !language.is_empty()
+        && language
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        && language
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_');
+    if !valid {
+        return Err(StorageError::InvalidArgument {
+            message: "nip50.language must be a PostgreSQL text-search configuration name",
+        });
+    }
+    Ok(language.to_owned())
+}
+
+fn search_query(filter: &Filter, gates: &Gates) -> String {
     let query = filter.search.as_deref().unwrap_or_default().trim();
-    let query = query
-        .chars()
-        .take(gate.max_query_length as usize)
-        .collect::<String>();
-    (gate.language.clone(), query)
+    let limit = gates
+        .nip50
+        .as_ref()
+        .map_or(super::DEFAULT_MAX_SEARCH_QUERY_LENGTH, |gate| {
+            gate.max_query_length
+        });
+    query.chars().take(limit as usize).collect()
 }
 
 /// Hex helpers, kept local so the query composer needs no hex crate dependency.
@@ -574,23 +615,53 @@ mod tests {
 
         let with = find_by_filters(&[filter], &gates(true, false)).unwrap();
         let text = sql(&with);
-        assert!(text.contains("ts_rank(to_tsvector($1::regconfig, events.event_content)"));
-        assert!(text.contains("to_tsvector($4::regconfig, events.event_content) @@"));
+        assert!(text.contains(
+            "ts_rank(to_tsvector('simple'::regconfig, events.event_content), \
+plainto_tsquery('simple'::regconfig, $1))"
+        ));
+        assert!(text.contains(
+            "to_tsvector('simple'::regconfig, events.event_content) @@ \
+plainto_tsquery('simple'::regconfig, $2)"
+        ));
         assert!(text.contains("ORDER BY search_rank DESC, event_id ASC"));
+        // The configuration is SQL text, not a bind: only the search term is bound.
         assert_eq!(
             with.args,
             Args {
                 items: vec![
-                    Arg::Text("simple".to_owned()),
-                    Arg::Text("simple".to_owned()),
                     Arg::Text("bitcoin lightning".to_owned()),
-                    Arg::Text("simple".to_owned()),
-                    Arg::Text("simple".to_owned()),
                     Arg::Text("bitcoin lightning".to_owned()),
                     Arg::BigInt(500),
                 ]
             }
         );
+    }
+
+    #[test]
+    fn the_search_language_must_be_a_config_identifier() {
+        let mut filter = filter();
+        filter.search = Some("bitcoin".to_owned());
+        for language in ["english", "simple", "pt_br2"] {
+            let gate = Gates {
+                nip50: Some(Nip50Gate {
+                    language: language.to_owned(),
+                    max_query_length: 256,
+                }),
+                nip56: false,
+            };
+            assert!(find_by_filters(&[filter.clone()], &gate).is_ok());
+        }
+        for language in ["", "simple'; DROP TABLE events; --", "Simple", "a-b"] {
+            let gate = Gates {
+                nip50: Some(Nip50Gate {
+                    language: language.to_owned(),
+                    max_query_length: 256,
+                }),
+                nip56: false,
+            };
+            let error = find_by_filters(&[filter.clone()], &gate).expect_err("rejected");
+            assert!(matches!(error, StorageError::InvalidArgument { .. }));
+        }
     }
 
     #[test]
@@ -612,13 +683,7 @@ mod tests {
                 .iter()
                 .any(|arg| { arg == &Arg::Text("a".repeat(10)) })
         );
-        assert!(
-            query
-                .args
-                .items
-                .iter()
-                .any(|arg| arg == &Arg::Text("english".to_owned()))
-        );
+        assert!(sql(&query).contains("to_tsvector('english'::regconfig"));
     }
 
     #[test]

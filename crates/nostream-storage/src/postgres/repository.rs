@@ -153,7 +153,7 @@ impl UserRepository for PostgresBackend {
             if let Some(user) = users::find_by_pubkey(&self.master, pubkey).await? {
                 return Ok(user.is_vanished);
             }
-            let vanished = events::has_active_request_to_vanish(&self.master, pubkey).await?;
+            let vanished = events::has_active_request_to_vanish(&self.reader, pubkey).await?;
             users::upsert_vanish_state(&self.master, pubkey, vanished).await?;
             Ok(vanished)
         })

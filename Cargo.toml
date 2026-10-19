@@ -16,7 +16,7 @@ chacha20 = "0.10.2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 clap = { version = "4", features = ["derive"] }
 futures-core = "0.3"
-heed = "0.20"
+heed = { version = "0.20", features = ["read-txn-no-tls"] }
 hex = "0.4.3"
 hkdf = "0.13.0"
 hmac = "0.13.0"

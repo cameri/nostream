@@ -22,10 +22,12 @@ pub mod backend;
 pub mod cache;
 pub mod error;
 pub mod event_store;
+#[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod records;
 pub mod repositories;
 
 pub use backend::{Backend, LmdbEnv};
 pub use error::StorageError;
+#[cfg(feature = "postgres")]
 pub use postgres::{PostgresBackend, PostgresTransaction};

@@ -49,7 +49,7 @@ pub struct PostgresBackend {
 /// The connection settings one pool is built from, resolved from the environment exactly
 /// as `src/database/client.ts:31-92` resolves them.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConnectParts {
+pub(crate) struct ConnectParts {
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -73,7 +73,7 @@ impl ConnectParts {
 
 /// The pool bounds one backend is built with.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PoolBounds {
+pub(crate) struct PoolBounds {
     pub min_connections: u32,
     pub max_connections: u32,
     pub acquire_timeout_ms: u64,
@@ -96,23 +96,19 @@ impl PostgresBackend {
         Self::from_lookup(&|name| env::var(name).ok()).await
     }
 
-    /// Connects master and reader pools from `url`; the harness and the tests use it.
+    /// Connects the master pool from `url`; with no replica configured the reader is the
+    /// master pool itself (`src/database/client.ts:97-100`). The harness and the tests use
+    /// this.
     pub async fn connect(url: &str) -> Result<Self, StorageError> {
         let options = url.parse::<PgConnectOptions>()?;
-        Self::with_pools(
-            options.clone(),
-            PoolBounds::default(),
-            options,
-            PoolBounds::default(),
-        )
-        .await
+        Self::with_pools(utc(options), PoolBounds::default(), None).await
     }
 
     /// Builds the backend without dialling. The dyn-compatibility test and the migration
     /// target use it, because neither needs a live connection to prove the trait objects.
     pub fn connect_lazy(url: &str) -> Result<Self, StorageError> {
         let options = url.parse::<PgConnectOptions>()?;
-        let master = lazy_pool(options, &PoolBounds::default());
+        let master = lazy_pool(utc(options), &PoolBounds::default());
         let reader = master.clone();
         Ok(Self {
             master,
@@ -182,33 +178,31 @@ impl PostgresBackend {
     {
         let master = master_options(lookup)?;
         let bounds = pool_bounds(lookup, "");
-        let reader = if lookup("READ_REPLICA_ENABLED").as_deref() == Some("true") {
+        let replica = if lookup("READ_REPLICA_ENABLED").as_deref() == Some("true") {
             let index = replica_index(lookup)?;
-            (
-                replica_parts(lookup, index)?.options(),
+            Some((
+                utc(replica_parts(lookup, index)?.options()),
                 pool_bounds(lookup, &format!("RR{index}_")),
-            )
+            ))
         } else {
-            (master.clone(), bounds.clone())
+            None
         };
 
-        Self::with_pools(
-            master.options([("timezone", "UTC")]),
-            bounds,
-            reader.0.options([("timezone", "UTC")]),
-            reader.1,
-        )
-        .await
+        Self::with_pools(utc(master), bounds, replica).await
     }
 
+    /// Opens the master pool and, only when a replica is configured, a second one; otherwise
+    /// the reader is the master pool, as `src/database/client.ts:97-100` returns it.
     async fn with_pools(
         master: PgConnectOptions,
         master_bounds: PoolBounds,
-        reader: PgConnectOptions,
-        reader_bounds: PoolBounds,
+        replica: Option<(PgConnectOptions, PoolBounds)>,
     ) -> Result<Self, StorageError> {
         let master_pool = connected_pool(master, &master_bounds).await?;
-        let reader_pool = connected_pool(reader, &reader_bounds).await?;
+        let reader_pool = match replica {
+            Some((options, bounds)) => connected_pool(options, &bounds).await?,
+            None => master_pool.clone(),
+        };
         Ok(Self {
             master: master_pool,
             reader: reader_pool,
@@ -248,6 +242,12 @@ fn pool_options(bounds: &PoolBounds) -> PgPoolOptions {
         .min_connections(bounds.min_connections)
         .max_connections(bounds.max_connections)
         .acquire_timeout(Duration::from_millis(bounds.acquire_timeout_ms))
+}
+
+/// Every connection is opened with the session time zone pinned to UTC, so a `timestamp`
+/// column round-trips deterministically.
+fn utc(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([("timezone", "UTC")])
 }
 
 fn lazy_pool(options: PgConnectOptions, bounds: &PoolBounds) -> PgPool {

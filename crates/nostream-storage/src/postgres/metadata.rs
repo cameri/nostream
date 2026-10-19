@@ -6,6 +6,7 @@ use nostream_core::{EventId, Kind, Pubkey};
 use sqlx::postgres::Postgres;
 use sqlx::{Executor, Row};
 
+use super::rows::{bytes_to_event_id, bytes_to_pubkey, int_column, optional_bytes};
 use super::{Arg, Args, EventQuery};
 use crate::error::StorageError;
 use crate::repositories::{
@@ -297,7 +298,7 @@ where
     let mut args = Args::default();
     let id_slot = args.push(Arg::Bytes(id.as_bytes().to_vec()));
     let requester_slot = args.push(Arg::Bytes(requester.as_bytes().to_vec()));
-    let kind_slot = args.push(Arg::Int(int32(kind.0 as i64, "kind")?));
+    let kind_slot = args.push(Arg::Int(int_column("kind", kind.0 as i64)?));
     let status_slot = args.push(Arg::Text(DvmJobStatus::Submitted.as_str().to_owned()));
     let created_slot = args.push(Arg::Timestamp(now));
     let updated_slot = args.push(Arg::Timestamp(now));
@@ -446,7 +447,7 @@ where
     if let Some(kinds) = kinds.filter(|kinds| !kinds.is_empty()) {
         let kinds: Vec<i32> = kinds
             .iter()
-            .map(|kind| int32(kind.0 as i64, "kind"))
+            .map(|kind| int_column("kind", kind.0 as i64))
             .collect::<Result<_, _>>()?;
         let kinds_slot = args.push(Arg::IntList(kinds));
         kinds_clause = format!(" AND kind = ANY({kinds_slot})");
@@ -584,38 +585,4 @@ where
             })
         })
         .collect()
-}
-
-fn int32(value: i64, column: &'static str) -> Result<i32, StorageError> {
-    i32::try_from(value).map_err(|_| StorageError::ValueOutOfRange {
-        column,
-        value: value.to_string(),
-    })
-}
-
-fn optional_bytes(
-    row: &sqlx::postgres::PgRow,
-    column: &'static str,
-) -> Result<Option<Vec<u8>>, StorageError> {
-    Ok(row.try_get::<Option<Vec<u8>>, _>(column)?)
-}
-
-fn bytes_to_pubkey(bytes: Vec<u8>, column: &'static str) -> Result<Pubkey, StorageError> {
-    bytes
-        .try_into()
-        .map(Pubkey::from_byte_array)
-        .map_err(|bytes: Vec<u8>| StorageError::ValueOutOfRange {
-            column,
-            value: format!("{} bytes", bytes.len()),
-        })
-}
-
-fn bytes_to_event_id(bytes: Vec<u8>, column: &'static str) -> Result<EventId, StorageError> {
-    bytes
-        .try_into()
-        .map(EventId::from_byte_array)
-        .map_err(|bytes: Vec<u8>| StorageError::ValueOutOfRange {
-            column,
-            value: format!("{} bytes", bytes.len()),
-        })
 }

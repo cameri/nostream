@@ -77,21 +77,6 @@ pub struct LmdbEnv {
     path: PathBuf,
 }
 
-/// Phase 1 stub — job 005; connects to Postgres with the Phase-2 driver choice; see `src/database/client.ts`.
-#[derive(Debug, Clone, Default)]
-pub struct PostgresBackend;
-
-impl PostgresBackend {
-    /// Connects to the database named by `DATABASE_URI` (or the `DB_*` parts).
-    ///
-    /// Phase 1 stub — job 005; will connect a pool through the Phase-2 driver; see `src/database/client.ts`.
-    pub async fn connect(_database_uri: &str) -> Result<Self, StorageError> {
-        Err(StorageError::NotImplemented {
-            module: "storage::backend::postgres::connect",
-        })
-    }
-}
-
 impl LmdbEnv {
     /// Opens (creating if needed) an LMDB environment at `path` with `map_size` bytes.
     pub fn open(path: impl Into<PathBuf>, map_size: usize) -> Result<Self, StorageError> {

@@ -59,10 +59,20 @@ where
         "is_admitted = excluded.is_admitted, is_vanished = excluded.is_vanished, \
          updated_at = excluded.updated_at",
     );
-    if let FieldUpdate::Set(tos_accepted_at) = patch.tos_accepted_at {
-        columns.push("tos_accepted_at");
-        values.push(args.push(Arg::NaiveTimestamp(tos_accepted_at.naive_utc())));
-        merge.push_str(", tos_accepted_at = excluded.tos_accepted_at");
+    match patch.tos_accepted_at {
+        // Absent leaves the column alone (knex skips `undefined`).
+        FieldUpdate::Absent => {}
+        // `null` in the capture's row: the column is written and the merge clears it.
+        FieldUpdate::Clear => {
+            columns.push("tos_accepted_at");
+            values.push(args.push(Arg::NullNaiveTimestamp));
+            merge.push_str(", tos_accepted_at = excluded.tos_accepted_at");
+        }
+        FieldUpdate::Set(tos_accepted_at) => {
+            columns.push("tos_accepted_at");
+            values.push(args.push(Arg::NaiveTimestamp(tos_accepted_at.naive_utc())));
+            merge.push_str(", tos_accepted_at = excluded.tos_accepted_at");
+        }
     }
 
     let sql = format!(

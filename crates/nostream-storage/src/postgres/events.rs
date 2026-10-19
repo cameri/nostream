@@ -9,6 +9,7 @@ use nostream_core::{EventId, Filter, Kind, KindSelector, Pubkey};
 use sqlx::postgres::{PgRow, Postgres};
 use sqlx::{Executor, Row};
 
+use super::rows::int_column;
 use super::sql::{self, hex_bytes};
 use super::{Arg, Args, EventQuery, Gates, RETENTION_BATCH_SIZE};
 use crate::error::StorageError;
@@ -34,6 +35,12 @@ event_content, event_signature, remote_address, expires_at, event_deduplication,
 /// The kind of the capture's `REQUEST_TO_VANISH`, which every retention whitelist keeps.
 const REQUEST_TO_VANISH: i32 = 62;
 
+/// PostgreSQL's bind limit is 65 535 parameters per statement; one insert row costs nine
+/// parameters and one upsert row eleven, so these are the largest single-statement batches
+/// the server accepts. Up to one batch, this is exactly the capture's one statement.
+const CREATE_BATCH_ROWS: usize = 65_535 / 9;
+const UPSERT_BATCH_ROWS: usize = 65_535 / 11;
+
 /// `create`: `INSERT ... ON CONFLICT (event_id) DO NOTHING`, returning the row count.
 pub(crate) async fn create<'e, E>(executor: E, record: &EventRecord) -> Result<u64, StorageError>
 where
@@ -55,7 +62,7 @@ where
     }
 
     let mut affected = 0;
-    for batch in records.chunks(1000) {
+    for batch in records.chunks(CREATE_BATCH_ROWS) {
         let mut args = Args::default();
         let values = batch
             .iter()
@@ -111,7 +118,7 @@ where
     }
 
     let mut affected = 0;
-    for batch in records.chunks(1000) {
+    for batch in records.chunks(UPSERT_BATCH_ROWS) {
         let mut args = Args::default();
         let values = batch
             .iter()
@@ -271,7 +278,7 @@ where
     };
 
     let now = Utc::now().timestamp();
-    let retention_limit = now - max_days * 86_400;
+    let retention_limit = now.saturating_sub(max_days.saturating_mul(86_400));
 
     let mut args = Args::default();
     let now_slot = args.push(Arg::BigInt(now));
@@ -407,13 +414,6 @@ fn tags_json(record: &EventRecord) -> Result<String, StorageError> {
     })
 }
 
-fn int_column(column: &'static str, value: i64) -> Result<i32, StorageError> {
-    i32::try_from(value).map_err(|_| StorageError::ValueOutOfRange {
-        column,
-        value: value.to_string(),
-    })
-}
-
 /// A stream of stored events, mapping each driver row.
 struct EventStream<'a> {
     inner: Pin<Box<dyn Stream<Item = Result<PgRow, sqlx::Error>> + Send + 'a>>,
@@ -449,5 +449,47 @@ impl Stream for ReconciliationStream<'_> {
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    #[test]
+    fn the_retention_whitelist_deduplicates_and_always_keeps_kind_62() {
+        let whitelist = retention_kinds(Some(&[
+            KindSelector::Single(Kind(1)),
+            KindSelector::Range([Kind(1), Kind(1)]),
+            KindSelector::Single(Kind(62)),
+            KindSelector::Single(Kind(1)),
+        ]));
+        assert_eq!(
+            whitelist,
+            vec![
+                KindSelector::Single(Kind(1)),
+                KindSelector::Range([Kind(1), Kind(1)]),
+                KindSelector::Single(Kind(62)),
+            ]
+        );
+
+        let default = retention_kinds(None);
+        assert_eq!(default, vec![KindSelector::Single(Kind(62))]);
+    }
+
+    #[test]
+    fn the_retention_whitelist_clause_names_kinds_and_ranges() {
+        let mut args = Args::default();
+        let clause = push_retention_kinds(
+            &mut args,
+            &[
+                KindSelector::Single(Kind(1)),
+                KindSelector::Range([Kind(10_000), Kind(19_999)]),
+            ],
+        );
+        assert_eq!(clause, "event_kind = $1 OR event_kind BETWEEN $2 AND $3");
+        assert_eq!(args.len(), 3);
     }
 }

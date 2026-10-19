@@ -238,17 +238,32 @@ fn optional_fixed<const N: usize>(
 
 fn tags(row: &PgRow) -> Result<Vec<Tag>, StorageError> {
     let value: Option<serde_json::Value> = row.try_get("event_tags")?;
-    match value {
-        None => Ok(Vec::new()),
-        Some(value) => {
-            let display = value.to_string();
-            serde_json::from_value(value).map_err(|_| StorageError::InvalidRow {
-                table: "events",
-                column: "event_tags",
-                value: display,
-            })
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let invalid = || StorageError::InvalidRow {
+        table: "events",
+        column: "event_tags",
+        value: value.to_string(),
+    };
+    let Some(rows) = value.as_array() else {
+        return Err(invalid());
+    };
+    let mut tags = Vec::with_capacity(rows.len());
+    for row in rows {
+        let Some(items) = row.as_array() else {
+            return Err(invalid());
+        };
+        let mut tag = Vec::with_capacity(items.len());
+        for item in items {
+            let Some(text) = item.as_str() else {
+                return Err(invalid());
+            };
+            tag.push(text.to_owned());
         }
+        tags.push(tag);
     }
+    Ok(tags)
 }
 
 fn optional_json_array(
@@ -256,19 +271,18 @@ fn optional_json_array(
     column: &'static str,
 ) -> Result<Option<Vec<serde_json::Value>>, StorageError> {
     let value: Option<serde_json::Value> = row.try_get(column)?;
-    match value {
-        None => Ok(None),
-        Some(value) => {
-            let display = value.to_string();
-            serde_json::from_value(value)
-                .map(Some)
-                .map_err(|_| StorageError::InvalidRow {
-                    table: "events",
-                    column,
-                    value: display,
-                })
-        }
-    }
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    value
+        .as_array()
+        .cloned()
+        .map(Some)
+        .ok_or_else(|| StorageError::InvalidRow {
+            table: "events",
+            column,
+            value: value.to_string(),
+        })
 }
 
 fn optional_address(row: &PgRow, column: &'static str) -> Result<Option<IpAddr>, StorageError> {
@@ -310,4 +324,49 @@ where
 {
     let value: String = row.try_get(column)?;
     value.parse()
+}
+
+/// An integer column value checked into `i32` (the `kind`, `event_created_at` and
+/// `expires_at` columns).
+pub(crate) fn int_column(column: &'static str, value: i64) -> Result<i32, StorageError> {
+    i32::try_from(value).map_err(|_| StorageError::ValueOutOfRange {
+        column,
+        value: value.to_string(),
+    })
+}
+
+/// The optional `bytea` column backing a nullable key.
+pub(crate) fn optional_bytes(
+    row: &PgRow,
+    column: &'static str,
+) -> Result<Option<Vec<u8>>, StorageError> {
+    Ok(row.try_get::<Option<Vec<u8>>, _>(column)?)
+}
+
+/// A 32-byte `bytea` as a pubkey.
+pub(crate) fn bytes_to_pubkey(
+    bytes: Vec<u8>,
+    column: &'static str,
+) -> Result<Pubkey, StorageError> {
+    bytes
+        .try_into()
+        .map(Pubkey::from_byte_array)
+        .map_err(|bytes: Vec<u8>| StorageError::ValueOutOfRange {
+            column,
+            value: format!("{} bytes", bytes.len()),
+        })
+}
+
+/// A 32-byte `bytea` as an event id.
+pub(crate) fn bytes_to_event_id(
+    bytes: Vec<u8>,
+    column: &'static str,
+) -> Result<EventId, StorageError> {
+    bytes
+        .try_into()
+        .map(EventId::from_byte_array)
+        .map_err(|bytes: Vec<u8>| StorageError::ValueOutOfRange {
+            column,
+            value: format!("{} bytes", bytes.len()),
+        })
 }

@@ -10,11 +10,15 @@ pub enum StorageError {
     NotImplemented { module: &'static str },
 
     /// A database operation failed. The driver's message names the statement class for an
-    /// operator; callers must not match on its text.
+    /// operator; callers must not match on its text, and a handler must never forward it.
+    /// Present only with the `postgres` feature, so the crate's error type names no
+    /// backend's driver in a build that does not link one.
+    #[cfg(feature = "postgres")]
     #[error("database operation failed: {0}")]
     Database(#[from] sqlx::Error),
 
-    /// The embedded migrator could not apply the schema.
+    /// The embedded migrator could not apply the schema (with the `postgres` feature).
+    #[cfg(feature = "postgres")]
     #[error("database migration failed: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
 
@@ -105,6 +109,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "postgres")]
     #[test]
     fn a_database_error_keeps_the_drivers_message() {
         let error = StorageError::from(sqlx::Error::RowNotFound);
