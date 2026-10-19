@@ -35,11 +35,12 @@ event_content, event_signature, remote_address, expires_at, event_deduplication,
 /// The kind of the capture's `REQUEST_TO_VANISH`, which every retention whitelist keeps.
 const REQUEST_TO_VANISH: i32 = 62;
 
-/// PostgreSQL's bind limit is 65 535 parameters per statement; one insert row costs nine
-/// parameters and one upsert row eleven, so these are the largest single-statement batches
-/// the server accepts. Up to one batch, this is exactly the capture's one statement.
+/// PostgreSQL's bind limit is 65 535 parameters per statement. One `create` row binds nine
+/// parameters (`INSERT_COLUMNS`) and one `upsert` row binds ten (`UPSERT_COLUMNS`), so these
+/// are the largest single-statement batches the server accepts. Up to one batch, this is
+/// exactly the capture's one statement.
 const CREATE_BATCH_ROWS: usize = 65_535 / 9;
-const UPSERT_BATCH_ROWS: usize = 65_535 / 11;
+const UPSERT_BATCH_ROWS: usize = 65_535 / 10;
 
 /// `create`: `INSERT ... ON CONFLICT (event_id) DO NOTHING`, returning the row count.
 pub(crate) async fn create<'e, E>(executor: E, record: &EventRecord) -> Result<u64, StorageError>

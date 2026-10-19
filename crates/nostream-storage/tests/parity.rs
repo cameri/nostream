@@ -5,6 +5,7 @@
 //! The test creates the database if absent and runs the migrator, so this target and
 //! `migrations.rs` have no ordering dependency.
 
+#![cfg(feature = "postgres")]
 // This integration-test target may unwrap: a failed assertion here is a failed test,
 // which is the point. The allowance names this file rather than exempting test targets
 // workspace-wide, so a new test file still has to ask.
@@ -19,9 +20,10 @@ use serde_json::{Value, json};
 use sqlx::Executor;
 use sqlx::postgres::PgPool;
 
-use nostream_config::Settings;
 use nostream_core::{Filter, Kind};
 use nostream_storage::postgres::{PostgresBackend, PostgresTransaction};
+mod common;
+
 use nostream_storage::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
     DvmJobRepository, DvmJobUpdate, EventPurgeCounts, EventRecord, EventRepository,
@@ -978,24 +980,6 @@ async fn run_transaction(backend: &PostgresBackend, op: &Value) -> Value {
     }
 }
 
-fn settings_from_fixture(fixture: &Value) -> Settings {
-    let raw = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../resources/default-settings.yaml"
-    ))
-    .expect("the shipped defaults are readable");
-    let mut document: serde_yaml::Value =
-        serde_yaml::from_str(&raw).expect("the shipped defaults are valid YAML");
-    if let Some(overrides) = fixture["settings"]["overrides"].as_object() {
-        for (path, value) in overrides {
-            let yaml = serde_yaml::to_value(value).expect("a YAML value");
-            document = nostream_config::path::set_by_path(&document, path, yaml)
-                .expect("the override path is writable");
-        }
-    }
-    serde_yaml::from_value(document).expect("the settings fit the typed schema")
-}
-
 #[tokio::test]
 #[ignore = "needs PARITY_ADMIN_URL; scripts/storage-parity.sh sets it"]
 async fn the_typescript_script_replays_with_an_empty_diff() {
@@ -1019,7 +1003,7 @@ async fn the_typescript_script_replays_with_an_empty_diff() {
     let backend = PostgresBackend::connect(&with_database(&admin_url, DATABASE))
         .await
         .expect("the parity database is reachable")
-        .with_settings(Arc::new(settings_from_fixture(&fixture)));
+        .with_settings(Arc::new(common::settings_from_fixture(&fixture)));
     backend.migrate().await.expect("the schema migrates");
 
     let corpus: Vec<EventRecord> = fixture["corpus"]

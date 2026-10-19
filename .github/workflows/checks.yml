@@ -270,6 +270,8 @@ jobs:
         env:
           PARITY_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: cargo test -p nostream-storage --test migrations --test parity -- --ignored --test-threads=1
+      - name: Storage builds without the Postgres driver
+        run: cargo check -p nostream-storage --no-default-features --all-targets
       - name: Release build
         run: cargo build --workspace --all-features --release
 

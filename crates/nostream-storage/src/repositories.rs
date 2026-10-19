@@ -353,13 +353,20 @@ pub trait EventRepository: Send + Sync {
     /// Inserts one event, returning the affected row count (0 on a duplicate `event_id`).
     fn create<'a>(&'a self, record: &'a EventRecord) -> StorageFuture<'a, u64>;
 
-    /// Inserts every event in one statement, returning the affected row count.
+    /// Inserts every event, returning the affected row count.
+    ///
+    /// Atomicity is backend-defined: the Postgres backend sends one statement up to its bind
+    /// limit and batches beyond it, so a mid-batch error can leave earlier batches written
+    /// (ADR 0003, "Batching"). A caller that needs all-or-nothing for any size owns a
+    /// transaction.
     fn create_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64>;
 
     /// Inserts or replaces a replaceable event, returning the affected row count.
     fn upsert<'a>(&'a self, record: &'a EventRecord) -> StorageFuture<'a, u64>;
 
-    /// Inserts or replaces every event in one statement, returning the affected row count.
+    /// Inserts or replaces every event, returning the affected row count.
+    ///
+    /// The same backend-defined atomicity as [`EventRepository::create_many`].
     fn upsert_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64>;
 
     /// Streams the events matching the filters, in the query's order.

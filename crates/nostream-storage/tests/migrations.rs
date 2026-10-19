@@ -6,10 +6,13 @@
 //! The test creates and migrates its own scratch databases, so either database-backed target
 //! can run alone.
 
+#![cfg(feature = "postgres")]
 // This integration-test target may unwrap: a failed assertion here is a failed test,
 // which is the point. The allowance names this file rather than exempting test targets
 // workspace-wide, so a new test file still has to ask.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+mod common;
 
 use serde_json::{Value, json};
 use sqlx::postgres::PgPool;
@@ -74,18 +77,46 @@ async fn applied_migrations(pool: &PgPool) -> Vec<(i64, bool)> {
         .collect()
 }
 
-async fn search_plan(pool: &PgPool) -> String {
+/// EXPLAINs the composer's own search statement, prepared with the same binds the backend
+/// sends. Sequential scans are disabled, so the only way to answer it is the GIN index the
+/// migrations built on `to_tsvector('simple', event_content)`; a configuration the index was
+/// not built with shows up here as a scan and fails the target.
+async fn composer_search_plan(pool: &PgPool) -> String {
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/repository-parity.json"))
+        .expect("the parity fixture is valid JSON");
+    let settings = common::settings_from_fixture(&fixture);
+    let backend =
+        nostream_storage::PostgresBackend::connect(&with_database(&admin_url(), RUST_DATABASE))
+            .await
+            .expect("the parity database is reachable")
+            .with_settings(std::sync::Arc::new(settings));
+    let filter = nostream_core::Filter {
+        search: Some("bitcoin lightning".to_owned()),
+        ..Default::default()
+    };
+    let composed = backend
+        .event_query_sql(std::slice::from_ref(&filter))
+        .expect("the composer builds the search statement");
+    assert!(
+        composed.contains("to_tsvector('simple'::regconfig, events.event_content)"),
+        "the composer's NIP-50 predicate is not the indexed expression: {composed}"
+    );
+
     let mut transaction = pool.begin().await.expect("a transaction");
     sqlx::query("SET LOCAL enable_seqscan = off")
         .execute(&mut *transaction)
         .await
         .expect("sequential scans can be disabled");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PREPARE nip50_plan AS {composed}"
+    )))
+    .execute(&mut *transaction)
+    .await
+    .expect("the composed statement prepares");
     let rows = sqlx::query(
-        "EXPLAIN (ANALYZE, BUFFERS) SELECT event_id FROM events \
-         WHERE to_tsvector('simple'::regconfig, event_content) @@ \
-         plainto_tsquery('simple'::regconfig, $1)",
+        "EXPLAIN (ANALYZE, BUFFERS) EXECUTE nip50_plan('bitcoin lightning', \
+         'bitcoin lightning', 500)",
     )
-    .bind("bitcoin lightning")
     .fetch_all(&mut *transaction)
     .await
     .expect("the search plan is explainable");
@@ -345,11 +376,10 @@ async fn the_migrations_apply_from_empty_are_idempotent_and_match_the_capture_sc
     assert_same(&actual, &fixture());
 
     // The NIP-50 predicate must be able to use the GIN index: the configuration is inlined
-    // as a constant (not a `text` bind, which would make the expression non-constant). With
-    // sequential scans disabled, the only way to answer the search is that index; a
-    // rewritten predicate that no longer matches the index expression shows up here as a
-    // Seq Scan (or no plan at all) rather than as a slower search.
-    let plan = search_plan(backend.master()).await;
+    // as a constant (not a `text` bind, which would make the expression non-constant). This
+    // EXPLAINs the composer's statement at the fixture's settings, so a configuration the
+    // index was not built with fails here rather than as a slower search in production.
+    let plan = composer_search_plan(backend.master()).await;
     assert!(
         plan.contains("events_content_fts_idx"),
         "the NIP-50 predicate does not use the FTS index:\n{plan}"

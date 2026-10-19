@@ -35,7 +35,6 @@ async fn the_repository_traits_are_dyn_compatible() {
     use std::sync::Arc;
 
     use nostream_core::{EventId, Filter, Kind, Pubkey};
-    use nostream_storage::PostgresBackend;
     use nostream_storage::StorageError;
     use nostream_storage::repositories::{
         ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
@@ -386,8 +385,20 @@ async fn the_repository_traits_are_dyn_compatible() {
     let _: Arc<dyn ReportRepository> = noop.clone();
     let _: Arc<dyn NotificationDeliveryLogRepository> = noop.clone();
     let _: Arc<dyn NotificationOutboxRepository> = noop;
+}
 
-    // The real backend coerces into the same nine forms without a database.
+/// The real backend coerces into the same nine forms without a database. Separate from the
+/// `Noop` check so the seam still compiles and is tested with the `postgres` feature off.
+#[cfg(feature = "postgres")]
+#[tokio::test]
+async fn the_postgres_backend_coerces_to_all_nine_trait_objects() {
+    use nostream_storage::PostgresBackend;
+    use nostream_storage::repositories::{
+        DvmJobRepository, EventRepository, InviteCodeRepository, InvoiceRepository,
+        Nip05VerificationRepository, NotificationDeliveryLogRepository,
+        NotificationOutboxRepository, ReportRepository, UserRepository,
+    };
+
     let backend = PostgresBackend::connect_lazy("postgres://postgres:postgres@127.0.0.1/postgres")
         .expect("a lazy backend");
     let _: &dyn EventRepository = &backend;

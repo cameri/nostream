@@ -134,6 +134,19 @@ impl PostgresBackend {
         migrate_pool(&self.master).await
     }
 
+    /// The SQL `find_by_filters` composes for these filters, at this backend's settings.
+    ///
+    /// The migrations target EXPLAINs it, so the NIP-50 plan guard sees the composer's own
+    /// text rather than a hand-written copy (ADR 0003, revisit trigger 4). Not part of the
+    /// repository seam.
+    #[doc(hidden)]
+    pub fn event_query_sql(
+        &self,
+        filters: &[nostream_core::Filter],
+    ) -> Result<String, StorageError> {
+        sql::find_by_filters(filters, &self.gates()).map(|query| query.sql)
+    }
+
     /// Opens a serializable transaction (`src/database/transaction.ts:12`).
     pub fn begin(&self) -> crate::repositories::StorageFuture<'_, PostgresTransaction> {
         Box::pin(async move {
