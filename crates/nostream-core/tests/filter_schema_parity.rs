@@ -511,19 +511,34 @@ fn rejects_an_astral_prefix_longer_than_64_utf16_units() {
 
 #[test]
 fn kinds_beyond_u64_are_refused_as_a_representability_divergence() {
-    // The capture accepts `kinds: [1e20]` (a JavaScript number); `Kind` is a `u64`, so the
-    // value cannot be held. This is a recorded divergence (ADR 0002), not a zod rule, and the
-    // message says so in its own words rather than imitating zod's phrasing.
-    let issues = issue_lines(&json!({"kinds": [1e20]}));
-
-    assert_eq!(issues, vec!["kinds[0]: kind value does not fit in 64 bits"]);
+    // The capture accepts these (JavaScript numbers, no ceiling in `kindSchema`); `Kind` is a
+    // `u64`. A recorded divergence (ADR 0002), not a zod rule, and the message says so in its
+    // own words rather than imitating zod's phrasing.
+    assert_eq!(
+        issue_lines(&json!({"kinds": [1e20]})),
+        vec!["kinds[0]: kind value does not fit in 64 bits"]
+    );
+    // The boundary in both directions: `2^64` is the first unrepresentable value, and the
+    // largest `f64` below it (`2^64 - 2048`) is representable. `u64::MAX` itself is not a
+    // usable cell here because serde reads that JSON integer as `2^64`, as JavaScript does.
+    assert_eq!(
+        issue_lines(&json!({"kinds": [1.8446744073709552e19]})),
+        vec!["kinds[0]: kind value does not fit in 64 bits"]
+    );
+    assert!(issue_lines(&json!({"kinds": [18_446_744_073_709_549_568_u64]})).is_empty());
     assert!(issue_lines(&json!({"kinds": [1e19]})).is_empty());
 }
 
 #[test]
 fn limit_beyond_u64_is_refused_as_a_representability_divergence() {
-    let issues = issue_lines(&json!({"limit": 1e20}));
-
-    assert_eq!(issues, vec!["limit: limit does not fit in 64 bits"]);
+    assert_eq!(
+        issue_lines(&json!({"limit": 1e20})),
+        vec!["limit: limit does not fit in 64 bits"]
+    );
+    assert_eq!(
+        issue_lines(&json!({"limit": 1.8446744073709552e19})),
+        vec!["limit: limit does not fit in 64 bits"]
+    );
+    assert!(issue_lines(&json!({"limit": 18_446_744_073_709_549_568_u64})).is_empty());
     assert!(issue_lines(&json!({"limit": 1e19})).is_empty());
 }

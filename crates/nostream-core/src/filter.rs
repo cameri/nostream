@@ -23,6 +23,11 @@ const KNOWN_FILTER_KEYS: [&str; 7] = [
 /// The largest integer JavaScript represents exactly (`Number.MAX_SAFE_INTEGER`).
 const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
+/// `2^64`, the first value a `u64` cannot hold. `u64::MAX as f64` **is** this number — the
+/// largest `f64` below it is `u64::MAX - 2047` — so the comparison must be `>=`, not `>`:
+/// with `>`, exactly `2^64` passed and `as u64` silently saturated it to `u64::MAX`.
+const U64_RANGE_END: f64 = 18_446_744_073_709_551_616.0;
+
 /// A Nostr REQ filter (`src/@types/subscription.ts` `SubscriptionFilter`).
 ///
 /// `ids` and `authors` hold hex **prefixes**: the schema admits 4..64 characters
@@ -427,7 +432,7 @@ fn validate_kinds(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
         // Representability, not a zod rule: the capture holds kinds as JavaScript numbers
         // and accepts any non-negative integer, while `Kind` is a `u64`. Refusing rather than
         // saturating is a recorded divergence (ADR 0002), so the message says what it is.
-        if number > u64::MAX as f64 {
+        if number >= U64_RANGE_END {
             issue(&element, "kind value does not fit in 64 bits", issues);
         } else {
             kinds.push(Kind(number as u64));
@@ -492,7 +497,7 @@ fn validate_limit(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
 
     // See `validate_kinds`: `limit` is a `u64` here, while the capture accepts any
     // non-negative integer. A recorded divergence, worded as such.
-    if number > u64::MAX as f64 {
+    if number >= U64_RANGE_END {
         issue(path, "limit does not fit in 64 bits", issues);
         return None;
     }
