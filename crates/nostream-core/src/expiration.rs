@@ -15,9 +15,11 @@ pub const MAX_EXPIRATION_TIME: u32 = 2_147_483_647;
 /// The event's expiration, when its first `expiration` tag holds a usable value
 /// (`getEventExpiration`, `src/utils/event.ts:265-276`).
 ///
-/// The value is parsed the way `Number(value)` does it: finite, integral, greater than
-/// zero and no higher than [`MAX_EXPIRATION_TIME`]. `"a"`, `"0"`, a millisecond-scale
-/// timestamp and a value beyond the column bound all yield `None`.
+/// The value is parsed the way `Number(value)` parses it — surrounding whitespace trimmed,
+/// `0x`/`0o`/`0b` radix prefixes read, the empty string as zero, everything else decimal —
+/// and then required to be finite, integral, greater than zero and no higher than
+/// [`MAX_EXPIRATION_TIME`]. `"a"`, `"0"`, a millisecond-scale timestamp and a value beyond
+/// the column bound all yield `None`.
 pub fn get_event_expiration(event: &Event) -> Option<u32> {
     let raw = event
         .tags
@@ -25,7 +27,7 @@ pub fn get_event_expiration(event: &Event) -> Option<u32> {
         .find(|tag| tag.len() >= 2 && tag[0] == "expiration")
         .map(|tag| tag[1].as_str())?;
 
-    let value: f64 = raw.parse().ok()?;
+    let value = js_number(raw)?;
 
     if value.is_finite()
         && value.fract() == 0.0
@@ -50,6 +52,33 @@ pub fn is_expired_event(event: &Event, now: i64) -> bool {
         Some(expiration) => i64::from(expiration) <= now,
         None => false,
     }
+}
+
+/// The subset of JavaScript's `Number(primitive)` a tag value can reach: `String.prototype`
+/// trimming, the three radix prefixes, the empty string as zero, and the decimal grammar
+/// `f64::from_str` shares with it. Anything JavaScript would read as `NaN` (or as a value
+/// this cannot represent) is `None`, which every caller treats as "no usable expiration".
+fn js_number(text: &str) -> Option<f64> {
+    let trimmed = text.trim();
+
+    if trimmed.is_empty() {
+        return Some(0.0);
+    }
+
+    let (radix, digits) =
+        if let Some(digits) = trimmed.strip_prefix("0x").or(trimmed.strip_prefix("0X")) {
+            (16, digits)
+        } else if let Some(digits) = trimmed.strip_prefix("0o").or(trimmed.strip_prefix("0O")) {
+            (8, digits)
+        } else if let Some(digits) = trimmed.strip_prefix("0b").or(trimmed.strip_prefix("0B")) {
+            (2, digits)
+        } else {
+            return trimmed.parse::<f64>().ok();
+        };
+
+    u64::from_str_radix(digits, radix)
+        .ok()
+        .map(|value| value as f64)
 }
 
 #[cfg(test)]
@@ -201,5 +230,38 @@ mod tests {
 
         assert!(is_expired_event(&event, 100_000));
         assert!(!is_expired_event(&event, 99_999));
+    }
+
+    #[test]
+    fn expiration_reads_the_forms_javascript_number_reads() {
+        assert_eq!(
+            get_event_expiration(&event_with(vec![vec!["expiration", " 160000000 "]])),
+            Some(160_000_000)
+        );
+        assert_eq!(
+            get_event_expiration(&event_with(vec![vec!["expiration", "0x10"]])),
+            Some(16)
+        );
+        assert_eq!(
+            get_event_expiration(&event_with(vec![vec!["expiration", "0o10"]])),
+            Some(8)
+        );
+        assert_eq!(
+            get_event_expiration(&event_with(vec![vec!["expiration", "0b101"]])),
+            Some(5)
+        );
+        assert_eq!(
+            get_event_expiration(&event_with(vec![vec!["expiration", "1e3"]])),
+            Some(1_000)
+        );
+    }
+
+    #[test]
+    fn expiration_of_a_bare_radix_prefix_is_none() {
+        // `Number("0x")` is NaN in JavaScript.
+        assert_eq!(
+            get_event_expiration(&event_with(vec![vec!["expiration", "0x"]])),
+            None
+        );
     }
 }
