@@ -37,11 +37,18 @@ pub fn verify_event_signature(event: &Event) -> Result<(), CoreError> {
         .map_err(|_| CoreError::InvalidSignature)
 }
 
-/// Fills in the event's id and signature from a 32-byte secret key (`signEvent`,
-/// `src/utils/event.ts:169-174`; the id first, then the signature over it).
+/// Produces a complete, valid event from a 32-byte secret key (`signEvent`,
+/// `src/utils/event.ts:169-174`): the author, the id and then the signature over it.
+///
+/// The capture's `signEvent` takes an id it was handed and leaves `pubkey` alone, so a
+/// caller that pairs it with the wrong key gets a signature that verifies over the id but
+/// not against the event's own pubkey. Here the pubkey is set from the key, because the id
+/// is hashed over the pubkey and a returned event must verify.
 pub fn sign_event(secret_key: &[u8; 32], event: &mut Event) -> Result<(), CoreError> {
     let keypair = keypair(secret_key)?;
+    let (public_key, _parity) = keypair.x_only_public_key();
 
+    event.pubkey = Pubkey::from_byte_array(public_key.to_byte_array());
     event.id = compute_event_id(event)?;
     let signature = schnorr::sign_no_aux_rand(event.id.as_bytes(), &keypair);
     event.sig = Signature::from_byte_array(*signature.as_byte_array());
@@ -152,6 +159,19 @@ mod tests {
 
         assert_eq!(event.id, again.id);
         assert_eq!(event.sig, again.sig);
+        assert!(verify_event_signature(&event).is_ok());
+    }
+
+    #[test]
+    fn signing_sets_the_author_so_a_mismatched_pubkey_cannot_be_signed() {
+        let secret = [2u8; 32];
+        let mut event = signed_candidate(&secret);
+        // Whatever the caller put here, signing makes it the signer's key.
+        event.pubkey = public_key(&[7u8; 32]).unwrap();
+
+        sign_event(&secret, &mut event).unwrap();
+
+        assert_eq!(event.pubkey, public_key(&secret).unwrap());
         assert!(verify_event_signature(&event).is_ok());
     }
 
