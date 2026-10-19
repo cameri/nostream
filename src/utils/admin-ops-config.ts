@@ -11,6 +11,10 @@ import {
 import { Settings } from '../@types/settings'
 import { ADMIN_OPS_HEARTBEAT_TTL_SECONDS, isAdminOpsHeartbeatStale } from './admin-ops-store'
 
+const UNMONITORED_WORKER_TYPES = new Set(['worker', 'dvm-orchestrator'])
+
+export const isAdminOpsWorkerMonitored = (type: string): boolean => !UNMONITORED_WORKER_TYPES.has(type)
+
 export const listConfiguredMirrors = (settings: Settings): AdminOpsConfiguredMirror[] => {
   const mirrors = settings.mirroring?.static
   if (!Array.isArray(mirrors) || !mirrors.length) {
@@ -102,16 +106,17 @@ export const mergeWorkerRows = (
   configured: AdminOpsConfiguredWorker[],
   heartbeats: AdminOpsWorkerHeartbeat[],
 ): AdminOpsWorkerRow[] => {
-  const byKey = new Map(
-    heartbeats.map((heartbeat) => [heartbeatKey(heartbeat.type, heartbeat.index), heartbeat]),
-  )
+  const byKey = new Map(heartbeats.map((heartbeat) => [heartbeatKey(heartbeat.type, heartbeat.index), heartbeat]))
 
   return configured.map((worker) => {
     const heartbeat = byKey.get(heartbeatKey(worker.type, worker.index))
+    const monitored = isAdminOpsWorkerMonitored(worker.type)
     return {
       ...worker,
       heartbeat,
-      stale: !heartbeat || isAdminOpsHeartbeatStale(heartbeat.updatedAt, ADMIN_OPS_HEARTBEAT_TTL_SECONDS),
+      monitored,
+      stale:
+        monitored && (!heartbeat || isAdminOpsHeartbeatStale(heartbeat.updatedAt, ADMIN_OPS_HEARTBEAT_TTL_SECONDS)),
     }
   })
 }

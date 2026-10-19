@@ -43,7 +43,7 @@ export interface IEventRepository {
   upsert(event: Event): Promise<number>
   upsertMany(events: Event[]): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
-  countByFilters(filters: SubscriptionFilter[]): Promise<number>
+  countByFilters(filters: SubscriptionFilter[], options?: { timeoutMs?: number }): Promise<number>
   findReconciliationItems(filter: SubscriptionFilter, limit?: number): IQueryResult<ReconciliationItem[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
   deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>

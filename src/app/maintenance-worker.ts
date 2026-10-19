@@ -1,32 +1,31 @@
+import { FSWatcher } from 'fs'
+import { mergeDeepLeft, path, pipe } from 'ramda'
+import { ICacheAdapter } from '../@types/adapters'
+import { IRunnable } from '../@types/base'
+import { InvoiceStatus } from '../@types/invoice'
+import { Nip05Verification } from '../@types/nip05'
+import { OperatorNotificationEventType } from '../@types/operator-notifications'
+import {
+  INip05VerificationRepository,
+  INotificationDeliveryLogRepository,
+  INotificationOutboxRepository,
+} from '../@types/repositories'
+import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../@types/services'
+import { Settings } from '../@types/settings'
+import { createLogger } from '../factories/logger-factory'
+import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
+import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { sanitizeAdminOpsError } from '../utils/admin-ops-sanitize'
+import { publishAdminOpsWorkerHeartbeatSafely } from '../utils/admin-ops-store'
+import { isExpiredInvoice } from '../utils/invoice'
+import { delayMs } from '../utils/misc'
 import {
   DEFAULT_NIP05_MAX_CONSECUTIVE_FAILURES,
   DEFAULT_NIP05_VERIFY_UPDATE_FREQUENCY_MS,
   Nip05VerificationOutcome,
   verifyNip05Identifier,
 } from '../utils/nip05'
-import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../@types/services'
-import { mergeDeepLeft, path, pipe } from 'ramda'
-import { IRunnable } from '../@types/base'
-
-import { createLogger } from '../factories/logger-factory'
-import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
-import { delayMs } from '../utils/misc'
-import { OperatorNotificationEventType } from '../@types/operator-notifications'
-import { ICacheAdapter } from '../@types/adapters'
-import {
-  INip05VerificationRepository,
-  INotificationDeliveryLogRepository,
-  INotificationOutboxRepository,
-} from '../@types/repositories'
-import { publishAdminOpsWorkerHeartbeat } from '../utils/admin-ops-store'
-import { InvoiceStatus } from '../@types/invoice'
-import { isExpiredInvoice } from '../utils/invoice'
-import { Nip05Verification } from '../@types/nip05'
-import { FSWatcher } from 'fs'
-
-import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
-import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 
 const UPDATE_INVOICE_INTERVAL = 60000
 const NIP05_REVERIFICATION_BATCH_SIZE = 50
@@ -138,7 +137,7 @@ export class MaintenanceWorker implements IRunnable {
       } catch (error) {
         await this.publishOpsHeartbeat({
           lastRunFinishedAt: new Date().toISOString(),
-          lastError: error instanceof Error ? error.message : String(error),
+          lastError: sanitizeAdminOpsError(error),
         })
         this.onError(error as Error)
       } finally {
@@ -156,7 +155,7 @@ export class MaintenanceWorker implements IRunnable {
       return
     }
 
-    await publishAdminOpsWorkerHeartbeat(this.opsCache, {
+    await publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
       type: 'maintenance',
       updatedAt: new Date().toISOString(),
       ...partial,

@@ -45,11 +45,28 @@
 
   const shortPubkey = (pubkey) => (pubkey.length > 16 ? `${pubkey.slice(0, 8)}…${pubkey.slice(-8)}` : pubkey)
 
+  const escapeHtml = (value) =>
+    String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;')
+
+  const escapeAttr = (value) => escapeHtml(value).replaceAll('`', '&#96;')
+
   const signalBadge = (stale) => {
     if (stale) {
       return '<span class="status-badge status-degraded"><span class="status-led" aria-hidden="true"></span>Stale</span>'
     }
     return '<span class="status-badge status-ok"><span class="status-led" aria-hidden="true"></span>Live</span>'
+  }
+
+  const workerSignalBadge = (worker) => {
+    if (worker.monitored === false) {
+      return '<span class="status-badge"><span class="status-led" aria-hidden="true"></span>Unmonitored</span>'
+    }
+    return signalBadge(worker.stale)
   }
 
   const adminFetch = async (path, options = {}) => {
@@ -76,13 +93,15 @@
         const state = heartbeat?.connectionState ?? 'unknown'
         const reconnects = heartbeat?.reconnectCount ?? 0
         const lastEvent = formatTime(heartbeat?.lastEventAt)
-        const errorNote = heartbeat?.lastError ? `<span class="admin-muted small d-block">${heartbeat.lastError}</span>` : ''
+        const errorNote = heartbeat?.lastError
+          ? `<span class="admin-muted small d-block">${escapeHtml(heartbeat.lastError)}</span>`
+          : ''
         return `<tr>
-          <td>${mirror.index}</td>
-          <td><code class="small">${mirror.targetUrl}</code>${errorNote}</td>
-          <td>${state}</td>
-          <td>${reconnects}</td>
-          <td class="small">${lastEvent}</td>
+          <td>${escapeHtml(mirror.index)}</td>
+          <td><code class="small">${escapeHtml(mirror.targetUrl)}</code>${errorNote}</td>
+          <td>${escapeHtml(state)}</td>
+          <td>${escapeHtml(reconnects)}</td>
+          <td class="small">${escapeHtml(lastEvent)}</td>
           <td>${signalBadge(mirror.stale)}</td>
         </tr>`
       })
@@ -102,10 +121,10 @@
         const finished = formatTime(heartbeat?.lastRunFinishedAt ?? heartbeat?.updatedAt)
         const lastError = heartbeat?.lastError ?? '—'
         return `<tr>
-          <td>${worker.label}</td>
-          <td class="small">${finished}</td>
-          <td class="small">${lastError}</td>
-          <td>${signalBadge(worker.stale)}</td>
+          <td>${escapeHtml(worker.label)}</td>
+          <td class="small">${escapeHtml(finished)}</td>
+          <td class="small">${escapeHtml(lastError)}</td>
+          <td>${workerSignalBadge(worker)}</td>
         </tr>`
       })
       .join('')
@@ -118,13 +137,13 @@
       elements.nip05Body.innerHTML = rows
         .map(
           (row) => `<tr>
-            <td><code class="small" title="${row.pubkey}">${shortPubkey(row.pubkey)}</code></td>
-            <td class="small">${row.nip05}</td>
+            <td><code class="small" title="${escapeAttr(row.pubkey)}">${escapeHtml(shortPubkey(row.pubkey))}</code></td>
+            <td class="small">${escapeHtml(row.nip05)}</td>
             <td>${row.isVerified ? 'yes' : 'no'}</td>
-            <td>${row.failureCount}</td>
-            <td class="small">${formatTime(row.lastVerifiedAt)}</td>
+            <td>${escapeHtml(row.failureCount)}</td>
+            <td class="small">${escapeHtml(formatTime(row.lastVerifiedAt))}</td>
             <td>${row.stale ? 'yes' : 'no'}</td>
-            <td><button type="button" class="btn btn-console btn-sm" data-reverify-pubkey="${row.pubkey}">Reverify</button></td>
+            <td><button type="button" class="btn btn-console btn-sm" data-reverify-pubkey="${escapeAttr(row.pubkey)}">Reverify</button></td>
           </tr>`,
         )
         .join('')
@@ -132,7 +151,39 @@
 
     if (elements.nip05Pagination && pagination) {
       const { offset, limit, total } = pagination
-      elements.nip05Pagination.textContent = `Showing ${offset + 1}–${Math.min(offset + limit, total)} of ${total}`
+      elements.nip05Pagination.replaceChildren()
+
+      const summary = document.createElement('span')
+      summary.textContent = `Showing ${offset + 1}–${Math.min(offset + limit, total)} of ${total}`
+      elements.nip05Pagination.append(summary)
+
+      if (total > limit) {
+        const controls = document.createElement('span')
+        controls.className = 'ms-2'
+
+        const previous = document.createElement('button')
+        previous.type = 'button'
+        previous.className = 'btn btn-console btn-sm me-1'
+        previous.textContent = 'Previous'
+        previous.disabled = offset <= 0
+        previous.addEventListener('click', () => {
+          nip05Offset = Math.max(0, offset - limit)
+          void loadNip05()
+        })
+
+        const next = document.createElement('button')
+        next.type = 'button'
+        next.className = 'btn btn-console btn-sm'
+        next.textContent = 'Next'
+        next.disabled = offset + limit >= total
+        next.addEventListener('click', () => {
+          nip05Offset = offset + limit
+          void loadNip05()
+        })
+
+        controls.append(previous, next)
+        elements.nip05Pagination.append(controls)
+      }
     }
   }
 
@@ -146,8 +197,8 @@
     elements.storageBody.innerHTML = counts
       .map(
         (row) => `<tr>
-          <td><code class="small">${(row.kinds ?? []).join(', ')}</code></td>
-          <td>${row.count}</td>
+          <td><code class="small">${escapeHtml((row.kinds ?? []).join(', '))}</code></td>
+          <td>${escapeHtml(row.count)}</td>
         </tr>`,
       )
       .join('')
@@ -296,10 +347,16 @@
     }, 30_000)
   }
 
-  elements.nip05Refresh?.addEventListener('click', () => {
+  const resetNip05Filters = () => {
     nip05Offset = 0
     void loadNip05()
-  })
+  }
+
+  elements.nip05Refresh?.addEventListener('click', resetNip05Filters)
+  elements.nip05Domain?.addEventListener('change', resetNip05Filters)
+  elements.nip05Verified?.addEventListener('change', resetNip05Filters)
+  elements.nip05Stale?.addEventListener('change', resetNip05Filters)
+  elements.nip05MinFailures?.addEventListener('change', resetNip05Filters)
 
   elements.storageRun?.addEventListener('click', () => {
     void loadStorage()

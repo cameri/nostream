@@ -1,8 +1,13 @@
 import { ICacheAdapter } from '../@types/adapters'
 import { AdminOpsMirrorHeartbeat, AdminOpsWorkerHeartbeat } from '../@types/admin-ops'
+import { createLogger } from '../factories/logger-factory'
+import { sanitizeAdminOpsError } from './admin-ops-sanitize'
+
+const logger = createLogger('admin-ops-store')
 
 export const ADMIN_OPS_HEARTBEAT_INDEX_KEY = 'admin:ops:heartbeat:index'
 export const ADMIN_OPS_HEARTBEAT_TTL_SECONDS = 120
+export const ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS = 45_000
 
 const mirrorKey = (index: string) => `admin:ops:mirror:${index}`
 const workerKey = (type: string, index?: string) =>
@@ -90,18 +95,56 @@ export const getAdminOpsStore = (cache: ICacheAdapter): AdminOpsStore => {
   return sharedStore
 }
 
+const sanitizeMirrorHeartbeat = (state: AdminOpsMirrorHeartbeat): AdminOpsMirrorHeartbeat => ({
+  ...state,
+  lastError: state.lastError !== undefined ? sanitizeAdminOpsError(state.lastError) : undefined,
+})
+
+const sanitizeWorkerHeartbeat = (state: AdminOpsWorkerHeartbeat): AdminOpsWorkerHeartbeat => ({
+  ...state,
+  lastError: state.lastError !== undefined ? sanitizeAdminOpsError(state.lastError) : undefined,
+})
+
 export const publishAdminOpsMirrorHeartbeat = async (
   cache: ICacheAdapter,
   state: AdminOpsMirrorHeartbeat,
 ): Promise<void> => {
-  await getAdminOpsStore(cache).publishMirror(state)
+  await getAdminOpsStore(cache).publishMirror(sanitizeMirrorHeartbeat(state))
 }
 
 export const publishAdminOpsWorkerHeartbeat = async (
   cache: ICacheAdapter,
   state: AdminOpsWorkerHeartbeat,
 ): Promise<void> => {
-  await getAdminOpsStore(cache).publishWorker(state)
+  await getAdminOpsStore(cache).publishWorker(sanitizeWorkerHeartbeat(state))
+}
+
+export const publishAdminOpsMirrorHeartbeatSafely = async (
+  cache: ICacheAdapter | undefined,
+  state: AdminOpsMirrorHeartbeat,
+): Promise<void> => {
+  if (!cache) {
+    return
+  }
+  try {
+    await publishAdminOpsMirrorHeartbeat(cache, state)
+  } catch (error) {
+    logger.warn('failed to publish mirror ops heartbeat: %o', error)
+  }
+}
+
+export const publishAdminOpsWorkerHeartbeatSafely = async (
+  cache: ICacheAdapter | undefined,
+  state: AdminOpsWorkerHeartbeat,
+): Promise<void> => {
+  if (!cache) {
+    return
+  }
+  try {
+    await publishAdminOpsWorkerHeartbeat(cache, state)
+  } catch (error) {
+    logger.warn('failed to publish worker ops heartbeat: %o', error)
+  }
 }
 
 export const isAdminOpsHeartbeatStale = (updatedAtIso: string | undefined, ttlSeconds: number): boolean => {

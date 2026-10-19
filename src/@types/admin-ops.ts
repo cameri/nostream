@@ -39,6 +39,7 @@ export interface AdminOpsMirrorRow extends AdminOpsConfiguredMirror {
 
 export interface AdminOpsWorkerRow extends AdminOpsConfiguredWorker {
   heartbeat?: AdminOpsWorkerHeartbeat
+  monitored: boolean
   stale: boolean
 }
 

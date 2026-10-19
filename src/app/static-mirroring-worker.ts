@@ -1,10 +1,23 @@
-import { anyPass, map, mergeDeepRight, path } from 'ramda'
-import { RawData, WebSocket } from 'ws'
 import cluster from 'cluster'
 import { randomUUID } from 'crypto'
-
-import { createRelayedEventMessage, createSubscriptionMessage } from '../utils/messages'
+import { anyPass, map, mergeDeepRight, path } from 'ramda'
+import { RawData, WebSocket } from 'ws'
+import { ICacheAdapter } from '../@types/adapters'
+import { AdminOpsConnectionState } from '../@types/admin-ops'
+import { IRunnable } from '../@types/base'
+import { Event, RelayedEvent } from '../@types/event'
+import { OutgoingEventMessage } from '../@types/messages'
+import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { EventLimits, FeeSchedule, Mirror, Settings } from '../@types/settings'
+import { WebSocketServerAdapterEvent } from '../constants/adapter'
+import { EventExpirationTimeMetadataKey } from '../constants/base'
+import { createLogger } from '../factories/logger-factory'
+import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import {
+  ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS,
+  publishAdminOpsMirrorHeartbeatSafely,
+  publishAdminOpsWorkerHeartbeatSafely,
+} from '../utils/admin-ops-store'
 import {
   getEventExpiration,
   getEventProofOfWork,
@@ -20,23 +33,13 @@ import {
   isFileMessageEvent,
   isSealEvent,
 } from '../utils/event'
-import { ICacheAdapter } from '../@types/adapters'
-import { AdminOpsConnectionState } from '../@types/admin-ops'
-import { IEventRepository, IUserRepository } from '../@types/repositories'
-import { publishAdminOpsMirrorHeartbeat, publishAdminOpsWorkerHeartbeat } from '../utils/admin-ops-store'
-import { createLogger } from '../factories/logger-factory'
-import { Event } from '../@types/event'
-import { EventExpirationTimeMetadataKey } from '../constants/base'
-import { IRunnable } from '../@types/base'
-import { OutgoingEventMessage } from '../@types/messages'
-import { RelayedEvent } from '../@types/event'
-import { WebSocketServerAdapterEvent } from '../constants/adapter'
-import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { createRelayedEventMessage, createSubscriptionMessage } from '../utils/messages'
 
 const logger = createLogger('static-mirror-worker')
 
 export class StaticMirroringWorker implements IRunnable {
   private client: WebSocket | undefined
+  private opsKeepaliveInterval: NodeJS.Timeout | undefined
   private config: Mirror
   private connectionState: AdminOpsConnectionState = 'connecting'
   private reconnectCount = 0
@@ -67,7 +70,7 @@ export class StaticMirroringWorker implements IRunnable {
     }
 
     const updatedAt = new Date().toISOString()
-    await publishAdminOpsMirrorHeartbeat(this.opsCache, {
+    await publishAdminOpsMirrorHeartbeatSafely(this.opsCache, {
       index: this.mirrorIndex,
       targetUrl: this.config.address,
       connectionState: this.connectionState,
@@ -76,7 +79,7 @@ export class StaticMirroringWorker implements IRunnable {
       lastEventAt: this.lastEventAt,
       updatedAt,
     })
-    await publishAdminOpsWorkerHeartbeat(this.opsCache, {
+    await publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
       type: 'static-mirroring',
       index: this.mirrorIndex,
       lastRunFinishedAt: updatedAt,
@@ -94,6 +97,12 @@ export class StaticMirroringWorker implements IRunnable {
     let since = Math.floor(Date.now() / 1000) - 60 * 10
 
     void this.publishOpsHeartbeats()
+
+    if (this.opsCache) {
+      this.opsKeepaliveInterval = setInterval(() => {
+        void this.publishOpsHeartbeats()
+      }, ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS)
+    }
 
     const createMirror = (config: Mirror) => {
       const subscriptionId = `mirror-${randomUUID()}`
@@ -397,6 +406,7 @@ export class StaticMirroringWorker implements IRunnable {
 
   public close(callback?: () => void) {
     logger('closing')
+    clearInterval(this.opsKeepaliveInterval)
     if (this.client) {
       this.client.terminate()
     }

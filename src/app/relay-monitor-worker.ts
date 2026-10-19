@@ -1,19 +1,22 @@
 import { ICacheAdapter } from '../@types/adapters'
 import { IRunnable } from '../@types/base'
-import { publishAdminOpsWorkerHeartbeat } from '../utils/admin-ops-store'
 import { IRelayProbeSnapshotStore, RelayProbeRunSnapshot } from '../@types/relay-probe-snapshot'
 import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 import { INip66EventPublisher } from '../services/nip66-event-publisher'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
-import { filterValidProbeTargets, resolveProbeTargets } from '../utils/relay-probe-targets'
-import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
-import { resolvePublicProbeTargetKeys } from '../utils/relay-probe-targets'
-import { RelayProbeHistoryStore } from '../utils/relay-probe-history'
-import { getEffectiveProbeIntervalSeconds, getNip66HistoryRetention, getProbeIntervalMs } from '../utils/nip66-schedule'
+import { ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS, publishAdminOpsWorkerHeartbeatSafely } from '../utils/admin-ops-store'
 import { getMonitorPrivateKey } from '../utils/monitor-identity'
+import { getEffectiveProbeIntervalSeconds, getNip66HistoryRetention, getProbeIntervalMs } from '../utils/nip66-schedule'
 import { runProbe } from '../utils/relay-probe'
 import { ProbeOptions, ProbeResult } from '../utils/relay-probe/types'
+import { RelayProbeHistoryStore } from '../utils/relay-probe-history'
+import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
+import {
+  filterValidProbeTargets,
+  resolveProbeTargets,
+  resolvePublicProbeTargetKeys,
+} from '../utils/relay-probe-targets'
 
 const logger = createLogger('relay-monitor-worker')
 
@@ -34,6 +37,7 @@ export { getProbeIntervalMs } from '../utils/nip66-schedule'
 
 export class RelayMonitorWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
+  private opsKeepaliveInterval: NodeJS.Timeout | undefined
   private isRunning = false
 
   public constructor(
@@ -69,6 +73,15 @@ export class RelayMonitorWorker implements IRunnable {
     this.interval = setInterval(() => {
       void this.runScheduledProbes()
     }, intervalMs)
+
+    if (this.opsCache) {
+      this.opsKeepaliveInterval = setInterval(() => {
+        void publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
+          type: 'relay-monitor',
+          updatedAt: new Date().toISOString(),
+        })
+      }, ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS)
+    }
   }
 
   private async runScheduledProbes(): Promise<void> {
@@ -97,7 +110,7 @@ export class RelayMonitorWorker implements IRunnable {
       return
     }
 
-    await publishAdminOpsWorkerHeartbeat(this.opsCache, {
+    await publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
       type: 'relay-monitor',
       updatedAt: new Date().toISOString(),
       ...partial,
@@ -210,6 +223,7 @@ export class RelayMonitorWorker implements IRunnable {
   public close(callback?: () => void) {
     logger('closing')
     clearInterval(this.interval)
+    clearInterval(this.opsKeepaliveInterval)
     if (typeof callback === 'function') {
       callback()
     }

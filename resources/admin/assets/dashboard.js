@@ -345,6 +345,7 @@
     unloadGrafanaFrames()
     stopMetricsStream()
     stopNetworkHealthPolling()
+    window.__ADMIN_OPS__?.stop?.()
     setNavOpen(false)
     loginPanel.classList.remove('d-none')
     dashboardPanel.classList.add('d-none')
