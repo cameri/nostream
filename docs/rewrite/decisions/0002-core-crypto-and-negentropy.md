@@ -60,12 +60,27 @@ the only shape that keeps both contracts.
 
 `mirroring.static[].filters` is the same capture type (`SubscriptionFilter`) but a different
 consumer, and it does **not** narrow with the wire type: `crates/nostream-config`'s
-`SettingsFilter` keeps `kinds: Option<Vec<KindSelector>>` and crosses to `Filter` through
-`into_filter()` at use, dropping a range element because the capture's matcher compared
-kinds with `Array.includes` on numbers, so a range never matched there either. The capture
-never validates a mirror filter, so a document with `kinds: [[10000, 19999]]` must keep
-loading; `crates/nostream-config/tests/mirror_filters.rs` pins the load, the round-trip and
-the crossing.
+`SettingsFilter` keeps `kinds: Option<Vec<KindSelector>>`.
+
+The declared type is numbers-only (`src/@types/subscription.ts:8`, `kinds?: (EventKinds |
+number)[]`); `EventKindsRange` belongs to the rate-limit criteria, not to a subscription
+filter. The ground for the wider settings type is the loader, not the type: the capture never
+validates a mirror filter — `validateShape` returns when a sequence's schema is empty
+(`src/utils/settings-config.ts:202-204`) and the defaults carry `mirroring.static: []` — so
+`kinds: [[10000, 19999]]` is an unvalidated runtime value that loads there and must load
+here. The two paths are distinct:
+
+- **local matching** uses `into_matcher_filter()`, which drops a range element because the
+  capture's matcher compared kinds with `Array.includes` on numbers, so a range never matched
+  there either;
+- **the outbound REQ** serialises `SettingsFilter` itself, as the capture does: the mirror
+  worker forwards each filter verbatim with only `since` injected
+  (`src/app/static-mirroring-worker.ts:72-77`) and `createSubscriptionMessage` sends it
+  unvalidated (`src/utils/messages.ts:53-58`), so the range reaches the peer. Serialising
+  `Filter` there would send `kinds: []`, which the capture never sends.
+
+`crates/nostream-config/tests/mirror_filters.rs` pins the load, the round-trip and the
+matching crossing.
 
 Signing sets the author: `sign_event` writes `pubkey` from the key before hashing the id,
 because the id is hashed over the pubkey and a returned event has to verify. The capture's
@@ -111,8 +126,12 @@ Two messages are **not** the capture's, and they say so in their own words:
 `{"kinds":[1e20]}` and `{"limit":1e20}` (JavaScript numbers, no ceiling in `kindSchema` or
 `limit`); `Kind` is a `u64` and `Filter.limit` a `u64`, so those values are unrepresentable
 here. That is a representability divergence, not a validation rule, so imitating zod's
-phrasing would be the fabrication this section forbids. The boundary cell of the two types is
-`u64::MAX`: `1e19` and `9007199254740992` are accepted by both paths.
+phrasing would be the fabrication this section forbids. The boundary is `2^64`, **exclusive**:
+`u64::MAX as f64` is `2^64`, so the check is `>= 2^64` and the largest accepted `f64` is
+`2^64 - 2048` (`18446744073709549568`). The exact JSON integer `18446744073709551615` also
+crosses that line, because serde reads it as `2^64` — the same value JavaScript's `JSON.parse`
+holds — so refusing it is consistent rather than incidental. `1e19` and `9007199254740992` are
+accepted by both paths.
 
 Length bounds count **UTF-16 code units**, as zod's `.min()`/`.max()` do through
 `String.prototype.length`: `text.encode_utf16().count()`, not `chars().count()`. An astral
@@ -180,9 +199,16 @@ envelope with the subscription id — `nostream-relay`'s Phase 2.
   `shared_secret_point`; D7's three call sites are in `crypto.rs`.
 - **If the acceptance gate finds a message contract** (an operator-facing string built
   from `validate_filter`), align it with the measured strings here before changing them.
-- **If the settings editor or a wire parser ever hands `Filter` a kind range or an integer
-  above `u64::MAX`**, decide there: the two refusals are representability, and a surface
-  that can hold the JavaScript value may want to keep it instead.
+- **If the mirror worker's outbound REQ path is built** and it needs the range element the
+  capture forwards, serialise `SettingsFilter` there rather than `Filter`. `into_matcher_filter`
+  has already dropped it, so that path must not route through it; this is the one place the
+  dropped range would be observable.
+- **If a signing path must preserve a caller-supplied author** — NIP-26 delegation, or a relay
+  signing for another author — add a second function. `sign_event` overwrites `pubkey` by
+  design, and weakening it would restore the silently invalid event round 2 removed.
+- **If a surface treats Rust issue counts as normative**, revisit the `Unknown key` superset
+  above: `validate_filter` can report one issue more than zod on a document that is invalid
+  either way, so a count-for-count comparison of that surface is not the right oracle.
 - **If NIP-40 retention is ever measured against the capture** on non-decimal `expiration`
   tag values, `expiration::js_number` is the seam that already covers `0x`/`0o`/`0b`,
   trimmed and exponential forms; extend it there rather than in the tag walk.
