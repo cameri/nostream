@@ -205,6 +205,25 @@ the script remains the local, complete run.
   `cargo test --workspace` meaningful without a database; the two database targets stay
   `#[ignore]`d and run in CI against a `postgres:16-alpine` service.
 
+## Costs inherited from the capture
+
+These queries are the capture's SQL and index set; the performance lens measured them and
+they are recorded here so the benchmark follow-up starts from facts, not surprise:
+
+- `count_by_filters` hashes the whole matching id set (267.6 ms for two broad branches at
+  200k events, 7 MB spilled); NIP-45 COUNT inherits it.
+- A tag `EXISTS` with many values gathers every matching event before the `LIMIT` (44.9 ms
+  for 200 `#p` values); a covering `(tag_name, tag_value, event_id)` index would help, but
+  the schema is pinned to the capture.
+- A kind-only limited REQ walks the `created_at` index and filters (5 508 rows discarded to
+  return 500); there is no `(event_kind, created_at DESC, event_id)` index in the capture.
+- `claim_batch`'s `pending OR processing` predicate cannot use
+  `idx_notification_outbox_dispatch` (12.2 ms and a scan at 20k outbox rows).
+- Hex prefix criteria use `substring(...)`, which is not sargable.
+
+None of these is introduced here, and changing any would diverge from the capture's
+schema or SQL; the hunt for them belongs to the benchmark rig (follow-up 6).
+
 ## Revisit triggers
 
 1. **A long-lived LMDB read transaction hurts writes.** If the benchmark follow-up measures
