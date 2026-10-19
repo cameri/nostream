@@ -97,9 +97,20 @@ is_remote_daemon() {
 
 # Preflight, before any container exists. A wildcard bind is never right, and a loopback
 # bind is right only for a daemon on this machine. No default guesses a daemon's address.
-case "$(unbracket "$PARITY_BIND")" in
-    0.0.0.0|'::'|'::0'|'0:0:0:0:0:0:0:0'|'*')
+bind_address=$(unbracket "$PARITY_BIND")
+case "$bind_address" in
+    0.0.0.0|'*')
         fail "PARITY_BIND=$PARITY_BIND is a wildcard: publish on one address (127.0.0.1 for a local daemon, or the daemon host's reachable address)"
+        ;;
+    *:*)
+        # Every spelling of the IPv6 wildcard is all-zero groups: `::`, `0::`, `::0000`,
+        # `0:0:0:0:0:0:0:0`. Any digit other than 0 (or a hex letter) means a real address.
+        case "$bind_address" in
+            *[!0:]*) ;;
+            *)
+                fail "PARITY_BIND=$PARITY_BIND is a wildcard: publish on one address (127.0.0.1 for a local daemon, or the daemon host's reachable address)"
+                ;;
+        esac
         ;;
 esac
 if is_loopback "$PARITY_BIND" && is_remote_daemon; then
@@ -124,7 +135,8 @@ printf '%s\n' "$redaction_output" | grep -q 'test result: ok. 1 passed' || {
 # The dialed address, probed with a three-second timeout: a refusal here names the two
 # variables instead of surfacing as a sqlx timeout later.
 probe_dial() {
-    node -e 'const net = require("net"); const s = net.connect({ host: process.argv[1], port: Number(process.argv[2]) }); s.setTimeout(3000); s.on("connect", () => { s.destroy(); process.exit(0) }); s.on("timeout", () => { s.destroy(); process.exit(1) }); s.on("error", () => process.exit(1))' "$PARITY_HOST" "$PARITY_PG_PORT"
+    # The probe wants the address itself; URLs keep the bracketed IPv6 spelling.
+    node -e 'const net = require("net"); const s = net.connect({ host: process.argv[1], port: Number(process.argv[2]) }); s.setTimeout(3000); s.on("connect", () => { s.destroy(); process.exit(0) }); s.on("timeout", () => { s.destroy(); process.exit(1) }); s.on("error", () => process.exit(1))' "$(unbracket "$PARITY_HOST")" "$PARITY_PG_PORT"
 }
 
 wait_for_log() {
