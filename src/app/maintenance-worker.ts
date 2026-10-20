@@ -1,30 +1,31 @@
-import {
-  DEFAULT_NIP05_MAX_CONSECUTIVE_FAILURES,
-  DEFAULT_NIP05_VERIFY_UPDATE_FREQUENCY_MS,
-  Nip05VerificationOutcome,
-  verifyNip05Identifier,
-} from '../utils/nip05'
-import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../@types/services'
+import { FSWatcher } from 'fs'
 import { mergeDeepLeft, path, pipe } from 'ramda'
+import { ICacheAdapter } from '../@types/adapters'
 import { IRunnable } from '../@types/base'
-
-import { createLogger } from '../factories/logger-factory'
-import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
-import { delayMs } from '../utils/misc'
+import { InvoiceStatus } from '../@types/invoice'
+import { Nip05Verification } from '../@types/nip05'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import {
   INip05VerificationRepository,
   INotificationDeliveryLogRepository,
   INotificationOutboxRepository,
 } from '../@types/repositories'
-import { InvoiceStatus } from '../@types/invoice'
-import { isExpiredInvoice } from '../utils/invoice'
-import { Nip05Verification } from '../@types/nip05'
-import { FSWatcher } from 'fs'
-
+import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../@types/services'
 import { Settings } from '../@types/settings'
-import { SettingsStatic } from '../utils/settings'
+import { createLogger } from '../factories/logger-factory'
+import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { sanitizeAdminOpsError } from '../utils/admin-ops-sanitize'
+import { publishAdminOpsWorkerHeartbeatSafely } from '../utils/admin-ops-store'
+import { isExpiredInvoice } from '../utils/invoice'
+import { delayMs } from '../utils/misc'
+import {
+  DEFAULT_NIP05_MAX_CONSECUTIVE_FAILURES,
+  DEFAULT_NIP05_VERIFY_UPDATE_FREQUENCY_MS,
+  Nip05VerificationOutcome,
+  verifyNip05Identifier,
+} from '../utils/nip05'
+import { SettingsStatic } from '../utils/settings'
 
 const UPDATE_INVOICE_INTERVAL = 60000
 const NIP05_REVERIFICATION_BATCH_SIZE = 50
@@ -98,6 +99,7 @@ export class MaintenanceWorker implements IRunnable {
     private readonly notificationOutboxService: INotificationOutboxService,
     private readonly notificationDeliveryLogRepository: INotificationDeliveryLogRepository,
     private readonly notificationOutboxRepository: INotificationOutboxRepository,
+    private readonly opsCache?: ICacheAdapter,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -133,6 +135,10 @@ export class MaintenanceWorker implements IRunnable {
       try {
         await this.onSchedule()
       } catch (error) {
+        await this.publishOpsHeartbeat({
+          lastRunFinishedAt: new Date().toISOString(),
+          lastError: sanitizeAdminOpsError(error),
+        })
         this.onError(error as Error)
       } finally {
         this.isRunning = false
@@ -140,7 +146,26 @@ export class MaintenanceWorker implements IRunnable {
     }, UPDATE_INVOICE_INTERVAL)
   }
 
+  private async publishOpsHeartbeat(partial: {
+    lastRunStartedAt?: string
+    lastRunFinishedAt?: string
+    lastError?: string
+  }): Promise<void> {
+    if (!this.opsCache) {
+      return
+    }
+
+    await publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
+      type: 'maintenance',
+      updatedAt: new Date().toISOString(),
+      ...partial,
+    })
+  }
+
   private async onSchedule(): Promise<void> {
+    const lastRunStartedAt = new Date().toISOString()
+    await this.publishOpsHeartbeat({ lastRunStartedAt })
+
     const currentSettings = this.settings()
     const clearOldEventsPromise = this.clearOldEventsSafely()
 
@@ -149,6 +174,10 @@ export class MaintenanceWorker implements IRunnable {
 
     if (!path(['payments', 'enabled'], currentSettings)) {
       await clearOldEventsPromise
+      await this.publishOpsHeartbeat({
+        lastRunStartedAt,
+        lastRunFinishedAt: new Date().toISOString(),
+      })
       return
     }
 
@@ -223,6 +252,10 @@ export class MaintenanceWorker implements IRunnable {
     }
 
     await clearOldEventsPromise
+    await this.publishOpsHeartbeat({
+      lastRunStartedAt,
+      lastRunFinishedAt: new Date().toISOString(),
+    })
   }
 
   private async processNotificationOutbox(): Promise<void> {

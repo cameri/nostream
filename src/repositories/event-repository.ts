@@ -101,7 +101,10 @@ export class EventRepository implements IEventRepository {
     return query
   }
 
-  public async countByFilters(filters: SubscriptionFilter[]): Promise<number> {
+  public async countByFilters(
+    filters: SubscriptionFilter[],
+    options?: { timeoutMs?: number },
+  ): Promise<number> {
     logger('counting events for %o', filters)
 
     if (!Array.isArray(filters) || !filters.length) {
@@ -129,7 +132,11 @@ export class EventRepository implements IEventRepository {
     const query = queries.length === 1 ? queries[0] : this.unionFilterQueries(queries)
 
     // Rows are already unique: EXISTS never repeats an event and UNION drops overlaps between filters.
-    const result = await this.readReplicaDbClient.from(query.as('matching_events')).count({ count: '*' }).first()
+    const countQuery = this.readReplicaDbClient.from(query.as('matching_events')).count({ count: '*' })
+    if (typeof options?.timeoutMs === 'number') {
+      countQuery.timeout(options.timeoutMs, { cancel: true })
+    }
+    const result = await countQuery.first()
 
     return Number(result?.count ?? 0)
   }

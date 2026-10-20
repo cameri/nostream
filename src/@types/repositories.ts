@@ -44,7 +44,7 @@ export interface IEventRepository {
   upsert(event: Event): Promise<number>
   upsertMany(events: Event[]): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
-  countByFilters(filters: SubscriptionFilter[]): Promise<number>
+  countByFilters(filters: SubscriptionFilter[], options?: { timeoutMs?: number }): Promise<number>
   findReconciliationItems(filter: SubscriptionFilter, limit?: number): IQueryResult<ReconciliationItem[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
   deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>
@@ -81,10 +81,21 @@ export interface IUserRepository {
   revokeAdmission(pubkey: Pubkey, client?: DatabaseClient): Promise<number>
 }
 
+export interface Nip05VerificationAdminListQuery {
+  domain?: string
+  verified?: boolean
+  stale?: boolean
+  minFailures?: number
+  verifyExpirationMs: number
+  limit: number
+  offset: number
+}
+
 export interface INip05VerificationRepository {
   findByPubkey(pubkey: Pubkey): Promise<Nip05Verification | undefined>
   upsert(verification: Nip05Verification): Promise<number>
   findPendingVerifications(updateFrequencyMs: number, maxFailures: number, limit: number): Promise<Nip05Verification[]>
+  listForAdmin(query: Nip05VerificationAdminListQuery): Promise<{ rows: Nip05Verification[]; total: number }>
   deleteByPubkey(pubkey: Pubkey): Promise<number>
 }
 
