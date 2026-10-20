@@ -1099,9 +1099,20 @@ async fn the_typescript_script_replays_with_an_empty_diff() {
 #[tokio::test]
 #[ignore = "needs PARITY_TLS_ADMIN_URL; scripts/storage-parity.sh sets it"]
 async fn the_same_replay_over_tls_matches_the_capture_and_the_plaintext_run() {
-    let Ok(tls_admin_url) = std::env::var("PARITY_TLS_ADMIN_URL") else {
-        eprintln!("PARITY_TLS_ADMIN_URL is unset: the TLS leg runs from scripts/storage-parity.sh");
-        return;
+    // CI runs every ignored test with only the plaintext URL, so the leg skips there.
+    // scripts/storage-parity.sh sets PARITY_TLS_REQUIRED, under which a skip is a failure:
+    // the oracle must not report a green run for a leg that never executed.
+    let tls_admin_url = match std::env::var("PARITY_TLS_ADMIN_URL") {
+        Ok(url) => url,
+        Err(_) if std::env::var_os("PARITY_TLS_REQUIRED").is_some() => {
+            panic!("PARITY_TLS_REQUIRED is set but PARITY_TLS_ADMIN_URL is not")
+        }
+        Err(_) => {
+            eprintln!(
+                "PARITY_TLS_ADMIN_URL is unset: the TLS leg runs from scripts/storage-parity.sh"
+            );
+            return;
+        }
     };
 
     let admin = PgPool::connect(&tls_admin_url)
@@ -1139,4 +1150,6 @@ async fn the_same_replay_over_tls_matches_the_capture_and_the_plaintext_run() {
             over_tls.get(index)
         );
     }
+    // Read by scripts/storage-parity.sh with --nocapture as proof the assertions ran.
+    println!("TLS_PARITY_COMPLETE");
 }

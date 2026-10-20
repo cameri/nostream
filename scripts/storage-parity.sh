@@ -58,7 +58,10 @@ redis_container="nostream-parity-redis-$$"
 # new, and they need the path the daemon sees (the sandbox mounts this tree at /workspace,
 # the daemon host at /home/cameri/Workspace). NOSTREAM_HOST_DIR overrides both, as it does
 # for scripts/rust.sh.
-tls_dir="$root/.test-reports/parity-tls"
+# The directory is per invocation: two runs of this script (different ports, or the same)
+# must not delete each other's live PGDATA, so the suffix carries the pid and a random
+# token, and the exit trap removes it.
+tls_dir="$root/.test-reports/parity-tls-$$-$(openssl rand -hex 4)"
 if [ -n "${NOSTREAM_HOST_DIR:-}" ]; then
     host_root=$NOSTREAM_HOST_DIR
 else
@@ -67,10 +70,11 @@ else
         *) host_root=$root ;;
     esac
 fi
-tls_dir_host="$host_root/.test-reports/parity-tls"
+tls_dir_host="$host_root${tls_dir#"$root"}"
 
 cleanup() {
     docker rm -f "$pg_container" "$tls_container" "$redis_container" >/dev/null 2>&1 || true
+    rm -rf "$tls_dir"
 }
 trap cleanup EXIT
 trap 'exit 130' INT HUP TERM
@@ -238,7 +242,6 @@ echo "== containers (bound to $PARITY_BIND, per-run credentials)"
 # alternative, chmod 644 on a copy, is not one PostgreSQL accepts either — it refuses a key
 # with group or world access and the server exits. Running as this uid with its own PGDATA
 # on a bind keeps the key strict and the image unchanged.
-rm -rf "$tls_dir"
 mkdir -p "$tls_dir/certs" "$tls_dir/pgdata"
 chmod 755 "$tls_dir" "$tls_dir/certs"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=localhost" \
@@ -285,15 +288,17 @@ echo "== behavioural parity"
 echo "== tls parity (the same replay over sslmode=require)"
 # The test skips itself when the variable is absent, so the run has to prove it executed:
 # a renamed or quietly skipped TLS leg is the failure mode this check closes.
-tls_output=$(./scripts/rust.sh env PARITY_ADMIN_URL="$admin_url" PARITY_TLS_ADMIN_URL="$tls_admin_url" \
+# PARITY_TLS_REQUIRED makes the test panic instead of skipping when it has no TLS URL, and
+# the completion marker is printed only after the assertions, so a skip cannot pass.
+tls_output=$(./scripts/rust.sh env PARITY_ADMIN_URL="$admin_url" PARITY_TLS_ADMIN_URL="$tls_admin_url" PARITY_TLS_REQUIRED=1 \
     cargo test -p nostream-storage --test parity the_same_replay_over_tls_matches_the_capture_and_the_plaintext_run \
-    -- --ignored --exact --test-threads=1 2>&1) || {
+    -- --ignored --exact --test-threads=1 --nocapture 2>&1) || {
     printf '%s\n' "$tls_output"
     fail "the TLS leg failed: the replay over sslmode=require did not match the plaintext run"
 }
-printf '%s\n' "$tls_output" | grep -q 'test result: ok. 1 passed' || {
+printf '%s\n' "$tls_output" | grep -q 'TLS_PARITY_COMPLETE' || {
     printf '%s\n' "$tls_output"
-    fail "the TLS parity test did not run (renamed or skipped?)"
+    fail "the TLS parity test did not complete (renamed, skipped, or it returned early?)"
 }
 echo "   the replay over sslmode=require matches the plaintext run ($(printf '%s\n' "$tls_output" | grep -o 'finished in [0-9.]*s'))"
 
