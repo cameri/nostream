@@ -11629,6 +11629,61 @@
           "user": null
         }
       }
+    },
+    {
+      "op": "transaction",
+      "request": {
+        "ops": [
+          {
+            "op": "outbox.enqueue",
+            "request": {
+              "event_type": "transaction.rollback.probe",
+              "payload": {
+                "probe": true
+              }
+            }
+          },
+          {
+            "op": "invite.create",
+            "request": {
+              "code": "invite-rollback",
+              "options": {
+                "remaining_uses": {
+                  "kind": "set",
+                  "value": -5
+                }
+              }
+            }
+          }
+        ]
+      },
+      "result": {
+        "compare": {
+          "failed": true,
+          "at": 1
+        }
+      }
+    },
+    {
+      "op": "outbox.claim_batch",
+      "request": {
+        "limit": 10
+      },
+      "result": {
+        "compare": {
+          "messages": [
+            {
+              "event_type": "admission.invoice.created",
+              "payload": {
+                "invoiceId": "inv-2"
+              },
+              "status": "processing",
+              "attempt_count": 0,
+              "last_error": null
+            }
+          ]
+        }
+      }
     }
   ],
   "projection": {

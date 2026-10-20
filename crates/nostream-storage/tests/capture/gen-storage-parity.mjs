@@ -836,6 +836,20 @@ const script = [
   },
   { op: 'invoice.find_by_id', request: { id: 'inv-3' } },
   { op: 'user.find_by_pubkey', request: { pubkey: PK_C } },
+  // An enqueue inside a transaction that later fails must roll back with it: the
+  // trailing claim sees only the enqueue from the successful transaction above.
+  {
+    op: 'transaction',
+    request: {
+      ops: [
+        { op: 'outbox.enqueue', request: { event_type: 'transaction.rollback.probe', payload: { probe: true } } },
+        // A negative count is a Set, not the unlimited sentinel, so the table's
+        // CHECK refuses it: the statement fails and takes the enqueue with it.
+        { op: 'invite.create', request: { code: 'invite-rollback', options: { remaining_uses: { kind: 'set', value: -5 } } } },
+      ],
+    },
+  },
+  { op: 'outbox.claim_batch', request: { limit: 10 } },
 ]
 
 // ---------------------------------------------------------------------------------------

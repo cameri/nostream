@@ -866,9 +866,10 @@ async fn run_op(
         }
         "outbox.enqueue" => {
             let event_type = text(request, "event_type");
-            let message =
-                NotificationOutboxRepository::enqueue(backend, &event_type, &request["payload"])
-                    .await?;
+            let message = client
+                .outbox()
+                .enqueue(&event_type, &request["payload"])
+                .await?;
             refs.insert(message.event_type.clone(), message.id.clone());
             Ok(json!({ "message": outbox_view(&message) }))
         }

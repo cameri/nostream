@@ -155,15 +155,12 @@ where
         Some(expires_at) => args.push(Arg::Timestamp(expires_at)),
         None => args.push(Arg::NullTimestamp),
     };
-    let remaining_uses = match options.remaining_uses {
-        FieldUpdate::Absent => 1,
-        FieldUpdate::Clear => -1,
-        FieldUpdate::Set(uses) => uses,
-    };
-    let remaining_slot = if remaining_uses < 0 {
-        args.push(Arg::NullInt)
-    } else {
-        args.push(Arg::Int(remaining_uses))
+    // `Clear` is the only sentinel that means "unlimited"; a `Set` value is bound
+    // as it arrives and the table's CHECK lets the database refuse a negative count.
+    let remaining_slot = match &options.remaining_uses {
+        FieldUpdate::Absent => args.push(Arg::Int(1)),
+        FieldUpdate::Clear => args.push(Arg::NullInt),
+        FieldUpdate::Set(uses) => args.push(Arg::Int(*uses)),
     };
     let created_slot = args.push(Arg::Timestamp(now));
     let updated_slot = args.push(Arg::Timestamp(now));
@@ -182,10 +179,10 @@ where
         created_by: options.created_by,
         claimed_by: None,
         expires_at: options.expires_at,
-        remaining_uses: if remaining_uses < 0 {
-            None
-        } else {
-            Some(remaining_uses)
+        remaining_uses: match &options.remaining_uses {
+            FieldUpdate::Absent => Some(1),
+            FieldUpdate::Clear => None,
+            FieldUpdate::Set(uses) => Some(*uses),
         },
         created_at: now,
         updated_at: now,
