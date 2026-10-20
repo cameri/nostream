@@ -137,9 +137,15 @@ describe('ZebedeePaymentsProcessor', () => {
       expect(httpClient.get).to.have.been.calledOnceWithExactly('/v0/charges/zbd-charge-id', { maxRedirects: 1 })
     })
 
-    for (const status of [InvoiceStatus.PENDING, InvoiceStatus.COMPLETED, InvoiceStatus.EXPIRED]) {
-      it(`reports a ${status} charge as ${status}`, async () => {
-        const httpClient = { get: sinon.stub().resolves({ data: { data: charge({ status }) } }) }
+    // Zebedee reports its status as these literal strings, which the processor hands on as the invoice status.
+    const statuses: Array<[string, InvoiceStatus]> = [
+      ['pending', InvoiceStatus.PENDING],
+      ['completed', InvoiceStatus.COMPLETED],
+      ['expired', InvoiceStatus.EXPIRED],
+    ]
+    for (const [providerStatus, status] of statuses) {
+      it(`reports a ${providerStatus} charge as ${status}`, async () => {
+        const httpClient = { get: sinon.stub().resolves({ data: { data: charge({ status: providerStatus }) } }) }
 
         const invoice = await makeProcessor(httpClient).getInvoice('zbd-charge-id')
 
