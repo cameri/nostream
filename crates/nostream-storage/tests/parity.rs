@@ -982,6 +982,36 @@ async fn run_transaction(
     }
 }
 
+/// The TLS feature is compiled in (#911). A server that does not offer TLS has
+/// to refuse the upgrade; this build must not refuse it first. With `tls-none`
+/// sqlx fails before any handshake with "built without TLS support", which is
+/// the regression the feature change closes. A server that does offer TLS is the
+/// stronger case: the connection succeeds and `SELECT 1` answers.
+#[tokio::test]
+#[ignore = "needs PARITY_ADMIN_URL; scripts/storage-parity.sh sets it"]
+async fn a_tls_connection_is_attempted_rather_than_refused_by_this_build() {
+    let admin = admin_url();
+    let base = admin.split('?').next().unwrap_or(admin.as_str());
+    let url = format!("{base}?sslmode=require");
+    match PgPool::connect(&url).await {
+        Ok(pool) => {
+            let one: i32 = sqlx::query_scalar("SELECT 1")
+                .fetch_one(&pool)
+                .await
+                .expect("SELECT 1 over TLS");
+            assert_eq!(one, 1);
+            pool.close().await;
+        }
+        Err(error) => {
+            let message = error.to_string();
+            assert!(
+                !message.contains("built without TLS support"),
+                "sqlx refused to negotiate TLS locally: {message}"
+            );
+        }
+    }
+}
+
 #[tokio::test]
 #[ignore = "needs PARITY_ADMIN_URL; scripts/storage-parity.sh sets it"]
 async fn the_typescript_script_replays_with_an_empty_diff() {
