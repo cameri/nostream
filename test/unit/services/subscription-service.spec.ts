@@ -270,6 +270,33 @@ describe('SubscriptionService', () => {
         expect(repository.findPeriodEnded.secondCall.args.slice(1)).to.deep.equal([10, 10])
       })
 
+      it('carries on behind the rows it skipped in the next pass, so more stuck rows than one pass reads do not hide the rest', async () => {
+        repository.findPeriodEnded.resolves(page(10, { planId: 'retired' }))
+
+        await service.processLifecycle(NOW)
+
+        // The first pass read ten pages of stuck rows and gave up at the cap; the next starts behind them.
+        expect(repository.findPeriodEnded.firstCall.args.slice(1)).to.deep.equal([10, 0])
+        repository.findPeriodEnded.resetHistory()
+        repository.findPeriodEnded.resolves([])
+
+        await service.processLifecycle(NOW)
+
+        expect(repository.findPeriodEnded.firstCall.args.slice(1)).to.deep.equal([10, 100])
+      })
+
+      it('starts over from the front once a pass reaches the end of the rows', async () => {
+        repository.findPeriodEnded.onCall(0).resolves(page(10, { planId: 'retired' }))
+        repository.findPeriodEnded.onCall(1).resolves([])
+        await service.processLifecycle(NOW)
+        repository.findPeriodEnded.resetHistory()
+        repository.findPeriodEnded.resolves([])
+
+        await service.processLifecycle(NOW)
+
+        expect(repository.findPeriodEnded.firstCall.args.slice(1)).to.deep.equal([10, 0])
+      })
+
       it('counts only the rows left behind when handled ones drop out of the next query', async () => {
         const mixed = [...page(7), ...page(3, { planId: 'retired' })]
         repository.findPeriodEnded.onCall(0).resolves(mixed)

@@ -373,6 +373,7 @@ describe('MaintenanceWorker', () => {
           notificationOutboxService,
           notificationDeliveryLogRepository,
           notificationOutboxRepository,
+          undefined,
           subscriptionService as any,
         )
       })
