@@ -11,6 +11,7 @@
 #                         host) set the address that machine reaches, e.g. the tailnet one.
 #   PARITY_HOST           host the harness dials. Default $PARITY_BIND.
 #   PARITY_PG_PORT        published Postgres port (default 18776)
+#   PARITY_PG_TLS_PORT    published port of the TLS Postgres server (default 18778)
 #   PARITY_REDIS_PORT     published Redis port (default 18777)
 #   PARITY_PG_PASSWORD    Postgres password; generated per run (openssl rand -hex 16) if unset
 #   PARITY_REDIS_PASSWORD Redis password; generated per run if unset
@@ -35,6 +36,7 @@ cd "$root"
 PARITY_BIND=${PARITY_BIND:-127.0.0.1}
 PARITY_HOST=${PARITY_HOST:-$PARITY_BIND}
 PARITY_PG_PORT=${PARITY_PG_PORT:-18776}
+PARITY_PG_TLS_PORT=${PARITY_PG_TLS_PORT:-18778}
 PARITY_REDIS_PORT=${PARITY_REDIS_PORT:-18777}
 PARITY_PG_PASSWORD=${PARITY_PG_PASSWORD:-$(openssl rand -hex 16)}
 PARITY_REDIS_PASSWORD=${PARITY_REDIS_PASSWORD:-$(openssl rand -hex 16)}
@@ -48,10 +50,27 @@ if [ -z "${CUCUMBER_BIN:-}" ]; then
 fi
 
 pg_container="nostream-parity-pg-$$"
+tls_container="nostream-parity-pg-tls-$$"
 redis_container="nostream-parity-redis-$$"
 
+# The TLS server keeps its certificate pair and its PGDATA inside the worktree. Ports,
+# labels and the per-run credential match the plaintext server; only the bind sources are
+# new, and they need the path the daemon sees (the sandbox mounts this tree at /workspace,
+# the daemon host at /home/cameri/Workspace). NOSTREAM_HOST_DIR overrides both, as it does
+# for scripts/rust.sh.
+tls_dir="$root/.test-reports/parity-tls"
+if [ -n "${NOSTREAM_HOST_DIR:-}" ]; then
+    host_root=$NOSTREAM_HOST_DIR
+else
+    case "$root" in
+        /workspace/*) host_root="/home/cameri/Workspace/${root#/workspace/}" ;;
+        *) host_root=$root ;;
+    esac
+fi
+tls_dir_host="$host_root/.test-reports/parity-tls"
+
 cleanup() {
-    docker rm -f "$pg_container" "$redis_container" >/dev/null 2>&1 || true
+    docker rm -f "$pg_container" "$tls_container" "$redis_container" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 trap 'exit 130' INT HUP TERM
@@ -171,6 +190,9 @@ fi
 pg_password_url=$(url_escape "$PARITY_PG_PASSWORD")
 redis_password_url=$(url_escape "$PARITY_REDIS_PASSWORD")
 admin_url="postgres://postgres:$pg_password_url@$host_url:$PARITY_PG_PORT/postgres"
+# sslmode=require: the leg is about a server that insists on TLS, and `prefer` would quietly
+# pass over plaintext, which is the failure #911 is about.
+tls_admin_url="postgres://postgres:$pg_password_url@$host_url:$PARITY_PG_TLS_PORT/postgres?sslmode=require"
 docker version >/dev/null 2>&1 \
     || fail "the Docker daemon at ${DOCKER_HOST:-/var/run/docker.sock} is not reachable"
 
@@ -191,7 +213,7 @@ printf '%s\n' "$redaction_output" | grep -q 'test result: ok. 1 passed' || {
 # variables instead of surfacing as a sqlx timeout later.
 probe_dial() {
     # The probe wants the address itself; URLs keep the bracketed IPv6 spelling.
-    node -e 'const net = require("net"); const s = net.connect({ host: process.argv[1], port: Number(process.argv[2]) }); s.setTimeout(3000); s.on("connect", () => { s.destroy(); process.exit(0) }); s.on("timeout", () => { s.destroy(); process.exit(1) }); s.on("error", () => process.exit(1))' "$host_plain" "$PARITY_PG_PORT"
+    node -e 'const net = require("net"); const s = net.connect({ host: process.argv[1], port: Number(process.argv[2]) }); s.setTimeout(3000); s.on("connect", () => { s.destroy(); process.exit(0) }); s.on("timeout", () => { s.destroy(); process.exit(1) }); s.on("error", () => process.exit(1))' "$host_plain" "$1"
 }
 
 wait_for_log() {
@@ -200,29 +222,55 @@ wait_for_log() {
     attempts=0
     until docker logs "$container" 2>&1 | grep -q "$pattern"; do
         attempts=$((attempts + 1))
-        [ "$attempts" -ge 90 ] && fail "$container did not report: $pattern"
+        if [ "$attempts" -ge 90 ]; then
+            docker logs "$container" 2>&1 | tail -20
+            fail "$container did not report: $pattern"
+        fi
         sleep 1
     done
 }
 
 echo "== containers (bound to $PARITY_BIND, per-run credentials)"
-docker rm -f "$pg_container" "$redis_container" >/dev/null 2>&1 || true
+
+# A fresh self-signed pair per run. The key stays 0600, and the server runs as the invoking
+# uid rather than the image's postgres user (uid 70): a 0600 file written here is owned by
+# this user and unreadable to uid 70, so the stock user cannot start with it. The issue's
+# alternative, chmod 644 on a copy, is not one PostgreSQL accepts either — it refuses a key
+# with group or world access and the server exits. Running as this uid with its own PGDATA
+# on a bind keeps the key strict and the image unchanged.
+rm -rf "$tls_dir"
+mkdir -p "$tls_dir/certs" "$tls_dir/pgdata"
+chmod 755 "$tls_dir" "$tls_dir/certs"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=localhost" \
+    -keyout "$tls_dir/certs/server.key" -out "$tls_dir/certs/server.crt" >/dev/null 2>&1 \
+    || fail "the TLS certificate pair could not be generated (openssl is required)"
+chmod 600 "$tls_dir/certs/server.key"
+chmod 644 "$tls_dir/certs/server.crt"
+
+docker rm -f "$pg_container" "$tls_container" "$redis_container" >/dev/null 2>&1 || true
 docker create --name "$pg_container" --label org.testcontainers=true \
     -e POSTGRES_PASSWORD="$PARITY_PG_PASSWORD" -e POSTGRES_DB=postgres \
     -p "$PARITY_BIND:$PARITY_PG_PORT:5432" postgres:16-alpine >/dev/null
+docker create --name "$tls_container" --label org.testcontainers=true \
+    --user "$(id -u):$(id -g)" \
+    -e POSTGRES_PASSWORD="$PARITY_PG_PASSWORD" -e POSTGRES_DB=postgres -e PGDATA=/pgdata \
+    -v "$tls_dir_host/certs:/certs:ro" -v "$tls_dir_host/pgdata:/pgdata" \
+    -p "$PARITY_BIND:$PARITY_PG_TLS_PORT:5432" postgres:16-alpine \
+    -c ssl=on -c ssl_cert_file=/certs/server.crt -c ssl_key_file=/certs/server.key >/dev/null
 docker create --name "$redis_container" --label org.testcontainers=true \
     -p "$PARITY_BIND:$PARITY_REDIS_PORT:6379" redis:7-alpine \
     redis-server --requirepass "$PARITY_REDIS_PASSWORD" >/dev/null
-docker start "$pg_container" "$redis_container" >/dev/null
+docker start "$pg_container" "$tls_container" "$redis_container" >/dev/null
 wait_for_log "$pg_container" "database system is ready to accept connections"
+wait_for_log "$tls_container" "database system is ready to accept connections"
 wait_for_log "$redis_container" "Ready to accept connections"
 attempts=0
-until probe_dial; do
+until probe_dial "$PARITY_PG_PORT" && probe_dial "$PARITY_PG_TLS_PORT"; do
     attempts=$((attempts + 1))
-    [ "$attempts" -ge 5 ] && fail "the published Postgres port is not reachable at $PARITY_HOST:$PARITY_PG_PORT: set PARITY_BIND and PARITY_HOST to an address this machine can dial (127.0.0.1 on the daemon host; the daemon host's reachable address from elsewhere)"
+    [ "$attempts" -ge 5 ] && fail "a published Postgres port is not reachable at $PARITY_HOST ($PARITY_PG_PORT, $PARITY_PG_TLS_PORT): set PARITY_BIND and PARITY_HOST to an address this machine can dial (127.0.0.1 on the daemon host; the daemon host's reachable address from elsewhere)"
     sleep 1
 done
-echo "   postgres and redis are accepting connections on $PARITY_HOST"
+echo "   postgres (plaintext and TLS) and redis are accepting connections on $PARITY_HOST"
 
 echo "== migrations and schema parity"
 ./scripts/rust.sh env PARITY_ADMIN_URL="$admin_url" \
@@ -233,6 +281,21 @@ echo "== behavioural parity"
 ./scripts/rust.sh env PARITY_ADMIN_URL="$admin_url" \
     cargo test -p nostream-storage --test parity -- --ignored --test-threads=1 \
     || fail "the parity target failed"
+
+echo "== tls parity (the same replay over sslmode=require)"
+# The test skips itself when the variable is absent, so the run has to prove it executed:
+# a renamed or quietly skipped TLS leg is the failure mode this check closes.
+tls_output=$(./scripts/rust.sh env PARITY_ADMIN_URL="$admin_url" PARITY_TLS_ADMIN_URL="$tls_admin_url" \
+    cargo test -p nostream-storage --test parity the_same_replay_over_tls_matches_the_capture_and_the_plaintext_run \
+    -- --ignored --exact --test-threads=1 2>&1) || {
+    printf '%s\n' "$tls_output"
+    fail "the TLS leg failed: the replay over sslmode=require did not match the plaintext run"
+}
+printf '%s\n' "$tls_output" | grep -q 'test result: ok. 1 passed' || {
+    printf '%s\n' "$tls_output"
+    fail "the TLS parity test did not run (renamed or skipped?)"
+}
+echo "   the replay over sslmode=require matches the plaintext run ($(printf '%s\n' "$tls_output" | grep -o 'finished in [0-9.]*s'))"
 
 echo "== cucumber on the sqlx-migrated schema"
 [ -x "$CUCUMBER_BIN" ] || fail "cucumber-js not found at $CUCUMBER_BIN"
@@ -245,4 +308,4 @@ NODE_OPTIONS=--no-experimental-strip-types \
     "$CUCUMBER_BIN" --format summary \
     || fail "the cucumber suite failed"
 
-echo "== storage-parity: all three steps passed"
+echo "== storage-parity: all four steps passed"
