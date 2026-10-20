@@ -4,7 +4,7 @@ import { DatabaseClient, Pubkey } from '../@types/base'
 import { DBNip05Verification, Nip05Verification } from '../@types/nip05'
 import { fromBuffer, toBuffer } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
-import { INip05VerificationRepository } from '../@types/repositories'
+import { INip05VerificationRepository, Nip05VerificationAdminListQuery } from '../@types/repositories'
 
 const logger = createLogger('nip05-verification-repository')
 
@@ -96,5 +96,45 @@ export class Nip05VerificationRepository implements INip05VerificationRepository
     logger('delete by pubkey: %s', pubkey)
 
     return this.dbClient<DBNip05Verification>('nip05_verifications').where('pubkey', toBuffer(pubkey)).delete()
+  }
+
+  public async listForAdmin(query: Nip05VerificationAdminListQuery): Promise<{ rows: Nip05Verification[]; total: number }> {
+    let builder = this.dbClient<DBNip05Verification>('nip05_verifications')
+
+    if (query.domain) {
+      builder = builder.where('domain', query.domain)
+    }
+
+    if (query.verified !== undefined) {
+      builder = builder.where('is_verified', query.verified)
+    }
+
+    if (query.minFailures !== undefined) {
+      builder = builder.where('failure_count', '>=', query.minFailures)
+    }
+
+    if (query.stale !== undefined) {
+      const cutoff = new Date(Date.now() - query.verifyExpirationMs)
+      if (query.stale) {
+        builder = builder.where((clause) => {
+          clause
+            .where('is_verified', false)
+            .orWhereNull('last_verified_at')
+            .orWhere('last_verified_at', '<', cutoff)
+        })
+      } else {
+        builder = builder.where('is_verified', true).andWhere('last_verified_at', '>=', cutoff)
+      }
+    }
+
+    const countRow = await builder.clone().count<{ count: string }>({ count: '*' }).first()
+    const total = Number(countRow?.count ?? 0)
+
+    const rows = await builder
+      .orderBy('last_checked_at', 'desc')
+      .limit(query.limit)
+      .offset(query.offset)
+
+    return { rows: rows.map(fromDBNip05Verification), total }
   }
 }

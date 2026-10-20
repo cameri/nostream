@@ -1,3 +1,4 @@
+import { createAdminOpsCacheAdapter } from './admin-ops-cache-adapter-factory'
 import { createMaintenanceService } from './maintenance-service-factory'
 import { createNotificationOutboxService } from './notification-outbox-service-factory'
 import { createPaymentsService } from './payments-service-factory'
@@ -22,5 +23,6 @@ export const maintenanceWorkerFactory = () => {
     createNotificationOutboxService(),
     notificationDeliveryLogRepository,
     notificationOutboxRepository,
+    createAdminOpsCacheAdapter(),
   )
 }

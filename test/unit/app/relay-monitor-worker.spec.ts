@@ -9,13 +9,17 @@ import {
   getProbeIntervalMs,
   RelayMonitorWorker,
 } from '../../../src/app/relay-monitor-worker'
+import { ICacheAdapter } from '../../../src/@types/adapters'
 import { Settings } from '../../../src/@types/settings'
+import { ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS, resetAdminOpsStore } from '../../../src/utils/admin-ops-store'
 import * as metricsTelemetry from '../../../src/telemetry/metrics'
 import { ProbeResult } from '../../../src/utils/relay-probe/types'
 
 chai.use(sinonChai)
 
 const { expect } = chai
+
+const flushAsyncWork = () => new Promise<void>((resolve) => setImmediate(resolve))
 
 describe('RelayMonitorWorker', () => {
   let sandbox: Sinon.SinonSandbox
@@ -51,6 +55,7 @@ describe('RelayMonitorWorker', () => {
     }) as ProbeResult
 
   beforeEach(() => {
+    resetAdminOpsStore()
     sandbox = Sinon.createSandbox()
     sandbox.stub(metricsTelemetry, 'shutdownMetricsTelemetry').resolves()
 
@@ -116,8 +121,8 @@ describe('RelayMonitorWorker', () => {
     const clock = sandbox.useFakeTimers()
 
     worker.run()
-    await Promise.resolve()
-    await Promise.resolve()
+    await clock.tickAsync(0)
+    await clock.tickAsync(0)
 
     expect(probeRunner).to.have.been.calledOnceWith('wss://relay.example.com', buildProbeOptions(settingsState))
     expect(snapshotStore.saveLatest).to.have.been.calledOnce
@@ -128,6 +133,7 @@ describe('RelayMonitorWorker', () => {
     historyStore.append.resetHistory()
 
     await clock.tickAsync(60_000)
+    await clock.tickAsync(0)
 
     expect(probeRunner).to.have.been.calledOnce
     expect(snapshotStore.saveLatest).to.have.been.calledOnce
@@ -193,12 +199,129 @@ describe('RelayMonitorWorker', () => {
     )
 
     worker.run()
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushAsyncWork()
+    await flushAsyncWork()
 
     expect(eventPublisher.publishAfterProbe).to.have.been.calledOnce
     expect(eventPublisher.publishAfterProbe.firstCall.args[0].status).to.equal('ok')
+  })
+
+  it('keepalive republishes the last probe heartbeat fields', async () => {
+    const workerPayloads: string[] = []
+    const opsCache: ICacheAdapter = {
+      getKey: async () => '',
+      hasKey: async () => false,
+      setKey: async (key, value) => {
+        if (key.startsWith('admin:ops:worker:')) {
+          workerPayloads.push(value)
+        }
+        return true
+      },
+      setKeyIfNotExists: async () => true,
+      addToSortedSet: async () => 0,
+      removeRangeByScoreFromSortedSet: async () => 0,
+      removeRangeByRankFromSortedSet: async () => 0,
+      getRangeFromSortedSet: async () => [],
+      setKeyExpiry: async () => {},
+      deleteKey: async () => 0,
+      getHKey: async () => '',
+      setHKey: async () => true,
+      addToSet: async () => 1,
+      getSetMembers: async () => [],
+      eval: async () => null,
+    }
+
+    settingsState.nip66!.targets = ['wss://relay.example.com']
+    probeRunner.rejects(new Error('probe failed'))
+
+    const clock = sandbox.useFakeTimers()
+    worker = new RelayMonitorWorker(
+      fakeProcess as unknown as NodeJS.Process,
+      settings,
+      snapshotStore,
+      probeRunner,
+      undefined,
+      historyStore as any,
+      opsCache,
+    )
+
+    worker.run()
+    await clock.tickAsync(0)
+    await clock.tickAsync(0)
+
+    expect(workerPayloads.length).to.be.greaterThan(0)
+    const afterFailure = JSON.parse(workerPayloads[workerPayloads.length - 1]!)
+    expect(afterFailure.lastError).to.equal('Probe run produced no results')
+
+    const countBeforeKeepalive = workerPayloads.length
+    await clock.tickAsync(ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS)
+    await clock.tickAsync(0)
+
+    expect(workerPayloads.length).to.be.greaterThan(countBeforeKeepalive)
+    const afterKeepalive = JSON.parse(workerPayloads[workerPayloads.length - 1]!)
+    expect(afterKeepalive.lastError).to.equal('Probe run produced no results')
+    expect(afterKeepalive.lastRunStartedAt).to.equal(afterFailure.lastRunStartedAt)
+
+    clock.restore()
+  })
+
+  it('clears lastError after a later successful probe run', async () => {
+    const workerPayloads: string[] = []
+    const opsCache: ICacheAdapter = {
+      getKey: async () => '',
+      hasKey: async () => false,
+      setKey: async (key, value) => {
+        if (key.startsWith('admin:ops:worker:')) {
+          workerPayloads.push(value)
+        }
+        return true
+      },
+      setKeyIfNotExists: async () => true,
+      addToSortedSet: async () => 0,
+      removeRangeByScoreFromSortedSet: async () => 0,
+      removeRangeByRankFromSortedSet: async () => 0,
+      getRangeFromSortedSet: async () => [],
+      setKeyExpiry: async () => {},
+      deleteKey: async () => 0,
+      getHKey: async () => '',
+      setHKey: async () => true,
+      addToSet: async () => 1,
+      getSetMembers: async () => [],
+      eval: async () => null,
+    }
+
+    settingsState.nip66!.targets = ['wss://relay.example.com']
+    probeRunner.onFirstCall().rejects(new Error('probe failed'))
+    probeRunner.onSecondCall().resolves(probeResult())
+
+    const clock = sandbox.useFakeTimers()
+    worker = new RelayMonitorWorker(
+      fakeProcess as unknown as NodeJS.Process,
+      settings,
+      snapshotStore,
+      probeRunner,
+      undefined,
+      historyStore as any,
+      opsCache,
+    )
+
+    worker.run()
+    await clock.tickAsync(0)
+    await clock.tickAsync(0)
+
+    expect(workerPayloads.length).to.be.greaterThan(0)
+    const afterFailure = JSON.parse(workerPayloads[workerPayloads.length - 1]!)
+    expect(afterFailure.lastError).to.equal('Probe run produced no results')
+
+    await clock.tickAsync(60_000)
+    await clock.tickAsync(0)
+
+    expect(workerPayloads.length).to.be.greaterThan(1)
+    const afterSuccess = JSON.parse(workerPayloads[workerPayloads.length - 1]!)
+    expect(afterSuccess.lastError).to.equal(undefined)
+    expect(afterSuccess.lastRunFinishedAt).to.be.a('string')
+
+    clock.restore()
   })
 
   it('still publishes NIP-66 events when probe history append fails', async () => {
@@ -218,9 +341,8 @@ describe('RelayMonitorWorker', () => {
     )
 
     worker.run()
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushAsyncWork()
+    await flushAsyncWork()
 
     expect(eventPublisher.publishAfterProbe).to.have.been.calledOnce
   })

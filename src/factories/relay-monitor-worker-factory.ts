@@ -2,6 +2,7 @@ import { RedisAdapter } from '../adapters/redis-adapter'
 import { RelayMonitorWorker } from '../app/relay-monitor-worker'
 import { getCacheClient } from '../cache/client'
 import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
+import { createAdminOpsCacheAdapter } from './admin-ops-cache-adapter-factory'
 import { createEventRepository } from './event-repository-factory'
 import { createSettings } from './settings-factory'
 import { Nip66EventPublisher } from '../services/nip66-event-publisher'
@@ -16,5 +17,13 @@ export const relayMonitorWorkerFactory = () => {
   const eventRepository = createEventRepository(getMasterDbClient(), getReadReplicaDbClient())
   const eventPublisher = new Nip66EventPublisher(eventRepository, cache)
 
-  return new RelayMonitorWorker(process, createSettings, snapshotStore, runProbe, eventPublisher, historyStore)
+  return new RelayMonitorWorker(
+    process,
+    createSettings,
+    snapshotStore,
+    runProbe,
+    eventPublisher,
+    historyStore,
+    createAdminOpsCacheAdapter(),
+  )
 }

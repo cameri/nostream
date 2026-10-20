@@ -65,6 +65,7 @@
         <aside id="dashboard-nav" class="dashboard-nav" aria-hidden="true">
           <p class="admin-kicker mb-2"><span class="prompt-char">&gt;</span> Navigation</p>
           <button type="button" class="nav-item active" data-view="metrics-view">Metrics</button>
+          <button type="button" class="nav-item" data-view="operations-view">Operations</button>
           <button type="button" class="nav-item" data-view="settings-view">Settings</button>
           <button type="button" class="nav-item" data-view="notifications-view">Notifications</button>
         </aside>
@@ -100,37 +101,6 @@
                 </div>
               </div>
             </div>
-          </section>
-
-          <section id="network-health-section" class="dashboard-section">
-            <h2 class="section-title">Network Health</h2>
-            <p id="network-health-sync" class="sync-line mb-3"><span class="prompt-char">&gt;</span> probes: waiting for snapshot…</p>
-            <div id="network-health-empty" class="panel-card admin-muted small">No external probe results yet. Enable NIP-66 relay monitoring to populate this panel.</div>
-            <div id="network-health-timeline-wrap" class="mb-3 d-none">
-              <p class="metric-label mb-2"><span class="module-code">HIST</span> Recent probe runs</p>
-              <div id="network-health-timeline" class="network-health-timeline" role="list" aria-label="Recent probe runs"></div>
-            </div>
-            <div id="network-health-summary" class="row g-2 mb-3 d-none">
-              <div class="col-6 col-md-3">
-                <div class="metric-card h-100">
-                  <p class="metric-label"><span class="module-code">RUN</span> Probe status</p>
-                  <p id="network-health-run-status" class="metric-value status-no-data mb-0"><span class="status-led" aria-hidden="true"></span>Pending</p>
-                </div>
-              </div>
-              <div class="col-6 col-md-3">
-                <div class="metric-card h-100">
-                  <p class="metric-label"><span class="module-code">TGT</span> Targets</p>
-                  <p id="network-health-target-count" class="metric-value mb-0"><span class="metric-number">0</span></p>
-                </div>
-              </div>
-              <div class="col-12 col-md-6">
-                <div class="metric-card h-100">
-                  <p class="metric-label"><span class="module-code">TS</span> Last probe run</p>
-                  <p id="network-health-run-at" class="metric-value mb-0"><span class="metric-number">—</span></p>
-                </div>
-              </div>
-            </div>
-            <div id="network-health-results" class="network-health-results d-none" aria-live="polite"></div>
           </section>
 
           <section class="dashboard-section">
@@ -228,6 +198,170 @@
                   <iframe class="grafana-frame" data-panel-id="10" title="CPU" loading="lazy" referrerpolicy="no-referrer"></iframe>
                 </div>
               </div>
+            </div>
+          </section>
+        </div>
+
+        <div id="operations-view" class="dashboard-view d-none">
+          <section class="dashboard-section">
+            <h2 class="section-title">Mirror health</h2>
+            <p id="ops-mirrors-sync" class="sync-line mb-2"><span class="prompt-char">&gt;</span> mirrors: not loaded</p>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="ops-mirrors-caption">
+                <caption id="ops-mirrors-caption" class="visually-hidden">Static mirror connection status</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Index</th>
+                    <th scope="col">Target</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Reconnects</th>
+                    <th scope="col">Last event</th>
+                    <th scope="col">Signal</th>
+                  </tr>
+                </thead>
+                <tbody id="ops-mirrors-body">
+                  <tr><td colspan="6" class="admin-muted small">No mirrors configured.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">Worker ops</h2>
+            <p id="ops-workers-sync" class="sync-line mb-2"><span class="prompt-char">&gt;</span> workers: not loaded</p>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="ops-workers-caption">
+                <caption id="ops-workers-caption" class="visually-hidden">Background worker heartbeats</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Worker</th>
+                    <th scope="col">Last run</th>
+                    <th scope="col">Last error</th>
+                    <th scope="col">Signal</th>
+                  </tr>
+                </thead>
+                <tbody id="ops-workers-body">
+                  <tr><td colspan="4" class="admin-muted small">No workers reported yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="network-health-section" class="dashboard-section">
+            <h2 class="section-title">Tor / I2P &amp; network probes</h2>
+            <p id="network-health-sync" class="sync-line mb-3"><span class="prompt-char">&gt;</span> probes: waiting for snapshot…</p>
+            <div id="network-health-empty" class="panel-card admin-muted small">No external probe results yet. Enable NIP-66 relay monitoring to populate this panel.</div>
+            <div id="network-health-timeline-wrap" class="mb-3 d-none">
+              <p class="metric-label mb-2"><span class="module-code">HIST</span> Recent probe runs</p>
+              <div id="network-health-timeline" class="network-health-timeline" role="list" aria-label="Recent probe runs"></div>
+            </div>
+            <div id="network-health-summary" class="row g-2 mb-3 d-none">
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100">
+                  <p class="metric-label"><span class="module-code">RUN</span> Probe status</p>
+                  <p id="network-health-run-status" class="metric-value status-no-data mb-0"><span class="status-led" aria-hidden="true"></span>Pending</p>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100">
+                  <p class="metric-label"><span class="module-code">TGT</span> Targets</p>
+                  <p id="network-health-target-count" class="metric-value mb-0"><span class="metric-number">0</span></p>
+                </div>
+              </div>
+              <div class="col-12 col-md-6">
+                <div class="metric-card h-100">
+                  <p class="metric-label"><span class="module-code">TS</span> Last probe run</p>
+                  <p id="network-health-run-at" class="metric-value mb-0"><span class="metric-number">—</span></p>
+                </div>
+              </div>
+            </div>
+            <div id="network-health-results" class="network-health-results d-none" aria-live="polite"></div>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">NIP-05 verifications</h2>
+            <div id="ops-nip05-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div class="d-flex flex-wrap gap-2 mb-3 align-items-end">
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-nip05-domain">Domain</label>
+                <input id="ops-nip05-domain" class="form-control console-input form-control-sm" type="text" placeholder="example.com">
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-nip05-verified">Verified</label>
+                <select id="ops-nip05-verified" class="form-select console-input form-select-sm">
+                  <option value="">Any</option>
+                  <option value="true">Verified</option>
+                  <option value="false">Not verified</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-nip05-stale">Stale</label>
+                <select id="ops-nip05-stale" class="form-select console-input form-select-sm">
+                  <option value="">Any</option>
+                  <option value="true">Stale</option>
+                  <option value="false">Fresh</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-nip05-min-failures">Min failures</label>
+                <input id="ops-nip05-min-failures" class="form-control console-input form-control-sm" type="number" min="0" step="1">
+              </div>
+              <button id="ops-nip05-refresh" type="button" class="btn btn-console btn-sm">Refresh</button>
+            </div>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="ops-nip05-caption">
+                <caption id="ops-nip05-caption" class="visually-hidden">NIP-05 verification records</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Pubkey</th>
+                    <th scope="col">NIP-05</th>
+                    <th scope="col">Verified</th>
+                    <th scope="col">Failures</th>
+                    <th scope="col">Last verified</th>
+                    <th scope="col">Stale</th>
+                    <th scope="col"></th>
+                  </tr>
+                </thead>
+                <tbody id="ops-nip05-body">
+                  <tr><td colspan="7" class="admin-muted small">No rows loaded.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p id="ops-nip05-pagination" class="admin-muted small mt-2 mb-0"></p>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">Storage counts</h2>
+            <p class="admin-muted small mb-2">Per-kind counts use NIP-45-style filters (comma-separated kinds, optional since/until unix seconds).</p>
+            <div class="d-flex flex-wrap gap-2 mb-3 align-items-end">
+              <div class="flex-grow-1">
+                <label class="form-label field-label small mb-1" for="ops-storage-kinds">Kinds</label>
+                <input id="ops-storage-kinds" class="form-control console-input form-control-sm" type="text" placeholder="1,7,9735">
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-storage-since">Since</label>
+                <input id="ops-storage-since" class="form-control console-input form-control-sm" type="number" min="0" step="1">
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-storage-until">Until</label>
+                <input id="ops-storage-until" class="form-control console-input form-control-sm" type="number" min="0" step="1">
+              </div>
+              <button id="ops-storage-run" type="button" class="btn btn-console btn-sm">Count</button>
+            </div>
+            <div id="ops-storage-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="ops-storage-caption">
+                <caption id="ops-storage-caption" class="visually-hidden">Event storage counts by kind</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Kinds</th>
+                    <th scope="col">Count</th>
+                  </tr>
+                </thead>
+                <tbody id="ops-storage-body">
+                  <tr><td colspan="2" class="admin-muted small">Run a query to load counts.</td></tr>
+                </tbody>
+              </table>
             </div>
           </section>
         </div>
@@ -392,5 +526,6 @@
     <script src="{{path_prefix}}/admin/assets/spark-field.js" nonce="{{nonce}}"></script>
     <script src="{{path_prefix}}/admin/assets/dashboard.js" nonce="{{nonce}}"></script>
     <script src="{{path_prefix}}/admin/assets/notifications.js" nonce="{{nonce}}"></script>
+    <script src="{{path_prefix}}/admin/assets/admin-ops.js" nonce="{{nonce}}"></script>
   </body>
 </html>
