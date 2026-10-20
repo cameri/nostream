@@ -18,6 +18,9 @@
 #   CARGO_TARGET_DIR    in-container build directory. Default: /target-<checkout>-<checksum>,
 #                       one directory per source path, mounted under RUST_CACHE_HOST. Set it
 #                       only to override that keying; a shared path reintroduces #906.
+#   RUST_CACHE_VISIBLE  where this shell sees RUST_CACHE_HOST, when that differs (a cache kept
+#                       on a remote daemon host). Only used to create the per-checkout target
+#                       directory with the right owner.
 #   RUST_BUILDER_IMAGE  image (default containers-rust-builder:latest)
 set -eu
 
@@ -80,8 +83,15 @@ target_host="$cache_host$target_dir"
 # /workspace, and a remote daemon may own the cache entirely on its side. Pick the spelling
 # this shell can see; when neither exists, leave the directory to the daemon, which is how
 # a daemon-only cache already works, rather than refusing a cache this side cannot check.
-cache_visible=$cache_host
-if [ ! -d "$cache_host" ]; then
+if [ -n "${RUST_CACHE_VISIBLE:-}" ]; then
+    if [ ! -d "$RUST_CACHE_VISIBLE" ]; then
+        echo "scripts/rust.sh: RUST_CACHE_VISIBLE=$RUST_CACHE_VISIBLE is not a directory" >&2
+        exit 66
+    fi
+    cache_visible=$RUST_CACHE_VISIBLE
+elif [ -d "$cache_host" ]; then
+    cache_visible=$cache_host
+else
     case "$cache_host" in
         /home/cameri/Workspace/*) cache_visible="/workspace/${cache_host#/home/cameri/Workspace/}" ;;
         *) cache_visible= ;;
@@ -89,9 +99,14 @@ if [ ! -d "$cache_host" ]; then
 fi
 if [ -n "$cache_visible" ] && [ -d "$cache_visible" ]; then
     if ! mkdir -p "$cache_visible$target_dir" 2>/dev/null || [ ! -w "$cache_visible$target_dir" ]; then
-        echo "scripts/rust.sh: cannot write $cache_visible$target_dir (it must be writable by uid 1000; set CARGO_TARGET_DIR or RUST_CACHE_HOST)" >&2
+        echo "scripts/rust.sh: cannot write $cache_visible$target_dir (it must be writable by uid 1000; set CARGO_TARGET_DIR, RUST_CACHE_HOST or RUST_CACHE_VISIBLE)" >&2
         exit 66
     fi
+else
+    # The cache root is not visible from this shell, so this side cannot create the directory;
+    # the daemon would create a missing bind source as root, which uid 1000 cannot write.
+    # Say so once rather than letting cargo surface it as a permission error.
+    echo "scripts/rust.sh: $target_host is not visible here; it must exist on the Docker host and be writable by uid 1000 (set RUST_CACHE_VISIBLE to where this shell sees the cache)" >&2
 fi
 
 name="rust-run-$$-$(date +%s)"
