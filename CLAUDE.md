@@ -36,6 +36,19 @@ cargo test --workspace --all-features
 cargo build --workspace --all-features --release
 ```
 
+CI additionally runs the two database-backed storage tests ("Storage parity against Postgres")
+against a `postgres:16-alpine` service, and they are `#[ignore]`d so a checkout without a database still passes
+`cargo test --workspace`:
+
+```
+cargo test -p nostream-storage --test migrations --test parity -- --ignored --test-threads=1
+```
+
+`PARITY_ADMIN_URL` names the administrative database (CI sets
+`postgres://postgres:postgres@localhost:5432/postgres`); the targets create, migrate and
+drop their own scratch databases. `scripts/storage-parity.sh` runs both plus the
+TypeScript Cucumber suite against the sqlx-migrated schema — the complete local oracle.
+
 - **`--workspace`, never a single crate.** A crate-local `cargo test -p` proves nothing
   about a workspace lint that another member trips.
 - **`--all-features` is not optional.** `nostreamd`'s `otlp` feature gates three

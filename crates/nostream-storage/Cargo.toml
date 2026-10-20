@@ -5,17 +5,30 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Repository traits, backend selection and the LMDB environment slice"
+description = "Repository traits, backend selection and the Postgres storage backend"
+
+[features]
+# The Postgres backend and its driver. On by default because Postgres is the reference
+# implementation; a build that only needs the trait seam (the LMDB follow-up) can turn it
+# off and lose the sqlx link entirely.
+default = ["postgres"]
+postgres = ["dep:sqlx"]
 
 [dependencies]
+chrono.workspace = true
+futures-core.workspace = true
+heed.workspace = true
 nostream-config.workspace = true
 nostream-core.workspace = true
-heed.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, optional = true }
 thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
+serde_yaml.workspace = true
 tempfile.workspace = true
-tokio.workspace = true
 
 [lints]
 workspace = true

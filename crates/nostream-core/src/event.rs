@@ -318,9 +318,10 @@ impl fmt::Display for Kind {
 
 /// One kind or an inclusive `[first, last]` range (`src/@types/settings.ts` `EventKindsRange`).
 ///
-/// Settings criteria use it (`isEventKindOrRangeMatch`, `src/utils/event.ts:34-37`);
-/// a subscription filter's `kinds` holds numbers only, so a range element never matches
-/// there and is unrepresentable in `Filter`.
+/// Two callers: settings criteria (`isEventKindOrRangeMatch`, `src/utils/event.ts:34-37`)
+/// and the storage retention whitelist (`EventRetentionOptions::kind_whitelist`, the capture's
+/// `(EventKinds | EventKindsRange)[]`). A subscription filter's `kinds` holds numbers only, so
+/// a range element never matches there and is unrepresentable in `Filter`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum KindSelector {
