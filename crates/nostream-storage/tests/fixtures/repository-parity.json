@@ -3,7 +3,7 @@
     "repo": "cameri/nostream",
     "capture_commit": "242a3001d77149e4d70151ec03060c4ef44a1547",
     "generator": "crates/nostream-storage/tests/capture/gen-storage-parity.mjs",
-    "generated_on": "2026-10-19",
+    "generated_on": "2026-10-20",
     "server_image": "postgres:16-alpine (PostgreSQL 16.15)",
     "timezone": "UTC",
     "migration_command": "knex migrate:latest",
@@ -11317,7 +11317,7 @@
           }
         },
         "ref": {
-          "id": "d05eb04a-9e3b-4fee-9226-57efc47138c2"
+          "id": "d6726eeb-3fc8-4d38-baa1-444875bfb324"
         }
       }
     },
@@ -11346,7 +11346,7 @@
           }
         },
         "ref": {
-          "id": "78642867-7c9f-4628-8dab-89a15adf2fe1"
+          "id": "ac74823d-fc2f-4963-a148-0266b982b07a"
         }
       }
     },
@@ -11680,6 +11680,49 @@
               "status": "processing",
               "attempt_count": 0,
               "last_error": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "transaction",
+      "request": {
+        "ops": [
+          {
+            "op": "outbox.enqueue",
+            "request": {
+              "event_type": "transaction.enqueue.mark",
+              "payload": {
+                "probe": "marked"
+              }
+            }
+          },
+          {
+            "op": "outbox.mark_delivered",
+            "request": {
+              "enqueue_event_type": "transaction.enqueue.mark"
+            }
+          }
+        ]
+      },
+      "result": {
+        "compare": {
+          "failed": false,
+          "results": [
+            {
+              "message": {
+                "event_type": "transaction.enqueue.mark",
+                "payload": {
+                  "probe": "marked"
+                },
+                "status": "pending",
+                "attempt_count": 0,
+                "last_error": null
+              }
+            },
+            {
+              "ok": true
             }
           ]
         }

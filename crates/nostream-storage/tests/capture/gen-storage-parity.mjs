@@ -850,6 +850,17 @@ const script = [
     },
   },
   { op: 'outbox.claim_batch', request: { limit: 10 } },
+  // One group enqueues and then marks the same row delivered: the enqueue's id has to be
+  // addressable by the next op, inside the transaction.
+  {
+    op: 'transaction',
+    request: {
+      ops: [
+        { op: 'outbox.enqueue', request: { event_type: 'transaction.enqueue.mark', payload: { probe: 'marked' } } },
+        { op: 'outbox.mark_delivered', request: { enqueue_event_type: 'transaction.enqueue.mark' } },
+      ],
+    },
+  },
 ]
 
 // ---------------------------------------------------------------------------------------
@@ -1278,8 +1289,8 @@ const resolveId = (request) => {
   return value
 }
 
-const runOp = async (op, client) => {
-  const result = await run(op, client)
+const runOp = async (op, client, inTransaction = false) => {
+  const result = await run(op, client, inTransaction)
   if (op.op === 'outbox.enqueue') {
     const message = result.compare.message
     // The id is not part of the comparison; it is needed to address the row later.
@@ -1300,7 +1311,7 @@ const runTransaction = async (op) => {
     await db.transaction(async (trx) => {
       for (const [index, nested] of op.request.ops.entries()) {
         try {
-          executed.push(await run(nested, trx, true))
+          executed.push(await runOp(nested, trx, true))
         } catch (error) {
           failedAt = index
           throw error

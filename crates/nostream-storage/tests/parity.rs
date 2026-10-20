@@ -946,21 +946,22 @@ fn new_report(value: &Value) -> NewReport {
     }
 }
 
-async fn run_transaction(backend: &PostgresBackend, op: &Value) -> Value {
+async fn run_transaction(
+    backend: &PostgresBackend,
+    op: &Value,
+    refs: &mut HashMap<String, String>,
+) -> Value {
     let ops = op["request"]["ops"].as_array().expect("transaction ops");
     let transaction = backend.begin().await.expect("a serializable transaction");
     let mut results = Vec::new();
     let mut failed_at = None;
 
+    // One map for the whole group: an enqueue's id has to be addressable by the
+    // next op in the same transaction, exactly as the top-level script does.
+    // A fresh map per nested op loses it, and `mark_delivered` then has no row
+    // to address.
     for (index, nested) in ops.iter().enumerate() {
-        match run_op(
-            backend,
-            Client::Transaction(&transaction),
-            nested,
-            &mut HashMap::new(),
-        )
-        .await
-        {
+        match run_op(backend, Client::Transaction(&transaction), nested, refs).await {
             Ok(result) => results.push(result),
             Err(_) => {
                 failed_at = Some(index);
@@ -1026,7 +1027,7 @@ async fn the_typescript_script_replays_with_an_empty_diff() {
     {
         let name = op["op"].as_str().expect("an op name");
         let actual = if name == "transaction" {
-            run_transaction(&backend, op).await
+            run_transaction(&backend, op, &mut refs).await
         } else {
             run_op(&backend, Client::Backend(&backend), op, &mut refs)
                 .await
