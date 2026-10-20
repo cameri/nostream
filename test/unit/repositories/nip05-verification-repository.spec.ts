@@ -114,16 +114,22 @@ describe('Nip05VerificationRepository', () => {
         .empty
     })
 
-    it('checks now when the verification says nothing about when it was last checked', async () => {
+    it('checks now when the verification says nothing about when it was last checked, on insert and on conflict', async () => {
       respondWith(1)
+      const checkedAt = new Date('2026-06-10T00:00:00.000Z')
 
       await repository.upsert(verification({ lastCheckedAt: undefined as unknown as Date }))
+      await repository.upsert(verification({ lastCheckedAt: checkedAt }))
 
-      const checkedNow = queries[0].bindings.filter(
-        (binding) => binding instanceof Date && binding.getTime() === NOW.getTime(),
-      )
-      // created_at, updated_at, last_checked_at on insert, and last_checked_at and updated_at on conflict
-      expect(checkedNow.length).to.be.at.least(3)
+      const written = (query: (typeof queries)[number]) => {
+        const insertColumns = /^insert into "nip05_verifications" \(([^)]*)\)/.exec(query.sql)![1].split(', ')
+        const inserted = insertColumns.indexOf('"last_checked_at"')
+        const updated = /"last_checked_at" = \$(\d+)/.exec(query.sql.slice(query.sql.indexOf('do update set')))![1]
+
+        return [query.bindings[inserted], query.bindings[Number(updated) - 1]]
+      }
+      expect(written(queries[0])).to.deep.equal([NOW, NOW])
+      expect(written(queries[1])).to.deep.equal([checkedAt, checkedAt])
     })
 
     it('resolves with the number of rows written', async () => {

@@ -12,6 +12,8 @@ describe('NotificationOutboxRepository', () => {
   const NOW = new Date('2026-06-15T12:00:00.000Z')
   let clock: Sinon.SinonFakeTimers
   let queries: ReturnType<typeof createRecordingKnex>['queries']
+  let steps: ReturnType<typeof createRecordingKnex>['steps']
+  let stepConnections: ReturnType<typeof createRecordingKnex>['stepConnections']
   let respondWith: ReturnType<typeof createRecordingKnex>['respondWith']
   let repository: NotificationOutboxRepository
 
@@ -33,6 +35,8 @@ describe('NotificationOutboxRepository', () => {
     clock = Sinon.useFakeTimers({ now: NOW, toFake: ['Date'] })
     const recording = createRecordingKnex()
     queries = recording.queries
+    steps = recording.steps
+    stepConnections = recording.stepConnections
     respondWith = recording.respondWith
     repository = new NotificationOutboxRepository(recording.db as any)
   })
@@ -100,14 +104,15 @@ describe('NotificationOutboxRepository', () => {
       expect(queries[0].sql).to.match(/^select/)
     })
 
-    it('selects due pending messages and processing ones whose lease ran out, oldest first, up to the limit', async () => {
+    it('selects due pending messages or processing ones whose lease ran out, oldest first, up to the limit', async () => {
       respondWith([])
 
       await repository.claimBatch(7)
 
       const { sql, bindings } = queries[0]
-      expect(sql).to.include('"status" = $1 and "available_at" <= CURRENT_TIMESTAMP')
-      expect(sql).to.include('"status" = $2 and "updated_at" < $3')
+      expect(sql).to.include(
+        'where (("status" = $1 and "available_at" <= CURRENT_TIMESTAMP) or ("status" = $2 and "updated_at" < $3))',
+      )
       expect(sql).to.include('order by "created_at" asc')
       expect(sql).to.include('limit $4')
       expect(bindings[0]).to.equal(NotificationOutboxStatus.PENDING)
@@ -150,6 +155,37 @@ describe('NotificationOutboxRepository', () => {
         expect(message.status).to.equal(NotificationOutboxStatus.PROCESSING)
         expect(message.updatedAt).to.deep.equal(NOW)
       }
+    })
+
+    it('selects and marks the messages in one transaction, so the rows stay locked until they are marked', async () => {
+      respondWith([row({ id: 'id-1' })], 1)
+
+      await repository.claimBatch(10)
+
+      expect(steps).to.deep.equal(['begin', 'select', 'update', 'commit'])
+      expect(new Set(stepConnections).size, 'every statement on the same connection').to.equal(1)
+    })
+
+    it('commits the transaction when there was nothing to claim', async () => {
+      respondWith([])
+
+      await repository.claimBatch(10)
+
+      expect(steps).to.deep.equal(['begin', 'select', 'commit'])
+    })
+
+    it('rolls the claim back when marking the messages fails, so they are not left half claimed', async () => {
+      respondWith([row({ id: 'id-1' })], new Error('update failed'))
+
+      let error: Error | undefined
+      try {
+        await repository.claimBatch(10)
+      } catch (caught) {
+        error = caught as Error
+      }
+
+      expect(error?.message).to.contain('update failed')
+      expect(steps).to.deep.equal(['begin', 'select', 'update', 'rollback'])
     })
 
     it('maps the row, and leaves the attempt count for the caller to advance', async () => {
