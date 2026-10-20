@@ -75,18 +75,23 @@ fi
 target_host="$cache_host$target_dir"
 
 # The daemon creates a missing bind source as an empty directory owned by root, which uid
-# 1000 then cannot write, so create it here and refuse loudly rather than letting the run
-# fail later as a permission error from cargo. The cache root is a host path by default and
-# this shell may be in the sandbox, where the same tree is mounted at /workspace, so pick
-# whichever spelling exists.
-case "$cache_host" in
-    /home/cameri/Workspace/*) cache_visible="/workspace/${cache_host#/home/cameri/Workspace/}" ;;
-    *) cache_visible=$cache_host ;;
-esac
-if [ -d "$cache_host" ]; then cache_visible=$cache_host; fi
-if ! mkdir -p "$cache_visible$target_dir" 2>/dev/null || [ ! -w "$cache_visible$target_dir" ]; then
-    echo "scripts/rust.sh: cannot write $cache_visible$target_dir (it must be writable by uid 1000; set CARGO_TARGET_DIR or RUST_CACHE_HOST)" >&2
-    exit 66
+# 1000 then cannot write, so create the target directory here when this shell can see it.
+# The cache root is a path on the daemon's host: the sandbox sees the same tree at
+# /workspace, and a remote daemon may own the cache entirely on its side. Pick the spelling
+# this shell can see; when neither exists, leave the directory to the daemon, which is how
+# a daemon-only cache already works, rather than refusing a cache this side cannot check.
+cache_visible=$cache_host
+if [ ! -d "$cache_host" ]; then
+    case "$cache_host" in
+        /home/cameri/Workspace/*) cache_visible="/workspace/${cache_host#/home/cameri/Workspace/}" ;;
+        *) cache_visible= ;;
+    esac
+fi
+if [ -n "$cache_visible" ] && [ -d "$cache_visible" ]; then
+    if ! mkdir -p "$cache_visible$target_dir" 2>/dev/null || [ ! -w "$cache_visible$target_dir" ]; then
+        echo "scripts/rust.sh: cannot write $cache_visible$target_dir (it must be writable by uid 1000; set CARGO_TARGET_DIR or RUST_CACHE_HOST)" >&2
+        exit 66
+    fi
 fi
 
 name="rust-run-$$-$(date +%s)"
