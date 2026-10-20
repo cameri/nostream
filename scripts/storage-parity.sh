@@ -116,6 +116,12 @@ process.stdout.write(cls + " " + urlHost + " " + plain);
 ' "$1"
 }
 
+# Credentials are spliced into URLs, where a reserved character would truncate the
+# userinfo or the authority. Encode for the URL and hand the raw value to the container.
+url_escape() {
+    node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"
+}
+
 # Only a TCP (or SSH) daemon endpoint can be on another machine. A unix socket, a bare
 # socket path, fd:// and npipe:// all name a daemon on this machine, and tcp://[::1] is the
 # local loopback spelled in brackets.
@@ -162,7 +168,9 @@ else
     host_url=$(printf '%s' "$host_info" | cut -d' ' -f2)
     host_plain=$(printf '%s' "$host_info" | cut -d' ' -f3)
 fi
-admin_url="postgres://postgres:$PARITY_PG_PASSWORD@$host_url:$PARITY_PG_PORT/postgres"
+pg_password_url=$(url_escape "$PARITY_PG_PASSWORD")
+redis_password_url=$(url_escape "$PARITY_REDIS_PASSWORD")
+admin_url="postgres://postgres:$pg_password_url@$host_url:$PARITY_PG_PORT/postgres"
 docker version >/dev/null 2>&1 \
     || fail "the Docker daemon at ${DOCKER_HOST:-/var/run/docker.sock} is not reachable"
 
@@ -229,8 +237,8 @@ echo "== behavioural parity"
 echo "== cucumber on the sqlx-migrated schema"
 [ -x "$CUCUMBER_BIN" ] || fail "cucumber-js not found at $CUCUMBER_BIN"
 mkdir -p .test-reports/integration
-DB_URI="postgres://postgres:$PARITY_PG_PASSWORD@$host_url:$PARITY_PG_PORT/nostream_parity_cucumber" \
-REDIS_URI="redis://:$PARITY_REDIS_PASSWORD@$host_url:$PARITY_REDIS_PORT" \
+DB_URI="postgres://postgres:$pg_password_url@$host_url:$PARITY_PG_PORT/nostream_parity_cucumber" \
+REDIS_URI="redis://:$redis_password_url@$host_url:$PARITY_REDIS_PORT" \
 NODE_PATH="${NODE_PATH:-}" \
 TS_NODE_TRANSPILE_ONLY=true \
 NODE_OPTIONS=--no-experimental-strip-types \
