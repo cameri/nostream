@@ -409,6 +409,93 @@ describe('rootRequestHandler', () => {
       expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(true)
     })
 
+    describe('subscription plans', () => {
+      const plans = [
+        { id: 'basic', amount: 1000000n, intervalSeconds: 2592000, graceSeconds: 259200 },
+        {
+          id: 'vip',
+          amount: 25000000n,
+          intervalSeconds: 31536000,
+          graceSeconds: 0,
+          description: 'Everything, for a year',
+        },
+      ]
+      const withPlans = (payments: Record<string, unknown> = {}) => ({
+        ...baseSettings,
+        payments: { enabled: true, processor: 'lnbits', feeSchedules: { admission: [] }, subscriptionPlans: plans, ...payments },
+      })
+
+      it('lists the plans under fees.subscription with the price in msats and the period in seconds', () => {
+        createSettingsStub.returns(withPlans())
+
+        rootRequestHandler(req, res, next)
+
+        expect(res.send.firstCall.args[0].fees.subscription).to.deep.equal([
+          { id: 'basic', amount: 1000000, unit: 'msats', period: 2592000 },
+          { id: 'vip', amount: 25000000, unit: 'msats', period: 31536000, description: 'Everything, for a year' },
+        ])
+      })
+
+      it('sends a document that can be serialized, although plan prices are bigints', () => {
+        createSettingsStub.returns(withPlans())
+
+        rootRequestHandler(req, res, next)
+
+        expect(() => JSON.stringify(res.send.firstCall.args[0])).to.not.throw()
+      })
+
+      it('keeps the admission fees next to the plans', () => {
+        createSettingsStub.returns(withPlans({ feeSchedules: { admission: [{ enabled: true, amount: 21000 }] } }))
+
+        rootRequestHandler(req, res, next)
+
+        const { fees } = res.send.firstCall.args[0]
+        expect(fees.admission).to.deep.equal([{ amount: 21000, unit: 'msats' }])
+        expect(fees.subscription).to.have.length(2)
+      })
+
+      it('does not advertise plans when none is configured', () => {
+        createSettingsStub.returns(withPlans({ subscriptionPlans: [] }))
+
+        rootRequestHandler(req, res, next)
+
+        expect(res.send.firstCall.args[0].fees).to.not.have.property('subscription')
+      })
+
+      it('does not advertise plans while payments are off', () => {
+        createSettingsStub.returns(withPlans({ enabled: false }))
+
+        rootRequestHandler(req, res, next)
+
+        expect(res.send.firstCall.args[0].fees).to.not.have.property('subscription')
+      })
+
+      it('does not advertise plans when the settings have no payments block', () => {
+        const { payments: _payments, ...settingsWithoutPayments } = baseSettings
+        createSettingsStub.returns(settingsWithoutPayments)
+
+        rootRequestHandler(req, res, next)
+
+        expect(res.send.firstCall.args[0].fees).to.deep.equal({})
+      })
+
+      it('sets limitation.restricted_writes when plans are what admits a user', () => {
+        createSettingsStub.returns(withPlans())
+
+        rootRequestHandler(req, res, next)
+
+        expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(true)
+      })
+
+      it('leaves limitation.restricted_writes off when plans are not in use', () => {
+        createSettingsStub.returns(withPlans({ subscriptionPlans: [] }))
+
+        rootRequestHandler(req, res, next)
+
+        expect(res.send.firstCall.args[0].limitation.restricted_writes).to.equal(false)
+      })
+    })
+
     it('returns empty fees instead of crashing when the payments block is absent', () => {
       const { payments: _payments, ...settingsWithoutPayments } = baseSettings
       createSettingsStub.returns(settingsWithoutPayments)
