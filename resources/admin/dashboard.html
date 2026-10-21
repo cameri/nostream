@@ -66,6 +66,7 @@
           <p class="admin-kicker mb-2"><span class="prompt-char">&gt;</span> Navigation</p>
           <button type="button" class="nav-item active" data-view="metrics-view">Metrics</button>
           <button type="button" class="nav-item" data-view="operations-view">Operations</button>
+          <button type="button" class="nav-item" data-view="trust-view">Trust</button>
           <button type="button" class="nav-item" data-view="settings-view">Settings</button>
           <button type="button" class="nav-item" data-view="notifications-view">Notifications</button>
         </aside>
@@ -248,7 +249,10 @@
           </section>
 
           <section id="network-health-section" class="dashboard-section">
-            <h2 class="section-title">Tor / I2P &amp; network probes</h2>
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <h2 class="section-title mb-0">Tor / I2P &amp; network probes</h2>
+              <button id="network-health-run-button" type="button" class="btn btn-console btn-sm" title="Run NIP-66 probe now">Run probe now</button>
+            </div>
             <p id="network-health-sync" class="sync-line mb-3"><span class="prompt-char">&gt;</span> probes: waiting for snapshot…</p>
             <div id="network-health-empty" class="panel-card admin-muted small">No external probe results yet. Enable NIP-66 relay monitoring to populate this panel.</div>
             <div id="network-health-timeline-wrap" class="mb-3 d-none">
@@ -411,6 +415,30 @@
                       <label class="form-check-label small" for="notifications-event-relay-restarted">Relay restarted</label>
                     </div>
                   </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-probe-failed" class="form-check-input" type="checkbox" data-event-key="probe.failed">
+                      <label class="form-check-label small" for="notifications-event-probe-failed">Probe failed</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-probe-recovered" class="form-check-input" type="checkbox" data-event-key="probe.recovered">
+                      <label class="form-check-label small" for="notifications-event-probe-recovered">Probe recovered</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-ssl-expiring" class="form-check-input" type="checkbox" data-event-key="ssl.expiring">
+                      <label class="form-check-label small" for="notifications-event-ssl-expiring">SSL expiring</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-mirror-disconnected" class="form-check-input" type="checkbox" data-event-key="mirror.disconnected">
+                      <label class="form-check-label small" for="notifications-event-mirror-disconnected">Mirror disconnected</label>
+                    </div>
+                  </div>
                 </div>
               </fieldset>
             </div>
@@ -480,6 +508,51 @@
           </section>
         </div>
 
+        <div id="trust-view" class="dashboard-view d-none">
+          <section class="dashboard-section">
+            <h2 class="section-title">Diagnostics export</h2>
+            <p class="admin-muted small">Download a redacted support bundle: version, health, settings, workers, mirrors, and latest probe snapshot.</p>
+            <div id="trust-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+              <button id="trust-diagnostics-download" type="button" class="btn btn-console btn-sm">Download JSON</button>
+              <button id="trust-diagnostics-preview-button" type="button" class="btn btn-console btn-sm">Preview in page</button>
+            </div>
+            <p id="trust-diagnostics-status" class="sync-line mb-2"><span class="prompt-char">&gt;</span> diagnostics: idle</p>
+            <p id="trust-diagnostics-preview-placeholder" class="admin-muted small mb-0">Preview not loaded.</p>
+            <div id="trust-diagnostics-preview-wrap" class="d-none mt-2">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <p class="metric-label mb-0"><span class="module-code">JSON</span> Diagnostics preview</p>
+                <button id="trust-diagnostics-preview-close" type="button" class="btn btn-console btn-sm">Close preview</button>
+              </div>
+              <pre id="trust-diagnostics-preview-body" class="panel-card small admin-muted mb-0" style="max-height: 320px; overflow: auto;" tabindex="0"></pre>
+            </div>
+          </section>
+
+          <section class="dashboard-section">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <h2 class="section-title mb-0">Admin audit log</h2>
+              <button id="trust-audit-refresh" type="button" class="btn btn-console btn-sm">Refresh</button>
+            </div>
+            <p id="trust-audit-sync" class="sync-line mb-2"><span class="prompt-char">&gt;</span> audit: not loaded</p>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="trust-audit-caption">
+                <caption id="trust-audit-caption" class="visually-hidden">Append-only admin audit entries</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Time (UTC)</th>
+                    <th scope="col">Action</th>
+                    <th scope="col">Remote</th>
+                    <th scope="col">Detail</th>
+                  </tr>
+                </thead>
+                <tbody id="trust-audit-body">
+                  <tr><td colspan="4" class="admin-muted small">No entries loaded.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
         <div id="settings-view" class="dashboard-view d-none">
           <section class="dashboard-section">
             <h2 class="section-title">Configuration<span class="sync-cursor" aria-hidden="true"></span></h2>
@@ -527,5 +600,6 @@
     <script src="{{path_prefix}}/admin/assets/dashboard.js" nonce="{{nonce}}"></script>
     <script src="{{path_prefix}}/admin/assets/notifications.js" nonce="{{nonce}}"></script>
     <script src="{{path_prefix}}/admin/assets/admin-ops.js" nonce="{{nonce}}"></script>
+    <script src="{{path_prefix}}/admin/assets/admin-trust.js" nonce="{{nonce}}"></script>
   </body>
 </html>

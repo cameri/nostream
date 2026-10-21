@@ -21,6 +21,7 @@ import {
   validateSettings,
 } from '../../utils/settings-config'
 import { validateSchema } from '../../utils/validation'
+import { recordAdminAuditFromRequest } from '../../utils/record-admin-audit'
 
 const logger = createLogger('patch-admin-notifications-controller')
 
@@ -60,6 +61,7 @@ export class PatchAdminNotificationsController implements IController {
       changes: [{ path: 'admin.notifications', reload: 'hot-reload' }],
       remoteAddress: request.ip,
     })
+    await recordAdminAuditFromRequest('notifications.updated', request)
 
     try {
       await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.SETTINGS_CHANGED, {

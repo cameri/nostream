@@ -4,6 +4,10 @@ export enum OperatorNotificationEventType {
   ADMISSION_INVOICE_FAILED = 'admission.invoice.failed',
   SETTINGS_CHANGED = 'settings.changed',
   RELAY_RESTARTED = 'relay.restarted',
+  PROBE_FAILED = 'probe.failed',
+  PROBE_RECOVERED = 'probe.recovered',
+  SSL_EXPIRING = 'ssl.expiring',
+  MIRROR_DISCONNECTED = 'mirror.disconnected',
 }
 
 export type OperatorNotificationChannelType = 'http' | 'discord' | 'slack' | 'telegram'
@@ -13,6 +17,8 @@ export interface OperatorNotificationTarget {
   type: OperatorNotificationChannelType
   enabled: boolean
   url?: string
+  /** HMAC-SHA256 signing secret for HTTP webhook payloads (optional). */
+  secret?: string
   botToken?: string
   chatId?: string
 }
@@ -23,6 +29,10 @@ export interface OperatorNotificationEventToggles {
   'admission.invoice.failed'?: boolean
   'settings.changed'?: boolean
   'relay.restarted'?: boolean
+  'probe.failed'?: boolean
+  'probe.recovered'?: boolean
+  'ssl.expiring'?: boolean
+  'mirror.disconnected'?: boolean
 }
 
 export interface OperatorNotificationRetrySettings {

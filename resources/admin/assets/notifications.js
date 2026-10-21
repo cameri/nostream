@@ -60,6 +60,10 @@
     'admission.invoice.failed': true,
     'settings.changed': true,
     'relay.restarted': false,
+    'probe.failed': true,
+    'probe.recovered': true,
+    'ssl.expiring': true,
+    'mirror.disconnected': true,
   })
 
   const newTargetId = () => {
@@ -74,6 +78,7 @@
     type: 'http',
     enabled: true,
     url: '',
+    secret: '',
     botToken: '',
     chatId: '',
   })
@@ -109,6 +114,7 @@
       const type = card.querySelector('[data-target-field="type"]')?.value ?? 'http'
       const enabled = card.querySelector('[data-target-field="enabled"]')?.checked ?? true
       const urlInput = card.querySelector('[data-target-field="url"]')
+      const secretInput = card.querySelector('[data-target-field="secret"]')
       const botTokenInput = card.querySelector('[data-target-field="botToken"]')
       const chatIdInput = card.querySelector('[data-target-field="chatId"]')
 
@@ -119,6 +125,13 @@
         target.url = url
       } else if (url === REDACTED) {
         target.url = REDACTED
+      }
+
+      const secret = secretInput?.value?.trim() ?? ''
+      if (secret === REDACTED) {
+        target.secret = REDACTED
+      } else if (secretInput) {
+        target.secret = secret
       }
 
       const botToken = botTokenInput?.value?.trim() ?? ''
@@ -230,6 +243,20 @@
     urlInput.value = target.url ?? ''
     urlCol.append(urlLabel, urlInput)
 
+    const secretCol = document.createElement('div')
+    secretCol.className = 'col-12 col-md-6 col-lg-3'
+    const secretLabel = document.createElement('label')
+    secretLabel.className = 'form-label field-label small mb-1'
+    secretLabel.textContent = 'Signing secret'
+    const secretInput = document.createElement('input')
+    secretInput.type = 'password'
+    secretInput.autocomplete = 'off'
+    secretInput.className = 'form-control console-input form-control-sm'
+    secretInput.dataset.targetField = 'secret'
+    secretInput.placeholder = 'HTTP HMAC (optional)'
+    secretInput.value = target.secret ?? ''
+    secretCol.append(secretLabel, secretInput)
+
     const botCol = document.createElement('div')
     botCol.className = 'col-12 col-md-6 col-lg-3'
     const botLabel = document.createElement('label')
@@ -256,7 +283,7 @@
     chatInput.value = target.chatId ?? ''
     chatCol.append(chatLabel, chatInput)
 
-    fieldsRow.append(urlCol, botCol, chatCol)
+    fieldsRow.append(urlCol, secretCol, botCol, chatCol)
     card.append(header, statusEl, fieldsRow)
 
     removeButton.addEventListener('click', () => {

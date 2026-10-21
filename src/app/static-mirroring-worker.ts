@@ -12,7 +12,9 @@ import { EventLimits, FeeSchedule, Mirror, Settings } from '../@types/settings'
 import { WebSocketServerAdapterEvent } from '../constants/adapter'
 import { EventExpirationTimeMetadataKey } from '../constants/base'
 import { createLogger } from '../factories/logger-factory'
+import { recordMirrorReconnectMetric } from '../telemetry/ops-metrics'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { notifyMirrorDisconnected } from '../utils/ops-trust-notifications'
 import {
   ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS,
   publishAdminOpsMirrorHeartbeatSafely,
@@ -198,6 +200,13 @@ export class StaticMirroringWorker implements IRunnable {
           logger(`disconnected (${code}): ${reason.toString()}`)
           this.connectionState = 'closed'
           this.reconnectCount += 1
+          recordMirrorReconnectMetric(this.mirrorIndex)
+          void notifyMirrorDisconnected(this.opsCache, {
+            index: this.mirrorIndex,
+            targetUrl: config.address,
+            code,
+            reason: reason.toString(),
+          })
           void this.publishOpsHeartbeats()
 
           setTimeout(() => {

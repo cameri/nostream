@@ -140,12 +140,36 @@ export class RedisAdapter implements ICacheAdapter {
     return this.client.sMembers(key)
   }
 
+  private isNoScriptError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false
+    }
+
+    const candidate = error as { code?: string; message?: string }
+    return candidate.code === 'NOSCRIPT' || (candidate.message?.includes('NOSCRIPT') ?? false)
+  }
+
   public async eval(script: string, keys: string[], args: string[]): Promise<unknown> {
     await this.connection
-    if (!this.scriptShas.has(script)) {
-      const sha = await this.client.scriptLoad(script)
-      this.scriptShas.set(script, sha)
+
+    const runEvalSha = async (): Promise<unknown> => {
+      if (!this.scriptShas.has(script)) {
+        const sha = await this.client.scriptLoad(script)
+        this.scriptShas.set(script, sha)
+      }
+
+      return this.client.evalSha(this.scriptShas.get(script)!, { keys, arguments: args })
     }
-    return await this.client.evalSha(this.scriptShas.get(script)!, { keys, arguments: args })
+
+    try {
+      return await runEvalSha()
+    } catch (error) {
+      if (!this.isNoScriptError(error)) {
+        throw error
+      }
+
+      this.scriptShas.delete(script)
+      return runEvalSha()
+    }
   }
 }
