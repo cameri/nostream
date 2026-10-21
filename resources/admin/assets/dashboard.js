@@ -371,6 +371,7 @@
   }
 
   const showDashboard = () => {
+    activeDashboardView = 'metrics-view'
     loginPanel.classList.add('d-none')
     dashboardPanel.classList.remove('d-none')
     dashboardActions.classList.remove('d-none')
@@ -1868,6 +1869,11 @@
       liveClock.textContent = formatClock()
     }, 1000)
   }
+
+  document.addEventListener('admin-unauthorized', () => {
+    window.__ADMIN_TRUST__?.closeDiagnosticsPreview?.()
+    showLogin()
+  })
 
   applyTheme(getTheme())
   checkSession()

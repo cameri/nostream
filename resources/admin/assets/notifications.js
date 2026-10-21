@@ -128,10 +128,10 @@
       }
 
       const secret = secretInput?.value?.trim() ?? ''
-      if (secret && secret !== REDACTED) {
-        target.secret = secret
-      } else if (secret === REDACTED) {
+      if (secret === REDACTED) {
         target.secret = REDACTED
+      } else if (secretInput) {
+        target.secret = secret
       }
 
       const botToken = botTokenInput?.value?.trim() ?? ''

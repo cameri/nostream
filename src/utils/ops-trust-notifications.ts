@@ -12,9 +12,61 @@ const MIRROR_DISCONNECT_PREFIX = 'admin:trust:mirror:disconnect:'
 
 const SSL_EXPIRY_WARNING_DAYS = 14
 const DEDUPE_TTL_SECONDS = 6 * 3600
+const PROBE_STATUS_TTL_SECONDS = 86400 * 30
 
-const isFailedStatus = (status: RelayProbeRunSnapshot['status']): boolean =>
-  status === 'failed' || status === 'partial'
+/** Atomically read previous probe status, persist the new status, return alert action. */
+const PROBE_TRANSITION_SCRIPT = `
+local prev = redis.call('GET', KEYS[1]) or ''
+local current = ARGV[1]
+local ttl = tonumber(ARGV[2])
+local action = ''
+if prev ~= '' and (prev == 'failed' or prev == 'partial') and current == 'ok' then
+  action = 'recovered'
+elseif current ~= 'ok' and prev ~= current then
+  action = 'failed'
+end
+redis.call('SET', KEYS[1], current, 'EX', ttl)
+return action
+`
+
+const enqueueTrustNotification = async (
+  eventType: OperatorNotificationEventType,
+  payload: Record<string, unknown>,
+): Promise<boolean> => {
+  return enqueueOperatorNotification(eventType, payload)
+}
+
+const sendDedupedTrustNotification = async (
+  cache: ICacheAdapter,
+  dedupeKey: string,
+  eventType: OperatorNotificationEventType,
+  payload: Record<string, unknown>,
+): Promise<void> => {
+  let claimed = false
+  try {
+    claimed = await cache.setKeyIfNotExists(dedupeKey, 'pending', DEDUPE_TTL_SECONDS)
+    if (!claimed) {
+      return
+    }
+
+    const enqueued = await enqueueTrustNotification(eventType, payload)
+    if (!enqueued) {
+      await cache.deleteKey(dedupeKey)
+      return
+    }
+
+    await cache.setKey(dedupeKey, '1', DEDUPE_TTL_SECONDS)
+  } catch (error) {
+    if (claimed) {
+      try {
+        await cache.deleteKey(dedupeKey)
+      } catch {
+        // best-effort release so a later attempt can retry
+      }
+    }
+    throw error
+  }
+}
 
 export const notifyProbeRunTransition = async (
   cache: ICacheAdapter | undefined,
@@ -24,30 +76,38 @@ export const notifyProbeRunTransition = async (
     return
   }
 
-  const previous = (await cache.getKey(PROBE_STATUS_KEY)) || ''
-  const current = snapshot.status
-
   try {
-    if (previous && isFailedStatus(previous as RelayProbeRunSnapshot['status']) && current === 'ok') {
-      await enqueueOperatorNotification(OperatorNotificationEventType.PROBE_RECOVERED, {
+    const action = String(
+      (await cache.eval(PROBE_TRANSITION_SCRIPT, [PROBE_STATUS_KEY], [
+        snapshot.status,
+        String(PROBE_STATUS_TTL_SECONDS),
+      ])) ?? '',
+    )
+
+    if (action === 'recovered') {
+      const enqueued = await enqueueTrustNotification(OperatorNotificationEventType.PROBE_RECOVERED, {
         runAt: snapshot.runAt,
-        status: current,
+        status: snapshot.status,
         targets: snapshot.targets,
       })
-    } else if (current !== 'ok' && previous !== current) {
-      await enqueueOperatorNotification(OperatorNotificationEventType.PROBE_FAILED, {
+      if (!enqueued) {
+        logger.error('probe recovered notification was not enqueued')
+      }
+    } else if (action === 'failed') {
+      const enqueued = await enqueueTrustNotification(OperatorNotificationEventType.PROBE_FAILED, {
         runAt: snapshot.runAt,
-        status: current,
+        status: snapshot.status,
         targets: snapshot.targets,
       })
+      if (!enqueued) {
+        logger.error('probe failed notification was not enqueued')
+      }
     }
 
-    await cache.setKey(PROBE_STATUS_KEY, current, 86400 * 30)
+    await notifySslExpiringFromSnapshot(cache, snapshot)
   } catch (error) {
     logger.error('probe transition notification failed: %o', error)
   }
-
-  await notifySslExpiringFromSnapshot(cache, snapshot)
 }
 
 const notifySslExpiringFromSnapshot = async (
@@ -75,18 +135,12 @@ const notifySslExpiringFromSnapshot = async (
     }
 
     const dedupeKey = `${SSL_ALERT_PREFIX}${relayUrl}`
-    const alreadySent = await cache.hasKey(dedupeKey)
-    if (alreadySent) {
-      continue
-    }
-
     try {
-      await enqueueOperatorNotification(OperatorNotificationEventType.SSL_EXPIRING, {
+      await sendDedupedTrustNotification(cache, dedupeKey, OperatorNotificationEventType.SSL_EXPIRING, {
         relayUrl,
         expiresAt,
         daysRemaining: Math.ceil(remainingMs / 86400000),
       })
-      await cache.setKey(dedupeKey, '1', DEDUPE_TTL_SECONDS)
     } catch (error) {
       logger.error('ssl expiring notification failed for %s: %o', relayUrl, error)
     }
@@ -102,18 +156,13 @@ export const notifyMirrorDisconnected = async (
   }
 
   const dedupeKey = `${MIRROR_DISCONNECT_PREFIX}${fields.index}`
-  if (await cache.hasKey(dedupeKey)) {
-    return
-  }
-
   try {
-    await enqueueOperatorNotification(OperatorNotificationEventType.MIRROR_DISCONNECTED, {
+    await sendDedupedTrustNotification(cache, dedupeKey, OperatorNotificationEventType.MIRROR_DISCONNECTED, {
       index: fields.index,
       targetUrl: fields.targetUrl,
       code: fields.code,
       reason: fields.reason,
     })
-    await cache.setKey(dedupeKey, '1', DEDUPE_TTL_SECONDS)
   } catch (error) {
     logger.error('mirror disconnected notification failed: %o', error)
   }

@@ -63,6 +63,18 @@
     elements.error?.classList.add('d-none')
   }
 
+  const handleUnauthorized = () => {
+    globalThis.dispatchEvent(new CustomEvent('admin-unauthorized'))
+  }
+
+  const handleFetchError = (error, fallbackMessage) => {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      handleUnauthorized()
+      return
+    }
+    showError(fallbackMessage)
+  }
+
   const renderAuditEntries = (entries) => {
     elements.auditBody.replaceChildren()
     if (!Array.isArray(entries) || entries.length === 0) {
@@ -108,11 +120,7 @@
         elements.auditSync.textContent = `> audit: ${body.entries?.length ?? 0} entries`
       }
     } catch (error) {
-      if (error instanceof Error && error.message === 'Unauthorized') {
-        globalThis.dispatchEvent(new CustomEvent('admin-unauthorized'))
-        return
-      }
-      showError('Network error while loading audit log')
+      handleFetchError(error, 'Network error while loading audit log')
     }
   }
 
@@ -139,8 +147,8 @@
       if (elements.diagnosticsStatus) {
         elements.diagnosticsStatus.textContent = 'Download started (secrets redacted).'
       }
-    } catch {
-      showError('Network error during diagnostics export')
+    } catch (error) {
+      handleFetchError(error, 'Network error during diagnostics export')
     }
   }
 
@@ -182,8 +190,8 @@
 
       const payload = await response.json()
       showDiagnosticsPreview(payload)
-    } catch {
-      showError('Network error during diagnostics preview')
+    } catch (error) {
+      handleFetchError(error, 'Network error during diagnostics preview')
     }
   }
 
