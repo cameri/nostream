@@ -2,10 +2,16 @@ import { Request } from 'express'
 
 import { RedisAdapter } from '../adapters/redis-adapter'
 import { AdminAuditAction } from '../@types/admin-audit'
-import { getCacheClient } from '../cache/client'
+import { getCacheClient, isCacheConfigured } from '../cache/client'
 import { appendAdminAuditEntrySafely } from './admin-audit-store'
 
-const getAdminAuditCache = () => new RedisAdapter(getCacheClient())
+const getAdminAuditCache = (): RedisAdapter | undefined => {
+  if (!isCacheConfigured()) {
+    return undefined
+  }
+
+  return new RedisAdapter(getCacheClient())
+}
 
 export const recordAdminAuditFromRequest = async (
   action: AdminAuditAction,
