@@ -359,6 +359,48 @@ describe('MaintenanceWorker', () => {
       expect(paymentsService.getPendingInvoices).not.to.have.been.called
     })
 
+    describe('subscription lifecycle', () => {
+      let subscriptionService: { processLifecycle: Sinon.SinonStub }
+
+      beforeEach(() => {
+        subscriptionService = { processLifecycle: sandbox.stub().resolves(0) }
+        worker = new MaintenanceWorker(
+          fakeProcess as any,
+          paymentsService,
+          maintenanceService,
+          settings as any,
+          nip05VerificationRepository,
+          notificationOutboxService,
+          notificationDeliveryLogRepository,
+          notificationOutboxRepository,
+          undefined,
+          subscriptionService as any,
+        )
+      })
+
+      it('runs the subscription lifecycle once per pass', async () => {
+        await (worker as any).onSchedule()
+
+        expect(subscriptionService.processLifecycle).to.have.been.calledOnce
+      })
+
+      it('skips it while payments are disabled', async () => {
+        settingsState.payments = { enabled: false } as any
+
+        await (worker as any).onSchedule()
+
+        expect(subscriptionService.processLifecycle).not.to.have.been.called
+      })
+
+      it('still clears old events and finishes the pass when the lifecycle fails', async () => {
+        subscriptionService.processLifecycle.rejects(new Error('db down'))
+
+        await (worker as any).onSchedule()
+
+        expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
+      })
+    })
+
     it('skips an invoice when the processor returns no id', async () => {
       settingsState.payments = { enabled: true } as any
       paymentsService.getPendingInvoices.resolves([pendingInvoice])

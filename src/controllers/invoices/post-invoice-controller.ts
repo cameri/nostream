@@ -11,6 +11,7 @@ import { IUserRepository } from '../../@types/repositories'
 
 import { createLogger } from '../../factories/logger-factory'
 
+import { areSubscriptionsEnabled, findSubscriptionPlan } from '../../utils/subscription'
 import { escapeHtml, safeJsonForScript } from '../../utils/html'
 import { fromBech32, toBech32 } from '../../utils/transform'
 import { getPublicKey, getRelayPrivateKey } from '../../utils/event'
@@ -57,8 +58,17 @@ export class PostInvoiceController implements IController {
       return
     }
 
-    const isAdmissionInvoice = request.body?.feeSchedule === 'admission'
-    if (!isAdmissionInvoice) {
+    const subscriptionsEnabled = areSubscriptionsEnabled(currentSettings)
+    const planId = request.body?.planId
+    const plan =
+      subscriptionsEnabled && typeof planId === 'string' ? findSubscriptionPlan(currentSettings, planId) : undefined
+    if (subscriptionsEnabled) {
+      if (!plan) {
+        response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid plan')
+
+        return
+      }
+    } else if (request.body?.feeSchedule !== 'admission') {
       response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Invalid fee')
 
       return
@@ -87,37 +97,43 @@ export class PostInvoiceController implements IController {
       return
     }
 
-    const isApplicableFee = (feeSchedule: FeeSchedule) =>
-      feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.includes(pubkey)
-    const admissionFee = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee) ?? []
+    let amount: bigint
+    if (plan) {
+      // Renewing early, or moving to another plan, is allowed, so an admitted user is not turned away.
+      amount = BigInt(plan.amount)
+    } else {
+      const isApplicableFee = (feeSchedule: FeeSchedule) =>
+        feeSchedule.enabled && !feeSchedule.whitelists?.pubkeys?.includes(pubkey)
+      const admissionFee = currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee) ?? []
 
-    if (!Array.isArray(admissionFee) || !admissionFee.length) {
-      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('No admission fee required')
+      if (!Array.isArray(admissionFee) || !admissionFee.length) {
+        response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('No admission fee required')
 
-      return
-    }
+        return
+      }
 
-    const minBalance = currentSettings.limits?.event?.pubkey?.minBalance
-    const user = await this.userRepository.findByPubkey(pubkey)
-    if (user && user.isAdmitted && (!minBalance || user.balance >= minBalance)) {
-      response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('User is already admitted.')
+      const minBalance = currentSettings.limits?.event?.pubkey?.minBalance
+      const user = await this.userRepository.findByPubkey(pubkey)
+      if (user && user.isAdmitted && (!minBalance || user.balance >= minBalance)) {
+        response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('User is already admitted.')
 
-      return
+        return
+      }
+
+      amount = admissionFee.reduce((sum, fee) => BigInt(fee.amount) + sum, 0n)
     }
 
     let invoice: Invoice
-    const amount = admissionFee.reduce((sum, fee) => BigInt(fee.amount) + sum, 0n)
 
     try {
-      const description = `${relayName} Admission Fee for ${toBech32('npub')(pubkey)}`
+      const description = plan
+        ? `${relayName} ${plan.id} subscription for ${toBech32('npub')(pubkey)}`
+        : `${relayName} Admission Fee for ${toBech32('npub')(pubkey)}`
 
-      invoice = await this.paymentsService.createInvoice(pubkey, amount, description)
+      invoice = await this.paymentsService.createInvoice(pubkey, amount, description, plan?.id)
     } catch (error) {
       logger.error('Unable to create invoice. Reason:', error)
-      response
-        .status(500)
-        .setHeader('content-type', 'text/plain')
-        .send('Unable to create invoice')
+      response.status(500).setHeader('content-type', 'text/plain').send('Unable to create invoice')
       return
     }
 
@@ -134,6 +150,7 @@ export class PostInvoiceController implements IController {
       .replaceAll('{{relay_url_html}}', escapeHtml(relayUrl))
       .replaceAll('{{invoice_html}}', escapeHtml(invoice.bolt11))
       .replaceAll('{{pubkey_html}}', escapeHtml(pubkey))
+      .replaceAll('{{plan_id_html}}', escapeHtml(plan?.id ?? ''))
       .replaceAll('{{path_prefix}}', escapeHtml(pathPrefix))
       .replaceAll('{{amount}}', (amount / 1000n).toString())
       // JS contexts — safeJsonForScript serializes and escapes < to prevent </script> injection

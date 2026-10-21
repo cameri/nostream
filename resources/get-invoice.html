@@ -20,9 +20,7 @@
             <div class="row">
               <div class="d-flex justify-content-center mt-2">
                 <p class="description-text">
-                  This <a href="https://github.com/nostr-protocol/nostr">Nostr</a> relay <strong>requires</strong> a one-time
-                  admission
-                  fee. <br /> Once payment is complete, you will be able to post and fetch events from this relay.
+                  {{fee_description_html}}
                 </p>
               </div>
               <div class="d-flex justify-content-center mb-1 mt-2">
@@ -36,6 +34,7 @@
         <div class="row justify-content-center">
           <div class="card col col-md-10 col-lg-6 mb-4">
             <div class="card-body">
+              {{plan_fields_html}}
               <div class="d-flex flex-column mb-4">
                 <label for="pubkey" class="h5">Your Nostr public key</label>
                 <input type="text" name="pubkey" class="form-control form-control-sm" id="pubkey" placeholder="npub... or hex..." pattern="^([0-9a-f]{64}|npub1[ac-hj-np-z02-9]+)$" required>
@@ -55,7 +54,7 @@
         <div class="row">
           <div class="d-flex justify-content-center mb-3">
             <input type="hidden" name="feeSchedule" value="admission" />
-            <button id="submitBtn" class="btn btn-lg btn-warning" type="submit">Pay {{amount}} sats</button>
+            <button id="submitBtn" class="btn btn-lg btn-warning" type="submit">{{pay_label}}</button>
           </div>
         </div>
         <div class="row d-none" id="powered-by-zebedee">

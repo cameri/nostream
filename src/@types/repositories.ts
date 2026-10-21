@@ -63,12 +63,25 @@ export interface IInvoiceRepository {
 export interface IUserSubscriptionRepository {
   findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<UserSubscription | undefined>
   upsert(subscription: Omit<UserSubscription, 'createdAt' | 'updatedAt'>, client?: DatabaseClient): Promise<number>
-  /** Active subscriptions whose period ends by `before` and that are not set to cancel. */
-  findDueForRenewal(before: Date, limit?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  /**
+   * Applies `changes` only while the stored row still matches `expected` (status, plan, period end
+   * and grace end), so a payment confirmed after the row was read is not overwritten.
+   * Returns false when the row has changed.
+   */
+  updateIfCurrent(
+    expected: UserSubscription,
+    changes: Partial<Pick<UserSubscription, 'status' | 'graceEndsAt'>>,
+    client?: DatabaseClient,
+  ): Promise<boolean>
+  /**
+   * Subscriptions whose period ends by `before` and that need a renewal invoice: active ones, and
+   * renewal-pending ones whose invoice has expired unpaid. `offset` skips rows already tried.
+   */
+  findDueForRenewal(before: Date, limit?: number, offset?: number, client?: DatabaseClient): Promise<UserSubscription[]>
   /** Active or renewal-pending subscriptions whose period has ended by `now`. */
-  findPeriodEnded(now: Date, limit?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  findPeriodEnded(now: Date, limit?: number, offset?: number, client?: DatabaseClient): Promise<UserSubscription[]>
   /** Past-due subscriptions whose grace period has ended by `now`. */
-  findGraceEnded(now: Date, limit?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  findGraceEnded(now: Date, limit?: number, offset?: number, client?: DatabaseClient): Promise<UserSubscription[]>
 }
 
 export interface IUserRepository {

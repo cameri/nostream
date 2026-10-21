@@ -222,6 +222,134 @@ describe('PostInvoiceController', () => {
     })
   })
 
+  describe('subscription plans', () => {
+    const plan = { id: 'basic', amount: 5000000n, intervalSeconds: 2592000, graceSeconds: 259200 }
+    const plansSettings = () => ({
+      ...baseSettings,
+      payments: { ...baseSettings.payments, subscriptionPlans: [plan, { ...plan, id: 'premium', amount: 9000000n }] },
+    })
+    const planBody = { ...validBody, planId: 'basic' }
+    const stubbedPaymentsService = () => ({
+      createInvoice: sinon
+        .stub()
+        .resolves({ id: 'inv-ref-123', bolt11: 'lnbc1...', expiresAt: new Date('2030-01-01') }),
+    })
+
+    it('creates an invoice for the plan price and tags it with the plan', async () => {
+      const paymentsService = stubbedPaymentsService()
+      const controller = makeController({ settings: plansSettings, paymentsService })
+      const res = makeRes()
+
+      await controller.handleRequest({ body: planBody } as any, res)
+
+      expect(res.status).to.have.been.calledWith(200)
+      const [pubkey, amount, description, planId] = paymentsService.createInvoice.firstCall.args
+      expect(pubkey).to.equal(VALID_PUBKEY)
+      expect(amount).to.equal(5000000n)
+      expect(description).to.contain('basic')
+      expect(planId).to.equal('basic')
+    })
+
+    it('keeps the chosen plan in the retry form of an expired invoice', async () => {
+      getTemplateStub.returns('{{plan_id_html}}')
+      const controller = makeController({ settings: plansSettings })
+      const res = makeRes()
+
+      await controller.handleRequest({ body: { ...validBody, planId: 'premium' } } as any, res)
+
+      expect(res.send).to.have.been.calledWith('premium')
+    })
+
+    it('leaves the plan empty in the retry form when no plan is configured', async () => {
+      getTemplateStub.returns('[{{plan_id_html}}]')
+      const controller = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest({ body: validBody } as any, res)
+
+      expect(res.send).to.have.been.calledWith('[]')
+    })
+
+    it('charges the price of the chosen plan', async () => {
+      const paymentsService = stubbedPaymentsService()
+      const controller = makeController({ settings: plansSettings, paymentsService })
+
+      await controller.handleRequest({ body: { ...validBody, planId: 'premium' } } as any, makeRes())
+
+      expect(paymentsService.createInvoice.firstCall.args[1]).to.equal(9000000n)
+    })
+
+    it('returns 400 when no plan is chosen, since the amount selects the plan', async () => {
+      const paymentsService = stubbedPaymentsService()
+      const controller = makeController({ settings: plansSettings, paymentsService })
+      const res = makeRes()
+
+      await controller.handleRequest({ body: validBody } as any, res)
+
+      expect(res.status).to.have.been.calledWith(400)
+      expect(res.send).to.have.been.calledWith('Invalid plan')
+      expect(paymentsService.createInvoice).not.to.have.been.called
+    })
+
+    it('returns 400 for an unknown plan or a plan id that is not a string', async () => {
+      const paymentsService = stubbedPaymentsService()
+      const controller = makeController({ settings: plansSettings, paymentsService })
+
+      for (const planId of ['gold', 'grandfathered', 42, ['basic'], { id: 'basic' }]) {
+        const res = makeRes()
+
+        await controller.handleRequest({ body: { ...validBody, planId } } as any, res)
+
+        expect(res.status).to.have.been.calledWith(400)
+        expect(res.send).to.have.been.calledWith('Invalid plan')
+      }
+      expect(paymentsService.createInvoice).not.to.have.been.called
+    })
+
+    it('lets an admitted user renew or change plan', async () => {
+      const userRepository = { findByPubkey: sinon.stub().resolves({ isAdmitted: true, balance: 99999 }) }
+      const controller = makeController({ settings: plansSettings, userRepository })
+      const res = makeRes()
+
+      await controller.handleRequest({ body: planBody } as any, res)
+
+      expect(res.status).to.have.been.calledWith(200)
+    })
+
+    it('needs no admission fee schedule', async () => {
+      const settings = () => ({
+        ...plansSettings(),
+        payments: { ...plansSettings().payments, feeSchedules: { admission: [] } },
+      })
+      const controller = makeController({ settings })
+      const res = makeRes()
+
+      await controller.handleRequest({ body: planBody } as any, res)
+
+      expect(res.status).to.have.been.calledWith(200)
+    })
+
+    it('still requires the ToS to be accepted', async () => {
+      const controller = makeController({ settings: plansSettings })
+      const res = makeRes()
+
+      await controller.handleRequest({ body: { ...planBody, tosAccepted: 'no' } } as any, res)
+
+      expect(res.send).to.have.been.calledWith('ToS agreement: not accepted')
+    })
+
+    it('ignores a plan id while plans are not configured, keeping the admission fee', async () => {
+      const paymentsService = stubbedPaymentsService()
+      const controller = makeController({ paymentsService })
+
+      await controller.handleRequest({ body: { ...validBody, planId: 'basic' } } as any, makeRes())
+
+      const [, amount, , planId] = paymentsService.createInvoice.firstCall.args
+      expect(amount).to.equal(21000n)
+      expect(planId).to.equal(undefined)
+    })
+  })
+
   describe('invoice creation', () => {
     it('returns 500 when the payments service throws', async () => {
       const paymentsService = {

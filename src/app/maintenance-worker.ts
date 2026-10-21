@@ -10,7 +10,12 @@ import {
   INotificationDeliveryLogRepository,
   INotificationOutboxRepository,
 } from '../@types/repositories'
-import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../@types/services'
+import {
+  IMaintenanceService,
+  INotificationOutboxService,
+  IPaymentsService,
+  ISubscriptionService,
+} from '../@types/services'
 import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
@@ -100,6 +105,7 @@ export class MaintenanceWorker implements IRunnable {
     private readonly notificationDeliveryLogRepository: INotificationDeliveryLogRepository,
     private readonly notificationOutboxRepository: INotificationOutboxRepository,
     private readonly opsCache?: ICacheAdapter,
+    private readonly subscriptionService?: ISubscriptionService,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -251,11 +257,24 @@ export class MaintenanceWorker implements IRunnable {
       logger('updated %d of %d invoices successfully', successful, invoices.length)
     }
 
+    await this.processSubscriptions()
+
     await clearOldEventsPromise
     await this.publishOpsHeartbeat({
       lastRunStartedAt,
       lastRunFinishedAt: new Date().toISOString(),
     })
+  }
+
+  private async processSubscriptions(): Promise<void> {
+    try {
+      const changed = await this.subscriptionService?.processLifecycle()
+      if (changed) {
+        logger('moved %d subscription(s) through their lifecycle', changed)
+      }
+    } catch (error) {
+      logger.error('Unable to process subscriptions', error)
+    }
   }
 
   private async processNotificationOutbox(): Promise<void> {
