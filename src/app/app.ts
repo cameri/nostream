@@ -124,16 +124,11 @@ export class App implements IRunnable {
     })
 
     logCentered('1 maintenance worker started', width)
-    const mirrors = settings?.mirroring?.static
-
-    if (Array.isArray(mirrors) && mirrors.length) {
-      for (let i = 0; i < mirrors.length; i++) {
-        createWorker({
-          WORKER_TYPE: 'static-mirroring',
-          MIRROR_INDEX: i.toString(),
-        })
-      }
-      logCentered(`${mirrors.length} static-mirroring worker started`, width)
+    if (Array.isArray(settings?.mirroring?.static) && settings.mirroring.static.length) {
+      logger.warn(
+        'mirroring.static is no longer supported and is ignored; sync with another relay over NIP-77 (negentropy) instead',
+      )
+      logCentered('mirroring.static is no longer supported (ignored)', width)
     }
 
     if (settings.nip66?.enabled) {

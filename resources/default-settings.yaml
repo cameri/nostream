@@ -185,8 +185,6 @@ workers:
 eventStore:
   # Only postgres for now. Changing it needs a restart.
   backend: postgres
-mirroring:
-  static: []
 dvm:
   workers: []
 limits:
