@@ -15,6 +15,7 @@ import {
   verifyNip05Identifier,
 } from '../utils/nip05'
 import { Event, ExpiringEvent } from '../@types/event'
+import { UserSubscription } from '../@types/user-subscription'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
 import {
   getEventExpiration,
@@ -81,6 +82,8 @@ export class EventMessageHandler implements IMessageHandler {
     private readonly wotGraphService: IWotGraphService,
     private readonly userSubscriptionRepository?: IUserSubscriptionRepository,
   ) {}
+
+  private readonly subscriptionReads = new WeakMap<Event, Promise<UserSubscription | undefined>>()
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
     let [, event] = message
@@ -408,7 +411,7 @@ export class EventMessageHandler implements IMessageHandler {
     const { whitelists } = currentSettings.limits?.event ?? {}
     // A subscriber's plan can replace the global limits, which carry on for everyone else.
     const rateLimits =
-      (await this.getPlanRateLimits(event.pubkey, currentSettings)) ?? currentSettings.limits?.event?.rateLimits
+      (await this.getPlanRateLimits(event, currentSettings)) ?? currentSettings.limits?.event?.rateLimits
     if (!rateLimits || !rateLimits.length) {
       return false
     }
@@ -469,7 +472,7 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   /** The rate limits of the plan the sender is subscribed to, if it has its own and the subscription still gives access. */
-  private async getPlanRateLimits(pubkey: string, settings: Settings): Promise<EventRateLimit[] | undefined> {
+  private async getPlanRateLimits(event: Event, settings: Settings): Promise<EventRateLimit[] | undefined> {
     if (!areSubscriptionsEnabled(settings) || !this.userSubscriptionRepository) {
       return undefined
     }
@@ -478,11 +481,12 @@ export class EventMessageHandler implements IMessageHandler {
       return undefined
     }
 
-    return findSubscriptionPlan(settings, await this.getActivePlanId(pubkey))?.limits?.rateLimits
+    return findSubscriptionPlan(settings, await this.getActivePlanId(event))?.limits?.rateLimits
   }
 
   /** Cached like admission, so it is read from the database once per pubkey and not once per event. */
-  private async getActivePlanId(pubkey: string): Promise<string | undefined> {
+  private async getActivePlanId(event: Event): Promise<string | undefined> {
+    const pubkey = event.pubkey
     const cacheKey = subscriptionPlanCacheKey(pubkey)
 
     try {
@@ -499,7 +503,7 @@ export class EventMessageHandler implements IMessageHandler {
 
     let subscription
     try {
-      subscription = await this.userSubscriptionRepository?.findByPubkey(pubkey)
+      subscription = await this.readSubscription(event)
     } catch (error) {
       // Without the subscription the global limits apply, and nothing is cached so the next event asks again.
       logger('unable to read the subscription of %s: %o', pubkey, error)
@@ -514,12 +518,27 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   private cacheSubscriptionPlan(pubkey: string, planId: string | undefined, accessEndsAt: Date | undefined, now: Date) {
-    const ttl = this.cacheTtlUntil(planId ? 300 : 60, accessEndsAt, now)
+    // Only a plan that is being cached ends with access; "no plan" is rechecked after a minute whatever the end was.
+    const ttl = planId ? this.cacheTtlUntil(300, accessEndsAt, now) : 60
     this.cacheSet(
       subscriptionPlanCacheKey(pubkey),
       planId ? `${SUBSCRIPTION_PLAN_PREFIX}${planId}` : NO_SUBSCRIPTION_PLAN,
       ttl,
     )
+  }
+
+  /**
+   * The subscription of the sender, read once per message: the rate limits and the admission check both need it,
+   * and on a cold cache they would otherwise each ask the database for the same row.
+   */
+  private readSubscription(event: Event): Promise<UserSubscription | undefined> {
+    let read = this.subscriptionReads.get(event)
+    if (!read) {
+      read = (this.userSubscriptionRepository as IUserSubscriptionRepository).findByPubkey(event.pubkey)
+      this.subscriptionReads.set(event, read)
+    }
+
+    return read
   }
 
   /** No longer than access lasts, so a plan's limits end when its period does rather than minutes later. */
@@ -613,7 +632,7 @@ export class EventMessageHandler implements IMessageHandler {
 
     let admittedTtl = 300
     if (subscriptionsEnabled && this.userSubscriptionRepository) {
-      const subscription = await this.userSubscriptionRepository.findByPubkey(event.pubkey)
+      const subscription = await this.readSubscription(event)
       const now = new Date()
       if (!hasSubscriptionAccess(subscription, now)) {
         this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_NOT_ADMITTED, 60)

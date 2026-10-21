@@ -1587,6 +1587,36 @@ describe('EventMessageHandler', () => {
           expect(cacheStub.setKey).to.have.been.calledOnceWithExactly(`${PUBKEY}:subscription-plan`, 'none', 60)
         })
 
+        it('caches "no plan" for a full 60s after the subscription expired, not just until its past end', async () => {
+          subscriptionFindByPubkeyStub.resolves(
+            subscription({ status: SubscriptionStatus.EXPIRED, currentPeriodEnd: new Date(Date.now() - 5 * DAY) }),
+          )
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(cacheStub.setKey).to.have.been.calledOnceWithExactly(`${PUBKEY}:subscription-plan`, 'none', 60)
+        })
+
+        it('reads the subscription once for a message that is rate limited and then checked for admission', async () => {
+          sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any).returns('a'.repeat(64))
+          userRepository.findByPubkey = sandbox.stub().resolves({ isAdmitted: true, balance: 0n })
+
+          await (handler as any).isRateLimited(subscriber)
+          await expect((handler as any).isUserAdmitted(subscriber)).to.eventually.be.undefined
+
+          expect(subscriptionFindByPubkeyStub).to.have.been.calledOnce
+        })
+
+        it('reads the subscription again for the next message of the same sender', async () => {
+          sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any).returns('a'.repeat(64))
+          userRepository.findByPubkey = sandbox.stub().resolves({ isAdmitted: true, balance: 0n })
+
+          await (handler as any).isRateLimited(subscriber)
+          await (handler as any).isRateLimited({ ...subscriber, id: 'e'.repeat(64) })
+
+          expect(subscriptionFindByPubkeyStub).to.have.been.calledTwice
+        })
+
         it('caches the plan no longer than access lasts', async () => {
           subscriptionFindByPubkeyStub.resolves(
             subscription({ currentPeriodEnd: new Date(Date.now() + 20_000), graceEndsAt: new Date(Date.now() + 40_000) }),
