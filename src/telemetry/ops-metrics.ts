@@ -8,7 +8,6 @@ const logger = createLogger('telemetry-ops-metrics')
 export interface OpsMetricInstruments {
   probeRunsTotal: Counter
   probeRunDurationMs: Histogram
-  mirrorReconnectsTotal: Counter
 }
 
 let opsMetricInstruments: OpsMetricInstruments | undefined
@@ -23,9 +22,6 @@ const createOpsMetricInstruments = (): OpsMetricInstruments => {
     probeRunDurationMs: meter.createHistogram('nostream.probe.run_duration_ms', {
       description: 'Wall-clock duration of a probe run in milliseconds',
       unit: 'ms',
-    }),
-    mirrorReconnectsTotal: meter.createCounter('nostream.mirror.reconnects_total', {
-      description: 'Static mirror websocket reconnect attempts',
     }),
   }
 }
@@ -48,9 +44,4 @@ export const recordProbeRunMetrics = (status: string, durationMs: number): void 
   const attributes = { ...getWorkerAttributes(), status }
   instruments.probeRunsTotal.add(1, attributes)
   instruments.probeRunDurationMs.record(durationMs, attributes)
-}
-
-export const recordMirrorReconnectMetric = (mirrorIndex: string): void => {
-  const instruments = getOpsMetricInstruments()
-  instruments.mirrorReconnectsTotal.add(1, { ...getWorkerAttributes(), mirror_index: mirrorIndex })
 }

@@ -8,7 +8,6 @@ const logger = createLogger('ops-trust-notifications')
 
 const PROBE_STATUS_KEY = 'admin:trust:probe:last_status'
 const SSL_ALERT_PREFIX = 'admin:trust:ssl:alert:'
-const MIRROR_DISCONNECT_PREFIX = 'admin:trust:mirror:disconnect:'
 
 const SSL_EXPIRY_WARNING_DAYS = 14
 const DEDUPE_TTL_SECONDS = 6 * 3600
@@ -148,26 +147,5 @@ const notifySslExpiringFromSnapshot = async (
     } catch (error) {
       logger.error('ssl expiring notification failed for %s: %o', relayUrl, error)
     }
-  }
-}
-
-export const notifyMirrorDisconnected = async (
-  cache: ICacheAdapter | undefined,
-  fields: { index: string; targetUrl: string; code?: number; reason?: string },
-): Promise<void> => {
-  if (!cache) {
-    return
-  }
-
-  const dedupeKey = `${MIRROR_DISCONNECT_PREFIX}${fields.index}`
-  try {
-    await sendDedupedTrustNotification(cache, dedupeKey, OperatorNotificationEventType.MIRROR_DISCONNECTED, {
-      index: fields.index,
-      targetUrl: fields.targetUrl,
-      code: fields.code,
-      reason: fields.reason,
-    })
-  } catch (error) {
-    logger.error('mirror disconnected notification failed: %o', error)
   }
 }

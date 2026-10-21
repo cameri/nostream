@@ -385,7 +385,6 @@ admin:
       probe.failed: true
       probe.recovered: true
       ssl.expiring: true
-      mirror.disconnected: true
     retry:
       maxAttempts: 5
       baseDelayMs: 1000

@@ -549,6 +549,16 @@ describe('settings-config', () => {
       expect(validateSettings(settings)).to.deep.equal([])
     })
 
+    it('accepts the mirror.disconnected notification toggle that is still configured', () => {
+      const settings = settingsWith({})
+      settings.admin = {
+        ...settings.admin,
+        notifications: { ...settings.admin?.notifications, events: { 'mirror.disconnected': true } },
+      }
+
+      expect(validateSettings(settings)).to.deep.equal([])
+    })
+
     it('still rejects an unknown key at the top level', () => {
       expect(validateSettings(settingsWith({ nonsense: true })).map((issue) => issue.path)).to.deep.equal(['nonsense'])
     })

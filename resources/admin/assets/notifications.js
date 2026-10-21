@@ -63,7 +63,6 @@
     'probe.failed': true,
     'probe.recovered': true,
     'ssl.expiring': true,
-    'mirror.disconnected': true,
   })
 
   const newTargetId = () => {
