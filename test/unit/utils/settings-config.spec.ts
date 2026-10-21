@@ -538,6 +538,29 @@ describe('settings-config', () => {
     })
   })
 
+  describe('removed settings', () => {
+    const settingsWith = (extra: Record<string, unknown>) =>
+      ({ ...loadDefaults(), info: { relay_url: 'wss://relay.example.com', name: 'test' }, ...extra }) as any
+
+    it('accepts a mirroring.static that is still configured, so an unrelated change can be saved', () => {
+      const settings = settingsWith({ mirroring: { static: [{ address: 'wss://mirror.example', secret: 'x' }] } })
+      settings.info.name = 'a new name'
+
+      expect(validateSettings(settings)).to.deep.equal([])
+    })
+
+    it('still rejects an unknown key at the top level', () => {
+      expect(validateSettings(settingsWith({ nonsense: true })).map((issue) => issue.path)).to.deep.equal(['nonsense'])
+    })
+
+    it('still rejects an unknown key inside a known section', () => {
+      const settings = settingsWith({})
+      settings.limits = { ...settings.limits, nonsense: true }
+
+      expect(validateSettings(settings).map((issue) => issue.path)).to.include('limits.nonsense')
+    })
+  })
+
   describe('event store settings', () => {
     const baseSettings = (): any => ({
       info: { relay_url: 'wss://test.relay', name: 'test' },
