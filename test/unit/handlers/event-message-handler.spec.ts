@@ -1346,6 +1346,277 @@ describe('EventMessageHandler', () => {
       expect(actualResult).to.be.true
       expect(rateLimiterHitStub).to.have.been.calledOnce
     })
+
+    describe('subscription plans', () => {
+      const DAY = 86_400_000
+      const PUBKEY = 'f'.repeat(64)
+      let subscriptionFindByPubkeyStub: SinonStub
+      let cacheStub: { getKey: SinonStub; setKey: SinonStub }
+      let subscriber: Event
+
+      const subscription = (overrides: Partial<UserSubscription> = {}): UserSubscription => ({
+        pubkey: PUBKEY,
+        planId: 'premium',
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodStart: new Date(Date.now() - 10 * DAY),
+        currentPeriodEnd: new Date(Date.now() + 20 * DAY),
+        graceEndsAt: new Date(Date.now() + 23 * DAY),
+        cancelAtPeriodEnd: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...overrides,
+      })
+
+      beforeEach(() => {
+        subscriber = { ...event, pubkey: PUBKEY, kind: 1 }
+        eventLimits.rateLimits = [{ period: 60000, rate: 1 }]
+        settings.payments = {
+          enabled: true,
+          feeSchedules: { admission: [] },
+          subscriptionPlans: [
+            {
+              id: 'premium',
+              amount: 5000000n,
+              intervalSeconds: 2_592_000,
+              graceSeconds: 259_200,
+              limits: { rateLimits: [{ period: 60000, rate: 100 }] },
+            },
+            { id: 'basic', amount: 1000000n, intervalSeconds: 2_592_000, graceSeconds: 259_200 },
+          ],
+        } as any
+        rateLimiterHitStub.resolves(false)
+        subscriptionFindByPubkeyStub = sandbox.stub().resolves(subscription())
+        cacheStub = { getKey: sandbox.stub().resolves(null), setKey: sandbox.stub().resolves(true) }
+        handler = new EventMessageHandler(
+          webSocket,
+          () => null,
+          {} as any,
+          userRepository,
+          () => settings,
+          {} as any,
+          cacheStub as any,
+          () => ({ hit: rateLimiterHitStub }),
+          {} as any,
+          { findByPubkey: subscriptionFindByPubkeyStub } as any,
+        )
+      })
+
+      it('holds a subscriber to the limits of their plan instead of the global ones, keyed the same way', async () => {
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(false)
+
+        expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${PUBKEY}:events:60000`, 1, {
+          period: 60000,
+          rate: 100,
+        })
+      })
+
+      it('holds everyone else to the global limits', async () => {
+        subscriptionFindByPubkeyStub.resolves(undefined)
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${PUBKEY}:events:60000`, 1, {
+          period: 60000,
+          rate: 1,
+        })
+      })
+
+      it('limits a subscriber who tops the plan limit', async () => {
+        rateLimiterHitStub.resolves(true)
+
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(60000)
+      })
+
+      it('keeps the global limits for a plan that has none of its own', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription({ planId: 'basic' }))
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+      })
+
+      it('lets a plan with an empty list of limits send without limit', async () => {
+        settings.payments.subscriptionPlans[0].limits.rateLimits = []
+
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(false)
+
+        expect(rateLimiterHitStub).not.to.have.been.called
+      })
+
+      it('replaces the whole global list, including limits for kinds the plan does not mention', async () => {
+        eventLimits.rateLimits = [
+          { period: 60000, rate: 1, kinds: [1] },
+          { period: 3600000, rate: 5 },
+        ]
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub).to.have.been.calledOnce
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+      })
+
+      it('applies the plan limits for the kinds the plan limits name, as the global ones do', async () => {
+        settings.payments.subscriptionPlans[0].limits.rateLimits = [{ period: 60000, rate: 100, kinds: [7] }]
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub).not.to.have.been.called
+      })
+
+      it('falls back to the global limits once the subscription expired', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription({ status: SubscriptionStatus.EXPIRED }))
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+      })
+
+      it('falls back to the global limits when the period and grace have both passed, before the sweep ran', async () => {
+        subscriptionFindByPubkeyStub.resolves(
+          subscription({
+            currentPeriodEnd: new Date(Date.now() - 5 * DAY),
+            graceEndsAt: new Date(Date.now() - DAY),
+          }),
+        )
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+      })
+
+      it('keeps the plan limits through the grace period', async () => {
+        subscriptionFindByPubkeyStub.resolves(
+          subscription({
+            status: SubscriptionStatus.PAST_DUE,
+            currentPeriodEnd: new Date(Date.now() - DAY),
+            graceEndsAt: new Date(Date.now() + 2 * DAY),
+          }),
+        )
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+      })
+
+      it('falls back to the global limits when the plan was removed from the settings', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription({ planId: 'retired' }))
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+      })
+
+      it('still lets a whitelisted pubkey send without limit', async () => {
+        ;(eventLimits as any).whitelists = { pubkeys: [PUBKEY] }
+
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(false)
+
+        expect(rateLimiterHitStub).not.to.have.been.called
+      })
+
+      describe('when subscriptions are not in use', () => {
+        it('does not look at subscriptions while payments are off', async () => {
+          settings.payments.enabled = false
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(cacheStub.getKey).not.to.have.been.called
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+        })
+
+        it('does not look at subscriptions when no plan is configured', async () => {
+          settings.payments.subscriptionPlans = []
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(cacheStub.getKey).not.to.have.been.called
+        })
+
+        it('does not look at subscriptions when no plan has limits of its own', async () => {
+          delete settings.payments.subscriptionPlans[0].limits
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(cacheStub.getKey).not.to.have.been.called
+        })
+      })
+
+      describe('caching', () => {
+        it('reads the plan from the database once and caches it, no longer than the usual 300s', async () => {
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).to.have.been.calledOnceWithExactly(PUBKEY)
+          expect(cacheStub.setKey).to.have.been.calledOnceWithExactly(`${PUBKEY}:subscription-plan`, 'plan:premium', 300)
+        })
+
+        it('uses the cached plan without reading the database', async () => {
+          cacheStub.getKey.withArgs(`${PUBKEY}:subscription-plan`).resolves('plan:premium')
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+        })
+
+        it('uses a cached "no plan" without reading the database', async () => {
+          cacheStub.getKey.withArgs(`${PUBKEY}:subscription-plan`).resolves('none')
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+        })
+
+        it('keeps a plan whose id is "none" apart from "no plan"', async () => {
+          settings.payments.subscriptionPlans[0].id = 'none'
+          cacheStub.getKey.withArgs(`${PUBKEY}:subscription-plan`).resolves('plan:none')
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+        })
+
+        it('caches "no plan" for 60s', async () => {
+          subscriptionFindByPubkeyStub.resolves(undefined)
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(cacheStub.setKey).to.have.been.calledOnceWithExactly(`${PUBKEY}:subscription-plan`, 'none', 60)
+        })
+
+        it('caches the plan no longer than access lasts', async () => {
+          subscriptionFindByPubkeyStub.resolves(
+            subscription({ currentPeriodEnd: new Date(Date.now() + 20_000), graceEndsAt: new Date(Date.now() + 40_000) }),
+          )
+
+          await (handler as any).isRateLimited(subscriber)
+
+          const [, , ttl] = cacheStub.setKey.firstCall.args
+          expect(ttl).to.be.within(39, 41)
+        })
+
+        it('reads the database when the cache cannot be read', async () => {
+          cacheStub.getKey.rejects(new Error('cache unavailable'))
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).to.have.been.calledOnce
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+        })
+
+        it('falls back to the global limits when the subscription cannot be read, and caches nothing', async () => {
+          subscriptionFindByPubkeyStub.rejects(new Error('db unavailable'))
+
+          await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(false)
+
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+          expect(cacheStub.setKey).not.to.have.been.called
+        })
+      })
+    })
   })
 
   describe('isUserAdmitted', () => {
@@ -1754,6 +2025,22 @@ describe('EventMessageHandler', () => {
 
         const [, , ttl] = cacheStub.setKey.lastCall.args
         expect(ttl).to.be.within(39, 41)
+      })
+
+      it('caches the plan with the admission, so the rate limits need no second read', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription())
+
+        await (handler as any).isUserAdmitted(event)
+
+        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:subscription-plan`, 'plan:basic', 300)
+      })
+
+      it('caches that a user admitted without a subscription has no plan', async () => {
+        subscriptionFindByPubkeyStub.resolves(undefined)
+
+        await (handler as any).isUserAdmitted(event)
+
+        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:subscription-plan`, 'none', 60)
       })
 
       it('caches admission for the usual 300s when access lasts longer', async () => {

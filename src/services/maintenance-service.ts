@@ -1,6 +1,7 @@
 import { createLogger } from '../factories/logger-factory'
 import { IEventRepository } from '../@types/repositories'
 import { IMaintenanceService } from '../@types/services'
+import { areSubscriptionsEnabled, getSubscriptionPlans } from '../utils/subscription'
 import { Settings } from '../@types/settings'
 
 const logger = createLogger('maintenance-service')
@@ -22,8 +23,10 @@ export class MaintenanceService implements IMaintenanceService {
 
     try {
       logger('purging deleted, expired and old events')
+      const planRetention = this.getPlanRetention(currentSettings)
       const deletedCounts = await this.eventRepository.deleteExpiredAndRetained({
         maxDays,
+        ...(planRetention.length ? { planRetention } : {}),
         kindWhitelist: retention?.kind?.whitelist,
         pubkeyWhitelist: retention?.pubkey?.whitelist,
       })
@@ -36,5 +39,17 @@ export class MaintenanceService implements IMaintenanceService {
     } catch (error) {
       logger.error('Unable to purge events. Reason:', error)
     }
+  }
+
+  private getPlanRetention(settings: Settings): { planId: string; maxDays: number }[] {
+    if (!areSubscriptionsEnabled(settings)) {
+      return []
+    }
+
+    return getSubscriptionPlans(settings).flatMap((plan) =>
+      typeof plan.limits?.retentionMaxDays === 'number'
+        ? [{ planId: plan.id, maxDays: plan.limits.retentionMaxDays }]
+        : [],
+    )
   }
 }
