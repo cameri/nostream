@@ -103,10 +103,14 @@ export const notifyProbeRunTransition = async (
         logger.error('probe failed notification was not enqueued')
       }
     }
-
-    await notifySslExpiringFromSnapshot(cache, snapshot)
   } catch (error) {
     logger.error('probe transition notification failed: %o', error)
+  }
+
+  try {
+    await notifySslExpiringFromSnapshot(cache, snapshot)
+  } catch (error) {
+    logger.error('ssl expiring notifications failed: %o', error)
   }
 }
 

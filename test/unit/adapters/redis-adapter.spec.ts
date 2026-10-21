@@ -319,5 +319,18 @@ describe('RedisAdapter', () => {
       expect(client.scriptLoad).to.have.been.calledOnce
       expect(client.evalSha).to.have.been.calledTwice
     })
+
+    it('reloads script and retries after NOSCRIPT', async () => {
+      client.scriptLoad.onFirstCall().resolves('stale-sha')
+      client.scriptLoad.onSecondCall().resolves('fresh-sha')
+      client.evalSha.onFirstCall().rejects(Object.assign(new Error('NOSCRIPT No matching script'), { code: 'NOSCRIPT' }))
+      client.evalSha.onSecondCall().resolves('recovered')
+
+      const result = await adapter.eval('local x = 1', ['key1'], ['arg1'])
+
+      expect(client.scriptLoad).to.have.been.calledTwice
+      expect(client.evalSha).to.have.been.calledTwice
+      expect(result).to.equal('recovered')
+    })
   })
 })
