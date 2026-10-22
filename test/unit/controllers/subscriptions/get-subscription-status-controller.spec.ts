@@ -105,6 +105,47 @@ describe('GetSubscriptionStatusController', () => {
       expect(res.send.firstCall.args[0]).to.include({ status: 'expired', active: false })
     })
 
+    it('reports when access really ended for an expired subscription: the period end plus the grace of its plan', async () => {
+      const periodEnd = new Date(Date.now() - 5 * DAY)
+      repository.findByPubkey.resolves(
+        subscription({ status: SubscriptionStatus.EXPIRED, currentPeriodEnd: periodEnd, graceEndsAt: null }),
+      )
+      const res = makeRes()
+
+      await makeController().handleRequest(makeReq(), res)
+
+      // the plan allows 259200 seconds, three days, of grace
+      expect(res.send.firstCall.args[0].accessEndsAt).to.equal(new Date(periodEnd.getTime() + 3 * DAY).toISOString())
+    })
+
+    it('falls back to the period end for an expired subscription whose plan was removed', async () => {
+      const periodEnd = new Date(Date.now() - 5 * DAY)
+      repository.findByPubkey.resolves(
+        subscription({
+          planId: 'retired',
+          status: SubscriptionStatus.EXPIRED,
+          currentPeriodEnd: periodEnd,
+          graceEndsAt: null,
+        }),
+      )
+      const res = makeRes()
+
+      await makeController().handleRequest(makeReq(), res)
+
+      expect(res.send.firstCall.args[0].accessEndsAt).to.equal(periodEnd.toISOString())
+    })
+
+    it('never reports the placeholder date of the write gate', async () => {
+      repository.findByPubkey.resolves(
+        subscription({ status: SubscriptionStatus.EXPIRED, currentPeriodEnd: new Date(Date.now() - 5 * DAY) }),
+      )
+      const res = makeRes()
+
+      await makeController().handleRequest(makeReq(), res)
+
+      expect(res.send.firstCall.args[0].accessEndsAt).to.not.contain('1970')
+    })
+
     it('is active in the grace period, whatever the stored status says', async () => {
       repository.findByPubkey.resolves(
         subscription({
@@ -187,6 +228,10 @@ describe('GetSubscriptionStatusController', () => {
       ['not hex', 'z'.repeat(64)],
       ['upper case hex', 'A'.repeat(64)],
       ['an invalid npub', 'npub1invalid'],
+      ['an npub of 31 bytes', toBech32('npub')('a'.repeat(62))],
+      ['an npub of 33 bytes', toBech32('npub')('a'.repeat(66))],
+      ['an nsec', toBech32('nsec')(PUBKEY)],
+      ['an npub in mixed case', toBech32('npub')(PUBKEY).replace(/[a-z](?=[a-z0-9]*$)/, (c) => c.toUpperCase())],
       ['not a string', ['a'.repeat(64)]],
     ] as Array<[string, unknown]>) {
       it(`returns 400 when it is ${label}`, async () => {

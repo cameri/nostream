@@ -5,12 +5,18 @@ import { Request, Response } from 'express'
 import { IController } from '../../@types/controllers'
 import { IRateLimiter } from '../../@types/utils'
 import { IUserSubscriptionRepository } from '../../@types/repositories'
-import { Settings } from '../../@types/settings'
+import { Settings, SubscriptionPlan } from '../../@types/settings'
+import { SubscriptionStatus, UserSubscription } from '../../@types/user-subscription'
 
 import { createLogger } from '../../factories/logger-factory'
 
-import { areSubscriptionsEnabled, getAccessEndsAt, hasSubscriptionAccess } from '../../utils/subscription'
-import { fromBech32 } from '../../utils/transform'
+import {
+  areSubscriptionsEnabled,
+  findSubscriptionPlan,
+  getAccessEndsAt,
+  hasSubscriptionAccess,
+} from '../../utils/subscription'
+import { fromNpub } from '../../utils/transform'
 import { getRemoteAddress } from '../../utils/http'
 
 const logger = createLogger('get-subscription-status-controller')
@@ -51,11 +57,28 @@ export class GetSubscriptionStatusController implements IController {
           status: subscription.status,
           active: hasSubscriptionAccess(subscription, new Date()),
           currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
-          accessEndsAt: getAccessEndsAt(subscription)?.toISOString() ?? null,
+          accessEndsAt: this.getAccessEndedOrEndsAt(subscription, findSubscriptionPlan(currentSettings, subscription.planId))
+            ?.toISOString() ?? null,
         }
       : { pubkey, planId: null, status: null, active: false, currentPeriodEnd: null, accessEndsAt: null }
 
     response.status(200).setHeader('content-type', 'application/json; charset=utf8').send(body)
+  }
+
+  /**
+   * When access ends, or ended. For an expired subscription `getAccessEndsAt` gives a placeholder in the past to block
+   * writes; the date to report is the period end plus the grace the plan allowed.
+   */
+  private getAccessEndedOrEndsAt(subscription: UserSubscription, plan: SubscriptionPlan | undefined): Date | undefined {
+    if (subscription.status !== SubscriptionStatus.EXPIRED) {
+      return getAccessEndsAt(subscription)
+    }
+
+    if (!subscription.currentPeriodEnd) {
+      return undefined
+    }
+
+    return new Date(subscription.currentPeriodEnd.getTime() + (plan?.graceSeconds ?? 0) * 1000)
   }
 
   private parsePubkey(raw: unknown): string | undefined {
@@ -69,7 +92,7 @@ export class GetSubscriptionStatusController implements IController {
 
     if (/^npub1/.test(raw)) {
       try {
-        return fromBech32(raw)
+        return fromNpub(raw)
       } catch (_error) {
         return undefined
       }
