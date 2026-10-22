@@ -185,8 +185,6 @@ workers:
 eventStore:
   # Only postgres for now. Changing it needs a restart.
   backend: postgres
-mirroring:
-  static: []
 dvm:
   workers: []
 limits:
@@ -387,7 +385,6 @@ admin:
       probe.failed: true
       probe.recovered: true
       ssl.expiring: true
-      mirror.disconnected: true
     retry:
       maxAttempts: 5
       baseDelayMs: 1000

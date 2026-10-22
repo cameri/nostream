@@ -1,6 +1,7 @@
 import { expect } from 'chai'
 
-import { mergeMirrorRows, mergeWorkerRows } from '../../../src/utils/admin-ops-config'
+import { listConfiguredWorkers, mergeWorkerRows } from '../../../src/utils/admin-ops-config'
+import { Settings } from '../../../src/@types/settings'
 import { ADMIN_OPS_HEARTBEAT_TTL_SECONDS, isAdminOpsHeartbeatStale } from '../../../src/utils/admin-ops-store'
 
 describe('admin-ops-config', () => {
@@ -25,19 +26,18 @@ describe('admin-ops-config', () => {
     expect(rows[0].stale).to.equal(true)
   })
 
-  it('merges mirror heartbeats and stale state', () => {
+  it('decides when a heartbeat is stale from the time it was last updated', () => {
     const freshUpdatedAt = new Date().toISOString()
-    const rows = mergeMirrorRows([{ index: '0', targetUrl: 'wss://mirror', enabled: true }], [
-      {
-        index: '0',
-        targetUrl: 'wss://mirror',
-        connectionState: 'open',
-        reconnectCount: 0,
-        updatedAt: freshUpdatedAt,
-      },
-    ])
 
-    expect(rows[0].stale).to.equal(false)
     expect(isAdminOpsHeartbeatStale(freshUpdatedAt, ADMIN_OPS_HEARTBEAT_TTL_SECONDS)).to.equal(false)
+  })
+
+  it('no longer lists mirroring workers, even for a mirroring.static that is still configured', () => {
+    const workers = listConfiguredWorkers({
+      workers: { count: 1 },
+      mirroring: { static: [{ address: 'wss://mirror.example' }] },
+    } as unknown as Settings)
+
+    expect(workers.map((worker) => worker.type)).to.deep.equal(['worker', 'maintenance'])
   })
 })

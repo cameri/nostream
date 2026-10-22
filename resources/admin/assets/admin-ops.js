@@ -2,16 +2,14 @@
   const config = window.__ADMIN_DASHBOARD__ || { pathPrefix: '' }
   const adminBase = `${config.pathPrefix || ''}/admin`
 
-  const mirrorsBody = document.getElementById('ops-mirrors-body')
-  if (!mirrorsBody) {
+  const workersBody = document.getElementById('ops-workers-body')
+  if (!workersBody) {
     return
   }
 
   const elements = {
-    mirrorsSync: document.getElementById('ops-mirrors-sync'),
-    mirrorsBody,
     workersSync: document.getElementById('ops-workers-sync'),
-    workersBody: document.getElementById('ops-workers-body'),
+    workersBody,
     nip05Error: document.getElementById('ops-nip05-error'),
     nip05Domain: document.getElementById('ops-nip05-domain'),
     nip05Verified: document.getElementById('ops-nip05-verified'),
@@ -78,34 +76,6 @@
       throw new Error('Unauthorized')
     }
     return response
-  }
-
-  const renderMirrors = (mirrors) => {
-    if (!Array.isArray(mirrors) || !mirrors.length) {
-      elements.mirrorsBody.innerHTML =
-        '<tr><td colspan="6" class="admin-muted small">No mirrors configured.</td></tr>'
-      return
-    }
-
-    elements.mirrorsBody.innerHTML = mirrors
-      .map((mirror) => {
-        const heartbeat = mirror.heartbeat
-        const state = heartbeat?.connectionState ?? 'unknown'
-        const reconnects = heartbeat?.reconnectCount ?? 0
-        const lastEvent = formatTime(heartbeat?.lastEventAt)
-        const errorNote = heartbeat?.lastError
-          ? `<span class="admin-muted small d-block">${escapeHtml(heartbeat.lastError)}</span>`
-          : ''
-        return `<tr>
-          <td>${escapeHtml(mirror.index)}</td>
-          <td><code class="small">${escapeHtml(mirror.targetUrl)}</code>${errorNote}</td>
-          <td>${escapeHtml(state)}</td>
-          <td>${escapeHtml(reconnects)}</td>
-          <td class="small">${escapeHtml(lastEvent)}</td>
-          <td>${signalBadge(mirror.stale)}</td>
-        </tr>`
-      })
-      .join('')
   }
 
   const renderWorkers = (workers) => {
@@ -222,18 +192,6 @@
     elements.storageError.classList.remove('d-none')
   }
 
-  const loadMirrors = async () => {
-    const response = await adminFetch('/ops/mirrors')
-    if (!response.ok) {
-      throw new Error('Failed to load mirrors')
-    }
-    const payload = await response.json()
-    renderMirrors(payload.mirrors)
-    if (elements.mirrorsSync) {
-      elements.mirrorsSync.innerHTML = `<span class="prompt-char">&gt;</span> mirrors: updated ${formatTime(new Date().toISOString())}`
-    }
-  }
-
   const loadWorkers = async () => {
     const response = await adminFetch('/ops/workers')
     if (!response.ok) {
@@ -327,7 +285,7 @@
 
   const refreshAll = async () => {
     try {
-      await Promise.all([loadMirrors(), loadWorkers(), loadNip05()])
+      await Promise.all([loadWorkers(), loadNip05()])
     } catch {
       showNip05Error('Unable to refresh operations data.')
     }

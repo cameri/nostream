@@ -17,7 +17,6 @@ import { createPostAdminLoginController } from '../../factories/controllers/post
 import { createPostAdminLogoutController } from '../../factories/controllers/post-admin-logout-controller-factory'
 import { createPostAdminSettingsRestoreController } from '../../factories/controllers/post-admin-settings-restore-controller-factory'
 import { createPostAdminSettingsValidateController } from '../../factories/controllers/post-admin-settings-validate-controller-factory'
-import { createGetAdminOpsMirrorsController } from '../../factories/controllers/get-admin-ops-mirrors-controller-factory'
 import { createGetAdminOpsWorkersController } from '../../factories/controllers/get-admin-ops-workers-controller-factory'
 import { createGetAdminOpsNip05VerificationsController } from '../../factories/controllers/get-admin-ops-nip05-verifications-controller-factory'
 import { createGetAdminOpsStorageCountsController } from '../../factories/controllers/get-admin-ops-storage-counts-controller-factory'
@@ -168,12 +167,6 @@ router.post(
   adminJsonBodyMiddleware,
   adminAuthMiddleware,
   withAdminController(createPostAdminNotificationTestController),
-)
-router.get(
-  '/ops/mirrors',
-  adminRateLimitMiddleware,
-  adminAuthMiddleware,
-  withAdminController(createGetAdminOpsMirrorsController),
 )
 router.get(
   '/ops/workers',

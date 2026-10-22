@@ -1,32 +1,12 @@
 import { cpus } from 'os'
 
-import {
-  AdminOpsConfiguredMirror,
-  AdminOpsConfiguredWorker,
-  AdminOpsMirrorHeartbeat,
-  AdminOpsMirrorRow,
-  AdminOpsWorkerHeartbeat,
-  AdminOpsWorkerRow,
-} from '../@types/admin-ops'
+import { AdminOpsConfiguredWorker, AdminOpsWorkerHeartbeat, AdminOpsWorkerRow } from '../@types/admin-ops'
 import { Settings } from '../@types/settings'
 import { ADMIN_OPS_HEARTBEAT_TTL_SECONDS, isAdminOpsHeartbeatStale } from './admin-ops-store'
 
 const UNMONITORED_WORKER_TYPES = new Set(['worker', 'dvm-orchestrator'])
 
 export const isAdminOpsWorkerMonitored = (type: string): boolean => !UNMONITORED_WORKER_TYPES.has(type)
-
-export const listConfiguredMirrors = (settings: Settings): AdminOpsConfiguredMirror[] => {
-  const mirrors = settings.mirroring?.static
-  if (!Array.isArray(mirrors) || !mirrors.length) {
-    return []
-  }
-
-  return mirrors.map((mirror, index) => ({
-    index: index.toString(),
-    targetUrl: mirror.address,
-    enabled: true,
-  }))
-}
 
 export const listConfiguredWorkers = (settings: Settings): AdminOpsConfiguredWorker[] => {
   const workers: AdminOpsConfiguredWorker[] = []
@@ -49,16 +29,6 @@ export const listConfiguredWorkers = (settings: Settings): AdminOpsConfiguredWor
     enabled: true,
     label: 'Maintenance',
   })
-
-  const mirrors = listConfiguredMirrors(settings)
-  for (const mirror of mirrors) {
-    workers.push({
-      type: 'static-mirroring',
-      index: mirror.index,
-      enabled: mirror.enabled,
-      label: `Static mirror ${mirror.index}`,
-    })
-  }
 
   if (settings.nip66?.enabled) {
     workers.push({
@@ -85,22 +55,6 @@ export const listConfiguredWorkers = (settings: Settings): AdminOpsConfiguredWor
 
 const heartbeatKey = (type: string, index?: string) =>
   typeof index === 'string' && index.length > 0 ? `${type}:${index}` : type
-
-export const mergeMirrorRows = (
-  configured: AdminOpsConfiguredMirror[],
-  heartbeats: AdminOpsMirrorHeartbeat[],
-): AdminOpsMirrorRow[] => {
-  const byIndex = new Map(heartbeats.map((heartbeat) => [heartbeat.index, heartbeat]))
-
-  return configured.map((mirror) => {
-    const heartbeat = byIndex.get(mirror.index)
-    return {
-      ...mirror,
-      heartbeat,
-      stale: !heartbeat || isAdminOpsHeartbeatStale(heartbeat.updatedAt, ADMIN_OPS_HEARTBEAT_TTL_SECONDS),
-    }
-  })
-}
 
 export const mergeWorkerRows = (
   configured: AdminOpsConfiguredWorker[],
