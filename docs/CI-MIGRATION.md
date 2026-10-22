@@ -1,27 +1,26 @@
 # CI container publishing migration
 
-Container publishing is now part of `.github/workflows/checks.yml`.
+Container publishing is now restricted exclusively to official releases via `.github/workflows/release.yml`.
 
 ## What changed
 
-The standalone `publish-container-image.yml` workflow, which listened for a
-completed `workflow_run`, was removed. `checks.yml` now contains
-`publish-container-image` as its final job.
+The `publish-container-image` job was removed from `.github/workflows/checks.yml`. Container images
+are no longer built or published on pushes to `main`.
 
 ## Why
 
-Keeping publishing in the workflow that performed the checks makes its
-dependencies explicit. It avoids the timing and event-context ambiguity of a
-separate `workflow_run`, which could be triggered by an external pull-request
-run.
+Publishing images from unreleased commits on `main` caused the `main` tag (and per-commit SHA tags)
+to serve as moving targets of unreleased code, creating drift between published releases and images
+pulled in production. Publishing is now aligned strictly with official GitHub releases.
 
 ## New behavior
 
-On successful pushes to `main`, CI runs linting, the build check, unit tests,
-integration tests, and post-test reporting before publishing the container
-image. The publish job cannot run for pull requests or manual workflow runs.
+Container images are published only by `.github/workflows/release.yml` when an official GitHub release
+is published with a `v*` tag. Pushes to `main` and pull requests run verification checks without
+publishing any container images.
 
 ## Action required
 
-None. Developers and deployment users receive the same `main` and per-commit
-container image tags automatically after CI succeeds.
+Deployments tracking `ghcr.io/cameri/nostream:main` should be updated to track released versions,
+such as `ghcr.io/cameri/nostream:latest` or pinned release tags (e.g. `ghcr.io/cameri/nostream:v3.6.2`).
+See [`deploy/README.md`](../deploy/README.md) and [`docs/DEPLOY-RUNBOOK.md`](DEPLOY-RUNBOOK.md).
