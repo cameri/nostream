@@ -178,4 +178,30 @@ describe('App', () => {
     expect(cluster.fork).to.have.been.calledThrice
     expect(cluster.fork.thirdCall.args[0]).to.deep.equal(cluster.fork.firstCall.args[0])
   })
+  it('does not start a mirroring worker for mirroring.static, which is no longer supported', () => {
+    const env = { ...process.env }
+    delete env.WORKER_COUNT
+    delete env.RELAY_BROADCAST_FANOUT
+    sandbox.stub(process, 'env').value(env)
+    sandbox.useFakeTimers()
+    sandbox.stub(SettingsStatic, 'watchSettings').returns([])
+    sandbox.stub(operatorNotificationEnqueue, 'enqueueOperatorNotification').resolves()
+    sandbox.stub(torClient, 'addOnion').rejects(new Error('tor is not configured'))
+    let pid = 1001
+    cluster.fork.callsFake(() => createWorker(String(pid), pid++))
+    const app = new App(
+      fakeProcess as any,
+      cluster as any,
+      sandbox.stub().returns({
+        payments: { enabled: false },
+        workers: { count: 1 },
+        eventStore: { backend: 'postgres' },
+        mirroring: { static: [{ address: 'wss://mirror.example' }, { address: 'wss://other.example' }] },
+      } as unknown as Settings),
+    )
+
+    app.run()
+
+    expect(cluster.fork.getCalls().map((call) => call.args[0].WORKER_TYPE)).to.deep.equal(['worker', 'maintenance'])
+  })
 })

@@ -62,6 +62,12 @@ const assertSafePathKey = (key: string, segment: string): void => {
   }
 }
 
+/** Settings that no longer do anything because the static mirroring worker was removed. */
+const REMOVED_SETTINGS = [
+  { path: '$', key: 'mirroring' },
+  { path: 'admin.notifications.events', key: 'mirror.disconnected' },
+]
+
 const hasOwn = (object: Record<string, unknown>, key: string): boolean => {
   return Object.prototype.hasOwnProperty.call(object, key)
 }
@@ -232,6 +238,11 @@ const validateShape = (schema: unknown, candidate: unknown, path: PathToken[], i
 
     for (const key of Object.keys(candidate)) {
       if (renderedPath === 'admin' && key === 'passwordHash') {
+        continue
+      }
+
+      // Settings that were removed stay accepted, so a settings file that still has one can be saved.
+      if (REMOVED_SETTINGS.some((removed) => removed.path === renderedPath && removed.key === key)) {
         continue
       }
 

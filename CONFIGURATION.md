@@ -165,7 +165,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.createdAt.maxNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. Ignored on the client path while `limits.event.pow.enabled` is true (mirrored events from `static-mirroring-worker.ts` still enforce this static value). |
+| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. Ignored on the client path while `limits.event.pow.enabled` is true. |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
 | limits.event.pow.ceilingBits                | Maximum adaptive PoW difficulty, reached at approximately 2x `targetEventsPerSecond` and beyond. |
@@ -194,11 +194,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
 | limits.message.rateLimits[].period | Rate limiting period in milliseconds. For `sliding_window`: the time window. For `ewma`: the half-life of the decay function. |
 | limits.message.rateLimits[].rate            | Maximum number of messages during period. |
-| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
-| mirroring.static[].filters                  | Subscription filters used to mirror. |
-| mirroring.static[].limits.event             | Event limit overrides for this mirror. See configurations under limits.event. |
-| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
-| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
+| mirroring.static                            | Removed: the static mirroring worker no longer exists, so this setting is ignored and logs a warning at start-up. To sync events with another relay, use NIP-77 (Negentropy) from a client that speaks it, for example `strfry sync`, against a relay with `nip77.enabled` set. |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
 | nip05.domainBlacklist                       | List of domains blocked from NIP-05 verification. Authors with NIP-05 at these domains will be rejected. |
@@ -226,7 +222,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip66.dnsCacheTtlSeconds                    | DNS cache TTL in seconds for repeated probe lookups of the same hostname. Defaults to 300. |
 | nip66.enabled                               | Enable NIP-66 relay monitoring. When true, starts a `relay-monitor` cluster worker that probes targets on an interval and stores the latest snapshot in Redis. Defaults to false. |
 | nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Defaults to 3600. |
-| nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. Addresses from `mirroring.static[]` are probed for the admin snapshot but are not published as kind `30166` discovery events. |
+| nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. |
 | nip66.geohash                               | Optional NIP-52 geohash describing this monitor's network vantage. Published on kind `10166` monitor announcements when set. |
 | nip66.historyRetentionRuns                  | Maximum probe run snapshots kept for the admin Network Health history API and timeline. Defaults to 168. |
 | nip66.historyRetentionHours                 | Optional maximum age in hours for retained probe history. When unset, history is trimmed by run count only. |
@@ -265,11 +261,6 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].rate            | Maximum number of admission checks during period. |
 | limits.admissionCheck.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.rateLimiter.strategy | Rate limiting strategy. Either `ewma` or `sliding_window`. Defaults to `ewma`. When using `ewma`, the `period` field in each rate limit serves as the half-life for the exponential decay function. Note: when switching from `sliding_window` to `ewma`, consider increasing `rate` values slightly as EWMA penalizes bursty behavior more aggressively. |
-| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
-| mirroring.static[].filters                  | Subscription filters used to mirror. |
-| mirroring.static[].limits.event             | Event limit overrides for this mirror. See configurations under limits.event. |
-| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
-| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
 | network.trustedProxies                      | Optional allow-list of proxy IPs allowed to set `network.remoteIpHeader`; otherwise socket remote IP is used. |

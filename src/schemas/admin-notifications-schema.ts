@@ -26,7 +26,6 @@ export const adminNotificationsPatchBodySchema = z
         'probe.failed': z.boolean().optional(),
         'probe.recovered': z.boolean().optional(),
         'ssl.expiring': z.boolean().optional(),
-        'mirror.disconnected': z.boolean().optional(),
       })
       .strict()
       .optional(),

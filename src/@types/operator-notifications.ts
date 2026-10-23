@@ -7,7 +7,6 @@ export enum OperatorNotificationEventType {
   PROBE_FAILED = 'probe.failed',
   PROBE_RECOVERED = 'probe.recovered',
   SSL_EXPIRING = 'ssl.expiring',
-  MIRROR_DISCONNECTED = 'mirror.disconnected',
 }
 
 export type OperatorNotificationChannelType = 'http' | 'discord' | 'slack' | 'telegram'
@@ -32,7 +31,6 @@ export interface OperatorNotificationEventToggles {
   'probe.failed'?: boolean
   'probe.recovered'?: boolean
   'ssl.expiring'?: boolean
-  'mirror.disconnected'?: boolean
 }
 
 export interface OperatorNotificationRetrySettings {

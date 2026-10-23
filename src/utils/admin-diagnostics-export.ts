@@ -22,7 +22,6 @@ export interface AdminDiagnosticsExport {
   }
   operations: {
     workers: Awaited<ReturnType<AdminOpsStore['listWorkerHeartbeats']>>
-    mirrors: Awaited<ReturnType<AdminOpsStore['listMirrorHeartbeats']>>
   }
 }
 
@@ -43,10 +42,9 @@ export const buildAdminDiagnosticsExport = async (
   const opsStore = new AdminOpsStore(cache)
   const snapshotStore = new RelayProbeSnapshotStore(cache)
 
-  const [health, workers, mirrors, latest] = await Promise.all([
+  const [health, workers, latest] = await Promise.all([
     collectAdminHealthSnapshot(),
     opsStore.listWorkerHeartbeats(),
-    opsStore.listMirrorHeartbeats(),
     snapshotStore.getLatest(),
   ])
 
@@ -59,6 +57,6 @@ export const buildAdminDiagnosticsExport = async (
     settings,
     notifications: getRedactedAdminNotifications(),
     networkHealth: { latest },
-    operations: { workers, mirrors },
+    operations: { workers },
   }
 }
