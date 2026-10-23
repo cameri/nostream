@@ -65,24 +65,40 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Whether `source` defines `fn name` and, if it does, whether that function is `#[ignore]`d.
-fn test_function(source: &str, name: &str) -> Option<bool> {
+/// What a mapping row's target is: `None` when no such function is defined, and otherwise
+/// whether it is a test the harness runs.
+///
+/// A name alone is not enough: a mapping retargeted at a private helper would otherwise pass
+/// every test in this file, and the census would count function names instead of live tests.
+/// The walk demands a `#[test]` (or a `#[tokio::test]`) in the attribute block, and reports
+/// `#[ignore]` from the same block.
+fn test_function(source: &str, name: &str) -> Option<TestFunction> {
     let needle = format!("fn {name}(");
     let lines: Vec<&str> = source.lines().collect();
     let index = lines.iter().position(|line| line.contains(&needle))?;
 
     // Walk up over the attribute and doc-comment block that decorates the function.
+    let mut test = false;
     let mut ignored = false;
     let mut above = index;
 
     while above > 0 {
         let line = lines[above - 1].trim();
 
-        if line.starts_with("#[") || line.starts_with("///") || line.starts_with("//") {
+        if line.starts_with("#[") {
             if line.starts_with("#[ignore") {
                 ignored = true;
             }
 
+            if line.starts_with("#[test") || line.starts_with("#[tokio::test") {
+                test = true;
+            }
+
+            above -= 1;
+            continue;
+        }
+
+        if line.starts_with("///") || line.starts_with("//") {
             above -= 1;
             continue;
         }
@@ -90,8 +106,13 @@ fn test_function(source: &str, name: &str) -> Option<bool> {
         break;
     }
 
-    // A one-line declaration (`fn name() { … }`) must still end the walk at a declaration.
-    Some(ignored)
+    Some(TestFunction { test, ignored })
+}
+
+/// What the census found at a mapping's target.
+struct TestFunction {
+    test: bool,
+    ignored: bool,
 }
 
 #[test]
@@ -214,6 +235,7 @@ fn every_mapped_test_exists_and_is_not_ignored() {
     let root = workspace_root();
 
     let mut checked = 0;
+    let mut functions: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut exempt = 0;
     let mut titles_in_exempt = 0;
 
@@ -247,8 +269,12 @@ fn every_mapped_test_exists_and_is_not_ignored() {
         let source = std::fs::read_to_string(&file).expect("the mapped source");
 
         match test_function(&source, function) {
-            Some(false) => checked += 1,
-            Some(true) => panic!("{target} is #[ignore]d, so it carries nothing"),
+            Some(found) if found.ignored => panic!("{target} is #[ignore]d, so it carries nothing"),
+            Some(found) if found.test => {
+                checked += 1;
+                functions.insert(target.to_owned());
+            }
+            Some(_) => panic!("{target} is not a #[test] or #[tokio::test], so it carries nothing"),
             None => panic!("{target}: no such test function in {}", file.display()),
         }
     }
@@ -256,10 +282,12 @@ fn every_mapped_test_exists_and_is_not_ignored() {
     assert!(checked > 0, "the map names no tests at all");
 
     println!(
-        "census: {} cases, {} mapped to {} live tests, {} exempt groups holding {} cases",
+        "census: {} cases, {} mapped across {} mapping rows to {} test functions, \
+         {} exempt groups holding {} cases",
         map["cases"].as_u64().unwrap_or(0),
         map["cases"].as_u64().unwrap_or(0) as usize - titles_in_exempt,
         checked,
+        functions.len(),
         exempt,
         titles_in_exempt
     );
