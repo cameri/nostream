@@ -22,8 +22,8 @@ use nostream_config::settings::{
 use nostream_core::clock::{Clock, TestClock};
 use nostream_core::{Event, Kind, KindSelector, Pubkey};
 use nostream_relay::limits::{
-    EwmaRateLimiter, Limiter, RateLimitConfig, RateLimits, SlidingWindowRateLimiter, backoff_ms,
-    kind_selector_matches,
+    EwmaRateLimiter, Limiter, MAX_STORE_KEYS, RateLimitConfig, RateLimits,
+    SlidingWindowRateLimiter, backoff_ms, kind_selector_matches,
 };
 use nostream_relay::testing::{FailingLimiter, Fixture, settings};
 
@@ -222,6 +222,83 @@ fn a_fresh_ewma_key_starts_from_zero_at_now() {
 }
 
 // ---------------------------------------------------------------------------------------
+// Reclamation (R20's TTL, in memory and not only in the verdict)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn an_expired_sliding_key_is_reclaimed_instead_of_kept_for_the_process_lifetime() {
+    let (clock, limiter) = sliding(BASE);
+    let config = RateLimitConfig {
+        period_ms: 1_000,
+        rate: 3,
+    };
+
+    for index in 0..100 {
+        assert!(!hit(&limiter, &format!("k{index}"), 1, &config));
+    }
+    assert_eq!(limiter.key_count(), 100);
+
+    // Every key is now a whole window old: the next hit sweeps them, as Redis would have
+    // expired them, and only the key it touched remains.
+    clock.advance(config.period_ms);
+    assert!(!hit(&limiter, "fresh", 1, &config));
+    assert_eq!(limiter.key_count(), 1);
+}
+
+#[test]
+fn an_expired_ewma_key_is_reclaimed_instead_of_kept_for_the_process_lifetime() {
+    let (clock, limiter) = ewma(BASE);
+    let config = RateLimitConfig {
+        period_ms: 1_000,
+        rate: 3,
+    };
+
+    for index in 0..100 {
+        assert!(!hit(&limiter, &format!("k{index}"), 1, &config));
+    }
+    assert_eq!(limiter.key_count(), 100);
+
+    clock.advance(config.period_ms);
+    assert!(!hit(&limiter, "fresh", 1, &config));
+    assert_eq!(limiter.key_count(), 1);
+}
+
+#[test]
+fn a_flood_of_new_keys_never_grows_a_store_past_its_ceiling() {
+    let (_, limiter) = sliding(BASE);
+    let config = RateLimitConfig {
+        period_ms: 60_000,
+        rate: 3,
+    };
+
+    for index in 0..(MAX_STORE_KEYS + 1_000) {
+        assert!(!hit(&limiter, &format!("k{index}"), 1, &config));
+    }
+
+    assert_eq!(limiter.key_count(), MAX_STORE_KEYS);
+}
+
+#[test]
+fn a_reclaimed_key_starts_a_fresh_window_rather_than_a_stale_one() {
+    let (clock, limiter) = sliding(BASE);
+    let config = RateLimitConfig {
+        period_ms: 1_000,
+        rate: 1,
+    };
+
+    assert!(!hit(&limiter, "k", 1, &config));
+    assert!(hit(&limiter, "k", 1, &config));
+
+    clock.advance(config.period_ms);
+    assert!(!hit(&limiter, "other", 1, &config));
+    assert_eq!(limiter.key_count(), 1, "the stale key was swept");
+    assert!(
+        !hit(&limiter, "k", 1, &config),
+        "a fresh window allows again"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
 // AC30: the model-based property test
 // ---------------------------------------------------------------------------------------
 
@@ -255,34 +332,53 @@ impl Generator {
 
 /// The sliding-window script, re-expressed independently: one sorted set per key, entries
 /// with their score and step, `ZREMRANGEBYSCORE 0 windowStart`, sum, then record only when
-/// allowed.
+/// allowed. The script also sets `PEXPIRE key period` on every write, so a key that has not
+/// been written for a whole window is gone before the next `ZREMRANGEBYSCORE` runs.
 #[derive(Default)]
 struct SlidingModel {
-    entries: std::collections::BTreeMap<String, Vec<(u64, u64)>>,
+    entries: std::collections::BTreeMap<String, (u64, Vec<(u64, u64)>)>,
 }
 
 impl SlidingModel {
     fn hit(&mut self, key: &str, now: u64, step: u64, config: &RateLimitConfig) -> bool {
         let window_start = now.saturating_sub(config.period_ms);
-        let entries = self.entries.entry(key.to_owned()).or_default();
+        let (stored_period, mut entries) = self
+            .entries
+            .remove(key)
+            .unwrap_or((config.period_ms, Vec::new()));
+
+        // `PEXPIRE` set the key's window at its last write: once every hit is older than
+        // that, the key is gone and the next hit starts from an empty set.
+        if entries
+            .iter()
+            .all(|(at, _)| now.saturating_sub(*at) >= stored_period)
+        {
+            entries.clear();
+        }
 
         entries.retain(|(at, _)| *at > window_start);
 
         let sum: u64 = entries.iter().map(|(_, step)| *step).sum();
+        let limited = sum.saturating_add(step) > config.rate;
 
-        if sum.saturating_add(step) > config.rate {
-            return true;
-        }
+        let period_ms = if limited {
+            stored_period
+        } else {
+            entries.push((now, step));
+            config.period_ms
+        };
 
-        entries.push((now, step));
+        self.entries.insert(key.to_owned(), (period_ms, entries));
 
-        false
+        limited
     }
 }
 
-/// The EWMA script, re-expressed independently: decay, store, then compare.
+/// The EWMA script, re-expressed independently: decay, store, then compare. The state
+/// carries the `EXPIRE` its last write set (`ceil(period / 1000)` s), so a key that has not
+/// been written for its whole TTL reads as absent.
 struct EwmaModel {
-    state: Option<(f64, u64)>,
+    state: Option<(f64, u64, u64)>,
 }
 
 impl EwmaModel {
@@ -290,14 +386,14 @@ impl EwmaModel {
         let ttl = config.period_ms.div_ceil(1000) * 1000;
 
         let (old_rate, old_at) = match self.state {
-            Some((rate, at)) if now.saturating_sub(at) < ttl => (rate, at),
+            Some((rate, at, stored_ttl)) if now.saturating_sub(at) < stored_ttl => (rate, at),
             _ => (0.0, now),
         };
 
         let lambda = std::f64::consts::LN_2 / config.period_ms as f64;
         let rate = old_rate * (-lambda * (now.saturating_sub(old_at)) as f64).exp() + step as f64;
 
-        self.state = Some((rate, now));
+        self.state = Some((rate, now, ttl));
 
         rate > config.rate as f64
     }

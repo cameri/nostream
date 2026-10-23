@@ -68,11 +68,58 @@ struct SlidingEntry {
     step: u64,
 }
 
+/// The most keys one store holds. Past this the store drops one arbitrary key to make room:
+/// a client that mints pubkeys cannot grow the process without bound, and the cost — the
+/// displaced key's window starts again — is smaller than the alternative, refusing new keys,
+/// which would let that client evade its own limit by minting a fresh pubkey per event.
+pub const MAX_STORE_KEYS: usize = 65_536;
+
+/// A keyed store with the TTL the capture's Redis sets: expired keys are reclaimed, and the
+/// map is capped so no client-chosen key can grow it without bound.
+#[derive(Debug)]
+struct Store<V> {
+    entries: HashMap<String, V>,
+    next_sweep_ms: u64,
+}
+
+impl<V> Store<V> {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            next_sweep_ms: 0,
+        }
+    }
+
+    /// Reclaims what `is_live` rejects at most once per `cadence_ms`, and keeps room for
+    /// `key` at the ceiling. Amortised on the clock rather than counted per hit, so a busy
+    /// key does not pay for the whole map on every message.
+    fn prepare(&mut self, key: &str, now_ms: u64, cadence_ms: u64, is_live: impl Fn(&V) -> bool) {
+        if now_ms >= self.next_sweep_ms {
+            self.entries.retain(|_, value| is_live(value));
+            self.next_sweep_ms = now_ms.saturating_add(cadence_ms.max(1));
+        }
+
+        if self.entries.len() >= MAX_STORE_KEYS
+            && !self.entries.contains_key(key)
+            && let Some(victim) = self.entries.keys().next().cloned()
+        {
+            self.entries.remove(&victim);
+        }
+    }
+}
+
+/// One sliding-window key: the window it was written with and the hits inside it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SlidingKey {
+    period_ms: u64,
+    entries: Vec<SlidingEntry>,
+}
+
 /// The sliding-window store (`SLIDING_WINDOW_RATE_LIMITER_LUA_SCRIPT`).
 #[derive(Debug)]
 pub struct SlidingWindowRateLimiter {
     clock: Arc<dyn Clock>,
-    entries: Mutex<HashMap<String, Vec<SlidingEntry>>>,
+    store: Mutex<Store<SlidingKey>>,
 }
 
 impl SlidingWindowRateLimiter {
@@ -80,7 +127,7 @@ impl SlidingWindowRateLimiter {
     pub fn new(clock: Arc<dyn Clock>) -> Self {
         Self {
             clock,
-            entries: Mutex::new(HashMap::new()),
+            store: Mutex::new(Store::new()),
         }
     }
 
@@ -94,11 +141,37 @@ impl SlidingWindowRateLimiter {
         let window_start = now.saturating_sub(config.period_ms);
 
         let mut store = self.store()?;
-        let entries = store.entry(key.to_owned()).or_default();
+        // The key lives one window from its last write, which is the `PEXPIRE` the script
+        // sets: once every hit is older than that window the key is reclaimed rather than
+        // pruned on its next visit.
+        store.prepare(key, now, config.period_ms, |sliding| {
+            sliding
+                .entries
+                .iter()
+                .any(|entry| now.saturating_sub(entry.at_ms) < sliding.period_ms)
+        });
 
-        entries.retain(|entry| entry.at_ms > window_start);
+        let sliding = store
+            .entries
+            .entry(key.to_owned())
+            .or_insert_with(|| SlidingKey {
+                period_ms: config.period_ms,
+                entries: Vec::new(),
+            });
+        // The key's `PEXPIRE` was set at its last write: once every hit is older than that
+        // window, Redis has dropped the key and this hit starts from an empty set.
+        if sliding
+            .entries
+            .iter()
+            .all(|entry| now.saturating_sub(entry.at_ms) >= sliding.period_ms)
+        {
+            sliding.entries.clear();
+        }
 
-        let sum = entries
+        sliding.entries.retain(|entry| entry.at_ms > window_start);
+
+        let sum = sliding
+            .entries
             .iter()
             .fold(0u64, |total, entry| total.saturating_add(entry.step));
 
@@ -106,16 +179,22 @@ impl SlidingWindowRateLimiter {
             return Ok(true);
         }
 
-        entries.push(SlidingEntry { at_ms: now, step });
+        sliding.period_ms = config.period_ms;
+        sliding.entries.push(SlidingEntry { at_ms: now, step });
 
         Ok(false)
     }
 
     /// How many hits the key currently carries inside its window.
     pub fn len(&self, key: &str) -> usize {
-        self.entries
+        self.store
             .lock()
-            .map(|store| store.get(key).map_or(0, Vec::len))
+            .map(|store| {
+                store
+                    .entries
+                    .get(key)
+                    .map_or(0, |sliding| sliding.entries.len())
+            })
             .unwrap_or(0)
     }
 
@@ -124,27 +203,35 @@ impl SlidingWindowRateLimiter {
         self.len(key) == 0
     }
 
-    fn store(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, HashMap<String, Vec<SlidingEntry>>>, RelayError> {
-        self.entries
+    /// How many keys the store holds, for the test that pins reclamation.
+    pub fn key_count(&self) -> usize {
+        self.store
+            .lock()
+            .map(|store| store.entries.len())
+            .unwrap_or(0)
+    }
+
+    fn store(&self) -> Result<std::sync::MutexGuard<'_, Store<SlidingKey>>, RelayError> {
+        self.store
             .lock()
             .map_err(|error| RelayError::RateLimiter(format!("sliding window store: {error}")))
     }
 }
 
-/// One EWMA key: the decayed rate and the instant it was written.
+/// One EWMA key: the decayed rate, the instant it was written, and the TTL it was written
+/// with.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct EwmaEntry {
     rate: f64,
     at_ms: u64,
+    ttl_ms: u64,
 }
 
 /// The EWMA store (`rateLimitScript`).
 #[derive(Debug)]
 pub struct EwmaRateLimiter {
     clock: Arc<dyn Clock>,
-    entries: Mutex<HashMap<String, EwmaEntry>>,
+    store: Mutex<Store<EwmaEntry>>,
 }
 
 impl EwmaRateLimiter {
@@ -152,7 +239,7 @@ impl EwmaRateLimiter {
     pub fn new(clock: Arc<dyn Clock>) -> Self {
         Self {
             clock,
-            entries: Mutex::new(HashMap::new()),
+            store: Mutex::new(Store::new()),
         }
     }
 
@@ -165,23 +252,34 @@ impl EwmaRateLimiter {
         let ttl_ms = config.period_ms.div_ceil(1000).saturating_mul(1000);
 
         let mut store = self
-            .entries
+            .store
             .lock()
             .map_err(|error| RelayError::RateLimiter(format!("ewma store: {error}")))?;
+        store.prepare(key, now, ttl_ms, |entry| {
+            now.saturating_sub(entry.at_ms) < entry.ttl_ms
+        });
 
         // The key's TTL is `ceil(period / 1000)` seconds from its last write: at that
         // instant Redis has dropped it, so the entry is gone too.
         let previous = store
+            .entries
             .get(key)
             .copied()
-            .filter(|entry| now.saturating_sub(entry.at_ms) < ttl_ms);
+            .filter(|entry| now.saturating_sub(entry.at_ms) < entry.ttl_ms);
 
         let (old_rate, old_at) = previous.map_or((0.0, now), |entry| (entry.rate, entry.at_ms));
         let delta_t = now.saturating_sub(old_at) as f64;
         let lambda = std::f64::consts::LN_2 / config.period_ms as f64;
         let rate = old_rate * (-lambda * delta_t).exp() + step as f64;
 
-        store.insert(key.to_owned(), EwmaEntry { rate, at_ms: now });
+        store.entries.insert(
+            key.to_owned(),
+            EwmaEntry {
+                rate,
+                at_ms: now,
+                ttl_ms,
+            },
+        );
 
         Ok(rate > config.rate as f64)
     }
@@ -191,12 +289,20 @@ impl EwmaRateLimiter {
         let now = self.clock.now_ms();
         let ttl_ms = config.period_ms.div_ceil(1000).saturating_mul(1000);
 
-        self.entries
+        self.store
             .lock()
             .ok()
-            .and_then(|store| store.get(key).copied())
+            .and_then(|store| store.entries.get(key).copied())
             .filter(|entry| now.saturating_sub(entry.at_ms) < ttl_ms)
             .map(|entry| entry.rate)
+    }
+
+    /// How many keys the store holds, for the test that pins reclamation.
+    pub fn key_count(&self) -> usize {
+        self.store
+            .lock()
+            .map(|store| store.entries.len())
+            .unwrap_or(0)
     }
 }
 
