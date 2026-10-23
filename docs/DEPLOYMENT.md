@@ -2,12 +2,17 @@
 
 The `ghcr.io/cameri/nostream` container image is published automatically by the
 Release workflow (`release.yml`) whenever an official GitHub release is published.
-The workflow publishes both the `latest` tag and semver tags (e.g. `v3.6.2`).
+For release `nostream@3.6.2` the workflow publishes three tags: `latest`, the release tag itself
+(`nostream@3.6.2`, which is what a host pins), and the bare version (`3.6.2`).
 
-Publishing is triggered only on published releases whose tag starts with `v`:
+Publishing is triggered only on published relay releases — the changesets tag `nostream@X.Y.Z`, or the
+`vX.Y.Z` form used before the changesets migration. A `nostream-website@X.Y.Z` release publishes no
+image:
 
 ```text
-release: published (tag v*) → build-and-push-image → ghcr.io/cameri/nostream:latest and :<version>
+release: published (nostream@X.Y.Z)
+  → build-and-push-image
+  → ghcr.io/cameri/nostream:{nostream@X.Y.Z, X.Y.Z, latest}
 ```
 
 CI Checks (`checks.yml`) does not build or publish container images on push to

@@ -15,12 +15,14 @@ pulled in production. Publishing is now aligned strictly with official GitHub re
 
 ## New behavior
 
-Container images are published only by `.github/workflows/release.yml` when an official GitHub release
-is published with a `v*` tag. Pushes to `main` and pull requests run verification checks without
+Container images are published only by `.github/workflows/release.yml` when an official relay release
+is published. Changesets tags a relay release `nostream@X.Y.Z`, so that prefix is what the workflow
+matches; the `vX.Y.Z` form from before the changesets migration is still accepted. Pushes to `main` and pull requests run verification checks without
 publishing any container images.
 
 ## Action required
 
 Deployments tracking `ghcr.io/cameri/nostream:main` should be updated to track released versions,
-such as `ghcr.io/cameri/nostream:latest` or pinned release tags (e.g. `ghcr.io/cameri/nostream:v3.6.2`).
+such as `ghcr.io/cameri/nostream:latest` or pinned release tags (e.g. `ghcr.io/cameri/nostream:nostream@3.6.2`,
+published as-is from the release tag, or the bare `ghcr.io/cameri/nostream:3.6.2`).
 See [`deploy/README.md`](../deploy/README.md) and [`docs/DEPLOY-RUNBOOK.md`](DEPLOY-RUNBOOK.md).

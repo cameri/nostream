@@ -33,6 +33,21 @@ and continue at step 2 below.
 The webhook pull stack **loads images only**. It does **not** run migrations or
 recreate relay containers. This runbook closes that gap.
 
+The release event reaches the webhook at the same moment the image build starts,
+so the pull fires before the tag exists. The puller retries on a growing backoff
+and re-queues a message it exhausts, but **there is no signal that says the pull
+landed**. Before you recreate, confirm the image is on the host:
+
+```bash
+docker images --filter=reference='ghcr.io/cameri/nostream' --format '{{.Tag}} {{.ID}}'
+# expect the tag the release carried, and a digest that is not the previous one
+```
+
+A recreate with a stale `latest` starts the previous release from a brand-new
+build: the migrate step runs the old schema, nothing fails, and the deploy looks
+successful. When in doubt, `docker pull ghcr.io/cameri/nostream:latest` and re-run
+the check above.
+
 ## Choose your stack
 
 | Stack | Compose file | Update script | Downtime |
