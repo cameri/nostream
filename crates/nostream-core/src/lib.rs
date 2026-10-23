@@ -26,13 +26,19 @@
 //! Implemented here, against those files: the 32-byte `EventId`/`Pubkey` and 64-byte
 //! `Signature` with the schema's hex rules in the type, the canonical serialization and
 //! SHA-256 event id, BIP-340 Schnorr verification and signing, the NIP-01 filter matcher
-//! and the zod filter schema's rules, subscription normalisation, NIP-13 difficulty,
-//! NIP-40 expiration, NIP-44 v2, and the NIP-77 reconciliation engine (over the
-//! `negentropy` crate; see `negentropy.rs` for the seam and its divergences).
+//! and the zod filter schema's rules with `count_filter_values`/`is_generic_tag_query`,
+//! subscription normalisation, NIP-13 difficulty, NIP-40 expiration, NIP-44 v2, the strict
+//! event schema ([`validation::validate_event`] with the kind 7/17/10002 and geohash
+//! refinements), the wire codec ([`messages::decode`] and the one encoder
+//! `RelayMessage::to_text`), NIP-42 ([`nip42::authenticate`], [`nip42::generate_challenge`]
+//! and [`nip42::Nip42Session`]), the NIP-43 invite code and its event, the NIP-05 identifier
+//! helpers, the adaptive-difficulty signal and its WoT policy, [`clock::Clock`] and
+//! [`random::RandomSource`], and the NIP-77 reconciliation engine (over the `negentropy`
+//! crate; see `negentropy.rs` for the seam and its divergences).
 //!
 //! What is still a stub is marked as such on the item and returns
-//! `CoreError::NotImplemented`: the NIP frames, the event acceptance gate's validator, and
-//! the adaptive-difficulty policy.
+//! `CoreError::NotImplemented`: the NIP frames' own codec layer, NIP-05 verification
+//! (`nip05::verify`), and the NIP-77 session state machine.
 //!
 //! Phase 2+ areas this crate deliberately does not own: the NIP-77 wire state machine and
 //! its `NEG-OPEN`/`NEG-MSG`/`NEG-CLOSE` frame encoder belong to `nostream-relay` once a real
@@ -70,6 +76,7 @@ pub mod nip66;
 pub mod nip77;
 pub mod nip98;
 pub mod pow;
+pub mod random;
 pub mod replaceable;
 pub mod report_scoring;
 pub mod secret;

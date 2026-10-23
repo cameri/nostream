@@ -1,0 +1,1212 @@
+{
+  "capture": "242a3001d77149e4d70151ec03060c4ef44a1547",
+  "generated_by": "crates/nostream-relay/tests/ts_case_parity.rs reads this map; a rule table over the census produced it, reviewed case by case",
+  "cases": 557,
+  "groups": [
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::an_admitted_pubkey_publishes_and_a_low_balance_blocks",
+      "titles": [
+        "EventMessageHandler handleMessage rejects event if it can't be accepted",
+        "EventMessageHandler handleMessage rejects event if user is not admitted",
+        "EventMessageHandler isUserAdmitted NIP-43 membership fulfills with restricted reason if user exists but is not admitted",
+        "EventMessageHandler isUserAdmitted NIP-43 membership fulfills with restricted reason if user is not admitted and payments are disabled",
+        "EventMessageHandler isUserAdmitted NIP-43 membership fulfills with undefined for a join request from a non-member",
+        "EventMessageHandler isUserAdmitted NIP-43 membership fulfills with undefined for a leave request from a non-member",
+        "EventMessageHandler isUserAdmitted NIP-43 membership fulfills with undefined for an invite request from a non-member",
+        "EventMessageHandler isUserAdmitted NIP-43 membership fulfills with undefined if user is admitted",
+        "EventMessageHandler isUserAdmitted NIP-43 membership skips the minimum balance check when payments are disabled",
+        "EventMessageHandler isUserAdmitted fulfills with reason if user does not meet minimum balance",
+        "EventMessageHandler isUserAdmitted fulfills with reason if user is not admitted",
+        "EventMessageHandler isUserAdmitted fulfills with reason if user is not admitted",
+        "EventMessageHandler isUserAdmitted fulfills with reason if user is not found",
+        "EventMessageHandler isUserAdmitted fulfills with undefined if event pubkey equals relay's own public key",
+        "EventMessageHandler isUserAdmitted fulfills with undefined if user is admitted"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_event_rate_limit_answers_with_the_backoff",
+      "titles": [
+        "EventMessageHandler handleMessage rejects event if rate-limited with the backoff in ms",
+        "EventMessageHandler isRateLimited calls hit with given rate limit settings",
+        "EventMessageHandler isRateLimited fulfills with false if event limits setting is not set",
+        "EventMessageHandler isRateLimited fulfills with false if limits setting is not set",
+        "EventMessageHandler isRateLimited fulfills with false if not rate limited",
+        "EventMessageHandler isRateLimited fulfills with false if rate limits setting is empty",
+        "EventMessageHandler isRateLimited fulfills with false if rate limits setting is not set",
+        "EventMessageHandler isRateLimited fulfills with the tripped period if rate limited by second rate limit setting",
+        "EventMessageHandler isRateLimited stops hitting subsequent rate limit windows once one is exceeded"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/limits.rs::a_failing_event_limiter_limits_the_event_without_a_backoff",
+      "titles": [
+        "EventMessageHandler handleMessage rejects event if rate-limited without a backoff when none is known",
+        "EventMessageHandler isRateLimited fails closed when the rate limiter backend is unavailable"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_vanished_pubkey_is_blocked",
+      "titles": [
+        "EventMessageHandler handleMessage rejects event if request to vanish is active for pubkey",
+        "EventMessageHandler isBlockedByRequestToVanish returns undefined for request to vanish events",
+        "EventMessageHandler isBlockedByRequestToVanish returns undefined if event pubkey equals relay's own public key"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::event_id_mismatch_is_rejected",
+      "titles": [
+        "EventMessageHandler handleMessage rejects event if invalid",
+        "EventMessageHandler isEventValid returns reason if event id is not valid",
+        "EventMessageHandler isEventValid returns undefined if event is valid"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::nip05_gates_publication",
+      "titles": [
+        "EventMessageHandler checkNip05Verification allows author when lastVerifiedAt is recent even if isVerified is false (transient re-check failure)",
+        "EventMessageHandler checkNip05Verification allows author when lastVerifiedAt is recent even if isVerified is false (transient re-check failure)",
+        "EventMessageHandler checkNip05Verification returns reason if domain is blacklisted",
+        "EventMessageHandler checkNip05Verification returns reason if domain is blacklisted",
+        "EventMessageHandler checkNip05Verification returns reason if domain is not in whitelist",
+        "EventMessageHandler checkNip05Verification returns reason if domain is not in whitelist",
+        "EventMessageHandler checkNip05Verification returns reason if no verification found for pubkey",
+        "EventMessageHandler checkNip05Verification returns reason if no verification found for pubkey",
+        "EventMessageHandler checkNip05Verification returns reason if verification exists but has no lastVerifiedAt",
+        "EventMessageHandler checkNip05Verification returns reason if verification exists but has no lastVerifiedAt",
+        "EventMessageHandler checkNip05Verification returns reason if verification is expired",
+        "EventMessageHandler checkNip05Verification returns reason if verification is expired",
+        "EventMessageHandler checkNip05Verification returns undefined for kind 0 events (SET_METADATA)",
+        "EventMessageHandler checkNip05Verification returns undefined for kind 0 events (SET_METADATA)",
+        "EventMessageHandler checkNip05Verification returns undefined if domain is in whitelist",
+        "EventMessageHandler checkNip05Verification returns undefined if domain is in whitelist",
+        "EventMessageHandler checkNip05Verification returns undefined if event pubkey equals relay public key",
+        "EventMessageHandler checkNip05Verification returns undefined if event pubkey equals relay public key",
+        "EventMessageHandler checkNip05Verification returns undefined if nip05 mode is disabled",
+        "EventMessageHandler checkNip05Verification returns undefined if nip05 mode is disabled",
+        "EventMessageHandler checkNip05Verification returns undefined if nip05 mode is passive",
+        "EventMessageHandler checkNip05Verification returns undefined if nip05 mode is passive",
+        "EventMessageHandler checkNip05Verification returns undefined if nip05 settings are not set",
+        "EventMessageHandler checkNip05Verification returns undefined if nip05 settings are not set",
+        "EventMessageHandler checkNip05Verification returns undefined if verification is valid and not expired",
+        "EventMessageHandler checkNip05Verification returns undefined if verification is valid and not expired",
+        "EventMessageHandler checkNip05Verification treats isVerified=true with null lastVerifiedAt as unverified (historical/bad data)",
+        "EventMessageHandler checkNip05Verification treats isVerified=true with null lastVerifiedAt as unverified (historical/bad data)",
+        "EventMessageHandler handleMessage rejects event if NIP-05 verification is required"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::an_expired_event_is_rejected",
+      "titles": [
+        "EventMessageHandler handleMessage rejects event if it is expired"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_default_strategy_answers_ok_and_duplicate",
+      "titles": [
+        "EventMessageHandler handleMessage calls strategy with event",
+        "EventMessageHandler handleMessage does not call strategy if none given",
+        "EventMessageHandler handleMessage does not reject if strategy rejects"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-core/src/adaptive_pow.rs::the_sample_decays_towards_the_target_when_events_stop",
+      "titles": [
+        "EventMessageHandler handleMessage adaptive pow load recording does not record load for an event rejected before acceptance (canAcceptEvent)",
+        "EventMessageHandler handleMessage adaptive pow load recording does not record load for an event rejected by rate limiting",
+        "EventMessageHandler handleMessage adaptive pow load recording records load only once the event clears every check and is dispatched"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::created_at_deltas_are_enforced_in_both_directions",
+      "titles": [
+        "EventMessageHandler canAcceptEvent content maxNegativeDelta returns reason if createdDate is too far in the past",
+        "EventMessageHandler canAcceptEvent content maxNegativeDelta returns undefined if maxNegativeDelta is zero",
+        "EventMessageHandler canAcceptEvent createdAt maxNegativeDelta returns reason if createdDate is too far in the past",
+        "EventMessageHandler canAcceptEvent createdAt maxNegativeDelta returns undefined if maxNegativeDelta is zero",
+        "EventMessageHandler canAcceptEvent createdAt maxPositiveDelta returns reason if createdDate is too far in the future",
+        "EventMessageHandler canAcceptEvent createdAt maxPositiveDelta returns undefined if maxPositiveDelta is zero",
+        "EventMessageHandler canAcceptEvent createdAt returns undefined if event pubkey equals relay public key"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_content_limit_is_bytes_of_utf16",
+      "titles": [
+        "EventMessageHandler canAcceptEvent content maxLength (deprecated) returns reason if content is too long",
+        "EventMessageHandler canAcceptEvent content maxLength (deprecated) returns reason if content is too long",
+        "EventMessageHandler canAcceptEvent content maxLength (deprecated) returns undefined if content is not set",
+        "EventMessageHandler canAcceptEvent content maxLength (deprecated) returns undefined if content is short",
+        "EventMessageHandler canAcceptEvent content maxLength (deprecated) returns undefined if kind does not match and content is too long",
+        "EventMessageHandler canAcceptEvent content maxLength (deprecated) returns undefined if kind matches and content is short",
+        "EventMessageHandler canAcceptEvent content maxLength (deprecated) returns undefined if maxLength is zero",
+        "EventMessageHandler canAcceptEvent content maxLength returns reason if content is too long",
+        "EventMessageHandler canAcceptEvent content maxLength returns reason if kind matches but content is too long",
+        "EventMessageHandler canAcceptEvent content maxLength returns undefined if kind does not match",
+        "EventMessageHandler canAcceptEvent content maxLength returns undefined if kind matches but content is short",
+        "EventMessageHandler canAcceptEvent content maxLength returns undefined if maxLength is disabled",
+        "EventMessageHandler canAcceptEvent content maxLength returns undefned if content is not too long"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_static_proof_of_work_requirements_are_enforced",
+      "titles": [
+        "EventMessageHandler canAcceptEvent eventId minLeadingZeroBits returns reason if eventId has insufficient proof of work ",
+        "EventMessageHandler canAcceptEvent eventId minLeadingZeroBits returns undefined if eventId has sufficient proof of work ",
+        "EventMessageHandler canAcceptEvent eventId minLeadingZeroBits returns undefined if minLeadingZeroBits is zero",
+        "EventMessageHandler canAcceptEvent pubkey minLeadingZeroBits returns reason if pubkey has insufficient proof of work ",
+        "EventMessageHandler canAcceptEvent pubkey minLeadingZeroBits returns undefined if minLeadingZeroBits is zero",
+        "EventMessageHandler canAcceptEvent pubkey minLeadingZeroBits returns undefined if pubkey has sufficient proof of work "
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-core/src/adaptive_pow.rs::the_ratio_scales_between_the_floor_and_the_ceiling",
+      "titles": [
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) does not apply the adaptive difficulty to the pubkey check",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) does not record load itself -- repeated calls do not change the observed rate",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) ignores the static eventId.minLeadingZeroBits setting while adaptive pow is enabled",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) rejects with the floor difficulty when insufficient and under target",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) scales the required difficulty up as the sustained recorded rate exceeds target",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) still enforces the static pubkey.minLeadingZeroBits setting while adaptive pow is enabled",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) uses the floor difficulty while the observed rate is at or under target"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-core/src/adaptive_pow.rs::the_wot_policy_takes_the_closest_eligible_threshold",
+      "titles": [
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) wotThresholds applies a partial reduction at distance 2 (half of the floor of 16 is 8)",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) wotThresholds bypasses eventId PoW entirely for a direct follow (distance 1)",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) wotThresholds does not consult the WoT graph when no thresholds are configured",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) wotThresholds rejects at distance 2 when the event does not meet even the reduced requirement",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) wotThresholds requires the full computed difficulty beyond every threshold",
+        "EventMessageHandler canAcceptEvent pubkey pow (adaptive) wotThresholds requires the full computed difficulty for a pubkey outside the trust graph"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::pubkey_whitelist_and_blacklist_block",
+      "titles": [
+        "EventMessageHandler canAcceptEvent pubkey blacklist returns reason if pubkey is blacklisted",
+        "EventMessageHandler canAcceptEvent pubkey blacklist returns undefined if blacklist is empty",
+        "EventMessageHandler canAcceptEvent pubkey blacklist returns undefined if pubkey extends a blacklist entry but is not an exact match",
+        "EventMessageHandler canAcceptEvent pubkey blacklist returns undefined if pubkey is not an exact match in the blacklist",
+        "EventMessageHandler canAcceptEvent pubkey blacklist returns undefined if pubkey is not blacklisted",
+        "EventMessageHandler canAcceptEvent pubkey whitelist returns reason if pubkey is not an exact match in the whitelist",
+        "EventMessageHandler canAcceptEvent pubkey whitelist returns reason if pubkey is not whitelisted",
+        "EventMessageHandler canAcceptEvent pubkey whitelist returns reason if pubkey is not whitelisted by exact match",
+        "EventMessageHandler canAcceptEvent pubkey whitelist returns undefined if pubkey is whitelisted",
+        "EventMessageHandler canAcceptEvent pubkey whitelist returns undefined if whitelist is empty"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::kind_whitelist_and_blacklist_block",
+      "titles": [
+        "EventMessageHandler canAcceptEvent kind blacklist returns reason if kind is blacklisted in range",
+        "EventMessageHandler canAcceptEvent kind blacklist returns undefined if blacklist is empty",
+        "EventMessageHandler canAcceptEvent kind blacklist returns undefined if kind is not blacklisted",
+        "EventMessageHandler canAcceptEvent kind blacklist returns undefined if kind is not blacklisted in range",
+        "EventMessageHandler canAcceptEvent kind whitelist returns reason if kind is blacklisted and whitelisted",
+        "EventMessageHandler canAcceptEvent kind whitelist returns reason if kind is blacklisted and whitelisted in range",
+        "EventMessageHandler canAcceptEvent kind whitelist returns reason if kind is not whitelisted",
+        "EventMessageHandler canAcceptEvent kind whitelist returns reason if kind is not whitelisted in range",
+        "EventMessageHandler canAcceptEvent kind whitelist returns undefined if kind is whitelisted",
+        "EventMessageHandler canAcceptEvent kind whitelist returns undefined if kind is whitelisted in range",
+        "EventMessageHandler canAcceptEvent kind whitelist returns undefined if whitelist is empty"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::request_to_vanish_relay_tag_is_checked",
+      "titles": [
+        "EventMessageHandler isEventValid returns reason if request to vanish relay tag does not match relay URL"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::event_signature_mismatch_is_rejected",
+      "titles": [
+        "EventMessageHandler isEventValid returns reason if event signature is not valid"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::inner_kinds_must_be_gift_wrapped",
+      "titles": [
+        "EventMessageHandler isEventValid NIP-17 inner event blocking blocks kind 13 (Seal) with a clear rejection message",
+        "EventMessageHandler isEventValid NIP-17 inner event blocking blocks kind 14 (Direct Message) with a clear rejection message",
+        "EventMessageHandler isEventValid NIP-17 inner event blocking blocks kind 15 (File Message) with a clear rejection message",
+        "EventMessageHandler isEventValid NIP-17 inner event blocking blocks kind 444 (Marmot Welcome rumor) with a clear rejection message",
+        "EventMessageHandler isEventValid NIP-17 inner event blocking does not block a kind 1059 (Gift Wrap) event",
+        "EventMessageHandler isEventValid NIP-17 inner event blocking does not block a kind 445 (Marmot Group Event)",
+        "EventMessageHandler isEventValid NIP-17 inner event blocking does not block a regular kind 1 event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_event_rate_limit_skips_a_non_matching_kind_and_the_relay_pubkey",
+      "titles": [
+        "EventMessageHandler isRateLimited calls rate limiter if IP is not whitelisted",
+        "EventMessageHandler isRateLimited calls rate limiter if pubkey is not whitelisted",
+        "EventMessageHandler isRateLimited fulfills with false if event pubkey equals relay's own public key",
+        "EventMessageHandler isRateLimited skips rate limiter if IP is whitelisted",
+        "EventMessageHandler isRateLimited skips rate limiter if pubkey is whitelisted"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "exempt": "admission fee schedules and their waivers are not ported; job 010 owns the payments surface — job 008",
+      "titles": [
+        "EventMessageHandler isUserAdmitted fulfills with undefined if admission fee schedule is waived for event kind",
+        "EventMessageHandler isUserAdmitted fulfills with undefined if admission fee schedule is waived for event kind range",
+        "EventMessageHandler isUserAdmitted fulfills with undefined if admission fee schedule is waived for pubkey",
+        "EventMessageHandler isUserAdmitted fulfills with undefined if admission fee schedules are not set",
+        "EventMessageHandler isUserAdmitted fulfills with undefined if fee schedules are not set",
+        "EventMessageHandler isUserAdmitted fulfills with undefined if payments are disabled",
+        "EventMessageHandler isUserAdmitted fulfills with undefined if there are no admission fee schedules",
+        "EventMessageHandler isUserAdmitted fulfills with undefined if there are no enabled admission fee schedules"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "exempt": "admission fee schedules are not ported; job 010 owns the payments surface — job 008",
+      "titles": [
+        "EventMessageHandler isUserAdmitted fulfills with reason if admission fee schedule is not waived for event kind range"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "exempt": "the admission cache and its 300s/60s TTLs are not ported; job 010 owns the payments surface — job 008",
+      "titles": [
+        "EventMessageHandler isUserAdmitted caching caches admitted status with 300s ttl when user is admitted and has balance",
+        "EventMessageHandler isUserAdmitted caching caches blocked status with 60s ttl when user is not found",
+        "EventMessageHandler isUserAdmitted caching caches insufficient balance status with 60s ttl when user balance is too low",
+        "EventMessageHandler isUserAdmitted caching falls back to repository lookup when cache read fails",
+        "EventMessageHandler isUserAdmitted caching fulfills with reason and uses cache hit for blocked user without hitting DB",
+        "EventMessageHandler isUserAdmitted caching fulfills with reason and uses cache hit for insufficient balance without hitting DB",
+        "EventMessageHandler isUserAdmitted caching fulfills with undefined and uses cache hit for admitted user without hitting DB"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-core/src/expiration.rs::expired_event_is_true_past_its_expiration",
+      "titles": [
+        "EventMessageHandler addExpirationMetadata adds expiration metadata when expiration tag is present"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "exempt": "processNip05Metadata (the NIP-05 metadata write) is not run by this port; job 010 owns it — job 008",
+      "titles": [
+        "EventMessageHandler processNip05Metadata deletes verification when kind-0 has no nip05 in content",
+        "EventMessageHandler processNip05Metadata deletes verification when kind-0 has no nip05 in content",
+        "EventMessageHandler processNip05Metadata does nothing for non-kind-0 events",
+        "EventMessageHandler processNip05Metadata does nothing for non-kind-0 events",
+        "EventMessageHandler processNip05Metadata does nothing when domain is not allowed",
+        "EventMessageHandler processNip05Metadata does nothing when domain is not allowed",
+        "EventMessageHandler processNip05Metadata does nothing when nip05 identifier is unparseable",
+        "EventMessageHandler processNip05Metadata does nothing when nip05 identifier is unparseable",
+        "EventMessageHandler processNip05Metadata does nothing when nip05 mode is disabled",
+        "EventMessageHandler processNip05Metadata does nothing when nip05 mode is disabled",
+        "EventMessageHandler processNip05Metadata does nothing when nip05 settings are undefined",
+        "EventMessageHandler processNip05Metadata does nothing when nip05 settings are undefined",
+        "EventMessageHandler processNip05Metadata handles verification errors gracefully (thrown by verifier)",
+        "EventMessageHandler processNip05Metadata handles verification errors gracefully (thrown by verifier)",
+        "EventMessageHandler processNip05Metadata ignores delete errors when kind-0 has no nip05 in content",
+        "EventMessageHandler processNip05Metadata increments failureCount from existing row on definitive mismatch",
+        "EventMessageHandler processNip05Metadata increments failureCount from existing row on definitive mismatch",
+        "EventMessageHandler processNip05Metadata preserves prior isVerified/lastVerifiedAt on transient error",
+        "EventMessageHandler processNip05Metadata preserves prior isVerified/lastVerifiedAt on transient error",
+        "EventMessageHandler processNip05Metadata upserts with unverified state and nulls lastVerifiedAt on definitive mismatch",
+        "EventMessageHandler processNip05Metadata upserts with unverified state and nulls lastVerifiedAt on definitive mismatch",
+        "EventMessageHandler processNip05Metadata verifies and upserts on successful verification",
+        "EventMessageHandler processNip05Metadata verifies and upserts on successful verification",
+        "EventMessageHandler processNip05Metadata works correctly in passive mode",
+        "EventMessageHandler processNip05Metadata works correctly in passive mode"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::authentication_can_be_required_to_publish",
+      "titles": [
+        "EventMessageHandler isAuthenticationRequired returns auth-required when enabled and the author is not authenticated",
+        "EventMessageHandler isAuthenticationRequired returns undefined when authRequired is disabled",
+        "EventMessageHandler isAuthenticationRequired returns undefined when enabled and the author is authenticated"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_repost_may_not_embed_a_protected_event",
+      "titles": [
+        "EventMessageHandler isProtectedEventBlocked rejects on the outer protected tag before checking embedded repost content",
+        "EventMessageHandler isProtectedEventBlocked returns reason if event has a protected tag and user is not authenticated",
+        "EventMessageHandler isProtectedEventBlocked returns reason if kind 6 repost embeds a repost that embeds a valid protected event (nested)",
+        "EventMessageHandler isProtectedEventBlocked returns reason if kind 6 repost embeds a valid protected event",
+        "EventMessageHandler isProtectedEventBlocked returns undefined for non-repost event kinds with JSON content",
+        "EventMessageHandler isProtectedEventBlocked returns undefined if embedded event has invalid id/sig (forged protected tag)",
+        "EventMessageHandler isProtectedEventBlocked returns undefined if event has a protected tag and user is authenticated",
+        "EventMessageHandler isProtectedEventBlocked returns undefined if event has no protected tag",
+        "EventMessageHandler isProtectedEventBlocked returns undefined if event has no tags",
+        "EventMessageHandler isProtectedEventBlocked returns undefined if kind 6 repost embeds a valid non-protected event",
+        "EventMessageHandler isProtectedEventBlocked returns undefined if kind 6 repost has empty content",
+        "EventMessageHandler isProtectedEventBlocked returns undefined if kind 6 repost has invalid JSON content",
+        "EventMessageHandler isProtectedEventBlocked returns undefined if kind 6 repost has non-array embedded tags"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_duplicate_req_is_refused_with_the_capture_string",
+      "titles": [
+        "SubscribeMessageHandler #handleMessage emits notice message if subscription is rejected"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::req_streams_a_stored_event_then_eose",
+      "titles": [
+        "SubscribeMessageHandler #fetchAndSend ends event stream if error occurs",
+        "SubscribeMessageHandler #fetchAndSend sends EOSE",
+        "SubscribeMessageHandler #fetchAndSend sends event if client is subscribed",
+        "SubscribeMessageHandler #handleMessage emits subscribe event if subscription is accepted"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_restricted_only_req_from_an_unauthenticated_client_is_closed",
+      "titles": [
+        "SubscribeMessageHandler #handleMessage closes subscription with auth-required if unauthenticated client requests only restricted kinds"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_restricted_read_delivers_only_to_the_author_or_a_p_tagged_reader",
+      "titles": [
+        "SubscribeMessageHandler #fetchAndSend does not send restricted-kind events to unauthenticated clients",
+        "SubscribeMessageHandler #fetchAndSend sends restricted-kind events to the authenticated author",
+        "SubscribeMessageHandler #fetchAndSend sends restricted-kind events to the authenticated recipient",
+        "SubscribeMessageHandler #handleMessage accepts mixed-kind subscription from unauthenticated client",
+        "SubscribeMessageHandler #handleMessage accepts restricted-kind subscription if client is authenticated"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::an_invite_request_mints_one_kind_28935_event_before_eose",
+      "titles": [
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests boundaries mints exactly one code for two non-identical filters naming 28935",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests boundaries serves stored events alongside the claim event on a mixed filter",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes adds a NIP-40 expiration tag mirroring inviteCodeExpirySeconds",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes emits a kind 28935 event carrying the minted claim code",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes emits exactly one claim event followed by EOSE",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes mints for a pubkey on a non-empty inviteRequestWhitelist",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes mints when info.self matches the derived signing pubkey",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes never broadcasts the claim event",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes never persists the claim event",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes omits the expiration tag when codes never expire",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes records the requesting pubkey as createdBy",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes signs the event as the derived relay pubkey with a valid id and signature",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests when every guard passes tags the event as NIP-70 protected"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::an_unauthenticated_invite_request_gets_eose_only",
+      "titles": [
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests boundaries does not mint for a REQ that does not ask for kind 28935",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests boundaries does not mint for a filter with no kinds at all",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests boundaries still sends EOSE when the invite code repository throws",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests boundaries still sends EOSE when the relay private key cannot be derived",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards does not consult the rate limiter when no invite rate limits are configured",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards fails closed when the rate limiter is unavailable",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards skips when NIP-43 is disabled",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards skips when a non-empty inviteRequestWhitelist does not include the requester",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards skips when allowInviteRequests is not enabled",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards skips when info.self does not match the derived signing pubkey",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards skips when info.self is a malformed npub",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards skips when the nip43 block is absent entirely",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards skips when the per-pubkey rate limit is exceeded",
+        "SubscribeMessageHandler #handleMessage NIP-43 invite requests guards skips when the requester is not NIP-42 authenticated"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_close_aborts_an_in_flight_read_without_a_frame",
+      "titles": [
+        "SubscribeMessageHandler #fetchAndSend aborts and destroys the event stream when abort() is called",
+        "SubscribeMessageHandler #fetchAndSend destroys event stream if aborted",
+        "SubscribeMessageHandler #fetchAndSend does not send event if client is not subscribed to it",
+        "SubscribeMessageHandler #fetchAndSend does not send expired events",
+        "SubscribeMessageHandler #fetchAndSend sends event if expiration is in the future"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::matching_subscription_ids_are_returned_in_id_order",
+      "titles": [
+        "SubscribeMessageHandler .isClientSubscribedToEvent returns false if event matches no filter",
+        "SubscribeMessageHandler .isClientSubscribedToEvent returns true if event matches filter"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_subscription_count_limit_is_the_capture_string",
+      "titles": [
+        "SubscribeMessageHandler #canSubscribe returns reason if a filter exceeds the value count limit",
+        "SubscribeMessageHandler #canSubscribe returns reason if client is sending a duplicate subscription",
+        "SubscribeMessageHandler #canSubscribe returns reason if client subscriptions exceed limits",
+        "SubscribeMessageHandler #canSubscribe returns reason if filter count exceeds limit",
+        "SubscribeMessageHandler #canSubscribe returns reason if filter limit exceeds max limit",
+        "SubscribeMessageHandler #canSubscribe returns reason if subscription id is too long",
+        "SubscribeMessageHandler #canSubscribe returns undefined if a filter is at the value count limit, ignoring scalar criteria",
+        "SubscribeMessageHandler #canSubscribe returns undefined if filter value count limit is disabled",
+        "SubscribeMessageHandler #canSubscribe returns undefined if filters limit is disabled",
+        "SubscribeMessageHandler #canSubscribe returns undefined if max subscription limit is disabled",
+        "SubscribeMessageHandler #canSubscribe returns undefined if subscription & filter count are allowed",
+        "SubscribeMessageHandler #canSubscribe returns undefined if subscription id matches max length"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/subscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_filter_limits_carry_the_captures_strings_and_typos",
+      "titles": [
+        "SubscribeMessageHandler #canSubscribe counts filter values across every array criterion of a filter"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/count-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::count_answers_with_the_count_object",
+      "titles": [
+        "CountMessageHandler handleMessage() drops duplicate filters before querying the repository",
+        "CountMessageHandler handleMessage() returns COUNT with the result when counting works"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/count-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::count_limits_are_the_capture_strings",
+      "titles": [
+        "CountMessageHandler handleMessage() returns CLOSED when a filter has too many values",
+        "CountMessageHandler handleMessage() returns CLOSED when the query ID is too long",
+        "CountMessageHandler handleMessage() returns CLOSED when the request has too many filters"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/count-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_count_repository_failure_is_generic",
+      "titles": [
+        "CountMessageHandler handleMessage() returns CLOSED when counting fails in the repository"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/count-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_restricted_count_needs_a_scoped_authors_filter",
+      "titles": [
+        "CountMessageHandler handleMessage() returns CLOSED when counting restricted kinds scoped to another pubkey",
+        "CountMessageHandler handleMessage() returns CLOSED with auth-required when counting restricted kinds unauthenticated",
+        "CountMessageHandler handleMessage() returns COUNT when restricted kinds are scoped to the authenticated client"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/count-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::count_can_be_disabled_by_configuration",
+      "titles": [
+        "CountMessageHandler handleMessage() returns CLOSED when COUNT is disabled in settings"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/auth-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::auth_outcomes_are_the_captures_seven",
+      "titles": [
+        "AuthMessageHandler handleMessage() accepts relay URL with different path but same domain",
+        "AuthMessageHandler handleMessage() accepts timestamp exactly at the 10-minute boundary",
+        "AuthMessageHandler handleMessage() authenticates successfully with a valid AUTH event",
+        "AuthMessageHandler handleMessage() rejects when challenge tag does not match",
+        "AuthMessageHandler handleMessage() rejects when created_at is too far in the future",
+        "AuthMessageHandler handleMessage() rejects when created_at is too far in the past",
+        "AuthMessageHandler handleMessage() rejects when event ID does not match",
+        "AuthMessageHandler handleMessage() rejects when kind is not 22242",
+        "AuthMessageHandler handleMessage() rejects when relay tag does not match",
+        "AuthMessageHandler handleMessage() rejects when relay tag has invalid URL",
+        "AuthMessageHandler handleMessage() rejects when signature is invalid"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/auth-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_challenge_is_never_rotated_by_auth",
+      "titles": [
+        "AuthMessageHandler handleMessage() rejects when the AUTH event id was already accepted on this socket"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/unsubscribe-message-handler.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::unsubscribing_removes_the_entry_and_reports_it",
+      "titles": [
+        "UnsubscribeMessageHandler handleMessage() emits unsubscribe event with subscription Id"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/default-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_default_strategy_answers_ok_and_duplicate",
+      "titles": [
+        "DefaultEventStrategy execute broadcast event if event is created",
+        "DefaultEventStrategy execute creates event",
+        "DefaultEventStrategy execute does not broadcast event if event is duplicate"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/default-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_failed_insert_answers_with_the_generic_error",
+      "titles": [
+        "DefaultEventStrategy execute rejects if unable to create event"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::the_payload_limit_defaults_to_131072_and_follows_the_settings",
+      "titles": [
+        "WebSocketAdapter IPv6 support handles IPv6 client address",
+        "WebSocketAdapter constructor extracts clientId from sec-websocket-key header",
+        "WebSocketAdapter constructor resolves client address from request",
+        "WebSocketAdapter getClientAddress returns the client IP address",
+        "WebSocketAdapter getClientId returns the client ID"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::two_overlapping_subscriptions_both_receive_a_live_event",
+      "titles": [
+        "WebSocketAdapter constructor registers WebSocket event listeners",
+        "WebSocketAdapter constructor registers internal event listeners",
+        "WebSocketAdapter onBroadcast emits broadcast event on the WebSocket server adapter",
+        "WebSocketAdapter onClientMessage sets alive to true when message is received",
+        "WebSocketAdapter onClientPong marks client as alive",
+        "WebSocketAdapter onSendEvent (via Event event) NIP-56: hidden content still broadcasts a hidden-target event when hideActionableReports is disabled",
+        "WebSocketAdapter onSendEvent (via Event event) NIP-56: hidden content still broadcasts an unrelated event when hideActionableReports is enabled",
+        "WebSocketAdapter onSendEvent (via Event event) does not send event not matching any filter",
+        "WebSocketAdapter onSendEvent (via Event event) does not send restricted-kind event to a client authenticated as somebody else",
+        "WebSocketAdapter onSendEvent (via Event event) does not send restricted-kind event to unauthenticated client",
+        "WebSocketAdapter onSendEvent (via Event event) sends event matching subscription filters",
+        "WebSocketAdapter onSendEvent (via Event event) sends restricted-kind event to the authenticated author",
+        "WebSocketAdapter onSendEvent (via Event event) sends restricted-kind event to the authenticated recipient",
+        "WebSocketAdapter onSendEvent edge cases does not send when socket is not OPEN",
+        "WebSocketAdapter onSendEvent edge cases sends event to multiple matching subscriptions",
+        "WebSocketAdapter sendMessage (via Message event) does nothing when WebSocket is not OPEN",
+        "WebSocketAdapter sendMessage (via Message event) sends JSON-serialized message when WebSocket is OPEN"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::a_subscription_registers_once_and_an_identical_re_req_is_recognised",
+      "titles": [
+        "WebSocketAdapter getSubscriptions edge cases returns a copy that does not affect internal state",
+        "WebSocketAdapter getSubscriptions returns a copy of subscriptions map",
+        "WebSocketAdapter getSubscriptions returns an empty map when no subscriptions",
+        "WebSocketAdapter onClientClose clears all subscriptions when client disconnects",
+        "WebSocketAdapter onClientClose removes all listeners from client",
+        "WebSocketAdapter onSubscribed adds subscription to the map",
+        "WebSocketAdapter onSubscribed overwrites existing subscription with same id",
+        "WebSocketAdapter onUnsubscribed does not throw when removing non-existent subscription",
+        "WebSocketAdapter onUnsubscribed removes subscription from the map"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::a_read_is_in_flight_until_it_ends_and_an_abort_notifies_it",
+      "titles": [
+        "WebSocketAdapter onHeartbeat pings the client and sets alive to false"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::a_client_that_never_pongs_is_closed_without_a_close_frame",
+      "titles": [
+        "WebSocketAdapter onHeartbeat closes connection when client is not alive and has no subscriptions",
+        "WebSocketAdapter onHeartbeat closes when client is not alive even if it has active subscriptions"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/hidden_content.rs::a_mark_hides_the_target_immediately",
+      "titles": [
+        "WebSocketAdapter onSendEvent (via Event event) NIP-56: hidden content does not broadcast an event matching an actionable report when hideActionableReports is enabled"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::a_client_ping_is_answered_with_the_same_payload",
+      "titles": [
+        "WebSocketAdapter onClientPing responds with pong"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::an_oversized_message_is_closed_with_1009",
+      "titles": [
+        "WebSocketAdapter error handling closes client on RSV1 compression error",
+        "WebSocketAdapter error handling closes client on RangeError with max payload exceeded"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::a_rsv_bit_with_no_negotiated_extension_is_closed_with_1002",
+      "titles": [
+        "WebSocketAdapter error handling closes client on generic errors"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::an_invalid_frame_gets_the_capture_notice",
+      "titles": [
+        "WebSocketAdapter onClientMessage handles invalid JSON gracefully"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_message_limiter_closes_reads_and_notices_everything_else",
+      "titles": [
+        "WebSocketAdapter onClientMessage does not rate limit when no rateLimits are configured",
+        "WebSocketAdapter onClientMessage stops hitting subsequent rate limit windows once one is exceeded",
+        "WebSocketAdapter onClientMessage when rate limited closes a COUNT with the tripped window as backoff hint",
+        "WebSocketAdapter onClientMessage when rate limited closes a REQ with the tripped window as backoff hint",
+        "WebSocketAdapter onClientMessage when rate limited ends an active subscription and aborts its in-flight read before CLOSED",
+        "WebSocketAdapter onClientMessage when rate limited falls back to the notice when the frame is not valid JSON",
+        "WebSocketAdapter onClientMessage when rate limited sends a rate-limited notice for non-read messages"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_whitelisted_ip_bypasses_the_message_limiter",
+      "titles": [
+        "WebSocketAdapter onClientMessage does not rate limit when client IP is whitelisted"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_close_emits_nothing_for_an_unknown_subscription",
+      "titles": [
+        "WebSocketAdapter onClientMessage handles AbortError without sending notice"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::decode_reports_the_capture_notice_strings",
+      "titles": [
+        "WebSocketAdapter onClientMessage returns early when no handler is found for message"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::a_connection_starts_unauthenticated_with_its_challenge",
+      "titles": [
+        "WebSocketAdapter NIP-42 authentication generates different challenges for different adapters",
+        "WebSocketAdapter NIP-42 authentication getChallenge returns a non-empty string",
+        "WebSocketAdapter NIP-42 authentication getChallenge returns consistent value for the same adapter",
+        "WebSocketAdapter NIP-42 authentication sends AUTH challenge message on construction"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::authenticating_records_the_pubkey_in_order_and_refuses_a_replay",
+      "titles": [
+        "WebSocketAdapter NIP-42 authentication addAuthenticatedPubkey adds a pubkey without rotating the challenge",
+        "WebSocketAdapter NIP-42 authentication addAuthenticatedPubkey deduplicates same pubkey",
+        "WebSocketAdapter NIP-42 authentication addAuthenticatedPubkey supports multiple pubkeys",
+        "WebSocketAdapter NIP-42 authentication expires authenticated pubkeys after sessionExpirySeconds",
+        "WebSocketAdapter NIP-42 authentication getAuthenticatedPubkeys returns empty set initially",
+        "WebSocketAdapter NIP-42 authentication rejects replayed AUTH event ids"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-server-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::the_payload_limit_defaults_to_131072_and_follows_the_settings",
+      "titles": [
+        "WebSocketServerAdapter constructor registers broadcast event listener on itself",
+        "WebSocketServerAdapter constructor registers connection event listener on webSocketServer",
+        "WebSocketServerAdapter constructor registers error event listener on webSocketServer"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-server-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::req_streams_a_stored_event_then_eose",
+      "titles": [
+        "WebSocketServerAdapter getConnectedClients counts only clients with OPEN readyState",
+        "WebSocketServerAdapter getConnectedClients returns 0 when no clients are connected",
+        "WebSocketServerAdapter onConnection creates a WebSocketAdapter for new connection"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-server-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::draining_closes_every_subscription_then_the_socket_with_1001",
+      "titles": [
+        "WebSocketServerAdapter close calls parent close which closes webServer",
+        "WebSocketServerAdapter close closes the webSocketServer after draining clients",
+        "WebSocketServerAdapter close drains connected WebSocket clients before closing the server",
+        "WebSocketServerAdapter close invokes callback after full close",
+        "WebSocketServerAdapter close removes all listeners from webSocketServer after close",
+        "WebSocketServerAdapter close terminates clients that remain open after the drain timeout"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-server-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::two_overlapping_subscriptions_both_receive_a_live_event",
+      "titles": [
+        "WebSocketServerAdapter onBroadcast emits event to adapters of all OPEN clients",
+        "WebSocketServerAdapter onBroadcast skips clients that are not in OPEN state"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-server-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::a_client_that_answers_every_ping_survives",
+      "titles": [
+        "WebSocketServerAdapter onHeartbeat emits heartbeat to connected adapters on the heartbeat interval"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-server-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_connection_limiter_terminates_the_upgrade",
+      "titles": [
+        "WebSocketServerAdapter onConnection terminates rate-limited connections"
+      ]
+    },
+    {
+      "file": "test/unit/adapters/web-socket-server-adapter.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::a_connection_accepted_while_draining_is_closed_with_1001",
+      "titles": [
+        "WebSocketServerAdapter onConnection rejects new connections while draining"
+      ]
+    },
+    {
+      "file": "test/unit/utils/nip42.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_restricted_only_req_from_an_unauthenticated_client_is_closed",
+      "titles": [
+        "nip42 getRestrictedReadKinds returns configured kinds when enabled",
+        "nip42 getRestrictedReadKinds returns default kinds when enabled without explicit kinds",
+        "nip42 getRestrictedReadKinds returns empty array when restrictedReads is disabled",
+        "nip42 getRestrictedReadKinds returns empty array when settings are undefined",
+        "nip42 isAuthRequired returns false when unset or disabled",
+        "nip42 isAuthRequired returns true when enabled",
+        "nip42 isSubscriptionAuthRequired returns false for filters without kinds",
+        "nip42 isSubscriptionAuthRequired returns false when any filter includes an unrestricted kind",
+        "nip42 isSubscriptionAuthRequired returns false when the client is authenticated",
+        "nip42 isSubscriptionAuthRequired returns false when the feature is disabled",
+        "nip42 isSubscriptionAuthRequired returns true when every filter exclusively targets restricted kinds"
+      ]
+    },
+    {
+      "file": "test/unit/utils/nip42.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_restricted_read_delivers_only_to_the_author_or_a_p_tagged_reader",
+      "titles": [
+        "nip42 createReadAuthorizationGuard allows everything when the feature is disabled",
+        "nip42 createReadAuthorizationGuard allows restricted kinds for the tagged recipient",
+        "nip42 createReadAuthorizationGuard allows unrestricted kinds without consulting authentication",
+        "nip42 createReadAuthorizationGuard blocks restricted kinds for unauthenticated clients",
+        "nip42 createReadAuthorizationGuard supports kind ranges",
+        "nip42 isClientAuthorizedToReadMention returns false for an unrelated authenticated pubkey",
+        "nip42 isClientAuthorizedToReadMention returns false when no pubkeys are authenticated",
+        "nip42 isClientAuthorizedToReadMention returns true for a p-tagged recipient",
+        "nip42 isClientAuthorizedToReadMention returns true for the event author"
+      ]
+    },
+    {
+      "file": "test/unit/utils/nip42.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::a_restricted_count_needs_a_scoped_authors_filter",
+      "titles": [
+        "nip42 isCountAuthorized returns false for unauthenticated restricted-kind counts",
+        "nip42 isCountAuthorized returns false for unscoped restricted-kind counts even when authenticated",
+        "nip42 isCountAuthorized returns false when scoped to somebody else",
+        "nip42 isCountAuthorized returns true when #p is scoped to the authenticated client",
+        "nip42 isCountAuthorized returns true when authors are scoped to the authenticated client",
+        "nip42 isCountAuthorized returns true when no filter targets restricted kinds",
+        "nip42 isCountAuthorized returns true when the feature is disabled"
+      ]
+    },
+    {
+      "file": "test/unit/utils/nip42-session.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::a_connection_starts_unauthenticated_with_its_challenge",
+      "titles": [
+        "Nip42SessionManager issues a non-empty challenge on construction"
+      ]
+    },
+    {
+      "file": "test/unit/utils/nip42-session.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::the_challenge_is_never_rotated_by_auth",
+      "titles": [
+        "Nip42SessionManager rotateChallenge replaces the active challenge"
+      ]
+    },
+    {
+      "file": "test/unit/utils/nip42-session.spec.ts",
+      "test": "crates/nostream-relay/tests/connection.rs::authenticating_records_the_pubkey_in_order_and_refuses_a_replay",
+      "titles": [
+        "Nip42SessionManager authenticate adds a pubkey to the session",
+        "Nip42SessionManager clear removes one pubkey or the whole session",
+        "Nip42SessionManager does not expire sessions when TTL is unset or non-positive",
+        "Nip42SessionManager does not extend TTL when the same AUTH event is replayed",
+        "Nip42SessionManager expires sessions after the configured TTL",
+        "Nip42SessionManager rejects replayed AUTH event ids",
+        "Nip42SessionManager supports multiple authenticated pubkeys"
+      ]
+    },
+    {
+      "file": "test/unit/utils/messages.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::notice_frame_is_a_two_element_array",
+      "titles": [
+        "createNotice returns a notice message"
+      ]
+    },
+    {
+      "file": "test/unit/utils/messages.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::event_frame_is_the_verb_the_id_and_the_event_in_wire_order",
+      "titles": [
+        "createOutgoingEventMessage returns an event message"
+      ]
+    },
+    {
+      "file": "test/unit/utils/messages.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::eose_frame_is_the_verb_and_the_subscription",
+      "titles": [
+        "createEndOfStoredEventsNoticeMessage returns a EOSE message"
+      ]
+    },
+    {
+      "file": "test/unit/utils/messages.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::ok_frame_has_four_elements_without_params_and_five_with_them",
+      "titles": [
+        "createCommandResult appends optional params as a fifth element",
+        "createCommandResult returns a command result message",
+        "createCommandResult returns an OK message with success=false and a rejection reason",
+        "createCommandResult returns an OK message with success=true and a reason"
+      ]
+    },
+    {
+      "file": "test/unit/utils/messages.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::closed_frame_has_three_elements_without_params_and_four_with_them",
+      "titles": [
+        "createClosedMessage appends optional params as a fourth element",
+        "createClosedMessage returns a CLOSED message without params"
+      ]
+    },
+    {
+      "file": "test/unit/utils/messages.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::decode_accepts_the_five_client_kinds",
+      "titles": [
+        "createSubscriptionMessage returns a REQ message with a single filter",
+        "createSubscriptionMessage returns a REQ message with multiple filters",
+        "createSubscriptionMessage returns a subscription message with filters"
+      ]
+    },
+    {
+      "file": "test/unit/utils/messages.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::relayed_event_message_is_unused_by_this_job_but_keeps_its_shape",
+      "titles": [
+        "createRelayedEventMessage returns an EVENT message with secret when provided",
+        "createRelayedEventMessage returns an EVENT message without secret when secret is missing"
+      ]
+    },
+    {
+      "file": "test/unit/utils/filter.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::filter_helpers_match_the_capture",
+      "titles": [
+        "countFilterValues counts generic tag criteria",
+        "countFilterValues does not count empty criteria",
+        "countFilterValues does not count scalar criteria",
+        "countFilterValues returns zero for a filter without array criteria",
+        "countFilterValues sums values across every array criterion",
+        "isGenericTagQuery returns false for #0",
+        "isGenericTagQuery returns false for #abc",
+        "isGenericTagQuery returns true for #A",
+        "isGenericTagQuery returns true for #a"
+      ]
+    },
+    {
+      "file": "test/unit/utils/ewma-rate-limiter.spec.ts",
+      "test": "crates/nostream-relay/tests/limits.rs::a_fresh_ewma_key_starts_from_zero_at_now",
+      "titles": [
+        "EWMARateLimiter calculateEWMA returns 1 on first request with no history",
+        "EWMARateLimiter hit returns false on first request"
+      ]
+    },
+    {
+      "file": "test/unit/utils/ewma-rate-limiter.spec.ts",
+      "test": "crates/nostream-relay/tests/limits.rs::the_ewma_decays_by_half_each_period",
+      "titles": [
+        "EWMARateLimiter calculateEWMA decays rate after time gap",
+        "EWMARateLimiter calculateEWMA increases rate on burst requests with no time gap",
+        "EWMARateLimiter calculateEWMA rate approaches 1 after very long inactivity"
+      ]
+    },
+    {
+      "file": "test/unit/utils/ewma-rate-limiter.spec.ts",
+      "test": "crates/nostream-relay/tests/limits.rs::a_limited_ewma_hit_is_still_recorded",
+      "titles": [
+        "EWMARateLimiter hit returns true when rate limit exceeded"
+      ]
+    },
+    {
+      "file": "test/unit/utils/sliding-window-rate-limiter.spec.ts",
+      "test": "crates/nostream-relay/tests/limits.rs::the_sliding_window_allows_up_to_the_rate_and_refuses_the_next",
+      "titles": [
+        "SlidingWindowRateLimiter returns false if not rate limited",
+        "SlidingWindowRateLimiter returns true if rate limited"
+      ]
+    },
+    {
+      "file": "test/unit/utils/sliding-window-rate-limiter.spec.ts",
+      "test": "crates/nostream-relay/tests/limits.rs::sum_plus_step_equal_to_the_rate_is_allowed",
+      "titles": [
+        "SlidingWindowRateLimiter robustly handles string return types from Redis"
+      ]
+    },
+    {
+      "file": "test/unit/factories/event-strategy-factory.spec.ts",
+      "test": "crates/nostream-relay/src/strategies/mod.rs::selection_follows_the_capture_chain",
+      "titles": [
+        "eventStrategyFactory returns ContactListEventStrategy given a contact_list event",
+        "eventStrategyFactory returns DefaultEventStrategy given a legacy Marmot KeyPackage (kind 443)",
+        "eventStrategyFactory returns DefaultEventStrategy given a reaction event (NIP-25)",
+        "eventStrategyFactory returns DefaultEventStrategy given a text_note event",
+        "eventStrategyFactory returns DefaultEventStrategy given an external content reaction event (NIP-25)",
+        "eventStrategyFactory returns DeleteEventStrategy given a delete event",
+        "eventStrategyFactory returns DvmJobRequestEventStrategy given a DVM job request (kind 5000-5999)",
+        "eventStrategyFactory returns DvmJobRequestEventStrategy given the last DVM job request kind (5999)",
+        "eventStrategyFactory returns EphemeralEventStrategy given an ephemeral event",
+        "eventStrategyFactory returns GiftWrapEventStrategy given a gift wrap event",
+        "eventStrategyFactory returns GroupEventStrategy given a Marmot group event (kind 445)",
+        "eventStrategyFactory returns InviteRequestEventStrategy given a NIP-43 invite request (kind 28935)",
+        "eventStrategyFactory returns JoinRequestEventStrategy given a NIP-43 join request (kind 28934)",
+        "eventStrategyFactory returns LeaveRequestEventStrategy given a NIP-43 leave request (kind 28936)",
+        "eventStrategyFactory returns ParameterizedReplaceableEventStrategy given a Marmot KeyPackage event (kind 30443)",
+        "eventStrategyFactory returns ParameterizedReplaceableEventStrategy given a delete event",
+        "eventStrategyFactory returns ParameterizedReplaceableEventStrategy given a handler information event (NIP-89, kind 31990)",
+        "eventStrategyFactory returns ParameterizedReplaceableEventStrategy given a handler recommendation event (NIP-89, kind 31989)",
+        "eventStrategyFactory returns ReplaceableEvent given a replaceable event",
+        "eventStrategyFactory returns ReplaceableEvent given a set_metadata event",
+        "eventStrategyFactory returns ReplaceableEventStrategy given a Marmot KeyPackage relay list (kind 10051)",
+        "eventStrategyFactory returns ReplaceableEventStrategy given a relay_list event (NIP-65)",
+        "eventStrategyFactory returns ReportEventStrategy given a report event (NIP-56, kind 1984)",
+        "eventStrategyFactory returns TimestampEventStrategy given an opentimestamps (NIP-03) event",
+        "eventStrategyFactory returns VanishEventStrategy given a request to vanish event"
+      ]
+    },
+    {
+      "file": "test/unit/factories/message-handler-factory.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::decode_accepts_the_five_client_kinds",
+      "titles": [
+        "messageHandlerFactory returns AuthMessageHandler when given an AUTH message",
+        "messageHandlerFactory returns CountMessageHandler when given a COUNT message",
+        "messageHandlerFactory returns EventMessageHandler when given an EVENT message",
+        "messageHandlerFactory returns SubscribeMessageHandler when given a REQ message",
+        "messageHandlerFactory returns UnsubscribeMessageHandler when given a REQ message"
+      ]
+    },
+    {
+      "file": "test/unit/factories/message-handler-factory.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::decode_reports_the_capture_notice_strings",
+      "titles": [
+        "messageHandlerFactory throws when given an invalid message"
+      ]
+    },
+    {
+      "file": "test/unit/factories/websocket-adapter-factory.spec.ts",
+      "test": "crates/nostream-relay/tests/handlers.rs::req_streams_a_stored_event_then_eose",
+      "titles": [
+        "webSocketAdapterFactory returns a WebSocketAdapter"
+      ]
+    },
+    {
+      "file": "test/unit/schemas/event-schema.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::strict_event_schema_rejects_an_unknown_field",
+      "titles": [
+        "NIP-01 validate event schema content content is required",
+        "NIP-01 validate event schema content content must be a string",
+        "NIP-01 validate event schema created_at created_at contains an invalid value",
+        "NIP-01 validate event schema created_at created_at is required",
+        "NIP-01 validate event schema created_at created_at must be a multiple of 1",
+        "NIP-01 validate event schema created_at created_at must be a number",
+        "NIP-01 validate event schema created_at created_at must be greater than or equal to 0",
+        "NIP-01 validate event schema id id is not allowed to be empty",
+        "NIP-01 validate event schema id id is required",
+        "NIP-01 validate event schema id id must be a string",
+        "NIP-01 validate event schema id id must only contain hexadecimal characters",
+        "NIP-01 validate event schema id id must only contain lowercase characters",
+        "NIP-01 validate event schema identifier identifier is not allowed to be empty",
+        "NIP-01 validate event schema identifier identifier must be a string",
+        "NIP-01 validate event schema kind kind is required",
+        "NIP-01 validate event schema kind kind must be a multiple of 1",
+        "NIP-01 validate event schema kind kind must be a number",
+        "NIP-01 validate event schema kind kind must be greater than or equal to 0",
+        "NIP-01 validate event schema pubkey pubkey is not allowed to be empty",
+        "NIP-01 validate event schema pubkey pubkey is required",
+        "NIP-01 validate event schema pubkey pubkey must be a string",
+        "NIP-01 validate event schema pubkey pubkey must only contain hexadecimal characters",
+        "NIP-01 validate event schema pubkey pubkey must only contain lowercase characters",
+        "NIP-01 validate event schema returns error if unknown key is provided",
+        "NIP-01 validate event schema returns same event if event is valid",
+        "NIP-01 validate event schema sig sig is not allowed to be empty",
+        "NIP-01 validate event schema sig sig is required",
+        "NIP-01 validate event schema sig sig must be a string",
+        "NIP-01 validate event schema sig sig must only contain hexadecimal characters",
+        "NIP-01 validate event schema sig sig must only contain lowercase characters",
+        "NIP-01 validate event schema value value must be a string"
+      ]
+    },
+    {
+      "file": "test/unit/schemas/event-schema.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::strict_event_schema_checks_tag_tuples",
+      "titles": [
+        "NIP-01 validate event schema id id length must be 64 characters long",
+        "NIP-01 validate event schema id id length must be 64 characters long",
+        "NIP-01 validate event schema pubkey pubkey length must be 64 characters long",
+        "NIP-01 validate event schema pubkey pubkey length must be 64 characters long",
+        "NIP-01 validate event schema sig sig length must be 128 characters long",
+        "NIP-01 validate event schema sig sig length must be 128 characters long",
+        "NIP-01 validate event schema tag tag must be an array",
+        "NIP-01 validate event schema tags tags is required",
+        "NIP-01 validate event schema tags tags must be an array"
+      ]
+    },
+    {
+      "file": "test/unit/schemas/event-schema.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::strict_event_schema_checks_the_refinements",
+      "titles": [
+        "NIP-12 accepts event with valid base32 geohash tag",
+        "NIP-12 rejects event with empty geohash",
+        "NIP-12 rejects event with non-base32 geohash characters",
+        "NIP-12 rejects event with uppercase geohash",
+        "NIP-14 accepts subject tag on text note events",
+        "NIP-25 accepts external content reaction with k and i tags",
+        "NIP-25 accepts reaction with e tag",
+        "NIP-25 rejects external content reaction missing i tag",
+        "NIP-25 rejects external content reaction missing k tag",
+        "NIP-25 rejects reaction missing e tag",
+        "NIP-65 accepts relay_list event with no relay tags",
+        "NIP-65 accepts relay_list event with valid wss relay URL",
+        "NIP-65 accepts relay_list event with valid wss relay URL and read marker",
+        "NIP-65 accepts relay_list event with valid wss relay URL and write marker",
+        "NIP-65 does not validate relay URL on non-relay_list events with r tags",
+        "NIP-65 rejects relay_list event with empty relay URL",
+        "NIP-65 rejects relay_list event with invalid relay URL"
+      ]
+    },
+    {
+      "file": "test/unit/schemas/message-schema.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::decode_accepts_the_five_client_kinds",
+      "titles": [
+        "NIP-01 validateSchema AUTH returns same message if valid",
+        "NIP-01 validateSchema CLOSE returns same message if valid",
+        "NIP-01 validateSchema COUNT returns same message if valid",
+        "NIP-01 validateSchema EVENT returns same message if valid",
+        "NIP-01 validateSchema REQ returns same message if valid"
+      ]
+    },
+    {
+      "file": "test/unit/schemas/message-schema.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::decode_reports_the_capture_notice_strings",
+      "titles": [
+        "NIP-01 validateSchema AUTH returns error if event is missing",
+        "NIP-01 validateSchema AUTH returns error if event is not an object",
+        "NIP-01 validateSchema AUTH returns error if event is null",
+        "NIP-01 validateSchema CLOSE returns error if subscription ID is missing",
+        "NIP-01 validateSchema COUNT returns error if filter is missing",
+        "NIP-01 validateSchema COUNT returns error if filter is not an object",
+        "NIP-01 validateSchema COUNT returns error if query ID is missing",
+        "NIP-01 validateSchema COUNT returns error if there are too many filters",
+        "NIP-01 validateSchema REQ returns error if filter is missing",
+        "NIP-01 validateSchema REQ returns error if filter is not an object",
+        "NIP-01 validateSchema REQ returns error if subscription Id is missing",
+        "NIP-01 validateSchema REQ returns error if there are too many filters"
+      ]
+    },
+    {
+      "file": "test/unit/utils/hidden-content-cache.spec.ts",
+      "test": "crates/nostream-relay/tests/hidden_content.rs::a_mark_hides_the_target_immediately",
+      "titles": [
+        "hidden-content-cache markActionableTarget/isHidden does not hide an unmarked event",
+        "hidden-content-cache markActionableTarget/isHidden hides an event whose id was marked",
+        "hidden-content-cache markActionableTarget/isHidden hides an event whose pubkey was marked",
+        "hidden-content-cache markActionableTarget/isHidden ignores a target with both fields null"
+      ]
+    },
+    {
+      "file": "test/unit/utils/hidden-content-cache.spec.ts",
+      "test": "crates/nostream-relay/tests/hidden_content.rs::start_seeds_the_mirror_and_keeps_refreshing_until_dropped",
+      "titles": [
+        "hidden-content-cache startHiddenContentCache periodically re-reads the DB and reconciles the in-memory set",
+        "hidden-content-cache startHiddenContentCache resumes polling within one interval after hideActionableReports is hot-enabled",
+        "hidden-content-cache startHiddenContentCache seeds the cache from the DB at boot when hideActionableReports is enabled",
+        "hidden-content-cache startHiddenContentCache stopHiddenContentCache stops further polling"
+      ]
+    },
+    {
+      "file": "test/unit/utils/hidden-content-cache.spec.ts",
+      "test": "crates/nostream-relay/tests/hidden_content.rs::a_tick_with_hiding_disabled_queries_nothing",
+      "titles": [
+        "hidden-content-cache startHiddenContentCache does not poll the DB on later ticks while hideActionableReports stays disabled",
+        "hidden-content-cache startHiddenContentCache does not query the DB at boot when hideActionableReports is disabled"
+      ]
+    },
+    {
+      "file": "test/unit/utils/hidden-content-cache.spec.ts",
+      "test": "crates/nostream-relay/tests/hidden_content.rs::a_failing_repository_leaves_the_mirror_as_it_was",
+      "titles": [
+        "hidden-content-cache startHiddenContentCache logs and continues if the initial DB read fails, without throwing"
+      ]
+    },
+    {
+      "file": "test/unit/utils/hidden-content-cache.spec.ts",
+      "test": "crates/nostream-relay/tests/hidden_content.rs::a_snapshot_replaces_the_mirror_wholesale",
+      "titles": [
+        "hidden-content-cache resetHiddenContentCache clears previously marked targets"
+      ]
+    },
+    {
+      "file": "test/unit/utils/shutdown-state.spec.ts",
+      "test": "crates/nostream-relay/tests/transport.rs::a_connection_accepted_while_draining_is_closed_with_1001",
+      "titles": [
+        "shutdown-state tracks draining state"
+      ]
+    },
+    {
+      "file": "test/unit/utils/shutdown-state.spec.ts",
+      "test": "crates/nostream-relay/src/transport.rs::drain_timeout_resolution_matches_the_capture",
+      "titles": [
+        "shutdown-state defaults WS drain timeout to 30s",
+        "shutdown-state falls back to default for invalid WS drain timeout",
+        "shutdown-state reads WS drain timeout from env"
+      ]
+    },
+    {
+      "file": "test/unit/utils/shutdown-state.spec.ts",
+      "exempt": "the process-level shutdown deadline buffer lives in nostreamd's signal path, not the relay wire — job 008",
+      "titles": [
+        "shutdown-state adds a buffer to the primary shutdown deadline"
+      ]
+    },
+    {
+      "file": "test/unit/utils/validation.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::decode_validates_the_event_payload",
+      "titles": [
+        "attemptValidation returns value if given value matches schema",
+        "validateSchema returns value property with given value if it matches schema"
+      ]
+    },
+    {
+      "file": "test/unit/utils/validation.spec.ts",
+      "test": "crates/nostream-core/tests/wire_codec.rs::strict_event_schema_rejects_an_unknown_field",
+      "titles": [
+        "attemptValidation throws error if given value does not match schema",
+        "validateSchema returns error property with ZodError if given value does not match schema"
+      ]
+    }
+  ]
+}

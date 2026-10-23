@@ -176,7 +176,7 @@ async fn mint_invite_code(
     )
     .map_err(|error| RelayError::Configuration(error.to_string()))?;
 
-    let code = nostream_core::nip43::generate_invite_code()
+    let code = nostream_core::nip43::invite_code_from(context.random.as_ref())
         .map_err(|error| RelayError::Configuration(error.to_string()))?;
 
     let options = nostream_storage::repositories::CreateInviteCodeOptions {

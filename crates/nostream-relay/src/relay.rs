@@ -63,6 +63,7 @@ pub struct Relay {
     clock: Arc<dyn Clock>,
     keys: Arc<RelayKeySource>,
     limits: Arc<RateLimits>,
+    random: Arc<dyn nostream_core::random::RandomSource>,
     hidden: Arc<HiddenContentCache>,
     hub: broadcast::Sender<Event>,
     pow: Arc<Mutex<AdaptivePowState>>,
@@ -98,6 +99,7 @@ impl Relay {
 
         Arc::new(Self {
             limits: Arc::new(RateLimits::new(&settings, Arc::clone(&clock))),
+            random: Arc::new(nostream_core::random::SystemRandom),
             settings,
             stores,
             clock,
@@ -125,6 +127,21 @@ impl Relay {
         &self.config
     }
 
+    /// Replaces the randomness source, returning the relay for chaining. A recorded fixture
+    /// replays its session with the recording's stream.
+    pub fn with_random(
+        mut self: Arc<Self>,
+        random: Arc<dyn nostream_core::random::RandomSource>,
+    ) -> Arc<Self> {
+        Arc::get_mut(&mut self)
+            .map(|relay| relay.random = random)
+            .unwrap_or_else(|| {
+                tracing::warn!("relay is already shared; the randomness was not replaced");
+            });
+
+        self
+    }
+
     /// The hidden-content mirror, so a caller can seed it.
     pub fn hidden_content(&self) -> &Arc<HiddenContentCache> {
         &self.hidden
@@ -140,6 +157,7 @@ impl Relay {
         HandlerContext {
             settings: Arc::clone(&self.settings),
             clock: Arc::clone(&self.clock),
+            random: Arc::clone(&self.random),
             sink,
             connection,
             stores: Arc::clone(&self.stores),
@@ -285,6 +303,7 @@ impl Relay {
         let connection_context = ConnectionContext {
             settings: Arc::clone(&self.settings),
             clock: Arc::clone(&self.clock),
+            random: Arc::clone(&self.random),
             sink: sink.clone(),
         };
 

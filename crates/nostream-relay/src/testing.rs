@@ -922,6 +922,7 @@ impl Fixture {
         HandlerContext {
             settings: Arc::clone(&self.settings),
             clock: Arc::clone(&clock),
+            random: Arc::new(nostream_core::random::SeededRandom::new(0)),
             sink,
             connection,
             stores: Arc::clone(&self.stores),

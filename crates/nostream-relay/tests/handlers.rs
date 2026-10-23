@@ -703,6 +703,25 @@ async fn the_default_strategy_answers_ok_and_duplicate() {
 }
 
 #[tokio::test]
+async fn a_failed_insert_answers_with_the_generic_error() {
+    // `default-event-strategy.ts`: a create that throws reaches the handler's catch, which is
+    // the generic rejection rather than a stack trace.
+    let fixture = Fixture::new(settings());
+    fixture.events.fail_create(true);
+
+    let server = start(fixture).await;
+    let event = signed_event(&CLIENT_SECRET, 1, vec![], "unlucky", NOW_SECS);
+
+    assert_eq!(
+        send_event(&server, &event).await,
+        format!(
+            r#"["OK","{}",false,"error: unable to process event"]"#,
+            event.id
+        )
+    );
+}
+
+#[tokio::test]
 async fn without_a_key_an_event_cannot_be_processed() {
     let server = Server::start_with(
         Fixture::new(settings()),

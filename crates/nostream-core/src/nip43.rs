@@ -63,12 +63,12 @@ pub fn resolve_invite_limits(
 /// A fresh invite code: 16 random bytes, hex (`generateInviteCode`,
 /// `src/utils/nip43-invites.ts:14`).
 pub fn generate_invite_code() -> Result<String, CoreError> {
-    let mut bytes = [0u8; 16];
+    invite_code_from(&crate::random::SystemRandom)
+}
 
-    getrandom::fill(&mut bytes)
-        .map_err(|error| CoreError::InvalidMessage(format!("invite code entropy: {error}")))?;
-
-    Ok(hex::encode(bytes))
+/// The same code over an injected source, for the differential fixture.
+pub fn invite_code_from(random: &dyn crate::random::RandomSource) -> Result<String, CoreError> {
+    Ok(hex::encode(random.bytes(16)?))
 }
 
 /// Builds the relay-signed kind-28935 event that answers an invite request

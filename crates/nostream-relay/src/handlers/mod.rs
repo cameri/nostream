@@ -23,6 +23,7 @@ use nostream_core::adaptive_pow::AdaptivePowState;
 use nostream_core::clock::Clock;
 use nostream_core::messages::{ClosedMessage, CommandResult, NoticeMessage, RelayMessage};
 use nostream_core::nip42;
+use nostream_core::random::RandomSource;
 use nostream_core::{Event, KindSelector, Pubkey};
 use nostream_storage::repositories::{
     DvmJobRepository, EventRepository, InviteCodeRepository, Nip05VerificationRepository,
@@ -54,6 +55,8 @@ pub struct Stores {
 pub struct HandlerContext {
     pub settings: Arc<Settings>,
     pub clock: Arc<dyn Clock>,
+    /// The server's randomness: the challenge and an invite code (R29's fixture seam).
+    pub random: Arc<dyn RandomSource>,
     pub sink: FrameSink,
     pub connection: Arc<Connection>,
     pub stores: Arc<Stores>,

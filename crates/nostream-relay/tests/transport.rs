@@ -295,6 +295,19 @@ async fn an_oversized_message_is_closed_with_1009() {
 }
 
 #[tokio::test]
+async fn a_600kb_frame_against_a_524288_limit_closes_with_1009() {
+    let server = Server::start(Fixture::new(settings_with_payload(524_288))).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(&"x".repeat(600_000)).await;
+
+    match client.next_message().await.expect("a close frame") {
+        Message::Close(Some(frame)) => assert_eq!(frame.code, CloseCode::Size),
+        other => panic!("expected a 1009 close, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn the_configured_limit_is_the_one_enforced() {
     // 1024 bytes: a text frame of 2000 bytes is refused.
     let server = Server::start(Fixture::new(settings_with_payload(1024))).await;

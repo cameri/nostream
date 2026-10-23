@@ -82,7 +82,7 @@ resolver 3:
 | `nostream-core` | domain vocabulary: events, filters, kinds, wire messages, NIP type surfaces, `ShutdownState` |
 | `nostream-config` | typed settings, loader, deep merge, validator, dot-path editor, redaction, guided catalogue |
 | `nostream-storage` | event-store backends (LMDB via heed, Postgres), cache |
-| `nostream-relay` | acceptor, connections, wire protocol, NIP-77 engine |
+| `nostream-relay` | connections, wire protocol, handlers, rate limiters, live dispatch, NIP-77 engine (the acceptor lives in `nostreamd`) |
 | `nostream-services` | NIP-66 monitors, Tor, schedulers, outbound work |
 | `nostream-admin` | admin API and auth |
 | `nostream-cli` | operator command line (`nostream-cli config validate`) |

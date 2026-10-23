@@ -15,6 +15,7 @@ use tokio::sync::watch;
 use nostream_config::settings::Settings;
 use nostream_core::clock::Clock;
 use nostream_core::nip42::Nip42Session;
+use nostream_core::random::RandomSource;
 use nostream_core::{Event, Filter, Pubkey};
 
 use crate::error::RelayError;
@@ -63,7 +64,7 @@ impl Connection {
             .and_then(|nipp42| nipp42.session_expiry_seconds)
             .unwrap_or(0);
 
-        let session = Nip42Session::new(ttl_seconds)
+        let session = Nip42Session::from_random(ttl_seconds, context.random.as_ref())
             .map_err(|error| RelayError::Configuration(error.to_string()))?;
 
         context
@@ -279,6 +280,7 @@ impl Connection {
 pub struct ConnectionContext {
     pub settings: Arc<Settings>,
     pub clock: Arc<dyn Clock>,
+    pub random: Arc<dyn RandomSource>,
     pub sink: FrameSink,
 }
 

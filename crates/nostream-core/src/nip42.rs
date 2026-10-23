@@ -126,12 +126,13 @@ pub fn is_relay_url_match(client_relay: &str, server_relay: &str) -> bool {
 /// Generates a fresh challenge for a connection: 32 OS-random bytes, base64url without
 /// padding (`Nip42SessionManager.createChallenge`, `src/utils/nip42-session.ts:29-31`).
 pub fn generate_challenge() -> Result<String, CoreError> {
-    let mut bytes = [0u8; 32];
+    challenge_from(&crate::random::SystemRandom)
+}
 
-    getrandom::fill(&mut bytes)
-        .map_err(|error| CoreError::InvalidMessage(format!("challenge entropy: {error}")))?;
-
-    Ok(URL_SAFE_NO_PAD.encode(bytes))
+/// The same challenge over an injected source, which is how a recorded fixture replays a
+/// session byte-for-byte.
+pub fn challenge_from(random: &dyn crate::random::RandomSource) -> Result<String, CoreError> {
+    Ok(URL_SAFE_NO_PAD.encode(random.bytes(32)?))
 }
 
 /// The per-connection NIP-42 state (`Nip42SessionManager`, `src/utils/nip42-session.ts`).
@@ -151,8 +152,16 @@ impl Nip42Session {
     /// Mints the connection's challenge. `ttl_seconds` is `nip42.sessionExpirySeconds`,
     /// where `0` means no expiry.
     pub fn new(ttl_seconds: i64) -> Result<Self, CoreError> {
+        Self::from_random(ttl_seconds, &crate::random::SystemRandom)
+    }
+
+    /// The session for a challenge drawn from `random`.
+    pub fn from_random(
+        ttl_seconds: i64,
+        random: &dyn crate::random::RandomSource,
+    ) -> Result<Self, CoreError> {
         Ok(Self {
-            challenge: generate_challenge()?,
+            challenge: challenge_from(random)?,
             ttl_seconds,
             sessions: BTreeMap::new(),
             accepted_auth_event_ids: HashSet::new(),

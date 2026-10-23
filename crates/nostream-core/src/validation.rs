@@ -2,10 +2,8 @@
 //! `src/schemas/event-schema.ts` and the id/signature half of `src/utils/event.ts`
 //! (`isEventIdValid`, `isEventSignatureValid`).
 //!
-//! [`validate_event`] is the schema check the codec runs before a frame reaches a handler;
-//! [`validate_event_fields`] is the same check at the value level, where it can report the
-//! schema's own message for a malformed field (the NOTICE carries it). The two share
-//! [`check_event_shape`], so the typed and untyped entry points cannot disagree.
+//! [`validate_event`] is the schema check the codec runs before a frame reaches a handler. It
+//! reports the schema's own message for a malformed field, which is what the NOTICE carries.
 
 use crate::error::CoreError;
 use crate::event::{Event, Kind, Tag};
@@ -30,9 +28,8 @@ const RELAY_LIST_KIND: Kind = Kind(10_002);
 
 /// Validates an event against the base schema (`eventSchema.parse`, `src/schemas/event-schema.ts`).
 ///
-/// The hex fields' length and alphabet are carried by [`EventId`](crate::event::EventId),
-/// [`Pubkey`] and [`Signature`], so what is left is `created_at`, the tag tuples, and the
-/// kind-7/17/10002/geohash refinements.
+/// The hex fields' length and alphabet are carried by `EventId`, `Pubkey` and `Signature`, so
+/// what is left is `created_at`, the tag tuples, and the kind-7/17/10002/geohash refinements.
 pub fn validate_event(event: &Event) -> Result<(), CoreError> {
     check_event_shape(event).map_err(CoreError::InvalidEvent)
 }
