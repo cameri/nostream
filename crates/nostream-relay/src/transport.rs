@@ -112,14 +112,13 @@ pub fn resolve_drain_timeout(raw: Option<&str>) -> u64 {
     }
 }
 
-/// `resolve_drain_timeout` over `WS_DRAIN_TIMEOUT_MS`.
-pub fn drain_timeout_from_env() -> u64 {
-    resolve_drain_timeout(std::env::var("WS_DRAIN_TIMEOUT_MS").ok().as_deref())
-}
-
-/// The drain timeout as a duration.
+/// The drain timeout as a duration: `WS_DRAIN_TIMEOUT_MS` through
+/// [`resolve_drain_timeout`]. The composition root calls this; the library's defaults do not,
+/// so a `RelayConfig::default()` never reads the environment.
 pub fn drain_timeout() -> Duration {
-    Duration::from_millis(drain_timeout_from_env())
+    Duration::from_millis(resolve_drain_timeout(
+        std::env::var("WS_DRAIN_TIMEOUT_MS").ok().as_deref(),
+    ))
 }
 
 /// Whether a websocket error is the max-payload failure (measured: close code 1009).

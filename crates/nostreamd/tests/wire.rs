@@ -33,7 +33,11 @@ async fn start() -> (u16, ShutdownState) {
         Arc::new(TestClock::new(1_700_000_000_000)),
         RelayKeySource::from_values(None, None),
         Arc::new(nostream_core::random::SystemRandom),
-        nostream_relay::relay::RelayConfig::default(),
+        // Explicit, so the suite's drain deadline is its own and not the environment's.
+        nostream_relay::relay::RelayConfig {
+            drain_timeout: std::time::Duration::from_millis(300),
+            ..Default::default()
+        },
     );
 
     let shutdown = ShutdownState::new();

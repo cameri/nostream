@@ -141,6 +141,7 @@ pub struct InMemoryEventRepository {
     /// When set, `find_by_filters` holds its stream until a permit is released, which is how
     /// a test gets a read in flight long enough to `CLOSE` it.
     read_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+    gate_per_item: std::sync::atomic::AtomicBool,
 }
 
 impl InMemoryEventRepository {
@@ -187,12 +188,25 @@ impl InMemoryEventRepository {
     /// Makes every read wait for a permit. Grant one with `Semaphore::add_permits` to let a
     /// read through.
     pub fn gate_reads(&self) -> Arc<tokio::sync::Semaphore> {
+        self.install_gate(false)
+    }
+
+    /// Makes a read wait for one permit **per record**, so a test can let one record through,
+    /// change the connection's state, and let the next one through — the only way to observe
+    /// a decision taken per event rather than once per read.
+    pub fn gate_reads_per_item(&self) -> Arc<tokio::sync::Semaphore> {
+        self.install_gate(true)
+    }
+
+    fn install_gate(&self, per_item: bool) -> Arc<tokio::sync::Semaphore> {
         let gate = Arc::new(tokio::sync::Semaphore::new(0));
 
         *self
             .read_gate
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::clone(&gate));
+        self.gate_per_item
+            .store(per_item, std::sync::atomic::Ordering::SeqCst);
 
         gate
     }
@@ -264,6 +278,7 @@ impl EventRepository for InMemoryEventRepository {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
+        let per_item = self.gate_per_item.load(std::sync::atomic::Ordering::SeqCst);
 
         Box::pin(async move {
             let records = self
@@ -282,6 +297,33 @@ impl EventRepository for InMemoryEventRepository {
                 return Ok(Box::pin(stream::iter(matched)) as QueryStream<'a, EventRecord>);
             };
 
+            if per_item {
+                // One permit per record, and the permits are held rather than returned, so
+                // one release lets exactly one record through.
+                let held = Arc::new(Mutex::new(Vec::new()));
+                let gated = stream::iter(matched).then(move |item| {
+                    let gate = Arc::clone(&gate);
+                    let held = Arc::clone(&held);
+
+                    async move {
+                        match gate.acquire_owned().await {
+                            Ok(permit) => {
+                                held.lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                    .push(permit);
+
+                                item
+                            }
+                            Err(_) => Err(StorageError::InvalidArgument {
+                                message: "in-memory double: the read gate was closed",
+                            }),
+                        }
+                    }
+                });
+
+                return Ok(Box::pin(gated) as QueryStream<'a, EventRecord>);
+            }
+
             let permit = gate
                 .acquire_owned()
                 .await
@@ -289,8 +331,8 @@ impl EventRepository for InMemoryEventRepository {
                     message: "in-memory double: the read gate was closed",
                 })?;
 
-            // The permit is held by the stream, so the read stays gated until it completes
-            // or the handler drops it.
+            // The permit is held by the stream, so the read stays gated until it completes or
+            // the handler drops it.
             let gated = stream::iter(matched).map(move |item| {
                 let _held = &permit;
 

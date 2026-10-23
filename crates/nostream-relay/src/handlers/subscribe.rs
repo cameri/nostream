@@ -251,6 +251,13 @@ async fn fetch_and_send(subscription_id: &str, filters: &[Filter], context: &Han
                 // event"; it is asked per event, as the capture's
                 // `createReadAuthorizationGuard` is, so an AUTH that lands mid-read applies to
                 // the rest of the stream.
+                let g = context.read_authorization_guard();
+                println!(
+                    "judging kind {} now {} auth {:?}",
+                    event.kind,
+                    context.now_secs(),
+                    g.allows(&event)
+                );
                 if expiration::is_expired_event(&event, now)
                     || !context.read_authorization_guard().allows(&event)
                     || !matches_any(&event)

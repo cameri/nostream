@@ -46,11 +46,13 @@ pub struct RelayConfig {
 }
 
 impl Default for RelayConfig {
+    /// The capture's own constants, and no environment read: `WS_DRAIN_TIMEOUT_MS` is
+    /// resolved by [`transport::drain_timeout`], which the composition root calls (ADR 0004).
     fn default() -> Self {
         Self {
             liveness_interval: Duration::from_millis(120_000),
             hidden_refresh_interval: DEFAULT_REFRESH_INTERVAL,
-            drain_timeout: transport::drain_timeout(),
+            drain_timeout: Duration::from_millis(transport::DEFAULT_WS_DRAIN_TIMEOUT_MS),
         }
     }
 }
@@ -85,8 +87,8 @@ impl Relay {
     ///
     /// Everything the relay runs with is an argument, so a relay that mints from
     /// `SystemRandom` or resolves `WS_DRAIN_TIMEOUT_MS` from the environment is one whose
-    /// composition root asked for it (`RelayConfig::default()` reads the variable, so the
-    /// read happens where the relay is built, not inside a setter that can silently no-op).
+    /// composition root asked for it: `RelayConfig::default()` is the capture's constants,
+    /// and the environment read is [`transport::drain_timeout`] at the call site.
     pub fn new(
         settings: Settings,
         stores: Arc<Stores>,
@@ -110,11 +112,6 @@ impl Relay {
             pow: Arc::new(Mutex::new(AdaptivePowState::default())),
             config,
         })
-    }
-
-    /// The intervals this relay runs with.
-    pub fn config(&self) -> &RelayConfig {
-        &self.config
     }
 
     /// The hidden-content mirror. The parity harness reads it to wait for the boot refresh
@@ -237,8 +234,9 @@ impl Relay {
     /// window terminates the upgrade.
     ///
     /// Keyed on the accept loop's peer rather than on `Connection::remote_address`: the
-    /// decision is taken before the socket is upgraded, so there is no connection yet, and
-    /// both derive from the same socket address (ADR 0004).
+    /// decision is taken after the upgrade but before the connection is registered, as the
+    /// capture checks it after the handshake, so there is no `Connection` yet; both derive
+    /// from the same socket address (ADR 0004).
     async fn is_connection_rate_limited(&self, peer: &std::net::SocketAddr) -> bool {
         match self.limits.connection_limited(&peer.ip().to_string()) {
             Ok(limited) => limited,

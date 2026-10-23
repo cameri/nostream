@@ -11,10 +11,6 @@ pub enum RelayError {
     #[error("not implemented: {module}")]
     NotImplemented { module: &'static str },
 
-    /// A client message could not be decoded or is malformed.
-    #[error("invalid message: {0}")]
-    InvalidMessage(String),
-
     /// A repository call failed.
     #[error(transparent)]
     Storage(#[from] StorageError),

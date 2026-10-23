@@ -914,17 +914,19 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 #[tokio::test(flavor = "multi_thread")]
 async fn every_recorded_session_replays_frame_for_frame() {
     let fixture = fixture();
-    let seed = fixture["seed"].as_u64().expect("a seed");
 
     assert_eq!(
         fixture["clock"]["start_ms"].as_u64(),
         Some(1_700_000_000_000),
         "the recording declares its frozen clock"
     );
+    assert!(
+        fixture["seed"].as_u64().is_some(),
+        "the recording declares the seed its generator's entropy came from"
+    );
 
     // Each session carries the bytes its relay minted; a fresh source per session replays them,
     // so the fixture does not depend on a generator's position in a shared stream.
-    let _ = seed;
     let sessions: Vec<Session> = fixture["sessions"]
         .as_array()
         .expect("sessions")
@@ -981,7 +983,7 @@ async fn every_recorded_session_replays_frame_for_frame() {
             session.id,
             counts.get("steps").copied().unwrap_or(0),
             if session.skipped {
-                " (declared not compared)"
+                " (compared against the harness's AC29 expectation)"
             } else {
                 ""
             }

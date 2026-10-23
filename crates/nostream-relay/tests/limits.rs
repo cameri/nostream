@@ -97,6 +97,119 @@ fn a_refused_sliding_hit_is_not_recorded() {
     assert!(!hit(&limiter, "k", 1, &config));
     assert!(hit(&limiter, "k", 1, &config));
     assert_eq!(limiter.len("k"), 1, "the refused hit left no entry");
+
+    // `len` reads 0 for an absent key and for an empty one alike, so the key's existence is
+    // what the script's "without recording" forbids: `ZADD` runs only on the allow path.
+    let before = limiter.key_count();
+    assert!(hit(&limiter, "refused-on-arrival", 2, &config));
+    assert_eq!(limiter.key_count(), before, "a refused hit created a key");
+}
+
+#[test]
+fn a_hit_on_a_long_window_does_not_postpone_reclaiming_a_short_one() {
+    let (clock, limiter) = sliding(BASE);
+    let short = RateLimitConfig {
+        period_ms: 1_000,
+        rate: 5,
+    };
+    let long = RateLimitConfig {
+        period_ms: 3_600_000,
+        rate: 5,
+    };
+
+    // The long window's hit is the first one after the previous pass. On a cadence taken from
+    // the caller's window, the next pass would be an hour away and every one-second key in
+    // between would accumulate.
+    assert!(!hit(&limiter, "hour", 1, &long));
+
+    for index in 0..1_000 {
+        assert!(!hit(&limiter, &format!("k{index}"), 1, &short));
+    }
+
+    assert_eq!(limiter.key_count(), 1_001);
+
+    // Two seconds later every one-second key has lapsed. The next hit is the pass, and it
+    // drops them because the cadence is the store's, not the long window's.
+    clock.advance(2_000);
+    assert!(!hit(&limiter, "another", 1, &short));
+    assert_eq!(
+        limiter.key_count(),
+        2,
+        "the lapsed one-second keys were reclaimed"
+    );
+}
+
+#[test]
+fn one_level_s_flood_cannot_refuse_another_level_s_clients() {
+    // The levels have a store each: a message-level flood fills the message store and must
+    // leave the event level's keys alone (round 2's live reproduction).
+    let clock = Arc::new(TestClock::new(BASE));
+    let mut settings = settings();
+    settings.limits = Some(Limits {
+        message: Some(MessageLimits {
+            rate_limits: Some(vec![MessageRateLimit {
+                description: None,
+                message_type: None,
+                period: 3_600_000,
+                rate: 1_000_000,
+            }]),
+            ip_whitelist: None,
+        }),
+        event: Some(EventLimits {
+            rate_limits: Some(vec![EventRateLimit {
+                description: None,
+                kinds: None,
+                period: 3_600_000,
+                rate: 1,
+            }]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    let limits = RateLimits::new(&settings, clock);
+
+    let event = signed_event(&CLIENT_SECRET, 1, vec![], "flood", NOW_SECS);
+
+    assert!(
+        limits
+            .event_backoff(&event, "10.0.0.1", None)
+            .expect("a verdict")
+            .is_none(),
+        "the first event is inside the window"
+    );
+    assert!(
+        limits
+            .event_backoff(&event, "10.0.0.1", None)
+            .is_ok_and(|backoff| backoff.is_some()),
+        "the event window is spent"
+    );
+
+    // Fill the message store past its ceiling with distinct addresses.
+    for index in 0..(2 * MAX_STORE_KEYS) {
+        limits
+            .message_backoff(&format!("10.1.{}.{}", index / 256, index % 256))
+            .expect("a verdict");
+    }
+
+    assert!(
+        limits
+            .event_backoff(&event, "10.0.0.1", None)
+            .is_ok_and(|backoff| backoff.is_some()),
+        "the message flood reset the event window"
+    );
+
+    // And a client that has never published is still served. On one shared store the flood
+    // has filled it and this author's first event is refused; with a store per level it is
+    // not.
+    let fresh = signed_event(&[8u8; 32], 1, vec![], "fresh", NOW_SECS);
+
+    assert!(
+        limits
+            .event_backoff(&fresh, "10.0.0.2", None)
+            .expect("a verdict")
+            .is_none(),
+        "a message flood refused a new author's first event"
+    );
 }
 
 #[test]
@@ -267,15 +380,64 @@ fn an_expired_ewma_key_is_reclaimed_instead_of_kept_for_the_process_lifetime() {
 fn a_flood_of_new_keys_never_grows_a_store_past_its_ceiling() {
     let (_, limiter) = sliding(BASE);
     let config = RateLimitConfig {
-        period_ms: 60_000,
+        period_ms: 1_000_000,
         rate: 3,
     };
 
-    for index in 0..(MAX_STORE_KEYS + 1_000) {
+    for index in 0..MAX_STORE_KEYS {
         assert!(!hit(&limiter, &format!("k{index}"), 1, &config));
     }
 
+    // Past the ceiling every new key is refused, and the refusal is the verdict: a client
+    // cannot make room by minting keys, and it cannot reach the store by pretending the
+    // refusal did not happen.
+    for index in MAX_STORE_KEYS..(MAX_STORE_KEYS + 1_000) {
+        assert!(hit(&limiter, &format!("k{index}"), 1, &config));
+    }
+
     assert_eq!(limiter.key_count(), MAX_STORE_KEYS);
+    assert_eq!(limiter.len(&format!("k{}", MAX_STORE_KEYS + 1)), 0);
+}
+
+#[test]
+fn a_full_store_of_live_keys_still_limits_the_keys_it_already_holds() {
+    // The security finding: displacement used to free a live key, so a flood reset a
+    // third party's exhausted window. A refused new key must leave every existing key alone.
+    let (_, limiter) = sliding(BASE);
+    let config = RateLimitConfig {
+        period_ms: 1_000_000,
+        rate: 1,
+    };
+
+    assert!(!hit(&limiter, "victim", 1, &config));
+    assert!(hit(&limiter, "victim", 1, &config), "the victim is limited");
+
+    for index in 0..(MAX_STORE_KEYS * 2) {
+        hit(&limiter, &format!("stranger{index}"), 1, &config);
+    }
+
+    assert!(
+        hit(&limiter, "victim", 1, &config),
+        "a stranger's flood reset the victim's window"
+    );
+}
+
+#[test]
+fn a_lapsed_key_makes_room_before_a_new_key_is_refused() {
+    let (clock, limiter) = sliding(BASE);
+    let config = RateLimitConfig {
+        period_ms: 1_000,
+        rate: 3,
+    };
+
+    for index in 0..MAX_STORE_KEYS {
+        assert!(!hit(&limiter, &format!("k{index}"), 1, &config));
+    }
+
+    // Everything has lapsed: the next new key sweeps the map rather than being refused.
+    clock.advance(config.period_ms + 1);
+    assert!(!hit(&limiter, "fresh", 1, &config));
+    assert_eq!(limiter.key_count(), 1);
 }
 
 #[test]

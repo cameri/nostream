@@ -431,3 +431,143 @@ async fn closing_the_socket_aborts_an_in_flight_read() {
     );
     assert_eq!(connection.subscription_count(), 0);
 }
+
+/// Starts a read that streams a public and then a restricted event, with the AUTH recorded
+/// between the two when `authenticate_mid_read` is set, and returns the frames it produced.
+///
+/// The gate releases one record at a time, so the AUTH lands after the first record has been
+/// judged and before the second one is.
+async fn restricted_read_with(authenticate_mid_read: bool) -> Vec<String> {
+    let mut configured = settings();
+    let mut nip42 = nostream_relay::testing::nip42_settings();
+    // A session that lasts: the settings fixture expires one at once, which is what most
+    // AUTH tests want and this one does not.
+    nip42.session_expiry_seconds = Some(3_600);
+    configured.nip42 = Some(nip42);
+
+    let fixture = Fixture::new(configured);
+    let gate = fixture.events.gate_reads_per_item();
+    fixture
+        .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "public", NOW_SECS))
+        .await;
+    fixture
+        .seed_event(signed_event(
+            &CLIENT_SECRET,
+            4,
+            vec![],
+            "encrypted",
+            NOW_SECS,
+        ))
+        .await;
+
+    let (sink, mut frames) = FrameSink::channel();
+    // The session outlives the read: `Nip42Session` carries the TTL it was built with.
+    let connection = Arc::new(Connection::new(
+        "127.0.0.1".to_owned(),
+        nostream_core::nip42::Nip42Session::with_challenge("challenge", 3_600),
+    ));
+    let context = Arc::new(fixture.context(
+        Arc::new(TestClock::new(NOW_MS)),
+        relay_keys(),
+        Arc::clone(&connection),
+        sink,
+    ));
+
+    let reading = tokio::spawn({
+        let context = Arc::clone(&context);
+
+        async move {
+            nostream_relay::handlers::subscribe::handle(
+                SubscribeMessage {
+                    subscription_id: "restricted".to_owned(),
+                    // A filter that names no kind is accepted while unauthenticated; the
+                    // stream can still carry a restricted event, which the per-event guard is
+                    // what withholds.
+                    filters: vec![Filter::default()],
+                },
+                &context,
+            )
+            .await;
+        }
+    });
+
+    for _ in 0..100 {
+        if connection.read_in_flight("restricted") {
+            break;
+        }
+
+        tokio::task::yield_now().await;
+    }
+
+    assert!(
+        connection.read_in_flight("restricted"),
+        "the read is in flight"
+    );
+
+    // The public record passes while the client is unauthenticated.
+    gate.add_permits(1);
+
+    let mut collected = Vec::new();
+    for _ in 0..100 {
+        if let Ok(frame) = frames.try_recv() {
+            collected.push(frame);
+            break;
+        }
+
+        tokio::task::yield_now().await;
+    }
+
+    assert_eq!(
+        collected.len(),
+        1,
+        "the public record arrived: {collected:?}"
+    );
+
+    // The AUTH lands between the two records: the guard the read uses next is built after it,
+    // as the capture's is (`createReadAuthorizationGuard(settings, () => getAuthenticatedPubkeys())`).
+    if authenticate_mid_read {
+        let now = i64::try_from(NOW_MS / 1_000).expect("seconds");
+        let pubkey = nostream_core::crypto::public_key(&CLIENT_SECRET).expect("a pubkey");
+
+        assert!(
+            connection.authenticate(
+                pubkey,
+                nostream_core::event::EventId::from_byte_array([1; 32]),
+                now,
+            ),
+            "the AUTH is recorded"
+        );
+    }
+
+    gate.add_permits(1);
+    reading.await.expect("the read finishes");
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    while let Ok(frame) = frames.try_recv() {
+        collected.push(frame);
+    }
+
+    collected
+}
+
+#[tokio::test]
+async fn a_restricted_read_is_judged_against_the_authenticated_set_at_each_event() {
+    // No AUTH: the public record arrives and the restricted one is withheld.
+    let withheld = restricted_read_with(false).await;
+
+    assert_eq!(withheld.len(), 2, "{withheld:?}");
+    assert!(withheld[0].starts_with(r#"["EVENT","restricted","#));
+    assert!(withheld[0].contains("public"));
+    assert_eq!(withheld[1], r#"["EOSE","restricted"]"#);
+
+    // AUTH between the two records: the second one is delivered, which a guard built once per
+    // read could not do.
+    let authenticated = restricted_read_with(true).await;
+
+    assert_eq!(authenticated.len(), 3, "{authenticated:?}");
+    assert!(authenticated[0].starts_with(r#"["EVENT","restricted","#));
+    assert!(authenticated[0].contains("public"));
+    assert!(authenticated[1].starts_with(r#"["EVENT","restricted","#));
+    assert!(authenticated[1].contains("encrypted"));
+    assert_eq!(authenticated[2], r#"["EOSE","restricted"]"#);
+}

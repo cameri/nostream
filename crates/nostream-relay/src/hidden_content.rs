@@ -97,7 +97,8 @@ impl HiddenContentCache {
             .clone()
     }
 
-    /// How many refreshes have queried the repository.
+    /// How many refreshes have queried the repository. The parity harness polls this; it is
+    /// not a metric.
     pub fn refreshes(&self) -> u64 {
         *self
             .refreshes

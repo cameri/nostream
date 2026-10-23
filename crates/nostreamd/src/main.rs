@@ -114,7 +114,11 @@ async fn serve(
         std::sync::Arc::new(SystemClock),
         RelayKeySource::from_env(),
         std::sync::Arc::new(nostream_core::random::SystemRandom),
-        nostream_relay::relay::RelayConfig::default(),
+        // The one environment read: the drain deadline is the operator's.
+        nostream_relay::relay::RelayConfig {
+            drain_timeout: nostream_relay::transport::drain_timeout(),
+            ..Default::default()
+        },
     );
 
     tracing::info!(at = %acceptor.local_addr(), "the acceptor is listening");

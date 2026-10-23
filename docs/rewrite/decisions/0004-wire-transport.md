@@ -115,14 +115,38 @@ Both exceptions are counted: `the_not_byte_compared_steps_are_exactly_the_declar
 fails if another step or session joins them, and `a_corrupted_expected_frame_fails_the_replay`
 shows that a garbled expectation fails in either mode.
 
-## Rate-limiter stores reclaim their keys
+## Rate-limiter stores reclaim their keys, and refuse rather than displace
 
 The capture's two Lua scripts set a TTL on every key (`PEXPIRE key period`,
-`EXPIRE key ceil(period / 1000)`), and the in-process stores carry the same lifetime:
-a key is swept once every hit in it is older than the window it was written with, on a
-clock-driven cadence so the sweep is amortised rather than paid per hit, and the map is
-capped at `MAX_STORE_KEYS` (65,536) by dropping one arbitrary key, because the alternative
-— refusing new keys — would let a client mint pubkeys to escape its own limit.
+`EXPIRE key ceil(period / 1000)`), and the in-process stores carry the same lifetime: one
+`retain` pass drops every entry past **its own** window. The pass runs at most once per
+`SWEEP_INTERVAL_MS` (one second), a cadence that belongs to the store — never to the
+caller's window, or one hit on an hour-long window would postpone reclaiming every
+one-second key for an hour — and that keeps a pass costing 1.3–2.0 ms at the ceiling off
+the hot path.
+
+Each of the four levels has a store of its own, so a flood of message keys cannot fill the
+store the event level uses.
+
+The map is capped at `MAX_STORE_KEYS` (65,536) per store, and a key that arrives when the
+store is full and nothing has lapsed is **refused**, with its hit answered as limited. The
+earlier policy — displace an arbitrary key — was wrong: a client that mints keys could free
+a live key, its own or a third party's, and reset an exhausted window (measured on this
+branch: a 240-per-hour message limit reset by another client's 80,000-event flood).
+Refusal yields `limited`, which is precisely the outcome a flooding client is trying to
+escape, so it is strictly safer; the cost is that a brand-new key is limited while the
+store is full.
+
+Two limits worth recording rather than discovering in production:
+
+- **The ceiling bounds keys, not bytes.** A sliding key holds one entry per hit, so the
+  shipped 60-per-minute windows cap a key at 60 entries and the hour window at 720: 65,536
+  keys × 720 entries is about 1 GB, reachable only at ~47 million accepted events.
+- **A relay with no signing key does not rate-limit EVENT at all.** The event key is
+  resolved before the limiter (the capture's `isRateLimited` calls `getRelayPublicKey()`,
+  which throws), so with neither `SECRET` nor `RELAY_PRIVATE_KEY` set every event is
+  answered `error: unable to process event` — AC29's declared outcome — and no window is
+  consulted. `nostreamd` logs it; a deployment that wants the limiter must set a key.
 
 ## The accept loop lives in the relay, and serving cannot fail
 
@@ -136,8 +160,10 @@ deleted with the `Result`: nothing constructed them.
 
 Every collaborator is a constructor argument (`Relay::new(settings, stores, clock, keys,
 random, config)`) rather than a setter, so the randomness a fixture replays is the one the
-relay was built with, and `WS_DRAIN_TIMEOUT_MS` is read where the relay is constructed —
-`RelayConfig::default()` at the composition root — not inside the library.
+relay was built with. `RelayConfig::default()` is the capture's own constants and reads no
+environment: `WS_DRAIN_TIMEOUT_MS` is resolved by `transport::drain_timeout()`, which
+`main.rs` calls when it builds the config, so a `default()` anywhere else — a test suite
+included — cannot inherit the operator's deadline by accident.
 
 ## A strategy is a type, and its signature is `(event, context)`
 

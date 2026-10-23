@@ -68,11 +68,22 @@ struct SlidingEntry {
     step: u64,
 }
 
-/// The most keys one store holds. Past this the store drops one arbitrary key to make room:
-/// a client that mints pubkeys cannot grow the process without bound, and the cost — the
-/// displaced key's window starts again — is smaller than the alternative, refusing new keys,
-/// which would let that client evade its own limit by minting a fresh pubkey per event.
+/// The most keys one store holds.
+///
+/// A key that arrives when the store is full is **refused**, and its hit counts as limited:
+/// displacement would let a client that mints keys free a live key — its own, or a third
+/// party's — and a refusal yields `limited`, which is the outcome a flooding client is trying
+/// to escape. Every level has a store of its own, so a flood at one level cannot fill
+/// another's.
 pub const MAX_STORE_KEYS: usize = 65_536;
+
+/// How often a store reclaims keys, as a floor on how often one pass may run.
+///
+/// The cadence is the store's, never the caller's: armed from a caller's window, one hit on
+/// an hour-long window would postpone reclaiming every one-second key for an hour. The pass
+/// itself drops each entry against *its own* window, so one pass per interval is the whole
+/// job, and the interval keeps the pass — which holds the store's mutex — off the hot path.
+pub const SWEEP_INTERVAL_MS: u64 = 1_000;
 
 /// A keyed store with the TTL the capture's Redis sets: expired keys are reclaimed, and the
 /// map is capped so no client-chosen key can grow it without bound.
@@ -90,21 +101,26 @@ impl<V> Store<V> {
         }
     }
 
-    /// Reclaims what `is_live` rejects at most once per `cadence_ms`, and keeps room for
-    /// `key` at the ceiling. Amortised on the clock rather than counted per hit, so a busy
-    /// key does not pay for the whole map on every message.
-    fn prepare(&mut self, key: &str, now_ms: u64, cadence_ms: u64, is_live: impl Fn(&V) -> bool) {
+    /// Reclaims what has lapsed, then says whether `key` may be recorded.
+    ///
+    /// The sweep runs at most once per [`SWEEP_INTERVAL_MS`], however long the caller's
+    /// window is — so a store at its ceiling costs one pass per interval and not one per
+    /// refused hit, which a client that floods keys would otherwise buy with every message.
+    /// The pass is what prefers a lapsed key over a live one; a store still full after it
+    /// refuses the new key rather than displacing a live one, and `false` is the caller's cue
+    /// to answer the hit as limited.
+    fn admit(&mut self, key: &str, now_ms: u64, is_live: impl Fn(&V) -> bool + Copy) -> bool {
         if now_ms >= self.next_sweep_ms {
-            self.entries.retain(|_, value| is_live(value));
-            self.next_sweep_ms = now_ms.saturating_add(cadence_ms.max(1));
+            self.sweep(now_ms, is_live);
         }
 
-        if self.entries.len() >= MAX_STORE_KEYS
-            && !self.entries.contains_key(key)
-            && let Some(victim) = self.entries.keys().next().cloned()
-        {
-            self.entries.remove(&victim);
-        }
+        self.entries.contains_key(key) || self.entries.len() < MAX_STORE_KEYS
+    }
+
+    /// One pass over the map, dropping every entry past its own window.
+    fn sweep(&mut self, now_ms: u64, is_live: impl Fn(&V) -> bool) {
+        self.entries.retain(|_, value| is_live(value));
+        self.next_sweep_ms = now_ms.saturating_add(SWEEP_INTERVAL_MS);
     }
 }
 
@@ -141,15 +157,41 @@ impl SlidingWindowRateLimiter {
         let window_start = now.saturating_sub(config.period_ms);
 
         let mut store = self.store()?;
-        // The key lives one window from its last write, which is the `PEXPIRE` the script
-        // sets: once every hit is older than that window the key is reclaimed rather than
-        // pruned on its next visit.
-        store.prepare(key, now, config.period_ms, |sliding| {
+        // A key lives one window from its last write, which is the `PEXPIRE` the script sets.
+        if !store.admit(key, now, |sliding| {
             sliding
                 .entries
                 .iter()
                 .any(|entry| now.saturating_sub(entry.at_ms) < sliding.period_ms)
+        }) {
+            return Ok(true);
+        }
+
+        if let Some(sliding) = store.entries.get_mut(key) {
+            // The key's `PEXPIRE` was set at its last write: once every hit is older than
+            // that window, Redis has dropped the key and this hit starts from an empty set.
+            if sliding
+                .entries
+                .iter()
+                .all(|entry| now.saturating_sub(entry.at_ms) >= sliding.period_ms)
+            {
+                sliding.entries.clear();
+            }
+
+            sliding.entries.retain(|entry| entry.at_ms > window_start);
+        }
+
+        let sum = store.entries.get(key).map_or(0, |sliding| {
+            sliding
+                .entries
+                .iter()
+                .fold(0u64, |total, entry| total.saturating_add(entry.step))
         });
+
+        if sum.saturating_add(step) > config.rate {
+            // The script `ZADD`s only on the allow path, so a refused hit creates no key.
+            return Ok(true);
+        }
 
         let sliding = store
             .entries
@@ -158,27 +200,6 @@ impl SlidingWindowRateLimiter {
                 period_ms: config.period_ms,
                 entries: Vec::new(),
             });
-        // The key's `PEXPIRE` was set at its last write: once every hit is older than that
-        // window, Redis has dropped the key and this hit starts from an empty set.
-        if sliding
-            .entries
-            .iter()
-            .all(|entry| now.saturating_sub(entry.at_ms) >= sliding.period_ms)
-        {
-            sliding.entries.clear();
-        }
-
-        sliding.entries.retain(|entry| entry.at_ms > window_start);
-
-        let sum = sliding
-            .entries
-            .iter()
-            .fold(0u64, |total, entry| total.saturating_add(entry.step));
-
-        if sum.saturating_add(step) > config.rate {
-            return Ok(true);
-        }
-
         sliding.period_ms = config.period_ms;
         sliding.entries.push(SlidingEntry { at_ms: now, step });
 
@@ -255,9 +276,12 @@ impl EwmaRateLimiter {
             .store
             .lock()
             .map_err(|error| RelayError::RateLimiter(format!("ewma store: {error}")))?;
-        store.prepare(key, now, ttl_ms, |entry| {
+        if !store.admit(key, now, |entry| {
             now.saturating_sub(entry.at_ms) < entry.ttl_ms
-        });
+        }) {
+            // A full store of live keys refuses the new one, and the refusal is the verdict.
+            return Ok(true);
+        }
 
         // The key's TTL is `ceil(period / 1000)` seconds from its last write: at that
         // instant Redis has dropped it, so the entry is gone too.
@@ -387,10 +411,17 @@ impl Limiter for RateLimiter {
     }
 }
 
-/// The four wired levels (connection, message, event, invite) over one limiter.
+/// The four wired levels (connection, message, event, invite), each over a store of its own.
+///
+/// The capture reaches one Redis singleton, whose keys expire and whose memory is the
+/// server's; here the map is bounded, so one store per level keeps a flood at one level from
+/// filling another's and refusing its clients.
 #[derive(Debug)]
 pub struct RateLimits {
-    limiter: Arc<dyn Limiter>,
+    connection_limiter: Arc<dyn Limiter>,
+    message_limiter: Arc<dyn Limiter>,
+    event_limiter: Arc<dyn Limiter>,
+    invite_limiter: Arc<dyn Limiter>,
     connection: Option<ConnectionLimits>,
     message: Option<MessageLimits>,
     event: Option<EventLimits>,
@@ -398,22 +429,36 @@ pub struct RateLimits {
 }
 
 impl RateLimits {
-    /// Reads every level from settings. The limiter is shared by all four, as the
-    /// capture's `rateLimiterFactory` singleton is.
+    /// Reads every level from settings, giving each level its own store of the strategy the
+    /// settings select.
     pub fn new(settings: &Settings, clock: Arc<dyn Clock>) -> Self {
-        Self::with_limiter(
-            Arc::new(RateLimiter::from_settings(settings, clock)),
-            settings,
-        )
+        let store = || {
+            Arc::new(RateLimiter::from_settings(settings, Arc::clone(&clock))) as Arc<dyn Limiter>
+        };
+        let limits = settings.limits.as_ref();
+
+        Self {
+            connection_limiter: store(),
+            message_limiter: store(),
+            event_limiter: store(),
+            invite_limiter: store(),
+            connection: limits.and_then(|limits| limits.connection.clone()),
+            message: limits.and_then(|limits| limits.message.clone()),
+            event: limits.and_then(|limits| limits.event.clone()),
+            invite: limits.and_then(|limits| limits.invite.clone()),
+        }
     }
 
-    /// The four levels over an explicit limiter, which is how the store's failure path is
-    /// exercised.
+    /// The four levels over one explicit limiter, which is how the store's failure path is
+    /// exercised: every level shares the caller's limiter, so a failing store fails them all.
     pub fn with_limiter(limiter: Arc<dyn Limiter>, settings: &Settings) -> Self {
         let limits = settings.limits.as_ref();
 
         Self {
-            limiter,
+            connection_limiter: Arc::clone(&limiter),
+            message_limiter: Arc::clone(&limiter),
+            event_limiter: Arc::clone(&limiter),
+            invite_limiter: limiter,
             connection: limits.and_then(|limits| limits.connection.clone()),
             message: limits.and_then(|limits| limits.message.clone()),
             event: limits.and_then(|limits| limits.event.clone()),
@@ -423,7 +468,7 @@ impl RateLimits {
 
     /// The store the settings selected.
     pub fn strategy(&self) -> RateLimiterStrategy {
-        self.limiter.strategy()
+        self.event_limiter.strategy()
     }
 
     /// `limits.connection.rateLimits` with its `ipWhitelist` bypass
@@ -448,7 +493,7 @@ impl RateLimits {
             let config = RateLimitConfig::from(window);
             let key = format!("{address}:connection:{}", config.period_ms);
 
-            if self.limiter.hit(&key, 1, &config)? {
+            if self.connection_limiter.hit(&key, 1, &config)? {
                 limited = true;
             }
         }
@@ -484,7 +529,7 @@ impl RateLimits {
             let config = RateLimitConfig::from(window);
             let key = format!("{address}:message:{}", config.period_ms);
 
-            if self.limiter.hit(&key, 1, &config)? {
+            if self.message_limiter.hit(&key, 1, &config)? {
                 return Ok(Some(backoff_ms(&config)));
             }
         }
@@ -556,7 +601,7 @@ impl RateLimits {
                 None => format!("{}:events:{}", event.pubkey, config.period_ms),
             };
 
-            if self.limiter.hit(&key, 1, &config)? {
+            if self.event_limiter.hit(&key, 1, &config)? {
                 return Ok(Some(backoff_ms(&config)));
             }
         }
@@ -583,7 +628,7 @@ impl RateLimits {
             let config = RateLimitConfig::from(window);
             let key = format!("{pubkey}:invites:{}", config.period_ms);
 
-            if self.limiter.hit(&key, 1, &config)? {
+            if self.invite_limiter.hit(&key, 1, &config)? {
                 return Ok(true);
             }
         }

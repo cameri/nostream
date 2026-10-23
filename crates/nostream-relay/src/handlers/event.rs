@@ -110,7 +110,7 @@ pub async fn handle(event: Event, context: &HandlerContext) {
         return;
     }
 
-    if let Some(reason) = is_protected_event_blocked(&event, context).await {
+    if let Some(reason) = is_protected_event_blocked(&event, context) {
         context.send_ok(event.id, false, &reason, None);
         return;
     }
@@ -400,7 +400,7 @@ fn is_authentication_required(
 }
 
 /// `isProtectedEventBlocked` (`:299-331`).
-async fn is_protected_event_blocked(event: &Event, context: &HandlerContext) -> Option<String> {
+fn is_protected_event_blocked(event: &Event, context: &HandlerContext) -> Option<String> {
     if event.is_protected() && !context.authenticated_pubkeys().contains(&event.pubkey) {
         return Some("auth-required: this event may only be published by its author".to_owned());
     }
