@@ -9,7 +9,9 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use nostream_config::SettingsPaths;
+use nostream_core::clock::SystemClock;
 use nostream_core::lifecycle::ShutdownState;
+use nostream_relay::{Relay, relay_key::RelayKeySource, unavailable};
 use nostreamd::{DaemonError, settings_gate, telemetry};
 
 #[derive(Debug, Parser)]
@@ -92,17 +94,31 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
         .build()
         .map_err(|error| DaemonError::Setup(format!("tokio runtime: {error}")))?;
 
-    runtime.block_on(async move { serve(listen).await })
+    let settings = outcome.settings;
+
+    runtime.block_on(async move { serve(listen, settings).await })
 }
 
-async fn serve(listen: SocketAddr) -> Result<ExitCode, DaemonError> {
+async fn serve(
+    listen: SocketAddr,
+    settings: nostream_config::Settings,
+) -> Result<ExitCode, DaemonError> {
     let acceptor = nostreamd::Acceptor::bind(listen).await?;
     let shutdown = ShutdownState::new();
-    let watch_rx = shutdown.watch();
+
+    // The storage backend is not wired yet (the LMDB environment is a stub), so the relay
+    // runs over seams that report `NotImplemented`; the wire itself is served in full.
+    let relay = Relay::with_keys(
+        settings,
+        std::sync::Arc::new(unavailable::stores()),
+        std::sync::Arc::new(SystemClock),
+        RelayKeySource::from_env(),
+    );
 
     tracing::info!(at = %acceptor.local_addr(), "the acceptor is listening");
 
-    let accept_task = tokio::spawn(async move { acceptor.run(watch_rx).await });
+    let connection_shutdown = shutdown.clone();
+    let accept_task = tokio::spawn(async move { acceptor.run(relay, connection_shutdown).await });
     let workers_task = tokio::spawn(async { nostreamd::workers::spawn_workers().await });
     let tor_task = tokio::spawn(async { nostreamd::workers::spawn_tor().await });
 
