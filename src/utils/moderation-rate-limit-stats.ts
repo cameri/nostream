@@ -22,8 +22,9 @@ if sourceCount < 1 then
   return {}
 end
 redis.call('ZUNIONSTORE', dest, sourceCount, unpack(KEYS, 2))
-redis.call('EXPIRE', dest, ARGV[2])
-return redis.call('ZREVRANGE', dest, 0, ARGV[1], 'WITHSCORES')
+local rows = redis.call('ZREVRANGE', dest, 0, ARGV[1], 'WITHSCORES')
+redis.call('DEL', dest)
+return rows
 `
 
 export interface ModerationRateLimitHitRow {
@@ -104,11 +105,7 @@ const fetchAggregatedHits = async (
 
   const destKey = `${prefix}:__agg:${randomBytes(8).toString('hex')}`
   const sourceKeys = suffixes.map((suffix) => `${prefix}:${suffix}`)
-  const result = await cache.eval(
-    AGGREGATE_TOP_SCRIPT,
-    [destKey, ...sourceKeys],
-    [String(clamped - 1), '120'],
-  )
+  const result = await cache.eval(AGGREGATE_TOP_SCRIPT, [destKey, ...sourceKeys], [String(clamped - 1)])
 
   return parseBucketRows(result).slice(0, clamped)
 }
