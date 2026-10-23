@@ -6,6 +6,7 @@ import path from 'path'
 import {
   applyAdminModerationAction,
   mergeAdminModerationLimitsPatch,
+  persistAdminModerationLimits,
   readAdminModerationLimits,
 } from '../../../src/utils/admin-moderation'
 import * as settingsConfig from '../../../src/utils/settings-config'
@@ -78,5 +79,24 @@ describe('admin-moderation', () => {
     })
     expect(merged.pubkey.blacklist).to.have.length(1)
     expect(merged.kind.whitelist).to.deep.equal([1])
+  })
+
+  it('whitelists and removes rate-limit bypass for IPs', () => {
+    const withIp = applyAdminModerationAction(baseLimits, 'whitelist-ip', { ip: '203.0.113.10' })
+    expect(withIp.rateLimitBypass.ipAddresses).to.include('203.0.113.10')
+
+    const withoutIp = applyAdminModerationAction(withIp, 'unwhitelist-ip', { ip: '203.0.113.10' })
+    expect(withoutIp.rateLimitBypass.ipAddresses).to.not.include('203.0.113.10')
+  })
+
+  it('persists normalized moderation limits to settings', () => {
+    const pubkey = 'c'.repeat(64)
+    persistAdminModerationLimits({
+      ...baseLimits,
+      pubkey: { blacklist: [pubkey], whitelist: [] },
+    })
+
+    const limits = readAdminModerationLimits()
+    expect(limits.pubkey.blacklist).to.include(pubkey)
   })
 })
