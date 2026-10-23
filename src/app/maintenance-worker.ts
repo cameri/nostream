@@ -1,22 +1,36 @@
+import { FSWatcher } from 'fs'
+import { mergeDeepLeft, path, pipe } from 'ramda'
+import { ICacheAdapter } from '../@types/adapters'
+import { IRunnable } from '../@types/base'
+import { InvoiceStatus } from '../@types/invoice'
+import { Nip05Verification } from '../@types/nip05'
+import { OperatorNotificationEventType } from '../@types/operator-notifications'
+import {
+  INip05VerificationRepository,
+  INotificationDeliveryLogRepository,
+  INotificationOutboxRepository,
+} from '../@types/repositories'
+import {
+  IMaintenanceService,
+  INotificationOutboxService,
+  IPaymentsService,
+  ISubscriptionService,
+} from '../@types/services'
+import { Settings } from '../@types/settings'
+import { createLogger } from '../factories/logger-factory'
+import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
+import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { sanitizeAdminOpsError } from '../utils/admin-ops-sanitize'
+import { publishAdminOpsWorkerHeartbeatSafely } from '../utils/admin-ops-store'
+import { isExpiredInvoice } from '../utils/invoice'
+import { delayMs } from '../utils/misc'
 import {
   DEFAULT_NIP05_MAX_CONSECUTIVE_FAILURES,
   DEFAULT_NIP05_VERIFY_UPDATE_FREQUENCY_MS,
   Nip05VerificationOutcome,
   verifyNip05Identifier,
 } from '../utils/nip05'
-import { IMaintenanceService, IPaymentsService } from '../@types/services'
-import { mergeDeepLeft, path, pipe } from 'ramda'
-import { IRunnable } from '../@types/base'
-
-import { createLogger } from '../factories/logger-factory'
-import { PENDING_INVOICE_PAGE_SIZE } from '../services/payments-service'
-import { delayMs } from '../utils/misc'
-import { INip05VerificationRepository } from '../@types/repositories'
-import { InvoiceStatus } from '../@types/invoice'
-import { isExpiredInvoice } from '../utils/invoice'
-import { Nip05Verification } from '../@types/nip05'
-import { Settings } from '../@types/settings'
-import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { SettingsStatic } from '../utils/settings'
 
 const UPDATE_INVOICE_INTERVAL = 60000
 const NIP05_REVERIFICATION_BATCH_SIZE = 50
@@ -74,6 +88,7 @@ export function applyReverificationOutcome(
 export class MaintenanceWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
   private isRunning = false
+  private watchers: FSWatcher[] | undefined
   /**
    * Where the next pass starts. Without it every pass re-reads the oldest ten, so
    * ten invoices that never resolve starve everything behind them.
@@ -86,6 +101,11 @@ export class MaintenanceWorker implements IRunnable {
     private readonly maintenanceService: IMaintenanceService,
     private readonly settings: () => Settings,
     private readonly nip05VerificationRepository: INip05VerificationRepository,
+    private readonly notificationOutboxService: INotificationOutboxService,
+    private readonly notificationDeliveryLogRepository: INotificationDeliveryLogRepository,
+    private readonly notificationOutboxRepository: INotificationOutboxRepository,
+    private readonly opsCache?: ICacheAdapter,
+    private readonly subscriptionService?: ISubscriptionService,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -109,6 +129,8 @@ export class MaintenanceWorker implements IRunnable {
   }
 
   public run(): void {
+    this.watchers = SettingsStatic.watchSettings()
+
     this.interval = setInterval(async () => {
       if (this.isRunning) {
         logger('skipping scheduled maintenance run because previous run is still in progress')
@@ -119,6 +141,10 @@ export class MaintenanceWorker implements IRunnable {
       try {
         await this.onSchedule()
       } catch (error) {
+        await this.publishOpsHeartbeat({
+          lastRunFinishedAt: new Date().toISOString(),
+          lastError: sanitizeAdminOpsError(error),
+        })
         this.onError(error as Error)
       } finally {
         this.isRunning = false
@@ -126,14 +152,38 @@ export class MaintenanceWorker implements IRunnable {
     }, UPDATE_INVOICE_INTERVAL)
   }
 
+  private async publishOpsHeartbeat(partial: {
+    lastRunStartedAt?: string
+    lastRunFinishedAt?: string
+    lastError?: string
+  }): Promise<void> {
+    if (!this.opsCache) {
+      return
+    }
+
+    await publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
+      type: 'maintenance',
+      updatedAt: new Date().toISOString(),
+      ...partial,
+    })
+  }
+
   private async onSchedule(): Promise<void> {
+    const lastRunStartedAt = new Date().toISOString()
+    await this.publishOpsHeartbeat({ lastRunStartedAt })
+
     const currentSettings = this.settings()
     const clearOldEventsPromise = this.clearOldEventsSafely()
 
     await this.processNip05Reverifications(currentSettings)
+    await this.processNotificationOutbox()
 
     if (!path(['payments', 'enabled'], currentSettings)) {
       await clearOldEventsPromise
+      await this.publishOpsHeartbeat({
+        lastRunStartedAt,
+        lastRunFinishedAt: new Date().toISOString(),
+      })
       return
     }
 
@@ -188,6 +238,15 @@ export class MaintenanceWorker implements IRunnable {
             id: invoice.id,
             status: InvoiceStatus.EXPIRED,
           })
+          try {
+            await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.ADMISSION_INVOICE_FAILED, {
+              invoiceId: invoice.id,
+              pubkey: invoice.pubkey,
+              reason: 'expired',
+            })
+          } catch (error) {
+            logger.error('Unable to enqueue admission.invoice.failed notification', error)
+          }
           successful++
           continue
         }
@@ -198,7 +257,40 @@ export class MaintenanceWorker implements IRunnable {
       logger('updated %d of %d invoices successfully', successful, invoices.length)
     }
 
+    await this.processSubscriptions()
+
     await clearOldEventsPromise
+    await this.publishOpsHeartbeat({
+      lastRunStartedAt,
+      lastRunFinishedAt: new Date().toISOString(),
+    })
+  }
+
+  private async processSubscriptions(): Promise<void> {
+    try {
+      const changed = await this.subscriptionService?.processLifecycle()
+      if (changed) {
+        logger('moved %d subscription(s) through their lifecycle', changed)
+      }
+    } catch (error) {
+      logger.error('Unable to process subscriptions', error)
+    }
+  }
+
+  private async processNotificationOutbox(): Promise<void> {
+    try {
+      const delivered = await this.notificationOutboxService.processBatch()
+      if (delivered > 0) {
+        logger('delivered %d notification outbox message(s)', delivered)
+      }
+
+      const retentionDays = this.settings().admin?.notifications?.deliveryLogRetentionDays ?? 30
+      const cutoff = new Date(Date.now() - retentionDays * 86_400_000)
+      await this.notificationDeliveryLogRepository.deleteOlderThan(cutoff)
+      await this.notificationOutboxRepository.deleteTerminalOlderThan(cutoff)
+    } catch (error) {
+      logger.error('Unable to process notification outbox', error)
+    }
   }
 
   private async processNip05Reverifications(currentSettings: Settings): Promise<void> {
@@ -255,6 +347,11 @@ export class MaintenanceWorker implements IRunnable {
   public close(callback?: () => void) {
     logger('closing')
     clearInterval(this.interval)
+    if (Array.isArray(this.watchers)) {
+      for (const watcher of this.watchers) {
+        watcher.close()
+      }
+    }
     if (typeof callback === 'function') {
       callback()
     }

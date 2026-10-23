@@ -33,11 +33,23 @@ export interface StoredProbeResult {
   nip11: ProbeCheckResult<Nip11Result>
 }
 
+/** Settings captured when the probe run executed (for mismatch checks on cached snapshots). */
+export interface RelayProbeRunContext {
+  configuredRelayUrl?: string
+  publicTargetKeys: string[]
+}
+
 export interface RelayProbeRunSnapshot {
   runAt: string
   targets: string[]
   results: StoredProbeResult[]
   status: RelayProbeRunStatus
+  probeContext?: RelayProbeRunContext
+}
+
+export interface RelayProbeHistoryRetention {
+  maxRuns: number
+  maxAgeHours?: number
 }
 
 export interface IRelayProbeSnapshotStore {

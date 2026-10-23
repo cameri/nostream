@@ -13,7 +13,6 @@
   const copySnapshotButton = document.getElementById('copy-snapshot-button')
   const streamStatus = document.getElementById('stream-status')
   const passwordInput = document.getElementById('password')
-  const themeToggle = document.getElementById('theme-toggle')
   const liveClock = document.getElementById('live-clock')
   const menuToggle = document.getElementById('menu-toggle')
   const navOverlay = document.getElementById('nav-overlay')
@@ -35,6 +34,14 @@
   const settingsDiffContent = document.getElementById('settings-diff-content')
   const settingsDiffSummary = document.getElementById('settings-diff-summary')
   const dashboardViews = document.querySelectorAll('.dashboard-view')
+  const networkHealthSync = document.getElementById('network-health-sync')
+  const networkHealthEmpty = document.getElementById('network-health-empty')
+  const networkHealthSummary = document.getElementById('network-health-summary')
+  const networkHealthResults = document.getElementById('network-health-results')
+  const networkHealthRunAt = document.getElementById('network-health-run-at')
+  const networkHealthTimelineWrap = document.getElementById('network-health-timeline-wrap')
+  const networkHealthTimeline = document.getElementById('network-health-timeline')
+  const networkHealthRunButton = document.getElementById('network-health-run-button')
 
   let settingsLoaded = false
   let settingsLoading = false
@@ -52,6 +59,12 @@
   let relativeTimeTimer
   let staleCheckTimer
   const staleThresholdMs = 15000
+  let networkHealthPollTimer
+  const networkHealthPollIntervalMs = 60000
+  const networkHealthHistoryLimit = 24
+  let networkHealthHistoryRuns = []
+  let selectedNetworkHealthRunAt = null
+  let networkHealthHistoryPinned = false
 
   const statusClasses = ['status-ok', 'status-degraded', 'status-unavailable', 'status-down', 'status-no-data']
 
@@ -81,22 +94,23 @@
       parseError: '[ERR]',
       reconnect: '[RETRY]',
     },
+    probeRun: {
+      ok: '[OK]',
+      partial: '[WARN]',
+      failed: '[FAULT]',
+    },
+    probeCheck: {
+      ok: '[OK]',
+      error: '[ERR]',
+      skipped: '[SKIP]',
+    },
   }
 
-  const getTheme = () => {
-    const stored = localStorage.getItem('admin_theme')
-    if (stored === 'light' || stored === 'dark') {
-      return stored
-    }
+  // The console only ships the nostream.dev dark (black + pink) theme.
+  const getTheme = () => 'dark'
 
-    return 'light'
-  }
-
-  const applyTheme = (theme) => {
-    document.body.setAttribute('data-theme', theme)
-    if (themeToggle) {
-      themeToggle.textContent = theme === 'dark' ? 'Dark' : 'Light'
-    }
+  const applyTheme = () => {
+    document.body.setAttribute('data-theme', 'dark')
   }
 
   const formatClock = () => {
@@ -207,8 +221,19 @@
     streamStatus.appendChild(document.createTextNode(label))
   }
 
-  const updateSystemAlert = (snapshot) => {
+  let activeDashboardView = 'metrics-view'
+
+  const hideSystemAlert = () => {
     if (!systemAlert) {
+      return
+    }
+
+    systemAlert.className = 'system-alert d-none'
+    systemAlert.textContent = ''
+  }
+
+  const updateSystemAlert = (snapshot) => {
+    if (!systemAlert || activeDashboardView !== 'metrics-view') {
       return
     }
 
@@ -298,8 +323,41 @@
     return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable
   }
 
+  const grafanaPanelUrl = (panelId) => {
+    const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:7777').replace(/\/+$/, '')
+    const dashboardUid = config.grafanaDashboardUid || 'nostream-overview'
+    const params = new URLSearchParams({
+      orgId: '1',
+      panelId: String(panelId),
+      from: 'now-15m',
+      to: 'now',
+      refresh: '5s',
+      theme: 'dark',
+      kiosk: '1',
+    })
+    return `${baseUrl}/d-solo/${dashboardUid}/nostream-overview?${params.toString()}`
+  }
+
+  const loadGrafanaFrames = () => {
+    document.querySelectorAll('.grafana-frame').forEach((frame) => {
+      if (!frame.dataset.panelId || frame.src) {
+        return
+      }
+      frame.src = grafanaPanelUrl(frame.dataset.panelId)
+    })
+  }
+
+  const unloadGrafanaFrames = () => {
+    document.querySelectorAll('.grafana-frame').forEach((frame) => {
+      frame.removeAttribute('src')
+    })
+  }
+
   const showLogin = () => {
+    unloadGrafanaFrames()
     stopMetricsStream()
+    stopNetworkHealthPolling()
+    window.__ADMIN_OPS__?.stop?.()
     setNavOpen(false)
     loginPanel.classList.remove('d-none')
     dashboardPanel.classList.add('d-none')
@@ -309,14 +367,17 @@
     loginError.classList.add('d-none')
     passwordInput.value = ''
     lastSnapshot = undefined
+    window.startAdminSparks?.()
   }
 
   const showDashboard = () => {
+    activeDashboardView = 'metrics-view'
     loginPanel.classList.add('d-none')
     dashboardPanel.classList.remove('d-none')
     dashboardActions.classList.remove('d-none')
     dashboardActions.classList.add('d-flex')
     menuToggle?.classList.remove('d-none')
+    window.stopAdminSparks?.()
 
     dashboardViews.forEach((view) => {
       view.classList.toggle('d-none', view.id !== 'metrics-view')
@@ -325,22 +386,456 @@
       item.classList.toggle('active', item.dataset.view === 'metrics-view')
     })
 
-    document.querySelectorAll('.grafana-frame').forEach((frame) => {
-      if (!frame.src && frame.dataset.panelId) {
-        const theme = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-        const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:7777').replace(/\/+$/, '')
-        const dashboardUid = config.grafanaDashboardUid || 'nostream-overview'
-        const params = new URLSearchParams({
-          orgId: '1',
-          panelId: frame.dataset.panelId,
-          refresh: '5s',
-          theme,
-        })
-        frame.src = `${baseUrl}/d-solo/${dashboardUid}?${params.toString()}`
-      }
-    })
-
+    loadGrafanaFrames()
     startMetricsStream()
+    stopNetworkHealthPolling()
+    window.__ADMIN_OPS__?.stop?.()
+  }
+
+  const stopNetworkHealthPolling = () => {
+    if (networkHealthPollTimer) {
+      clearInterval(networkHealthPollTimer)
+      networkHealthPollTimer = undefined
+    }
+  }
+
+  const startNetworkHealthPolling = () => {
+    stopNetworkHealthPolling()
+    networkHealthPollTimer = setInterval(() => {
+      void refreshNetworkHealth()
+      void refreshNetworkHealthHistory()
+    }, networkHealthPollIntervalMs)
+  }
+
+  const setNetworkHealthSyncLine = (message) => {
+    if (!networkHealthSync) {
+      return
+    }
+
+    networkHealthSync.innerHTML = `<span class="prompt-char">&gt;</span> probes: ${message}`
+  }
+
+  const probeCheckStatusClass = (status, options = {}) => {
+    if (status === 'ok') {
+      if (typeof options.tlsDaysUntilExpiry === 'number' && options.tlsDaysUntilExpiry < 14) {
+        return 'status-degraded'
+      }
+
+      return 'status-ok'
+    }
+    if (status === 'error') {
+      return 'status-down'
+    }
+
+    return 'status-no-data'
+  }
+
+  const summarizeProbeError = (error) => {
+    const raw = String(error ?? '').replace(/\s+/g, ' ').trim()
+    if (!raw) {
+      return ''
+    }
+
+    const lowered = raw.toLowerCase()
+    if (lowered.includes('wrong version number')) {
+      return 'wrong TLS version'
+    }
+    if (lowered.includes('certificate has expired')) {
+      return 'certificate expired'
+    }
+    if (lowered.includes('self-signed')) {
+      return 'self-signed certificate'
+    }
+    if (lowered.includes('unable to verify')) {
+      return 'certificate unverified'
+    }
+    if (lowered.includes('econnrefused')) {
+      return 'connection refused'
+    }
+    if (lowered.includes('etimedout') || lowered.includes('timeout')) {
+      return 'timed out'
+    }
+    if (lowered.includes('enotfound')) {
+      return 'host not found'
+    }
+    if (lowered.includes('cert') && lowered.includes('expired')) {
+      return 'certificate expired'
+    }
+
+    const opensslReason = raw.match(/SSL routines:[^:]+:([^:\s]+(?:\s[^:]+)*)/i)
+    if (opensslReason?.[1]) {
+      return opensslReason[1].replace(/_/g, ' ')
+    }
+
+    const lastSegment = raw.split(':').map((part) => part.trim()).filter(Boolean).at(-1)
+    if (lastSegment && lastSegment.length < 80 && !/^[0-9A-F]{6,}$/i.test(lastSegment)) {
+      return lastSegment
+    }
+
+    return raw.length > 72 ? `${raw.slice(0, 69)}…` : raw
+  }
+
+  const formatProbeCheckDetail = (check, formatter, options = {}) => {
+    const label = statusLabels.probeCheck[check?.status] ?? statusLabels.probeCheck.skipped
+    const rawDetail = typeof formatter === 'function' && check?.status === 'ok' ? formatter(check.data) : check?.error
+    const fullDetail = rawDetail ? String(rawDetail) : ''
+    const detail = check?.status === 'error' ? summarizeProbeError(fullDetail) : fullDetail
+    const className = probeCheckStatusClass(check?.status, options)
+
+    const needsFullDetailTitle =
+      fullDetail && (fullDetail !== detail || fullDetail.length > 80)
+
+    return {
+      label,
+      className,
+      detail,
+      title: needsFullDetailTitle ? fullDetail : '',
+    }
+  }
+
+  const renderNetworkHealthTimeline = (runs) => {
+    if (!networkHealthTimeline || !networkHealthTimelineWrap) {
+      return
+    }
+
+    networkHealthTimeline.replaceChildren()
+
+    if (!Array.isArray(runs) || runs.length === 0) {
+      networkHealthTimelineWrap.classList.add('d-none')
+      return
+    }
+
+    networkHealthTimelineWrap.classList.remove('d-none')
+
+    runs.forEach((run) => {
+      const runAt = run?.runAt
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'network-health-timeline-item'
+      button.setAttribute('role', 'listitem')
+
+      const status = run?.status ?? 'failed'
+      const statusClass =
+        status === 'ok' ? 'status-ok' : status === 'partial' ? 'status-degraded' : 'status-down'
+      button.classList.add(statusClass)
+
+      if (runAt && runAt === selectedNetworkHealthRunAt) {
+        button.classList.add('is-selected')
+      }
+
+      const runAtMs = Date.parse(runAt ?? '')
+      const label = Number.isFinite(runAtMs) ? new Date(runAtMs).toISOString() : 'Unknown run'
+      const targetCount = Array.isArray(run?.results) ? run.results.length : 0
+      button.textContent = `${label} · ${status} · ${targetCount} target(s)`
+
+      button.addEventListener('click', () => {
+        if (networkHealthHistoryPinned && runAt && runAt === selectedNetworkHealthRunAt) {
+          networkHealthHistoryPinned = false
+          selectedNetworkHealthRunAt = null
+          renderNetworkHealthTimeline(networkHealthHistoryRuns)
+          void refreshNetworkHealth()
+          return
+        }
+
+        networkHealthHistoryPinned = true
+        selectedNetworkHealthRunAt = runAt ?? null
+        renderNetworkHealthTimeline(networkHealthHistoryRuns)
+        renderNetworkHealthSnapshot(run)
+      })
+
+      networkHealthTimeline.appendChild(button)
+    })
+  }
+
+  const renderNetworkHealthSnapshot = (snapshot) => {
+    if (!networkHealthEmpty || !networkHealthSummary || !networkHealthResults) {
+      return
+    }
+
+    if (!snapshot) {
+      networkHealthEmpty.classList.remove('d-none')
+      networkHealthSummary.classList.add('d-none')
+      networkHealthResults.classList.add('d-none')
+      networkHealthResults.replaceChildren()
+      if (networkHealthTimelineWrap) {
+        networkHealthTimelineWrap.classList.add('d-none')
+      }
+      setNetworkHealthSyncLine('no probe snapshot available')
+      return
+    }
+
+    networkHealthEmpty.classList.add('d-none')
+    networkHealthSummary.classList.remove('d-none')
+    networkHealthResults.classList.remove('d-none')
+
+    const runStatus = snapshot.status ?? 'failed'
+    const runStatusClass =
+      runStatus === 'ok' ? 'status-ok' : runStatus === 'partial' ? 'status-degraded' : 'status-down'
+    setStatusText(
+      'network-health-run-status',
+      statusLabels.probeRun[runStatus] ?? statusLabels.probeRun.failed,
+      runStatusClass,
+    )
+    setMetricValue('network-health-target-count', Array.isArray(snapshot.results) ? snapshot.results.length : 0)
+
+    const runAtMs = Date.parse(snapshot.runAt)
+    if (Number.isFinite(runAtMs)) {
+      networkHealthRunAt.innerHTML = `<span class="metric-number">${new Date(runAtMs).toISOString()}</span>`
+      setNetworkHealthSyncLine(`last updated ${formatRelativeTime(runAtMs)}`)
+    } else {
+      networkHealthRunAt.innerHTML = '<span class="metric-number">—</span>'
+      setNetworkHealthSyncLine('snapshot received')
+    }
+
+    networkHealthResults.replaceChildren()
+
+    if (!Array.isArray(snapshot.results) || snapshot.results.length === 0) {
+      const empty = document.createElement('p')
+      empty.className = 'admin-muted small mb-0'
+      empty.textContent = 'Probe run completed with no target results.'
+      networkHealthResults.appendChild(empty)
+      return
+    }
+
+    snapshot.results.forEach((result) => {
+      const card = document.createElement('article')
+      card.className = 'network-health-target'
+
+      const header = document.createElement('div')
+      header.className = 'network-health-target-header'
+
+      const title = document.createElement('p')
+      title.className = 'network-health-target-url mb-0'
+      title.textContent = result?.target?.relayUrl ?? result?.target?.wsUrl ?? 'Unknown target'
+      header.appendChild(title)
+
+      const networkType = result?.target?.networkType
+      if (networkType) {
+        const badge = document.createElement('span')
+        badge.className = 'network-health-network-type'
+        badge.textContent = networkType
+        header.appendChild(badge)
+      }
+
+      card.appendChild(header)
+
+      const checks = document.createElement('div')
+      checks.className = 'network-health-checks'
+
+      const dns = formatProbeCheckDetail(result.dns, (data) => {
+        const records = Array.isArray(data?.records) ? data.records : []
+
+        if (records.length === 0) {
+          return 'no records'
+        }
+
+        const preview = records.slice(0, 3).map((record) => {
+          const ttl = typeof record?.ttl === 'number' ? ` TTL ${record.ttl}` : ''
+          return `${record.type} ${record.value}${ttl}`
+        })
+
+        if (records.length > 3) {
+          preview.push(`+${records.length - 3} more`)
+        }
+
+        return preview.join('; ')
+      })
+      const tlsDaysUntilExpiry =
+        result.tls?.status === 'ok' && typeof result.tls?.data?.daysUntilExpiry === 'number'
+          ? result.tls.data.daysUntilExpiry
+          : undefined
+      const tls = formatProbeCheckDetail(
+        result.tls,
+        (data) => {
+          if (typeof data?.daysUntilExpiry === 'number') {
+            return `${data.daysUntilExpiry}d remaining`
+          }
+
+          return data?.issuer ?? 'valid'
+        },
+        { tlsDaysUntilExpiry },
+      )
+      const wsRtt = formatProbeCheckDetail(result.wsRtt, (data) => {
+        const parts = [`open ${data.rttOpenMs} ms`]
+
+        if (typeof data.rttReadMs === 'number') {
+          parts.push(`read ${data.rttReadMs} ms`)
+        }
+
+        if (typeof data.rttWriteMs === 'number') {
+          parts.push(`write ${data.rttWriteMs} ms`)
+        }
+
+        if (data.nip42AuthRequired === true) {
+          parts.push('NIP-42 auth required')
+        }
+
+        return parts.join(' · ')
+      })
+      const nip11 = formatProbeCheckDetail(result.nip11, (data) => {
+        const name = data?.name ? ` ${data.name}` : ''
+        return `HTTP ${data.statusCode}${name}`
+      })
+
+      const mismatches = Array.isArray(result.mismatches) ? result.mismatches : []
+      if (
+        result.nip11?.status === 'ok' &&
+        mismatches.some((entry) => entry?.severity === 'warning')
+      ) {
+        nip11.className = 'status-degraded'
+      }
+
+      ;[
+        ['DNS', dns],
+        ['TLS', tls],
+        ['WS RTT', wsRtt],
+        ['NIP-11', nip11],
+      ].forEach(([name, check]) => {
+        const item = document.createElement('div')
+        item.className = 'network-health-check'
+
+        const label = document.createElement('p')
+        label.className = 'network-health-check-label mb-0'
+        label.textContent = name
+
+        const value = document.createElement('p')
+        value.className = `network-health-check-value ${check.className} mb-0`
+        value.textContent = check.detail ? `${check.label} · ${check.detail}` : check.label
+        if (check.title) {
+          value.title = check.title
+        }
+
+        item.appendChild(label)
+        item.appendChild(value)
+        checks.appendChild(item)
+      })
+
+      card.appendChild(checks)
+
+      if (mismatches.length > 0) {
+        const mismatchBlock = document.createElement('div')
+        mismatchBlock.className = 'network-health-mismatches'
+
+        const heading = document.createElement('p')
+        heading.className = 'network-health-mismatch-heading mb-1'
+        heading.textContent = 'Advertised vs observed'
+        mismatchBlock.appendChild(heading)
+
+        const list = document.createElement('ul')
+        list.className = 'network-health-mismatch-list mb-0'
+
+        mismatches.forEach((entry) => {
+          const item = document.createElement('li')
+          item.className = `network-health-mismatch network-health-mismatch-${entry.severity ?? 'warning'}`
+          item.textContent = entry.message ?? entry.code ?? 'Mismatch'
+          list.appendChild(item)
+        })
+
+        mismatchBlock.appendChild(list)
+        card.appendChild(mismatchBlock)
+      }
+      networkHealthResults.appendChild(card)
+    })
+  }
+
+  const runNetworkHealthProbe = async () => {
+    if (!networkHealthRunButton) {
+      return
+    }
+
+    networkHealthRunButton.disabled = true
+    setNetworkHealthSyncLine('manual probe running…')
+
+    try {
+      const response = await fetch(`${adminBase}/network-health/run`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+
+      if (response.status === 401) {
+        showLogin()
+        return
+      }
+
+      if (!response.ok) {
+        setNetworkHealthSyncLine('manual probe failed')
+        return
+      }
+
+      networkHealthHistoryPinned = false
+      selectedNetworkHealthRunAt = null
+      await refreshNetworkHealth()
+      await refreshNetworkHealthHistory()
+      setNetworkHealthSyncLine('manual probe completed')
+    } catch {
+      setNetworkHealthSyncLine('network error during manual probe')
+    } finally {
+      networkHealthRunButton.disabled = false
+    }
+  }
+
+  const refreshNetworkHealth = async () => {
+    try {
+      const response = await fetch(`${adminBase}/network-health`, {
+        credentials: 'include',
+      })
+
+      if (response.status === 401) {
+        showLogin()
+        return
+      }
+
+      if (!response.ok) {
+        setNetworkHealthSyncLine('failed to load probe snapshot')
+        return
+      }
+
+      const body = await response.json()
+      const snapshot = body.snapshot ?? null
+      let displaySnapshot = snapshot
+      if (networkHealthHistoryPinned && selectedNetworkHealthRunAt && networkHealthHistoryRuns.length > 0) {
+        const selected = networkHealthHistoryRuns.find((run) => run?.runAt === selectedNetworkHealthRunAt)
+        if (selected) {
+          displaySnapshot = selected
+        } else {
+          networkHealthHistoryPinned = false
+          selectedNetworkHealthRunAt = null
+        }
+      }
+      renderNetworkHealthSnapshot(displaySnapshot)
+      if (networkHealthHistoryRuns.length > 0) {
+        renderNetworkHealthTimeline(networkHealthHistoryRuns)
+      }
+    } catch {
+      setNetworkHealthSyncLine('network error while loading probes')
+    }
+  }
+
+  const refreshNetworkHealthHistory = async () => {
+    if (!networkHealthTimeline) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${adminBase}/network-health/history?limit=${networkHealthHistoryLimit}`, {
+        credentials: 'include',
+      })
+
+      if (response.status === 401) {
+        showLogin()
+        return
+      }
+
+      if (!response.ok) {
+        return
+      }
+
+      const body = await response.json()
+      networkHealthHistoryRuns = Array.isArray(body.runs) ? body.runs : []
+      renderNetworkHealthTimeline(networkHealthHistoryRuns)
+    } catch {
+      // Timeline is optional; keep the latest snapshot panel usable.
+    }
   }
 
   const parsePathTokens = (path) => {
@@ -1030,6 +1525,11 @@
   }
 
   const showView = (viewId) => {
+    activeDashboardView = viewId
+    if (viewId !== 'metrics-view') {
+      hideSystemAlert()
+    }
+
     dashboardViews.forEach((view) => {
       view.classList.toggle('d-none', view.id !== viewId)
     })
@@ -1039,11 +1539,41 @@
     })
 
     if (viewId === 'settings-view') {
+      stopNetworkHealthPolling()
+      window.__ADMIN_OPS__?.stop?.()
+      stopMetricsStream()
       void loadSettingsData()
       return
     }
 
+    if (viewId === 'notifications-view') {
+      stopNetworkHealthPolling()
+      window.__ADMIN_OPS__?.stop?.()
+      stopMetricsStream()
+      window.__ADMIN_NOTIFICATIONS__?.load?.()
+      return
+    }
+
+    if (viewId === 'operations-view') {
+      stopMetricsStream()
+      void refreshNetworkHealth()
+      void refreshNetworkHealthHistory()
+      startNetworkHealthPolling()
+      window.__ADMIN_OPS__?.load?.()
+      return
+    }
+
+    if (viewId === 'trust-view') {
+      stopNetworkHealthPolling()
+      stopMetricsStream()
+      window.__ADMIN_OPS__?.stop?.()
+      window.__ADMIN_TRUST__?.load?.()
+      return
+    }
+
     if (viewId === 'metrics-view') {
+      stopNetworkHealthPolling()
+      window.__ADMIN_OPS__?.stop?.()
       startMetricsStream()
     }
   }
@@ -1051,26 +1581,6 @@
   const showLoginError = (message) => {
     loginError.textContent = message
     loginError.classList.remove('d-none')
-  }
-
-  const refreshGrafanaFrames = () => {
-    const currentTheme = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-    const baseUrl = (config.grafanaBaseUrl || config.grafanaUrl || 'http://127.0.0.1:7777').replace(/\/+$/, '')
-    const dashboardUid = config.grafanaDashboardUid || 'nostream-overview'
-
-    document.querySelectorAll('.grafana-frame').forEach((frame) => {
-      if (!frame.src || !frame.dataset.panelId) {
-        return
-      }
-
-      const params = new URLSearchParams({
-        orgId: '1',
-        panelId: frame.dataset.panelId,
-        refresh: '5s',
-        theme: currentTheme,
-      })
-      frame.src = `${baseUrl}/d-solo/${dashboardUid}?${params.toString()}`
-    })
   }
 
   const updateSnapshot = (snapshot) => {
@@ -1305,14 +1815,6 @@
       return
     }
 
-    if (event.key === 't' || event.key === 'T') {
-      const current = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-      const nextTheme = current === 'dark' ? 'light' : 'dark'
-      localStorage.setItem('admin_theme', nextTheme)
-      applyTheme(nextTheme)
-      refreshGrafanaFrames()
-    }
-
     if ((event.key === 'l' || event.key === 'L') && !dashboardPanel.classList.contains('d-none')) {
       logoutButton?.click()
     }
@@ -1357,15 +1859,9 @@
     void loadSettingsData(true)
   })
 
-  if (themeToggle) {
-    themeToggle.addEventListener('click', () => {
-      const current = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-      const nextTheme = current === 'dark' ? 'light' : 'dark'
-      localStorage.setItem('admin_theme', nextTheme)
-      applyTheme(nextTheme)
-      refreshGrafanaFrames()
-    })
-  }
+  networkHealthRunButton?.addEventListener('click', () => {
+    void runNetworkHealthProbe()
+  })
 
   if (liveClock) {
     liveClock.textContent = formatClock()
@@ -1373,6 +1869,11 @@
       liveClock.textContent = formatClock()
     }, 1000)
   }
+
+  document.addEventListener('admin-unauthorized', () => {
+    window.__ADMIN_TRUST__?.closeDiagnosticsPreview?.()
+    showLogin()
+  })
 
   applyTheme(getTheme())
   checkSession()

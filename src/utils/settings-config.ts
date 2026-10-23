@@ -1,9 +1,11 @@
 import fs from 'fs'
 import { join } from 'path'
 import yaml from 'js-yaml'
-import { mergeDeepRight } from 'ramda'
+import { isNil, mergeDeepRight } from 'ramda'
 
 import { createLogger } from '../factories/logger-factory'
+import { EVENT_STORE_BACKENDS, isEventStoreBackend } from './event-store'
+import { GRANDFATHERED_PLAN_ID } from '../@types/user-subscription'
 import { Settings } from '../@types/settings'
 import {
   getConfigBaseDir,
@@ -59,6 +61,12 @@ const assertSafePathKey = (key: string, segment: string): void => {
     throw new Error(`Invalid path segment: ${segment}`)
   }
 }
+
+/** Settings that no longer do anything because the static mirroring worker was removed. */
+const REMOVED_SETTINGS = [
+  { path: '$', key: 'mirroring' },
+  { path: 'admin.notifications.events', key: 'mirror.disconnected' },
+]
 
 const hasOwn = (object: Record<string, unknown>, key: string): boolean => {
   return Object.prototype.hasOwnProperty.call(object, key)
@@ -230,6 +238,11 @@ const validateShape = (schema: unknown, candidate: unknown, path: PathToken[], i
 
     for (const key of Object.keys(candidate)) {
       if (renderedPath === 'admin' && key === 'passwordHash') {
+        continue
+      }
+
+      // Settings that were removed stay accepted, so a settings file that still has one can be saved.
+      if (REMOVED_SETTINGS.some((removed) => removed.path === renderedPath && removed.key === key)) {
         continue
       }
 
@@ -622,11 +635,132 @@ export const validatePathAgainstDefaults = (path: string): ValidationIssue[] => 
   ]
 }
 
+const validateRateLimitPeriods = (
+  rateLimits: { period: number }[] | undefined,
+  pathPrefix: string,
+  issues: ValidationIssue[],
+): void => {
+  if (!Array.isArray(rateLimits)) {
+    return
+  }
+  rateLimits.forEach((entry, index) => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      issues.push({ path: `${pathPrefix}[${index}]`, message: 'rateLimits entry must be an object' })
+      return
+    }
+    if (!(entry.period > 0)) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be greater than 0' })
+    }
+  })
+}
+
+const isPositiveInteger = (value: unknown): boolean =>
+  (typeof value === 'number' || typeof value === 'bigint') && Number.isInteger(Number(value)) && Number(value) > 0
+
+// Unlike the global limits, a plan's limits are not covered by the settings schema while the plan list
+// is empty by default, so each entry is checked here.
+const validatePlanRateLimits = (rateLimits: unknown, path: string, issues: ValidationIssue[]): void => {
+  if (rateLimits === undefined || rateLimits === null) {
+    return
+  }
+  if (!Array.isArray(rateLimits)) {
+    issues.push({ path, message: 'rateLimits must be a list' })
+    return
+  }
+
+  rateLimits.forEach((entry, index) => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      issues.push({ path: `${path}[${index}]`, message: 'rateLimits entry must be an object' })
+      return
+    }
+    for (const key of ['period', 'rate']) {
+      if (!isPositiveInteger(entry[key])) {
+        issues.push({ path: `${path}[${index}].${key}`, message: `${key} must be a positive integer` })
+      }
+    }
+  })
+}
+
+const validateSubscriptionPlans = (plans: unknown, issues: ValidationIssue[]): void => {
+  // A value that is not a list is already reported against the default settings schema.
+  if (!Array.isArray(plans)) {
+    return
+  }
+
+  const ids = new Set<string>()
+  const amounts = new Set<string>()
+
+  plans.forEach((plan, index) => {
+    const prefix = `payments.subscriptionPlans[${index}]`
+    if (plan === null || typeof plan !== 'object' || Array.isArray(plan)) {
+      issues.push({ path: prefix, message: 'plan must be an object' })
+      return
+    }
+
+    if (typeof plan.id !== 'string' || !plan.id.trim()) {
+      issues.push({ path: `${prefix}.id`, message: 'id is required' })
+    } else if (plan.id === GRANDFATHERED_PLAN_ID) {
+      issues.push({ path: `${prefix}.id`, message: `id "${GRANDFATHERED_PLAN_ID}" is reserved` })
+    } else if (ids.has(plan.id)) {
+      issues.push({ path: `${prefix}.id`, message: `id "${plan.id}" is used by more than one plan` })
+    } else {
+      ids.add(plan.id)
+    }
+
+    // The amount paid selects the plan, so two plans with one price could not be told apart.
+    if (!isPositiveInteger(plan.amount)) {
+      issues.push({ path: `${prefix}.amount`, message: 'amount must be a positive integer (msats)' })
+    } else if (amounts.has(String(plan.amount))) {
+      issues.push({ path: `${prefix}.amount`, message: `amount ${plan.amount} is used by more than one plan` })
+    } else {
+      amounts.add(String(plan.amount))
+    }
+
+    if (!isPositiveInteger(plan.intervalSeconds)) {
+      issues.push({ path: `${prefix}.intervalSeconds`, message: 'intervalSeconds must be a positive integer' })
+    }
+
+    if (!(Number.isInteger(plan.graceSeconds) && plan.graceSeconds >= 0)) {
+      issues.push({ path: `${prefix}.graceSeconds`, message: 'graceSeconds must be a non-negative integer' })
+    }
+
+    const limits = plan.limits
+    if (limits !== undefined && limits !== null) {
+      if (typeof limits !== 'object' || Array.isArray(limits)) {
+        issues.push({ path: `${prefix}.limits`, message: 'limits must be an object' })
+        return
+      }
+      validatePlanRateLimits(limits.rateLimits, `${prefix}.limits.rateLimits`, issues)
+      if (limits.retentionMaxDays !== undefined && !isPositiveInteger(limits.retentionMaxDays)) {
+        issues.push({
+          path: `${prefix}.limits.retentionMaxDays`,
+          message: 'retentionMaxDays must be a positive integer',
+        })
+      }
+    }
+  })
+}
+
 export const validateSettings = (settings: Settings): ValidationIssue[] => {
   const issues: ValidationIssue[] = []
 
   if (!settings.info?.relay_url) {
     issues.push({ path: 'info.relay_url', message: 'relay_url is required' })
+  } else if (typeof settings.info.relay_url === 'string') {
+    try {
+      const parsed = new URL(settings.info.relay_url)
+
+      if (!parsed.host) {
+        issues.push({ path: 'info.relay_url', message: 'relay_url must include a valid host' })
+      } else if (!['ws:', 'wss:', 'http:', 'https:'].includes(parsed.protocol)) {
+        issues.push({
+          path: 'info.relay_url',
+          message: 'relay_url must use ws, wss, http, or https protocol',
+        })
+      }
+    } catch {
+      issues.push({ path: 'info.relay_url', message: 'relay_url must be a valid absolute URL' })
+    }
   }
 
   if (!settings.info?.name) {
@@ -646,7 +780,181 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
     issues.push({ path: 'limits.rateLimiter.strategy', message: 'strategy must be ewma or sliding_window' })
   }
 
+  const eventStoreBackend = settings.eventStore?.backend
+  if (!isNil(eventStoreBackend) && !isEventStoreBackend(eventStoreBackend)) {
+    issues.push({
+      path: 'eventStore.backend',
+      message: `backend must be one of: ${EVENT_STORE_BACKENDS.join(', ')}`,
+    })
+  }
+
+  const nip66 = settings.nip66
+  if (nip66?.historyRetentionRuns !== undefined) {
+    const runs = nip66.historyRetentionRuns
+    if (!Number.isFinite(runs) || !(runs >= 1)) {
+      issues.push({ path: 'nip66.historyRetentionRuns', message: 'historyRetentionRuns must be at least 1' })
+    }
+  }
+  if (
+    nip66?.historyRetentionHours !== undefined &&
+    !(nip66.historyRetentionHours === 0 || nip66.historyRetentionHours >= 1)
+  ) {
+    issues.push({
+      path: 'nip66.historyRetentionHours',
+      message: 'historyRetentionHours must be 0 (disabled) or at least 1',
+    })
+  }
+
+  const nip77 = settings.nip77
+  if (nip77?.enabled) {
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs'] as const) {
+      const value = nip77[key]
+      // Wrong types (e.g. a string) are already reported against the default settings schema.
+      if (typeof value === 'number' && !(Number.isInteger(value) && value > 0)) {
+        issues.push({ path: `nip77.${key}`, message: `${key} must be a positive integer` })
+      }
+    }
+  }
+
+  validateSubscriptionPlans(settings.payments?.subscriptionPlans, issues)
+
+  const pow = settings.limits?.event?.pow
+  if (pow?.enabled) {
+    if (!(pow.floorBits >= 0) || !(pow.floorBits <= pow.ceilingBits)) {
+      issues.push({ path: 'limits.event.pow.floorBits', message: 'floorBits must be >= 0 and <= ceilingBits' })
+    }
+    if (!(pow.ceilingBits <= 256)) {
+      issues.push({ path: 'limits.event.pow.ceilingBits', message: 'ceilingBits must be <= 256' })
+    }
+    if (!(pow.periodMs > 0)) {
+      issues.push({ path: 'limits.event.pow.periodMs', message: 'periodMs must be greater than 0' })
+    }
+    if (!(pow.targetEventsPerSecond > 0)) {
+      issues.push({
+        path: 'limits.event.pow.targetEventsPerSecond',
+        message: 'targetEventsPerSecond must be greater than 0',
+      })
+    }
+    if (Array.isArray(pow.wotThresholds)) {
+      pow.wotThresholds.forEach((threshold, index) => {
+        if (threshold === null || typeof threshold !== 'object') {
+          issues.push({
+            path: `limits.event.pow.wotThresholds[${index}]`,
+            message: 'wotThresholds entry must be an object',
+          })
+          return
+        }
+        if (!(threshold.maxDistance >= 0)) {
+          issues.push({
+            path: `limits.event.pow.wotThresholds[${index}].maxDistance`,
+            message: 'maxDistance must be >= 0',
+          })
+        }
+        if (!(threshold.difficultyFactor >= 0) || !(threshold.difficultyFactor <= 1)) {
+          issues.push({
+            path: `limits.event.pow.wotThresholds[${index}].difficultyFactor`,
+            message: 'difficultyFactor must be between 0 and 1',
+          })
+        }
+      })
+    }
+  }
+
+  const limits = settings.limits
+  if (limits) {
+    validateRateLimitPeriods(limits.event?.rateLimits, 'limits.event.rateLimits', issues)
+    validateRateLimitPeriods(limits.message?.rateLimits, 'limits.message.rateLimits', issues)
+    validateRateLimitPeriods(limits.connection?.rateLimits, 'limits.connection.rateLimits', issues)
+    validateRateLimitPeriods(limits.invoice?.rateLimits, 'limits.invoice.rateLimits', issues)
+    validateRateLimitPeriods(limits.admissionCheck?.rateLimits, 'limits.admissionCheck.rateLimits', issues)
+    validateRateLimitPeriods(limits.invite?.rateLimits, 'limits.invite.rateLimits', issues)
+    validateRateLimitPeriods(limits.admin?.rateLimits, 'limits.admin.rateLimits', issues)
+    validateRateLimitPeriods(limits.admin?.loginRateLimits, 'limits.admin.loginRateLimits', issues)
+  }
+
   validateShape(loadDefaults(), settings, [], issues)
+  issues.push(...validateAdminNotifications(settings))
+
+  return issues
+}
+
+const validateAdminNotifications = (settings: Settings): ValidationIssue[] => {
+  const issues: ValidationIssue[] = []
+  const notifications = settings.admin?.notifications
+  if (!notifications) {
+    return issues
+  }
+
+  if (notifications.retry?.maxAttempts !== undefined && notifications.retry.maxAttempts < 1) {
+    issues.push({ path: 'admin.notifications.retry.maxAttempts', message: 'maxAttempts must be at least 1' })
+  }
+
+  if (notifications.retry?.baseDelayMs !== undefined && notifications.retry.baseDelayMs < 0) {
+    issues.push({ path: 'admin.notifications.retry.baseDelayMs', message: 'baseDelayMs must be >= 0' })
+  }
+
+  if (notifications.deliveryLogRetentionDays !== undefined && notifications.deliveryLogRetentionDays < 1) {
+    issues.push({
+      path: 'admin.notifications.deliveryLogRetentionDays',
+      message: 'deliveryLogRetentionDays must be at least 1',
+    })
+  }
+
+  const rawTargets = notifications.targets
+  if (rawTargets !== undefined && !Array.isArray(rawTargets)) {
+    issues.push({ path: 'admin.notifications.targets', message: 'targets must be an array' })
+    return issues
+  }
+
+  const targetIds = new Set<string>()
+  for (const [index, target] of (rawTargets ?? []).entries()) {
+    const prefix = `admin.notifications.targets[${index}]`
+    if (!target || typeof target !== 'object' || Array.isArray(target)) {
+      issues.push({ path: prefix, message: 'target must be an object' })
+      continue
+    }
+
+    if (typeof target.id !== 'string' || !target.id.trim()) {
+      issues.push({ path: `${prefix}.id`, message: 'target id is required' })
+    } else if (targetIds.has(target.id)) {
+      issues.push({ path: `${prefix}.id`, message: 'target id must be unique' })
+    } else {
+      targetIds.add(target.id)
+    }
+
+    if (
+      typeof target.type !== 'string' ||
+      !['http', 'discord', 'slack', 'telegram'].includes(target.type)
+    ) {
+      issues.push({ path: `${prefix}.type`, message: 'type must be http, discord, slack, or telegram' })
+    }
+
+    if (target.enabled !== undefined && typeof target.enabled !== 'boolean') {
+      issues.push({ path: `${prefix}.enabled`, message: 'enabled must be a boolean' })
+    }
+
+    if (target.type === 'telegram') {
+      if (typeof target.botToken !== 'string' || !target.botToken.trim()) {
+        issues.push({ path: `${prefix}.botToken`, message: 'botToken is required for telegram targets' })
+      }
+      if (typeof target.chatId !== 'string' || !target.chatId.trim()) {
+        issues.push({ path: `${prefix}.chatId`, message: 'chatId is required for telegram targets' })
+      }
+    } else if (target.type === 'http' || target.type === 'discord' || target.type === 'slack') {
+      if (typeof target.url !== 'string' || !target.url.trim()) {
+        issues.push({ path: `${prefix}.url`, message: 'url is required for webhook targets' })
+      } else {
+        try {
+          const parsed = new URL(target.url)
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            issues.push({ path: `${prefix}.url`, message: 'url must use http or https' })
+          }
+        } catch {
+          issues.push({ path: `${prefix}.url`, message: 'url must be a valid URL' })
+        }
+      }
+    }
+  }
 
   return issues
 }

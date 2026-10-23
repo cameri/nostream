@@ -13,19 +13,23 @@ import {
   ProbeTarget,
   ProbeTimeouts,
 } from './types'
-import { createNodeWebSocketConnector, probeWebSocketRtt, WebSocketConnector } from './ws-rtt-probe'
+import {
+  createNodeWebSocketProtocolConnector,
+  probeWebSocketProtocol,
+  WebSocketProtocolConnector,
+} from './ws-protocol-probe'
 
 export interface ProbeClients {
   dns: DnsResolver
   tls: TlsConnector
-  ws: WebSocketConnector
+  ws: WebSocketProtocolConnector
   nip11: Nip11Fetcher
 }
 
 export const createDefaultProbeClients = (): ProbeClients => ({
   dns: createNodeDnsResolver(),
   tls: createNodeTlsConnector(),
-  ws: createNodeWebSocketConnector(),
+  ws: createNodeWebSocketProtocolConnector(),
   nip11: createNodeNip11Fetcher(),
 })
 
@@ -120,6 +124,7 @@ export const runProbe = async (
   const timeouts = mergeTimeouts(options.timeouts)
   const dnsCacheTtlSeconds = options.dnsCacheTtlSeconds ?? DEFAULT_DNS_CACHE_TTL_SECONDS
   const skipDnsCache = options.skipDnsCache ?? false
+  const monitorPrivateKey = options.monitorPrivateKey
 
   const dnsStartedAt = Date.now()
   const dnsPromise = runDnsProbe(clients, target, { dnsCacheTtlSeconds, skipDnsCache })
@@ -136,7 +141,9 @@ export const runProbe = async (
   const [dns, tls, wsRtt, nip11] = await Promise.all([
     Promise.race([dnsPromise, dnsTimeout]),
     runTimedProbe(() => probeTls(clients.tls, target, timeouts.tlsMs)),
-    runTimedProbe(() => probeWebSocketRtt(clients.ws, target, timeouts.wsRttMs)),
+    runTimedProbe(() =>
+      probeWebSocketProtocol(clients.ws, target, timeouts.wsRttMs, { monitorPrivateKey }),
+    ),
     runTimedProbe(() => probeNip11(clients.nip11, target.nip11Url, timeouts.nip11Ms)),
   ])
 

@@ -1,10 +1,10 @@
-import { createLogger } from '../factories/logger-factory'
-import { EventKinds, EventTags } from '../constants/base'
 import { ICacheAdapter } from '../@types/adapters'
+import { Pubkey, Tag } from '../@types/base'
 import { IEventRepository } from '../@types/repositories'
 import { IWotGraphService } from '../@types/services'
-import { Pubkey, Tag } from '../@types/base'
 import { Settings } from '../@types/settings'
+import { EventKinds, EventTags } from '../constants/base'
+import { createLogger } from '../factories/logger-factory'
 import { toNostrEvent } from '../utils/event'
 
 const logger = createLogger('wot-graph-service')
@@ -35,6 +35,19 @@ export class WotGraphService implements IWotGraphService {
 
   public isReady(): boolean {
     return this.ready
+  }
+
+  public warmUp(): void {
+    // Do NOT call ensureBuilt() when WoT is disabled: rebuild()'s
+    // disabled-graph branch marks `ready = true` permanently, and if an
+    // operator later hot-enables WoT at runtime, getDistance() would see
+    // `ready` already true and skip rebuilding, leaving the graph
+    // permanently empty until the worker restarts. Only warm up when
+    // there's an actual graph to build.
+    if (!this.settings().wot?.enabled) {
+      return
+    }
+    void this.ensureBuilt()
   }
 
   public async getDistance(pubkey: Pubkey): Promise<number | undefined> {

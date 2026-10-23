@@ -1,5 +1,6 @@
-import { Invoice } from './invoice'
 import { Pubkey } from './base'
+import { Invoice } from './invoice'
+import { NotificationOutboxPayload } from './notification-outbox'
 
 export interface IMaintenanceService {
   clearOldEvents(): Promise<void>
@@ -16,14 +17,49 @@ export interface IWotGraphService {
   isTrusted(pubkey: Pubkey): Promise<boolean>
   /** Applies a pubkey's current NIP-02 follow list to the graph. */
   updateFollowList(pubkey: Pubkey, follows: Pubkey[]): Promise<void>
+  /**
+   * Fire-and-forget: kicks off the initial graph build without waiting on it,
+   * so the first real getDistance() call after startup doesn't have to pay
+   * for a cold-start rebuild itself.
+   */
+  warmUp(): void
 }
 
 export interface IPaymentsService {
   getInvoiceFromPaymentsProcessor(invoice: string | Invoice): Promise<Partial<Invoice>>
-  createInvoice(pubkey: Pubkey, amount: bigint, description: string): Promise<Invoice>
+  createInvoice(pubkey: Pubkey, amount: bigint, description: string, planId?: string): Promise<Invoice>
   updateInvoice(invoice: Partial<Invoice>): Promise<void>
   updateInvoiceStatus(invoice: Pick<Invoice, 'id' | 'status'>): Promise<Invoice>
-  confirmInvoice(invoice: Pick<Invoice, 'id' | 'amountPaid' | 'confirmedAt' | 'status' | 'pubkey'>): Promise<void>
+  confirmInvoice(
+    invoice: Pick<Invoice, 'id' | 'amountPaid' | 'confirmedAt' | 'status' | 'pubkey'> &
+      Partial<Pick<Invoice, 'planId'>>,
+  ): Promise<void>
   sendInvoiceUpdateNotification(invoice: Invoice): Promise<void>
+  /** Tells the subscriber, with a kind 402 event, that their renewal invoice can be paid. */
+  sendRenewalNotification(invoice: Invoice): Promise<void>
   getPendingInvoices(offset?: number): Promise<Invoice[]>
+}
+
+export interface ISubscriptionService {
+  /** One pass of renewal invoices, period ends and grace expiries. Returns how many subscriptions changed. */
+  processLifecycle(now?: Date): Promise<number>
+}
+
+export interface NotificationDispatchContext {
+  outboxId?: string
+  attemptNumber?: number
+}
+
+export interface INotificationDispatcher {
+  dispatch(eventType: string, payload: NotificationOutboxPayload, context?: NotificationDispatchContext): Promise<void>
+}
+
+export interface IOperatorNotificationService extends INotificationDispatcher {
+  dispatchTestTarget(targetId: string): Promise<void>
+  getMaxAttempts(): number
+  getBaseDelayMs(): number
+}
+
+export interface INotificationOutboxService {
+  processBatch(limit?: number): Promise<number>
 }

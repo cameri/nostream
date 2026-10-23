@@ -16,10 +16,16 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # The default GITHUB_TOKEN must not be the credential behind the version
+      # branch push: GitHub starts no workflow runs for events a GITHUB_TOKEN
+      # creates, so the version PR would never run its own required checks.
+      # RELEASE_PAT is the environment secret this job already hands to the
+      # action for its API calls; the push needs the same credential.
       - name: Checkout
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
 
       - uses: pnpm/action-setup@v4
 

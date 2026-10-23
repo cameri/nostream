@@ -9,6 +9,7 @@ import {
   toCategoryLabel,
   getByPath,
   getTopLevelSettingCategories,
+  loadDefaults,
   parseTypedValue,
   parseValue,
   setByPath,
@@ -21,6 +22,7 @@ import {
   guidedSettingCategories,
   requireNonEmptySettingValue,
   requireSafeNonNegativeIntegerSettingValue,
+  requireSafePositiveIntegerSettingValue,
 } from '../../../src/utils/settings-guided-schema'
 
 describe('settings-config', () => {
@@ -97,6 +99,507 @@ describe('settings-config', () => {
     expect(issues.some((issue) => issue.path === 'network')).to.equal(true)
   })
 
+  it('rejects invalid nip66 history retention settings', () => {
+    const issues = validateSettings({
+      info: { relay_url: 'wss://test.relay', name: 'test' },
+      network: {},
+      nip66: { historyRetentionRuns: 0, historyRetentionHours: 0 },
+    } as any)
+
+    expect(issues.some((issue) => issue.path === 'nip66.historyRetentionRuns')).to.equal(true)
+    expect(issues.some((issue) => issue.path === 'nip66.historyRetentionHours')).to.equal(false)
+  })
+
+  it('rejects non-finite nip66 historyRetentionRuns', () => {
+    const issues = validateSettings({
+      info: { relay_url: 'wss://test.relay', name: 'test' },
+      network: {},
+      nip66: { historyRetentionRuns: Number.POSITIVE_INFINITY },
+    } as any)
+
+    expect(issues.some((issue) => issue.path === 'nip66.historyRetentionRuns')).to.equal(true)
+  })
+
+  it('accepts a relay_url with a valid ws/wss/http/https absolute URL', () => {
+    for (const relay_url of [
+      'ws://nostream.example.com:8008',
+      'wss://nostream.example.com',
+      'http://localhost:8008',
+      'http://nostream.example.com',
+      'https://nostream.example.com',
+      'https://nostream.example.com:8443',
+      'ws://[::1]:8008',
+      'wss://127.0.0.1',
+    ]) {
+      const issues = validateSettings({ info: { relay_url, name: 'test' } } as any)
+
+      expect(
+        issues.filter((issue) => issue.path === 'info.relay_url'),
+        `expected ${relay_url} to pass`,
+      ).to.be.empty
+    }
+  })
+
+  it('rejects a relay_url that is not a valid absolute URL', () => {
+    const issues = validateSettings({ info: { relay_url: 'nostream.example.com', name: 'test' } } as any)
+
+    expect(
+      issues.some(
+        (issue) => issue.path === 'info.relay_url' && issue.message === 'relay_url must be a valid absolute URL',
+      ),
+    ).to.equal(true)
+  })
+
+  it('rejects a scheme-only relay_url with no host', () => {
+    const issues = validateSettings({ info: { relay_url: 'localhost:8008', name: 'test' } } as any)
+
+    expect(
+      issues.some(
+        (issue) => issue.path === 'info.relay_url' && issue.message === 'relay_url must include a valid host',
+      ),
+    ).to.equal(true)
+  })
+
+  it('rejects a relay_url whose protocol is not ws/wss/http/https', () => {
+    for (const relay_url of [
+      'ftp://nostream.example.com',
+      'gopher://nostream.example.com:70',
+      'whttp://nostream.example.com',
+    ]) {
+      const issues = validateSettings({ info: { relay_url, name: 'test' } } as any)
+
+      expect(
+        issues.some(
+          (issue) =>
+            issue.path === 'info.relay_url' &&
+            issue.message === 'relay_url must use ws, wss, http, or https protocol',
+        ),
+        `expected ${relay_url} to be rejected for protocol`,
+      ).to.equal(true)
+    }
+  })
+
+  describe('rate limit period validation', () => {
+    const baseSettings = () =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+      }) as any
+
+    const nonPositivePeriodCases: { issuePath: string; limits: Record<string, unknown> }[] = [
+      {
+        issuePath: 'limits.event.rateLimits[0].period',
+        limits: { event: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.message.rateLimits[0].period',
+        limits: { message: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.connection.rateLimits[0].period',
+        limits: { connection: { rateLimits: [{ period: -1, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.invoice.rateLimits[0].period',
+        limits: { invoice: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.admissionCheck.rateLimits[0].period',
+        limits: { admissionCheck: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.invite.rateLimits[0].period',
+        limits: { invite: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.admin.rateLimits[0].period',
+        limits: { admin: { rateLimits: [{ period: 0, rate: 1 }] } },
+      },
+      {
+        issuePath: 'limits.admin.loginRateLimits[0].period',
+        limits: { admin: { loginRateLimits: [{ period: -1, rate: 1 }] } },
+      },
+    ]
+
+    for (const { issuePath, limits } of nonPositivePeriodCases) {
+      it(`rejects a non-positive period on ${issuePath.replace('[0].period', '')}`, () => {
+        const settings = baseSettings()
+        settings.limits = limits
+
+        const issues = validateSettings(settings)
+        expect(issues.some((issue) => issue.path === issuePath)).to.equal(true)
+      })
+    }
+
+    it('accepts a positive period on limits.event.rateLimits', () => {
+      const settings = baseSettings()
+      settings.limits = { event: { rateLimits: [{ period: 60_000, rate: 10 }] } }
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path.startsWith('limits.event.rateLimits'))).to.equal(false)
+    })
+
+    it('rejects a null entry in limits.event.rateLimits without throwing', () => {
+      const settings = baseSettings()
+      settings.limits = { event: { rateLimits: [null] } }
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.rateLimits[0]')).to.equal(true)
+    })
+  })
+
+  describe('nip77 settings', () => {
+    const baseSettings = (nip77: any) =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+        nip77,
+      }) as any
+
+    const nip77Issues = (nip77: any) =>
+      validateSettings(baseSettings(nip77)).filter((issue) => issue.path.startsWith('nip77'))
+
+    it('accepts the shipped defaults', () => {
+      expect(
+        nip77Issues({
+          enabled: true,
+          maxEventsPerSession: 100000,
+          maxSessionsPerConnection: 3,
+          sessionIdleTimeoutMs: 60000,
+        }),
+      ).to.deep.equal([])
+    })
+
+    it('accepts an enabled section that leaves the limits to their defaults', () => {
+      expect(nip77Issues({ enabled: true })).to.deep.equal([])
+    })
+
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs']) {
+      for (const bad of [0, -1, 1.5, '10', Number.NaN]) {
+        it(`rejects ${key} = ${String(bad)}`, () => {
+          const issues = nip77Issues({ enabled: true, [key]: bad })
+
+          expect(issues.map((issue) => issue.path)).to.deep.equal([`nip77.${key}`])
+        })
+      }
+    }
+
+    it('does not validate the limits while the feature is off', () => {
+      expect(nip77Issues({ enabled: false, maxEventsPerSession: 0 })).to.deep.equal([])
+    })
+  })
+
+  describe('subscription plan settings', () => {
+    const settingsWith = (subscriptionPlans: any) =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+        payments: { enabled: true, processor: 'lnbits', subscriptionPlans },
+      }) as any
+
+    const planIssues = (subscriptionPlans: any) =>
+      validateSettings(settingsWith(subscriptionPlans)).filter((issue) =>
+        issue.path.startsWith('payments.subscriptionPlans'),
+      )
+
+    const basic = { id: 'basic', amount: 1000000, intervalSeconds: 2592000, graceSeconds: 259200 }
+    const premium = { id: 'premium', amount: 5000000, intervalSeconds: 2592000, graceSeconds: 0 }
+
+    it('accepts no plans, an empty list and valid plans', () => {
+      expect(planIssues(undefined)).to.deep.equal([])
+      expect(planIssues([])).to.deep.equal([])
+      expect(planIssues([basic, premium])).to.deep.equal([])
+    })
+
+    it('accepts per-plan limits', () => {
+      const plan = { ...basic, limits: { rateLimits: [{ period: 60000, rate: 120 }], retentionMaxDays: 90 } }
+
+      expect(planIssues([plan])).to.deep.equal([])
+    })
+
+    it('reports a value that is not a list once, through the settings schema', () => {
+      expect(planIssues({ basic }).map((issue) => issue.path)).to.deep.equal(['payments.subscriptionPlans'])
+    })
+
+    it('rejects a plan that is not an object', () => {
+      expect(planIssues(['basic']).map((issue) => issue.path)).to.deep.equal(['payments.subscriptionPlans[0]'])
+    })
+
+    it('rejects a missing, empty, reserved or repeated id', () => {
+      expect(planIssues([{ ...basic, id: undefined }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].id',
+      ])
+      expect(planIssues([{ ...basic, id: '  ' }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].id',
+      ])
+      expect(planIssues([{ ...basic, id: 'grandfathered' }]).map((issue) => issue.message)).to.deep.equal([
+        'id "grandfathered" is reserved',
+      ])
+      expect(planIssues([basic, { ...premium, id: 'basic' }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[1].id',
+      ])
+    })
+
+    for (const bad of [0, -1, 1.5, '1000', undefined]) {
+      it(`rejects amount = ${String(bad)}`, () => {
+        expect(planIssues([{ ...basic, amount: bad }]).map((issue) => issue.path)).to.deep.equal([
+          'payments.subscriptionPlans[0].amount',
+        ])
+      })
+
+      it(`rejects intervalSeconds = ${String(bad)}`, () => {
+        expect(planIssues([{ ...basic, intervalSeconds: bad }]).map((issue) => issue.path)).to.deep.equal([
+          'payments.subscriptionPlans[0].intervalSeconds',
+        ])
+      })
+    }
+
+    it('rejects two plans with the same amount, since the amount selects the plan', () => {
+      const issues = planIssues([basic, { ...premium, amount: basic.amount }])
+
+      expect(issues.map((issue) => issue.path)).to.deep.equal(['payments.subscriptionPlans[1].amount'])
+    })
+
+    it('accepts a bigint amount', () => {
+      expect(planIssues([{ ...basic, amount: 1000000n }])).to.deep.equal([])
+    })
+
+    it('allows a zero grace period but not a negative or fractional one', () => {
+      expect(planIssues([{ ...basic, graceSeconds: 0 }])).to.deep.equal([])
+      for (const bad of [-1, 0.5, '60', undefined]) {
+        expect(planIssues([{ ...basic, graceSeconds: bad }]).map((issue) => issue.path)).to.deep.equal([
+          'payments.subscriptionPlans[0].graceSeconds',
+        ])
+      }
+    })
+
+    it('rejects invalid per-plan limits', () => {
+      expect(planIssues([{ ...basic, limits: 'fast' }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].limits',
+      ])
+      expect(
+        planIssues([{ ...basic, limits: { rateLimits: [{ period: 0, rate: 1 }] } }]).map((issue) => issue.path),
+      ).to.deep.equal(['payments.subscriptionPlans[0].limits.rateLimits[0].period'])
+      expect(planIssues([{ ...basic, limits: { rateLimits: 'fast' } }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].limits.rateLimits',
+      ])
+      expect(
+        planIssues([{ ...basic, limits: { rateLimits: [{ period: 60000, rate: 'fast' }] } }]).map(
+          (issue) => issue.path,
+        ),
+      ).to.deep.equal(['payments.subscriptionPlans[0].limits.rateLimits[0].rate'])
+      expect(
+        planIssues([{ ...basic, limits: { rateLimits: [{ period: '60000', rate: 5 }] } }]).map((issue) => issue.path),
+      ).to.deep.equal(['payments.subscriptionPlans[0].limits.rateLimits[0].period'])
+      expect(
+        planIssues([{ ...basic, limits: { rateLimits: [{ period: 60000 }] } }]).map((issue) => issue.path),
+      ).to.deep.equal(['payments.subscriptionPlans[0].limits.rateLimits[0].rate'])
+      expect(planIssues([{ ...basic, limits: { rateLimits: ['x'] } }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].limits.rateLimits[0]',
+      ])
+      expect(planIssues([{ ...basic, limits: { retentionMaxDays: 0 } }]).map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].limits.retentionMaxDays',
+      ])
+    })
+
+    it('reports a problem in each plan', () => {
+      const issues = planIssues([
+        { ...basic, intervalSeconds: 0 },
+        { ...premium, graceSeconds: -1 },
+      ])
+
+      expect(issues.map((issue) => issue.path)).to.deep.equal([
+        'payments.subscriptionPlans[0].intervalSeconds',
+        'payments.subscriptionPlans[1].graceSeconds',
+      ])
+    })
+  })
+
+  describe('adaptive pow settings', () => {
+    const baseSettings = () =>
+      ({
+        info: { relay_url: 'wss://test.relay', name: 'test' },
+        network: {},
+        limits: {
+          event: {
+            pow: { enabled: true, floorBits: 8, ceilingBits: 24, targetEventsPerSecond: 10, periodMs: 60000 },
+          },
+        },
+      }) as any
+
+    it('accepts a valid pow config', () => {
+      const issues = validateSettings(baseSettings())
+      expect(issues.some((issue) => issue.path.startsWith('limits.event.pow'))).to.equal(false)
+    })
+
+    it('rejects floorBits greater than ceilingBits', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.floorBits = 20
+      settings.limits.event.pow.ceilingBits = 10
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.floorBits')).to.equal(true)
+    })
+
+    it('rejects a negative floorBits', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.floorBits = -1
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.floorBits')).to.equal(true)
+    })
+
+    it('rejects a ceilingBits above 256', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.ceilingBits = 300
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.ceilingBits')).to.equal(true)
+    })
+
+    it('accepts a ceilingBits of exactly 256', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.ceilingBits = 256
+      settings.limits.event.pow.floorBits = 0
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.ceilingBits')).to.equal(false)
+    })
+
+    it('rejects a non-positive periodMs', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.periodMs = 0
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.periodMs')).to.equal(true)
+    })
+
+    it('rejects a non-positive targetEventsPerSecond', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.targetEventsPerSecond = 0
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.targetEventsPerSecond')).to.equal(true)
+    })
+
+    it('skips validation entirely when pow is disabled', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.enabled = false
+      settings.limits.event.pow.floorBits = -1
+      settings.limits.event.pow.periodMs = -1
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path.startsWith('limits.event.pow'))).to.equal(false)
+    })
+
+    it('accepts valid wotThresholds', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.wotThresholds = [
+        { maxDistance: 1, difficultyFactor: 0 },
+        { maxDistance: 2, difficultyFactor: 0.5 },
+      ]
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path.startsWith('limits.event.pow.wotThresholds'))).to.equal(false)
+    })
+
+    it('rejects a negative wotThresholds maxDistance', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.wotThresholds = [{ maxDistance: -1, difficultyFactor: 0.5 }]
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[0].maxDistance')).to.equal(true)
+    })
+
+    it('rejects a wotThresholds difficultyFactor outside [0, 1]', () => {
+      const settings = baseSettings()
+      settings.limits.event.pow.wotThresholds = [
+        { maxDistance: 1, difficultyFactor: -0.1 },
+        { maxDistance: 2, difficultyFactor: 1.1 },
+      ]
+
+      const issues = validateSettings(settings)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[0].difficultyFactor')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[1].difficultyFactor')).to.equal(true)
+    })
+
+    it('rejects null or non-object entries in wotThresholds without throwing', () => {
+      const settings = baseSettings()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(settings.limits.event.pow as any).wotThresholds = [null, undefined, 42]
+
+      let issues: ReturnType<typeof validateSettings>
+      expect(() => {
+        issues = validateSettings(settings)
+      }).not.to.throw()
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[0]')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[1]')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'limits.event.pow.wotThresholds[2]')).to.equal(true)
+    })
+  })
+
+  describe('removed settings', () => {
+    const settingsWith = (extra: Record<string, unknown>) =>
+      ({ ...loadDefaults(), info: { relay_url: 'wss://relay.example.com', name: 'test' }, ...extra }) as any
+
+    it('accepts a mirroring.static that is still configured, so an unrelated change can be saved', () => {
+      const settings = settingsWith({ mirroring: { static: [{ address: 'wss://mirror.example', secret: 'x' }] } })
+      settings.info.name = 'a new name'
+
+      expect(validateSettings(settings)).to.deep.equal([])
+    })
+
+    it('accepts the mirror.disconnected notification toggle that is still configured', () => {
+      const settings = settingsWith({})
+      settings.admin = {
+        ...settings.admin,
+        notifications: { ...settings.admin?.notifications, events: { 'mirror.disconnected': true } },
+      }
+
+      expect(validateSettings(settings)).to.deep.equal([])
+    })
+
+    it('still rejects an unknown key at the top level', () => {
+      expect(validateSettings(settingsWith({ nonsense: true })).map((issue) => issue.path)).to.deep.equal(['nonsense'])
+    })
+
+    it('still rejects an unknown key inside a known section', () => {
+      const settings = settingsWith({})
+      settings.limits = { ...settings.limits, nonsense: true }
+
+      expect(validateSettings(settings).map((issue) => issue.path)).to.include('limits.nonsense')
+    })
+  })
+
+  describe('event store settings', () => {
+    const baseSettings = (): any => ({
+      info: { relay_url: 'wss://test.relay', name: 'test' },
+      network: {},
+    })
+
+    it('ships postgres as the default backend', () => {
+      expect(loadDefaults().eventStore?.backend).to.equal('postgres')
+    })
+
+    it('accepts settings without an eventStore section', () => {
+      const issues = validateSettings(baseSettings())
+
+      expect(issues.some((issue) => issue.path.startsWith('eventStore'))).to.equal(false)
+    })
+
+    it('accepts the postgres backend', () => {
+      const issues = validateSettings({ ...baseSettings(), eventStore: { backend: 'postgres' } })
+
+      expect(issues.some((issue) => issue.path.startsWith('eventStore'))).to.equal(false)
+    })
+
+    it('rejects an unsupported backend', () => {
+      const issues = validateSettings({ ...baseSettings(), eventStore: { backend: 'mongodb' } })
+
+      expect(issues).to.deep.include({ path: 'eventStore.backend', message: 'backend must be one of: postgres' })
+    })
+  })
+
   it('formats setting category labels', () => {
     expect(toCategoryLabel('payments_processors')).to.equal('Payments Processors')
     expect(toCategoryLabel('rate_limiter')).to.equal('Rate Limiter')
@@ -122,6 +625,26 @@ describe('settings-guided-schema', () => {
     expect(requireSafeNonNegativeIntegerSettingValue('bad')).to.equal('Value must be a non-negative integer')
     expect(requireSafeNonNegativeIntegerSettingValue('2048')).to.equal(undefined)
     expect(requireNonEmptySettingValue(' ')).to.equal('Value is required')
+  })
+
+  it('validates guided positive integer fields', () => {
+    expect(requireSafePositiveIntegerSettingValue('bad')).to.equal('Value must be a positive integer')
+    expect(requireSafePositiveIntegerSettingValue('-1')).to.equal('Value must be a positive integer')
+    expect(requireSafePositiveIntegerSettingValue('0')).to.equal('Value must be a positive integer')
+    expect(requireSafePositiveIntegerSettingValue('9007199254740993')).to.equal('Value must be a safe integer')
+    expect(requireSafePositiveIntegerSettingValue(' 60000 ')).to.equal(undefined)
+  })
+
+  it('exposes the nip77 settings with positive integer validation', () => {
+    const category = 'nip-features'
+
+    expect(getGuidedSettingField(category, 'nip77.enabled')?.type).to.equal('boolean')
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs']) {
+      const field = getGuidedSettingField(category, `nip77.${key}`)
+      expect(field?.type, key).to.equal('number')
+      expect(field?.validate?.('0'), key).to.equal('Value must be a positive integer')
+      expect(field?.validate?.('3'), key).to.equal(undefined)
+    }
   })
 
   it('does not create settings.yaml when ensuring config dir exists', () => {

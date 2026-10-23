@@ -6,7 +6,9 @@ that image.
 
 This guide assumes a Linux host with Docker Engine and the Compose plugin
 installed. Container images are published automatically after CI succeeds on pushes to
-`main`. See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for the CI/CD flow.
+`main`. See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for the CI/CD flow and
+[`docs/DEPLOY-RUNBOOK.md`](../docs/DEPLOY-RUNBOOK.md) for the step-by-step update
+procedure after a new image lands on the host.
 
 ## What the server keeps locally
 
@@ -14,7 +16,7 @@ installed. Container images are published automatically after CI succeeds on pus
 |------|----------|------------------------|
 | `.env` | **Yes** | No — your secrets and tuning |
 | `.nostr/data/` | Created at runtime | No — Postgres data |
-| `docker-compose.yml` | Yes (via bootstrap) | **Yes** — re-run bootstrap or PR 2 auto-sync |
+| `docker-compose.yml` | Yes (via bootstrap) | **Yes** — re-run bootstrap when release notes say so |
 | `postgresql.conf` | Yes (via bootstrap) | Rarely |
 | `.nostr/settings.yaml` | **Optional** | Your overrides only |
 
@@ -108,16 +110,23 @@ Use the relay HTTP port (default `8008`) for deploy and load-balancer probes:
 | Endpoint   | Type       | Behavior                                                 | Typical use                   |
 |------------|------------|----------------------------------------------------------|-------------------------------|
 | `/healthz` | Liveness   | Always `200 OK` if the process is running                | Restart unhealthy containers  |
-| `/readyz`  | Readiness  | `200` when Postgres and Redis respond; `503` otherwise   | HAProxy blue/green cutover    |
+| `/readyz`  | Readiness  | `200` when Postgres and Redis respond; `503` otherwise. When `RELAY_BROADCAST_FANOUT=true` (HAProxy stack), fan-out must also be ready or `/readyz` is `503`. | HAProxy blue/green cutover    |
 
 `/readyz` is unauthenticated and intended for infrastructure. It reuses the same
 Postgres and Redis checks as `/admin/health` without requiring admin auth.
+When fan-out is enabled, the JSON body includes `relayBroadcast.ok` so a backend
+that lost Redis stream fan-out is drained by HAProxy instead of serving half of
+live subscribers.
 Each dependency ping uses the default 3s timeout (`ADMIN_DEPENDENCY_PING_TIMEOUT_MS`).
 Set your load balancer check timeout above that (for example HAProxy
 `timeout check 5s`) so slow-but-healthy backends do not flap during probes.
 Responses are cached in-process for 1s to absorb polling without hammering the DB pool.
-Use readiness before routing traffic to a new instance during deploys; graceful
-WebSocket draining on shutdown is planned as a follow-up.
+Use readiness before routing traffic to a new instance during deploys. On
+SIGTERM the relay sets `/readyz` to `503` with `"status":"draining"` while
+the HTTP listener remains up, rejects new WebSocket connections, drains
+existing clients, then closes (`WS_DRAIN_TIMEOUT_MS`, default 30s). Set
+`stop_grace_period` above that timeout (reference compose uses 45s) so Docker
+does not SIGKILL the container mid-drain.
 
 ## Image delivery on restricted networks
 
@@ -129,21 +138,24 @@ Some hosts cannot reach GHCR over IPv4:
 
 ## Updating
 
-When a new image is available:
+After a new image is on the host (`docker pull`, `docker load`, or the webhook
+pull stack), **recreate the relay** so migrations run and the new code starts:
 
 ```bash
-docker pull ghcr.io/cameri/nostream:main   # or: docker load -i nostream-main.tar.gz
-docker compose up -d
+chmod +x deploy/recreate-relay.sh
+./deploy/recreate-relay.sh /opt/nostream
 ```
 
-If migrate does not re-run after a load:
+The script runs `nostream-migrate`, force-recreates `nostream`, and waits for
+`/readyz` to return `200`.
 
-```bash
-docker compose up -d --force-recreate nostream-migrate nostream
-```
+Checklist, rollback, and troubleshooting:
+[`docs/DEPLOY-RUNBOOK.md`](../docs/DEPLOY-RUNBOOK.md).
 
-When compose or `postgresql.conf` change in a release, re-run bootstrap against
-the new checkout (or copy the updated files). Automated sync is planned separately.
+When compose or `postgresql.conf` change in a release, re-run bootstrap before
+recreating. For zero-downtime updates on two relay backends, use the HAProxy
+stack and [`rolling-relay-recreate.sh`](rolling-relay-recreate.sh) below instead
+of `recreate-relay.sh`.
 
 ## Refresh release-managed files
 
@@ -152,3 +164,82 @@ the new checkout (or copy the updated files). Automated sync is planned separate
 ```
 
 Existing `.env` and `.nostr/settings.yaml` are preserved.
+
+## Zero-downtime updates (HAProxy blue/green)
+
+`deploy/docker-compose.haproxy.yml` replaces the single-relay stack with two
+relays (`nostream-blue`, `nostream-green`) behind HAProxy on `127.0.0.1:8008`.
+Postgres, Redis, and migrations are unchanged.
+
+The HAProxy compose file **always sets `RELAY_BROADCAST_FANOUT=true` on relay
+services** (even if bootstrap `.env` leaves it `false` for the single-relay
+stack). Both relays publish accepted events to a shared Redis stream; each
+cluster primary subscribes and fans out to its workers so live WebSocket clients
+stay in sync when HAProxy balances across blue and green.
+
+Do **not** run the single-relay `docker-compose.yml` stack and the HAProxy stack
+at the same time: both bind `127.0.0.1:8008`. Stop the old stack before starting
+blue/green:
+
+```bash
+cd /opt/nostream
+docker compose down   # single-relay stack, if it was running
+```
+
+Install alongside `.env` and `postgresql.conf`, then validate and start:
+
+```bash
+cp deploy/docker-compose.haproxy.yml deploy/rolling-relay-recreate.sh /opt/nostream/
+cp -r deploy/haproxy /opt/nostream/
+chmod +x /opt/nostream/rolling-relay-recreate.sh
+cd /opt/nostream
+```
+
+`docker compose config` only checks YAML merge syntax. Validate the HAProxy file
+with the same image the stack uses (`haproxy:3.0-alpine`) before `up -d`:
+
+```bash
+docker run --rm \
+  -v "$(pwd)/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro" \
+  haproxy:3.0-alpine \
+  haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
+```
+
+Expect `Configuration file is valid` and exit 0. Then start:
+
+```bash
+docker compose -f docker-compose.haproxy.yml up -d
+curl -s http://127.0.0.1:8008/readyz
+```
+
+HAProxy sets `X-Forwarded-For` (appended as the rightmost hop). In
+`.nostr/settings.yaml` (or your settings overrides), trust the HAProxy address
+from `docker-compose.haproxy.yml` (`172.28.0.2` on subnet `172.28.0.0/24`):
+
+```yaml
+network:
+  remoteIpHeader: x-forwarded-for
+  trustedProxies:
+    - "172.28.0.2"
+    - "127.0.0.1"
+    - "::ffff:127.0.0.1"
+    - "::1"
+```
+
+With a trusted proxy, the relay uses the **last** `X-Forwarded-For` hop (what
+HAProxy appended), not the leftmost value clients may supply.
+
+To update, load the new image, run migrations, then replace relays one at a time:
+
+```bash
+cd /opt/nostream
+docker compose -f docker-compose.haproxy.yml run --rm nostream-migrate
+./rolling-relay-recreate.sh
+```
+
+The script requires the peer relay to be running and `/readyz` healthy before it
+stops either backend. It waits for each replacement to become healthy before
+moving to the second relay. HAProxy health-checks `/readyz` every 2s and retries
+failed requests on the other backend (`option redispatch`). Set
+`STOP_GRACE_PERIOD` (default `45s`) above `WS_DRAIN_TIMEOUT_MS` (default 30s) so
+WebSocket drain finishes before Docker sends SIGKILL.

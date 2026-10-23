@@ -1,16 +1,29 @@
 import express, { json, Router } from 'express'
 
+import { createGetAdminNotificationDeliveryLogController } from '../../factories/controllers/get-admin-notification-delivery-log-controller-factory'
+import { createGetAdminNotificationsController } from '../../factories/controllers/get-admin-notifications-controller-factory'
+import { createPatchAdminNotificationsController } from '../../factories/controllers/patch-admin-notifications-controller-factory'
 import { createGetAdminHealthController } from '../../factories/controllers/get-admin-health-controller-factory'
 import { createGetAdminMetricsController } from '../../factories/controllers/get-admin-metrics-controller-factory'
+import { createGetAdminNetworkHealthController } from '../../factories/controllers/get-admin-network-health-controller-factory'
+import { createGetAdminNetworkHealthHistoryController } from '../../factories/controllers/get-admin-network-health-history-controller-factory'
 import { createGetAdminSessionController } from '../../factories/controllers/get-admin-session-controller-factory'
 import { createGetAdminSettingsBackupsController } from '../../factories/controllers/get-admin-settings-backups-controller-factory'
 import { createGetAdminSettingsController } from '../../factories/controllers/get-admin-settings-controller-factory'
 import { createGetAdminSettingsSchemaController } from '../../factories/controllers/get-admin-settings-schema-controller-factory'
 import { createPatchAdminSettingsController } from '../../factories/controllers/patch-admin-settings-controller-factory'
+import { createPostAdminNotificationTestController } from '../../factories/controllers/post-admin-notification-test-controller-factory'
 import { createPostAdminLoginController } from '../../factories/controllers/post-admin-login-controller-factory'
 import { createPostAdminLogoutController } from '../../factories/controllers/post-admin-logout-controller-factory'
 import { createPostAdminSettingsRestoreController } from '../../factories/controllers/post-admin-settings-restore-controller-factory'
 import { createPostAdminSettingsValidateController } from '../../factories/controllers/post-admin-settings-validate-controller-factory'
+import { createGetAdminOpsWorkersController } from '../../factories/controllers/get-admin-ops-workers-controller-factory'
+import { createGetAdminOpsNip05VerificationsController } from '../../factories/controllers/get-admin-ops-nip05-verifications-controller-factory'
+import { createGetAdminOpsStorageCountsController } from '../../factories/controllers/get-admin-ops-storage-counts-controller-factory'
+import { createPostAdminOpsNip05ReverifyController } from '../../factories/controllers/post-admin-ops-nip05-reverify-controller-factory'
+import { createGetAdminAuditLogController } from '../../factories/controllers/get-admin-audit-log-controller-factory'
+import { createGetAdminDiagnosticsExportController } from '../../factories/controllers/get-admin-diagnostics-export-controller-factory'
+import { createPostAdminNetworkHealthRunController } from '../../factories/controllers/post-admin-network-health-run-controller-factory'
 import { adminAuthGateMiddleware, adminAuthMiddleware } from '../../handlers/request-handlers/admin-auth-middleware'
 import { adminEnabledMiddleware } from '../../handlers/request-handlers/admin-enabled-middleware'
 import { adminJsonBodyMiddleware } from '../../handlers/request-handlers/admin-json-body-middleware'
@@ -57,6 +70,36 @@ router.get(
   withAdminController(createGetAdminMetricsController),
 )
 router.get(
+  '/network-health',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminNetworkHealthController),
+)
+router.get(
+  '/network-health/history',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminNetworkHealthHistoryController),
+)
+router.post(
+  '/network-health/run',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPostAdminNetworkHealthRunController),
+)
+router.get(
+  '/audit-log',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminAuditLogController),
+)
+router.get(
+  '/diagnostics/export',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminDiagnosticsExportController),
+)
+router.get(
   '/settings',
   adminRateLimitMiddleware,
   adminAuthMiddleware,
@@ -96,6 +139,58 @@ router.post(
   adminJsonBodyMiddleware,
   adminAuthMiddleware,
   withAdminController(createPostAdminSettingsRestoreController),
+)
+router.get(
+  '/notifications',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminNotificationsController),
+)
+router.patch(
+  '/notifications',
+  adminRateLimitMiddleware,
+  adminAuthGateMiddleware,
+  adminJsonBodyMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPatchAdminNotificationsController),
+)
+router.get(
+  '/notifications/deliveries',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminNotificationDeliveryLogController),
+)
+router.post(
+  '/notifications/test',
+  adminRateLimitMiddleware,
+  adminAuthGateMiddleware,
+  adminJsonBodyMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPostAdminNotificationTestController),
+)
+router.get(
+  '/ops/workers',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminOpsWorkersController),
+)
+router.get(
+  '/ops/nip05-verifications',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminOpsNip05VerificationsController),
+)
+router.post(
+  '/ops/nip05-verifications/:pubkey/reverify',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPostAdminOpsNip05ReverifyController),
+)
+router.get(
+  '/ops/storage/counts',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminOpsStorageCountsController),
 )
 
 export default router

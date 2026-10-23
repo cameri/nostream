@@ -20,7 +20,7 @@ export interface RelayMetricInstruments {
 let relayMetricInstruments: RelayMetricInstruments | undefined
 let meterProvider: MeterProvider | undefined
 
-const getWorkerAttributes = () => {
+export const getWorkerAttributes = () => {
   const workerType = process.env.WORKER_TYPE ?? (cluster.isPrimary ? 'primary' : 'worker')
   const workerIndex = process.env.WORKER_INDEX
 

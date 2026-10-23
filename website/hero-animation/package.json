@@ -1,0 +1,49 @@
+{
+  "name": "nostream-hero-animation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Framefields hero animation explaining nostream for the website landing page",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "fonts": "tsx src/fetch-fonts.ts",
+    "assets": "tsx src/build-assets.ts",
+    "setup": "tsx src/fetch-fonts.ts && tsx src/build-assets.ts",
+    "preview": "tsx src/render.ts preview --open",
+    "render": "tsx src/render.ts video",
+    "render:small": "tsx src/render.ts video low",
+    "frames": "tsx src/render.ts frames 130 300 500 620 800 1010",
+    "render:release": "tsx src/release-render.ts video very_high",
+    "render:release:small": "tsx src/release-render.ts video low",
+    "frames:release": "tsx src/release-render.ts frames 60 300 650 1000 1199",
+    "preview:admin": "tsx src/admin-render.ts preview --open",
+    "render:admin": "tsx src/admin-render.ts video very_high",
+    "render:admin:small": "tsx src/admin-render.ts video low",
+    "frames:admin": "tsx src/admin-render.ts frames 50 140 250 450 670 860 1040",
+    "typecheck": "tsc -p ."
+  },
+  "engines": {
+    "node": ">=22.20"
+  },
+  "dependencies": {
+    "framefields": "^2.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "sharp": "^0.35.5",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "ip@<=2.0.1": "npm:@stdlib/utils-noop@^0.2.3"
+    },
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "node-av",
+      "sharp",
+      "skia-canvas",
+      "webgpu"
+    ]
+  }
+}

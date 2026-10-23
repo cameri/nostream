@@ -1,0 +1,247 @@
+name: Deploy Website Preview
+
+# Per-PR preview of the marketing site at https://ema.tnsor.network/preview/<n>/
+# (the production router worker proxies /preview/<n> to this PR's worker,
+# nostream-web-pr-<n>, served from its workers.dev URL). The preview is deleted
+# when the PR closes (merged or not).
+#
+# Requires the `website-preview` GitHub environment to exist with
+# CLOUDFLARE_API_TOKEN (Workers Scripts edit) and CLOUDFLARE_ACCOUNT_ID —
+# one-time setup. While the environment or its secrets are absent, this
+# workflow skips with a notice instead of failing the PR.
+#
+# Ordering rule for this workflow: the deploy runs FIRST among the side
+# effects, and every GitHub-comment step is cosmetic (`continue-on-error`).
+# Measured 2026-10-18: a pull request opened from a FORK gets a read-only
+# GITHUB_TOKEN whatever the `permissions:` block says, so its comment call
+# answers `GraphQL: Resource not accessible by integration (addComment)` —
+# and because that step ran BEFORE the deploy, run 39134047965 failed at
+# 14:01Z with the deploy skipped, leaving the previous build being served.
+# A comment must never be able to prevent a deploy.
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - closed
+    paths:
+      - "website/site/**"
+      - "website/hero-animation/**"
+      - ".github/workflows/deploy-website-preview.yml"
+      # The production workflow deploys the router that serves /preview/*, so
+      # a router change has to refresh the previews or they keep serving the
+      # old routing. (This file's own entry is what made run 39134047965 fire
+      # at all: PR 885 touches none of the website paths.)
+      - ".github/workflows/deploy-website.yml"
+      - "website/site/worker/**"
+
+concurrency:
+  group: website-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  # PR conversation comments are issue comments: `gh pr comment` and the
+  # `issues/<n>/comments` API need this, and `pull-requests: write` alone
+  # does not grant it. Same-repo runs worked only because the repo's default
+  # GITHUB_TOKEN permissions already included it; a fork PR never does.
+  issues: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    # Deploy credentials live in this GitHub environment: CLOUDFLARE_API_TOKEN
+    # secret (Workers Scripts scope) and CLOUDFLARE_ACCOUNT_ID variable.
+    environment: website-preview
+    # Guard the environment reference so a missing setup skips rather than fails:
+    # the job targets the environment only when it exists.
+    steps:
+      - name: Check preview environment is configured
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          # Existence is the only check the runner's token can make: listing
+          # environment secrets needs permissions github.token does not carry,
+          # and probing them here once made every run skip with "lacks
+          # CLOUDFLARE_API_TOKEN" even after the secrets were set.
+          # A pull_request run from a fork gets no repository secrets at all -
+          # GitHub does not hand them to code the PR author controls, whatever
+          # the environment says. Such a run can never deploy a preview, so it
+          # must stop here rather than reach `wrangler deploy` with an empty
+          # token and fail there. The fix that would serve forks is a
+          # workflow_run deployment on a trusted branch; this workflow does
+          # not implement one, so it skips instead of pretending.
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::pull request is from a fork — preview skipped (fork runs receive no repository secrets). The site deploy runs on main after merge."
+          elif gh api repos/${{ github.repository }}/environments/website-preview >/dev/null 2>&1; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::website-preview environment does not exist yet — PR preview skipped. Create it with CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID to enable previews."
+          fi
+
+      - name: Checkout (for cleanup metadata)
+        if: steps.guard.outputs.skip == 'false'
+        uses: actions/checkout@v3
+
+      - uses: pnpm/action-setup@v4
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+
+      - uses: actions/setup-node@v3
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the site under the preview base
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        working-directory: website/site
+        env:
+          # Previews are built under the preview domain, not the production
+          # one: a preview's absolute links and canonical tags must not claim
+          # nostream.dev, or a crawler reaching a preview caches the wrong
+          # origin. Not a repo variable - previews are our own infrastructure,
+          # and a variable someone forgets to set would silently point them
+          # at production.
+          SITE_URL: https://ema.tnsor.network
+          SITE_BASE: /preview/${{ github.event.pull_request.number }}/
+        run: |
+          pnpm run build
+          node scripts/apply-base.mjs
+          # The assets manifest is keyed by file path: the worker serves dist/
+          # at the root of its URL, but the preview is requested under
+          # /preview/<n>/... — so the built tree must also EXIST at that path
+          # or every asset request falls through to the SPA-fallback
+          # index.html (text/html for .css/.mp4 requests — the broken preview).
+          # Copy the build into dist/preview/<n>/ (excluding the copy itself).
+          n="${{ github.event.pull_request.number }}"
+          mkdir -p "dist/preview/$n"
+          find dist -mindepth 1 -maxdepth 1 ! -name preview -exec cp -r {} "dist/preview/$n/" \;
+
+      - name: Deploy the preview worker
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        working-directory: website/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler deploy \
+            --config wrangler.preview.jsonc \
+            --name nostream-web-pr-${{ github.event.pull_request.number }}
+
+      - name: Purge the preview's CDN cache
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        # Part of making a deploy visible, never a gate on it: a missing or
+        # under-scoped purge credential must not fail a job whose deploy
+        # already succeeded.
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+        run: |
+          # A newly deployed preview worker sits behind the CDN for its own
+          # domain, so a request that landed mid-deploy can keep being served
+          # the previous build after the new one is live. Measured 2026-10-18:
+          # https://ema.tnsor.network/preview/885/ returned production HTML
+          # with no x-preview-pr header at 14:01:53Z and answered correctly
+          # three minutes later — a stale window, not a broken deploy.
+          #
+          # The purge is scoped to this PR's path prefix, so it cannot affect
+          # the production site or another PR's preview.
+          n="${{ github.event.pull_request.number }}"
+          if [ -z "$CLOUDFLARE_ZONE_ID" ]; then
+            echo "::notice::CLOUDFLARE_ZONE_ID is not set for the website-preview environment — preview deployed, cache purge skipped. Add it as an environment VARIABLE (the zone id is on the ema.tnsor.network zone Overview page) to enable purging."
+            exit 0
+          fi
+          # Hostname and path only: a scheme-prefixed value is rejected outright.
+          body="{\"prefixes\":[\"ema.tnsor.network/preview/$n/\"]}"
+          code=$(curl -sS -o /tmp/purge.json -w '%{http_code}' \
+            -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
+            -H "authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'content-type: application/json' \
+            --data "$body")
+          if [ "$code" = "200" ]; then
+            echo "purged https://ema.tnsor.network/preview/$n/ (prefix)"
+          else
+            echo "::warning::cache purge answered HTTP $code — $(head -c 400 /tmp/purge.json)"
+          fi
+
+      # The comment is written ONCE, after the deploy, in its final state. A
+      # separate "rendering" write that a later step has to undo would leave a
+      # finished preview reading as unfinished whenever the second write failed
+      # or the run was cancelled - and it no longer signals anything useful now
+      # that it runs after the deploy rather than before it.
+      - name: Link the preview on the PR
+        if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: https://ema.tnsor.network/preview/${{ github.event.pull_request.number }}/
+          WORKER_URL: https://nostream-web-pr-${{ github.event.pull_request.number }}.cameri.workers.dev/preview/${{ github.event.pull_request.number }}/
+          MARKER: <!-- site-preview-comment -->
+        run: |
+          # One comment per PR, updated in place on every push: find the
+          # existing one by marker, edit it, or create it if absent. The
+          # direct workers.dev URL works as soon as this deploy lands; the
+          # ema.tnsor.network form starts working once the router ships
+          # (it deploys with this PR's merge).
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
+            --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | tail -1)
+          BODY="${MARKER}
+          🔍 Site preview for this PR (includes all changes on this branch): ${WORKER_URL}
+
+          The ${URL} form serves the same build once this PR merges — the production router that proxies /preview/* ships with it.
+
+          Updates with every push to this PR; deleted when the PR closes."
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$COMMENT_ID" -f body="$BODY" >/dev/null
+            echo "updated comment $COMMENT_ID"
+          else
+            gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$BODY" >/dev/null
+            echo "created new preview comment"
+          fi
+
+      - name: Delete the preview worker
+        if: steps.guard.outputs.skip == 'false' && github.event.action == 'closed'
+        working-directory: website/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # --force skips the "would this break dependents" probe, which calls
+          # KV namespaces listing the deploy token's scope (Workers Scripts
+          # only) cannot read — the probe errors with auth 10000 AFTER the
+          # delete has already succeeded. Preview workers are assets-only
+          # (no bindings), so the check is pure overhead. A missing worker
+          # still errors and is caught below.
+          npx wrangler delete --config wrangler.preview.jsonc --force \
+            --name nostream-web-pr-${{ github.event.pull_request.number }} \
+          || echo "preview worker already absent"
+
+      - name: Note the cleanup on the PR
+        if: steps.guard.outputs.skip == 'false' && github.event.action == 'closed'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER: <!-- site-preview-comment -->
+        run: |
+          # Update the SAME single preview comment instead of adding one.
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100" \
+            --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | tail -1)
+          BODY="${MARKER}
+          🧹 Site preview for this PR was deleted (PR closed)."
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$COMMENT_ID" -f body="$BODY" >/dev/null
+          else
+            gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$BODY" >/dev/null || true
+          fi

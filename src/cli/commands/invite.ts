@@ -100,14 +100,23 @@ export const openInviteDbClient = (): DatabaseClient => {
 
   return knex({
     client: 'pg',
+    // connectionTimeoutMillis bounds the underlying pg socket connection
+    // attempt itself -- acquireTimeoutMillis/acquireConnectionTimeout below
+    // only bound how long the knex/tarn pool waits for a connection to
+    // become available, not the socket connect() call in flight underneath.
+    // Without it, an unreachable host leaves that connect() pending forever,
+    // so db.destroy() never resolves and this one-shot CLI process hangs
+    // indefinitely instead of exiting once the pool "gives up" (same root
+    // cause as info.ts's getEventCount(), see #739/#740).
     connection: process.env.DB_URI
-      ? process.env.DB_URI
+      ? { connectionString: process.env.DB_URI, connectionTimeoutMillis: CLI_DB_ACQUIRE_TIMEOUT_MS }
       : {
           host: process.env.DB_HOST,
           port: Number(process.env.DB_PORT ?? 5432),
           user: process.env.DB_USER,
           password: process.env.DB_PASSWORD,
           database: process.env.DB_NAME,
+          connectionTimeoutMillis: CLI_DB_ACQUIRE_TIMEOUT_MS,
         },
     pool: {
       min: 0,

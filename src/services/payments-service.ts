@@ -2,7 +2,14 @@ import { andThen, otherwise, pipe } from 'ramda'
 import { broadcastEvent, getPublicKey, getRelayPrivateKey, identifyEvent, signEvent } from '../utils/event'
 import { DatabaseClient, Pubkey } from '../@types/base'
 import { FeeSchedule, Settings } from '../@types/settings'
-import { IEventRepository, IInvoiceRepository, IUserRepository } from '../@types/repositories'
+import {
+  IEventRepository,
+  IInvoiceRepository,
+  INotificationOutboxRepository,
+  IUserRepository,
+  IUserSubscriptionRepository,
+} from '../@types/repositories'
+import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 
 import { Event, ExpiringEvent, UnidentifiedEvent } from '../@types/event'
@@ -11,6 +18,7 @@ import { createLogger } from '../factories/logger-factory'
 import { IPaymentsProcessor } from '../@types/clients'
 import { IPaymentsService } from '../@types/services'
 import { Transaction } from '../database/transaction'
+import { applyPayment, areSubscriptionsEnabled, findSubscriptionPlan } from '../utils/subscription'
 import { resolveInvoiceExpiry } from '../utils/invoice'
 
 const logger = createLogger('payments-service')
@@ -26,6 +34,8 @@ export class PaymentsService implements IPaymentsService {
     private readonly invoiceRepository: IInvoiceRepository,
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
+    private readonly notificationOutboxRepository: INotificationOutboxRepository,
+    private readonly userSubscriptionRepository?: IUserSubscriptionRepository,
   ) {}
 
   public async getPendingInvoices(offset = 0): Promise<Invoice[]> {
@@ -51,7 +61,7 @@ export class PaymentsService implements IPaymentsService {
     }
   }
 
-  public async createInvoice(pubkey: Pubkey, amount: bigint, description: string): Promise<Invoice> {
+  public async createInvoice(pubkey: Pubkey, amount: bigint, description: string, planId?: string): Promise<Invoice> {
     logger('create invoice for %s for %s: %s', pubkey, amount.toString(), description)
     const transaction = new Transaction(this.dbClient)
 
@@ -86,6 +96,18 @@ export class PaymentsService implements IPaymentsService {
           updatedAt: date,
           createdAt: date,
           verifyURL: invoiceResponse.verifyURL,
+          planId,
+        },
+        transaction.transaction,
+      )
+
+      await this.notificationOutboxRepository.enqueue(
+        OperatorNotificationEventType.ADMISSION_INVOICE_CREATED,
+        {
+          invoiceId: invoiceResponse.id,
+          pubkey,
+          amountRequested: invoiceResponse.amountRequested.toString(),
+          unit: invoiceResponse.unit,
         },
         transaction.transaction,
       )
@@ -104,6 +126,7 @@ export class PaymentsService implements IPaymentsService {
         updatedAt: date,
         createdAt: invoiceResponse.createdAt,
         verifyURL: invoiceResponse.verifyURL,
+        planId,
       }
     } catch (error) {
       await transaction.rollback()
@@ -155,6 +178,14 @@ export class PaymentsService implements IPaymentsService {
 
       await transaction.begin()
 
+      const currentSettings = this.settings()
+      const subscriptionsEnabled = areSubscriptionsEnabled(currentSettings)
+      // The callbacks only pass what their processor reports, so the plan, the unit and whether the
+      // invoice was already confirmed come from the stored invoice, read before it is confirmed.
+      const stored = subscriptionsEnabled
+        ? await this.invoiceRepository.findById(invoice.id, transaction.transaction)
+        : undefined
+
       await this.invoiceRepository.confirmInvoice(
         invoice.id,
         invoice.amountPaid,
@@ -162,13 +193,12 @@ export class PaymentsService implements IPaymentsService {
         transaction.transaction,
       )
 
-      const currentSettings = this.settings()
-
       let amountPaidMsat = invoice.amountPaid
 
-      if (invoice.unit === InvoiceUnit.SATS) {
+      const unit = invoice.unit ?? stored?.unit
+      if (unit === InvoiceUnit.SATS) {
         amountPaidMsat *= 1000n
-      } else if (invoice.unit === InvoiceUnit.BTC) {
+      } else if (unit === InvoiceUnit.BTC) {
         amountPaidMsat *= 1000n * 100000000n
       }
 
@@ -179,10 +209,39 @@ export class PaymentsService implements IPaymentsService {
         return sum + (isApplicableFee(feeSchedule) ? BigInt(feeSchedule.amount) : 0n)
       }, 0n)
 
-      if (admissionFeeAmount > 0n && amountPaidMsat >= admissionFeeAmount) {
+      const plan = findSubscriptionPlan(currentSettings, invoice.planId ?? stored?.planId)
+
+      if (plan && this.userSubscriptionRepository) {
+        if (stored?.confirmedAt) {
+          // A repeated callback must not grant another period.
+          logger('invoice %s was already confirmed, not extending the subscription again', invoice.id)
+        } else if (amountPaidMsat >= BigInt(plan.amount)) {
+          const date = new Date()
+          const existing = await this.userSubscriptionRepository.findByPubkey(invoice.pubkey, transaction.transaction)
+          await this.userSubscriptionRepository.upsert(
+            applyPayment(invoice.pubkey, existing, plan, date),
+            transaction.transaction,
+          )
+          await this.userRepository.admitUser(invoice.pubkey, date, transaction.transaction)
+        } else {
+          logger('invoice %s paid %s msats, below plan %s price %s', invoice.id, amountPaidMsat, plan.id, plan.amount)
+        }
+      } else if (admissionFeeAmount > 0n && amountPaidMsat >= admissionFeeAmount) {
         const date = new Date()
         await this.userRepository.admitUser(invoice.pubkey, date, transaction.transaction)
       }
+
+      await this.notificationOutboxRepository.enqueue(
+        OperatorNotificationEventType.ADMISSION_INVOICE_PAID,
+        {
+          invoiceId: invoice.id,
+          pubkey: invoice.pubkey,
+          amountPaid: invoice.amountPaid.toString(),
+          unit: invoice.unit,
+          confirmedAt: invoice.confirmedAt.toISOString(),
+        },
+        transaction.transaction,
+      )
 
       await transaction.commit()
     } catch (error) {
@@ -195,14 +254,6 @@ export class PaymentsService implements IPaymentsService {
 
   public async sendInvoiceUpdateNotification(invoice: Invoice): Promise<void> {
     logger('invoice updated notification %s: %o', invoice.id, invoice)
-    const currentSettings = this.settings()
-
-    const {
-      info: { relay_url: relayUrl },
-    } = currentSettings
-
-    const relayPrivkey = getRelayPrivateKey(relayUrl)
-    const relayPubkey = getPublicKey(relayPrivkey)
 
     let unit: string = invoice.unit
     let amount: bigint | undefined = invoice.amountPaid
@@ -220,11 +271,40 @@ export class PaymentsService implements IPaymentsService {
     const now = new Date()
     const expiration = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate())
 
+    await this.publishInvoiceNotification(invoice, `Invoice paid: ${amount.toString()} ${unit}`, expiration)
+  }
+
+  public async sendRenewalNotification(invoice: Invoice): Promise<void> {
+    logger('subscription renewal notification %s: %o', invoice.id, invoice)
+
+    let unit: string = invoice.unit
+    let amount = invoice.amountRequested
+    if (invoice.unit === InvoiceUnit.MSATS) {
+      amount /= 1000n
+      unit = InvoiceUnit.SATS
+    }
+
+    // The notice is only useful while the invoice can still be paid.
+    const expiration = invoice.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+    await this.publishInvoiceNotification(invoice, `Subscription renewal due: ${amount.toString()} ${unit}`, expiration)
+  }
+
+  private async publishInvoiceNotification(invoice: Invoice, content: string, expiration: Date): Promise<void> {
+    const {
+      info: { relay_url: relayUrl },
+    } = this.settings()
+
+    const relayPrivkey = getRelayPrivateKey(relayUrl)
+    const relayPubkey = getPublicKey(relayPrivkey)
+
+    const now = new Date()
+
     const unsignedInvoiceEvent: UnidentifiedEvent & Pick<ExpiringEvent, typeof EventExpirationTimeMetadataKey> = {
       pubkey: relayPubkey,
       kind: EventKinds.INVOICE_UPDATE,
       created_at: Math.floor(now.getTime() / 1000),
-      content: `Invoice paid: ${amount.toString()} ${unit}`,
+      content,
       tags: [
         [EventTags.Pubkey, invoice.pubkey],
         [EventTags.Invoice, invoice.bolt11],

@@ -7,6 +7,7 @@ import { DEFAULT_FILTER_LIMIT } from '../../constants/base'
 import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
 import { getPublicPathPrefix, joinPathPrefix } from '../../utils/http'
+import { isNip77Active } from '../../utils/nip77'
 import { resolveRelaySelfPubkey } from '../../utils/nip43'
 import packageJson from '../../../package.json'
 
@@ -66,6 +67,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       settings.nip42?.authRequired === true ||
       (eventLimits?.eventId?.minLeadingZeroBits ?? 0) > 0 ||
       (eventLimits?.pubkey?.minLeadingZeroBits ?? 0) > 0 ||
+      eventLimits?.pow?.enabled === true ||
       (eventLimits?.pubkey?.whitelist?.length ?? 0) > 0 ||
       (eventLimits?.pubkey?.blacklist?.length ?? 0) > 0 ||
       (eventLimits?.kind?.whitelist?.length ?? 0) > 0 ||
@@ -87,10 +89,11 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
       ...(self !== undefined ? { self } : {}),
       contact,
       // NIP-43: clients MUST only send join requests to relays advertising 43,
-      // so only advertise it when the feature is actually enabled
-      supported_nips: settings.nip43?.enabled === true
-        ? packageJson.supportedNips
-        : packageJson.supportedNips.filter((nip: number) => nip !== 43),
+      // so only advertise it when the feature is actually enabled. Likewise 77
+      // only while this relay answers NEG-OPEN itself (enabled, PostgreSQL backend).
+      supported_nips: packageJson.supportedNips.filter(
+        (nip: number) => (nip !== 43 || settings.nip43?.enabled === true) && (nip !== 77 || isNip77Active(settings)),
+      ),
       supported_nip_extensions: packageJson.supportedNipExtensions,
       supported_mips: packageJson.supportedMips,
       software: packageJson.repository.url,
@@ -100,6 +103,10 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         max_message_length: settings.network.maxPayloadSize,
         max_subscriptions: settings.limits?.client?.subscription?.maxSubscriptions,
         max_filters: settings.limits?.client?.subscription?.maxFilters,
+        // NIP-11 has no field for the number of values a client may put in a
+        // filter's array criteria (ids, authors, kinds, #<tag>), so the limit
+        // the relay enforces is advertised as a non-standard extension.
+        max_filter_values: settings.limits?.client?.subscription?.maxFilterValues,
         max_limit: settings.limits?.client?.subscription?.maxLimit,
         max_subid_length: settings.limits?.client?.subscription?.maxSubscriptionIdLength,
         min_prefix: settings.limits?.client?.subscription?.minPrefixLength,
@@ -107,7 +114,23 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         max_content_length: Array.isArray(content)
           ? content[0].maxLength // best guess since we have per-kind limits
           : content?.maxLength,
-        min_pow_difficulty: eventLimits?.eventId?.minLeadingZeroBits,
+        // When adaptive PoW is enabled it replaces the static minLeadingZeroBits checks
+        // entirely. Advertise the lowest difficulty any client may be accepted at:
+        // - Without WoT thresholds: floorBits is the guaranteed minimum.
+        // - With WoT thresholds: a trusted pubkey may receive a further reduction down
+        //   to ceil(floorBits * minFactor) where minFactor is the smallest configured
+        //   difficultyFactor. Advertising floorBits when trusted pubkeys may be accepted
+        //   at lower difficulty would mislead clients (NIP-11 contract violation).
+        min_pow_difficulty: eventLimits?.pow?.enabled
+          ? (() => {
+              const thresholds = eventLimits.pow.wotThresholds
+              if (thresholds?.length) {
+                const minFactor = Math.min(...thresholds.map((t) => t.difficultyFactor))
+                return Math.ceil(eventLimits.pow.floorBits * minFactor)
+              }
+              return eventLimits.pow.floorBits
+            })()
+          : eventLimits?.eventId?.minLeadingZeroBits,
         // NIP-11: auth_required means AUTH before any action. We only gate publishes
         // via nip42.authRequired (advertised as restricted_writes instead).
         auth_required: false,

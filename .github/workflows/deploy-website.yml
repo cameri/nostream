@@ -1,0 +1,102 @@
+name: Deploy Website
+
+# The marketing site deploys when a nostream-website release is published:
+# the changesets release PR bumps the site package, and merging that PR makes
+# the changesets workflow tag + publish nostream-website@X.Y.Z and create the
+# GitHub release — this workflow deploys that tagged build. Merges to main do
+# not deploy; version the site with a changeset and merge the release PR.
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    # Concurrency lives on the job, not the workflow: a relay release
+    # (v* tag) fails the if below and must not enter this deploy queue,
+    # where it could replace a queued website deploy. Measured: the
+    # nostream@3.5.1 release run (38845857055) was cancelled with zero
+    # jobs at the workflow-level group, before the job if could skip it.
+    concurrency:
+      group: deploy-website
+      cancel-in-progress: false
+    # workflow_dispatch ignores every on: filter — a manual run must not
+    # publish a non-main branch to production, so dispatch stays main-only.
+    if: >-
+      ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+    name: Build and deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    # Deploy credentials live in this GitHub environment: CLOUDFLARE_API_TOKEN
+    # secret (Workers Scripts scope) and CLOUDFLARE_ACCOUNT_ID variable.
+    environment: website
+    permissions:
+      contents: read
+    steps:
+      # Checkout gets the release event's default: the tag that triggered the
+      # run (refs/tags/nostream-website@X.Y.Z). The website environment's
+      # branch policy admits nostream-website@* — every release deploy since
+      # 1.1.1 has run on the tag ref — so the build is exactly the released
+      # commit, even if main has advanced by the time the job starts.
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the site
+        working-directory: website/site
+        env:
+          SITE_URL: https://nostream.dev
+        run: pnpm run build
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: website/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CANONICAL_HOST: nostream.dev
+        # The router worker: serves the production assets itself and proxies
+        # /preview/<n> to per-PR preview workers (deploy-website-preview.yml).
+        # The site answers on one host. Every other host the routes catch,
+        # http included, 301s to it, so www/apex cannot serve a second copy
+        # and split search ranking. --var keeps the deployed value from
+        # drifting away from the SITE_URL the build above baked in.
+        run: pnpm exec wrangler deploy --config wrangler.router.jsonc --var CANONICAL_HOST:"$CANONICAL_HOST"
+
+      - name: Purge the site's CDN cache
+        # Same reason as the preview workflow's purge: a request that lands
+        # mid-deploy can keep being served the previous build after the new
+        # one is live. Production deploys the router, so everything changes
+        # and the purge is unfiltered (`purge_everything`). Guarded on the
+        # variable so an unconfigured environment skips instead of POSTing to
+        # a zone id of "" and the notice says what is missing.
+        if: vars.CLOUDFLARE_ZONE_ID != ''
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+        run: |
+          code=$(curl -sS -o /tmp/purge.json -w '%{http_code}' \
+            -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache" \
+            -H "authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'content-type: application/json' \
+            --data '{"purge_everything":true}')
+          if [ "$code" = "200" ]; then
+            echo "purged the whole nostream.dev cache"
+          else
+            echo "::warning::cache purge answered HTTP $code — $(head -c 400 /tmp/purge.json)"
+          fi
+
+      - name: Note a skipped purge
+        if: vars.CLOUDFLARE_ZONE_ID == ''
+        run: echo "::notice::CLOUDFLARE_ZONE_ID is not set for the website environment — deployed, cache purge skipped. Add it as an environment VARIABLE to enable purging."

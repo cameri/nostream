@@ -6,9 +6,17 @@ import { DBEvent, Event } from './event'
 import { CreateInviteCodeOptions, InviteCode } from './invite-code'
 import { Invoice } from './invoice'
 import { Nip05Verification } from './nip05'
+import { NotificationOutboxMessage, NotificationOutboxPayload } from './notification-outbox'
+import {
+  NotificationDeliveryLogEntry,
+  NotificationDeliveryStatus,
+  OperatorNotificationChannelType,
+} from './operator-notifications'
+import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
+import { UserSubscription } from './user-subscription'
 
 export interface EventRetentionOptions {
   maxDays?: number
@@ -24,6 +32,8 @@ export interface EventPurgeCounts {
 
 export type ExposedPromiseKeys = 'then' | 'catch' | 'finally'
 
+export type ReconciliationItem = Pick<DBEvent, 'event_created_at' | 'event_id'>
+
 export interface IQueryResult<T> extends Pick<Promise<T>, keyof Promise<T> & ExposedPromiseKeys> {
   stream(options?: Record<string, any>): PassThrough & AsyncIterable<T>
 }
@@ -34,7 +44,8 @@ export interface IEventRepository {
   upsert(event: Event): Promise<number>
   upsertMany(events: Event[]): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
-  countByFilters(filters: SubscriptionFilter[]): Promise<number>
+  countByFilters(filters: SubscriptionFilter[], options?: { timeoutMs?: number }): Promise<number>
+  findReconciliationItems(filter: SubscriptionFilter, limit?: number): IQueryResult<ReconciliationItem[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
   deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>
   hasActiveRequestToVanish(pubkey: Pubkey): Promise<boolean>
@@ -49,6 +60,30 @@ export interface IInvoiceRepository {
   findPendingInvoices(offset?: number, limit?: number, client?: DatabaseClient): Promise<Invoice[]>
 }
 
+export interface IUserSubscriptionRepository {
+  findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<UserSubscription | undefined>
+  upsert(subscription: Omit<UserSubscription, 'createdAt' | 'updatedAt'>, client?: DatabaseClient): Promise<number>
+  /**
+   * Applies `changes` only while the stored row still matches `expected` (status, plan, period end
+   * and grace end), so a payment confirmed after the row was read is not overwritten.
+   * Returns false when the row has changed.
+   */
+  updateIfCurrent(
+    expected: UserSubscription,
+    changes: Partial<Pick<UserSubscription, 'status' | 'graceEndsAt'>>,
+    client?: DatabaseClient,
+  ): Promise<boolean>
+  /**
+   * Subscriptions whose period ends by `before` and that need a renewal invoice: active ones, and
+   * renewal-pending ones whose invoice has expired unpaid. `offset` skips rows already tried.
+   */
+  findDueForRenewal(before: Date, limit?: number, offset?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  /** Active or renewal-pending subscriptions whose period has ended by `now`. */
+  findPeriodEnded(now: Date, limit?: number, offset?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  /** Past-due subscriptions whose grace period has ended by `now`. */
+  findGraceEnded(now: Date, limit?: number, offset?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+}
+
 export interface IUserRepository {
   findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<User | undefined>
   upsert(user: Partial<User>, client?: DatabaseClient): Promise<number>
@@ -59,10 +94,21 @@ export interface IUserRepository {
   revokeAdmission(pubkey: Pubkey, client?: DatabaseClient): Promise<number>
 }
 
+export interface Nip05VerificationAdminListQuery {
+  domain?: string
+  verified?: boolean
+  stale?: boolean
+  minFailures?: number
+  verifyExpirationMs: number
+  limit: number
+  offset: number
+}
+
 export interface INip05VerificationRepository {
   findByPubkey(pubkey: Pubkey): Promise<Nip05Verification | undefined>
   upsert(verification: Nip05Verification): Promise<number>
   findPendingVerifications(updateFrequencyMs: number, maxFailures: number, limit: number): Promise<Nip05Verification[]>
+  listForAdmin(query: Nip05VerificationAdminListQuery): Promise<{ rows: Nip05Verification[]; total: number }>
   deleteByPubkey(pubkey: Pubkey): Promise<number>
 }
 
@@ -82,4 +128,55 @@ export interface IDvmJobRepository {
     job: Pick<DvmJob, 'id' | 'status'> & Partial<Pick<DvmJob, 'resultEventId' | 'error'>>,
   ): Promise<DvmJob | undefined>
   findPendingJobs(limit?: number, kinds?: number[]): Promise<DvmJob[]>
+}
+
+export interface IReportRepository {
+  create(report: Omit<Report, 'id' | 'createdAt'>): Promise<Report>
+  /** Inserts every row in a single transaction, so a mid-batch failure leaves none of them. */
+  createMany(reports: Omit<Report, 'id' | 'createdAt'>[]): Promise<Report[]>
+  findByEventId(eventId: EventId): Promise<Report[]>
+  findActionable(limit?: number): Promise<Report[]>
+  /** Every distinct actionable report target, unpaginated -- feeds the hidden-content cache's boot-time warm-up. */
+  findActionableTargets(): Promise<{ reportedPubkey: Pubkey | null; reportedEventId: EventId | null }[]>
+}
+
+export interface INotificationDeliveryLogRepository {
+  append(
+    entry: {
+      outboxId: string | null
+      eventType: string
+      targetId: string
+      targetType: OperatorNotificationChannelType
+      status: NotificationDeliveryStatus
+      attemptNumber: number
+      errorSnippet: string | null
+    },
+    client?: DatabaseClient,
+  ): Promise<void>
+  findRecent(
+    limit?: number,
+    filters?: { status?: NotificationDeliveryStatus; eventType?: string },
+    client?: DatabaseClient,
+  ): Promise<NotificationDeliveryLogEntry[]>
+  findSuccessfulTargetIds(outboxId: string, client?: DatabaseClient): Promise<string[]>
+  deleteOlderThan(cutoff: Date, client?: DatabaseClient): Promise<number>
+}
+
+export interface INotificationOutboxRepository {
+  enqueue(
+    eventType: string,
+    payload: NotificationOutboxPayload,
+    client?: DatabaseClient,
+  ): Promise<NotificationOutboxMessage>
+  claimBatch(limit: number, client?: DatabaseClient): Promise<NotificationOutboxMessage[]>
+  markDelivered(id: string, client?: DatabaseClient): Promise<void>
+  markFailed(
+    id: string,
+    error: string,
+    attemptCount: number,
+    maxAttempts: number,
+    baseDelayMs: number,
+    client?: DatabaseClient,
+  ): Promise<void>
+  deleteTerminalOlderThan(cutoff: Date, client?: DatabaseClient): Promise<number>
 }

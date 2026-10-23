@@ -1,29 +1,44 @@
 import { ICacheAdapter, IWebSocketAdapter } from '../@types/adapters'
+import { IncomingMessage, MessageType } from '../@types/messages'
 import {
   IDvmJobRepository,
   IEventRepository,
   IInviteCodeRepository,
   INip05VerificationRepository,
+  IReportRepository,
   IUserRepository,
 } from '../@types/repositories'
-import { IncomingMessage, MessageType } from '../@types/messages'
-import { createSettings } from './settings-factory'
+import { RedisAdapter } from '../adapters/redis-adapter'
+import { getCacheClient } from '../cache/client'
 import { AuthMessageHandler } from '../handlers/auth-message-handler'
 import { CountMessageHandler } from '../handlers/count-message-handler'
 import { EventMessageHandler } from '../handlers/event-message-handler'
-import { eventStrategyFactory } from './event-strategy-factory'
-import { getCacheClient } from '../cache/client'
-import { RedisAdapter } from '../adapters/redis-adapter'
-import { rateLimiterFactory } from './rate-limiter-factory'
+import { NegCloseMessageHandler } from '../handlers/neg-close-message-handler'
+import { NegMsgMessageHandler } from '../handlers/neg-msg-message-handler'
+import { NegOpenMessageHandler } from '../handlers/neg-open-message-handler'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
+import { eventStrategyFactory } from './event-strategy-factory'
+import { getMasterDbClient } from '../database/client'
+import { UserSubscriptionRepository } from '../repositories/user-subscription-repository'
+import { rateLimiterFactory } from './rate-limiter-factory'
+import { createSettings } from './settings-factory'
+import { wotGraphServiceFactory } from './wot-graph-service-factory'
 
 let cacheAdapter: ICacheAdapter | undefined = undefined
-const getCache = (): ICacheAdapter => {
+export const getCache = (): ICacheAdapter => {
   if (!cacheAdapter) {
     cacheAdapter = new RedisAdapter(getCacheClient())
   }
   return cacheAdapter
+}
+
+let userSubscriptionRepository: UserSubscriptionRepository | undefined = undefined
+const getUserSubscriptionRepository = (): UserSubscriptionRepository => {
+  if (!userSubscriptionRepository) {
+    userSubscriptionRepository = new UserSubscriptionRepository(getMasterDbClient())
+  }
+  return userSubscriptionRepository
 }
 
 export const messageHandlerFactory =
@@ -33,6 +48,7 @@ export const messageHandlerFactory =
     nip05VerificationRepository: INip05VerificationRepository,
     inviteCodeRepository: IInviteCodeRepository,
     dvmJobRepository: IDvmJobRepository,
+    reportRepository: IReportRepository,
   ) =>
   ([message, adapter]: [IncomingMessage, IWebSocketAdapter]) => {
     switch (message[0]) {
@@ -44,6 +60,7 @@ export const messageHandlerFactory =
             userRepository,
             inviteCodeRepository,
             dvmJobRepository,
+            reportRepository,
             getCache(),
             createSettings,
           ),
@@ -53,6 +70,8 @@ export const messageHandlerFactory =
           nip05VerificationRepository,
           getCache(),
           rateLimiterFactory,
+          wotGraphServiceFactory(getCache(), eventRepository, createSettings),
+          getUserSubscriptionRepository(),
         )
       }
       case MessageType.REQ:
@@ -69,6 +88,12 @@ export const messageHandlerFactory =
         return new CountMessageHandler(adapter, eventRepository, createSettings)
       case MessageType.AUTH:
         return new AuthMessageHandler(adapter, createSettings)
+      case MessageType.NEG_OPEN:
+        return new NegOpenMessageHandler(adapter, eventRepository, createSettings)
+      case MessageType.NEG_MSG:
+        return new NegMsgMessageHandler(adapter, createSettings)
+      case MessageType.NEG_CLOSE:
+        return new NegCloseMessageHandler(adapter)
       default:
         throw new Error(`Unknown message type: ${String(message[0]).substring(0, 64)}`)
     }

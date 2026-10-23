@@ -1,7 +1,11 @@
 import { expect } from 'chai'
 
 import { Settings } from '../../../src/@types/settings'
-import { filterValidProbeTargets, resolveProbeTargets } from '../../../src/utils/relay-probe-targets'
+import {
+  filterValidProbeTargets,
+  resolveProbeTargets,
+  resolvePublicProbeTargets,
+} from '../../../src/utils/relay-probe-targets'
 
 describe('relay-probe-targets', () => {
   const baseSettings = {
@@ -36,6 +40,18 @@ describe('relay-probe-targets', () => {
     } as Settings
 
     expect(resolveProbeTargets(settings)).to.deep.equal(['wss://one.example', 'wss://two.example'])
+  })
+
+  it('does not probe mirroring.static addresses, which are no longer supported', () => {
+    const settings = {
+      ...baseSettings,
+      mirroring: {
+        static: [{ address: 'wss://mirror.example' }],
+      },
+    } as unknown as Settings
+
+    expect(resolvePublicProbeTargets(settings)).to.deep.equal(['wss://relay.example.com'])
+    expect(resolveProbeTargets(settings)).to.deep.equal(['wss://relay.example.com'])
   })
 
   it('filters invalid probe targets', () => {

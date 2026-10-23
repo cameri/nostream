@@ -1,0 +1,144 @@
+---
+import Logo from './Logo.astro'
+import { REPO, VERSION } from '../data/site'
+
+const columns = [
+  {
+    title: 'Docs',
+    links: [
+      { href: '/docs/quick-start', label: 'Quick start' },
+      { href: '/docs/cli', label: 'CLI reference' },
+      { href: '/docs/configuration', label: 'Configuration' },
+      { href: '/docs/deploy', label: 'Deployment' },
+    ],
+  },
+  {
+    title: 'Project',
+    links: [
+      { href: '/changelog', label: 'Changelog' },
+      { href: '/community', label: 'Community' },
+      { href: '/docs/contributing', label: 'Contributing' },
+      { href: '/docs/security', label: 'Security' },
+      { href: 'https://t.me/nostream', label: 'Telegram' },
+    ],
+  },
+  {
+    title: 'Source',
+    links: [
+      { href: REPO, label: 'GitHub' },
+      { href: `${REPO}/issues`, label: 'Issues' },
+      { href: `${REPO}/releases`, label: 'Releases' },
+      { href: `${REPO}/blob/main/LICENSE`, label: 'MIT license' },
+    ],
+  },
+]
+const external = (href: string) => href.startsWith('http')
+---
+
+<footer class="footer">
+  <div class="container grid">
+    <div class="about">
+      <Logo />
+      <p>A production-ready Nostr relay written in TypeScript. Self-host it, charge for it, run it over Tor. Your relay, your rules.</p>
+      <p class="mono stamp"><span class="g3">●</span> v{VERSION} · MIT</p>
+    </div>
+    {
+      columns.map((col) => (
+        <div class="col">
+          <p class="title mono">{col.title}</p>
+          <ul>
+            {col.links.map((link) => (
+              <li>
+                <a
+                  href={link.href}
+                  {...(external(link.href) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </div>
+  <div class="container base mono">
+    <span>© {new Date().getFullYear()} nostream</span>
+    <span class="muted">MIT License</span>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    padding: 64px 0 28px;
+    background: linear-gradient(180deg, transparent, rgba(255, 46, 136, 0.03));
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px 24px;
+  }
+
+  .about {
+    grid-column: 1 / -1;
+    max-width: 360px;
+  }
+
+  .about p {
+    margin: 16px 0 0;
+    font-size: 14px;
+  }
+
+  .stamp {
+    color: var(--muted);
+    font-size: 12px !important;
+  }
+
+  .title {
+    margin: 0 0 14px;
+    color: var(--teal);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  ul {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 14px;
+  }
+
+  a {
+    color: var(--fg-2);
+    transition: color 0.2s ease;
+  }
+
+  a:hover {
+    color: var(--fg);
+  }
+
+  .base {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--fg-2);
+    font-size: 12px;
+  }
+
+  @media (min-width: 860px) {
+    .grid {
+      grid-template-columns: 1.6fr repeat(3, 1fr);
+    }
+    .about {
+      grid-column: auto;
+    }
+  }
+</style>

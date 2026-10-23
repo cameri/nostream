@@ -4,13 +4,21 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{name}} Admin</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.2.5/index.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.2.5/400.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.2.5/600.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
-    <link rel="stylesheet" href="{{path_prefix}}/admin/assets/dashboard.css">
+    <link rel="stylesheet" href="{{path_prefix}}/admin/assets/dashboard.css?v=site-6">
   </head>
-  <body class="admin-dashboard console-theme" data-theme="light">
+  <body class="admin-dashboard console-theme" data-theme="dark" data-spark-host data-spark-mode="stream">
+    <canvas
+      class="admin-spark-canvas"
+      data-spark-canvas
+      data-max-pool="1800"
+      data-spawn-chance="0.995"
+      data-per-frame="6"
+      aria-hidden="true"
+    ></canvas>
     <main class="container-fluid py-4 px-3 px-lg-4">
       <header class="admin-header d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
         <div class="d-flex align-items-center gap-2">
@@ -21,7 +29,6 @@
           </div>
         </div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
-          <button id="theme-toggle" type="button" class="btn btn-console btn-sm" aria-label="Toggle theme (T)">Light</button>
           <div class="clock-wrap">
             <p id="live-clock" class="clock-value mb-0">--:--:--</p>
             <p class="clock-label mb-0">UTC</p>
@@ -47,7 +54,7 @@
                 <input id="password" name="password" type="password" class="form-control console-input" autocomplete="current-password" required>
               </div>
               <div id="login-error" class="alert alert-danger d-none small" role="alert"></div>
-              <button id="login-button" type="submit" class="btn btn-console w-100">Execute</button>
+              <button id="login-button" type="submit" class="btn btn-console w-100">Sign in</button>
             </form>
           </div>
         </div>
@@ -58,7 +65,10 @@
         <aside id="dashboard-nav" class="dashboard-nav" aria-hidden="true">
           <p class="admin-kicker mb-2"><span class="prompt-char">&gt;</span> Navigation</p>
           <button type="button" class="nav-item active" data-view="metrics-view">Metrics</button>
+          <button type="button" class="nav-item" data-view="operations-view">Operations</button>
+          <button type="button" class="nav-item" data-view="trust-view">Trust</button>
           <button type="button" class="nav-item" data-view="settings-view">Settings</button>
+          <button type="button" class="nav-item" data-view="notifications-view">Notifications</button>
         </aside>
 
         <div id="system-alert" class="system-alert d-none" role="status"></div>
@@ -193,6 +203,327 @@
           </section>
         </div>
 
+        <div id="operations-view" class="dashboard-view d-none">
+          <section class="dashboard-section">
+            <h2 class="section-title">Worker ops</h2>
+            <p id="ops-workers-sync" class="sync-line mb-2"><span class="prompt-char">&gt;</span> workers: not loaded</p>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="ops-workers-caption">
+                <caption id="ops-workers-caption" class="visually-hidden">Background worker heartbeats</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Worker</th>
+                    <th scope="col">Last run</th>
+                    <th scope="col">Last error</th>
+                    <th scope="col">Signal</th>
+                  </tr>
+                </thead>
+                <tbody id="ops-workers-body">
+                  <tr><td colspan="4" class="admin-muted small">No workers reported yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="network-health-section" class="dashboard-section">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <h2 class="section-title mb-0">Tor / I2P &amp; network probes</h2>
+              <button id="network-health-run-button" type="button" class="btn btn-console btn-sm" title="Run NIP-66 probe now">Run probe now</button>
+            </div>
+            <p id="network-health-sync" class="sync-line mb-3"><span class="prompt-char">&gt;</span> probes: waiting for snapshot…</p>
+            <div id="network-health-empty" class="panel-card admin-muted small">No external probe results yet. Enable NIP-66 relay monitoring to populate this panel.</div>
+            <div id="network-health-timeline-wrap" class="mb-3 d-none">
+              <p class="metric-label mb-2"><span class="module-code">HIST</span> Recent probe runs</p>
+              <div id="network-health-timeline" class="network-health-timeline" role="list" aria-label="Recent probe runs"></div>
+            </div>
+            <div id="network-health-summary" class="row g-2 mb-3 d-none">
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100">
+                  <p class="metric-label"><span class="module-code">RUN</span> Probe status</p>
+                  <p id="network-health-run-status" class="metric-value status-no-data mb-0"><span class="status-led" aria-hidden="true"></span>Pending</p>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="metric-card h-100">
+                  <p class="metric-label"><span class="module-code">TGT</span> Targets</p>
+                  <p id="network-health-target-count" class="metric-value mb-0"><span class="metric-number">0</span></p>
+                </div>
+              </div>
+              <div class="col-12 col-md-6">
+                <div class="metric-card h-100">
+                  <p class="metric-label"><span class="module-code">TS</span> Last probe run</p>
+                  <p id="network-health-run-at" class="metric-value mb-0"><span class="metric-number">—</span></p>
+                </div>
+              </div>
+            </div>
+            <div id="network-health-results" class="network-health-results d-none" aria-live="polite"></div>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">NIP-05 verifications</h2>
+            <div id="ops-nip05-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div class="d-flex flex-wrap gap-2 mb-3 align-items-end">
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-nip05-domain">Domain</label>
+                <input id="ops-nip05-domain" class="form-control console-input form-control-sm" type="text" placeholder="example.com">
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-nip05-verified">Verified</label>
+                <select id="ops-nip05-verified" class="form-select console-input form-select-sm">
+                  <option value="">Any</option>
+                  <option value="true">Verified</option>
+                  <option value="false">Not verified</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-nip05-stale">Stale</label>
+                <select id="ops-nip05-stale" class="form-select console-input form-select-sm">
+                  <option value="">Any</option>
+                  <option value="true">Stale</option>
+                  <option value="false">Fresh</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-nip05-min-failures">Min failures</label>
+                <input id="ops-nip05-min-failures" class="form-control console-input form-control-sm" type="number" min="0" step="1">
+              </div>
+              <button id="ops-nip05-refresh" type="button" class="btn btn-console btn-sm">Refresh</button>
+            </div>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="ops-nip05-caption">
+                <caption id="ops-nip05-caption" class="visually-hidden">NIP-05 verification records</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Pubkey</th>
+                    <th scope="col">NIP-05</th>
+                    <th scope="col">Verified</th>
+                    <th scope="col">Failures</th>
+                    <th scope="col">Last verified</th>
+                    <th scope="col">Stale</th>
+                    <th scope="col"></th>
+                  </tr>
+                </thead>
+                <tbody id="ops-nip05-body">
+                  <tr><td colspan="7" class="admin-muted small">No rows loaded.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p id="ops-nip05-pagination" class="admin-muted small mt-2 mb-0"></p>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">Storage counts</h2>
+            <p class="admin-muted small mb-2">Per-kind counts use NIP-45-style filters (comma-separated kinds, optional since/until unix seconds).</p>
+            <div class="d-flex flex-wrap gap-2 mb-3 align-items-end">
+              <div class="flex-grow-1">
+                <label class="form-label field-label small mb-1" for="ops-storage-kinds">Kinds</label>
+                <input id="ops-storage-kinds" class="form-control console-input form-control-sm" type="text" placeholder="1,7,9735">
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-storage-since">Since</label>
+                <input id="ops-storage-since" class="form-control console-input form-control-sm" type="number" min="0" step="1">
+              </div>
+              <div>
+                <label class="form-label field-label small mb-1" for="ops-storage-until">Until</label>
+                <input id="ops-storage-until" class="form-control console-input form-control-sm" type="number" min="0" step="1">
+              </div>
+              <button id="ops-storage-run" type="button" class="btn btn-console btn-sm">Count</button>
+            </div>
+            <div id="ops-storage-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="ops-storage-caption">
+                <caption id="ops-storage-caption" class="visually-hidden">Event storage counts by kind</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Kinds</th>
+                    <th scope="col">Count</th>
+                  </tr>
+                </thead>
+                <tbody id="ops-storage-body">
+                  <tr><td colspan="2" class="admin-muted small">Run a query to load counts.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div id="notifications-view" class="dashboard-view d-none">
+          <section class="dashboard-section">
+            <h2 class="section-title">Operator notifications</h2>
+            <p class="admin-muted small mb-3">Configure alert targets, event toggles, and review delivery history.</p>
+            <div id="notifications-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div id="notifications-success" class="alert settings-success d-none small" role="status"></div>
+
+            <div class="panel-card mb-3">
+              <div class="form-check form-switch mb-3">
+                <input id="notifications-enabled" class="form-check-input" type="checkbox" role="switch">
+                <label class="form-check-label field-label" for="notifications-enabled">Enable operator notifications</label>
+              </div>
+              <fieldset id="notifications-events-fieldset" class="notifications-events mb-0">
+                <legend class="field-label fs-6 mb-2">Events</legend>
+                <div class="row g-2">
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-invoice-created" class="form-check-input" type="checkbox" data-event-key="admission.invoice.created">
+                      <label class="form-check-label small" for="notifications-event-invoice-created">Invoice created</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-invoice-paid" class="form-check-input" type="checkbox" data-event-key="admission.invoice.paid">
+                      <label class="form-check-label small" for="notifications-event-invoice-paid">Invoice paid</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-invoice-failed" class="form-check-input" type="checkbox" data-event-key="admission.invoice.failed">
+                      <label class="form-check-label small" for="notifications-event-invoice-failed">Invoice failed</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-settings-changed" class="form-check-input" type="checkbox" data-event-key="settings.changed">
+                      <label class="form-check-label small" for="notifications-event-settings-changed">Settings changed</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-relay-restarted" class="form-check-input" type="checkbox" data-event-key="relay.restarted">
+                      <label class="form-check-label small" for="notifications-event-relay-restarted">Relay restarted</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-probe-failed" class="form-check-input" type="checkbox" data-event-key="probe.failed">
+                      <label class="form-check-label small" for="notifications-event-probe-failed">Probe failed</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-probe-recovered" class="form-check-input" type="checkbox" data-event-key="probe.recovered">
+                      <label class="form-check-label small" for="notifications-event-probe-recovered">Probe recovered</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                      <input id="notifications-event-ssl-expiring" class="form-check-input" type="checkbox" data-event-key="ssl.expiring">
+                      <label class="form-check-label small" for="notifications-event-ssl-expiring">SSL expiring</label>
+                    </div>
+                  </div>
+                </div>
+              </fieldset>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <button id="notifications-save-button" type="button" class="btn btn-console btn-sm">Save configuration</button>
+              <button id="notifications-reload-button" type="button" class="btn btn-console btn-sm">Reload</button>
+              <button id="notifications-add-target-button" type="button" class="btn btn-console btn-sm">Add target</button>
+            </div>
+
+            <div id="notifications-targets" class="notifications-targets mb-3" aria-live="polite"></div>
+
+            <details class="panel-card notifications-advanced mb-3">
+              <summary class="field-label">Advanced (retry &amp; retention)</summary>
+              <div class="row g-3 mt-1">
+                <div class="col-md-4">
+                  <label class="form-label field-label" for="notifications-retry-max">Max attempts</label>
+                  <input id="notifications-retry-max" class="form-control console-input" type="number" min="1" step="1">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label field-label" for="notifications-retry-delay">Base delay (ms)</label>
+                  <input id="notifications-retry-delay" class="form-control console-input" type="number" min="0" step="1">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label field-label" for="notifications-log-retention">Delivery log retention (days)</label>
+                  <input id="notifications-log-retention" class="form-control console-input" type="number" min="1" step="1">
+                </div>
+              </div>
+            </details>
+
+            <section class="dashboard-section pt-2">
+              <h3 class="section-title h6">Delivery history</h3>
+              <div class="d-flex flex-wrap gap-2 mb-2 align-items-end">
+                <div>
+                  <label class="form-label field-label small mb-1" for="notifications-log-status">Status</label>
+                  <select id="notifications-log-status" class="form-select console-input form-select-sm">
+                    <option value="">All</option>
+                    <option value="success">Success</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label field-label small mb-1" for="notifications-log-event">Event type</label>
+                  <input id="notifications-log-event" class="form-control console-input form-control-sm" type="text" placeholder="e.g. admission.invoice.paid">
+                </div>
+                <button id="notifications-log-refresh" type="button" class="btn btn-console btn-sm">Refresh log</button>
+                <button id="notifications-log-more" type="button" class="btn btn-console btn-sm">Load more</button>
+              </div>
+              <div class="table-responsive panel-card">
+                <table class="table table-sm notifications-log-table mb-0" aria-describedby="notifications-log-caption">
+                  <caption id="notifications-log-caption" class="visually-hidden">Notification delivery log</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Time (UTC)</th>
+                      <th scope="col">Event</th>
+                      <th scope="col">Target</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Error</th>
+                    </tr>
+                  </thead>
+                  <tbody id="notifications-log-body">
+                    <tr><td colspan="5" class="admin-muted small">No entries loaded.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        </div>
+
+        <div id="trust-view" class="dashboard-view d-none">
+          <section class="dashboard-section">
+            <h2 class="section-title">Diagnostics export</h2>
+            <p class="admin-muted small">Download a redacted support bundle: version, health, settings, workers, and latest probe snapshot.</p>
+            <div id="trust-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+              <button id="trust-diagnostics-download" type="button" class="btn btn-console btn-sm">Download JSON</button>
+              <button id="trust-diagnostics-preview-button" type="button" class="btn btn-console btn-sm">Preview in page</button>
+            </div>
+            <p id="trust-diagnostics-status" class="sync-line mb-2"><span class="prompt-char">&gt;</span> diagnostics: idle</p>
+            <p id="trust-diagnostics-preview-placeholder" class="admin-muted small mb-0">Preview not loaded.</p>
+            <div id="trust-diagnostics-preview-wrap" class="d-none mt-2">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <p class="metric-label mb-0"><span class="module-code">JSON</span> Diagnostics preview</p>
+                <button id="trust-diagnostics-preview-close" type="button" class="btn btn-console btn-sm">Close preview</button>
+              </div>
+              <pre id="trust-diagnostics-preview-body" class="panel-card small admin-muted mb-0" style="max-height: 320px; overflow: auto;" tabindex="0"></pre>
+            </div>
+          </section>
+
+          <section class="dashboard-section">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <h2 class="section-title mb-0">Admin audit log</h2>
+              <button id="trust-audit-refresh" type="button" class="btn btn-console btn-sm">Refresh</button>
+            </div>
+            <p id="trust-audit-sync" class="sync-line mb-2"><span class="prompt-char">&gt;</span> audit: not loaded</p>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="trust-audit-caption">
+                <caption id="trust-audit-caption" class="visually-hidden">Append-only admin audit entries</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Time (UTC)</th>
+                    <th scope="col">Action</th>
+                    <th scope="col">Remote</th>
+                    <th scope="col">Detail</th>
+                  </tr>
+                </thead>
+                <tbody id="trust-audit-body">
+                  <tr><td colspan="4" class="admin-muted small">No entries loaded.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
         <div id="settings-view" class="dashboard-view d-none">
           <section class="dashboard-section">
             <h2 class="section-title">Configuration<span class="sync-cursor" aria-hidden="true"></span></h2>
@@ -236,6 +567,10 @@
         grafanaDashboardUid: '{{grafana_dashboard_uid}}',
       }
     </script>
+    <script src="{{path_prefix}}/admin/assets/spark-field.js" nonce="{{nonce}}"></script>
     <script src="{{path_prefix}}/admin/assets/dashboard.js" nonce="{{nonce}}"></script>
+    <script src="{{path_prefix}}/admin/assets/notifications.js" nonce="{{nonce}}"></script>
+    <script src="{{path_prefix}}/admin/assets/admin-ops.js" nonce="{{nonce}}"></script>
+    <script src="{{path_prefix}}/admin/assets/admin-trust.js" nonce="{{nonce}}"></script>
   </body>
 </html>

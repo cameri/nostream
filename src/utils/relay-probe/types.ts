@@ -44,13 +44,28 @@ export interface TlsResult {
 
 export interface WsRttResult {
   rttOpenMs: number
+  rttReadMs?: number
+  rttWriteMs?: number
+  nip42AuthRequired?: boolean
+  nip42ChallengeObserved?: boolean
   address: string
+}
+
+export interface Nip11Limitation {
+  authRequired?: boolean
+  restrictedWrites?: boolean
+  paymentRequired?: boolean
+  minPowDifficulty?: number
 }
 
 export interface Nip11Result {
   statusCode: number
   name?: string
   pubkey?: string
+  supportedNips?: number[]
+  limitation?: Nip11Limitation
+  acceptedKinds?: number[]
+  rawDocument?: string
 }
 
 export interface ProbeResult {
@@ -82,4 +97,6 @@ export interface ProbeOptions {
   timeouts?: Partial<ProbeTimeouts>
   dnsCacheTtlSeconds?: number
   skipDnsCache?: boolean
+  /** When set, write probes and NIP-42 authentication use this monitor identity. */
+  monitorPrivateKey?: string
 }

@@ -34,6 +34,7 @@ services:
       nostream-migrate:
         condition: service_completed_successfully
     restart: on-failure
+    stop_grace_period: 45s
 
   nostream-db:
     image: postgres:15

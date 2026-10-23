@@ -19,20 +19,23 @@ export const getGrafanaDashboardUrl = (): string => {
   const baseUrl = getGrafanaBaseUrl()
   const dashboardUid = getGrafanaDashboardUid()
 
-  return `${baseUrl}/d/${dashboardUid}/nostream-overview?orgId=1&refresh=5s&theme=light`
+  return `${baseUrl}/d/${dashboardUid}/nostream-overview?orgId=1&refresh=5s&theme=dark`
 }
 
-export const getGrafanaSoloPanelUrl = (panelId: number | string, theme: 'light' | 'dark' = 'light'): string => {
+export const getGrafanaSoloPanelUrl = (panelId: number | string, theme: 'light' | 'dark' = 'dark'): string => {
   const baseUrl = getGrafanaBaseUrl()
   const dashboardUid = getGrafanaDashboardUid()
   const params = new URLSearchParams({
     orgId: '1',
     panelId: String(panelId),
+    from: 'now-15m',
+    to: 'now',
     refresh: '5s',
     theme,
+    kiosk: '1',
   })
 
-  return `${baseUrl}/d-solo/${dashboardUid}?${params.toString()}`
+  return `${baseUrl}/d-solo/${dashboardUid}/nostream-overview?${params.toString()}`
 }
 
 export const getGrafanaEmbedUrl = (): string => {

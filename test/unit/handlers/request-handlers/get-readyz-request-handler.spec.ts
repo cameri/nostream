@@ -8,12 +8,29 @@ import {
   getReadyzRequestHandler,
   resetReadyzSnapshotCache,
 } from '../../../../src/handlers/request-handlers/get-readyz-request-handler'
+import {
+  resetRelayBroadcastFanoutState,
+  setRelayBroadcastFanoutReady,
+} from '../../../../src/utils/relay-broadcast-state'
+import { beginDraining, resetDrainingState } from '../../../../src/utils/shutdown-state'
 
 chai.use(sinonChai)
 const { expect } = chai
 
 describe('buildReadyzSnapshot', () => {
+  const previousFanoutEnv = process.env.RELAY_BROADCAST_FANOUT
+
+  afterEach(() => {
+    resetRelayBroadcastFanoutState()
+    if (previousFanoutEnv === undefined) {
+      delete process.env.RELAY_BROADCAST_FANOUT
+    } else {
+      process.env.RELAY_BROADCAST_FANOUT = previousFanoutEnv
+    }
+  })
+
   it('returns ok when database and redis are healthy', () => {
+    delete process.env.RELAY_BROADCAST_FANOUT
     expect(buildReadyzSnapshot({ ok: true }, { ok: true })).to.deep.equal({
       status: 'ok',
       database: { ok: true },
@@ -22,10 +39,23 @@ describe('buildReadyzSnapshot', () => {
   })
 
   it('returns unavailable when either dependency is unhealthy', () => {
+    delete process.env.RELAY_BROADCAST_FANOUT
     expect(buildReadyzSnapshot({ ok: false }, { ok: true })).to.deep.equal({
       status: 'unavailable',
       database: { ok: false },
       redis: { ok: true },
+    })
+  })
+
+  it('returns unavailable when fan-out is required but not ready', () => {
+    process.env.RELAY_BROADCAST_FANOUT = 'true'
+    setRelayBroadcastFanoutReady(false)
+
+    expect(buildReadyzSnapshot({ ok: true }, { ok: true })).to.deep.equal({
+      status: 'unavailable',
+      database: { ok: true },
+      redis: { ok: true },
+      relayBroadcast: { ok: false },
     })
   })
 })
@@ -58,6 +88,26 @@ describe('getReadyzRequestHandler', () => {
   afterEach(() => {
     sandbox.restore()
     resetReadyzSnapshotCache()
+    resetDrainingState()
+  })
+
+  it('responds with 503 JSON while the relay is draining', async () => {
+    beginDraining()
+    collectAdminHealthSnapshotStub.resolves(healthyAdminSnapshot)
+
+    const res = createResponse()
+    const next = sinon.stub()
+
+    await getReadyzRequestHandler({} as any, res, next)
+
+    expect(collectAdminHealthSnapshotStub).to.have.been.calledOnce
+    expect(res.status).to.have.been.calledOnceWithExactly(503)
+    expect(res.send).to.have.been.calledOnceWithExactly({
+      status: 'draining',
+      database: { ok: true },
+      redis: { ok: true },
+    })
+    expect(next).to.have.been.calledOnce
   })
 
   it('responds with 200 JSON when dependencies are ready', async () => {

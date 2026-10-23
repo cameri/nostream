@@ -1,0 +1,198 @@
+---
+import FilmFrame from '../FilmFrame.astro'
+import InfoTip from '../InfoTip.astro'
+
+const media = (file: string) => `${import.meta.env.BASE_URL}media/${file}`.replace(/\/\//, '/')
+
+const capabilities = [
+  'Login-gated so only you can reach it',
+  'Plugs into the monitoring you already run',
+  'Health endpoint for load balancers and zero-downtime deploys',
+  'Self-hosted probes, labelled as one monitor among many',
+]
+
+const features = [
+  {
+    title: 'Live metrics',
+    body: 'Watch traffic and load as it happens, so you catch problems while they are small.',
+    tip: 'Events per second, rejections, connections, CPU and memory, streamed over SSE.',
+  },
+  {
+    title: 'Network health',
+    body: 'Know your relay is reachable and fast from the outside, not just from your own machine.',
+    tip: 'NIP-66 probes for DNS, TLS, WebSocket read/write RTT and NIP-11, per target.',
+  },
+  {
+    title: 'Settings editor',
+    body: 'Change settings confidently — mistakes are caught before they ship, and undo is one click.',
+    tip: 'Guided, validated edits with automatic backups and one-click restore.',
+  },
+  {
+    title: 'Notifications',
+    body: 'Hear about trouble first, before your users notice.',
+    tip: 'Outbound alerts with a delivery log, so nothing gets lost silently.',
+  },
+]
+---
+
+<section class="section" id="console">
+  <div class="container">
+    <div class="section-head split">
+      <div>
+        <p class="kicker reveal"><span class="idx">03</span> Admin & observability</p>
+        <h2 class="h2 reveal"><span class="g1">Know what your relay</span> <span class="g3">is actually doing.</span></h2>
+      </div>
+      <div class="reveal">
+        <p class="lead">A built-in console for operators: no SSH, no SQL, no guessing at 3am.</p>
+        <ul class="caps">
+          {capabilities.map((c) => <li>{c}</li>)}
+        </ul>
+      </div>
+    </div>
+
+    <div class="reveal film-wrap">
+      <p class="sr-only">
+        Silent looping video walkthrough of the /admin operator console: live metrics over SSE, the settings editor
+        with validated YAML and restore, NIP-66 network health probes, and alert notifications with a delivery log.
+        Use the pause control to stop playback. The sections below describe each beat in text.
+      </p>
+      <FilmFrame
+        src={media('admin.mp4')}
+        poster={media('admin-poster.webp')}
+        title="/admin · operator console"
+      />
+      <button class="film-toggle mono" type="button" data-console-film-toggle aria-pressed="false" aria-label="Pause the console film">
+        Pause
+      </button>
+    </div>
+
+    <ul class="feature-list reveal">
+      {
+        features.map((feature, i) => (
+          <li class="feature" style={`transition-delay:${(i % 2) * 80}ms`}>
+            <h3 class="h3">{feature.title}</h3>
+            <p>
+              {feature.body}
+              {feature.tip && <InfoTip detail={feature.tip} label={feature.title} />}
+            </p>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .caps {
+    display: grid;
+    gap: 8px;
+    margin: 22px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 14px;
+  }
+
+  .caps li {
+    position: relative;
+    padding-left: 20px;
+  }
+
+  .caps li::before {
+    content: '✓';
+    position: absolute;
+    left: 0;
+    color: var(--teal);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .film-wrap {
+    position: relative;
+    margin-top: 8px;
+  }
+
+  .film-wrap :global(.film-frame) {
+    width: 100%;
+  }
+
+  .film-toggle {
+    position: absolute;
+    z-index: 4;
+    left: 16px;
+    bottom: 16px;
+    padding: 8px 14px;
+    border: 1px solid var(--panel-border);
+    border-radius: 7px;
+    background: rgba(14, 14, 17, 0.8);
+    color: var(--fg-2);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+
+  .film-toggle:hover {
+    border-color: var(--wire);
+    color: var(--fg);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .feature-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px 16px;
+    margin: 20px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  @media (min-width: 900px) {
+    .feature-list {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .feature p {
+    margin: 0;
+    font-size: 15px;
+  }
+</style>
+
+<script>
+  // Same pause behaviour as the hero film. Base replays a visible clip on
+  // scroll, so a deliberate pause has to cancel that play event.
+  let userPaused = false
+  const button = document.querySelector<HTMLButtonElement>('[data-console-film-toggle]')
+  const video = document.querySelector<HTMLVideoElement>('#console video')
+  const sync = () => {
+    if (!button || !video) return
+    const paused = video.paused
+    button.textContent = paused ? 'Play' : 'Pause'
+    button.setAttribute('aria-pressed', String(paused))
+    button.setAttribute('aria-label', paused ? 'Play the console film' : 'Pause the console film')
+  }
+  video?.addEventListener('pause', sync)
+  video?.addEventListener('play', () => {
+    if (userPaused) video.pause()
+    else sync()
+  })
+  button?.addEventListener('click', () => {
+    if (!video) return
+    userPaused = !video.paused
+    if (video.paused) void video.play()
+    else video.pause()
+    sync()
+  })
+  sync()
+</script>

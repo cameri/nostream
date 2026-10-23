@@ -81,6 +81,7 @@ services:
       otel-collector:
         condition: service_started
     restart: on-failure
+    stop_grace_period: 45s
     networks:
       default:
         ipv4_address: 10.10.10.2
@@ -188,6 +189,7 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: 'true'
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_SECURITY_ALLOW_EMBEDDING: 'true'
+      GF_SECURITY_COOKIE_SAMESITE: disabled
       GF_SERVER_ROOT_URL: ${GRAFANA_URL:-http://127.0.0.1:7777}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

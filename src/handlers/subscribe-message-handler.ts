@@ -2,6 +2,7 @@ import { anyPass, equals, isNil, map, omit, propSatisfies, uniqWith } from 'ramd
 import { addAbortSignal } from 'stream'
 import { pipeline } from 'stream/promises'
 
+import { countFilterValues } from '../utils/filter'
 import {
   createClosedMessage,
   createEndOfStoredEventsNoticeMessage,
@@ -30,6 +31,9 @@ const logger = createLogger('subscribe-message-handler')
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private readonly abortController: AbortController
 
+  /** Set while `handleMessage` runs; used to abort in-flight reads when the sub is closed early. */
+  public activeSubscriptionId: SubscriptionId | undefined
+
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
@@ -46,6 +50,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   public async handleMessage(message: SubscribeMessage): Promise<void> {
     const subscriptionId = message[1]
+    this.activeSubscriptionId = subscriptionId
     const rawFilters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
 
     // NIP-50: strip search from filters when disabled so isEventMatchingFilter ignores it
@@ -268,6 +273,14 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     if (maxFilters > 0) {
       if (filters.length > maxFilters) {
         return `Too many filters: Number of filters per susbscription must be less then or equal to ${maxFilters}`
+      }
+    }
+
+    const maxFilterValues = subscriptionLimits?.maxFilterValues ?? 0
+    if (maxFilterValues > 0) {
+      const hasExcessiveFilterValues = filters.some((filter) => countFilterValues(filter) > maxFilterValues)
+      if (hasExcessiveFilterValues) {
+        return `Too many filter values: Number of values per filter must be less than or equal to ${maxFilterValues}`
       }
     }
 

@@ -18,8 +18,17 @@ import {
   redactSettingsValue,
 } from '../../utils/settings-redaction'
 import { validateSchema } from '../../utils/validation'
+import { INotificationOutboxRepository } from '../../@types/repositories'
+import { OperatorNotificationEventType } from '../../@types/operator-notifications'
+import { redactSettingsSecrets } from '../../utils/settings-redaction'
+import { createLogger } from '../../factories/logger-factory'
+import { recordAdminAuditFromRequest } from '../../utils/record-admin-audit'
+
+const logger = createLogger('patch-admin-settings-controller')
 
 export class PatchAdminSettingsController implements IController {
+  public constructor(private readonly notificationOutboxRepository: INotificationOutboxRepository) {}
+
   public async handleRequest(request: Request, response: Response): Promise<void> {
     const validation = validateSchema(adminSettingsPatchBodySchema)(request.body)
     if (validation.error) {
@@ -72,6 +81,20 @@ export class PatchAdminSettingsController implements IController {
       changes: updatedChanges.map(({ path, reload }) => ({ path, reload })),
       remoteAddress: request.ip,
     })
+    await recordAdminAuditFromRequest('settings.updated', request, {
+      changes: updatedChanges.map(({ path, reload }) => ({ path, reload })),
+    })
+
+    try {
+      await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.SETTINGS_CHANGED, {
+        changes: redactSettingsSecrets(
+          updatedChanges.map(({ path, value, reload }) => ({ path, value, reload })),
+        ),
+        remoteAddress: request.ip,
+      })
+    } catch (error) {
+      logger.error('Unable to enqueue settings notification outbox event', error)
+    }
 
     if (changes.length === 1 && !('changes' in validation.value)) {
       const [change] = updatedChanges

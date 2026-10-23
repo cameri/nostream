@@ -1,6 +1,6 @@
 {
   "name": "nostream",
-  "version": "3.0.0",
+  "version": "3.6.2",
   "packageManager": "pnpm@10.33.0",
   "private": true,
   "description": "A Nostr relay written in Typescript.",
@@ -28,7 +28,8 @@
     44,
     45,
     50,
-    65
+    65,
+    77
   ],
   "supportedNipExtensions": [],
   "supportedMips": [
@@ -174,11 +175,11 @@
     "@opentelemetry/exporter-metrics-otlp-http": "^0.219.0",
     "@opentelemetry/resources": "^2.8.0",
     "@opentelemetry/sdk-metrics": "^2.8.0",
-    "axios": "^1.18.0",
+    "axios": "^1.20.0",
     "cac": "^7.0.0",
     "colorette": "^2.0.20",
     "express": "4.22.1",
-    "js-yaml": "4.2.0",
+    "js-yaml": "4.3.2",
     "knex": "2.4.2",
     "ora": "^9.3.0",
     "pg": "8.9.0",
@@ -186,7 +187,7 @@
     "pino": "^8.21.0",
     "ramda": "0.28.0",
     "redis": "4.5.1",
-    "stream-json": "^2.1.0",
+    "stream-json": "^3.7.0",
     "ws": "^8.21.0",
     "zod": "^3.22.4"
   },
@@ -195,7 +196,12 @@
   },
   "pnpm": {
     "overrides": {
-      "serialize-javascript": ">=7.0.3 <8"
+      "serialize-javascript": ">=7.0.3 <8",
+      "proxy-addr@<2.0.8": ">=2.0.8",
+      "fast-uri@<3.1.7": ">=3.1.7",
+      "brace-expansion@<1.1.21": ">=1.1.21 <2",
+      "brace-expansion@>=2.0.0 <2.1.7": ">=2.1.7 <3",
+      "js-yaml@>=3.0.0 <3.15.2": ">=3.15.2 <4"
     }
   }
 }

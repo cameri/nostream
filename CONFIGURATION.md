@@ -54,6 +54,10 @@ The following environment variables can be set:
 | REDIS_PORT                       | Redis Port                       | 6379                   |
 | REDIS_USER                       | Redis User                       | default                |
 | REDIS_PASSWORD                   | Redis Password                   | nostr_ts_relay         |
+| RELAY_BROADCAST_FANOUT           | Publish accepted events to a Redis stream so multiple relay containers share live fan-out (`true`/`false`) | `false` |
+| RELAY_BROADCAST_STREAM_KEY       | Redis stream key used when `RELAY_BROADCAST_FANOUT` is enabled | `nostream:relay:broadcast` |
+| RELAY_BROADCAST_STREAM_MAXLEN    | Approximate max entries retained on the broadcast Redis stream (`XADD` trim). Dominant Redis memory use when fan-out is enabled. | `50000` |
+| RELAY_INSTANCE_ID                | Optional stable id for this relay instance (defaults to hostname and pid) | |
 | PROMETHEUS_URL                   | Prometheus base URL for admin metrics queries | http://127.0.0.1:9090 |
 | PROMETHEUS_QUERY_TIMEOUT_MS      | Timeout for each Prometheus admin metrics query (ms) | 5000 |
 | ADMIN_METRICS_SSE_INTERVAL_MS    | Interval between `/admin/metrics` SSE snapshots (ms) | 5000 |
@@ -142,6 +146,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | dvm.workers[].command                       | Command to spawn for this DVM worker (e.g. an interpreter or executable path). |
 | dvm.workers[].kinds                         | NIP-90 job request kinds (5000-5999) this worker accepts. Optional. |
 | dvm.workers[].timeoutMs                     | Max time in ms to wait for a job result before considering it timed out. Optional. |
+| eventStore.backend                          | Where events are stored. Only `postgres` for now. Read once at startup, so changing it needs a restart; an unsupported value stops the relay. Defaults to `postgres`. |
 | info.banner                                 | Public banner image URL for the relay information document. |
 | info.contact                                | Relay operator's contact. (e.g. mailto:operator@relay-your-domain.com) |
 | info.description                            | Public description of your relay. (e.g. Toronto Bitcoin Group Public Relay) |
@@ -155,16 +160,24 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].period   | Rate limit period in milliseconds. |
 | limits.admissionCheck.rateLimits[].rate     | Maximum number of admission checks during period. |
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
+| limits.client.subscription.maxFilterValues  | Maximum number of values allowed in each filter, counting its array criteria (`ids`, `authors`, `kinds`, `#<tag>`) together. Defaults to 2500. Disabled when set to zero. |
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
 | limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.createdAt.maxNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. |
+| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. Ignored on the client path while `limits.event.pow.enabled` is true. |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
+| limits.event.pow.ceilingBits                | Maximum adaptive PoW difficulty, reached at approximately 2x `targetEventsPerSecond` and beyond. |
+| limits.event.pow.enabled                    | Enables load-aware PoW difficulty scaling on the eventId check only, in place of the static `eventId.minLeadingZeroBits` value. Does not affect `pubkey.minLeadingZeroBits`, which stays a static, non-adaptive knob regardless of this setting -- a pubkey requirement is a one-time offline identity cost, not a per-event load signal. Defaults to false. |
+| limits.event.pow.floorBits                  | Minimum adaptive PoW difficulty, used at or below approximately `targetEventsPerSecond`. With the default `floorBits: 0`, the load signal costs an attacker nothing to drive; set a non-zero floor if the gate should cost something even under light load. |
+| limits.event.pow.periodMs                   | EWMA half-life (ms) used to smooth the observed event rate. |
+| limits.event.pow.targetEventsPerSecond      | Event-rate threshold (in real events/sec) above which the adaptive difficulty starts climbing toward `ceilingBits`. |
+| limits.event.pow.wotThresholds[].difficultyFactor | Fraction of the computed adaptive difficulty required at this threshold's `maxDistance`: 0 bypasses eventId PoW entirely, 1 requires the full computed difficulty. |
+| limits.event.pow.wotThresholds[].maxDistance | Reporters at or under this WoT distance (from `wot.seedPubkey`) get this threshold's `difficultyFactor`. The eligible threshold with the smallest `maxDistance` applies. Requires `wot.enabled`; a pubkey outside the trust graph always pays the full computed difficulty. |
 | limits.event.pubkey.blacklist               | List of public keys to always reject. Public keys in this list will not be able to post to this relay. |
-| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. Defaults to zero. Disabled when set to zero. |
+| limits.event.pubkey.minLeadingZeroBits      | Leading zero bits required on the public key of incoming events for proof of work. Defaults to zero. Disabled when set to zero. Always enforced regardless of `limits.event.pow.enabled` -- adaptive PoW never applies to the pubkey check (see `limits.event.pow.enabled`). |
 | limits.event.pubkey.whitelist               | List of public keys to always allow. Only public keys in this list will be able to post to this relay. Use for private relays. |
 | limits.event.rateLimits[].kinds             | List of event kinds rate limited. Use `[min, max]` for ranges. Optional. |
 | limits.event.rateLimits[].period | Rate limiting period in milliseconds. For `sliding_window`: the time window during which requests are counted. For `ewma`: the half-life of the exponential decay — shorter values forget bursts faster, longer values are stricter on bursty clients. |
@@ -182,11 +195,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
 | limits.message.rateLimits[].period | Rate limiting period in milliseconds. For `sliding_window`: the time window. For `ewma`: the half-life of the decay function. |
 | limits.message.rateLimits[].rate            | Maximum number of messages during period. |
-| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
-| mirroring.static[].filters                  | Subscription filters used to mirror. |
-| mirroring.static[].limits.event             | Event limit overrides for this mirror. See configurations under limits.event. |
-| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
-| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
+| mirroring.static                            | Removed: the static mirroring worker no longer exists, so this setting is ignored and logs a warning at start-up. To sync events with another relay, use NIP-77 (Negentropy) from a client that speaks it, for example `strfry sync`, against a relay with `nip77.enabled` set. |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
 | nip05.domainBlacklist                       | List of domains blocked from NIP-05 verification. Authors with NIP-05 at these domains will be rejected. |
@@ -208,14 +217,24 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip50.enabled                               | Enable or disable NIP-50 full-text search. Defaults to false. When enabled, clients can include a `search` field in REQ filters to perform text queries against event content. Requires the GIN full-text index migration. |
 | nip50.language                              | PostgreSQL text-search configuration name. Defaults to `simple` (language-agnostic tokenization). Set to `english`, `spanish`, etc. for stemming support. See [PostgreSQL text search configurations](https://www.postgresql.org/docs/current/textsearch-configuration.html). **Note:** The GIN index migration is built with the `simple` configuration. If you change this value, you must manually rebuild the index: `DROP INDEX CONCURRENTLY events_content_fts_idx; CREATE INDEX CONCURRENTLY events_content_fts_idx ON events USING gin (to_tsvector('<your_language>', event_content));` — otherwise the planner cannot use the index and queries fall back to sequential scans. |
 | nip50.maxQueryLength                        | Maximum length of the search query string. Queries exceeding this are truncated. Defaults to 256. |
+| nip56.enabled                               | Enable NIP-56 content reporting. When true, kind-1984 report events are stored and scored by the reporter's WoT distance from `wot.seedPubkey`. Defaults to false. If `wot.enabled` is false, every non-moderator report is still stored, but its WoT distance is always undefined, so it scores weight 0 and never becomes actionable — easy to misread as a misconfiguration. `reports` rows have no automatic retention/pruning: they can outlive the kind-1984 event that produced them (which is itself subject to normal event retention/deletion) and accumulate indefinitely; operators who want bounded growth need to prune the table themselves. |
+| nip56.trustedModerators                     | Pubkeys (hex) whose reports are always maximum-weight and actionable, regardless of WoT distance. Reports from any other pubkey are stored and weighted, but never trigger automatic actions on their own. Defaults to []. |
+| nip56.hideActionableReports                 | When true, events matching an actionable report are excluded from REQ/COUNT results: a pubkey-targeted report hides every event from that pubkey, an event-targeted report hides just that event. Has no effect unless `nip56.enabled` is also true. Defaults to false, so enabling reporting alone never changes what existing subscribers see. Requires the `reports_actionable_reported_event_id_idx`/`reports_actionable_reported_pubkey_idx` partial indexes (added by migration) to stay efficient at scale. |
 | nip66.dnsCacheTtlSeconds                    | DNS cache TTL in seconds for repeated probe lookups of the same hostname. Defaults to 300. |
 | nip66.enabled                               | Enable NIP-66 relay monitoring. When true, starts a `relay-monitor` cluster worker that probes targets on an interval and stores the latest snapshot in Redis. Defaults to false. |
 | nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Defaults to 3600. |
 | nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. |
+| nip66.geohash                               | Optional NIP-52 geohash describing this monitor's network vantage. Published on kind `10166` monitor announcements when set. |
+| nip66.historyRetentionRuns                  | Maximum probe run snapshots kept for the admin Network Health history API and timeline. Defaults to 168. |
+| nip66.historyRetentionHours                 | Optional maximum age in hours for retained probe history. When unset, history is trimmed by run count only. |
 | nip66.timeouts.dnsMs                        | DNS probe timeout in milliseconds. Defaults to 10000. |
 | nip66.timeouts.nip11Ms                      | NIP-11 fetch timeout in milliseconds. Defaults to 10000. |
 | nip66.timeouts.tlsMs                        | TLS probe timeout in milliseconds. Defaults to 10000. |
 | nip66.timeouts.wsRttMs                      | WebSocket open RTT probe timeout in milliseconds. Defaults to 10000. |
+| nip77.enabled                               | Enable NIP-77 (Negentropy) set-reconciliation sync, so clients and other relays can find which events differ without downloading them all. Defaults to false. Only answers when `eventStore.backend` is `postgres`; other backends bring their own negentropy implementation. While active, the relay lists `77` in the NIP-11 `supported_nips`; it is left out when this is off or another backend is used. All `nip77.*` settings can be edited in the admin console and the CLI settings menu. When `nip42.restrictedReads` is enabled, reconciliation would list the ids of restricted events, so a `NEG-OPEN` filter that could match one (it names a restricted kind or no kinds at all) is only accepted when scoped by `authors` or `#p` to pubkeys the client has authenticated as, and is re-checked on every `NEG-MSG`; otherwise the session is closed with `NEG-ERR auth-required:`. Each open session holds the ids of every event matching its filter in memory, so size the limits below for your hardware. |
+| nip77.maxEventsPerSession                   | Most events one session may cover. A `NEG-OPEN` whose filter matches more is rejected with `NEG-ERR blocked:` (clients should split the sync into `since`/`until` windows). The filter's `limit` is ignored, since reconciliation needs the whole set. Defaults to 100000. |
+| nip77.maxSessionsPerConnection              | Concurrent negentropy sessions one websocket connection may hold; opening an id that is already open replaces it. Further `NEG-OPEN`s are rejected with `NEG-ERR blocked:`. Defaults to 3. |
+| nip77.sessionIdleTimeoutMs                  | A session that receives no `NEG-MSG` for this many milliseconds is closed with `NEG-ERR closed:`. Defaults to 60000. |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
@@ -228,6 +247,14 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.subscriptionPlans                  | Recurring membership plans. Leave empty to keep the one-time admission fee. With plans and `payments.enabled`, `POST /invoices` takes a `planId` instead of a fee schedule, a payment of at least the plan price starts or extends a period (from the period end while access is still running, otherwise from now), and writes need an active subscription or grace period. Admitted users with no subscription keep access. About three days before a period ends the relay creates a renewal invoice and sends it to the subscriber in a kind 402 event, replacing it if it expires unpaid; it moves the subscription through grace to expired once the period and grace pass without payment. Users still have to pay renewal invoices themselves, since Lightning cannot be charged automatically. The invoice page lets users pick a plan. |
+| payments.subscriptionPlans[].id             | Unique plan name, for example `basic`. `grandfathered` is reserved: users admitted before plans existed are moved onto it and keep access without a paid period. |
+| payments.subscriptionPlans[].amount         | Price of one period in msats. Must be unique across plans. A payment below it does not start or extend a period. |
+| payments.subscriptionPlans[].intervalSeconds | Length of one paid period, in seconds. |
+| payments.subscriptionPlans[].graceSeconds   | How long access lasts after a period ends without a renewal, in seconds. `0` ends access straight away. |
+| payments.subscriptionPlans[].description    | Optional text shown to users. |
+| payments.subscriptionPlans[].limits.rateLimits | Optional event rate limits for subscribers on this plan, in the same format as `limits.event.rateLimits`. |
+| payments.subscriptionPlans[].limits.retentionMaxDays | Optional event retention in days for subscribers on this plan. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. |
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
@@ -235,11 +262,6 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].rate            | Maximum number of admission checks during period. |
 | limits.admissionCheck.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.rateLimiter.strategy | Rate limiting strategy. Either `ewma` or `sliding_window`. Defaults to `ewma`. When using `ewma`, the `period` field in each rate limit serves as the half-life for the exponential decay function. Note: when switching from `sliding_window` to `ewma`, consider increasing `rate` values slightly as EWMA penalizes bursty behavior more aggressively. |
-| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
-| mirroring.static[].filters                  | Subscription filters used to mirror. |
-| mirroring.static[].limits.event             | Event limit overrides for this mirror. See configurations under limits.event. |
-| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
-| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
 | network.trustedProxies                      | Optional allow-list of proxy IPs allowed to set `network.remoteIpHeader`; otherwise socket remote IP is used. |

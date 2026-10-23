@@ -5,7 +5,6 @@ import { createLogger } from './factories/logger-factory'
 import { dvmOrchestratorWorkerFactory } from './factories/dvm-orchestrator-worker-factory'
 import { maintenanceWorkerFactory } from './factories/maintenance-worker-factory'
 import { relayMonitorWorkerFactory } from './factories/relay-monitor-worker-factory'
-import { staticMirroringWorkerFactory } from './factories/static-mirroring.worker-factory'
 import { workerFactory } from './factories/worker-factory'
 import { initializeMetricsTelemetry } from './telemetry/metrics'
 import { bootstrapSettingsStore } from './utils/settings-store'
@@ -21,8 +20,6 @@ export const getRunner = () => {
         return workerFactory()
       case 'maintenance':
         return maintenanceWorkerFactory()
-      case 'static-mirroring':
-        return staticMirroringWorkerFactory()
       case 'relay-monitor':
         return relayMonitorWorkerFactory()
       case 'dvm-orchestrator':

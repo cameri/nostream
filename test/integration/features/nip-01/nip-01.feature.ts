@@ -129,6 +129,82 @@ When(
 )
 
 When(
+  /^(\w+) sends a text_note event with content "([^"]+)" and tags (\w) "([^"]+)" and (\w) "([^"]+)"$/,
+  async function (name: string, content: string, tag1: string, value1: string, tag2: string, value2: string) {
+    const ws = this.parameters.clients[name] as WebSocket
+    const { pubkey, privkey } = this.parameters.identities[name]
+
+    const event: Event = await createEvent(
+      {
+        pubkey,
+        kind: 1,
+        content,
+        tags: [
+          [tag1, value1],
+          [tag2, value2],
+        ],
+      },
+      privkey,
+    )
+
+    await sendEvent(ws, event)
+    this.parameters.events[name].push(event)
+  },
+)
+
+When(
+  /^(\w+) subscribes to events from (\w+) with tag (\w) "([^"]+)" and tag (\w) "([^"]+)"$/,
+  async function (
+    this: World<Record<string, any>>,
+    name: string,
+    author: string,
+    tag1: string,
+    value1: string,
+    tag2: string,
+    value2: string,
+  ) {
+    const ws = this.parameters.clients[name] as WebSocket
+    const pubkey = this.parameters.identities[author].pubkey
+    const subscription = {
+      name: `test-${Math.random()}`,
+      filters: [{ authors: [pubkey], [`#${tag1}`]: [value1], [`#${tag2}`]: [value2] }],
+    }
+    this.parameters.subscriptions[name].push(subscription)
+
+    await createSubscription(ws, subscription.name, subscription.filters)
+  },
+)
+
+When(
+  /^(\w+) subscribes to the last event from (\w+) with tag (\w) "([^"]+)"$/,
+  async function (this: World<Record<string, any>>, name: string, author: string, tag: string, value: string) {
+    const ws = this.parameters.clients[name] as WebSocket
+    const event = this.parameters.events[author][this.parameters.events[author].length - 1]
+    const subscription = { name: `test-${Math.random()}`, filters: [{ ids: [event.id], [`#${tag}`]: [value] }] }
+    this.parameters.subscriptions[name].push(subscription)
+
+    await createSubscription(ws, subscription.name, subscription.filters)
+  },
+)
+
+When(
+  /^(\w+) subscribes to text_note events from (\w+) with a limit of (\d+) or set_metadata events from (\w+)$/,
+  async function (this: World<Record<string, any>>, name: string, author1: string, limit: string, author2: string) {
+    const ws = this.parameters.clients[name] as WebSocket
+    const subscription = {
+      name: `test-${Math.random()}`,
+      filters: [
+        { kinds: [1], authors: [this.parameters.identities[author1].pubkey], limit: Number(limit) },
+        { kinds: [0], authors: [this.parameters.identities[author2].pubkey] },
+      ],
+    }
+    this.parameters.subscriptions[name].push(subscription)
+
+    await createSubscription(ws, subscription.name, subscription.filters)
+  },
+)
+
+When(
   /^(\w+) sends a text_note event with content "([^"]+)" on (\d+)$/,
   async function (name: string, content: string, createdAt: string) {
     const ws = this.parameters.clients[name] as WebSocket
@@ -253,3 +329,28 @@ Then(/(\w+) receives an? (\w+) result/, async function (name: string, successful
 
   expect(command[2]).to.equal(successful === 'successful')
 })
+
+Then(
+  /^(\w+) receives 1 stored text_note event from (\w+) with content "([^"]+)" and EOSE$/,
+  async function (this: World<Record<string, any>>, name: string, author: string, content: string) {
+    const ws = this.parameters.clients[name] as WebSocket
+    const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
+    const [event] = await waitForEventCount(ws, subscription.name, 1, true)
+
+    expect(event.kind).to.equal(1)
+    expect(event.pubkey).to.equal(this.parameters.identities[author].pubkey)
+    expect(event.content).to.equal(content)
+  },
+)
+
+Then(
+  /^(\w+) receives 2 stored events from (\w+) and EOSE$/,
+  async function (this: World<Record<string, any>>, name: string, author: string) {
+    const ws = this.parameters.clients[name] as WebSocket
+    const subscription = this.parameters.subscriptions[name][this.parameters.subscriptions[name].length - 1]
+    const events = await waitForEventCount(ws, subscription.name, 2, true)
+
+    expect(events.map((event) => event.kind).sort()).to.deep.equal([0, 1])
+    expect(events.every((event) => event.pubkey === this.parameters.identities[author].pubkey)).to.equal(true)
+  },
+)

@@ -1,8 +1,11 @@
 import { expect } from 'chai'
 
 import {
+  createClosedMessage,
   createCommandResult,
   createEndOfStoredEventsNoticeMessage,
+  createNegErrMessage,
+  createNegMsgMessage,
   createNoticeMessage,
   createOutgoingEventMessage,
   createRelayedEventMessage,
@@ -60,6 +63,35 @@ describe('createCommandResult', () => {
       'blocked: content not allowed',
     ])
   })
+
+  it('appends optional params as a fifth element', () => {
+    expect(createCommandResult('event-id', false, 'rate-limited: slow down', '1000')).to.deep.equal([
+      MessageType.OK,
+      'event-id',
+      false,
+      'rate-limited: slow down',
+      '1000',
+    ])
+  })
+})
+
+describe('createClosedMessage', () => {
+  it('returns a CLOSED message without params', () => {
+    expect(createClosedMessage('sub1', 'error: shutting down')).to.deep.equal([
+      MessageType.CLOSED,
+      'sub1',
+      'error: shutting down',
+    ])
+  })
+
+  it('appends optional params as a fourth element', () => {
+    expect(createClosedMessage('sub1', 'rate-limited: slow down', '2500')).to.deep.equal([
+      MessageType.CLOSED,
+      'sub1',
+      'rate-limited: slow down',
+      '2500',
+    ])
+  })
 })
 
 describe('createSubscriptionMessage', () => {
@@ -115,5 +147,34 @@ describe('createRelayedEventMessage', () => {
       event,
       'shared-secret',
     ])
+  })
+})
+
+describe('NIP-77 messages', () => {
+  it('createNegMsgMessage returns a NEG-MSG with the hex payload', () => {
+    expect(createNegMsgMessage('sync1', '6100')).to.deep.equal([MessageType.NEG_MSG, 'sync1', '6100'])
+  })
+
+  it('createNegErrMessage returns a NEG-ERR with the reason', () => {
+    expect(createNegErrMessage('sync1', 'closed: bye')).to.deep.equal([MessageType.NEG_ERR, 'sync1', 'closed: bye'])
+  })
+
+  it('createNegErrMessage appends the record limit when given', () => {
+    expect(createNegErrMessage('sync1', 'blocked: this query is too big', 5000)).to.deep.equal([
+      MessageType.NEG_ERR,
+      'sync1',
+      'blocked: this query is too big',
+      5000,
+    ])
+  })
+
+  it('createNegErrMessage keeps a record limit of 0', () => {
+    expect(createNegErrMessage('sync1', 'blocked: no', 0)).to.have.lengthOf(4)
+  })
+
+  it('serialises to the JSON array NIP-77 describes', () => {
+    expect(JSON.stringify(createNegErrMessage('sync1', 'blocked: no', 3))).to.equal(
+      '["NEG-ERR","sync1","blocked: no",3]',
+    )
   })
 })

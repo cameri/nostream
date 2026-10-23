@@ -7,7 +7,7 @@ import sinonChai from 'sinon-chai'
 
 import { InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
 import { Nip05Verification } from '../../../src/@types/nip05'
-import { IMaintenanceService, IPaymentsService } from '../../../src/@types/services'
+import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../../../src/@types/services'
 import { Settings } from '../../../src/@types/settings'
 import { applyReverificationOutcome, MaintenanceWorker } from '../../../src/app/maintenance-worker'
 import * as metricsTelemetry from '../../../src/telemetry/metrics'
@@ -28,6 +28,9 @@ describe('MaintenanceWorker', () => {
   let settings: Sinon.SinonStub
   let settingsState: Settings
   let nip05VerificationRepository: any
+  let notificationOutboxService: Sinon.SinonStubbedInstance<INotificationOutboxService>
+  let notificationDeliveryLogRepository: any
+  let notificationOutboxRepository: any
   let verifyStub: Sinon.SinonStub
 
   const pendingInvoice = {
@@ -91,6 +94,19 @@ describe('MaintenanceWorker', () => {
       clearOldEvents: sandbox.stub().resolves(),
     } as any
 
+    notificationOutboxService = {
+      processBatch: sandbox.stub().resolves(0),
+    } as any
+
+    notificationDeliveryLogRepository = {
+      deleteOlderThan: sandbox.stub().resolves(0),
+    }
+
+    notificationOutboxRepository = {
+      enqueue: sandbox.stub().resolves(),
+      deleteTerminalOlderThan: sandbox.stub().resolves(0),
+    }
+
     // Prevent real timeouts and randomized per-invoice delays.
     sandbox.stub(misc, 'delayMs').resolves()
 
@@ -100,6 +116,9 @@ describe('MaintenanceWorker', () => {
       maintenanceService,
       settings as any,
       nip05VerificationRepository,
+      notificationOutboxService,
+      notificationDeliveryLogRepository,
+      notificationOutboxRepository,
     )
   })
 
@@ -338,6 +357,48 @@ describe('MaintenanceWorker', () => {
       expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
       expect(paymentsService.updateInvoiceStatus).not.to.have.been.called
       expect(paymentsService.getPendingInvoices).not.to.have.been.called
+    })
+
+    describe('subscription lifecycle', () => {
+      let subscriptionService: { processLifecycle: Sinon.SinonStub }
+
+      beforeEach(() => {
+        subscriptionService = { processLifecycle: sandbox.stub().resolves(0) }
+        worker = new MaintenanceWorker(
+          fakeProcess as any,
+          paymentsService,
+          maintenanceService,
+          settings as any,
+          nip05VerificationRepository,
+          notificationOutboxService,
+          notificationDeliveryLogRepository,
+          notificationOutboxRepository,
+          undefined,
+          subscriptionService as any,
+        )
+      })
+
+      it('runs the subscription lifecycle once per pass', async () => {
+        await (worker as any).onSchedule()
+
+        expect(subscriptionService.processLifecycle).to.have.been.calledOnce
+      })
+
+      it('skips it while payments are disabled', async () => {
+        settingsState.payments = { enabled: false } as any
+
+        await (worker as any).onSchedule()
+
+        expect(subscriptionService.processLifecycle).not.to.have.been.called
+      })
+
+      it('still clears old events and finishes the pass when the lifecycle fails', async () => {
+        subscriptionService.processLifecycle.rejects(new Error('db down'))
+
+        await (worker as any).onSchedule()
+
+        expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
+      })
     })
 
     it('skips an invoice when the processor returns no id', async () => {
