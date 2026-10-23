@@ -14,7 +14,7 @@ return 1
 `
 
 const FETCH_BUCKET_SCRIPT = `
-return redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')
+return redis.call('ZREVRANGE', KEYS[1], 0, ARGV[1], 'WITHSCORES')
 `
 
 export interface ModerationRateLimitHitRow {
@@ -105,7 +105,7 @@ const fetchAggregatedHits = async (
   const buckets = await Promise.all(
     suffixes.map(async (suffix) => {
       const key = `${prefix}:${suffix}`
-      const result = await cache.eval(FETCH_BUCKET_SCRIPT, [key], [])
+      const result = await cache.eval(FETCH_BUCKET_SCRIPT, [key], [String(clamped - 1)])
       return parseBucketRows(result)
     }),
   )
