@@ -157,6 +157,14 @@ impl Filter {
     }
 }
 
+/// The number of array-valued criteria a filter carries (`countFilterValues`,
+/// `src/utils/filter.ts:9-10`): `ids`, `authors`, `kinds` and every `#`-criterion, each
+/// contributing its length; scalar criteria (`since`, `until`, `limit`, `search`) contribute
+/// nothing.
+pub fn count_filter_values(filter: &Filter) -> usize {
+    filter.value_count()
+}
+
 /// Whether a string is a single-letter tag query, `#` plus one ASCII letter
 /// (`isGenericTagQuery`, `src/utils/filter.ts:4`). Any other key is ignored by the matcher.
 pub fn is_generic_tag_query(key: &str) -> bool {

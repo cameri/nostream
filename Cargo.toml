@@ -16,6 +16,8 @@ chacha20 = "0.10.2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 clap = { version = "4", features = ["derive"] }
 futures-core = "0.3"
+futures-util = "0.3"
+getrandom = "0.3"
 heed = { version = "0.20", features = ["read-txn-no-tls"] }
 hex = "0.4.3"
 hkdf = "0.13.0"
@@ -40,7 +42,8 @@ sha2 = "0.11.1"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "macros", "chrono", "json", "tls-rustls-ring-webpki"] }
 tempfile = "3"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-tungstenite = { version = "0.30", features = ["connect", "handshake"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

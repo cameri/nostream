@@ -46,6 +46,7 @@
 //! it carries.
 
 pub mod adaptive_pow;
+pub mod clock;
 pub mod constants;
 pub mod crypto;
 pub mod error;
@@ -75,6 +76,7 @@ pub mod secret;
 pub mod time;
 pub mod validation;
 
+pub use clock::{Clock, SystemClock, TestClock};
 pub use error::CoreError;
 pub use event::{
     CanonicalEvent, Event, EventId, Kind, KindSelector, Pubkey, SettingsPubkey, Signature, Tag,
