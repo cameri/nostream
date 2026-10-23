@@ -1,10 +1,34 @@
-//! The `auth-message-handler.ts` handler.
+//! The `auth-message-handler.ts` handler (NIP-42).
 
-use crate::error::RelayError;
+use nostream_core::messages::AuthMessage;
+use nostream_core::nip42;
 
-/// Phase 1 stub — job 005; will handle a NIP-42 AUTH message; see `src/handlers/auth-message-handler.ts`.
-pub async fn handle() -> Result<(), RelayError> {
-    Err(RelayError::NotImplemented {
-        module: "relay::handlers::auth",
-    })
+use crate::handlers::HandlerContext;
+
+/// The handler's entry point (`handleMessage`, `:22-70`).
+///
+/// The seven outcomes are `nip42::authenticate`'s failures in the capture's order, then the
+/// replay check, then `["OK",<id>,true,""]`. The challenge is never rotated by AUTH
+/// (`web-socket-adapter.ts:186-196`).
+pub async fn handle(message: AuthMessage, context: &HandlerContext) {
+    let event = message.event;
+    let now = context.now_secs();
+    let challenge = context.connection.challenge();
+    let relay_url = context.relay_url().to_owned();
+
+    match nip42::authenticate(&event, &challenge, &relay_url, now) {
+        Ok(pubkey) => {
+            if !context.connection.authenticate(pubkey, event.id, now) {
+                context.send_ok(event.id, false, "invalid: auth event already used", None);
+                return;
+            }
+
+            context.send_ok(event.id, true, "", None);
+        }
+        Err(failure) => {
+            let reason = format!("invalid: {}", failure.message());
+
+            context.send_ok(event.id, false, &reason, None);
+        }
+    }
 }

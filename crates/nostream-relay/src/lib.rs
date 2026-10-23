@@ -1,5 +1,6 @@
-//! `nostream-relay` owns the Nostr wire: the five message handlers, the event strategies, the
-//! per-connection state, the rate limiters and the cross-worker broadcast fan-out.
+//! `nostream-relay` owns the Nostr wire: the transport and per-connection state machine, the
+//! positional frame codec's use, the five message handlers, the event strategies and their
+//! ordered registry, the NIP-42 session and read guards, and the rate limiters.
 //!
 //! It owns these TypeScript paths from the capture commit
 //! (`242a3001d77149e4d70151ec03060c4ef44a1547`):
@@ -16,13 +17,26 @@
 //! - `src/factories/{event-strategy-factory,message-handler-factory,
 //!   websocket-adapter-factory,rate-limiter-factory}.ts`
 //!
-//! Phase 1 carries the module map and labelled stubs only: no protocol behaviour, no WebSocket
-//! dependency, no transport. The NIP-77 `neg-*` handlers exist at the porting oracle
-//! (`041fe34e`) and are deliberately absent here. Phase 2+ areas this crate does not own: the
-//! HTTP surface (nostream-admin) and the probe family (nostream-services).
+//! **Implemented here:** the transport (`transport.rs`: `tokio-tungstenite` 0.30, the
+//! settings-derived message limit, the close codes, the drain timeout), the per-socket state
+//! machine (`connection.rs`, `relay.rs`: subscriptions, liveness, drain, live dispatch), the
+//! five handlers, the strategy trait with its ordered registry and the `default` strategy,
+//! the NIP-42 session and read guards' wiring, the two rate limiters over an in-process
+//! store, and the NIP-56 hidden-content mirror. The positional codec, `validation::validate_event`
+//! and `nip42::{authenticate, generate_challenge}` are `nostream-core`'s.
 //!
-//! The event acceptance gate this crate will build owns the *policy*: the kind-specific tag
-//! rules, which `created_at` deltas the settings supply, and where the check runs. The pure
+//! **Still stubbed, each labelled with the job that fills it:** the fourteen non-default
+//! event strategies (job 009), `NegentropySession`/`open_negentropy_session` (a NIP-77 job
+//! cut against `041fe34e`, where the `neg-*` handlers first exist), and the cross-worker
+//! broadcast `publish`/`deduplicate` (unassigned: `src/relay-broadcast/redis-relay-broadcast-fanout.ts`
+//! is named by no bullet of issue #865). `broadcast.rs` therefore carries no behaviour; the
+//! in-process fan-out this job needs is `Relay::hub`.
+//!
+//! Phase 2+ areas this crate does not own: the HTTP surface and NIP-11 document
+//! (`nostream-admin`), and the probe family and NIP-66 monitor (`nostream-services`).
+//!
+//! The event acceptance gate this crate owns is the *policy*: the kind-specific tag rules,
+//! which `created_at` deltas the settings supply, and where the check runs. The pure
 //! predicate it calls — `nostream_core::time::check_created_at` — is core's, along with the
 //! rest of the reference-time arithmetic; do not re-implement it here.
 
@@ -30,7 +44,15 @@ pub mod broadcast;
 pub mod connection;
 pub mod error;
 pub mod handlers;
+pub mod hidden_content;
 pub mod limits;
+pub mod relay;
+pub mod relay_key;
+pub mod sink;
 pub mod strategies;
+pub mod testing;
+pub mod transport;
+pub mod unavailable;
 
 pub use error::RelayError;
+pub use relay::{Relay, RelayConfig};

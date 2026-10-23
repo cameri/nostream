@@ -3,10 +3,10 @@
 use nostream_core::Event;
 
 use crate::error::RelayError;
-use crate::strategies::StrategyOutcome;
+use crate::handlers::HandlerContext;
 
-/// Phase 1 stub — job 005; will decide acceptance for kinds 20000-29999; see `src/handlers/event-strategies/ephemeral-event-strategy.ts`.
-pub async fn handle(_event: &Event) -> Result<StrategyOutcome, RelayError> {
+/// Phase 2 stub — job 009; will answer OK and broadcast without storing; see `src/handlers/event-strategies/ephemeral-event-strategy.ts`.
+pub async fn execute(_event: &Event, _context: &HandlerContext) -> Result<(), RelayError> {
     Err(RelayError::NotImplemented {
         module: "relay::strategies::ephemeral",
     })

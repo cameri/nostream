@@ -8,10 +8,22 @@ repository.workspace = true
 description = "Nostr wire handlers, event strategies, connection state and rate limiters"
 
 [dependencies]
+chrono.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+hmac.workspace = true
 nostream-config.workspace = true
 nostream-core.workspace = true
 nostream-storage.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
 
 [lints]
 workspace = true

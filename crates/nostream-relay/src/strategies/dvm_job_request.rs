@@ -3,10 +3,10 @@
 use nostream_core::Event;
 
 use crate::error::RelayError;
-use crate::strategies::StrategyOutcome;
+use crate::handlers::HandlerContext;
 
-/// Phase 1 stub — job 005; will decide acceptance for NIP-90 job requests; see `src/handlers/event-strategies/dvm-job-request-event-strategy.ts`.
-pub async fn handle(_event: &Event) -> Result<StrategyOutcome, RelayError> {
+/// Phase 2 stub — job 009; will store a job row for a NIP-90 request; see `src/handlers/event-strategies/dvm-job-request-event-strategy.ts`.
+pub async fn execute(_event: &Event, _context: &HandlerContext) -> Result<(), RelayError> {
     Err(RelayError::NotImplemented {
         module: "relay::strategies::dvm_job_request",
     })
