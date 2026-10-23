@@ -300,12 +300,10 @@ impl Relay {
 
         let mut hub = self.hub.subscribe();
         let mut drained = shutdown.watch();
-        // `tokio::time::interval`'s first tick is immediate; the capture's `setInterval`
-        // first fires one interval after the socket opens.
-        let mut liveness = tokio::time::interval_at(
-            tokio::time::Instant::now() + self.config.liveness_interval,
-            self.config.liveness_interval,
-        );
+        // `tokio::time::interval`'s first tick is immediate and the capture's `setInterval`
+        // first fires one interval after the socket opens, so the interval is re-armed.
+        let mut liveness = tokio::time::interval(self.config.liveness_interval);
+        liveness.reset();
         let mut alive = true;
         let mut handlers: JoinSet<()> = JoinSet::new();
 
@@ -317,7 +315,7 @@ impl Relay {
                 frame = frames.recv() => {
                     let Some(text) = frame else { break };
 
-                    if transport.send(Message::Text(text.into())).await.is_err() {
+                    if transport::send_text(&mut transport, &text).await.is_err() {
                         break;
                     }
                 }
@@ -325,27 +323,25 @@ impl Relay {
                     let Some(message) = message else { break };
 
                     match message {
-                        Ok(Message::Text(text)) => {
-                            alive = true;
-                            self.on_client_message(text.as_str(), &context, &mut handlers);
-                        }
-                        Ok(Message::Binary(_)) => {
-                            alive = true;
-                        }
-                        Ok(Message::Ping(payload)) => {
-                            // A client Ping is answered in place and marks the socket alive
-                            // (`web-socket-adapter.ts:342-346`).
-                            alive = true;
-
-                            if transport.send(Message::Pong(payload)).await.is_err() {
-                                break;
+                        Ok(message) => match transport::classify(message) {
+                            transport::Inbound::Text(text) => {
+                                alive = true;
+                                self.on_client_message(&text, &context, &mut handlers);
                             }
-                        }
-                        Ok(Message::Pong(_)) => {
-                            alive = true;
-                        }
-                        Ok(Message::Close(_)) => break,
-                        Ok(Message::Frame(_)) => {}
+                            transport::Inbound::Ping(payload) => {
+                                // A client Ping is answered in place and marks the socket
+                                // alive (`web-socket-adapter.ts:342-346`).
+                                alive = true;
+
+                                if transport::send_pong(&mut transport, payload).await.is_err() {
+                                    break;
+                                }
+                            }
+                            transport::Inbound::Binary | transport::Inbound::Pong => {
+                                alive = true;
+                            }
+                            transport::Inbound::Close | transport::Inbound::Other => break,
+                        },
                         Err(error) => {
                             self.close_on_error(&mut transport, &error).await;
                             break;
@@ -478,8 +474,7 @@ impl Relay {
                 params: None,
             });
 
-            if transport
-                .send(Message::Text(frame.to_text().into()))
+            if transport::send_text(transport, &frame.to_text())
                 .await
                 .is_err()
             {

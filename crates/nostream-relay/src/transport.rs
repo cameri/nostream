@@ -11,6 +11,9 @@
 
 use std::time::Duration;
 
+use futures_util::SinkExt;
+use tokio_tungstenite::tungstenite::Message;
+
 use nostream_config::settings::Settings;
 use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
@@ -125,6 +128,46 @@ pub fn is_message_too_long(error: &tokio_tungstenite::tungstenite::Error) -> boo
 /// (`Invalid WebSocket frame: RSV1 must be clear`, `web-socket-adapter.ts:73`).
 pub fn is_protocol_error(error: &tokio_tungstenite::tungstenite::Error) -> bool {
     matches!(error, tokio_tungstenite::tungstenite::Error::Protocol(_))
+}
+
+/// One inbound websocket message, as the per-socket loop needs it. Classification lives here
+/// so that the loop never names a `Message` variant of its own.
+#[derive(Debug)]
+pub enum Inbound {
+    Text(String),
+    Binary,
+    Ping(Vec<u8>),
+    Pong,
+    Close,
+    Other,
+}
+
+/// Classifies an inbound message (`web-socket-adapter.ts:198-240`).
+pub fn classify(message: Message) -> Inbound {
+    match message {
+        Message::Text(text) => Inbound::Text(text.as_str().to_owned()),
+        Message::Binary(_) => Inbound::Binary,
+        Message::Ping(payload) => Inbound::Ping(payload.to_vec()),
+        Message::Pong(_) => Inbound::Pong,
+        Message::Close(_) => Inbound::Close,
+        Message::Frame(_) => Inbound::Other,
+    }
+}
+
+/// Writes one text frame. This is the relay's single write point for outbound JSON.
+pub async fn send_text(
+    transport: &mut AcceptedTransport,
+    text: &str,
+) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+    transport.send(Message::Text(text.to_owned().into())).await
+}
+
+/// Answers a client Ping in place.
+pub async fn send_pong(
+    transport: &mut AcceptedTransport,
+    payload: Vec<u8>,
+) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+    transport.send(Message::Pong(payload.into())).await
 }
 
 /// A negotiated socket, for callers that hold the concrete type.
