@@ -1571,6 +1571,14 @@
       return
     }
 
+    if (viewId === 'moderation-view') {
+      stopNetworkHealthPolling()
+      stopMetricsStream()
+      window.__ADMIN_OPS__?.stop?.()
+      window.__ADMIN_MODERATION__?.load?.()
+      return
+    }
+
     if (viewId === 'metrics-view') {
       stopNetworkHealthPolling()
       window.__ADMIN_OPS__?.stop?.()

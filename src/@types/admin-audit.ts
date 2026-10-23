@@ -6,6 +6,8 @@ export type AdminAuditAction =
   | 'notifications.updated'
   | 'probe.manual_run'
   | 'nip05.reverify'
+  | 'moderation.limits.updated'
+  | 'moderation.action'
 
 export interface AdminAuditEntry {
   id: string

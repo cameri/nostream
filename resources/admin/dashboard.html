@@ -67,6 +67,7 @@
           <button type="button" class="nav-item active" data-view="metrics-view">Metrics</button>
           <button type="button" class="nav-item" data-view="operations-view">Operations</button>
           <button type="button" class="nav-item" data-view="trust-view">Trust</button>
+          <button type="button" class="nav-item" data-view="moderation-view">Moderation</button>
           <button type="button" class="nav-item" data-view="settings-view">Settings</button>
           <button type="button" class="nav-item" data-view="notifications-view">Notifications</button>
         </aside>
@@ -524,6 +525,108 @@
           </section>
         </div>
 
+        <div id="moderation-view" class="dashboard-view d-none">
+          <section class="dashboard-section">
+            <h2 class="section-title">Quick actions</h2>
+            <p class="admin-muted small">Ban or unban pubkeys and manage event rate-limit bypass lists without editing YAML by hand.</p>
+            <div id="moderation-error" class="alert alert-danger d-none small" role="alert"></div>
+            <div id="moderation-success" class="alert settings-success d-none small" role="status"></div>
+            <div class="row g-2 mb-3">
+              <div class="col-md-6 col-lg-4">
+                <label class="form-label field-label small" for="moderation-ban-pubkey">Pubkey or npub</label>
+                <input id="moderation-ban-pubkey" class="form-control console-input form-control-sm" placeholder="hex or npub">
+              </div>
+              <div class="col-md-6 col-lg-4 d-flex align-items-end gap-2 flex-wrap">
+                <button id="moderation-ban-button" type="button" class="btn btn-console btn-sm">Ban pubkey</button>
+                <button id="moderation-unban-button" type="button" class="btn btn-console btn-sm">Unban</button>
+              </div>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-md-6 col-lg-4">
+                <label class="form-label field-label small" for="moderation-ip">Client IP</label>
+                <input id="moderation-ip" class="form-control console-input form-control-sm" placeholder="203.0.113.10">
+              </div>
+              <div class="col-md-6 col-lg-4 d-flex align-items-end gap-2 flex-wrap">
+                <button id="moderation-whitelist-ip-button" type="button" class="btn btn-console btn-sm">Bypass rate limits</button>
+                <button id="moderation-unwhitelist-ip-button" type="button" class="btn btn-console btn-sm">Remove bypass</button>
+              </div>
+            </div>
+            <p id="moderation-sync" class="sync-line mb-0"><span class="prompt-char">&gt;</span> moderation: not loaded</p>
+          </section>
+
+          <section class="dashboard-section">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <h2 class="section-title mb-0">Activity (7 days)</h2>
+              <button id="moderation-refresh-button" type="button" class="btn btn-console btn-sm">Refresh</button>
+            </div>
+            <div class="row g-3">
+              <div class="col-lg-4">
+                <h3 class="section-title h6">Top publishing pubkeys</h3>
+                <div class="table-responsive panel-card">
+                  <table class="table table-sm mb-0">
+                    <thead><tr><th scope="col">Pubkey</th><th scope="col">Events</th></tr></thead>
+                    <tbody id="moderation-top-pubkeys-body">
+                      <tr><td colspan="2" class="admin-muted small">Not loaded.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="col-lg-4">
+                <h3 class="section-title h6">Top client IPs</h3>
+                <div class="table-responsive panel-card">
+                  <table class="table table-sm mb-0">
+                    <thead><tr><th scope="col">IP</th><th scope="col">Events</th></tr></thead>
+                    <tbody id="moderation-top-ips-body">
+                      <tr><td colspan="2" class="admin-muted small">Not loaded.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="col-lg-4">
+                <h3 class="section-title h6">Rate-limit hits</h3>
+                <div class="table-responsive panel-card">
+                  <table class="table table-sm mb-0">
+                    <thead><tr><th scope="col">Pubkey</th><th scope="col">Hits</th></tr></thead>
+                    <tbody id="moderation-rate-pubkeys-body">
+                      <tr><td colspan="2" class="admin-muted small">Not loaded.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="dashboard-section">
+            <h2 class="section-title">Current limits</h2>
+            <div class="row g-3">
+              <div class="col-lg-6">
+                <h3 class="section-title h6">Pubkey blacklist</h3>
+                <pre id="moderation-pubkey-blacklist" class="panel-card small admin-muted mb-0" style="max-height: 160px; overflow: auto;"></pre>
+              </div>
+              <div class="col-lg-6">
+                <h3 class="section-title h6">Pubkey whitelist</h3>
+                <pre id="moderation-pubkey-whitelist" class="panel-card small admin-muted mb-0" style="max-height: 160px; overflow: auto;"></pre>
+              </div>
+              <div class="col-lg-6">
+                <h3 class="section-title h6">Kind blacklist</h3>
+                <pre id="moderation-kind-blacklist" class="panel-card small admin-muted mb-0" style="max-height: 160px; overflow: auto;"></pre>
+              </div>
+              <div class="col-lg-6">
+                <h3 class="section-title h6">Kind whitelist</h3>
+                <pre id="moderation-kind-whitelist" class="panel-card small admin-muted mb-0" style="max-height: 160px; overflow: auto;"></pre>
+              </div>
+              <div class="col-lg-6">
+                <h3 class="section-title h6">Rate-limit bypass pubkeys</h3>
+                <pre id="moderation-bypass-pubkeys" class="panel-card small admin-muted mb-0" style="max-height: 160px; overflow: auto;"></pre>
+              </div>
+              <div class="col-lg-6">
+                <h3 class="section-title h6">Rate-limit bypass IPs</h3>
+                <pre id="moderation-bypass-ips" class="panel-card small admin-muted mb-0" style="max-height: 160px; overflow: auto;"></pre>
+              </div>
+            </div>
+          </section>
+        </div>
+
         <div id="settings-view" class="dashboard-view d-none">
           <section class="dashboard-section">
             <h2 class="section-title">Configuration<span class="sync-cursor" aria-hidden="true"></span></h2>
@@ -572,5 +675,6 @@
     <script src="{{path_prefix}}/admin/assets/notifications.js" nonce="{{nonce}}"></script>
     <script src="{{path_prefix}}/admin/assets/admin-ops.js" nonce="{{nonce}}"></script>
     <script src="{{path_prefix}}/admin/assets/admin-trust.js" nonce="{{nonce}}"></script>
+    <script src="{{path_prefix}}/admin/assets/admin-moderation.js" nonce="{{nonce}}"></script>
   </body>
 </html>
