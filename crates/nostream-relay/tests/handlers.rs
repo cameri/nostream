@@ -722,6 +722,57 @@ async fn a_failed_insert_answers_with_the_generic_error() {
 }
 
 #[tokio::test]
+async fn a_store_error_is_reported_as_a_failure_and_not_as_a_refusal() {
+    // The capture lets a store error escape `handleMessage` and the adapter sends no frame;
+    // the port answers the generic failure. A gate that could not read its store must not
+    // tell the publisher it was refused: the message would be false, and on a NIP-43 relay it
+    // would send them down a join flow that cannot help.
+    let mut nip43 = settings();
+    nip43.nip43 = Some(nostream_relay::testing::nip43_settings());
+
+    let fixture = Fixture::new(nip43);
+    fixture.users.fail_reads();
+
+    let server = start(fixture).await;
+    let event = signed_event(&CLIENT_SECRET, 1, vec![], "unreadable", NOW_SECS);
+
+    assert_eq!(
+        send_event(&server, &event).await,
+        format!(
+            r#"["OK","{}",false,"error: unable to process event"]"#,
+            event.id
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_nip05_store_error_is_reported_as_a_failure_and_not_as_a_refusal() {
+    let mut enabled = settings();
+    enabled.nip05 = Some(nostream_config::settings::Nip05Settings {
+        mode: nostream_config::settings::Nip05Mode::Enabled,
+        verify_expiration: None,
+        verify_update_frequency: None,
+        max_consecutive_failures: None,
+        domain_whitelist: None,
+        domain_blacklist: None,
+    });
+
+    let fixture = Fixture::new(enabled);
+    fixture.nip05.fail_reads();
+
+    let server = start(fixture).await;
+    let event = signed_event(&CLIENT_SECRET, 1, vec![], "unreadable", NOW_SECS);
+
+    assert_eq!(
+        send_event(&server, &event).await,
+        format!(
+            r#"["OK","{}",false,"error: unable to process event"]"#,
+            event.id
+        )
+    );
+}
+
+#[tokio::test]
 async fn without_a_key_an_event_cannot_be_processed() {
     let server = Server::start_with(
         Fixture::new(settings()),

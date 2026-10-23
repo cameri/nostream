@@ -31,6 +31,27 @@ const AUTH_KIND: Kind = Kind(22_242);
 /// `EventKinds.NIP43_JOIN_REQUEST`, `NIP43_INVITE_REQUEST`, `NIP43_LEAVE_REQUEST`.
 const NIP43_REQUEST_KINDS: [Kind; 3] = [Kind(28_934), Kind(28_935), Kind(28_936)];
 
+/// The capture's answer when the event could not be processed for a reason that is not a
+/// decision about the publisher (`event-message-handler.ts:360-374` lets such an error
+/// escape; the adapter sends no frame, and this is the frame the port sends instead).
+const UNAVAILABLE: &str = "error: unable to process event";
+
+/// What an admission gate answered.
+enum Gate {
+    /// The gate decided, and the client is told its reason.
+    Refused(&'static str),
+    /// The gate could not read its store: not a policy decision, so not a policy string.
+    Unavailable,
+}
+
+/// Answers a gate's outcome with the frame its answer calls for.
+fn answer_gate(context: &HandlerContext, event_id: nostream_core::EventId, gate: Gate) {
+    match gate {
+        Gate::Refused(reason) => context.send_ok(event_id, false, reason, None),
+        Gate::Unavailable => context.send_ok(event_id, false, UNAVAILABLE, None),
+    }
+}
+
 /// The handler's entry point (`handleMessage`).
 pub async fn handle(event: Event, context: &HandlerContext) {
     if let Some(reason) = is_event_valid(&event, context.relay_url()) {
@@ -51,7 +72,7 @@ pub async fn handle(event: Event, context: &HandlerContext) {
         Ok(keys) => keys.public_key,
         Err(error) => {
             tracing::debug!(error = %error, "no relay signing key; refusing the event");
-            context.send_ok(event.id, false, "error: unable to process event", None);
+            context.send_ok(event.id, false, UNAVAILABLE, None);
             return;
         }
     };
@@ -94,19 +115,18 @@ pub async fn handle(event: Event, context: &HandlerContext) {
         return;
     }
 
-    if let Some(reason) = is_blocked_by_request_to_vanish(&event, context, &relay_public_key).await
-    {
-        context.send_ok(event.id, false, &reason, None);
+    if let Some(gate) = is_blocked_by_request_to_vanish(&event, context, &relay_public_key).await {
+        answer_gate(context, event.id, gate);
         return;
     }
 
-    if let Some(reason) = is_user_admitted(&event, context, &relay_public_key).await {
-        context.send_ok(event.id, false, &reason, None);
+    if let Some(gate) = is_user_admitted(&event, context, &relay_public_key).await {
+        answer_gate(context, event.id, gate);
         return;
     }
 
-    if let Some(reason) = check_nip05_verification(&event, context, &relay_public_key).await {
-        context.send_ok(event.id, false, &reason, None);
+    if let Some(gate) = check_nip05_verification(&event, context, &relay_public_key).await {
+        answer_gate(context, event.id, gate);
         return;
     }
 
@@ -136,7 +156,7 @@ pub async fn handle(event: Event, context: &HandlerContext) {
             other => tracing::error!(error = %other, "event strategy failed"),
         }
 
-        context.send_ok(event.id, false, "error: unable to process event", None);
+        context.send_ok(event.id, false, UNAVAILABLE, None);
     }
 }
 
@@ -431,7 +451,7 @@ async fn is_blocked_by_request_to_vanish(
     event: &Event,
     context: &HandlerContext,
     relay_public_key: &nostream_core::Pubkey,
-) -> Option<String> {
+) -> Option<Gate> {
     if event.kind == Kind::REQUEST_TO_VANISH {
         return None;
     }
@@ -441,11 +461,13 @@ async fn is_blocked_by_request_to_vanish(
     }
 
     match context.stores.users.is_vanished(&event.pubkey).await {
-        Ok(true) => Some("blocked: request to vanish active for pubkey".to_owned()),
+        Ok(true) => Some(Gate::Refused(
+            "blocked: request to vanish active for pubkey",
+        )),
         Ok(false) => None,
         Err(error) => {
-            tracing::error!(error = %error, "admission read failed; refusing the event");
-            Some("blocked: pubkey not admitted".to_owned())
+            tracing::error!(error = %error, "admission read failed");
+            Some(Gate::Unavailable)
         }
     }
 }
@@ -455,7 +477,7 @@ async fn is_user_admitted(
     event: &Event,
     context: &HandlerContext,
     relay_public_key: &nostream_core::Pubkey,
-) -> Option<String> {
+) -> Option<Gate> {
     let settings: &Settings = context.settings.as_ref();
     let payments_enabled = settings
         .payments
@@ -528,13 +550,13 @@ async fn is_user_admitted(
     let user = match context.stores.users.find_by_pubkey(&event.pubkey).await {
         Ok(user) => user,
         Err(error) => {
-            tracing::error!(error = %error, "user read failed; refusing the event");
-            return Some(not_admitted_reason.to_owned());
+            tracing::error!(error = %error, "user read failed");
+            return Some(Gate::Unavailable);
         }
     };
 
     let Some(user) = user.filter(|user| user.is_admitted) else {
-        return Some(not_admitted_reason.to_owned());
+        return Some(Gate::Refused(not_admitted_reason));
     };
 
     let min_balance = if payments_enabled {
@@ -549,7 +571,7 @@ async fn is_user_admitted(
     };
 
     if min_balance > 0 && user.balance < min_balance {
-        return Some("blocked: insufficient balance".to_owned());
+        return Some(Gate::Refused("blocked: insufficient balance"));
     }
 
     None
@@ -563,7 +585,7 @@ async fn check_nip05_verification(
     event: &Event,
     context: &HandlerContext,
     relay_public_key: &nostream_core::Pubkey,
-) -> Option<String> {
+) -> Option<Gate> {
     let settings = context.settings.nip05.as_ref()?;
 
     if settings.mode != nostream_config::settings::Nip05Mode::Enabled {
@@ -581,13 +603,13 @@ async fn check_nip05_verification(
     let verification = match context.stores.nip05.find_by_pubkey(&event.pubkey).await {
         Ok(verification) => verification,
         Err(error) => {
-            tracing::error!(error = %error, "nip05 read failed; refusing the event");
-            return Some("blocked: NIP-05 verification required".to_owned());
+            tracing::error!(error = %error, "nip05 read failed");
+            return Some(Gate::Unavailable);
         }
     };
 
     let Some(verification) = verification else {
-        return Some("blocked: NIP-05 verification required".to_owned());
+        return Some(Gate::Refused("blocked: NIP-05 verification required"));
     };
 
     if !nip05::is_domain_allowed(
@@ -595,11 +617,11 @@ async fn check_nip05_verification(
         settings.domain_whitelist.as_deref(),
         settings.domain_blacklist.as_deref(),
     ) {
-        return Some("blocked: NIP-05 domain not allowed".to_owned());
+        return Some(Gate::Refused("blocked: NIP-05 domain not allowed"));
     }
 
     let Some(last_verified_at) = verification.last_verified_at else {
-        return Some("blocked: NIP-05 verification required".to_owned());
+        return Some(Gate::Refused("blocked: NIP-05 verification required"));
     };
 
     let expiration = settings
@@ -613,7 +635,7 @@ async fn check_nip05_verification(
         .saturating_sub(u64::try_from(last_verified_at.timestamp_millis()).unwrap_or_default());
 
     if elapsed > u64::try_from(expiration).unwrap_or(u64::MAX) {
-        return Some("blocked: NIP-05 verification expired".to_owned());
+        return Some(Gate::Refused("blocked: NIP-05 verification expired"));
     }
 
     None

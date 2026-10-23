@@ -370,12 +370,18 @@ impl EventRepository for InMemoryEventRepository {
 #[derive(Debug, Default)]
 pub struct InMemoryUserRepository {
     users: Mutex<BTreeMap<Pubkey, User>>,
+    fail_reads: AtomicBool,
 }
 
 impl InMemoryUserRepository {
     /// An empty store.
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// Makes every read fail, as an unavailable database would.
+    pub fn fail_reads(&self) {
+        self.fail_reads.store(true, Ordering::SeqCst);
     }
 
     /// Adds or replaces one user row.
@@ -389,6 +395,14 @@ impl InMemoryUserRepository {
 
 impl UserRepository for InMemoryUserRepository {
     fn find_by_pubkey<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, Option<User>> {
+        if self.fail_reads.load(Ordering::SeqCst) {
+            return Box::pin(async move {
+                Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the user read failed",
+                })
+            });
+        }
+
         Box::pin(async move {
             Ok(self
                 .users
@@ -500,12 +514,18 @@ impl UserRepository for InMemoryUserRepository {
 #[derive(Debug, Default)]
 pub struct InMemoryNip05Repository {
     rows: Mutex<BTreeMap<Pubkey, Nip05Verification>>,
+    fail_reads: AtomicBool,
 }
 
 impl InMemoryNip05Repository {
     /// An empty store.
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// Makes every read fail, as an unavailable database would.
+    pub fn fail_reads(&self) {
+        self.fail_reads.store(true, Ordering::SeqCst);
     }
 
     /// Adds or replaces one verification row.
@@ -522,6 +542,14 @@ impl Nip05VerificationRepository for InMemoryNip05Repository {
         &'a self,
         pubkey: &'a Pubkey,
     ) -> StorageFuture<'a, Option<Nip05Verification>> {
+        if self.fail_reads.load(Ordering::SeqCst) {
+            return Box::pin(async move {
+                Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the nip05 read failed",
+                })
+            });
+        }
+
         Box::pin(async move {
             Ok(self
                 .rows
@@ -850,7 +878,7 @@ pub struct Fixture {
     pub invites: Arc<InMemoryInviteCodeRepository>,
     pub reports: Arc<InMemoryReportRepository>,
     pub hidden: Arc<HiddenContentCache>,
-    pub hub: tokio::sync::broadcast::Sender<Event>,
+    pub hub: tokio::sync::broadcast::Sender<std::sync::Arc<Event>>,
 }
 
 impl Fixture {
@@ -975,7 +1003,7 @@ impl Fixture {
 
 /// A broadcast receiver over the fixture's hub.
 pub fn hub_receiver(
-    hub: &tokio::sync::broadcast::Sender<Event>,
-) -> tokio::sync::broadcast::Receiver<Event> {
+    hub: &tokio::sync::broadcast::Sender<std::sync::Arc<Event>>,
+) -> tokio::sync::broadcast::Receiver<std::sync::Arc<Event>> {
     hub.subscribe()
 }
