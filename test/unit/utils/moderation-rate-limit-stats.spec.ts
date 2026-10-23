@@ -19,13 +19,22 @@ describe('moderation-rate-limit-stats', () => {
     await recordModerationRateLimitHitSafely(cache, { pubkey: 'a'.repeat(64), ip: '127.0.0.1' })
   })
 
+  it('swallows redis eval failures when recording hits', async () => {
+    const evalStub = Sinon.stub().rejects(new Error('redis unavailable'))
+    const cache = { eval: evalStub } as unknown as ICacheAdapter
+
+    await recordModerationRateLimitHitSafely(cache, { pubkey: 'a'.repeat(64), ip: '127.0.0.1' })
+
+    expect(evalStub.callCount).to.be.greaterThan(0)
+  })
+
   it('records pubkey and ip hits via eval', async () => {
     const evalStub = Sinon.stub().resolves(1)
     const cache = { eval: evalStub } as unknown as ICacheAdapter
 
     await recordModerationRateLimitHitSafely(cache, { pubkey: 'A'.repeat(64), ip: '127.0.0.1' })
 
-    expect(evalStub).to.have.been.calledTwice
+    expect(evalStub.callCount).to.equal(2)
     expect(evalStub.firstCall.args[1][0]).to.match(/^admin:moderation:rate-limit:pubkeys:\d{8}$/)
     expect(evalStub.firstCall.args[2][0]).to.equal('a'.repeat(64))
   })

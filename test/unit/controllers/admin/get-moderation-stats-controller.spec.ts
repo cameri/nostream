@@ -76,6 +76,25 @@ describe('GetAdminModerationStatsController', () => {
     expect(adminModerationStats.queryTopPublishingPubkeys).to.not.have.been.called
   })
 
+
+  it('returns 500 when stats queries fail unexpectedly', async () => {
+    sandbox.restore()
+    sandbox = Sinon.createSandbox()
+    response = {
+      status: sandbox.stub().returnsThis(),
+      setHeader: sandbox.stub().returnsThis(),
+      send: sandbox.stub().returnsThis(),
+    }
+    sandbox.stub(dbClient, 'getReadReplicaDbClient').returns({} as any)
+    sandbox.stub(cacheClient, 'isCacheConfigured').returns(false)
+    sandbox.stub(adminModerationStats, 'queryTopPublishingPubkeys').rejects(new Error('db exploded'))
+    sandbox.stub(adminModerationStats, 'queryTopClientIps').resolves([])
+
+    const controller = new GetAdminModerationStatsController()
+    await controller.handleRequest({ query: { windowHours: '24' } } as any, response as any)
+
+    expect(response.status).to.have.been.calledOnceWithExactly(500)
+  })
   it('returns 504 when stats queries time out', async () => {
     sandbox.restore()
     sandbox = Sinon.createSandbox()

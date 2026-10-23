@@ -81,6 +81,22 @@ describe('admin-moderation', () => {
     expect(merged.kind.whitelist).to.deep.equal([1])
   })
 
+  it('whitelists and removes rate-limit bypass pubkeys', () => {
+    const pubkey = 'd'.repeat(64)
+    const withPubkey = applyAdminModerationAction(baseLimits, 'whitelist-pubkey', { pubkey })
+    expect(withPubkey.rateLimitBypass.pubkeys).to.include(pubkey)
+
+    const withoutPubkey = applyAdminModerationAction(withPubkey, 'unwhitelist-pubkey', { pubkey })
+    expect(withoutPubkey.rateLimitBypass.pubkeys).to.not.include(pubkey)
+  })
+
+  it('rejects invalid pubkeys and IPs for moderation actions', () => {
+    expect(() => applyAdminModerationAction(baseLimits, 'ban-pubkey', { pubkey: 'short' })).to.throw(
+      /64-character hex pubkey/,
+    )
+    expect(() => applyAdminModerationAction(baseLimits, 'whitelist-ip', { ip: 'not-an-ip' })).to.throw(/valid IPv4/)
+  })
+
   it('whitelists and removes rate-limit bypass for IPs', () => {
     const withIp = applyAdminModerationAction(baseLimits, 'whitelist-ip', { ip: '203.0.113.10' })
     expect(withIp.rateLimitBypass.ipAddresses).to.include('203.0.113.10')
