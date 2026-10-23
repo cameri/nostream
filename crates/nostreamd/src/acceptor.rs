@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 
 use nostream_core::lifecycle::ShutdownState;
-use nostream_relay::{Relay, RelayError};
+use nostream_relay::Relay;
 
 use crate::error::DaemonError;
 
@@ -49,18 +49,13 @@ impl Acceptor {
     ///
     /// `Relay::serve` owns the accept loop so the socket never leaves the relay's hands: it
     /// upgrades each accepted stream, spawns its connection task and waits out the drain
-    /// timeout (`web-socket-server-adapter.ts:67-95`).
-    pub async fn run(self, relay: Arc<Relay>, shutdown: ShutdownState) -> Result<(), DaemonError> {
+    /// timeout (`web-socket-server-adapter.ts:67-95`). The handover is recorded in ADR 0004
+    /// (against spec R1's "the acceptor hands the accepted socket to the relay"): the drain
+    /// deadline and the `JoinSet` it waits on are one decision, so both live where the
+    /// sockets are served.
+    pub async fn run(self, relay: Arc<Relay>, shutdown: ShutdownState) {
         tracing::debug!(at = %self.local_addr, "the relay takes the listener");
 
-        relay
-            .serve(self.listener, shutdown)
-            .await
-            .map_err(|error| match error {
-                RelayError::Draining => {
-                    DaemonError::Setup("the relay was already draining".to_owned())
-                }
-                other => DaemonError::Setup(other.to_string()),
-            })
+        relay.serve(self.listener, shutdown).await;
     }
 }

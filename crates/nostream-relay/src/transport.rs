@@ -16,7 +16,6 @@ use tokio_tungstenite::tungstenite::Message;
 
 use nostream_config::settings::Settings;
 use tokio::net::TcpStream;
-use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
@@ -92,14 +91,23 @@ pub fn protocol_error_frame() -> CloseFrame {
 }
 
 /// `getWsDrainTimeoutMs` (`src/utils/shutdown-state.ts:17-29`): unset, empty, non-numeric or
-/// negative resolves to 30000; otherwise the parsed value in milliseconds.
+/// negative resolves to 30000; otherwise the parsed value in milliseconds. The parse is the
+/// JavaScript one, so `"10.5"` is 10.5 ms and truncates to 10, where an integer parse would
+/// have fallen back to the default.
 pub fn resolve_drain_timeout(raw: Option<&str>) -> u64 {
     let Some(raw) = raw.filter(|value| !value.is_empty()) else {
         return DEFAULT_WS_DRAIN_TIMEOUT_MS;
     };
 
-    match raw.parse::<i64>() {
-        Ok(millis) if millis >= 0 => u64::try_from(millis).unwrap_or(DEFAULT_WS_DRAIN_TIMEOUT_MS),
+    match raw.trim().parse::<f64>() {
+        Ok(millis) if millis.is_finite() && millis >= 0.0 => {
+            // `setTimeout` truncates a fractional delay to whole milliseconds.
+            if millis >= u64::MAX as f64 {
+                DEFAULT_WS_DRAIN_TIMEOUT_MS
+            } else {
+                millis.trunc() as u64
+            }
+        }
         _ => DEFAULT_WS_DRAIN_TIMEOUT_MS,
     }
 }
@@ -155,11 +163,14 @@ pub fn classify(message: Message) -> Inbound {
 }
 
 /// Writes one text frame. This is the relay's single write point for outbound JSON.
+///
+/// The frame is taken by value: the encoder's `String` becomes the frame's payload without
+/// a second copy of the whole message.
 pub async fn send_text(
     transport: &mut AcceptedTransport,
-    text: &str,
+    text: String,
 ) -> Result<(), tokio_tungstenite::tungstenite::Error> {
-    transport.send(Message::Text(text.to_owned().into())).await
+    transport.send(Message::Text(text.into())).await
 }
 
 /// Answers a client Ping in place.
@@ -169,9 +180,6 @@ pub async fn send_pong(
 ) -> Result<(), tokio_tungstenite::tungstenite::Error> {
     transport.send(Message::Pong(payload.into())).await
 }
-
-/// A negotiated socket, for callers that hold the concrete type.
-pub type Transport = WebSocketStream<TcpStream>;
 
 #[cfg(test)]
 mod tests {
@@ -212,5 +220,9 @@ mod tests {
         assert_eq!(resolve_drain_timeout(Some("-1")), 30_000);
         assert_eq!(resolve_drain_timeout(Some("10")), 10);
         assert_eq!(resolve_drain_timeout(Some("0")), 0);
+        // `Number("10.5")` is a number, so the capture arms a 10.5 ms timer and `setTimeout`
+        // truncates it; an integer parse would have rejected the value.
+        assert_eq!(resolve_drain_timeout(Some("10.5")), 10);
+        assert_eq!(resolve_drain_timeout(Some(" 25 ")), 25);
     }
 }

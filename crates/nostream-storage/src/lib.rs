@@ -9,7 +9,9 @@
 //! - `src/database/client.ts`, `src/database/transaction.ts` (`src/postgres/mod.rs`)
 //! - the schema: `migrations/` (37 knex migrations, ported to `migrations/*.sql`)
 //! - `src/cache/client.ts`, `src/adapters/redis-adapter.ts`
-//! - `src/utils/event-store.ts`, `src/utils/hidden-content-cache.ts`
+//! - `src/utils/event-store.ts` (the mirror of `src/utils/hidden-content-cache.ts` is the
+//!   relay's: the cache polls the report repository from a settings-dependent task, so
+//!   `nostream-relay::hidden_content` owns it and this crate owns only the query it calls)
 //! - `src/@types/{adapters,cache,database,repositories,invite-code,invoice,nip05,report,
 //!   notification-outbox,user}.ts`
 //! - `src/factories/event-repository-factory.ts`

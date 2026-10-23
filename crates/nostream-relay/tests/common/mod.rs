@@ -52,13 +52,14 @@ impl Server {
         let address = listener.local_addr().expect("local addr");
         let clock = Arc::new(TestClock::new(NOW_MS));
 
-        let relay = Relay::with_keys(
+        let relay = Relay::new(
             (*fixture.settings).clone(),
             Arc::clone(&fixture.stores),
             clock.clone(),
             keys,
-        )
-        .with_config(config);
+            Arc::new(nostream_core::random::SystemRandom),
+            config,
+        );
 
         let shutdown = ShutdownState::new();
         let connection_shutdown = shutdown.clone();

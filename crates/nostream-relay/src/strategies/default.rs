@@ -41,7 +41,9 @@ impl EventStrategy for DefaultStrategy {
 
             if count > 0 {
                 // A closed hub means no connection is listening; the event is still stored.
-                let _ = context.broadcast.send(event.clone());
+                // The hub carries a shared event, so every connection's fan-out is one
+                // reference count rather than a copy of the payload.
+                let _ = context.broadcast.send(std::sync::Arc::new(event.clone()));
             }
 
             Ok(())

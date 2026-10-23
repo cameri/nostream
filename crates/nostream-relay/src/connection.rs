@@ -13,7 +13,6 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 
 use nostream_config::settings::Settings;
-use nostream_core::clock::Clock;
 use nostream_core::nip42::Nip42Session;
 use nostream_core::random::RandomSource;
 use nostream_core::{Event, Filter, Pubkey};
@@ -275,11 +274,10 @@ impl Connection {
     }
 }
 
-/// The state a connection is accepted with: the settings it reads through, the clock, and
-/// the sink its challenge leaves through.
+/// The state a connection is accepted with: the settings it reads through, the randomness its
+/// challenge is minted from, and the sink the challenge leaves through.
 pub struct ConnectionContext {
     pub settings: Arc<Settings>,
-    pub clock: Arc<dyn Clock>,
     pub random: Arc<dyn RandomSource>,
     pub sink: FrameSink,
 }

@@ -62,7 +62,7 @@ fn event_frame_is_the_verb_the_id_and_the_event_in_wire_order() {
     let event = event();
     let frame = RelayMessage::Event(OutgoingEventMessage {
         subscription_id: "subscriptionId".to_owned(),
-        event: event.clone(),
+        event: std::sync::Arc::new(event.clone()),
     });
 
     assert_eq!(

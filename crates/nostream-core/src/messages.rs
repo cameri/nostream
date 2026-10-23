@@ -94,10 +94,14 @@ pub struct EoseMessage {
 }
 
 /// `["EVENT", <subscription id>, <event>]` (`src/@types/messages.ts` `OutgoingEventMessage`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// The event is shared: the hub hands one `Arc` to every connection and each matching
+/// subscription clones the pointer, not the event, so a fan-out costs one increment per
+/// receiver rather than a copy of the payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutgoingEventMessage {
     pub subscription_id: SubscriptionId,
-    pub event: Event,
+    pub event: std::sync::Arc<Event>,
 }
 
 /// `["COUNT", <subscription id>, {"count": <number>}]` (`src/@types/messages.ts`
@@ -197,12 +201,7 @@ impl RelayMessage {
                 ),
             },
             Self::Eose(message) => frame("EOSE", &[&quote(&message.subscription_id)]),
-            Self::Event(message) => {
-                let event =
-                    serde_json::to_string(&message.event).unwrap_or_else(|_| "null".to_owned());
-
-                frame("EVENT", &[&quote(&message.subscription_id), &event])
-            }
+            Self::Event(message) => event_frame(message),
             Self::Count(message) => frame(
                 "COUNT",
                 &[
@@ -252,6 +251,27 @@ impl From<ClosedMessage> for RelayMessage {
 impl From<NoticeMessage> for RelayMessage {
     fn from(message: NoticeMessage) -> Self {
         Self::Notice(message)
+    }
+}
+
+/// `["EVENT", <id>, <event>]` in one pass: the tuple serializes straight into the frame's
+/// buffer, so the event's JSON is written once instead of into a `String` and then copied
+/// into the frame.
+fn event_frame(message: &OutgoingEventMessage) -> String {
+    // Sized for one write: the fixed fields and both hex halves, the content as it stands
+    // (escaping can grow it, and then the buffer grows once), and about one tag element.
+    let mut buffer: Vec<u8> =
+        Vec::with_capacity(512 + message.event.content.len() + 96 * message.event.tags.len());
+
+    let written = serde_json::to_writer(
+        &mut buffer,
+        &("EVENT", &message.subscription_id, &*message.event),
+    );
+
+    match written {
+        Ok(()) => String::from_utf8(buffer)
+            .unwrap_or_else(|_| frame("EVENT", &[&quote(&message.subscription_id), "null"])),
+        Err(_) => frame("EVENT", &[&quote(&message.subscription_id), "null"]),
     }
 }
 

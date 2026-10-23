@@ -63,7 +63,7 @@ pub struct HandlerContext {
     pub limits: Arc<RateLimits>,
     pub hidden: Arc<HiddenContentCache>,
     pub keys: Arc<RelayKeySource>,
-    pub broadcast: broadcast::Sender<Event>,
+    pub broadcast: broadcast::Sender<std::sync::Arc<Event>>,
     pub pow: Arc<Mutex<AdaptivePowState>>,
 }
 
@@ -99,8 +99,10 @@ impl HandlerContext {
         restricted_read_kinds(self.settings.nip42.as_ref())
     }
 
-    /// `createReadAuthorizationGuard` bound to this socket's authenticated set: the caller
-    /// takes one snapshot, and every event in the read is judged against it.
+    /// `createReadAuthorizationGuard` bound to this socket's authenticated set: the snapshot
+    /// is taken when the guard is built, so a caller that wants the capture's per-event
+    /// behaviour builds one per event (the stored read does; the live fan-out builds one per
+    /// dispatch).
     pub fn read_authorization_guard(&self) -> ReadGuard {
         ReadGuard {
             restricted: self.restricted_read_kinds(),

@@ -88,26 +88,85 @@ unparseable JSON (V8's parse diagnostics are not reproducible; the prefix is), a
 **T2**, the reason text of a close frame whose code matches. The fixture declares T1 for
 the one malformed-JSON step and nothing else.
 
-Two steps are recorded but not byte-compared, and the fixture says so per step:
+Two steps are compared as JSON values rather than text, and the fixture says so per step
+(`compare: "json"`, with a `compare_why`):
 
 - **A REQ result and the minted claim event.** The capture's in-memory event objects
   carry field insertion order into `JSON.stringify`, and its paths do not agree: a
   stored row is emitted as `id, kind, pubkey, created_at, content, tags, sig`, a
   broadcast of the stored event as `id, pubkey, created_at, kind, tags, content, sig`,
   and the invite-code builder as `pubkey, kind, created_at, content, tags, id, sig`. One
-  Rust serializer cannot produce three orders, so the relay emits the one NIP-01 order
-  every other EVENT frame matches and these two frames are compared structurally by the
-  handler tests instead. Everything else — the challenge, every NOTICE, OK, EOSE,
-  CLOSED and COUNT frame, the broadcast EVENT frames, the close codes and the drain —
-  is compared as text.
+  Rust serializer cannot produce three orders, and JSON has no field order on the wire,
+  so both sides are parsed and the values compared: the same keys, the same values, the
+  same array order. One difference inside a relay-minted event is accepted on top of
+  that — a signature depends on the auxiliary random the signer drew — and it is
+  accepted only when the observed signature verifies against the observed event, so the
+  frame's content is checked rather than skipped. Everything else — the challenge, every
+  NOTICE, OK, EOSE, CLOSED and COUNT frame, the broadcast EVENT frames, the close codes
+  and the drain — is compared as text.
 - **`no-secret`.** With no `SECRET` the capture logs the failure inside its rate-limit
   step and sends nothing; the Rust relay resolves the key at the same step and answers
   `["OK",<id>,false,"error: unable to process event"]`, which is the behaviour
-  `handlers.rs` pins and AC29 asks for. The session is recorded, and its frames are not
-  compared.
+  `handlers.rs` pins and AC29 asks for. The session is recorded (`comparison:
+  "skipped"`), and its frames are compared against the harness's own AC29 constant
+  rather than the recording, so the session is not unchecked.
 
-Both exceptions are visible in the fixture (`compare: false`, `comparison: "skipped"`)
-with their reasons, and in the job's build report.
+Both exceptions are counted: `the_not_byte_compared_steps_are_exactly_the_declared_two_and_one_session`
+fails if another step or session joins them, and `a_corrupted_expected_frame_fails_the_replay`
+shows that a garbled expectation fails in either mode.
+
+## Rate-limiter stores reclaim their keys
+
+The capture's two Lua scripts set a TTL on every key (`PEXPIRE key period`,
+`EXPIRE key ceil(period / 1000)`), and the in-process stores carry the same lifetime:
+a key is swept once every hit in it is older than the window it was written with, on a
+clock-driven cadence so the sweep is amortised rather than paid per hit, and the map is
+capped at `MAX_STORE_KEYS` (65,536) by dropping one arbitrary key, because the alternative
+— refusing new keys — would let a client mint pubkeys to escape its own limit.
+
+## The accept loop lives in the relay, and serving cannot fail
+
+Spec R1 says the acceptor hands the accepted socket to the relay; this job hands the
+*listener* over instead (`Acceptor::run` → `Relay::serve`), because the drain deadline and
+the `JoinSet` the drain waits on are one decision, and a socket the relay must drain
+cannot be owned by a loop that has already returned. `Relay::serve` therefore returns
+nothing: an accept error is logged and the loop continues, and the drain is bounded by
+`RelayConfig::drain_timeout`. `RelayError::Draining` and `RelayError::Transport` were
+deleted with the `Result`: nothing constructed them.
+
+Every collaborator is a constructor argument (`Relay::new(settings, stores, clock, keys,
+random, config)`) rather than a setter, so the randomness a fixture replays is the one the
+relay was built with, and `WS_DRAIN_TIMEOUT_MS` is read where the relay is constructed —
+`RelayConfig::default()` at the composition root — not inside the library.
+
+## A strategy is a type, and its signature is `(event, context)`
+
+The capture's `IEventStrategy.execute(event, sink)` becomes
+`EventStrategy::execute(&self, event: &Event, context: &HandlerContext)`: a strategy
+writes through the context's sink and needs the context's stores, settings and clock
+(the default arm calls `EventRepository::create` and the broadcast hub, neither of which a
+bare sink carries). Every arm — the filled `DefaultStrategy` and the fourteen stubs — is a
+zero-sized type implementing the trait, so job 009 changes a body rather than choosing
+between two shapes.
+
+## Two orders the capture leaves unspecified, fixed deliberately
+
+- **Subscriptions are walked in id order.** The capture's `Map` walks insertion order; the
+  port's `Connection` keeps a `BTreeMap`, so a drain or a fan-out emits `CLOSED`/`EVENT`
+  frames in id order. Observable only when a client's ids are not alphabetical, and the
+  fixture's ids are sorted.
+- **The connection-level limit is keyed on the peer address.** The other three levels key
+  on `Connection::remote_address`, which is derived from the transport; the connection
+  level is decided before the socket is upgraded (a refused client must never see the
+  challenge), so it reads the accept loop's `peer` — the same address.
+
+## The hidden-content mirror is the relay's
+
+`src/utils/hidden-content-cache.ts` polls the report repository on an interval that
+depends on the settings, so the mirror lives in `nostream-relay::hidden_content` and
+`nostream-storage` owns only the query it calls. `Relay::serve` starts the refresh task
+and aborts it when the loop ends; dropping the handle would detach the task, so the
+handle's owner is the caller that started it.
 
 ## The census is a checked artifact
 

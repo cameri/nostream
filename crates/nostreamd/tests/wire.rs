@@ -27,11 +27,13 @@ async fn start() -> (u16, ShutdownState) {
     let port = acceptor.local_addr().port();
 
     let fixture = Fixture::new(settings());
-    let relay = Relay::with_keys(
+    let relay = Relay::new(
         (*fixture.settings).clone(),
         Arc::clone(&fixture.stores),
         Arc::new(TestClock::new(1_700_000_000_000)),
         RelayKeySource::from_values(None, None),
+        Arc::new(nostream_core::random::SystemRandom),
+        nostream_relay::relay::RelayConfig::default(),
     );
 
     let shutdown = ShutdownState::new();

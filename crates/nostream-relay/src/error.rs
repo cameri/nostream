@@ -15,10 +15,6 @@ pub enum RelayError {
     #[error("invalid message: {0}")]
     InvalidMessage(String),
 
-    /// The socket is closing under drain.
-    #[error("the relay is draining and refuses new work")]
-    Draining,
-
     /// A repository call failed.
     #[error(transparent)]
     Storage(#[from] StorageError),
@@ -34,8 +30,4 @@ pub enum RelayError {
     /// The signed websocket handshake failed.
     #[error("websocket handshake: {0}")]
     Handshake(String),
-
-    /// A frame could not be written to the socket.
-    #[error("websocket write: {0}")]
-    Transport(String),
 }

@@ -108,17 +108,19 @@ async fn serve(
 
     // The storage backend is not wired yet (the LMDB environment is a stub), so the relay
     // runs over seams that report `NotImplemented`; the wire itself is served in full.
-    let relay = Relay::with_keys(
+    let relay = Relay::new(
         settings,
         std::sync::Arc::new(unavailable::stores()),
         std::sync::Arc::new(SystemClock),
         RelayKeySource::from_env(),
+        std::sync::Arc::new(nostream_core::random::SystemRandom),
+        nostream_relay::relay::RelayConfig::default(),
     );
 
     tracing::info!(at = %acceptor.local_addr(), "the acceptor is listening");
 
     let connection_shutdown = shutdown.clone();
-    let accept_task = tokio::spawn(async move { acceptor.run(relay, connection_shutdown).await });
+    let accept_task = tokio::spawn(acceptor.run(relay, connection_shutdown));
     let workers_task = tokio::spawn(async { nostreamd::workers::spawn_workers().await });
     let tor_task = tokio::spawn(async { nostreamd::workers::spawn_tor().await });
 
@@ -128,8 +130,7 @@ async fn serve(
     shutdown.begin_draining();
     let accept_result = accept_task
         .await
-        .map_err(|error| DaemonError::Setup(format!("acceptor task: {error}")))
-        .and_then(std::convert::identity);
+        .map_err(|error| DaemonError::Setup(format!("acceptor task: {error}")));
     let workers_result = workers_task
         .await
         .map_err(|error| DaemonError::Setup(format!("workers task: {error}")))

@@ -11,7 +11,7 @@
 //! - `src/relay-broadcast/redis-relay-broadcast-fanout.ts`
 //! - `src/controllers/admission/get-admission-check-controller.ts`,
 //!   `src/routes/admissions/index.ts`
-//! - `src/utils/{sliding-window-rate-limiter,ewma-rate-limiter,
+//! - `src/utils/{sliding-window-rate-limiter,ewma-rate-limiter,hidden-content-cache,
 //!   relay-broadcast-deduplicator,relay-broadcast-message,relay-broadcast-state}.ts`
 //! - `src/@types/{message-handlers,subscription,clients}.ts`
 //! - `src/factories/{event-strategy-factory,message-handler-factory,
@@ -29,8 +29,9 @@
 //! event strategies (job 009), `NegentropySession`/`open_negentropy_session` (a NIP-77 job
 //! cut against `041fe34e`, where the `neg-*` handlers first exist), and the cross-worker
 //! broadcast `publish`/`deduplicate` (unassigned: `src/relay-broadcast/redis-relay-broadcast-fanout.ts`
-//! is named by no bullet of issue #865). `broadcast.rs` therefore carries no behaviour; the
-//! in-process fan-out this job needs is `Relay::hub`.
+//! is named by no bullet of issue #865, which is why `broadcast.rs` still carries phase-1
+//! stub labels naming job 005, and the job may be re-cut). `broadcast.rs` therefore carries no
+//! behaviour; the in-process fan-out this job needs is the relay's own broadcast channel.
 //!
 //! Phase 2+ areas this crate does not own: the HTTP surface and NIP-11 document
 //! (`nostream-admin`), and the probe family and NIP-66 monitor (`nostream-services`).

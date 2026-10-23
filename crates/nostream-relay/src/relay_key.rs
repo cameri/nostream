@@ -27,7 +27,7 @@ type HmacSha256 = Hmac<Sha256>;
 pub struct RelayKeySource {
     relay_private_key: Option<String>,
     secret: Option<String>,
-    resolved: Arc<Mutex<Option<RelayKeys>>>,
+    resolved: Arc<Mutex<Option<(String, RelayKeys)>>>,
 }
 
 impl RelayKeySource {
@@ -49,13 +49,22 @@ impl RelayKeySource {
     }
 
     /// The relay's key pair, or [`RelayError::Configuration`] when neither source is set.
+    ///
+    /// The pair is memoised with the URL it was derived from: `SECRET` seeds the key from the
+    /// relay's URL, so a second call with another URL must derive again rather than inherit
+    /// the first one's key.
     pub fn resolve(&self, relay_url: &str) -> Result<RelayKeys, RelayError> {
-        if let Some(keys) = *self
-            .resolved
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
         {
-            return Ok(keys);
+            let resolved = self
+                .resolved
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+            if let Some((url, keys)) = resolved.as_ref()
+                && url == relay_url
+            {
+                return Ok(*keys);
+            }
         }
 
         let key = match (&self.relay_private_key, &self.secret) {
@@ -77,7 +86,7 @@ impl RelayKeySource {
         *self
             .resolved
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(keys);
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((relay_url.to_owned(), keys));
 
         Ok(keys)
     }
@@ -118,4 +127,42 @@ fn derive_from_secret(secret: &str, purpose: &str) -> Result<[u8; 32], RelayErro
     mac.update(purpose.as_bytes());
 
     Ok(mac.finalize().into_bytes().into())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    #[test]
+    fn a_secret_derived_key_is_memoised_per_relay_url() {
+        // `SECRET` seeds the key from the relay's URL, so the memo has to remember which URL
+        // produced the pair it holds.
+        let source = RelayKeySource::from_values(None, Some("operator-secret".to_owned()));
+
+        let first = source.resolve("wss://one.example").expect("a key");
+        let again = source
+            .resolve("wss://one.example")
+            .expect("the memoised key");
+        let other = source.resolve("wss://two.example").expect("a key");
+
+        assert_eq!(first, again);
+        assert_ne!(
+            first.public_key, other.public_key,
+            "a second URL derives a second key"
+        );
+    }
+
+    #[test]
+    fn an_explicit_private_key_does_not_depend_on_the_url() {
+        // `01` repeated is a valid secp256k1 scalar; all zeros is not.
+        let source =
+            RelayKeySource::from_values(Some("01".repeat(32)), Some("operator-secret".to_owned()));
+
+        assert_eq!(
+            source.resolve("wss://one.example").expect("a key"),
+            source.resolve("wss://two.example").expect("a key")
+        );
+    }
 }

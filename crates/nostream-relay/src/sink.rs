@@ -1,10 +1,15 @@
 //! The one write point for server→client frames. Mirrors `WebSocketAdapter.sendMessage`
 //! (`src/adapters/web-socket-adapter.ts:150-155`).
 //!
-//! Every frame the relay sends — handler replies, subscription reads, live dispatch, drain
-//! notices, the NIP-42 challenge — goes through [`FrameSink`]. Handlers and strategies hold
-//! a sink and never touch the transport; the connection task is the only writer, and it
-//! encodes through [`RelayMessage::to_text`], so frame encoding happens in one place.
+//! Every JSON frame the relay sends — handler replies, subscription reads, live dispatch, the
+//! NIP-42 challenge — goes through [`FrameSink`]. Handlers and strategies hold a sink and
+//! never touch the transport; the connection task is the only writer, and it encodes through
+//! [`RelayMessage::to_text`], so frame encoding happens in one place.
+//!
+//! Two writes deliberately skip the queue, and both are in the connection task that drains
+//! it: the drain's `CLOSED` frames go straight to the socket because the loop that would
+//! drain the queue is the one being left, and the liveness `Ping` is a control frame rather
+//! than JSON.
 //!
 //! A send on a socket that is no longer open is dropped silently, which is what the
 //! capture's `readyState !== OPEN` guard does: it returns without an error.

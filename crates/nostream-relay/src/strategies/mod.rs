@@ -1,10 +1,12 @@
 //! The event strategies. Mirrors `src/handlers/event-strategies/*-event-strategy.ts` and the
 //! selection chain of `src/factories/event-strategy-factory.ts:56-108`.
 //!
-//! The trait is `IEventStrategy.execute` (one method, `(event, sink)`); the registry
-//! [`select`]s the arm in the capture's order — which **is** the policy — and [`Strategy`]
-//! runs it. `default` is implemented here; the other fourteen modules are labelled stubs for
-//! job 009.
+//! A strategy is one type implementing [`EventStrategy`] — `IEventStrategy.execute`'s one
+//! method, `(event, context)` — and every arm has that shape, filled or stubbed, so job 009
+//! adds behaviour to a type rather than choosing a second convention (ADR 0004 records the
+//! signature, which departs from the capture's `(event, sink)`). [`select`] picks the arm in
+//! the capture's order, which **is** the policy, and [`Strategy`] runs it. `default` is
+//! implemented here; the other fourteen arms are labelled stubs for job 009.
 
 pub mod contact_list;
 pub mod default;
@@ -29,6 +31,7 @@ use nostream_core::{Event, Kind};
 
 use crate::error::RelayError;
 use crate::handlers::HandlerContext;
+use crate::strategies::default::DefaultStrategy;
 
 /// One strategy's outcome (`IEventStrategy.execute`).
 ///
@@ -117,22 +120,48 @@ impl EventStrategy for Strategy {
 
         Box::pin(async move {
             match selection {
-                Selection::Default => default::DefaultStrategy.execute(event, context).await,
-                Selection::Vanish => vanish::execute(event, context).await,
-                Selection::GiftWrap => gift_wrap::execute(event, context).await,
-                Selection::Group => group::execute(event, context).await,
-                Selection::Timestamp => timestamp::execute(event, context).await,
-                Selection::ContactList => contact_list::execute(event, context).await,
-                Selection::Report => report::execute(event, context).await,
-                Selection::Replaceable => replaceable::execute(event, context).await,
-                Selection::Join => join_request::execute(event, context).await,
-                Selection::Leave => leave_request::execute(event, context).await,
-                Selection::InviteRequest => invite_request::execute(event, context).await,
-                Selection::DvmJob => dvm_job_request::execute(event, context).await,
-                Selection::Ephemeral => ephemeral::execute(event, context).await,
-                Selection::Delete => delete::execute(event, context).await,
+                Selection::Default => DefaultStrategy.execute(event, context).await,
+                Selection::Vanish => vanish::VanishStrategy.execute(event, context).await,
+                Selection::GiftWrap => gift_wrap::GiftWrapStrategy.execute(event, context).await,
+                Selection::Group => group::GroupStrategy.execute(event, context).await,
+                Selection::Timestamp => timestamp::TimestampStrategy.execute(event, context).await,
+                Selection::ContactList => {
+                    contact_list::ContactListStrategy
+                        .execute(event, context)
+                        .await
+                }
+                Selection::Report => report::ReportStrategy.execute(event, context).await,
+                Selection::Replaceable => {
+                    replaceable::ReplaceableStrategy
+                        .execute(event, context)
+                        .await
+                }
+                Selection::Join => {
+                    join_request::JoinRequestStrategy
+                        .execute(event, context)
+                        .await
+                }
+                Selection::Leave => {
+                    leave_request::LeaveRequestStrategy
+                        .execute(event, context)
+                        .await
+                }
+                Selection::InviteRequest => {
+                    invite_request::InviteRequestStrategy
+                        .execute(event, context)
+                        .await
+                }
+                Selection::DvmJob => {
+                    dvm_job_request::DvmJobRequestStrategy
+                        .execute(event, context)
+                        .await
+                }
+                Selection::Ephemeral => ephemeral::EphemeralStrategy.execute(event, context).await,
+                Selection::Delete => delete::DeleteStrategy.execute(event, context).await,
                 Selection::ParameterizedReplaceable => {
-                    parameterized_replaceable::execute(event, context).await
+                    parameterized_replaceable::ParameterizedReplaceableStrategy
+                        .execute(event, context)
+                        .await
                 }
             }
         })
@@ -241,23 +270,71 @@ mod stubs {
         runtime.block_on(async {
             for (selection, module) in selections {
                 let outcome = match selection {
-                    Selection::Vanish => vanish::execute(&event_of(62), &context).await,
-                    Selection::GiftWrap => gift_wrap::execute(&event_of(1059), &context).await,
-                    Selection::Group => group::execute(&event_of(445), &context).await,
-                    Selection::Timestamp => timestamp::execute(&event_of(1040), &context).await,
-                    Selection::ContactList => contact_list::execute(&event_of(3), &context).await,
-                    Selection::Report => report::execute(&event_of(1984), &context).await,
-                    Selection::Replaceable => replaceable::execute(&event_of(0), &context).await,
-                    Selection::Join => join_request::execute(&event_of(28934), &context).await,
-                    Selection::Leave => leave_request::execute(&event_of(28936), &context).await,
-                    Selection::InviteRequest => {
-                        invite_request::execute(&event_of(28935), &context).await
+                    Selection::Vanish => {
+                        vanish::VanishStrategy
+                            .execute(&event_of(62), &context)
+                            .await
                     }
-                    Selection::DvmJob => dvm_job_request::execute(&event_of(5000), &context).await,
-                    Selection::Ephemeral => ephemeral::execute(&event_of(20000), &context).await,
-                    Selection::Delete => delete::execute(&event_of(5), &context).await,
+                    Selection::GiftWrap => {
+                        gift_wrap::GiftWrapStrategy
+                            .execute(&event_of(1059), &context)
+                            .await
+                    }
+                    Selection::Group => {
+                        group::GroupStrategy.execute(&event_of(445), &context).await
+                    }
+                    Selection::Timestamp => {
+                        timestamp::TimestampStrategy
+                            .execute(&event_of(1040), &context)
+                            .await
+                    }
+                    Selection::ContactList => {
+                        contact_list::ContactListStrategy
+                            .execute(&event_of(3), &context)
+                            .await
+                    }
+                    Selection::Report => {
+                        report::ReportStrategy
+                            .execute(&event_of(1984), &context)
+                            .await
+                    }
+                    Selection::Replaceable => {
+                        replaceable::ReplaceableStrategy
+                            .execute(&event_of(0), &context)
+                            .await
+                    }
+                    Selection::Join => {
+                        join_request::JoinRequestStrategy
+                            .execute(&event_of(28934), &context)
+                            .await
+                    }
+                    Selection::Leave => {
+                        leave_request::LeaveRequestStrategy
+                            .execute(&event_of(28936), &context)
+                            .await
+                    }
+                    Selection::InviteRequest => {
+                        invite_request::InviteRequestStrategy
+                            .execute(&event_of(28935), &context)
+                            .await
+                    }
+                    Selection::DvmJob => {
+                        dvm_job_request::DvmJobRequestStrategy
+                            .execute(&event_of(5000), &context)
+                            .await
+                    }
+                    Selection::Ephemeral => {
+                        ephemeral::EphemeralStrategy
+                            .execute(&event_of(20000), &context)
+                            .await
+                    }
+                    Selection::Delete => {
+                        delete::DeleteStrategy.execute(&event_of(5), &context).await
+                    }
                     Selection::ParameterizedReplaceable => {
-                        parameterized_replaceable::execute(&event_of(30000), &context).await
+                        parameterized_replaceable::ParameterizedReplaceableStrategy
+                            .execute(&event_of(30000), &context)
+                            .await
                     }
                     Selection::Default => unreachable!("default is implemented"),
                 };

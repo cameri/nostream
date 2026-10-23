@@ -85,7 +85,7 @@ async fn maybe_issue_invite_code(
                 .sink
                 .send(&RelayMessage::Event(OutgoingEventMessage {
                     subscription_id: subscription_id.to_owned(),
-                    event,
+                    event: std::sync::Arc::new(event),
                 }));
         }
         Ok(None) => {}
@@ -214,11 +214,6 @@ async fn fetch_and_send(subscription_id: &str, filters: &[Filter], context: &Han
     futures_util::pin_mut!(stream);
 
     let now = context.now_secs();
-    let authenticated = context.authenticated_pubkeys();
-    let restricted = context.restricted_read_kinds();
-    let read_authorized = |event: &nostream_core::Event| {
-        nip42::is_read_authorized(event, &restricted, &authenticated)
-    };
     let matches_any =
         |event: &nostream_core::Event| filters.iter().any(|filter| filter.matches(event));
 
@@ -252,8 +247,12 @@ async fn fetch_and_send(subscription_id: &str, filters: &[Filter], context: &Han
 
                 let event = record.event;
 
+                // The guard is the crate's one definition of "may this socket read this
+                // event"; it is asked per event, as the capture's
+                // `createReadAuthorizationGuard` is, so an AUTH that lands mid-read applies to
+                // the rest of the stream.
                 if expiration::is_expired_event(&event, now)
-                    || !read_authorized(&event)
+                    || !context.read_authorization_guard().allows(&event)
                     || !matches_any(&event)
                 {
                     continue;
@@ -263,7 +262,7 @@ async fn fetch_and_send(subscription_id: &str, filters: &[Filter], context: &Han
                     .sink
                     .send(&RelayMessage::Event(OutgoingEventMessage {
                         subscription_id: subscription_id.to_owned(),
-                        event,
+                        event: std::sync::Arc::new(event),
                     }));
             }
             Err(error) => {

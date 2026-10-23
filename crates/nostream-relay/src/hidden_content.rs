@@ -134,7 +134,9 @@ impl HiddenContentCache {
         Ok(())
     }
 
-    /// Seeds the mirror, then re-reads it on `interval` until the returned task is dropped.
+    /// Seeds the mirror, then re-reads it on `interval` until the returned handle is
+    /// **aborted** (dropping it detaches the task rather than stopping it, so the caller owns
+    /// the handle and [`crate::relay::Relay::serve`] aborts it when its loop ends).
     ///
     /// `interval` is injectable (`startHiddenContentCache`'s third argument); the daemon
     /// passes [`DEFAULT_REFRESH_INTERVAL`].
