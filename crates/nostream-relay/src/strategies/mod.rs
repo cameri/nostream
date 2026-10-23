@@ -267,7 +267,7 @@ mod stubs {
                         assert_eq!(reported, module, "{selection:?}");
                     }
                     // Anything but `NotImplemented` means the arm was wired without a
-                    // port: `assert` rather than `panic!`, and the message names the arm.
+                    // port: an `assert`, and the message names the arm.
                     other => assert!(
                         matches!(other, Err(RelayError::NotImplemented { .. })),
                         "{selection:?} must be a NotImplemented stub, got {other:?}"
