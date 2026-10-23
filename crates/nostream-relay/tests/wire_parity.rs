@@ -59,6 +59,16 @@ impl Allow {
     }
 }
 
+/// How a step's frames are compared. `Json` parses both sides and compares the values, which
+/// is the only difference the capture's three event-building paths leave: their objects carry
+/// the same keys and values in different insertion orders, and JSON has no field order.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum Compare {
+    #[default]
+    Text,
+    Json,
+}
+
 /// One recorded step: a client frame, what the relay answered, and the declared tolerances.
 #[derive(Debug, Clone, Default)]
 struct Step {
@@ -69,8 +79,7 @@ struct Step {
     advance_ms: u64,
     none: bool,
     drain: bool,
-    compare: bool,
-    compare_why: Option<String>,
+    compare: Compare,
     oversized: Option<usize>,
 }
 
@@ -101,8 +110,10 @@ fn parse_step(value: &Value) -> Step {
         advance_ms: value["advance_ms"].as_u64().unwrap_or(0),
         none: value["send"].is_null() && value["drain"].is_null() && value["connect"].is_null(),
         drain: value["drain"].as_bool().unwrap_or(false),
-        compare: value["compare"].as_bool().unwrap_or(true),
-        compare_why: value["compare_why"].as_str().map(str::to_owned),
+        compare: match value["compare"].as_str() {
+            Some("json") => Compare::Json,
+            _ => Compare::Text,
+        },
         oversized: value["oversized"].as_u64().map(|size| size as usize),
     }
 }
@@ -122,7 +133,6 @@ struct Session {
     actionable: Vec<ActionableTarget>,
     vanished: Vec<nostream_core::Pubkey>,
     blocked: Vec<nostream_core::Pubkey>,
-    seeded_events: Vec<nostream_core::Event>,
     skipped: bool,
 }
 
@@ -183,7 +193,6 @@ fn parse_session(value: &Value) -> Session {
             .unwrap_or_default(),
         vanished: pubkeys(value["vanished"].as_array()),
         blocked: pubkeys(value["blocked"].as_array()),
-        seeded_events: Vec::new(),
         skipped: value["comparison"].as_str() == Some("skipped"),
     }
 }
@@ -210,10 +219,6 @@ struct Server {
 impl Server {
     async fn start(session: &Session, random: Arc<RecordedRandom>) -> Self {
         let fixture = Fixture::new(session.settings.clone());
-
-        for event in &session.seeded_events {
-            fixture.seed_event(event.clone()).await;
-        }
 
         for pubkey in &session.vanished {
             let mut user = user(*pubkey);
@@ -242,14 +247,14 @@ impl Server {
             drain_timeout: Duration::from_millis(300),
         };
 
-        let relay = Relay::with_keys(
+        let relay = Relay::new(
             session.settings.clone(),
             Arc::clone(&fixture.stores),
             Arc::clone(&clock) as Arc<dyn Clock>,
             keys,
-        )
-        .with_config(config)
-        .with_random(random);
+            random,
+            config,
+        );
 
         // The relay's boot refresh seeds its mirror from the repository, exactly as the
         // capture's `startHiddenContentCache` does, so the targets go to the double.
@@ -264,6 +269,31 @@ impl Server {
         tokio::spawn(async move {
             let _ = served.serve(listener, connection_shutdown).await;
         });
+
+        // `serve` starts the hidden-content refresh as a task of its own, and its first tick
+        // is what seeds the mirror from the report repository: replaying before it lands lets
+        // a hidden event through and makes the run flake (measured 3 of 26 before this wait,
+        // 0 of 12 after it). The wait comes *after* the spawn, because the task it waits on
+        // does not exist until then, and only when the tick queries at all.
+        let hiding = session
+            .settings
+            .nip56
+            .as_ref()
+            .is_some_and(|nip56| nip56.enabled && nip56.hide_actionable_reports);
+
+        if hiding {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+            while relay.hidden_content().refreshes() == 0 {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "{}: the hidden-content mirror never refreshed",
+                    session.id
+                );
+
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }
 
         Self {
             address,
@@ -307,6 +337,10 @@ impl Replay {
             });
 
             if got == want {
+                continue;
+            }
+
+            if step.compare == Compare::Json && same_json(want, got) {
                 continue;
             }
 
@@ -469,9 +503,11 @@ async fn replay(session: &Session, random: Arc<RecordedRandom>) -> BTreeMap<Stri
         if step.drain {
             server.shutdown.begin_draining();
 
-            let replay = collect(&mut client, step, &challenge).await;
+            let replay = collect(&mut client, step, pinned_count(session, step), &challenge).await;
 
-            if !session.skipped {
+            if session.skipped {
+                compare_pinned(AC29, &replay, step, &session.id);
+            } else {
                 replay.compare(&step.expect, step, &session.id);
             }
 
@@ -506,12 +542,12 @@ async fn replay(session: &Session, random: Arc<RecordedRandom>) -> BTreeMap<Stri
             continue;
         }
 
-        let replay = collect(&mut client, step, &challenge).await;
+        let replay = collect(&mut client, step, pinned_count(session, step), &challenge).await;
 
-        if !session.skipped && step.compare {
+        if session.skipped {
+            compare_pinned(AC29, &replay, step, &session.id);
+        } else {
             replay.compare(&step.expect, step, &session.id);
-        } else if let Some(why) = &step.compare_why {
-            println!("{}: not compared — {why}", session.id);
         }
 
         allow.extend(replay.allow);
@@ -579,11 +615,12 @@ async fn collect(
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
     step: &Step,
+    count: usize,
     challenge: &str,
 ) -> Replay {
     let mut frames = Vec::new();
 
-    for _ in 0..step.expect.len() {
+    for _ in 0..count {
         let frame = next_text(client).await;
 
         frames.push(mask(&frame, challenge));
@@ -593,6 +630,99 @@ async fn collect(
         frames,
         allow: step.allow.clone(),
     }
+}
+
+/// What the Rust relay answers in the one session the capture records no frame for: with no
+/// `SECRET` the capture logs and sends nothing, while AC29 requires an `OK` refusing the
+/// event. It lives here rather than in the fixture, which is a recording, and it is compared
+/// like every other frame, so a corrupted expectation cannot pass.
+const AC29: &[&str] = &[r#"["OK","{{event_id}}",false,"error: unable to process event"]"#];
+
+/// How many frames a skipped session's step is read for: the harness's own expectation
+/// replaces the empty recording.
+fn pinned_count(session: &Session, step: &Step) -> usize {
+    if session.skipped {
+        AC29.len()
+    } else {
+        step.expect.len()
+    }
+}
+
+/// Compares a skipped session's frames against the harness's own expectation (AC29), so the
+/// skip is a declared capture gap and not an unchecked session.
+fn compare_pinned(expected: &[&str], replay: &Replay, step: &Step, session: &str) {
+    let event_id = step
+        .text
+        .as_deref()
+        .and_then(|text| serde_json::from_str::<Value>(text).ok())
+        .and_then(|value| value[1]["id"].as_str().map(str::to_owned))
+        .unwrap_or_default();
+
+    let expected: Vec<String> = expected
+        .iter()
+        .map(|frame| frame.replace("{{event_id}}", &event_id))
+        .collect();
+
+    assert_eq!(
+        replay.frames, expected,
+        "{session}: the AC29 frame the capture does not record"
+    );
+}
+
+/// Whether two frames are the same JSON value: the same keys, values and array order, with
+/// one exception. A relay-minted event's signature depends on the auxiliary random the signer
+/// drew, which is not wire semantics, so an `EVENT` frame whose only difference is `sig` is
+/// accepted when the observed signature verifies against the observed event.
+fn same_json(left: &str, right: &str) -> bool {
+    let (Ok(left), Ok(right)) = (
+        serde_json::from_str::<Value>(left),
+        serde_json::from_str::<Value>(right),
+    ) else {
+        return false;
+    };
+
+    left == right || (relay_signed_event(&left, &right) && verified_event(&right))
+}
+
+/// Whether `got` is `want` with a different `sig` and nothing else.
+fn relay_signed_event(want: &Value, got: &Value) -> bool {
+    let (Some(want), Some(got)) = (want.as_array(), got.as_array()) else {
+        return false;
+    };
+
+    if want.len() != 3 || got.len() != 3 || want[0] != got[0] || want[1] != got[1] {
+        return false;
+    }
+
+    let (Value::Object(mut want_event), Value::Object(mut got_event)) =
+        (want[2].clone(), got[2].clone())
+    else {
+        return false;
+    };
+
+    let want_sig = want_event.remove("sig");
+    let got_sig = got_event.remove("sig");
+
+    if want_sig == got_sig {
+        return false;
+    }
+
+    Value::Object(want_event) == Value::Object(got_event)
+}
+
+/// Whether the frame's event is the one its own id and signature describe.
+fn verified_event(frame: &Value) -> bool {
+    let Some(event) = frame
+        .as_array()
+        .and_then(|items| items.get(2))
+        .cloned()
+        .and_then(|event| serde_json::from_value::<nostream_core::Event>(event).ok())
+    else {
+        return false;
+    };
+
+    nostream_core::crypto::verify_event_signature(&event).is_ok()
+        && nostream_core::crypto::compute_event_id(&event).is_ok_and(|id| id == event.id)
 }
 
 fn hex_to_bytes(hex: &str) -> Vec<u8> {
@@ -897,12 +1027,143 @@ async fn every_declared_tolerance_is_one_of_the_two() {
     assert_eq!(t1 + t2, tolerances.len());
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn the_fixture_seeds_the_client_key_the_frames_were_signed_with() {
+/// The oracle's two exceptions are counted, not assumed: a step compared as JSON values (the
+/// capture's three event-building paths disagree about key order) and a session whose frames
+/// the capture does not record (AC29). Weakening the fixture by another step or session fails
+/// here, and each exception still compares everything but its declared difference.
+#[test]
+fn the_not_byte_compared_steps_are_exactly_the_declared_two_and_one_session() {
     let fixture = fixture();
-    let secret = fixture["client_secret"].as_str().expect("a client secret");
-    let first = &fixture["sessions"][0];
+    let mut json_steps = Vec::new();
 
-    assert_eq!(first["clock"]["start_ms"].as_u64(), Some(1_700_000_000_000));
-    assert_eq!(secret.len(), 64, "a secp256k1 secret in hex");
+    for session in fixture["sessions"].as_array().expect("sessions") {
+        let id = session["id"].as_str().expect("a session id");
+
+        for (index, step) in session["steps"]
+            .as_array()
+            .expect("steps")
+            .iter()
+            .enumerate()
+        {
+            if step["compare"].as_str() == Some("json") {
+                assert!(
+                    step["compare_why"]
+                        .as_str()
+                        .is_some_and(|why| !why.is_empty()),
+                    "{id}: step {index} is not byte compared and says why"
+                );
+                json_steps.push(format!("{id}:{index}"));
+            }
+        }
+    }
+
+    assert_eq!(
+        json_steps,
+        ["measured-session:13", "invite-mint:2"],
+        "the steps compared as JSON values"
+    );
+
+    let skipped: Vec<&str> = fixture["sessions"]
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .filter(|session| session["comparison"].as_str() == Some("skipped"))
+        .map(|session| session["id"].as_str().expect("a session id"))
+        .collect();
+
+    assert_eq!(skipped, ["no-secret"], "the sessions compared by AC29");
+}
+
+/// A corrupted expectation is a failure in every comparison mode, so an edit that switches a
+/// step off or garbles it cannot leave the oracle green.
+#[test]
+fn a_corrupted_expected_frame_fails_the_replay() {
+    let frame = r#"["EVENT","s1",{"id":"aa","pubkey":"bb","created_at":1,"kind":1,"tags":[],"content":"x","sig":"cc"}]"#;
+    let reordered = r#"["EVENT","s1",{"kind":1,"created_at":1,"pubkey":"bb","id":"aa","content":"x","tags":[],"sig":"cc"}]"#;
+
+    let text = Step {
+        expect: vec![frame.to_owned()],
+        ..Step::default()
+    };
+    let json = Step {
+        compare: Compare::Json,
+        expect: vec![frame.to_owned()],
+        ..Step::default()
+    };
+    let replay = |observed: &str| Replay {
+        frames: vec![observed.to_owned()],
+        allow: Vec::new(),
+    };
+
+    // The failures below are the point of the test: keep them out of a green run's output.
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+
+    // The mode that ignores key order ignores only key order.
+    assert!(
+        std::panic::catch_unwind(|| replay(reordered).compare(&json.expect, &json, "probe"))
+            .is_ok(),
+        "a reordered frame is the same value"
+    );
+
+    let tampered = reordered.replace(r#""content":"x""#, r#""content":"garbage""#);
+
+    for (step, observed) in [
+        (&text, reordered),
+        (&json, tampered.as_str()),
+        (&json, r#"["EVENT","s1","garbage"]"#),
+    ] {
+        assert!(
+            std::panic::catch_unwind(|| replay(observed).compare(&step.expect, step, "probe"))
+                .is_err(),
+            "{step:?} accepted {observed}"
+        );
+    }
+
+    std::panic::set_hook(hook);
+}
+
+#[test]
+fn the_fixture_seeds_the_client_key_the_frames_were_signed_with() {
+    let fixture = fixture();
+    let secret = hex_to_bytes(fixture["client_secret"].as_str().expect("a client secret"));
+    let mut secret_bytes = [0u8; 32];
+    secret_bytes.copy_from_slice(&secret);
+
+    let pubkey = nostream_core::crypto::public_key(&secret_bytes).expect("a public key");
+
+    // The recorded secret is the key that signed the recorded frames: some of the fixture's
+    // frames are deliberately malformed (the rejections session) and one session signs with
+    // a second key (the whitelist), so the proof is that a frame's author is the derived
+    // pubkey and its signature verifies, not that every frame does.
+    let mut authored = 0;
+
+    for session in fixture["sessions"].as_array().expect("sessions") {
+        for step in session["steps"].as_array().expect("steps") {
+            let Some(text) = step["send"]["text"].as_str() else {
+                continue;
+            };
+            let Ok(frame) = serde_json::from_str::<Value>(text) else {
+                continue;
+            };
+            let Some(event) = frame
+                .as_array()
+                .and_then(|items| items.get(1))
+                .cloned()
+                .and_then(|event| serde_json::from_value::<nostream_core::Event>(event).ok())
+            else {
+                continue;
+            };
+
+            authored += usize::from(
+                event.pubkey == pubkey
+                    && nostream_core::crypto::verify_event_signature(&event).is_ok(),
+            );
+        }
+    }
+
+    assert!(
+        authored > 0,
+        "the recorded client secret authors a frame whose signature verifies"
+    );
 }

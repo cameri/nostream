@@ -458,12 +458,12 @@
           "expect": []
         }
       ],
+      "comparison": "skipped",
+      "comparison_why": "the capture logs the missing SECRET and sends no frame; the Rust relay answers [\"OK\",<id>,false,\"error: unable to process event\"] (AC29, measured by handlers.rs) — job 008",
       "random": {
         "challenge": "49211c0738849f579f8e41cc8c68e197a3439705738e12b5da86e560b44d1e6a",
         "invite_code": null
-      },
-      "comparison": "skipped",
-      "comparison_why": "the capture logs the missing SECRET and sends no frame; the Rust relay answers [\"OK\",<id>,false,\"error: unable to process event\"] (AC29, measured by handlers.rs) \u2014 job 008"
+      }
     },
     {
       "id": "measured-session",
@@ -1012,8 +1012,8 @@
           "send": {
             "text": "[\"REQ\",\"s2\",{\"kinds\":[1]}]"
           },
-          "compare": false,
-          "compare_why": "a REQ result carries the capture\u2019s stored-row field order; recorded, not compared \u2014 job 008",
+          "compare": "json",
+          "compare_why": "a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 008",
           "expect": [
             "[\"EVENT\",\"s2\",{\"id\":\"d73cc9e9e7bbfb8fbc3ba0ba9b66a5175d1161e7d3fb85c2d72aa2ef33d0edd1\",\"kind\":1,\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"created_at\":1700000000,\"content\":\"wire-session\",\"tags\":[],\"sig\":\"89fc957335b6d7ce82f561d4441881c7401019e830214296a63da7626b16331968c1cc6f70b0176cfe06c6d4ddfb4e90dd1c85aad877845ca21bbded25db895f\"}]",
             "[\"EOSE\",\"s2\"]"
@@ -3712,8 +3712,8 @@
           "send": {
             "text": "[\"REQ\",\"invite\",{\"kinds\":[28935]}]"
           },
-          "compare": false,
-          "compare_why": "the capture builds the claim event with its own field order; recorded, not compared \u2014 job 008",
+          "compare": "json",
+          "compare_why": "the capture builds the claim event with its own field order; the values are compared, the key order is the capture’s — job 008",
           "expect": [
             "[\"EVENT\",\"invite\",{\"pubkey\":\"608219ac222037d5914b0bec4441d5a913eafe1f14175ff18ee8fa08a87e085d\",\"kind\":28935,\"created_at\":1700000000,\"content\":\"\",\"tags\":[[\"claim\",\"f540cd7a9033056c23f0f1f53d088202\"],[\"-\"],[\"expiration\",\"1700000600\"]],\"id\":\"d7c06fc53a5ae1239732b3ac2fe81a65e2b0d7711866b4ad12387518e266956a\",\"sig\":\"44ce4a606ea32731cc5404e7f5ad1a158726971159d050d881202d791c5d6368908450df392c0608a3ac20d0bb435ef841dd042efe4322f5d38162444affa687\"}]",
             "[\"EOSE\",\"invite\"]"

@@ -557,8 +557,10 @@ const runSession = async (definition) => {
 
     const step = { send: { text: text.split(challenge).join('{{challenge}}') } }
     if (options.allow) step.allow = options.allow
-    if (options.compare === false) {
-      step.compare = false
+    // A step whose frames carry an event the capture built on another path is compared as
+    // JSON values: the keys and values are the same, only the insertion order differs.
+    if (options.compare === 'json') {
+      step.compare = 'json'
       step.compare_why = options.why
     }
     if (options.advanceMs) step.advance_ms = options.advanceMs
@@ -621,6 +623,15 @@ const runSession = async (definition) => {
     }
   }
   if (!definition.withoutSecret) session.relay_secret = RELAY_SECRET
+  if (definition.withoutSecret) {
+    // The capture logs the missing SECRET and sends no frame, while AC29 requires the relay
+    // to answer ["OK",<id>,false,"error: unable to process event"]. The session is recorded
+    // and its frames are compared against the harness's own AC29 expectation, not this one.
+    session.comparison = 'skipped'
+    session.comparison_why =
+      'the capture logs the missing SECRET and sends no frame; the Rust relay answers ' +
+      '["OK",<id>,false,"error: unable to process event"] (AC29, measured by handlers.rs) — job 008'
+  }
   if (state.actionable.length) session.actionable = state.actionable
 
   // The two values the relay minted from its own randomness: the challenge this socket was
@@ -710,8 +721,8 @@ const runAll = async () => {
       // broadcast path emits; recorded, not byte-compared.
       await send(['REQ', 's2', { kinds: [1] }], {
         expect: 2,
-        compare: false,
-        why: 'a REQ result carries the capture’s stored-row field order; recorded, not compared — job 008',
+        compare: 'json',
+        why: 'a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 008',
       })
       // The oversized frame: recorded as its size, not its 600 KB of text.
       socket.send(JSON.stringify(['EVENT', makeEvent({ content: 'x'.repeat(600 * 1024) })]))
@@ -831,8 +842,8 @@ const runAll = async () => {
       // the read-back order, so this frame is recorded but not byte-compared.
       await send(['REQ', 'invite', { kinds: [28935] }], {
         expect: 2,
-        compare: false,
-        why: 'the capture builds the claim event with its own field order; recorded, not compared — job 008',
+        compare: 'json',
+        why: 'the capture builds the claim event with its own field order; the values are compared, the key order is the capture’s — job 008',
       })
     },
   })
