@@ -1,4 +1,7 @@
 import { expect } from 'chai'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
 import {
   applyAdminModerationAction,
@@ -13,6 +16,24 @@ describe('admin-moderation', () => {
     kind: { blacklist: [], whitelist: [1] },
     rateLimitBypass: { pubkeys: [], ipAddresses: ['::1'] },
   }
+
+  let previousConfigDir: string | undefined
+  let tempConfigDir: string
+
+  before(() => {
+    previousConfigDir = process.env.NOSTR_CONFIG_DIR
+    tempConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-admin-moderation-'))
+    process.env.NOSTR_CONFIG_DIR = tempConfigDir
+  })
+
+  after(() => {
+    if (previousConfigDir === undefined) {
+      delete process.env.NOSTR_CONFIG_DIR
+    } else {
+      process.env.NOSTR_CONFIG_DIR = previousConfigDir
+    }
+    fs.rmSync(tempConfigDir, { recursive: true, force: true })
+  })
 
   beforeEach(() => {
     const settings = settingsConfig.loadDefaults() as any
@@ -38,6 +59,17 @@ describe('admin-moderation', () => {
 
     const unbanned = applyAdminModerationAction(banned, 'unban-pubkey', { pubkey })
     expect(unbanned.pubkey.blacklist).to.not.include(pubkey)
+  })
+
+  it('does not remove a banned pubkey from the event pubkey whitelist', () => {
+    const pubkey = 'a'.repeat(64)
+    const withWhitelist = {
+      ...baseLimits,
+      pubkey: { blacklist: [], whitelist: [pubkey] },
+    }
+    const banned = applyAdminModerationAction(withWhitelist, 'ban-pubkey', { pubkey })
+    expect(banned.pubkey.whitelist).to.deep.equal([pubkey])
+    expect(banned.pubkey.blacklist).to.include(pubkey)
   })
 
   it('merges partial limit patches', () => {

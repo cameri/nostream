@@ -38,7 +38,7 @@ export class GetAdminModerationStatsController implements IController {
       let rateLimitHits = { pubkeys: [] as { key: string; hits: number }[], ips: [] as { key: string; hits: number }[] }
       if (isCacheConfigured()) {
         const cache = new RedisAdapter(getCacheClient())
-        rateLimitHits = await listModerationRateLimitHits(cache, limit)
+        rateLimitHits = await listModerationRateLimitHits(cache, limit, window.hours)
       }
 
       response.status(200).setHeader('content-type', 'application/json').send({

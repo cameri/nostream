@@ -200,10 +200,7 @@ export const applyAdminModerationAction = (
         ...current,
         pubkey: {
           blacklist: [...new Set([...current.pubkey.blacklist.map((p) => p.toLowerCase()), pubkey])],
-          whitelist: withoutValue(
-            current.pubkey.whitelist.map((p) => p.toLowerCase()),
-            pubkey,
-          ),
+          whitelist: current.pubkey.whitelist,
         },
       }
     }
