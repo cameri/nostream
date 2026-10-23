@@ -26,7 +26,6 @@ use nostream_core::messages::RelayMessage;
 use nostream_core::{Event, messages};
 
 use crate::connection::{AcceptedTransport, Connection, ConnectionContext};
-use crate::error::RelayError;
 use crate::handlers::{self, HandlerContext, Stores};
 use crate::hidden_content::{DEFAULT_REFRESH_INTERVAL, HiddenContentCache};
 use crate::limits::RateLimits;
@@ -65,7 +64,7 @@ pub struct Relay {
     limits: Arc<RateLimits>,
     random: Arc<dyn nostream_core::random::RandomSource>,
     hidden: Arc<HiddenContentCache>,
-    hub: broadcast::Sender<Event>,
+    hub: broadcast::Sender<Arc<Event>>,
     pow: Arc<Mutex<AdaptivePowState>>,
     config: RelayConfig,
 }
@@ -81,25 +80,27 @@ impl std::fmt::Debug for Relay {
 }
 
 impl Relay {
-    /// Builds the relay from the loaded settings, the repository seams and a clock. The
-    /// signing key is read from the environment (`RELAY_PRIVATE_KEY`, then `SECRET`).
-    pub fn new(settings: Settings, stores: Arc<Stores>, clock: Arc<dyn Clock>) -> Arc<Self> {
-        Self::with_keys(settings, stores, clock, RelayKeySource::from_env())
-    }
-
-    /// Builds the relay with an explicit key source, for tests and for the daemon's wiring.
-    pub fn with_keys(
+    /// Builds the relay from its collaborators: the settings, the stores, the clock, the key
+    /// source, the randomness and the intervals.
+    ///
+    /// Everything the relay runs with is an argument, so a relay that mints from
+    /// `SystemRandom` or resolves `WS_DRAIN_TIMEOUT_MS` from the environment is one whose
+    /// composition root asked for it (`RelayConfig::default()` reads the variable, so the
+    /// read happens where the relay is built, not inside a setter that can silently no-op).
+    pub fn new(
         settings: Settings,
         stores: Arc<Stores>,
         clock: Arc<dyn Clock>,
         keys: RelayKeySource,
+        random: Arc<dyn nostream_core::random::RandomSource>,
+        config: RelayConfig,
     ) -> Arc<Self> {
         let settings = Arc::new(settings);
-        let (hub, _receiver) = broadcast::channel(1_024);
+        let (hub, _receiver) = broadcast::channel(1024);
 
         Arc::new(Self {
             limits: Arc::new(RateLimits::new(&settings, Arc::clone(&clock))),
-            random: Arc::new(nostream_core::random::SystemRandom),
+            random,
             settings,
             stores,
             clock,
@@ -107,19 +108,8 @@ impl Relay {
             hidden: HiddenContentCache::new(),
             hub,
             pow: Arc::new(Mutex::new(AdaptivePowState::default())),
-            config: RelayConfig::default(),
+            config,
         })
-    }
-
-    /// Replaces the intervals, returning the relay for chaining.
-    pub fn with_config(mut self: Arc<Self>, config: RelayConfig) -> Arc<Self> {
-        Arc::get_mut(&mut self)
-            .map(|relay| relay.config = config)
-            .unwrap_or_else(|| {
-                tracing::warn!("relay is already shared; the intervals were not replaced");
-            });
-
-        self
     }
 
     /// The intervals this relay runs with.
@@ -127,29 +117,10 @@ impl Relay {
         &self.config
     }
 
-    /// Replaces the randomness source, returning the relay for chaining. A recorded fixture
-    /// replays its session with the recording's stream.
-    pub fn with_random(
-        mut self: Arc<Self>,
-        random: Arc<dyn nostream_core::random::RandomSource>,
-    ) -> Arc<Self> {
-        Arc::get_mut(&mut self)
-            .map(|relay| relay.random = random)
-            .unwrap_or_else(|| {
-                tracing::warn!("relay is already shared; the randomness was not replaced");
-            });
-
-        self
-    }
-
-    /// The hidden-content mirror, so a caller can seed it.
+    /// The hidden-content mirror. The parity harness reads it to wait for the boot refresh
+    /// that seeds it; nothing else in the workspace calls this.
     pub fn hidden_content(&self) -> &Arc<HiddenContentCache> {
         &self.hidden
-    }
-
-    /// The process's broadcast hub, for a caller that publishes from outside a connection.
-    pub fn hub(&self) -> &broadcast::Sender<Event> {
-        &self.hub
     }
 
     /// The context one socket's handlers run in.
@@ -171,14 +142,15 @@ impl Relay {
 
     /// Accepts sockets until `shutdown` fires, then drains.
     ///
+    /// Returns nothing because serving cannot fail: an accept error is logged and the loop
+    /// continues, and the drain is bounded by `config.drain_timeout`. A caller that wants to
+    /// know the task finished awaits the future; a caller that wants to know *why* there is
+    /// a `ShutdownState` to watch.
+    ///
     /// The hidden-content refresh starts with the relay and stops with it; the drain waits
     /// `config.drain_timeout` for the connections to finish and then aborts the rest
     /// (`drainClients`, `web-socket-server-adapter.ts:67-95`).
-    pub async fn serve(
-        self: &Arc<Self>,
-        listener: TcpListener,
-        shutdown: ShutdownState,
-    ) -> Result<(), RelayError> {
+    pub async fn serve(self: &Arc<Self>, listener: TcpListener, shutdown: ShutdownState) {
         let hidden_task = self.hidden.start(
             Arc::clone(&self.stores.reports),
             Arc::clone(&self.settings),
@@ -234,8 +206,6 @@ impl Relay {
         }
 
         hidden_task.abort();
-
-        Ok(())
     }
 
     /// Serves one accepted socket: the upgrade, the per-socket state machine, and the close.
@@ -255,12 +225,6 @@ impl Relay {
             }
         };
 
-        if shutdown.is_draining() {
-            tracing::debug!(%peer, "client rejected: draining");
-            self.close_draining(transport).await;
-            return;
-        }
-
         if self.is_connection_rate_limited(&peer).await {
             tracing::debug!(%peer, "client terminated: rate-limited");
             return;
@@ -271,6 +235,10 @@ impl Relay {
 
     /// `isRateLimited` at the connection level (`rate-limiter-middleware.ts`): a tripped
     /// window terminates the upgrade.
+    ///
+    /// Keyed on the accept loop's peer rather than on `Connection::remote_address`: the
+    /// decision is taken before the socket is upgraded, so there is no connection yet, and
+    /// both derive from the same socket address (ADR 0004).
     async fn is_connection_rate_limited(&self, peer: &std::net::SocketAddr) -> bool {
         match self.limits.connection_limited(&peer.ip().to_string()) {
             Ok(limited) => limited,
@@ -280,15 +248,6 @@ impl Relay {
                 true
             }
         }
-    }
-
-    async fn close_draining(&self, mut transport: AcceptedTransport) {
-        let _ = transport
-            .close(Some(transport::close_frame(
-                CloseCode::Away,
-                transport::DRAIN_REASON,
-            )))
-            .await;
     }
 
     /// The per-socket loop (R26): read, live-dispatch, liveness and drain in one task.
@@ -302,7 +261,6 @@ impl Relay {
 
         let connection_context = ConnectionContext {
             settings: Arc::clone(&self.settings),
-            clock: Arc::clone(&self.clock),
             random: Arc::clone(&self.random),
             sink: sink.clone(),
         };
@@ -319,6 +277,11 @@ impl Relay {
 
         let mut hub = self.hub.subscribe();
         let mut drained = shutdown.watch();
+        // `watch()`'s receiver has already seen a drain that began before it existed, and its
+        // `changed()` would never fire, so the flag is read once before the loop as well as
+        // in the select arm: a socket accepted while the relay is draining gets its CLOSED
+        // frames and its 1001 instead of being aborted by the deadline (R4).
+        let mut drain_seen = *drained.borrow_and_update();
         // `tokio::time::interval`'s first tick is immediate and the capture's `setInterval`
         // first fires one interval after the socket opens, so the interval is re-armed.
         let mut liveness = tokio::time::interval(self.config.liveness_interval);
@@ -330,11 +293,16 @@ impl Relay {
         let _task_sink = sink.clone();
 
         loop {
+            if drain_seen {
+                self.drain_connection(&context, &mut transport).await;
+                break;
+            }
+
             tokio::select! {
                 frame = frames.recv() => {
                     let Some(text) = frame else { break };
 
-                    if transport::send_text(&mut transport, &text).await.is_err() {
+                    if transport::send_text(&mut transport, text).await.is_err() {
                         break;
                     }
                 }
@@ -368,8 +336,18 @@ impl Relay {
                     }
                 }
                 event = hub.recv() => {
-                    if let Ok(event) = event {
-                        self.dispatch_live(&context, &event);
+                    match event {
+                        Ok(event) => self.dispatch_live(&context, &event),
+                        // The ring holds 1,024 events: a connection that falls further behind
+                        // misses some, and the miss is logged rather than swallowed. One
+                        // subscription needs one `find_by_filters` to catch up, which is the
+                        // client's job, not this loop's.
+                        Err(broadcast::error::RecvError::Lagged(missed)) => {
+                            tracing::warn!(%peer, missed, "live events missed; the client must re-read");
+                        }
+                        // The relay holds a sender for its whole life, so this is
+                        // unreachable; leaving beats spinning on a closed channel.
+                        Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
                 _ = liveness.tick() => {
@@ -386,12 +364,7 @@ impl Relay {
                         break;
                     }
                 }
-                _ = drained.changed() => {
-                    if *drained.borrow() {
-                        self.drain_connection(&context, &mut transport).await;
-                        break;
-                    }
-                }
+                _ = drained.changed() => drain_seen = *drained.borrow_and_update(),
                 Some(_) = handlers.join_next(), if !handlers.is_empty() => {}
             }
         }
@@ -457,7 +430,7 @@ impl Relay {
 
     /// Live dispatch (`onSendEvent`): the read guard, the NIP-56 mirror, then every matching
     /// subscription on this socket.
-    fn dispatch_live(&self, context: &HandlerContext, event: &Event) {
+    fn dispatch_live(&self, context: &HandlerContext, event: &Arc<Event>) {
         if !context.read_authorization_guard().allows(event) {
             return;
         }
@@ -477,7 +450,7 @@ impl Relay {
                 .sink
                 .send(&RelayMessage::Event(messages::OutgoingEventMessage {
                     subscription_id,
-                    event: event.clone(),
+                    event: Arc::clone(event),
                 }));
         }
     }
@@ -493,7 +466,7 @@ impl Relay {
                 params: None,
             });
 
-            if transport::send_text(transport, &frame.to_text())
+            if transport::send_text(transport, frame.to_text())
                 .await
                 .is_err()
             {

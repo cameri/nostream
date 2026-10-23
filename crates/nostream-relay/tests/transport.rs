@@ -537,7 +537,9 @@ async fn a_connection_accepted_while_draining_is_closed_with_1001() {
     let server = Server::start(Fixture::new(settings())).await;
 
     // Drive the socket path directly: the serve loop stops listening the moment the flag
-    // is set, so the accept-and-refuse branch is reached through `handle_socket`.
+    // is set, so the branch is reached through `handle_socket`. The flag is set before the
+    // connection task starts, which is the window a `watch` receiver created afterwards
+    // would otherwise miss: the drain still produces the 1001 rather than an abort.
     let shutdown = server.shutdown();
     shutdown.begin_draining();
 
