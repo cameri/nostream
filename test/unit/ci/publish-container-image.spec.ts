@@ -41,4 +41,17 @@ describe('container image publishing workflow', () => {
     expect(buildAndPush.if).to.include("startsWith(github.event.release.tag_name, 'v')")
     expect(existsSync(join(process.cwd(), '.github', 'workflows', 'publish-container-image.yml'))).to.equal(false)
   })
+
+  // The deploy path pulls `:latest`, so the release must actually push it.
+  // Without this the metadata action's defaults are the only thing producing
+  // the tag, and a silent change in that action would strand every host on the
+  // last image it managed to pull.
+  it('tags the released image latest, which is what deploys pull', () => {
+    const steps = (releaseWorkflow.jobs['build-and-push-image'] as { steps?: Array<{ id?: string; with?: Record<string, string> }> }).steps ?? []
+    const meta = steps.find((step) => step.id === 'meta')
+    expect(meta, 'the metadata step must exist and be named `meta`').to.exist
+    const tags = meta?.with?.tags ?? ''
+    expect(tags, 'release.yml must declare its tags, not inherit the defaults').to.include('type=raw,value=latest')
+    expect(tags).to.include('type=semver,pattern={{version}}')
+  })
 })

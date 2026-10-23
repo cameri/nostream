@@ -11,12 +11,24 @@ Step-by-step procedure for updating a running nostream host after a new
 ## Image delivery vs relay recreate
 
 ```text
-GitHub Release published
-  → CI publishes ghcr.io/cameri/nostream:latest (and versioned tags)
-  → (optional) webhook pull stack loads the image on the host
+GitHub Release published (tag v*)
+  → CI publishes ghcr.io/cameri/nostream:latest (and the version tag)
+  → the release webhook pulls :latest onto the host (see below)
   → operator runs this runbook (migrate + recreate relay(s))
   → Cloudflare Tunnel / reverse proxy keeps pointing at 127.0.0.1:8008
 ```
+
+Nothing publishes an image on a push to `main` any more, so a host that still
+pulls `:main` will never see a new image. The on-host pull stack must track the
+release instead:
+
+1. `NOSTREAM_TAG` in `/opt/nostream/webhook/.env` set to `latest`.
+2. The GitHub webhook subscribed to **releases** as well as **push**, because
+   the receiver ignores anything that is not a push to the watched branch.
+
+Both live in `containers/nostream-dev-webhook/` (the versioned source) with its
+own README. Until both are done, deployments are manual: pull the tag by hand
+and continue at step 2 below.
 
 The webhook pull stack **loads images only**. It does **not** run migrations or
 recreate relay containers. This runbook closes that gap.
