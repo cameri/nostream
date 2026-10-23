@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { createHmac } from 'crypto'
 
 import {
   OperatorNotificationChannelType,
@@ -31,9 +32,16 @@ const deliverHttp = async (target: OperatorNotificationTarget, envelope: Operato
     throw new Error('HTTP notification target requires url')
   }
 
-  await axios.post(target.url, envelope, {
+  const body = JSON.stringify(envelope)
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (target.secret) {
+    const digest = createHmac('sha256', target.secret).update(body).digest('hex')
+    headers['x-nostream-signature'] = `sha256=${digest}`
+  }
+
+  await axios.post(target.url, body, {
     timeout: REQUEST_TIMEOUT_MS,
-    headers: { 'content-type': 'application/json' },
+    headers,
     validateStatus: (status) => status >= 200 && status < 300,
   })
 }

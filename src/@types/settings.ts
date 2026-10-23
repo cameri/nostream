@@ -300,18 +300,11 @@ export interface Remote {
   secret: Secret
 }
 
-export interface Mirror {
-  address: string
-  filters?: SubscriptionFilter[]
-  secret?: Secret
-  limits?: {
-    event?: EventLimits
-  }
-  skipAdmissionCheck?: boolean
-}
-
+/**
+ * @deprecated The static mirroring worker was removed. Setting `mirroring.static` only logs a warning at start-up.
+ */
 export interface Mirroring {
-  static?: Mirror[]
+  static?: unknown[]
 }
 
 export interface DvmWorker {

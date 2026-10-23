@@ -33,8 +33,14 @@ import {
   isSealEvent,
   isWelcomeRumorEvent,
 } from '../utils/event'
+import { areSubscriptionsEnabled, getAccessEndsAt, hasSubscriptionAccess } from '../utils/subscription'
 import { isAuthRequired } from '../utils/nip42'
-import { IEventRepository, INip05VerificationRepository, IUserRepository } from '../@types/repositories'
+import {
+  IEventRepository,
+  INip05VerificationRepository,
+  IUserRepository,
+  IUserSubscriptionRepository,
+} from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
 import { admissionCacheKey, CacheAdmissionState } from '../constants/caching'
 import { createEventCommandResult } from '../telemetry/event-metrics'
@@ -61,6 +67,7 @@ export class EventMessageHandler implements IMessageHandler {
     private readonly cache: ICacheAdapter,
     private readonly rateLimiter: Factory<IRateLimiter>,
     private readonly wotGraphService: IWotGraphService,
+    private readonly userSubscriptionRepository?: IUserSubscriptionRepository,
   ) {}
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
@@ -163,7 +170,10 @@ export class EventMessageHandler implements IMessageHandler {
       this.processNip05Metadata(event)
     } catch (error) {
       logger.error('error handling message', message, error)
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createEventCommandResult(event.id, false, 'error: unable to process event'))
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createEventCommandResult(event.id, false, 'error: unable to process event'),
+      )
     }
   }
 
@@ -477,7 +487,11 @@ export class EventMessageHandler implements IMessageHandler {
     const feeSchedules = paymentsEnabled
       ? currentSettings.payments?.feeSchedules?.admission?.filter(isApplicableFee)
       : undefined
-    const admissionFeeRequired = Array.isArray(feeSchedules) && feeSchedules.length > 0
+    // With plans and no admission fee at all, a plan is what admits a user.
+    const subscriptionsEnabled = areSubscriptionsEnabled(currentSettings)
+    const onlyPlansAdmit =
+      subscriptionsEnabled && !currentSettings.payments?.feeSchedules?.admission?.some((schedule) => schedule.enabled)
+    const admissionFeeRequired = (Array.isArray(feeSchedules) && feeSchedules.length > 0) || onlyPlansAdmit
     if (!admissionFeeRequired && !nip43Enabled) {
       return
     }
@@ -512,13 +526,29 @@ export class EventMessageHandler implements IMessageHandler {
       return notAdmittedReason
     }
 
-    const minBalance = paymentsEnabled ? currentSettings.limits?.event?.pubkey?.minBalance ?? 0n : 0n
+    const minBalance = paymentsEnabled ? (currentSettings.limits?.event?.pubkey?.minBalance ?? 0n) : 0n
     if (minBalance > 0n && user.balance < minBalance) {
       this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_INSUFFICIENT_BALANCE, 60)
       return 'blocked: insufficient balance'
     }
 
-    this.cacheSet(cacheKey, CacheAdmissionState.ADMITTED, 300)
+    let admittedTtl = 300
+    if (subscriptionsEnabled && this.userSubscriptionRepository) {
+      const subscription = await this.userSubscriptionRepository.findByPubkey(event.pubkey)
+      const now = new Date()
+      if (!hasSubscriptionAccess(subscription, now)) {
+        this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_NOT_ADMITTED, 60)
+        return 'blocked: subscription expired'
+      }
+
+      // Cache no longer than access lasts, so the block lands when the period ends rather than minutes later.
+      const accessEndsAt = subscription ? getAccessEndsAt(subscription) : undefined
+      if (accessEndsAt) {
+        admittedTtl = Math.max(1, Math.min(admittedTtl, Math.ceil((accessEndsAt.getTime() - now.getTime()) / 1000)))
+      }
+    }
+
+    this.cacheSet(cacheKey, CacheAdmissionState.ADMITTED, admittedTtl)
   }
 
   private cacheSet(key: string, value: string, ttl: number): void {

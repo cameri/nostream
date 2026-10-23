@@ -22,10 +22,12 @@ export const enqueueOperatorNotification = async (
   eventType: OperatorNotificationEventType | string,
   payload: NotificationOutboxPayload,
   client?: DatabaseClient,
-): Promise<void> => {
+): Promise<boolean> => {
   try {
     await getOutboxRepository().enqueue(eventType, payload, client)
+    return true
   } catch (error) {
     logger.error('Unable to enqueue operator notification %s', eventType, error)
+    return false
   }
 }

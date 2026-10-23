@@ -1,10 +1,13 @@
-import axios from 'axios'
 import chai from 'chai'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
-import { OperatorNotificationEventType } from '../../../src/@types/operator-notifications'
-import { deliverToTarget, validateTargetConfig } from '../../../src/services/notification-channels'
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const axios = require('axios')
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { OperatorNotificationEventType } = require('../../../src/@types/operator-notifications')
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { deliverToTarget, validateTargetConfig } = require('../../../src/services/notification-channels')
 
 chai.use(sinonChai)
 
@@ -35,7 +38,31 @@ describe('notification-channels', () => {
       envelope,
     )
 
-    expect(axios.post).to.have.been.calledOnceWith('https://example.com/hook', envelope, Sinon.match.object)
+    const body = JSON.stringify(envelope)
+    expect(axios.post).to.have.been.calledOnceWith(
+      'https://example.com/hook',
+      body,
+      Sinon.match({
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+  })
+
+  it('signs HTTP webhook payloads when a secret is configured', async () => {
+    await deliverToTarget(
+      {
+        id: 'http-1',
+        type: 'http',
+        enabled: true,
+        url: 'https://example.com/hook',
+        secret: 'test-secret',
+      },
+      envelope,
+    )
+
+    expect(axios.post).to.have.been.calledOnce
+    const [, , config] = axios.post.getCall(0).args
+    expect(config.headers['x-nostream-signature']).to.match(/^sha256=[a-f0-9]{64}$/)
   })
 
   it('delivers Slack webhook payloads', async () => {
