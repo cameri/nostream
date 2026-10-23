@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto'
+
 import { ICacheAdapter } from '../@types/adapters'
 import { createLogger } from '../factories/logger-factory'
 
@@ -13,8 +15,15 @@ redis.call('EXPIRE', KEYS[1], ARGV[2])
 return 1
 `
 
-const FETCH_BUCKET_SCRIPT = `
-return redis.call('ZREVRANGE', KEYS[1], 0, ARGV[1], 'WITHSCORES')
+const AGGREGATE_TOP_SCRIPT = `
+local dest = KEYS[1]
+local sourceCount = #KEYS - 1
+if sourceCount < 1 then
+  return {}
+end
+redis.call('ZUNIONSTORE', dest, sourceCount, unpack(KEYS, 2))
+redis.call('EXPIRE', dest, ARGV[2])
+return redis.call('ZREVRANGE', dest, 0, ARGV[1], 'WITHSCORES')
 `
 
 export interface ModerationRateLimitHitRow {
@@ -81,19 +90,6 @@ const parseBucketRows = (result: unknown): ModerationRateLimitHitRow[] => {
   return rows
 }
 
-const mergeHitRows = (buckets: ModerationRateLimitHitRow[][]): ModerationRateLimitHitRow[] => {
-  const totals = new Map<string, number>()
-  for (const bucket of buckets) {
-    for (const row of bucket) {
-      totals.set(row.key, (totals.get(row.key) ?? 0) + row.hits)
-    }
-  }
-
-  return [...totals.entries()]
-    .map(([key, hits]) => ({ key, hits }))
-    .sort((a, b) => b.hits - a.hits)
-}
-
 const fetchAggregatedHits = async (
   cache: ICacheAdapter,
   prefix: string,
@@ -102,15 +98,19 @@ const fetchAggregatedHits = async (
 ): Promise<ModerationRateLimitHitRow[]> => {
   const clamped = Math.min(Math.max(Math.floor(limit), 1), 100)
   const suffixes = listDayBucketSuffixes(windowHours)
-  const buckets = await Promise.all(
-    suffixes.map(async (suffix) => {
-      const key = `${prefix}:${suffix}`
-      const result = await cache.eval(FETCH_BUCKET_SCRIPT, [key], [String(clamped - 1)])
-      return parseBucketRows(result)
-    }),
+  if (!suffixes.length) {
+    return []
+  }
+
+  const destKey = `${prefix}:__agg:${randomBytes(8).toString('hex')}`
+  const sourceKeys = suffixes.map((suffix) => `${prefix}:${suffix}`)
+  const result = await cache.eval(
+    AGGREGATE_TOP_SCRIPT,
+    [destKey, ...sourceKeys],
+    [String(clamped - 1), '120'],
   )
 
-  return mergeHitRows(buckets).slice(0, clamped)
+  return parseBucketRows(result).slice(0, clamped)
 }
 
 /** Top rate-limit hits in Redis daily buckets within the requested window. */
