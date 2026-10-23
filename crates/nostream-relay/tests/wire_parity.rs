@@ -503,13 +503,9 @@ async fn replay(session: &Session, random: Arc<RecordedRandom>) -> BTreeMap<Stri
         if step.drain {
             server.shutdown.begin_draining();
 
-            let replay = collect(&mut client, step, pinned_count(session, step), &challenge).await;
+            let replay = collect(&mut client, step, frame_count(session, step), &challenge).await;
 
-            if session.skipped {
-                compare_pinned(AC29, &replay, step, &session.id);
-            } else {
-                replay.compare(&step.expect, step, &session.id);
-            }
+            compare_step(session, step, &replay);
 
             allow.extend(replay.allow);
             steps += 1;
@@ -542,13 +538,9 @@ async fn replay(session: &Session, random: Arc<RecordedRandom>) -> BTreeMap<Stri
             continue;
         }
 
-        let replay = collect(&mut client, step, pinned_count(session, step), &challenge).await;
+        let replay = collect(&mut client, step, frame_count(session, step), &challenge).await;
 
-        if session.skipped {
-            compare_pinned(AC29, &replay, step, &session.id);
-        } else {
-            replay.compare(&step.expect, step, &session.id);
-        }
+        compare_step(session, step, &replay);
 
         allow.extend(replay.allow);
         counts.insert(format!("step{steps}"), replay.frames.len());
@@ -638,13 +630,23 @@ async fn collect(
 /// like every other frame, so a corrupted expectation cannot pass.
 const AC29: &[&str] = &[r#"["OK","{{event_id}}",false,"error: unable to process event"]"#];
 
-/// How many frames a skipped session's step is read for: the harness's own expectation
-/// replaces the empty recording.
-fn pinned_count(session: &Session, step: &Step) -> usize {
+/// How many frames a step is read for. A skipped session's recording is empty, so its count
+/// comes from the harness's own expectation instead.
+fn frame_count(session: &Session, step: &Step) -> usize {
     if session.skipped {
         AC29.len()
     } else {
         step.expect.len()
+    }
+}
+
+/// Compares one step's frames: against the recording, or against the harness's expectation
+/// for the one session the capture does not record.
+fn compare_step(session: &Session, step: &Step, replay: &Replay) {
+    if session.skipped {
+        compare_pinned(AC29, replay, step, &session.id);
+    } else {
+        replay.compare(&step.expect, step, &session.id);
     }
 }
 
