@@ -86,6 +86,11 @@ async fn frames_within(client: &mut common::Client, window: Duration) -> Vec<Str
     frames
 }
 
+/// Whether a frame names the closed subscription: a live dispatch to it, or its `EOSE`.
+fn names_s1(frame: &str) -> bool {
+    frame.starts_with(r#"["EVENT","s1""#) || frame == r#"["EOSE","s1"]"#
+}
+
 // ---------------------------------------------------------------------------------------
 // EVENT (R9)
 // ---------------------------------------------------------------------------------------
@@ -1046,13 +1051,16 @@ async fn a_close_aborts_an_in_flight_read_without_a_frame() {
 
 /// A `CLOSE` must not be handled ahead of the `REQ` it closes.
 ///
-/// Both frames leave in one flush, so the loop reads them back to back while the stored read
-/// is parked at its gate — the window in which an unordered dispatch lets the `CLOSE` run
-/// first, leave nothing to abort, and let the `REQ` register a subscription nobody will close.
-/// The gate is part of the test: without it the in-memory read finishes in one poll and its
-/// frames arrive even when the ordering is right. `multi_thread, worker_threads = 1` is the
-/// flavour the defect was measured on (30/30); on `current_thread` a spawned handler cannot
-/// be polled before the spawning task yields, so the test would pass on a wrong tree.
+/// The `REQ` and the `CLOSE` leave in one flush, followed by a frame that cannot be decoded:
+/// its `NOTICE` is written by the connection loop itself, so receiving it proves the loop has
+/// read the two frames ahead of it. No wall-clock wait stands in for an observation — the
+/// barrier orders the live event after both frames, and the live event's own `OK` (on the
+/// client's deadline) is the only other anchor. The stored read stays parked at its gate until
+/// the test releases it, which is what keeps the assertion about ordering: without the gate
+/// the in-memory read finishes in one poll and its frames arrive even when the ordering is
+/// right. `multi_thread, worker_threads = 1` is the flavour the defect was measured on (30/30);
+/// on `current_thread` a spawned handler cannot be polled before the spawning task yields, so
+/// the test would pass on a wrong tree.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn a_close_that_overtakes_its_req_streams_nothing() {
     use futures_util::SinkExt;
@@ -1067,18 +1075,9 @@ async fn a_close_that_overtakes_its_req_streams_nothing() {
     let server = start(fixture).await;
     let (mut client, _challenge) = server.connect().await;
     let live = signed_event(&CLIENT_SECRET, 1, vec![], "live", NOW_SECS);
+    let accepted = format!(r#"["OK","{}",true,""]"#, live.id);
 
-    // Nothing may name the closed subscription: not a live dispatch, not the stored read.
-    let nothing_for_s1 = |frames: &[String]| {
-        assert!(
-            frames.iter().all(|frame| {
-                !frame.starts_with(r#"["EVENT","s1""#) && frame != r#"["EOSE","s1"]"#
-            }),
-            "a closed subscription streamed: {frames:?}"
-        );
-    };
-
-    // One flush, so both frames are buffered before the loop reads either of them.
+    // One flush, so the loop reads the three frames in the order they are written here.
     let stream = client.stream();
     stream
         .feed(Message::Text(
@@ -1090,24 +1089,47 @@ async fn a_close_that_overtakes_its_req_streams_nothing() {
         .feed(Message::Text(r#"["CLOSE","s1"]"#.to_owned().into()))
         .await
         .expect("feed the CLOSE");
-    stream.flush().await.expect("flush both frames");
+    stream
+        .feed(Message::Text(r#"{"kind":"#.to_owned().into()))
+        .await
+        .expect("feed the undecodable frame");
+    stream.flush().await.expect("flush the three frames");
 
-    // The window the `REQ` handler registers in and parks at the gated read.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // The loop's own answer to the third frame: the `REQ` and the `CLOSE` have been read.
+    let barrier = client.expect_frame().await;
+    assert!(barrier.starts_with(r#"["NOTICE","invalid: "#), "{barrier}");
+
+    // The live event's `OK` is the second anchor: nothing for `s1` may reach the client on
+    // the way to it, and the client's own deadline bounds the wait.
     client.send(&event_frame(&live)).await;
 
-    let frames = frames_within(&mut client, Duration::from_millis(150)).await;
+    loop {
+        let Some(message) = client.next_message().await else {
+            panic!("the live event's OK never arrived");
+        };
+        let Message::Text(frame) = message else {
+            continue;
+        };
 
-    nothing_for_s1(&frames);
-    assert_eq!(frames.len(), 1, "only the live event's OK: {frames:?}");
-    assert_eq!(frames[0], format!(r#"["OK","{}",true,""]"#, live.id));
+        assert!(
+            !names_s1(frame.as_str()),
+            "a closed subscription streamed: {frame}"
+        );
+
+        if frame.as_str() == accepted {
+            break;
+        }
+    }
 
     // Releasing the read decides nothing new: the read either never opened or was aborted.
     gate.add_permits(4);
 
     let frames = frames_within(&mut client, Duration::from_millis(300)).await;
 
-    nothing_for_s1(&frames);
+    assert!(
+        frames.iter().all(|frame| !names_s1(frame)),
+        "a closed subscription streamed: {frames:?}"
+    );
 }
 
 #[tokio::test]
