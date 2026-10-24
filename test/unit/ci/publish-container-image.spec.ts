@@ -25,26 +25,30 @@ type Workflow = {
 // and a relay image built from the wrong commit, so it is exercised rather than
 // string-matched: a typo that still contains the right substring would pass a
 // `to.include` and skip every relay release.
-const evaluateReleaseGate = (tagName: string): boolean => {
+const evaluateReleaseGate = (tagName: string, isDispatch = false): boolean => {
   const expression =
     (load(
       readFileSync(join(process.cwd(), '.github', 'workflows', 'release.yml'), 'utf-8'),
     ) as Workflow).jobs['build-and-push-image'].if ?? ''
-  // Only the `startsWith(github.event.release.tag_name, '…')` clauses are used
-  // in this expression; anything else is a workflow change that needs review.
+  // Only two clause forms are allowed in this expression; anything else is a
+  // workflow change that needs review rather than a silent pass.
   const clauses = String(expression)
     .split('||')
     .map((clause) => clause.trim())
   const startsWith = (value: string, prefix: string) => value.startsWith(prefix)
-  // Translate the two GitHub expression forms into JavaScript.
-  const js = clauses
-    .map((clause) =>
-      clause.replace(/^startsWith\(github\.event\.release\.tag_name, '([^']*)'\)$/,
-        (_, prefix: string) => `startsWith(tagName, ${JSON.stringify(prefix)})`),
-    )
-    .join(' || ')
+  const toJs = (clause: string): string => {
+    const prefix = clause.match(/^startsWith\(github\.event\.release\.tag_name, '([^']*)'\)$/)
+    if (prefix) return `startsWith(tagName, ${JSON.stringify(prefix[1])})`
+    const event = clause.match(/^github\.event_name == '([^']*)'$/)
+    if (event) return `isDispatch === ${event[1] === 'workflow_dispatch'}`
+    throw new Error(`unsupported clause in the release gate: ${clause}`)
+  }
   // eslint-disable-next-line no-new-func
-  return new Function('tagName', 'startsWith', `return ${js}`)(tagName, startsWith) as boolean
+  return new Function('tagName', 'startsWith', 'isDispatch', `return ${clauses.map(toJs).join(' || ')}`)(
+    tagName,
+    startsWith,
+    isDispatch,
+  ) as boolean
 }
 
 // The tags are computed by a `run:` block, not by metadata-action's rules,
@@ -59,9 +63,10 @@ const tagStep = (workflow: Workflow): string => {
   return run
 }
 
-// Executes the step's own `run:` block with the two inputs it maps from the
-// release event, and returns the tags it wrote to the job output.
-const imageTags = (workflow: Workflow, releaseTag: string, prerelease: boolean): string[] => {
+// Executes the step's own `run:` block with the inputs it maps from the release
+// event, and returns the tags it wrote to the job output. `undefined` means a
+// `workflow_dispatch`, where the event carries no flags at all.
+const imageTags = (workflow: Workflow, releaseTag: string, prerelease?: boolean): string[] => {
   const dir = mkdtempSync(join(tmpdir(), 'release-tags-'))
   try {
     const out = join(dir, 'github-output')
@@ -73,7 +78,7 @@ const imageTags = (workflow: Workflow, releaseTag: string, prerelease: boolean):
         REGISTRY: 'ghcr.io',
         IMAGE_NAME: 'cameri/nostream',
         RELEASE_TAG: releaseTag,
-        PRERELEASE: String(prerelease),
+        ...(prerelease === undefined ? {} : { PRERELEASE: String(prerelease) }),
         GITHUB_OUTPUT: out,
       },
     })
@@ -127,6 +132,14 @@ describe('container image publishing workflow', () => {
     expect(evaluateReleaseGate('nostream-website@1.3.1')).to.equal(false)
   })
 
+  // A published release is immutable, so the build that publishes its image
+  // cannot be retried through the same event. The dispatch path is what makes a
+  // failed build recoverable; the step's own range check keeps it from building
+  // a non-relay tag, since a dispatch carries no release tag at all.
+  it('accepts a dispatched run so a failed build can be retried', () => {
+    expect(evaluateReleaseGate('', true)).to.equal(true)
+  })
+
   // The deploy path pulls `:latest`, so the release must actually push it.
   it('tags a stable release with its version and latest', () => {
     expect(imageTags(releaseWorkflow, 'nostream@3.7.0', false)).to.deep.equal(['3.7.0', 'latest'])
@@ -151,6 +164,36 @@ describe('container image publishing workflow', () => {
     expect(() => imageTags(releaseWorkflow, 'nostream@3.7.0+build', false)).to.throw(/not a legal Docker tag/)
   })
 
+  // A published release is immutable, so a failed build has to be re-runnable
+  // by hand — that is what workflow_dispatch exists for, and it carries no
+  // release flags for the step to read.
+  it('builds a dispatched tag with the same tags as the release event', () => {
+    expect(imageTags(releaseWorkflow, 'nostream@3.7.0')).to.deep.equal(['3.7.0', 'latest'])
+  })
+
+  // Without the event's flag the prerelease has to be read from the tag, or a
+  // dispatch of an rc silently moves `latest` onto a test build.
+  it('reads a prerelease out of a dispatched tag', () => {
+    expect(imageTags(releaseWorkflow, 'nostream@3.8.0-rc.1')).to.deep.equal(['3.8.0-rc.1'])
+  })
+
+  // `github.event.release.tag_name` is empty on a dispatch, so a mistyped input
+  // is the only thing that would otherwise reach the build.
+  it('refuses a dispatched tag that is not a relay release', () => {
+    expect(() => imageTags(releaseWorkflow, 'nostream-website@1.3.2')).to.throw(/not a relay release tag/)
+  })
+
+  // The image must be built from the code its tag names. A dispatch starts on a
+  // branch, so without this the default ref is checked out and that branch's
+  // HEAD is published as a release version. The expression itself only runs on
+  // GitHub, so this asserts its shape: the tag form for a dispatch, and the
+  // event's own ref when no input is present.
+  it('checks out the release tag rather than the dispatching branch', () => {
+    const step = (releaseWorkflow.jobs['build-and-push-image'].steps ?? []).find((entry) => entry.with?.ref)
+    const expression = (step?.with?.ref ?? '').replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '')
+    expect(expression, 'a dispatch must build the tag it was given').to.include("format('refs/tags/{0}', inputs.tag)")
+    expect(expression, 'a release event already carries its tag in github.ref').to.include('|| github.ref')
+  })
   it('builds with the tags the step computed', () => {
     const build = (releaseWorkflow.jobs['build-and-push-image'].steps ?? []).find((step) => step.with?.tags)
     expect(build?.with?.tags, 'the build must consume the computed tags').to.equal('${{ steps.tags.outputs.tags }}')
