@@ -1,5 +1,32 @@
 # nostream
 
+## 3.7.0
+
+### Minor Changes
+
+- [#895](https://github.com/cameri/nostream/pull/895) [`a52cbfd`](https://github.com/cameri/nostream/commit/a52cbfd3149b68327f046ecc78e485746ba5cd58) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add admin Operations area with mirror and worker heartbeats, NIP-05 verification ops, storage counts, and dashboard view.
+
+- [#920](https://github.com/cameri/nostream/pull/920) [`abd4a1b`](https://github.com/cameri/nostream/commit/abd4a1bf96698b8f829d1d1a3bb86ecc1f405f4d) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add admin trust and automation: Redis-backed audit log API and UI, signed HTTP webhooks for probe/mirror/SSL events, OpenTelemetry probe and mirror metrics, and redacted diagnostics export.
+
+- [#849](https://github.com/cameri/nostream/pull/849) [`7e504e1`](https://github.com/cameri/nostream/commit/7e504e1a377822d7cfbb199f143b088c8d9db776) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(payments): add the subscription data model and plan settings
+
+- [#909](https://github.com/cameri/nostream/pull/909) [`7b4f627`](https://github.com/cameri/nostream/commit/7b4f6278a1ee500088c9e7b06d4a5af968eec227) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(payments): add the subscription lifecycle, renewal invoices and plan-based write access
+
+- [#924](https://github.com/cameri/nostream/pull/924) [`e417437`](https://github.com/cameri/nostream/commit/e41743788e603b3b549dd80ca381f671690679d6) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - chore: sunset the StaticMirroringWorker
+
+  The static mirroring worker is removed, together with the `mirroring.static` settings and the mirror health table and `/admin/ops/mirrors` route of the admin console. A `mirroring.static` that is still configured is ignored and logs a warning at start-up. To sync events with another relay, use NIP-77 (Negentropy), for example with `strfry sync`.
+
+### Patch Changes
+
+- [#943](https://github.com/cameri/nostream/pull/943) [`17157d5`](https://github.com/cameri/nostream/commit/17157d54513ba0424ccae512b5fdd7eb02bafdc5) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(payments): parse the ISO 8601 `time`/`expiry` returned by LNbits >= 1.0 so paid admissions are confirmed and expired invoices are retired
+
+- [#944](https://github.com/cameri/nostream/pull/944) [`82124b0`](https://github.com/cameri/nostream/commit/82124b02180b3c722e217ed39eb71c324ddec1a9) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(ci): stop building and pushing container images outside a release
+
+  Remove the container publish job from checks.yml so pushes to main no longer publish
+  images to GHCR. Container image builds and pushes are now restricted exclusively to
+  release.yml on published releases. Update deployment documentation and reference compose
+  stacks to target the released image tag (:latest) instead of :main.
+
 ## 3.6.2
 
 ### Patch Changes
