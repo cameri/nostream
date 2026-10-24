@@ -1,6 +1,8 @@
 import chai from 'chai'
-import { existsSync, readFileSync } from 'fs'
+import { execFileSync } from 'child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { load } from 'js-yaml'
+import { tmpdir } from 'os'
 import { join } from 'path'
 
 const { expect } = chai
@@ -12,7 +14,7 @@ type Workflow = {
       if?: string
       needs?: string[]
       permissions?: Record<string, string>
-      steps?: Array<{ id?: string; with?: Record<string, string> }>
+      steps?: Array<{ id?: string; run?: string; with?: Record<string, string> }>
     }
   >
 }
@@ -45,8 +47,48 @@ const evaluateReleaseGate = (tagName: string): boolean => {
   return new Function('tagName', 'startsWith', `return ${js}`)(tagName, startsWith) as boolean
 }
 
-const metaTags = (workflow: Workflow): string =>
-  ((workflow.jobs['build-and-push-image'].steps ?? []).find((step) => step.id === 'meta')?.with?.tags ?? '')
+// The tags are computed by a `run:` block, not by metadata-action's rules,
+// because a changesets release tag is `nostream@X.Y.Z` and `@` is not legal in a
+// Docker tag (#964). The block is executed here rather than string-matched: the
+// defect it replaced was a tag nobody validated, only compared.
+const tagStep = (workflow: Workflow): string => {
+  const step = (workflow.jobs['build-and-push-image'].steps ?? []).find((entry) => entry.id === 'tags')
+  expect(step, 'release.yml must compute its image tags').to.exist
+  const run = step?.run ?? ''
+  expect(run, 'the tag step must compute the tags itself, not inherit them').to.not.equal('')
+  return run
+}
+
+// Executes the step's own `run:` block with the two inputs it maps from the
+// release event, and returns the tags it wrote to the job output.
+const imageTags = (workflow: Workflow, releaseTag: string, prerelease: boolean): string[] => {
+  const dir = mkdtempSync(join(tmpdir(), 'release-tags-'))
+  try {
+    const out = join(dir, 'github-output')
+    writeFileSync(out, '')
+    execFileSync('bash', ['-c', tagStep(workflow)], {
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        REGISTRY: 'ghcr.io',
+        IMAGE_NAME: 'cameri/nostream',
+        RELEASE_TAG: releaseTag,
+        PRERELEASE: String(prerelease),
+        GITHUB_OUTPUT: out,
+      },
+    })
+    const line = readFileSync(out, 'utf-8')
+      .split('\n')
+      .find((entry) => entry.startsWith('tags='))
+    expect(line, 'the step must write its tags to the job output').to.exist
+    return (line ?? '')
+      .slice('tags='.length)
+      .split(',')
+      .map((tag) => tag.replace('ghcr.io/cameri/nostream:', ''))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
 
 describe('container image publishing workflow', () => {
   const checksWorkflow = load(
@@ -86,26 +128,31 @@ describe('container image publishing workflow', () => {
   })
 
   // The deploy path pulls `:latest`, so the release must actually push it.
-  // Without this the metadata action's defaults are the only thing producing
-  // the tag, and a silent change in that action would strand every host on the
-  // last image it managed to pull.
-  it('tags the released image latest, which is what deploys pull', () => {
-    const tags = metaTags(releaseWorkflow)
-    expect(tags, 'release.yml must declare its tags, not inherit the defaults').to.include('type=raw,value=latest')
+  it('tags a stable release with its version and latest', () => {
+    expect(imageTags(releaseWorkflow, 'nostream@3.7.0', false)).to.deep.equal(['3.7.0', 'latest'])
   })
 
-  // A semver rule's input comes from the git ref, so a `nostream@X.Y.Z` tag
-  // makes it emit nothing - and with no version, the `latest` rule is skipped
-  // too. A `match` rule is what produces the version tag for that shape.
-  it('derives a version tag from the changesets release tag', () => {
-    expect(metaTags(releaseWorkflow)).to.include('type=match,pattern=nostream@(.+),group=1')
+  // `latest` is the tag both deploy stacks pull, so a prerelease must not move
+  // it onto a test build.
+  it('does not move latest for a prerelease', () => {
+    expect(imageTags(releaseWorkflow, 'nostream@3.8.0-rc.1', true)).to.deep.equal(['3.8.0-rc.1'])
   })
 
-  // The release tag is what a host sees on the GitHub release and pins, and no
-  // semver rule can reproduce its `nostream@` prefix (a `prefix=` is rendered
-  // after parsing, a `value=` replaces the whole tag). The plain ref rule
-  // publishes it unchanged.
-  it('publishes the release tag name itself, which the deploy docs pull', () => {
-    expect(metaTags(releaseWorkflow)).to.include('type=ref,event=tag')
+  // Releases cut before the changesets migration are tagged `vX.Y.Z`, and a host
+  // pinned to that form must still resolve after one is republished.
+  it('keeps the v-prefixed tag for a pre-changesets release', () => {
+    expect(imageTags(releaseWorkflow, 'v3.4.1', false)).to.deep.equal(['3.4.1', 'v3.4.1', 'latest'])
+  })
+
+  // The defect this replaced: `nostream@3.7.0` is a release tag, not a Docker
+  // tag, and `@` is illegal in one. It must fail here, by name, rather than at
+  // buildx as `invalid reference format` after the image has been built.
+  it('refuses a release tag whose version is not a legal Docker tag', () => {
+    expect(() => imageTags(releaseWorkflow, 'nostream@3.7.0+build', false)).to.throw(/not a legal Docker tag/)
+  })
+
+  it('builds with the tags the step computed', () => {
+    const build = (releaseWorkflow.jobs['build-and-push-image'].steps ?? []).find((step) => step.with?.tags)
+    expect(build?.with?.tags, 'the build must consume the computed tags').to.equal('${{ steps.tags.outputs.tags }}')
   })
 })

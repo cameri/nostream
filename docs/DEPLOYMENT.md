@@ -2,8 +2,12 @@
 
 The `ghcr.io/cameri/nostream` container image is published automatically by the
 Release workflow (`release.yml`) whenever an official GitHub release is published.
-For release `nostream@3.6.2` the workflow publishes three tags: `latest`, the release tag itself
-(`nostream@3.6.2`, which is what a host pins), and the bare version (`3.6.2`).
+For release `nostream@3.6.2` the workflow publishes two tags: the bare version
+(`3.6.2`, which is what a host pins) and `latest`. A prerelease publishes only its
+version, so it cannot move `latest` onto a test build. The release tag itself
+(`nostream@3.6.2`) is never an image tag — `@` is not legal in a Docker tag — and
+the `vX.Y.Z` form used before the changesets migration also publishes `vX.Y.Z`
+beside its bare version.
 
 Publishing is triggered only on published relay releases — the changesets tag `nostream@X.Y.Z`, or the
 `vX.Y.Z` form used before the changesets migration. A `nostream-website@X.Y.Z` release publishes no
@@ -12,7 +16,7 @@ image:
 ```text
 release: published (nostream@X.Y.Z)
   → build-and-push-image
-  → ghcr.io/cameri/nostream:{nostream@X.Y.Z, X.Y.Z, latest}
+  → ghcr.io/cameri/nostream:{X.Y.Z, latest}
 ```
 
 CI Checks (`checks.yml`) does not build or publish container images on push to

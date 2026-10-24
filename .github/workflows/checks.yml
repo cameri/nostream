@@ -39,7 +39,10 @@ jobs:
               - 'Dockerfile*'
               - 'docker-compose*.yml'
               - '.nvmrc'
-              - '.github/workflows/checks.yml'
+              # A unit test reads these workflows, so a change to any of them
+              # must run the suite that asserts on it. #965 changed release.yml
+              # and skipped the very tests that change broke.
+              - '.github/workflows/**'
 
   commit-lint:
     name: Lint commits
