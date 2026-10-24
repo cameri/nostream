@@ -168,21 +168,34 @@ Two limits worth recording rather than discovering in production:
 
   | level | keys per client | clients to fill | closure |
   | --- | --- | --- | --- |
-  | connection | 2 — `{address}:connection:{period}`, windows 1 s and 60 s | 32,768 addresses | ≤ 60 s |
-  | event | 2 — a 60 s kind window and the global hour window, both hit by an accepted event | 32,768 authors per cycle | ≤ 60 s per cycle, **up to 1 h** under a sustained flood (below) |
-  | message | 1 — `{address}:message:60000` | 65,536 addresses | ≤ 60 s |
-  | invite | 1 — `{pubkey}:invites:3600000` | 65,536 pubkeys | **≤ 1 h** (reopens at 1 h + 1 s) |
+  | connection | 2 — `{address}:connection:{period}`, windows 1 s and 60 s | 32,768 addresses | ≤ 61 s |
+  | event | **1 to 7** — one 60 s key per kind window the event matches, plus the global hour key | **9,400–65,536 authors** (see below) | **depends on the kind** (see below) |
+  | message | 1 — `{address}:message:60000` | 65,536 addresses | ≤ 61 s |
+  | invite | 1 — `{pubkey}:invites:3600000` | 65,536 pubkeys | **≤ 1 h + 1 s** |
 
-  The event level's hour keys outlive its 60 s ones: a sustained flood keeps admitting
-  authors as the minute keys lapse while the hour keys stay (an EWMA key lives
-  `period_ms.div_ceil(1000) * 1000` = 3,600 s), so the store converges to hour-window keys
-  and that level too can stay closed for an hour. The invite level has no window shorter
-  than an hour, so a filled invite store refuses every new pubkey for up to an hour while
-  the other three levels keep serving.
+  Each cell is window **+ up to one sweep interval**, not the window alone: a lapsed key is
+  only removed by a pass, the pass runs at most once per `SWEEP_INTERVAL_MS` (1 s), and a
+  full store refuses a new key until one has run (`limits.rs`, `admit`). The invite row
+  therefore reopens at 1 h + 1 s rather than 1 h.
+
+  The event level's key count is a property of the *kinds an author uses*, not of the level.
+  `resources/default-settings.yaml` ships six kind-scoped 60 s windows — `0,3,40,41`;
+  `1,2,4,42`; `5–7,43–49`; `10000–19999,30000–39999`; `445`; `20000–29999` — and the key is
+  `{pubkey}:events:{period}:{kinds}`, so the selector set names the key
+  (`limits.rs`, `event_backoff`). A kind that matches no kind window (`8–10`, `11–39`,
+  `50–444`) spends only the hour key: 65,536 such authors fill the store and are refused
+  until 1 h + 1 s. An author posting one kind from each window holds all seven keys,
+  65,536 ÷ 7 ≈ 9,400 authors fill the same store; their 60 s keys lapse first, which reopens
+  it at 61 s, and a *sustained* flood then accumulates hour keys until those alone reach the
+  ceiling — that is the hour-long closure, and it follows from the kinds such a flood picks,
+  not from the level. A single-kind flood is the common case of two keys: 32,768 authors,
+  reopening at 61 s. Both ends were measured in the round-4 probe: kind 1 → 32,768 authors
+  reopening at 61 s, kind 9999 → 65,536 authors still refused at 61 s and admitting at
+  1 h + 1 s.
 
   The closure is per level and it never touches the others, which is the point of four
   stores; it is the price of never freeing a live key. This is also the reason a level's
-  key count is not a client count: two windows spend two keys per client.
+  key count is not a client count: the event level spends one, two or seven.
 - **A relay with no signing key does not rate-limit EVENT at all.** The event key is
   resolved before the limiter (the capture's `isRateLimited` calls `getRelayPublicKey()`,
   which throws), so with neither `SECRET` nor `RELAY_PRIVATE_KEY` set every event is
