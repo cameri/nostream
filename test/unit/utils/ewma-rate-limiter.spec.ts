@@ -1,7 +1,7 @@
 import { expect } from 'chai'
 import Sinon from 'sinon'
 
-import { calculateEWMA, EWMARateLimiter } from '../../../src/utils/ewma-rate-limiter'
+import { calculateEWMA, EWMA_KEY_PREFIX, EWMARateLimiter, ewmaKey } from '../../../src/utils/ewma-rate-limiter'
 import { ICacheAdapter } from '../../../src/@types/adapters'
 import { IRateLimiter } from '../../../src/@types/utils'
 
@@ -67,6 +67,23 @@ describe('EWMARateLimiter', () => {
         evalStub.resolves(1)
         const result = await rateLimiter.hit('key', 1, { period: 120000, rate: 10 })
         expect(result).to.be.true
+        })
+
+        // EWMA and sliding_window store different Redis types under the same
+        // logical key name, so they must not share the physical key: a 2.x
+        // volume, or an operator switching strategy, leaves a sorted set where
+        // EWMA would then HSET and fail with WRONGTYPE on every request.
+        it('namespaces the key it writes', async () => {
+        evalStub.resolves(0)
+        await rateLimiter.hit('1.2.3.4:connection:120000', 1, { period: 120000, rate: 10 })
+
+        expect(evalStub.calledOnce).to.be.true
+        expect(evalStub.firstCall.args[1]).to.deep.equal(['ewma:1.2.3.4:connection:120000'])
+        })
+
+        it('builds the namespaced key from any caller key', () => {
+        expect(ewmaKey('abc:message:60000')).to.equal('ewma:abc:message:60000')
+        expect(EWMA_KEY_PREFIX).to.equal('ewma:')
         })
     })
 })

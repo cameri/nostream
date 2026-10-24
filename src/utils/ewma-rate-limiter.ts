@@ -29,6 +29,21 @@ const rateLimitScript = {
     `,
   }
 
+// Every limiter key is namespaced by strategy, because the window layouts are
+// not interchangeable: a sliding window stores a sorted set under a key named
+// `<identity>:<bucket>:<period>`, while EWMA stores a hash under the same name.
+// The strategies share Redis and an operator can switch between them (and 2.x
+// shipped only the sliding window), so reading a key this strategy did not
+// write makes the script fail with WRONGTYPE on every request that hits it -
+// and the failure path is the hot path, per connection and per message.
+//
+// A prefix, rather than deleting a key of the wrong type, keeps both strategies'
+// data intact: switching back to sliding_window resumes its window instead of
+// starting from zero.
+export const EWMA_KEY_PREFIX = 'ewma:'
+
+export const ewmaKey = (key: string): string => `${EWMA_KEY_PREFIX}${key}`
+
 export const calculateEWMA = (
   rOld: number,
   deltaT: number,
@@ -52,7 +67,7 @@ export class EWMARateLimiter implements IRateLimiter {
     const { rate, period } = options
 
     const result = await this.cache.eval(rateLimitScript.SCRIPT,
-       [key],
+       [ewmaKey(key)],
        [Date.now().toString(), rate.toString(), period.toString(), step.toString()]
     )
 
