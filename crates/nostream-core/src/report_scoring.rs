@@ -28,7 +28,10 @@ impl ReportWeight {
                 let hops = distance.saturating_sub(1);
 
                 // f32's smallest subnormal is 2^-149, so 2^-150 is the first exponent that
-                // lands on zero (Assumption 7 of the job's spec).
+                // lands on zero (Assumption 7 of the job's spec). Below this guard `powi` is
+                // left to round, which means a subnormal weight (distance 128-150) reads
+                // correctly in an optimised build and as zero in an unoptimised one; both are
+                // "stored, never actionable", and the `real` column holds either.
                 if hops >= 150 {
                     0.0
                 } else {
@@ -89,7 +92,13 @@ mod tests {
 
     #[test]
     fn a_very_large_distance_underflows_to_zero() {
-        assert_eq!(score_reporter(Some(150), false).weight(), 0.0);
+        // The weight is `2^-(distance - 1)`, so distance 150 is 2^-149: f32's smallest
+        // subnormal, which is representable, and the first exponent that is not is 2^-150 —
+        // distance 151, where `weight` answers an exact zero. Distance 150 is asserted as a
+        // bound rather than a value because `powi` flushes subnormals to zero in an
+        // unoptimised build and rounds them correctly in an optimised one.
+        assert!(score_reporter(Some(150), false).weight() <= f32::MIN_POSITIVE);
+        assert_eq!(score_reporter(Some(151), false).weight(), 0.0);
         assert_eq!(score_reporter(Some(u32::MAX), false).weight(), 0.0);
     }
 }
