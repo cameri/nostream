@@ -67,6 +67,25 @@ async fn send_event(server: &Server, event: &Event) -> String {
     client.expect_frame().await
 }
 
+/// The text frames that arrive within `window`, read straight off the socket so a test can
+/// bound a silence shorter than `Client::next_message`'s two-second deadline.
+async fn frames_within(client: &mut common::Client, window: Duration) -> Vec<String> {
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let deadline = tokio::time::Instant::now() + window;
+    let stream = client.stream();
+    let mut frames = Vec::new();
+
+    while let Ok(Some(Ok(message))) = tokio::time::timeout_at(deadline, stream.next()).await {
+        if let Message::Text(text) = message {
+            frames.push(text.as_str().to_owned());
+        }
+    }
+
+    frames
+}
+
 // ---------------------------------------------------------------------------------------
 // EVENT (R9)
 // ---------------------------------------------------------------------------------------
@@ -1025,6 +1044,72 @@ async fn a_close_aborts_an_in_flight_read_without_a_frame() {
     assert_eq!(frames[1], r#"["EOSE","s1"]"#);
 }
 
+/// A `CLOSE` must not be handled ahead of the `REQ` it closes.
+///
+/// Both frames leave in one flush, so the loop reads them back to back while the stored read
+/// is parked at its gate — the window in which an unordered dispatch lets the `CLOSE` run
+/// first, leave nothing to abort, and let the `REQ` register a subscription nobody will close.
+/// The gate is part of the test: without it the in-memory read finishes in one poll and its
+/// frames arrive even when the ordering is right. `multi_thread, worker_threads = 1` is the
+/// flavour the defect was measured on (30/30); on `current_thread` a spawned handler cannot
+/// be polled before the spawning task yields, so the test would pass on a wrong tree.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn a_close_that_overtakes_its_req_streams_nothing() {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let fixture = Fixture::new(settings());
+    let gate = fixture.events.gate_reads();
+    fixture
+        .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "stored", NOW_SECS))
+        .await;
+
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+    let live = signed_event(&CLIENT_SECRET, 1, vec![], "live", NOW_SECS);
+
+    // Nothing may name the closed subscription: not a live dispatch, not the stored read.
+    let nothing_for_s1 = |frames: &[String]| {
+        assert!(
+            frames.iter().all(|frame| {
+                !frame.starts_with(r#"["EVENT","s1""#) && frame != r#"["EOSE","s1"]"#
+            }),
+            "a closed subscription streamed: {frames:?}"
+        );
+    };
+
+    // One flush, so both frames are buffered before the loop reads either of them.
+    let stream = client.stream();
+    stream
+        .feed(Message::Text(
+            r#"["REQ","s1",{"kinds":[1]}]"#.to_owned().into(),
+        ))
+        .await
+        .expect("feed the REQ");
+    stream
+        .feed(Message::Text(r#"["CLOSE","s1"]"#.to_owned().into()))
+        .await
+        .expect("feed the CLOSE");
+    stream.flush().await.expect("flush both frames");
+
+    // The window the `REQ` handler registers in and parks at the gated read.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    client.send(&event_frame(&live)).await;
+
+    let frames = frames_within(&mut client, Duration::from_millis(150)).await;
+
+    nothing_for_s1(&frames);
+    assert_eq!(frames.len(), 1, "only the live event's OK: {frames:?}");
+    assert_eq!(frames[0], format!(r#"["OK","{}",true,""]"#, live.id));
+
+    // Releasing the read decides nothing new: the read either never opened or was aborted.
+    gate.add_permits(4);
+
+    let frames = frames_within(&mut client, Duration::from_millis(300)).await;
+
+    nothing_for_s1(&frames);
+}
+
 #[tokio::test]
 async fn a_new_filter_set_replaces_the_subscription() {
     let fixture = Fixture::new(settings());
@@ -1487,6 +1572,51 @@ async fn nip42_sessions_expire_at_the_ttl_boundary() {
     let mut forever = Nip42Session::with_challenge("challenge", 0);
     assert!(forever.authenticate(pubkey, event_id, 0));
     assert!(forever.is_authenticated(&pubkey, i64::MAX));
+}
+
+/// An `AUTH` must be handled before the restricted `REQ` that follows it in the stream.
+///
+/// The existing NIP-42 tests read the `OK` before sending their `REQ`, which serialises the
+/// pair; pipelined in one flush they exercise the loop's ordering. Two workers, the flavour
+/// this symptom was measured on (10/10 refused before the ordering fix).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pipelined_auth_before_a_restricted_req_is_ordered() {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut settings = settings();
+    settings.nip42 = Some(nip42_settings());
+    let server = start(Fixture::new(settings)).await;
+    let (mut client, challenge) = server.connect().await;
+    let auth = auth_event(&challenge, NOW_SECS);
+
+    // One flush, so both frames are buffered before the loop reads either of them.
+    let stream = client.stream();
+    stream
+        .feed(Message::Text(
+            format!(
+                r#"["AUTH",{}]"#,
+                serde_json::to_string(&auth).expect("auth json")
+            )
+            .into(),
+        ))
+        .await
+        .expect("feed the AUTH");
+    stream
+        .feed(Message::Text(r#"["REQ","s1",{"kinds":[4]}]"#.to_owned().into()))
+        .await
+        .expect("feed the REQ");
+    stream.flush().await.expect("flush both frames");
+
+    let first = client.expect_frame().await;
+    let second = client.expect_frame().await;
+
+    assert_eq!(first, format!(r#"["OK","{}",true,""]"#, auth.id));
+    assert_eq!(second, r#"["EOSE","s1"]"#);
+    assert!(
+        !first.starts_with(r#"["CLOSED","s1""#) && !second.starts_with(r#"["CLOSED","s1""#),
+        "the REQ was refused: {first} {second}"
+    );
 }
 
 // ---------------------------------------------------------------------------------------
