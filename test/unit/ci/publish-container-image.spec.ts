@@ -1,6 +1,8 @@
 import chai from 'chai'
-import { existsSync, readFileSync } from 'fs'
+import { execFileSync } from 'child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { load } from 'js-yaml'
+import { tmpdir } from 'os'
 import { join } from 'path'
 
 const { expect } = chai
@@ -12,7 +14,7 @@ type Workflow = {
       if?: string
       needs?: string[]
       permissions?: Record<string, string>
-      steps?: Array<{ id?: string; with?: Record<string, string> }>
+      steps?: Array<{ id?: string; run?: string; with?: Record<string, string> }>
     }
   >
 }
@@ -23,30 +25,75 @@ type Workflow = {
 // and a relay image built from the wrong commit, so it is exercised rather than
 // string-matched: a typo that still contains the right substring would pass a
 // `to.include` and skip every relay release.
-const evaluateReleaseGate = (tagName: string): boolean => {
+const evaluateReleaseGate = (tagName: string, isDispatch = false): boolean => {
   const expression =
     (load(
       readFileSync(join(process.cwd(), '.github', 'workflows', 'release.yml'), 'utf-8'),
     ) as Workflow).jobs['build-and-push-image'].if ?? ''
-  // Only the `startsWith(github.event.release.tag_name, '…')` clauses are used
-  // in this expression; anything else is a workflow change that needs review.
+  // Only two clause forms are allowed in this expression; anything else is a
+  // workflow change that needs review rather than a silent pass.
   const clauses = String(expression)
     .split('||')
     .map((clause) => clause.trim())
   const startsWith = (value: string, prefix: string) => value.startsWith(prefix)
-  // Translate the two GitHub expression forms into JavaScript.
-  const js = clauses
-    .map((clause) =>
-      clause.replace(/^startsWith\(github\.event\.release\.tag_name, '([^']*)'\)$/,
-        (_, prefix: string) => `startsWith(tagName, ${JSON.stringify(prefix)})`),
-    )
-    .join(' || ')
+  const toJs = (clause: string): string => {
+    const prefix = clause.match(/^startsWith\(github\.event\.release\.tag_name, '([^']*)'\)$/)
+    if (prefix) return `startsWith(tagName, ${JSON.stringify(prefix[1])})`
+    const event = clause.match(/^github\.event_name == '([^']*)'$/)
+    if (event) return `isDispatch === ${event[1] === 'workflow_dispatch'}`
+    throw new Error(`unsupported clause in the release gate: ${clause}`)
+  }
   // eslint-disable-next-line no-new-func
-  return new Function('tagName', 'startsWith', `return ${js}`)(tagName, startsWith) as boolean
+  return new Function('tagName', 'startsWith', 'isDispatch', `return ${clauses.map(toJs).join(' || ')}`)(
+    tagName,
+    startsWith,
+    isDispatch,
+  ) as boolean
 }
 
-const metaTags = (workflow: Workflow): string =>
-  ((workflow.jobs['build-and-push-image'].steps ?? []).find((step) => step.id === 'meta')?.with?.tags ?? '')
+// The tags are computed by a `run:` block, not by metadata-action's rules,
+// because a changesets release tag is `nostream@X.Y.Z` and `@` is not legal in a
+// Docker tag (#964). The block is executed here rather than string-matched: the
+// defect it replaced was a tag nobody validated, only compared.
+const tagStep = (workflow: Workflow): string => {
+  const step = (workflow.jobs['build-and-push-image'].steps ?? []).find((entry) => entry.id === 'tags')
+  expect(step, 'release.yml must compute its image tags').to.exist
+  const run = step?.run ?? ''
+  expect(run, 'the tag step must compute the tags itself, not inherit them').to.not.equal('')
+  return run
+}
+
+// Executes the step's own `run:` block with the inputs it maps from the release
+// event, and returns the tags it wrote to the job output. `undefined` means a
+// `workflow_dispatch`, where the event carries no flags at all.
+const imageTags = (workflow: Workflow, releaseTag: string, prerelease?: boolean): string[] => {
+  const dir = mkdtempSync(join(tmpdir(), 'release-tags-'))
+  try {
+    const out = join(dir, 'github-output')
+    writeFileSync(out, '')
+    execFileSync('bash', ['-c', tagStep(workflow)], {
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        REGISTRY: 'ghcr.io',
+        IMAGE_NAME: 'cameri/nostream',
+        RELEASE_TAG: releaseTag,
+        ...(prerelease === undefined ? {} : { PRERELEASE: String(prerelease) }),
+        GITHUB_OUTPUT: out,
+      },
+    })
+    const line = readFileSync(out, 'utf-8')
+      .split('\n')
+      .find((entry) => entry.startsWith('tags='))
+    expect(line, 'the step must write its tags to the job output').to.exist
+    return (line ?? '')
+      .slice('tags='.length)
+      .split(',')
+      .map((tag) => tag.replace('ghcr.io/cameri/nostream:', ''))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
 
 describe('container image publishing workflow', () => {
   const checksWorkflow = load(
@@ -85,27 +132,70 @@ describe('container image publishing workflow', () => {
     expect(evaluateReleaseGate('nostream-website@1.3.1')).to.equal(false)
   })
 
+  // A published release is immutable, so the build that publishes its image
+  // cannot be retried through the same event. The dispatch path is what makes a
+  // failed build recoverable; the step's own range check keeps it from building
+  // a non-relay tag, since a dispatch carries no release tag at all.
+  it('accepts a dispatched run so a failed build can be retried', () => {
+    expect(evaluateReleaseGate('', true)).to.equal(true)
+  })
+
   // The deploy path pulls `:latest`, so the release must actually push it.
-  // Without this the metadata action's defaults are the only thing producing
-  // the tag, and a silent change in that action would strand every host on the
-  // last image it managed to pull.
-  it('tags the released image latest, which is what deploys pull', () => {
-    const tags = metaTags(releaseWorkflow)
-    expect(tags, 'release.yml must declare its tags, not inherit the defaults').to.include('type=raw,value=latest')
+  it('tags a stable release with its version and latest', () => {
+    expect(imageTags(releaseWorkflow, 'nostream@3.7.0', false)).to.deep.equal(['3.7.0', 'latest'])
   })
 
-  // A semver rule's input comes from the git ref, so a `nostream@X.Y.Z` tag
-  // makes it emit nothing - and with no version, the `latest` rule is skipped
-  // too. A `match` rule is what produces the version tag for that shape.
-  it('derives a version tag from the changesets release tag', () => {
-    expect(metaTags(releaseWorkflow)).to.include('type=match,pattern=nostream@(.+),group=1')
+  // `latest` is the tag both deploy stacks pull, so a prerelease must not move
+  // it onto a test build.
+  it('does not move latest for a prerelease', () => {
+    expect(imageTags(releaseWorkflow, 'nostream@3.8.0-rc.1', true)).to.deep.equal(['3.8.0-rc.1'])
   })
 
-  // The release tag is what a host sees on the GitHub release and pins, and no
-  // semver rule can reproduce its `nostream@` prefix (a `prefix=` is rendered
-  // after parsing, a `value=` replaces the whole tag). The plain ref rule
-  // publishes it unchanged.
-  it('publishes the release tag name itself, which the deploy docs pull', () => {
-    expect(metaTags(releaseWorkflow)).to.include('type=ref,event=tag')
+  // Releases cut before the changesets migration are tagged `vX.Y.Z`, and a host
+  // pinned to that form must still resolve after one is republished.
+  it('keeps the v-prefixed tag for a pre-changesets release', () => {
+    expect(imageTags(releaseWorkflow, 'v3.4.1', false)).to.deep.equal(['3.4.1', 'v3.4.1', 'latest'])
+  })
+
+  // The defect this replaced: `nostream@3.7.0` is a release tag, not a Docker
+  // tag, and `@` is illegal in one. It must fail here, by name, rather than at
+  // buildx as `invalid reference format` after the image has been built.
+  it('refuses a release tag whose version is not a legal Docker tag', () => {
+    expect(() => imageTags(releaseWorkflow, 'nostream@3.7.0+build', false)).to.throw(/not a legal Docker tag/)
+  })
+
+  // A published release is immutable, so a failed build has to be re-runnable
+  // by hand — that is what workflow_dispatch exists for, and it carries no
+  // release flags for the step to read.
+  it('builds a dispatched tag with the same tags as the release event', () => {
+    expect(imageTags(releaseWorkflow, 'nostream@3.7.0')).to.deep.equal(['3.7.0', 'latest'])
+  })
+
+  // Without the event's flag the prerelease has to be read from the tag, or a
+  // dispatch of an rc silently moves `latest` onto a test build.
+  it('reads a prerelease out of a dispatched tag', () => {
+    expect(imageTags(releaseWorkflow, 'nostream@3.8.0-rc.1')).to.deep.equal(['3.8.0-rc.1'])
+  })
+
+  // `github.event.release.tag_name` is empty on a dispatch, so a mistyped input
+  // is the only thing that would otherwise reach the build.
+  it('refuses a dispatched tag that is not a relay release', () => {
+    expect(() => imageTags(releaseWorkflow, 'nostream-website@1.3.2')).to.throw(/not a relay release tag/)
+  })
+
+  // The image must be built from the code its tag names. A dispatch starts on a
+  // branch, so without this the default ref is checked out and that branch's
+  // HEAD is published as a release version. The expression itself only runs on
+  // GitHub, so this asserts its shape: the tag form for a dispatch, and the
+  // event's own ref when no input is present.
+  it('checks out the release tag rather than the dispatching branch', () => {
+    const step = (releaseWorkflow.jobs['build-and-push-image'].steps ?? []).find((entry) => entry.with?.ref)
+    const expression = (step?.with?.ref ?? '').replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '')
+    expect(expression, 'a dispatch must build the tag it was given').to.include("format('refs/tags/{0}', inputs.tag)")
+    expect(expression, 'a release event already carries its tag in github.ref').to.include('|| github.ref')
+  })
+  it('builds with the tags the step computed', () => {
+    const build = (releaseWorkflow.jobs['build-and-push-image'].steps ?? []).find((step) => step.with?.tags)
+    expect(build?.with?.tags, 'the build must consume the computed tags').to.equal('${{ steps.tags.outputs.tags }}')
   })
 })

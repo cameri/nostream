@@ -23,6 +23,8 @@ publishing any container images.
 ## Action required
 
 Deployments tracking `ghcr.io/cameri/nostream:main` should be updated to track released versions,
-such as `ghcr.io/cameri/nostream:latest` or pinned release tags (e.g. `ghcr.io/cameri/nostream:nostream@3.6.2`,
-published as-is from the release tag, or the bare `ghcr.io/cameri/nostream:3.6.2`).
+such as `ghcr.io/cameri/nostream:latest` or a pinned version tag such as
+`ghcr.io/cameri/nostream:3.6.2`. The release tag itself (`nostream@3.6.2`) is not an
+image tag: `@` is not legal in a Docker tag, so each release publishes its bare
+version and `latest` instead.
 See [`deploy/README.md`](../deploy/README.md) and [`docs/DEPLOY-RUNBOOK.md`](DEPLOY-RUNBOOK.md).
