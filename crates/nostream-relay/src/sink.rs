@@ -84,21 +84,39 @@ impl FrameSink {
 
         let text = message.to_text();
         let length = text.len();
-        let queued = self.queued_bytes.load(Ordering::SeqCst);
+        let mut queued = self.queued_bytes.load(Ordering::SeqCst);
 
-        // An empty queue admits its frame whatever the size, so an event larger than the
-        // whole bound still reaches the client instead of closing it.
-        if queued > 0 && queued + length > self.bound_bytes {
-            self.overflowed.store(true, Ordering::SeqCst);
-            tracing::warn!(
-                bound_bytes = self.bound_bytes,
-                queued_bytes = queued,
-                "outbound frame queue full: dropping frames and closing the client"
-            );
-            return;
+        // Admission is a compare-and-exchange, not a load-then-store: an in-flight read runs
+        // in its own task and several readers share this sink, so two sends that interleaved
+        // a load and a store would lose one increment and admit more than the bound.
+        loop {
+            if self.overflowed.load(Ordering::SeqCst) {
+                return;
+            }
+
+            // An empty queue admits its frame whatever the size, so an event larger than the
+            // whole bound still reaches the client instead of closing it.
+            if queued > 0 && queued + length > self.bound_bytes {
+                self.overflowed.store(true, Ordering::SeqCst);
+                tracing::warn!(
+                    bound_bytes = self.bound_bytes,
+                    queued_bytes = queued,
+                    "outbound frame queue full: dropping frames and closing the client"
+                );
+                return;
+            }
+
+            match self.queued_bytes.compare_exchange_weak(
+                queued,
+                queued + length,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                // Another sender got in first: judge the bound against what it left.
+                Err(actual) => queued = actual,
+            }
         }
-
-        self.queued_bytes.store(queued + length, Ordering::SeqCst);
 
         // The receiver is gone exactly when the connection task ended: the socket is not
         // open, and the capture's guard returns without sending.
@@ -187,6 +205,37 @@ mod tests {
 
         assert!(sink.overflowed());
         assert_eq!(sink.queued_bytes(), len);
+        assert!(frames.try_recv().is_err());
+
+        // Several in-flight reads share one sink, so the accounting has to survive concurrent
+        // senders: every frame fits the bound and every frame's bytes are counted once. The
+        // barrier makes the sends overlap but cannot force the interleaving a lost update
+        // needs, so this is a regression guard rather than a proof.
+        const SENDERS: usize = 8;
+
+        let (sink, mut frames) = FrameSink::channel(SENDERS * len);
+        let start = std::sync::Barrier::new(SENDERS);
+
+        std::thread::scope(|scope| {
+            for _ in 0..SENDERS {
+                let sink = sink.clone();
+                let frame = &frame;
+                let start = &start;
+
+                scope.spawn(move || {
+                    start.wait();
+                    sink.send(frame);
+                });
+            }
+        });
+
+        assert!(!sink.overflowed(), "every frame fits the bound");
+        assert_eq!(sink.queued_bytes(), SENDERS * len);
+
+        for _ in 0..SENDERS {
+            assert!(frames.try_recv().is_ok());
+        }
+
         assert!(frames.try_recv().is_err());
     }
 }
