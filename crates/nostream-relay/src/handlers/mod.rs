@@ -11,13 +11,14 @@
 //! per-connection state a later frame's handler reads and expects to be there. `subscribe`
 //! registers its subscription and its read, `unsubscribe` clears them, and `auth` records the
 //! session a restricted `REQ` is judged against, so those three are prefixes. `event` and
-//! `count` keep their whole body as one future: no later frame's handler needs an entry they
-//! establish — `COUNT`'s work before its first `await` mutates nothing shared, and the event
-//! limiter, though keyed on this connection, is consulted by each `EVENT` from its own task —
-//! so none of it has to be ordered. The accepted consequence is that two pipelined `EVENT`s
-//! may have their limiter hits recorded in either order, so which of the two is refused is not
-//! fixed by arrival order; the capture's limiter hit also sits after
-//! `await this.isEventValid(event)` (`event-message-handler.ts:66-86`), so that is parity.
+//! `count` keep their whole body as one future: neither establishes per-connection state that a
+//! later frame looks up. What they do touch is not per-connection either — the event limiter's
+//! key is the event's author and window in a table the whole relay shares
+//! (`RateLimits::event_backoff`) — so two pipelined `EVENT`s from one author record their hits
+//! in whichever order their tasks are polled, and which of the two is refused is not fixed by
+//! arrival order. The capture races the same way: each `message` event starts an async handler
+//! the adapter does not await (`web-socket-adapter.ts:79`, `:229`), so the two hits are
+//! unordered there too.
 
 pub mod auth;
 pub mod count;
@@ -176,7 +177,7 @@ impl ReadGuard {
     }
 }
 
-/// `getRestrictedReadKinds` (`src/utils/nip42.ts:15-23`): the configured kinds when
+/// `getRestrictedReadKinds` (`src/utils/nip42.ts:17-24`): the configured kinds when
 /// restricted reads are enabled, the NIP-42 defaults when no list is given, none when off.
 pub fn restricted_read_kinds(settings: Option<&Nip42Settings>) -> Vec<KindSelector> {
     let Some(settings) = settings else {
@@ -204,10 +205,11 @@ pub type HandlerFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 /// capture's `messageHandlerFactory` switch does, and returns the rest of its handler.
 ///
 /// Nothing here can enforce when it is called: the guarantee holds because the connection loop
-/// is the only caller, and it calls this before reading the next frame. For a message with a
-/// prefix, every statement the prefix executes has run by the time this returns. `None` means
-/// the prefix answered the message; `Some(future)` is the rest of the handler, which is spawned
-/// into the socket's handler set and runs unordered with its neighbours.
+/// is the only caller in `src`, and it calls this before reading the next frame. For a message
+/// with a prefix, every statement the prefix executes has run by the time this returns. `None`
+/// means the prefix handled the message and nothing is left to run — it writes whatever frames
+/// its handler writes, and `CLOSE` writes none; `Some(future)` is the rest of the handler, which
+/// is spawned into the socket's handler set and runs unordered with its neighbours.
 ///
 /// The postcondition is therefore about the prefix, not the handler: the `Event` and `Count`
 /// arms box the whole handler, so none of their body is ordered.
