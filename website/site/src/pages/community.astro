@@ -9,6 +9,7 @@ import Base from '../layouts/Base.astro'
 
 const NPUB = 'npub1qqqqqqyz0la2jjl752yv8h7wgs3v098mh9nztd4nr6gynaef6uqqt0n47m'
 const PRIYANSHU_NPUB = 'npub1mt3ezhzerxdjqp3sdnk68zz2ldx8wkvrq49qrqlexkdkqqwu5tjsfcw5vl'
+const ABHAY_NPUB = 'npub1lm9jlk92yr9p643y0ucmgvk9tnz7d9894t9g80xe34n6nws0f7aqmh329k'
 
 const maintainers = [
   {
@@ -64,6 +65,11 @@ const maintainers = [
     links: [
       { label: 'GitHub', value: '@Ferryx349', href: 'https://github.com/Ferryx349' },
       { label: 'X', value: '@Ferryx0523', href: 'https://x.com/Ferryx0523' },
+      {
+        label: 'Nostr',
+        value: `${ABHAY_NPUB.slice(0, 12)}…${ABHAY_NPUB.slice(-6)}`,
+        href: `https://njump.me/${ABHAY_NPUB}`,
+      },
     ],
   },
 ]

@@ -1,6 +1,7 @@
 import { DatabaseClient, Pubkey } from '../@types/base'
 import { DBUserSubscription, SubscriptionStatus, UserSubscription } from '../@types/user-subscription'
 import { fromBuffer, toBuffer } from '../utils/transform'
+import { InvoiceStatus } from '../@types/invoice'
 import { createLogger } from '../factories/logger-factory'
 import { IUserSubscriptionRepository } from '../@types/repositories'
 
@@ -67,18 +68,57 @@ export class UserSubscriptionRepository implements IUserSubscriptionRepository {
     return (result as unknown as { rowCount?: number }).rowCount ?? 0
   }
 
+  public async updateIfCurrent(
+    expected: UserSubscription,
+    changes: Partial<Pick<UserSubscription, 'status' | 'graceEndsAt'>>,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<boolean> {
+    const update: Partial<DBUserSubscription> = { updated_at: new Date() }
+    if (changes.status !== undefined) {
+      update.status = changes.status
+    }
+    if (changes.graceEndsAt !== undefined) {
+      update.grace_ends_at = changes.graceEndsAt
+    }
+
+    const updated = await client<DBUserSubscription>('user_subscriptions')
+      .where('pubkey', toBuffer(expected.pubkey))
+      .where('status', expected.status)
+      .where('plan_id', expected.planId)
+      .whereRaw('current_period_end IS NOT DISTINCT FROM ?', [expected.currentPeriodEnd])
+      .whereRaw('grace_ends_at IS NOT DISTINCT FROM ?', [expected.graceEndsAt])
+      .update(update)
+
+    return updated > 0
+  }
+
   public async findDueForRenewal(
     before: Date,
     limit = DEFAULT_PAGE_SIZE,
+    offset = 0,
     client: DatabaseClient = this.dbClient,
   ): Promise<UserSubscription[]> {
+    const now = new Date()
     const rows = await client<DBUserSubscription>('user_subscriptions')
-      .where('status', SubscriptionStatus.ACTIVE)
+      .where((builder) =>
+        builder.where('status', SubscriptionStatus.ACTIVE).orWhere((renewalPending) =>
+          renewalPending.where('status', SubscriptionStatus.RENEWAL_PENDING).whereNotExists(function () {
+            // A renewal invoice that is still payable needs no replacement.
+            this.select('invoices.id')
+              .from('invoices')
+              .whereRaw('invoices.pubkey = user_subscriptions.pubkey')
+              .whereRaw('invoices.plan_id = user_subscriptions.plan_id')
+              .where('invoices.status', InvoiceStatus.PENDING)
+              .where((unexpired) => unexpired.whereNull('invoices.expires_at').orWhere('invoices.expires_at', '>', now))
+          }),
+        ),
+      )
       .where('cancel_at_period_end', false)
       .whereNotNull('current_period_end')
       .where('current_period_end', '<=', before)
       .orderBy('current_period_end', 'asc')
       .limit(limit)
+      .offset(offset)
       .select()
 
     return rows.map(fromDBUserSubscription)
@@ -87,6 +127,7 @@ export class UserSubscriptionRepository implements IUserSubscriptionRepository {
   public async findPeriodEnded(
     now: Date,
     limit = DEFAULT_PAGE_SIZE,
+    offset = 0,
     client: DatabaseClient = this.dbClient,
   ): Promise<UserSubscription[]> {
     const rows = await client<DBUserSubscription>('user_subscriptions')
@@ -95,6 +136,7 @@ export class UserSubscriptionRepository implements IUserSubscriptionRepository {
       .where('current_period_end', '<=', now)
       .orderBy('current_period_end', 'asc')
       .limit(limit)
+      .offset(offset)
       .select()
 
     return rows.map(fromDBUserSubscription)
@@ -103,6 +145,7 @@ export class UserSubscriptionRepository implements IUserSubscriptionRepository {
   public async findGraceEnded(
     now: Date,
     limit = DEFAULT_PAGE_SIZE,
+    offset = 0,
     client: DatabaseClient = this.dbClient,
   ): Promise<UserSubscription[]> {
     const rows = await client<DBUserSubscription>('user_subscriptions')
@@ -111,6 +154,7 @@ export class UserSubscriptionRepository implements IUserSubscriptionRepository {
       .where('grace_ends_at', '<=', now)
       .orderBy('grace_ends_at', 'asc')
       .limit(limit)
+      .offset(offset)
       .select()
 
     return rows.map(fromDBUserSubscription)

@@ -17,11 +17,13 @@ import { createPostAdminLoginController } from '../../factories/controllers/post
 import { createPostAdminLogoutController } from '../../factories/controllers/post-admin-logout-controller-factory'
 import { createPostAdminSettingsRestoreController } from '../../factories/controllers/post-admin-settings-restore-controller-factory'
 import { createPostAdminSettingsValidateController } from '../../factories/controllers/post-admin-settings-validate-controller-factory'
-import { createGetAdminOpsMirrorsController } from '../../factories/controllers/get-admin-ops-mirrors-controller-factory'
 import { createGetAdminOpsWorkersController } from '../../factories/controllers/get-admin-ops-workers-controller-factory'
 import { createGetAdminOpsNip05VerificationsController } from '../../factories/controllers/get-admin-ops-nip05-verifications-controller-factory'
 import { createGetAdminOpsStorageCountsController } from '../../factories/controllers/get-admin-ops-storage-counts-controller-factory'
 import { createPostAdminOpsNip05ReverifyController } from '../../factories/controllers/post-admin-ops-nip05-reverify-controller-factory'
+import { createGetAdminAuditLogController } from '../../factories/controllers/get-admin-audit-log-controller-factory'
+import { createGetAdminDiagnosticsExportController } from '../../factories/controllers/get-admin-diagnostics-export-controller-factory'
+import { createPostAdminNetworkHealthRunController } from '../../factories/controllers/post-admin-network-health-run-controller-factory'
 import { adminAuthGateMiddleware, adminAuthMiddleware } from '../../handlers/request-handlers/admin-auth-middleware'
 import { adminEnabledMiddleware } from '../../handlers/request-handlers/admin-enabled-middleware'
 import { adminJsonBodyMiddleware } from '../../handlers/request-handlers/admin-json-body-middleware'
@@ -78,6 +80,24 @@ router.get(
   adminRateLimitMiddleware,
   adminAuthMiddleware,
   withAdminController(createGetAdminNetworkHealthHistoryController),
+)
+router.post(
+  '/network-health/run',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPostAdminNetworkHealthRunController),
+)
+router.get(
+  '/audit-log',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminAuditLogController),
+)
+router.get(
+  '/diagnostics/export',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminDiagnosticsExportController),
 )
 router.get(
   '/settings',
@@ -147,12 +167,6 @@ router.post(
   adminJsonBodyMiddleware,
   adminAuthMiddleware,
   withAdminController(createPostAdminNotificationTestController),
-)
-router.get(
-  '/ops/mirrors',
-  adminRateLimitMiddleware,
-  adminAuthMiddleware,
-  withAdminController(createGetAdminOpsMirrorsController),
 )
 router.get(
   '/ops/workers',

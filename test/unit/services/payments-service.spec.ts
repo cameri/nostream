@@ -212,6 +212,15 @@ describe('PaymentsService', () => {
       expect(result.pubkey).to.equal('pubkey1234')
     })
 
+    it('stores the plan on the invoice and returns it', async () => {
+      settings.returns({ payments: { invoiceExpirySeconds: 3600 } })
+
+      const result = await service.createInvoice('pubkey1234', 1000n, 'test', 'basic')
+
+      expect(invoiceRepository.upsert.firstCall.args[0]).to.include({ planId: 'basic' })
+      expect(result.planId).to.equal('basic')
+    })
+
     it('gives the invoice an expiry when the processor does not report one', async () => {
       // Without this the row can never be retired and stays pending forever.
       settings.returns({ payments: { invoiceExpirySeconds: 3600 } })
@@ -488,6 +497,172 @@ describe('PaymentsService', () => {
     })
 
 
+    describe('subscription plans', () => {
+      const DAY = 86_400_000
+      const plan = { id: 'basic', amount: 5_000_000n, intervalSeconds: 2_592_000, graceSeconds: 259_200 }
+      let userSubscriptionRepository: any
+
+      const plansSettings = (plans: any[] = [plan], admission: any[] = [{ enabled: true, amount: 1000n }]) => ({
+        payments: { enabled: true, feeSchedules: { admission }, subscriptionPlans: plans },
+      })
+
+      beforeEach(() => {
+        userSubscriptionRepository = {
+          findByPubkey: sandbox.stub().resolves(undefined),
+          upsert: sandbox.stub().resolves(1),
+        }
+        invoiceRepository.findById = sandbox.stub().resolves(stubInvoice({ planId: 'basic' }))
+        settings.returns(plansSettings())
+        service = new PaymentsService(
+          dbClient,
+          paymentsProcessor,
+          userRepository,
+          invoiceRepository,
+          eventRepository,
+          settings,
+          notificationOutboxRepository,
+          userSubscriptionRepository,
+        )
+      })
+
+      it('starts a subscription for the plan on the stored invoice and admits the user', async () => {
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 5_000_000n }))
+
+        expect(invoiceRepository.findById).to.have.been.calledOnceWithExactly('invoice-id', mockTrx)
+        expect(userSubscriptionRepository.upsert).to.have.been.calledOnce
+        const [subscription, client] = userSubscriptionRepository.upsert.firstCall.args
+        expect(subscription).to.include({ pubkey: 'pubkey1234', planId: 'basic', status: 'active' })
+        expect(subscription.currentPeriodEnd.getTime() - subscription.currentPeriodStart.getTime()).to.equal(
+          30 * DAY,
+        )
+        expect(client).to.equal(mockTrx)
+        expect(userRepository.admitUser).to.have.been.calledOnce
+        expect(mockTrx.commit).to.have.been.calledOnce
+      })
+
+      it('prefers the plan on the invoice it was given over the stored one', async () => {
+        invoiceRepository.findById.resolves(stubInvoice({ planId: null }))
+
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 5_000_000n, planId: 'basic' }))
+
+        expect(userSubscriptionRepository.upsert).to.have.been.calledOnce
+      })
+
+      it('extends a running subscription from its period end', async () => {
+        const periodEnd = new Date(Date.now() + 5 * DAY)
+        userSubscriptionRepository.findByPubkey.resolves({
+          pubkey: 'pubkey1234',
+          planId: 'basic',
+          status: 'active',
+          currentPeriodStart: new Date(Date.now() - 25 * DAY),
+          currentPeriodEnd: periodEnd,
+          graceEndsAt: null,
+          cancelAtPeriodEnd: false,
+        })
+
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 5_000_000n }))
+
+        const [subscription] = userSubscriptionRepository.upsert.firstCall.args
+        expect(subscription.currentPeriodStart).to.deep.equal(periodEnd)
+        expect(subscription.currentPeriodEnd).to.deep.equal(new Date(periodEnd.getTime() + 30 * DAY))
+      })
+
+      it('does not extend the subscription again for a repeated callback of an invoice that was already confirmed', async () => {
+        invoiceRepository.findById.resolves(stubInvoice({ planId: 'basic', confirmedAt: new Date() }))
+
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 5_000_000n }))
+
+        expect(userSubscriptionRepository.findByPubkey).not.to.have.been.called
+        expect(userSubscriptionRepository.upsert).not.to.have.been.called
+        expect(mockTrx.commit).to.have.been.calledOnce
+      })
+
+      it('reads the stored invoice before confirming it, so a first confirmation is told from a repeat', async () => {
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 5_000_000n }))
+
+        expect(invoiceRepository.findById).to.have.been.calledBefore(invoiceRepository.confirmInvoice)
+      })
+
+      it('takes the unit from the stored invoice when the callback does not report one', async () => {
+        // OpenNode reports the amount in sats without a unit.
+        invoiceRepository.findById.resolves(stubInvoice({ planId: 'basic', unit: InvoiceUnit.SATS }))
+
+        await service.confirmInvoice(makeCompletedInvoice({ unit: undefined, amountPaid: 5_000n } as any))
+
+        expect(userSubscriptionRepository.upsert).to.have.been.calledOnce
+      })
+
+      it('still rejects an underpayment when the unit comes from the stored invoice', async () => {
+        invoiceRepository.findById.resolves(stubInvoice({ planId: 'basic', unit: InvoiceUnit.SATS }))
+
+        await service.confirmInvoice(makeCompletedInvoice({ unit: undefined, amountPaid: 4_999n } as any))
+
+        expect(userSubscriptionRepository.upsert).not.to.have.been.called
+      })
+
+      it('converts SATS to msats before comparing against the plan price', async () => {
+        await service.confirmInvoice(makeCompletedInvoice({ unit: InvoiceUnit.SATS, amountPaid: 5_000n }))
+
+        expect(userSubscriptionRepository.upsert).to.have.been.calledOnce
+      })
+
+      it('does not start a subscription when the paid amount is below the plan price', async () => {
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 4_999_999n }))
+
+        expect(userSubscriptionRepository.upsert).not.to.have.been.called
+        expect(userRepository.admitUser).not.to.have.been.called
+        expect(mockTrx.commit).to.have.been.calledOnce
+      })
+
+      it('does not fall back to the admission fee when a plan invoice is underpaid', async () => {
+        settings.returns(plansSettings([plan], [{ enabled: true, amount: 1000n }]))
+
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 4_000_000n }))
+
+        expect(userRepository.admitUser).not.to.have.been.called
+      })
+
+      it('treats an invoice without a plan as an admission payment', async () => {
+        invoiceRepository.findById.resolves(stubInvoice({ planId: null }))
+
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 2000n }))
+
+        expect(userSubscriptionRepository.upsert).not.to.have.been.called
+        expect(userRepository.admitUser).to.have.been.calledOnce
+      })
+
+      it('treats an invoice whose plan was removed from the settings as an admission payment', async () => {
+        invoiceRepository.findById.resolves(stubInvoice({ planId: 'retired' }))
+
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 2000n }))
+
+        expect(userSubscriptionRepository.upsert).not.to.have.been.called
+        expect(userRepository.admitUser).to.have.been.calledOnce
+      })
+
+      it('does not read the invoice or subscriptions while no plan is configured', async () => {
+        settings.returns(plansSettings([]))
+
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 2000n }))
+
+        expect(invoiceRepository.findById).not.to.have.been.called
+        expect(userSubscriptionRepository.findByPubkey).not.to.have.been.called
+        expect(userRepository.admitUser).to.have.been.calledOnce
+      })
+
+      it('rolls back when the subscription cannot be saved, so the user is not admitted for free', async () => {
+        userSubscriptionRepository.upsert.rejects(new Error('db error'))
+
+        await expect(service.confirmInvoice(makeCompletedInvoice({ amountPaid: 5_000_000n }))).to.be.rejectedWith(
+          'db error',
+        )
+
+        expect(mockTrx.rollback).to.have.been.calledOnce
+        expect(mockTrx.commit).not.to.have.been.called
+        expect(userRepository.admitUser).not.to.have.been.called
+      })
+    })
+
     it('rolls back the transaction and re-throws on error', async () => {
       settings.returns(makeSettings([]))
       invoiceRepository.confirmInvoice.rejects(new Error('db error'))
@@ -499,6 +674,66 @@ describe('PaymentsService', () => {
     })
   })
 
+
+  describe('sendRenewalNotification', () => {
+    const renewalInvoice = () =>
+      stubInvoice({
+        pubkey: 'subscriber1234',
+        bolt11: 'lnbc50000n1...',
+        amountRequested: 5_000_000n,
+        unit: InvoiceUnit.MSATS,
+        expiresAt: new Date('2030-01-01T00:00:00Z'),
+        planId: 'basic',
+      })
+
+    beforeEach(() => {
+      settings.returns({ info: { relay_url: 'wss://relay.example.com' } })
+    })
+
+    it('tells the subscriber what is due, with the invoice to pay, until the invoice expires', async () => {
+      await service.sendRenewalNotification(renewalInvoice())
+
+      const unsigned = (eventUtils.identifyEvent as Sinon.SinonStub).firstCall.args[0]
+      expect(unsigned.kind).to.equal(402)
+      expect(unsigned.pubkey).to.equal('fakepubkey')
+      expect(unsigned.content).to.equal('Subscription renewal due: 5000 sats')
+      expect(unsigned.tags).to.deep.include(['p', 'subscriber1234'])
+      expect(unsigned.tags).to.deep.include(['bolt11', 'lnbc50000n1...'])
+      expect(unsigned.tags).to.deep.include(['expiration', '1893456000'])
+    })
+
+    it('keeps the unit when it is not msats', async () => {
+      await service.sendRenewalNotification({ ...renewalInvoice(), unit: InvoiceUnit.SATS, amountRequested: 5000n })
+
+      expect((eventUtils.identifyEvent as Sinon.SinonStub).firstCall.args[0].content).to.equal(
+        'Subscription renewal due: 5000 sats',
+      )
+    })
+
+    it('expires the notice a day out when the invoice has no expiry', async () => {
+      const before = Math.floor(Date.now() / 1000)
+
+      await service.sendRenewalNotification({ ...renewalInvoice(), expiresAt: null })
+
+      const expiration = (eventUtils.identifyEvent as Sinon.SinonStub).firstCall.args[0].tags.find(
+        (tag: string[]) => tag[0] === 'expiration',
+      )
+      expect(Number(expiration[1])).to.be.within(before + 86_399, before + 86_402)
+    })
+
+    it('persists and broadcasts the signed event', async () => {
+      await service.sendRenewalNotification(renewalInvoice())
+
+      expect(eventRepository.create).to.have.been.calledOnce
+      expect(eventUtils.broadcastEvent).to.have.been.calledOnce
+    })
+
+    it('does not throw when the pipeline fails', async () => {
+      eventRepository.create.rejects(new Error('db down'))
+
+      await expect(service.sendRenewalNotification(renewalInvoice())).to.be.fulfilled
+    })
+  })
 
   describe('sendInvoiceUpdateNotification', () => {
     beforeEach(() => {
