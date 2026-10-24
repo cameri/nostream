@@ -126,4 +126,5 @@ record, so the fix must not reach for the emit; the exposure it leaves is one st
 
 ## Not decided here — the port's `CLOSE` semantics
 
-Whether a plain `CLOSE` aborts a stored read is out of scope for this record.
+Whether a plain `CLOSE` aborts a stored read is out of scope for this record; it is tracked
+as cameri/nostream#957.
