@@ -20,7 +20,8 @@
 //! admitted only while the queued bytes stay within the bound the sink was built with, and a
 //! frame larger than the bound is still admitted into an empty queue so one big event does
 //! not close every client. A frame that does not fit is dropped, the sink records the
-//! overflow and warns once with the bound and the depth, and every later send is dropped
+//! overflow and each racing sender that sets the flag warns once with the bound and the
+//! depth — one line per sender, not one per connection — and every later send is dropped
 //! without queueing. The connection task reads the flag and closes the client with 1013, so
 //! the policy is a disconnect rather than a silent break (ADR 0005).
 
@@ -236,6 +237,27 @@ mod tests {
             assert!(frames.try_recv().is_ok());
         }
 
+        assert!(frames.try_recv().is_err());
+
+        // `release` is the drain side's half of the balance: bytes come back as a frame is
+        // written, so a drained queue admits again and the count never drifts upwards.
+        let (sink, mut frames) = FrameSink::channel(2 * len);
+
+        sink.send(&frame);
+        sink.send(&frame);
+        sink.release(2 * len);
+
+        assert_eq!(sink.queued_bytes(), 0);
+        assert!(!sink.overflowed());
+
+        sink.send(&frame);
+        sink.send(&frame);
+
+        assert_eq!(sink.queued_bytes(), 2 * len);
+        assert!(frames.try_recv().is_ok());
+        assert!(frames.try_recv().is_ok());
+        assert!(frames.try_recv().is_ok());
+        assert!(frames.try_recv().is_ok());
         assert!(frames.try_recv().is_err());
     }
 }
