@@ -33,37 +33,51 @@ jobs:
         uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Stated rather than inherited from the action's defaults: the deploy
-          # path pulls `:latest`, so a released image must carry it. Naming the
-          # tags here is what makes `latest` something this repository promises
-          # rather than a behaviour of a third-party action.
-          #
-          # Changesets tags a relay release `nostream@3.6.2`, which is not a
-          # semver. A semver rule derives its input from the git ref and emits
-          # NOTHING for it, and with no version the `latest` rule is skipped as
-          # well - so a relay release published no tag at all. `prefix=` cannot
-          # help (it is rendered after parsing), and `value=` cannot help either
-          # (it replaces the whole tag, leaving no room for the prefix).
-          #
-          # So the semver-shaped tag comes from a `match` rule that extracts the
-          # version out of the relay tag, and the release tag itself is resolved
-          # from the git ref, unchanged. The semver rule runs first so the bare
-          # version is the primary tag; the release tag is kept beside it, which
-          # is what a host sees on the GitHub release and pins.
-          #
-          # Verified by running this action revision's own Meta class over this
-          # block: a relay release yields `3.6.2`, `nostream@3.6.2` and `latest`;
-          # a legacy `v3.4.1` yields `3.4.1`, `v3.4.1` and `latest`; a website
-          # release matches neither semver nor `match`, and the job's `if:`
-          # never lets that job run.
-          tags: |
-            type=match,pattern=nostream@(.+),group=1
-            type=ref,event=tag
-            type=raw,value=latest
+      # The image tags are computed here rather than by metadata-action's rules
+      # because a changesets relay release is tagged `nostream@3.7.0`, and `@` is
+      # not legal in a Docker tag: it separates the repository path from a digest
+      # in an image reference. A `type=ref,event=tag` rule emitted that string
+      # verbatim, and buildx refused the whole build with `invalid tag ...:
+      # invalid reference format`, so a published release produced no image at
+      # all (#964). Nothing in the action's output is legal just because the
+      # action emitted it, so every tag is checked against Docker's grammar here
+      # and an illegal one fails by name instead of at buildx.
+      - name: Compute image tags
+        id: tags
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          image="$REGISTRY/$IMAGE_NAME"
+          # `nostream@3.7.0` -> `3.7.0`; the pre-changesets form `v3.4.1` -> `3.4.1`.
+          version="${RELEASE_TAG##*@}"
+          version="${version#v}"
+          tags="$image:$version"
+          # A legacy `vX.Y.Z` release also keeps the form hosts pinned before the
+          # changesets migration. A changesets tag has no legal form of its own.
+          case "$RELEASE_TAG" in
+            v*) tags="$tags,$image:$RELEASE_TAG" ;;
+          esac
+          # `latest` is the tag both deploy stacks pull, so a prerelease must not
+          # move it onto a test build.
+          if [ "$PRERELEASE" != "true" ]; then
+            tags="$tags,$image:latest"
+          fi
+          for tag in ${tags//,/ }; do
+            name="${tag##*:}"
+            if ! printf '%s' "$name" | grep -qE '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+              echo "::error::'$name' is not a legal Docker tag (release tag: $RELEASE_TAG)"
+              exit 1
+            fi
+          done
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "publishing: $tags"
       - name: Build and push Docker image
         uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

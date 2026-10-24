@@ -23,12 +23,15 @@ pulls `:main` will never see a new image. The on-host pull stack must track the
 release instead:
 
 1. `NOSTREAM_TAG` in `/opt/nostream/webhook/.env` set to `latest`.
-2. The GitHub webhook subscribed to **releases** as well as **push**, because
-   the receiver ignores anything that is not a push to the watched branch.
+2. The GitHub webhook subscribed to **releases** as well as **push**.
+3. The receiver changed to accept a `release` event. Subscribing alone does
+   nothing: the receiver ignores every event that is not a push to the watched
+   branch, so step 2 delivers a delivery it then discards. It must treat a
+   `release` event whose tag is a relay release as "pull `NOSTREAM_TAG`".
 
-Both live in `containers/nostream-dev-webhook/` (the versioned source) with its
-own README. Until both are done, deployments are manual: pull the tag by hand
-and continue at step 2 below.
+The receiver is not part of this repository, so step 3 is a change to whatever
+deployment owns it. Until all three are done, deployments are manual: pull the
+tag by hand and continue at step 2 below.
 
 The webhook pull stack **loads images only**. It does **not** run migrations or
 recreate relay containers. This runbook closes that gap.
