@@ -19,5 +19,5 @@ reaching a client.
 Parity is measured rather than asserted. The census grew from 557 to 658 cases (36 spec
 files, 612 mapped across 200 rows to 182 live Rust tests, 46 exempt with the job that owns
 them), and the fourteen files' 101 cases are carried by the new `tests/strategies.rs`
-target's 99 tests. Decisions are recorded in
+target's 100 tests. Decisions are recorded in
 `docs/rewrite/decisions/0006-event-strategies.md`.
