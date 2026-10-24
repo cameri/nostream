@@ -20,18 +20,19 @@
 //! **Implemented here:** the transport (`transport.rs`: `tokio-tungstenite` 0.30, the
 //! settings-derived message limit, the close codes, the drain timeout), the per-socket state
 //! machine (`connection.rs`, `relay.rs`: subscriptions, liveness, drain, live dispatch), the
-//! five handlers, the strategy trait with its ordered registry and the `default` strategy,
-//! the NIP-42 session and read guards' wiring, the two rate limiters over an in-process
-//! store, and the NIP-56 hidden-content mirror. The positional codec, `validation::validate_event`
+//! five handlers, the strategy trait with its ordered registry and all fifteen strategies,
+//! the web-of-trust seam those strategies reach for (`wot.rs`), the NIP-42 session and read
+//! guards' wiring, the two rate limiters over an in-process store, and the NIP-56
+//! hidden-content mirror. The positional codec, `validation::validate_event`
 //! and `nip42::{authenticate, generate_challenge}` are `nostream-core`'s.
 //!
-//! **Still stubbed, each labelled with the job that fills it:** the fourteen non-default
-//! event strategies (job 009), `NegentropySession`/`open_negentropy_session` (a NIP-77 job
-//! cut against `041fe34e`, where the `neg-*` handlers first exist), and the cross-worker
-//! broadcast `publish`/`deduplicate` (unassigned: `src/relay-broadcast/redis-relay-broadcast-fanout.ts`
-//! is named by no bullet of issue #865, which is why `broadcast.rs` still carries phase-1
-//! stub labels naming job 005, and the job may be re-cut). `broadcast.rs` therefore carries no
-//! behaviour; the in-process fan-out this job needs is the relay's own broadcast channel.
+//! **Still stubbed:** `NegentropySession`/`open_negentropy_session` (a NIP-77 job cut against
+//! `041fe34e`, where the `neg-*` handlers first exist), and the cross-worker broadcast
+//! `publish`/`deduplicate` (unassigned:
+//! `src/relay-broadcast/redis-relay-broadcast-fanout.ts` is named by no bullet of issue #865,
+//! which is why `broadcast.rs` still carries phase-1 stub labels naming job 005, and the job
+//! may be re-cut). `broadcast.rs` therefore carries no behaviour; the in-process fan-out this
+//! crate needs is the relay's own broadcast channel.
 //!
 //! Phase 2+ areas this crate does not own: the HTTP surface and NIP-11 document
 //! (`nostream-admin`), and the probe family and NIP-66 monitor (`nostream-services`).
@@ -54,6 +55,7 @@ pub mod strategies;
 pub mod testing;
 pub mod transport;
 pub mod unavailable;
+pub mod wot;
 
 pub use error::RelayError;
 pub use relay::{Relay, RelayConfig};

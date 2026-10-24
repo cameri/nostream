@@ -17,9 +17,11 @@ use nostream_storage::repositories::{
     StorageFuture, User, UserPatch, UserRepository,
 };
 
+use crate::error::RelayError;
 use crate::handlers::Stores;
+use crate::wot::{WotFuture, WotGraph};
 
-/// The six seams, every call reporting `NotImplemented`.
+/// The six stores and the trust graph, every call reporting `NotImplemented`.
 pub fn stores() -> Stores {
     Stores {
         events: std::sync::Arc::new(UnavailableEventRepository),
@@ -28,12 +30,40 @@ pub fn stores() -> Stores {
         invites: std::sync::Arc::new(UnavailableInviteCodeRepository),
         dvm_jobs: std::sync::Arc::new(UnavailableDvmJobRepository),
         reports: std::sync::Arc::new(UnavailableReportRepository),
+        wot: std::sync::Arc::new(UnavailableWotGraph),
     }
 }
 
 fn unavailable() -> StorageError {
     StorageError::NotImplemented {
         module: "storage::backend::wiring",
+    }
+}
+
+/// The trust graph, for a daemon with no `nostream-services` wiring: the contact-list and
+/// report arms treat it as best-effort, so every refusal here is logged and the event stands.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UnavailableWotGraph;
+
+impl WotGraph for UnavailableWotGraph {
+    fn update_follow_list<'a>(
+        &'a self,
+        _pubkey: &'a Pubkey,
+        _follows: &'a [String],
+    ) -> WotFuture<'a, ()> {
+        Box::pin(async {
+            Err(RelayError::NotImplemented {
+                module: "relay::wot::update_follow_list",
+            })
+        })
+    }
+
+    fn get_distance<'a>(&'a self, _pubkey: &'a Pubkey) -> WotFuture<'a, Option<u32>> {
+        Box::pin(async {
+            Err(RelayError::NotImplemented {
+                module: "relay::wot::get_distance",
+            })
+        })
     }
 }
 

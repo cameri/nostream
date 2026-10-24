@@ -2,11 +2,10 @@
 //! selection chain of `src/factories/event-strategy-factory.ts:56-108`.
 //!
 //! A strategy is one type implementing [`EventStrategy`] — `IEventStrategy.execute`'s one
-//! method, `(event, context)` — and every arm has that shape, filled or stubbed, so job 009
-//! adds behaviour to a type rather than choosing a second convention (ADR 0004 records the
-//! signature, which departs from the capture's `(event, sink)`). [`select`] picks the arm in
-//! the capture's order, which **is** the policy, and [`Strategy`] runs it. `default` is
-//! implemented here; the other fourteen arms are labelled stubs for job 009.
+//! method, `(event, context)` — and every arm has that shape, so behaviour is added to a type
+//! rather than a second convention chosen (ADR 0004 records the signature, which departs from
+//! the capture's `(event, sink)`). [`select`] picks the arm in the capture's order, which
+//! **is** the policy, and [`Strategy`] runs it. All fifteen arms are implemented here.
 
 pub mod contact_list;
 pub mod default;
@@ -27,7 +26,8 @@ pub mod vanish;
 use std::future::Future;
 use std::pin::Pin;
 
-use nostream_core::{Event, Kind};
+use nostream_core::{Event, Kind, expiration};
+use nostream_storage::repositories::EventRecord;
 
 use crate::error::RelayError;
 use crate::handlers::HandlerContext;
@@ -168,11 +168,27 @@ impl EventStrategy for Strategy {
     }
 }
 
-#[cfg(test)]
-mod stubs {
-    //! AC27: each of the fourteen arms is honestly stubbed.
+/// The row an arm writes: the event, its NIP-40 expiration and the socket's address.
+fn event_record(event: &Event, context: &HandlerContext) -> EventRecord {
+    let mut record = EventRecord::from_event(event);
+    record.expires_at = expiration::get_event_expiration(event).map(i64::from);
+    record.remote_address = context.connection.remote_address.parse().ok();
 
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    record
+}
+
+/// Whether a tag value is exactly 32 bytes of lowercase hex — the rule the `delete`,
+/// `gift_wrap`, `group` and `timestamp` arms apply to theirs. The report arm deliberately
+/// accepts either case (`nip56::extract_report_targets`); ADR 0006 records why.
+fn is_lowercase_hex64(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
+#[cfg(test)]
+mod tests {
 
     use super::*;
     use nostream_core::event::{EventId, Pubkey, Signature};
@@ -224,133 +240,5 @@ mod stubs {
         for (kind, expected) in cases {
             assert_eq!(select(&event_of(kind)), expected, "kind {kind}");
         }
-    }
-
-    #[test]
-    fn every_unfilled_arm_returns_not_implemented() {
-        use nostream_core::clock::SystemClock;
-        use std::sync::Arc;
-
-        // The stub bodies do not read the context, so a sink that drops everything stands in
-        // for a socket.
-        let fixture = crate::testing::Fixture::new(crate::testing::settings());
-        let context = fixture.anonymous_context(
-            Arc::new(SystemClock),
-            crate::relay_key::RelayKeySource::from_values(None, None),
-        );
-
-        let selections = [
-            (Selection::Vanish, "relay::strategies::vanish"),
-            (Selection::GiftWrap, "relay::strategies::gift_wrap"),
-            (Selection::Group, "relay::strategies::group"),
-            (Selection::Timestamp, "relay::strategies::timestamp"),
-            (Selection::ContactList, "relay::strategies::contact_list"),
-            (Selection::Report, "relay::strategies::report"),
-            (Selection::Replaceable, "relay::strategies::replaceable"),
-            (Selection::Join, "relay::strategies::join_request"),
-            (Selection::Leave, "relay::strategies::leave_request"),
-            (
-                Selection::InviteRequest,
-                "relay::strategies::invite_request",
-            ),
-            (Selection::DvmJob, "relay::strategies::dvm_job_request"),
-            (Selection::Ephemeral, "relay::strategies::ephemeral"),
-            (Selection::Delete, "relay::strategies::delete"),
-            (
-                Selection::ParameterizedReplaceable,
-                "relay::strategies::parameterized_replaceable",
-            ),
-        ];
-
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-
-        runtime.block_on(async {
-            for (selection, module) in selections {
-                let outcome = match selection {
-                    Selection::Vanish => {
-                        vanish::VanishStrategy
-                            .execute(&event_of(62), &context)
-                            .await
-                    }
-                    Selection::GiftWrap => {
-                        gift_wrap::GiftWrapStrategy
-                            .execute(&event_of(1059), &context)
-                            .await
-                    }
-                    Selection::Group => {
-                        group::GroupStrategy.execute(&event_of(445), &context).await
-                    }
-                    Selection::Timestamp => {
-                        timestamp::TimestampStrategy
-                            .execute(&event_of(1040), &context)
-                            .await
-                    }
-                    Selection::ContactList => {
-                        contact_list::ContactListStrategy
-                            .execute(&event_of(3), &context)
-                            .await
-                    }
-                    Selection::Report => {
-                        report::ReportStrategy
-                            .execute(&event_of(1984), &context)
-                            .await
-                    }
-                    Selection::Replaceable => {
-                        replaceable::ReplaceableStrategy
-                            .execute(&event_of(0), &context)
-                            .await
-                    }
-                    Selection::Join => {
-                        join_request::JoinRequestStrategy
-                            .execute(&event_of(28934), &context)
-                            .await
-                    }
-                    Selection::Leave => {
-                        leave_request::LeaveRequestStrategy
-                            .execute(&event_of(28936), &context)
-                            .await
-                    }
-                    Selection::InviteRequest => {
-                        invite_request::InviteRequestStrategy
-                            .execute(&event_of(28935), &context)
-                            .await
-                    }
-                    Selection::DvmJob => {
-                        dvm_job_request::DvmJobRequestStrategy
-                            .execute(&event_of(5000), &context)
-                            .await
-                    }
-                    Selection::Ephemeral => {
-                        ephemeral::EphemeralStrategy
-                            .execute(&event_of(20000), &context)
-                            .await
-                    }
-                    Selection::Delete => {
-                        delete::DeleteStrategy.execute(&event_of(5), &context).await
-                    }
-                    Selection::ParameterizedReplaceable => {
-                        parameterized_replaceable::ParameterizedReplaceableStrategy
-                            .execute(&event_of(30000), &context)
-                            .await
-                    }
-                    Selection::Default => unreachable!("default is implemented"),
-                };
-
-                match outcome {
-                    Err(RelayError::NotImplemented { module: reported }) => {
-                        assert_eq!(reported, module, "{selection:?}");
-                    }
-                    // Anything but `NotImplemented` means the arm was wired without a
-                    // port: an `assert`, and the message names the arm.
-                    other => assert!(
-                        matches!(other, Err(RelayError::NotImplemented { .. })),
-                        "{selection:?} must be a NotImplemented stub, got {other:?}"
-                    ),
-                }
-            }
-        });
     }
 }

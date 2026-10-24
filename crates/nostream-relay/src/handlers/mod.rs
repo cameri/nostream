@@ -35,9 +35,10 @@ use crate::hidden_content::HiddenContentCache;
 use crate::limits::RateLimits;
 use crate::relay_key::RelayKeySource;
 use crate::sink::FrameSink;
+use crate::wot::WotGraph;
 
-/// The repository seams a handler may call. Every one is a trait object, so a test supplies
-/// in-memory doubles and no handler knows which backend it has.
+/// The repository and service seams a handler may call. Every one is a trait object, so a test
+/// supplies in-memory doubles and no handler knows which backend it has.
 pub struct Stores {
     pub events: Arc<dyn EventRepository>,
     pub users: Arc<dyn UserRepository>,
@@ -45,6 +46,8 @@ pub struct Stores {
     pub invites: Arc<dyn InviteCodeRepository>,
     pub dvm_jobs: Arc<dyn DvmJobRepository>,
     pub reports: Arc<dyn ReportRepository>,
+    /// The trust graph `contact_list` and `report` reach for, best-effort.
+    pub wot: Arc<dyn WotGraph>,
 }
 
 /// The context one socket shares across handlers (`src/@types/message-handlers.ts`).

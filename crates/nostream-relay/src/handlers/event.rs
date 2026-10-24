@@ -151,7 +151,7 @@ pub async fn handle(event: Event, context: &HandlerContext) {
     if let Err(error) = Strategy.execute(&event, context).await {
         match &error {
             RelayError::NotImplemented { module } => {
-                tracing::debug!(module, "strategy is not implemented in this job");
+                tracing::debug!(module, "strategy is not implemented");
             }
             other => tracing::error!(error = %other, "event strategy failed"),
         }

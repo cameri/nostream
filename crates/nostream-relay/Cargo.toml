@@ -22,5 +22,8 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+base64.workspace = true
+
 [lints]
 workspace = true
