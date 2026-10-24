@@ -1,10 +1,14 @@
 //! The `unsubscribe-message-handler.ts` handler.
+//!
+//! A `CLOSE` removes the subscription, aborts its in-flight read, and emits **no frame**
+//! (`:9-11`; measured: `CLOSE s1` → no frame).
 
-use crate::error::RelayError;
+use nostream_core::messages::UnsubscribeMessage;
 
-/// Phase 1 stub — job 005; will handle a CLOSE message; see `src/handlers/unsubscribe-message-handler.ts`.
-pub async fn handle() -> Result<(), RelayError> {
-    Err(RelayError::NotImplemented {
-        module: "relay::handlers::unsubscribe",
-    })
+use crate::handlers::HandlerContext;
+
+/// The handler's entry point (`handleMessage`).
+pub fn handle(message: UnsubscribeMessage, context: &HandlerContext) {
+    context.connection.abort_read(&message.subscription_id);
+    context.connection.unsubscribe(&message.subscription_id);
 }

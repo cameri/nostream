@@ -10,6 +10,7 @@ description = "Nostr domain types, wire messages and NIP surfaces for the nostre
 [dependencies]
 base64.workspace = true
 chacha20.workspace = true
+getrandom.workspace = true
 hex.workspace = true
 hkdf.workspace = true
 hmac.workspace = true
@@ -20,6 +21,7 @@ serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+url.workspace = true
 
 [lints]
 workspace = true

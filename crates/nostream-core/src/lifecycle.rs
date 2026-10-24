@@ -41,6 +41,10 @@ impl ShutdownState {
     }
 
     /// A receiver for the drain flag, for tasks that select on it.
+    ///
+    /// A receiver created after `begin_draining` has already seen `true` and its `changed()`
+    /// never resolves, so a task that selects on `changed()` MUST read
+    /// `borrow_and_update()` once before the first `select!` (`wait_for_drain` does).
     pub fn watch(&self) -> watch::Receiver<bool> {
         self.sender.subscribe()
     }

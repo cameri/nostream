@@ -33,7 +33,11 @@ default = []
 otlp = ["dep:opentelemetry", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
 
 [dev-dependencies]
+futures-util.workspace = true
+nostream-relay.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
+tokio-tungstenite.workspace = true
 
 [lints]
 workspace = true

@@ -20,9 +20,8 @@
 //! `SO_REUSEPORT` sharding — the capture's cluster fan-out (a primary forking
 //! `cpus().length` client workers that each `listen()` the same port, IPC into each
 //! worker's own adapter; the primary itself never listens) is the model Phase 2 decides
-//! against. Phase 1 binds, accepts, drains on SIGINT/SIGTERM through
-//! `nostream_core::lifecycle::ShutdownState` and drops sockets with a debug line; the relay
-//! wire takes the socket in Phase 2.
+//! against. The daemon binds, hands the listener to `nostream_relay::Relay`, and drains on
+//! SIGINT/SIGTERM through `nostream_core::lifecycle::ShutdownState`.
 //!
 //! The MCP server named in the issue is Phase 5 and has no TS counterpart at the capture; it
 //! has no module here either.

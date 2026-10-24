@@ -82,7 +82,7 @@ resolver 3:
 | `nostream-core` | domain vocabulary: events, filters, kinds, wire messages, NIP type surfaces, `ShutdownState` |
 | `nostream-config` | typed settings, loader, deep merge, validator, dot-path editor, redaction, guided catalogue |
 | `nostream-storage` | event-store backends (LMDB via heed, Postgres), cache |
-| `nostream-relay` | acceptor, connections, wire protocol, NIP-77 engine |
+| `nostream-relay` | connections, wire protocol, handlers, rate limiters, live dispatch, NIP-77 engine (the acceptor lives in `nostreamd`) |
 | `nostream-services` | NIP-66 monitors, Tor, schedulers, outbound work |
 | `nostream-admin` | admin API and auth |
 | `nostream-cli` | operator command line (`nostream-cli config validate`) |
@@ -139,11 +139,12 @@ resolver 3:
   recorded per case.** When a message or an exemption must change, change the fixture in
   the same commit and say why; never loosen the comparison to make a case pass.
 
-## Porting discipline (this branch, phase 1)
+## Porting discipline (this branch, phase 2)
 
 - **Stubs are labelled, not hidden.** Every unimplemented item carries
-  `/// Phase 1 stub — job 005; <what it will do>; see <TS path>` on the item, takes typed
-  arguments, and returns `NotImplemented`. `grep -rn 'Phase 1 stub' crates` must count
+  `/// Phase 2 stub — job NNN; <what it will do>; see <TS path>` on the item (a stub left
+  from phase 1 keeps its `Phase 1 stub` label until a job touches it), takes typed
+  arguments, and returns `NotImplemented`. `grep -rn 'Phase [12] stub' crates` must count
   the stubs.
 - **No silent `Ok(())`, no plausible fake data, no partial port.** A function that would
   need real behaviour returns the error. A `Result`-returning stub whose body is

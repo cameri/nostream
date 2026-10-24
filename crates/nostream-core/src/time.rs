@@ -1,23 +1,11 @@
-//! Reference time and the `created_at` window the relay accepts.
+//! The `created_at` window the relay accepts.
 //!
 //! Mirrors `src/handlers/event-message-handler.ts:179,203-218` (and its twin in
-//! `src/app/static-mirroring-worker.ts:203-219`). The clock is read in one place,
-//! [`unix_now`], so every caller can supply a fixed time instead; the capture reads
-//! `Date.now()` inside the check because it has no such seam.
-
-use std::time::{SystemTime, UNIX_EPOCH};
+//! `src/app/static-mirroring-worker.ts:203-219`). The reference time is an argument, never a
+//! clock read: the capture reads `Date.now()` inside the check because it has no such seam,
+//! and [`crate::clock::Clock`] is where the rewrite reads time.
 
 use crate::error::CoreError;
-
-/// The current Unix time in whole seconds — the floor of `Date.now() / 1000`.
-///
-/// A clock before the epoch saturates to zero rather than wrapping.
-pub fn unix_now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX))
-        .unwrap_or(0)
-}
 
 /// Checks `created_at` against the reference time
 /// (`src/handlers/event-message-handler.ts:203-217`).
@@ -105,10 +93,5 @@ mod tests {
         let error = check_created_at(NOW + 901, NOW, Some(900), Some(900)).unwrap_err();
 
         assert!(matches!(error, CoreError::CreatedAtInFuture { .. }));
-    }
-
-    #[test]
-    fn unix_now_is_plausible() {
-        assert!(unix_now() > 1_600_000_000);
     }
 }
