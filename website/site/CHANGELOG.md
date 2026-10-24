@@ -1,5 +1,20 @@
 # nostream-website
 
+## 1.3.2
+
+### Patch Changes
+
+- [#894](https://github.com/cameri/nostream/pull/894) [`02b70cf`](https://github.com/cameri/nostream/commit/02b70cf162365ac1c22e9c61f8cfecde2dd54f8a) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Refresh the operator console marketing film with an updated notifications screenshot and re-ship `admin.mp4` / `admin-poster.webp` for the home page.
+
+- [#944](https://github.com/cameri/nostream/pull/944) [`82124b0`](https://github.com/cameri/nostream/commit/82124b02180b3c722e217ed39eb71c324ddec1a9) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(ci): stop building and pushing container images outside a release
+
+  Remove the container publish job from checks.yml so pushes to main no longer publish
+  images to GHCR. Container image builds and pushes are now restricted exclusively to
+  release.yml on published releases. Update deployment documentation and reference compose
+  stacks to target the released image tag (:latest) instead of :main.
+
+- [#916](https://github.com/cameri/nostream/pull/916) [`c40e570`](https://github.com/cameri/nostream/commit/c40e5704f6f63a86515de6bb8d4e243eb68fd830) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add Abhay Pandey Nostr profile link on the community page.
+
 ## 1.3.1
 
 ### Patch Changes
