@@ -68,6 +68,23 @@ pnpm run render:release:small  # → output/release/nostream-3.4.0-low.mp4 (~2.3
 pnpm run frames:release        # → output/release/frames/f0060.png … (one still per scene + the end card)
 ```
 
+## Peering launch film
+
+A 40 s cut for relay peering ([#942](https://github.com/cameri/nostream/issues/942)), in the same dialect as the 3.3.0 release film: **1200 frames** at 1920×1080, composed in `src/peering-film.ts` and rendered by `src/peering-render.ts`. Scene copy and claim traceability live in [`docs/peering-film-copy.md`](docs/peering-film-copy.md) — draft that before changing on-screen text.
+
+1. **People** (frames 0–240): run a relay for your people, not the whole network — peers for its scope, fetches on demand.
+2. **Worth** (240–520): your archive is worth something now; sell feeds in sats; flat per-period terms, never per event.
+3. **Fast** (520–760): cache peers and an operator-configured window (e.g. the last hour); hot feed near readers.
+4. **Middle** (760–980): relays that only talk to relays — archive/cache infrastructure, edges facing users.
+5. **Close** (980–1200): today every relay tries to be everything → one thing well; the network assembles the rest.
+
+```bash
+pnpm run render:peering        # → output/peering/nostream-peering.mp4
+pnpm run render:peering:small  # → output/peering/nostream-peering-low.mp4
+pnpm run frames:peering        # → output/peering/frames/f0150.png … (one still per scene + the end card)
+cd ../site && pnpm run media   # → public/media/peering.mp4, peering-poster.webp (home #peering)
+```
+
 ## Admin console film
 
 **35 s** at 1920×1080. Opens on “Operator Console”, then each feature is a short explanation on the landing-hero backdrop (dot grid, planet, sparkle halo) followed by that screenshot full frame: metrics, settings, NIP-66, notifications.
@@ -92,6 +109,7 @@ After changing the admin film, run `pnpm run media` in `website/site` to re-enco
 
 - Timeline & layout: `src/film.ts` (scene windows `HERO`, `WHAT`, `FLOW`, `FEATURES`, `DEPLOY`)
 - Release film: `src/release-film.ts` (scene windows `PROBLEM`, `WAIT`, `DOCS`, `CLOSE`), rendered by `src/release-render.ts`
+- Peering film: `src/peering-film.ts` (scene windows `PEOPLE`, `WORTH`, `FAST`, `MIDDLE`, `CLOSE`), rendered by `src/peering-render.ts`
 - Admin film: `src/admin-film.ts`, rendered by `src/admin-render.ts`
 - Palette & fonts: `src/theme.ts`
 - Logos / planet / grid: `src/build-assets.ts` (source SVGs in `assets/icons-raw/`, Nostr PNG in `assets/logos/`)

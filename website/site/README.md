@@ -2,7 +2,7 @@
 
 Landing page, docs and changelog for nostream, in the same omp.sh-style dialect as the Framefields films in [`../hero-animation`](../hero-animation).
 
-- `/` framed landing film ([PR #803](https://github.com/cameri/nostream/pull/803) / `film.ts`), sparkles, who it's for, feature pillars, admin & observability, NIPs
+- `/` framed landing film ([PR #803](https://github.com/cameri/nostream/pull/803) / `film.ts`), sparkles, who it's for, feature pillars, relay peering film, admin & observability, NIPs
 - `/get-started` copy-paste build command for the [`run-a-decentralized-social-network-relay`](https://schemaformat.ai/schematics/run-a-decentralized-social-network-relay/SCHEMATIC.md) agent schematic
 - `/docs` deploy path chooser plus the repository markdown (README, CLI, CONFIGURATION, deploy docs, Redis, ...) rendered as pages
 - `/changelog` rendered from `CHANGELOG.md`
@@ -30,6 +30,7 @@ Media comes from the landing film in `../hero-animation` (needs `ffmpeg` for `pn
 |-------|--------|
 | `hero.mp4`, `hero-low.mp4`, `hero-poster.webp`, `hero.meta.json` | Landing film — `src/film.ts` (`pnpm run render`, `pnpm run frames`) |
 | `admin.mp4`, `admin-poster.webp` | Operator console film — `src/admin-film.ts` (`pnpm run render:admin`, `pnpm run frames:admin`) |
+| `peering.mp4`, `peering-low.mp4`, `peering-poster.webp` | Relay peering launch film — `src/peering-film.ts` (`pnpm run render:peering`, `pnpm run frames:peering`); copy in `docs/peering-film-copy.md` |
 | `planet.webp` | Particle planet — `src/build-assets.ts` (`pnpm run assets`) |
 
 ```bash
@@ -37,6 +38,7 @@ cd website/hero-animation
 pnpm run assets
 pnpm run render && pnpm run frames
 pnpm run render:admin && pnpm run frames:admin   # when the admin film or screenshots change
+pnpm run render:peering && pnpm run frames:peering   # when the peering launch film changes
 cd ../site
 pnpm run media
 ```
