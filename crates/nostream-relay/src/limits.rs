@@ -82,7 +82,15 @@ pub const MAX_STORE_KEYS: usize = 65_536;
 /// The cadence is the store's, never the caller's: armed from a caller's window, one hit on
 /// an hour-long window would postpone reclaiming every one-second key for an hour. The pass
 /// itself drops each entry against *its own* window, so one pass per interval is the whole
-/// job, and the interval keeps the pass — which holds the store's mutex — off the hot path.
+/// job.
+///
+/// The cadence bounds *how often* the pass runs, not how long it holds the lock. The pass
+/// runs inside [`SlidingWindowRateLimiter::hit`] and [`EwmaRateLimiter::hit`], under the
+/// store's mutex to the end of the call, so the caller that triggers it pays for it: a pass
+/// over a full store that frees nothing measured 0.32–0.78 ms, and one that reclaims all
+/// 65,536 keys measured 4.26–5.06 ms (round-3 performance check, this branch's head). That
+/// last figure is the worst single wait a client can be made to pay, and the number to
+/// weigh before adding a fifth store or chunking the pass.
 pub const SWEEP_INTERVAL_MS: u64 = 1_000;
 
 /// A keyed store with the TTL the capture's Redis sets: expired keys are reclaimed, and the

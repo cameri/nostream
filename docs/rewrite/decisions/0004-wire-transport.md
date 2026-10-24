@@ -125,14 +125,21 @@ caller's window, or one hit on an hour-long window would postpone reclaiming eve
 one-second key for an hour.
 
 The pass is *not* free and it is not off the request path: it runs inside the caller's
-`hit`, holding the store's mutex, to the end of the lock. At the ceiling one pass takes
-1.3–2.0 ms, so the caller that triggers it waits that long and a concurrent `hit` queues
-behind it (measured: 0.96–1.16 ms behind a pass that frees nothing). What the gate buys is
-that this is the *most* a client can be made to pay: bounded to one pass per second per
-store rather than one per hit, which measured 0.035–0.380 % of a core under continuous
-load with a slow flood paying 0.482 ms/s. Sweeping on each refused insert instead made a
-131,072-key test take 193 s against 0.2 s, and would have given a flooding client
-O(store) work per message.
+`hit`, holding the store's mutex for the whole pass, so the caller that triggers it waits
+for it and a concurrent `hit` queues behind it. Two passes have to be sized differently:
+
+- **A pass that frees nothing** — the common one, whenever a store sits at its ceiling
+  between lapsings — measured 0.32–0.78 ms over 65,536 sliding keys at this head, and
+  1.3–2.0 ms in round 2's busier conditions.
+- **A pass that reclaims the whole store** — the one that clears a full level and so the
+  one a client waits behind at the moment the level reopens — measured **4.26–5.06 ms**.
+
+The one-second cadence bounds *how often* the lock is held, not *how long*: the worst
+single stall a client can be made to pay is the reclaiming pass, 5 ms and not 0.8. Behind
+a no-op pass a concurrent `hit` waited 0.96–1.16 ms. Taken together the cost measured
+0.035–0.380 % of a core under continuous load, with a slow flood paying 0.482 ms/s.
+Sweeping on each refused insert instead made a 131,072-key test take 193 s against 0.2 s,
+and would have given a flooding client O(store) work per message.
 
 Each of the four levels has a store of its own, so a flood of message keys cannot fill the
 store the event level uses.
@@ -154,11 +161,28 @@ Two limits worth recording rather than discovering in production:
   one entry per hit instead — its 60-per-minute windows cap a key at 60 entries and its
   hour window at 720 — so a full *sliding* store is 65,536 × 720 entries, about 1 GB, and
   is reachable only at ~47 million accepted events.
-- **A full level is closed to new keys until entries lapse.** Refusal is decided per store,
-  so a flood that fills one level (measured: ~32,768 addresses or authors per cycle with
-  the settings the port ships) limits every new address or author *at that level* until
-  its entries pass their window — up to 60 s per cycle — while the other three levels
-  keep serving. That is the price of never freeing a live key.
+- **A full level is closed to new keys until entries lapse, and the four levels are not
+  alike.** A store fills at 65,536 keys (measured); how many *clients* that is, and how long
+  the closure lasts, follow from the windows the key is built with
+  (`resources/default-settings.yaml`):
+
+  | level | keys per client | clients to fill | closure |
+  | --- | --- | --- | --- |
+  | connection | 2 — `{address}:connection:{period}`, windows 1 s and 60 s | 32,768 addresses | ≤ 60 s |
+  | event | 2 — a 60 s kind window and the global hour window, both hit by an accepted event | 32,768 authors per cycle | ≤ 60 s per cycle, **up to 1 h** under a sustained flood (below) |
+  | message | 1 — `{address}:message:60000` | 65,536 addresses | ≤ 60 s |
+  | invite | 1 — `{pubkey}:invites:3600000` | 65,536 pubkeys | **≤ 1 h** (reopens at 1 h + 1 s) |
+
+  The event level's hour keys outlive its 60 s ones: a sustained flood keeps admitting
+  authors as the minute keys lapse while the hour keys stay (an EWMA key lives
+  `period_ms.div_ceil(1000) * 1000` = 3,600 s), so the store converges to hour-window keys
+  and that level too can stay closed for an hour. The invite level has no window shorter
+  than an hour, so a filled invite store refuses every new pubkey for up to an hour while
+  the other three levels keep serving.
+
+  The closure is per level and it never touches the others, which is the point of four
+  stores; it is the price of never freeing a live key. This is also the reason a level's
+  key count is not a client count: two windows spend two keys per client.
 - **A relay with no signing key does not rate-limit EVENT at all.** The event key is
   resolved before the limiter (the capture's `isRateLimited` calls `getRelayPublicKey()`,
   which throws), so with neither `SECRET` nor `RELAY_PRIVATE_KEY` set every event is
@@ -210,7 +234,12 @@ between two shapes.
   It keys on the accept loop's `peer` because no `Connection` exists yet; that is the same
   string `Connection::remote_address` derives from the transport, since the port
   implements neither `network.remoteIpHeader` nor `network.trustedProxies` (the only way
-  the capture's two keys differ).
+  the capture's two keys differ). The consequence is worth stating where the limit is
+  described, because the settings do carry both fields (`settings.rs:71,73`) and the shipped
+  defaults set `trustedProxies`: the header-derived address lands with the HTTP surface
+  (daemon/admin), and until then a relay behind a reverse proxy sees every client as the
+  proxy's address. One connection bucket then serves the deployment, so this level's limit
+  and the closure recorded below apply to the proxy rather than to each client.
 
 ## The hidden-content mirror is the relay's
 
