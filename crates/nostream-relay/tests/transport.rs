@@ -600,6 +600,9 @@ async fn a_client_that_stops_reading_is_closed_with_1013() {
     // timestamps differ so every event is a distinct row.
     let content = "x".repeat(32 * 1024);
     let fixture = Fixture::new(settings());
+    // One permit per stored record, so the prefix below is a frame the client can read rather
+    // than one of the whole 32 MiB the read would otherwise queue in a single poll.
+    let gate = fixture.events.gate_reads_per_item();
 
     for index in 0..1024 {
         fixture
@@ -616,10 +619,50 @@ async fn a_client_that_stops_reading_is_closed_with_1013() {
     let server = Server::start_with(fixture, relay_keys(), fast_config()).await;
     let (mut raw, _head) = RawClient::connect(server.address, None).await;
 
-    // Nothing is read, not even the AUTH challenge: the loop is parked on a socket nobody
-    // drains while the read fills the queue.
+    // The socket's first frame is the NIP-42 challenge, which is a text frame on every
+    // connection: read it here so nothing below counts it as a stored event.
+    let challenge = raw.next_frame().await.expect("the AUTH challenge");
+    assert_eq!(challenge.opcode, 0x1);
+    assert!(
+        challenge.text().starts_with(r#"["AUTH","#),
+        "the first frame is the challenge: {}",
+        challenge.text()
+    );
+
     raw.send_text(r#"["REQ","bulk",{"kinds":[1]}]"#).await;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // Three stored events while the client is still reading: these are the frames AC6 step 5
+    // means by "at least one `EVENT` frame preceded it".
+    gate.add_permits(3);
+
+    let mut delivered = Vec::new();
+
+    for _ in 0..3 {
+        let frame = tokio::time::timeout(Duration::from_secs(5), raw.next_frame())
+            .await
+            .expect("a stored event arrives while the client reads")
+            .expect("a stored event frame");
+
+        assert_eq!(frame.opcode, 0x1, "{frame:?}");
+        delivered.push(frame.text());
+    }
+
+    for text in &delivered {
+        let event: serde_json::Value = serde_json::from_str(
+            text.strip_prefix(r#"["EVENT","bulk","#)
+                .and_then(|rest| rest.strip_suffix(']'))
+                .expect("an EVENT frame for bulk"),
+        )
+        .expect("event json");
+
+        assert_eq!(event["kind"], 1, "the stored events are the ones asked for");
+    }
+
+    // The client stops reading and the rest of the read runs at once: the queue takes what
+    // the socket cannot, overflows, and the loop closes the client as soon as the blocked
+    // write returns.
+    gate.add_permits(1024);
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     let frames = tokio::time::timeout(Duration::from_secs(10), raw.frames_until(0x8))
         .await
@@ -628,8 +671,11 @@ async fn a_client_that_stops_reading_is_closed_with_1013() {
 
     assert_eq!(last.opcode, 0x8, "the last frame is a close frame");
     assert!(
-        frames.iter().any(|frame| frame.opcode == 0x1),
-        "at least one EVENT preceded the close"
+        frames.iter().all(|frame| {
+            frame.opcode == 0x8 || frame.text().starts_with(r#"["EVENT","bulk","#)
+        }),
+        "everything the closed client still receives is a stored event: {:?}",
+        frames.iter().map(Frame::text).collect::<Vec<_>>()
     );
     assert_eq!(
         close_of(last),
