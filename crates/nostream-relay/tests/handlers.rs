@@ -1603,7 +1603,9 @@ async fn a_pipelined_auth_before_a_restricted_req_is_ordered() {
         .await
         .expect("feed the AUTH");
     stream
-        .feed(Message::Text(r#"["REQ","s1",{"kinds":[4]}]"#.to_owned().into()))
+        .feed(Message::Text(
+            r#"["REQ","s1",{"kinds":[4]}]"#.to_owned().into(),
+        ))
         .await
         .expect("feed the REQ");
     stream.flush().await.expect("flush both frames");

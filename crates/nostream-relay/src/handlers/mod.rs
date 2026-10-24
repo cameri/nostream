@@ -212,12 +212,16 @@ pub fn begin(
         ClientMessage::Event(event) => {
             let context = Arc::clone(context);
 
-            Some(Box::pin(async move { event::handle(event, &context).await }))
+            Some(Box::pin(
+                async move { event::handle(event, &context).await },
+            ))
         }
         ClientMessage::Count(message) => {
             let context = Arc::clone(context);
 
-            Some(Box::pin(async move { count::handle(message, &context).await }))
+            Some(Box::pin(
+                async move { count::handle(message, &context).await },
+            ))
         }
         ClientMessage::Subscribe(message) => subscribe::begin(message, context),
         ClientMessage::Unsubscribe(message) => {
