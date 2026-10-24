@@ -35,6 +35,11 @@ event_content, event_signature, remote_address, expires_at, event_deduplication,
 /// The kind of the capture's `REQUEST_TO_VANISH`, which every retention whitelist keeps.
 const REQUEST_TO_VANISH: i32 = 62;
 
+/// PostgreSQL's `unique_violation` SQLSTATE, and the constraint the capture's two catching
+/// arms match by message.
+const EVENT_ID_UNIQUE_VIOLATION_CODE: &str = "23505";
+const EVENT_ID_UNIQUE_CONSTRAINT: &str = "events_event_id_unique";
+
 /// PostgreSQL's bind limit is 65 535 parameters per statement. One `create` row binds the
 /// nine insert values; one `upsert` row binds those nine plus the deduplication value
 /// (`deleted_at` is the literal NULL in the tuple, so its column costs no parameter). These
@@ -102,8 +107,24 @@ where
     Ok(EventQuery { sql, args }
         .into_query()
         .execute(executor)
-        .await?
+        .await
+        .map_err(duplicate_event)?
         .rows_affected())
+}
+
+/// `events_event_id_unique` (`migrations/20220524153400_create_events_table.sql:3`), which the
+/// replaceable and contact-list arms answer `rejected: event already exists`. Every other
+/// failure passes through unchanged: it is not a decision about the publisher.
+fn duplicate_event(error: sqlx::Error) -> StorageError {
+    match &error {
+        sqlx::Error::Database(database)
+            if database.code().as_deref() == Some(EVENT_ID_UNIQUE_VIOLATION_CODE)
+                && database.constraint() == Some(EVENT_ID_UNIQUE_CONSTRAINT) =>
+        {
+            StorageError::DuplicateEvent
+        }
+        _ => StorageError::Database(error),
+    }
 }
 
 /// `upsert_many`: one multi-row replaceable insert. The capture's explicit merge list omits

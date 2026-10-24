@@ -110,3 +110,71 @@ pub fn build_invite_code_event(
 pub fn is_join_request(kind: Kind) -> bool {
     kind == Kind(28_934)
 }
+
+/// `getClaimTag` (`src/utils/nip43.ts:19-22`): the value of the first `claim` tag that carries
+/// one.
+pub fn get_claim_tag(event: &Event) -> Option<&str> {
+    event
+        .tags
+        .iter()
+        .find(|tag| tag.len() >= 2 && tag[0] == "claim")
+        .map(|tag| tag[1].as_str())
+}
+
+/// How far a join or leave request's `created_at` may sit from the relay's clock
+/// (`MAX_TIMESTAMP_DELTA_SECONDS`, `src/utils/nip43.ts:26`). Same tolerance as NIP-42.
+pub const MAX_TIMESTAMP_DELTA_SECONDS: i64 = 600;
+
+/// `isNip43RequestTimestampValid` (`src/utils/nip43.ts:28-29`), with the reference time taken
+/// from the caller so the relay's clock decides it rather than `Date.now()`.
+pub fn is_request_timestamp_valid(created_at: i64, now_secs: i64) -> bool {
+    now_secs
+        .saturating_sub(created_at)
+        .saturating_abs()
+        <= MAX_TIMESTAMP_DELTA_SECONDS
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    fn event_with(tags: Vec<Vec<&str>>) -> Event {
+        Event {
+            id: crate::event::EventId::from_byte_array([1; 32]),
+            pubkey: crate::event::Pubkey::from_byte_array([2; 32]),
+            created_at: 1_700_000_000,
+            kind: Kind(28_934),
+            tags: tags
+                .into_iter()
+                .map(|tag| tag.into_iter().map(str::to_owned).collect())
+                .collect(),
+            content: String::new(),
+            sig: crate::event::Signature::from_byte_array([0; 64]),
+        }
+    }
+
+    #[test]
+    fn the_claim_tag_is_the_first_one_with_a_value() {
+        let event = event_with(vec![vec!["claim"], vec!["-,", "x"], vec!["claim", "code"]]);
+
+        assert_eq!(get_claim_tag(&event), Some("code"));
+    }
+
+    #[test]
+    fn an_event_without_a_claim_tag_has_none() {
+        assert_eq!(get_claim_tag(&event_with(vec![vec!["p", "pubkey"]])), None);
+    }
+
+    #[test]
+    fn the_timestamp_window_is_six_hundred_seconds_either_way() {
+        let now = 1_700_000_000;
+
+        assert!(is_request_timestamp_valid(now, now));
+        assert!(is_request_timestamp_valid(now - 600, now));
+        assert!(is_request_timestamp_valid(now + 600, now));
+        assert!(!is_request_timestamp_valid(now - 601, now));
+        assert!(!is_request_timestamp_valid(now + 3600, now));
+    }
+}
