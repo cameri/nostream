@@ -23,7 +23,7 @@ greppable.
 `contact_list` replaces a pubkey's follows (`contact-list-event-strategy.ts:36`) and
 `report` asks a reporter's distance (`report-event-strategy.ts:53`). The graph is a
 service (`nostream-services`' `wot_graph_service`, #866), and `nostream-relay` takes no
-dependency on that crate: `src/wot.rs:24` declares `WotGraph` beside `limits::Limiter`,
+dependency on that crate: `src/wot.rs:25` declares `WotGraph` beside `limits::Limiter`,
 which is the file's existing precedent for a service the relay needs and does not own. The
 instance follows the same precedent: the composition root picks it, `Relay::new` takes it,
 and `HandlerContext` carries it beside `limits` — not in `Stores`, which holds storage
@@ -38,7 +38,7 @@ The shapes rejected:
   service; a repository trait here would fix an on-disk shape #866 has not chosen.
 - **Inline the whole graph in the relay.** That is #866's work, not this job's.
 
-`UnavailableWotGraph` (`src/unavailable.rs:44-69`) is the capture's *disabled* graph, not a
+`UnavailableWotGraph` (`src/unavailable.rs:41-69`) is the capture's *disabled* graph, not a
 failing one: a follow-list update touches nothing and `get_distance` answers `None`, which
 `report` stores as an unweighted row — a report from a relay with no graph is still a
 report. `Err` is reserved for a wired implementation's genuine failure (a rebuild that
@@ -64,13 +64,13 @@ so it validates the magic header, the LEB128 lengths, the tree, and the three
 relay-observable requirements (sha256 file hash, digest equal to the attested id, at least
 one Bitcoin attestation), and every rejection is the capture's reason verbatim.
 
-**`OtsSummary::digest` is `Vec<u8>`, not `[u8; 32]`** (`src/nip03.rs:110`), which departs
+**`OtsSummary::digest` is `Vec<u8>`, not `[u8; 32]`** (`src/nip03.rs:108`), which departs
 from this job's spec. A sha1 or ripemd160 proof carries a 20-byte digest, and the capture
 reads the file hash op's own length before the digest. Refusing a short digest at parse time
 would move one of `validateOtsProof`'s five rules into the parser and change the reason the
 client sees from `ots proof must use sha256 file hash op (got sha1)` to a parse error; two
 census cases pin that reason. The digest is compared as a slice
-(`src/nip03.rs:191`), so the sha256 rule stays where the capture puts it.
+(`src/nip03.rs:199`), so the sha256 rule stays where the capture puts it.
 
 ## A report's weight is a method on the enum
 

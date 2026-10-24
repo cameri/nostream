@@ -490,10 +490,19 @@ async fn replay(session: &Session, random: Arc<RecordedRandom>) -> BTreeMap<Stri
 
         if let Some(size) = step.oversized {
             // One frame past the limit: the relay answers with a close frame, compared below.
-            client
-                .send(Message::Text("x".repeat(size).into()))
-                .await
-                .expect("send the oversized frame");
+            //
+            // The length is in the frame's header, so the relay can refuse it and close before
+            // the client has finished writing 614 600 bytes: the write then loses the race with
+            // an IO error (measured: 11 runs in 20 write into an already-closed socket). The
+            // close frame below is the assertion that matters, so an IO error here is tolerated
+            // and any other send failure still fails.
+            if let Err(error) = client.send(Message::Text("x".repeat(size).into())).await {
+                assert!(
+                    matches!(error, tokio_tungstenite::tungstenite::Error::Io(_)),
+                    "{}: send the oversized frame: {error}",
+                    session.id
+                );
+            }
             steps += 1;
             continue;
         }
