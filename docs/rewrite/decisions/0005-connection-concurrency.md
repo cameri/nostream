@@ -1,6 +1,6 @@
 # ADR 0005: Connection concurrency — read ownership, a bounded frame queue, and liveness under a blocked write (job 010)
 
-- **Status:** accepted (job 010, Phase 2)
+- **Status:** accepted (job 010 and job 012, Phase 2)
 - **Deciders:** the rewrite team, on the evidence in job 010's recon and spec
 - **Date:** 2026-10-24
 
@@ -134,17 +134,53 @@ on as soon as the write completes.
 ## The invite emit stays unguarded
 
 The read is registered before the invite mint's only `await`, and its cancellation is
-checked before the stored read opens, so a `CLOSE` that is *handled after that registration*
-ends the subscription with no stored event and no `EOSE`; one whose handler is scheduled
-ahead of its own `REQ` finds nothing to abort, which is pre-existing and tracked as
-cameri/nostream#958. The invite `EVENT` is nonetheless still
-emitted for that closed subscription. That is deliberate parity, not an oversight: the
+checked before the stored read opens, so a `CLOSE` ends the subscription with no stored
+event and no `EOSE`. Since §"Inbound dispatch order" below, that `CLOSE` cannot be handled
+ahead of its own `REQ` either: a handler's prefix runs on the connection loop before the next
+frame is read, which is what closed cameri/nostream#958. The invite `EVENT` is nonetheless
+still emitted for that closed subscription. That is deliberate parity, not an oversight: the
 capture emits the invite event unguarded
 (`src/handlers/subscribe-message-handler.ts:111`) and attaches its abort signal only to the
 stored read (`:230`), while it sets the abortable subscription id as the handler's first
 statement (`:53`). The TypeScript tree wins where the two trees disagree absent a decision
 record, so the fix must not reach for the emit; the exposure it leaves is one stray
 `EVENT`, which is the capture's own.
+
+## Inbound dispatch order — a prefix on the loop, not a serialized handler
+
+An inbound frame's handler was spawned whole into the per-socket `JoinSet`, so two frames
+read in order ran in whichever order the scheduler picked: a `CLOSE` could be handled ahead
+of its own `REQ` and find nothing to abort, and a restricted `REQ` could be refused before
+the `AUTH` that preceded it had been handled. Both were measured through a real socket —
+30/30 runs at one worker for the `REQ`/`CLOSE` pair, 10/10 at two for `AUTH`/`REQ` — and
+neither was visible to the suite, because `#[tokio::test]` defaults to the one runtime flavour
+in which a spawned handler cannot overtake the task that spawned it.
+
+The decision is the capture's own division of a message: its **ordering-sensitive prefix**
+runs before the next frame is read, and its continuations stay concurrent.
+`handlers::begin` runs each prefix on the connection loop and returns the continuation for
+the `JoinSet`. The prefixes are `subscribe` (everything through `begin_read`, so the
+subscription and its read exist before a following `CLOSE` is looked at), `unsubscribe` (the
+whole handler) and `auth` (the whole handler, which has no `await`). `EVENT` and `COUNT` keep
+their whole body as one spawned future: what they do before their first `await` touches the
+rate limiters and the settings, which no later frame reads in arrival order, and moving it
+would add loop latency to the hottest inbound path for no capture-visible difference.
+
+Two shapes were rejected. **Serializing whole handlers** — an ordered queue drained in the
+loop — would run a `REQ`'s invite mint to completion before a `CLOSE` already in the buffer
+is looked at, which the capture permits and `tests/handlers.rs` asserts, and it would put
+every database write in front of the socket's whole read path. **An ordering token per
+connection** — a per-id "closed at sequence N" consulted by `begin_read` — needs the second
+structure in `InFlightReads` this record argues against in §"Read ownership", must be bounded
+or evicted, needs a rule for what an "older" `REQ` means under a re-`REQ`, and orders
+`AUTH` before a restricted `REQ` only with a second, unrelated rule.
+
+What this does not decide: it is a guarantee about prefixes, not about handler execution.
+Continuations interleave as before, so a `CLOSE` during a gated invite mint still aborts the
+read and the invite `EVENT` is still emitted. The cost accepted is that
+`normalise_subscription` and `can_subscribe` run on the loop task, bounded by
+`transport::max_payload_size` and, where configured, `max_filters` / `max_filter_values`;
+the capture does the same work on its socket's thread.
 
 ## Not decided here — the port's `CLOSE` semantics
 
