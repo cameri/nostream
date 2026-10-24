@@ -115,4 +115,18 @@ describe('admin-moderation', () => {
     const limits = readAdminModerationLimits()
     expect(limits.pubkey.blacklist).to.include(pubkey)
   })
+
+  it('persists when user settings only override part of info', () => {
+    settingsConfig.saveSettings({ info: { relay_url: 'wss://relay.example' } } as any)
+    const pubkey = 'f'.repeat(64)
+
+    expect(() =>
+      persistAdminModerationLimits({
+        ...baseLimits,
+        pubkey: { blacklist: [pubkey], whitelist: [] },
+      }),
+    ).to.not.throw()
+
+    expect(readAdminModerationLimits().pubkey.blacklist).to.include(pubkey)
+  })
 })

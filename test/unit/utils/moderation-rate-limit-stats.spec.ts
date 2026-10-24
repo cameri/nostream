@@ -39,6 +39,19 @@ describe('moderation-rate-limit-stats', () => {
     expect(evalStub.firstCall.args[2][0]).to.equal('a'.repeat(64))
   })
 
+  it('aggregates every UTC day bucket touched by a 24h rolling window', async () => {
+    const evalStub = Sinon.stub().resolves([])
+    const cache = { eval: evalStub } as unknown as ICacheAdapter
+    const nowMs = Date.UTC(2026, 9, 24, 15, 0, 0)
+
+    await listModerationRateLimitHits(cache, 5, 24, nowMs)
+
+    const dayBuckets = (evalStub.firstCall.args[1] as string[]).slice(1)
+    expect(dayBuckets).to.have.length(2)
+    expect(dayBuckets[0]).to.match(/:20261023$/)
+    expect(dayBuckets[1]).to.match(/:20261024$/)
+  })
+
   it('lists aggregated top hits from redis eval', async () => {
     const evalStub = Sinon.stub()
     evalStub.onFirstCall().resolves(['pubkey-a', '3'])

@@ -1,4 +1,5 @@
 import { isIP } from 'node:net'
+import { mergeDeepRight } from 'ramda'
 
 import { Settings } from '../@types/settings'
 import { isHexPubkey, parseRelayPubkey } from './nip43-invites'
@@ -136,10 +137,7 @@ export const persistAdminModerationLimits = (next: AdminModerationLimits): void 
 
   const userSettings = loadUserSettings() as Settings
   const nextUserSettings = applyLimitsToUserSettings(userSettings, normalized)
-  const mergedNext = {
-    ...loadDefaults(),
-    ...nextUserSettings,
-  } as Settings
+  const mergedNext = mergeDeepRight(loadDefaults(), nextUserSettings) as Settings
 
   const issues = validateSettings(mergedNext)
   if (issues.length > 0) {

@@ -47,13 +47,26 @@ const bucketKey = (prefix: string, unixMs: number): string => `${prefix}:${utcDa
 
 const bucketTtlSeconds = (): number => STATS_RETENTION_DAYS * 86400
 
+const utcDayStartMs = (unixMs: number): number => {
+  const date = new Date(unixMs)
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+}
+
+/** UTC day buckets that overlap the rolling window (not just the last N calendar days from now). */
 const listDayBucketSuffixes = (windowHours: number, nowMs = Date.now()): string[] => {
-  const windowDays = Math.max(1, Math.ceil(windowHours / 24))
-  const dayCount = Math.min(windowDays, STATS_RETENTION_DAYS)
+  const clampedWindowHours = Math.min(Math.max(Math.floor(windowHours), 1), STATS_RETENTION_DAYS * 24)
+  const windowStartMs = nowMs - clampedWindowHours * 3600000
+  const retentionStartMs = nowMs - STATS_RETENTION_DAYS * 86400000
+
+  let cursorMs = utcDayStartMs(Math.max(windowStartMs, retentionStartMs))
+  const endDayMs = utcDayStartMs(nowMs)
   const suffixes: string[] = []
-  for (let offset = 0; offset < dayCount; offset += 1) {
-    suffixes.push(utcDayBucketSuffix(nowMs - offset * 86400000))
+
+  while (cursorMs <= endDayMs) {
+    suffixes.push(utcDayBucketSuffix(cursorMs))
+    cursorMs += 86400000
   }
+
   return suffixes
 }
 
@@ -96,9 +109,10 @@ const fetchAggregatedHits = async (
   prefix: string,
   limit: number,
   windowHours: number,
+  nowMs = Date.now(),
 ): Promise<ModerationRateLimitHitRow[]> => {
   const clamped = Math.min(Math.max(Math.floor(limit), 1), 100)
-  const suffixes = listDayBucketSuffixes(windowHours)
+  const suffixes = listDayBucketSuffixes(windowHours, nowMs)
   if (!suffixes.length) {
     return []
   }
@@ -115,10 +129,11 @@ export const listModerationRateLimitHits = async (
   cache: ICacheAdapter,
   limit: number,
   windowHours = STATS_RETENTION_DAYS * 24,
+  nowMs = Date.now(),
 ): Promise<{ pubkeys: ModerationRateLimitHitRow[]; ips: ModerationRateLimitHitRow[] }> => {
   const [pubkeys, ips] = await Promise.all([
-    fetchAggregatedHits(cache, PUBKEY_HITS_PREFIX, limit, windowHours),
-    fetchAggregatedHits(cache, IP_HITS_PREFIX, limit, windowHours),
+    fetchAggregatedHits(cache, PUBKEY_HITS_PREFIX, limit, windowHours, nowMs),
+    fetchAggregatedHits(cache, IP_HITS_PREFIX, limit, windowHours, nowMs),
   ])
 
   return { pubkeys, ips }
