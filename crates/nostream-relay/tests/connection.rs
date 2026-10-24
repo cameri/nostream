@@ -18,7 +18,7 @@ use std::sync::Arc;
 use common::{CLIENT_SECRET, NOW_MS, NOW_SECS, Server, fast_config, relay_keys, signed_event};
 use nostream_core::clock::TestClock;
 use nostream_core::filter::Filter;
-use nostream_core::messages::SubscribeMessage;
+use nostream_core::messages::{AuthMessage, ClientMessage, SubscribeMessage, UnsubscribeMessage};
 use nostream_core::{EventId, Pubkey};
 use nostream_relay::connection::{Connection, Subscription};
 use nostream_relay::sink::FrameSink;
@@ -427,7 +427,7 @@ async fn closing_the_socket_aborts_an_in_flight_read() {
         let context = Arc::clone(&context);
 
         async move {
-            nostream_relay::handlers::subscribe::handle(
+            let continuation = nostream_relay::handlers::subscribe::begin(
                 SubscribeMessage {
                     subscription_id: "s1".to_owned(),
                     filters: vec![Filter {
@@ -437,7 +437,9 @@ async fn closing_the_socket_aborts_an_in_flight_read() {
                 },
                 &context,
             )
-            .await;
+            .expect("the REQ registers its subscription");
+
+            continuation.await;
         }
     });
 
@@ -510,7 +512,7 @@ async fn restricted_read_with(authenticate_mid_read: bool) -> Vec<String> {
         let context = Arc::clone(&context);
 
         async move {
-            nostream_relay::handlers::subscribe::handle(
+            let continuation = nostream_relay::handlers::subscribe::begin(
                 SubscribeMessage {
                     subscription_id: "restricted".to_owned(),
                     // A filter that names no kind is accepted while unauthenticated; the
@@ -520,7 +522,9 @@ async fn restricted_read_with(authenticate_mid_read: bool) -> Vec<String> {
                 },
                 &context,
             )
-            .await;
+            .expect("the REQ registers its subscription");
+
+            continuation.await;
         }
     });
 
@@ -603,4 +607,82 @@ async fn a_restricted_read_is_judged_against_the_authenticated_set_at_each_event
     assert!(authenticated[1].starts_with(r#"["EVENT","restricted","#));
     assert!(authenticated[1].contains("encrypted"));
     assert_eq!(authenticated[2], r#"["EOSE","restricted"]"#);
+}
+
+// ---------------------------------------------------------------------------------------
+// Handler dispatch order
+// ---------------------------------------------------------------------------------------
+
+/// A message's prefix has run by the time `begin` returns, before its continuation is polled.
+///
+/// No scheduler is involved: every assertion sits between two synchronous calls on this task,
+/// so `Connection` either holds the registration or it does not.
+#[tokio::test]
+async fn a_handler_prefix_runs_before_its_continuation_is_polled() {
+    let fixture = Fixture::new(settings());
+    let connection = connection();
+    let (sink, mut frames) = FrameSink::channel(1024 * 1024);
+    let context = Arc::new(fixture.context(
+        Arc::new(TestClock::new(NOW_MS)),
+        relay_keys(),
+        Arc::clone(&connection),
+        sink,
+    ));
+
+    let continuation = nostream_relay::handlers::begin(
+        ClientMessage::Subscribe(SubscribeMessage {
+            subscription_id: "s1".to_owned(),
+            filters: vec![Filter {
+                kinds: Some(vec![nostream_core::Kind(1)]),
+                ..Default::default()
+            }],
+        }),
+        &context,
+    );
+
+    // Nothing above was awaited and nothing was polled, yet the REQ has registered.
+    assert!(continuation.is_some(), "the REQ has a continuation");
+    assert!(connection.read_in_flight("s1"));
+    assert!(connection.subscription("s1").is_some());
+
+    // Dropped unpolled: the registration is the whole of what this test needs from it.
+    drop(continuation);
+
+    assert!(
+        nostream_relay::handlers::begin(
+            ClientMessage::Unsubscribe(UnsubscribeMessage {
+                subscription_id: "s1".to_owned(),
+            }),
+            &context,
+        )
+        .is_none(),
+        "a CLOSE completes inside its prefix"
+    );
+    assert!(!connection.read_in_flight("s1"));
+    assert!(connection.subscription("s1").is_none());
+
+    let event = signed_event(
+        &CLIENT_SECRET,
+        22_242,
+        vec![
+            vec!["relay", "wss://relay.example.com"],
+            vec!["challenge", "challenge"],
+        ],
+        "",
+        NOW_SECS,
+    );
+
+    assert!(
+        nostream_relay::handlers::begin(ClientMessage::Auth(AuthMessage { event }), &context)
+            .is_none(),
+        "an AUTH completes inside its prefix"
+    );
+
+    // The OK is already in the sink, so the AUTH's frame was written on this task.
+    let ok = frames.try_recv().expect("the AUTH's OK frame");
+
+    assert!(
+        ok.starts_with(r#"["OK","#) && ok.ends_with(r#"true,""]"#),
+        "{ok}"
+    );
 }

@@ -5,6 +5,15 @@
 //! write-point sink, the read-through settings, the clock, the connection state and the
 //! repository seams.
 
+//! [`begin`] runs a message's **ordering-sensitive prefix** on the caller's task — the
+//! connection loop — before the loop reads the next frame, and returns the rest of the
+//! handler as a future to spawn. The rule for which handler takes a prefix: it is the
+//! per-connection state a later frame's handler reads and expects to be there. `subscribe`
+//! registers its subscription and its read, `unsubscribe` clears them, and `auth` records the
+//! session a restricted `REQ` is judged against, so those three are prefixes. `event` and
+//! `count` keep their whole body as one future: what they do before their first `await`
+//! touches the rate limiters and the settings, which no later frame reads in arrival order.
+
 pub mod auth;
 pub mod count;
 pub mod event;
@@ -186,20 +195,40 @@ pub fn restricted_read_kinds(settings: Option<&Nip42Settings>) -> Vec<KindSelect
 /// One handler's future, boxed so a connection task can spawn it without naming its type.
 pub type HandlerFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 
-/// Runs one decoded client message as the capture's `messageHandlerFactory` switch does.
-pub fn dispatch(
+/// Runs one decoded client message's ordering-sensitive prefix on the caller's task, as the
+/// capture's `messageHandlerFactory` switch does, and returns the rest of its handler.
+///
+/// The connection loop calls this before it reads the next frame, so every statement a
+/// handler executes before its first suspension point has run in arrival order. `None` means
+/// the message was handled inside its prefix; `Some(future)` is the continuation, which is
+/// spawned into the socket's handler set and stays concurrent with its neighbours.
+pub fn begin(
     message: nostream_core::messages::ClientMessage,
-    context: Arc<HandlerContext>,
-) -> HandlerFuture {
+    context: &Arc<HandlerContext>,
+) -> Option<HandlerFuture> {
     use nostream_core::messages::ClientMessage;
 
-    Box::pin(async move {
-        match message {
-            ClientMessage::Event(event) => event::handle(event, &context).await,
-            ClientMessage::Subscribe(message) => subscribe::handle(message, &context).await,
-            ClientMessage::Count(message) => count::handle(message, &context).await,
-            ClientMessage::Unsubscribe(message) => unsubscribe::handle(message, &context),
-            ClientMessage::Auth(message) => auth::handle(message, &context).await,
+    match message {
+        ClientMessage::Event(event) => {
+            let context = Arc::clone(context);
+
+            Some(Box::pin(async move { event::handle(event, &context).await }))
         }
-    })
+        ClientMessage::Count(message) => {
+            let context = Arc::clone(context);
+
+            Some(Box::pin(async move { count::handle(message, &context).await }))
+        }
+        ClientMessage::Subscribe(message) => subscribe::begin(message, context),
+        ClientMessage::Unsubscribe(message) => {
+            unsubscribe::handle(message, context);
+
+            None
+        }
+        ClientMessage::Auth(message) => {
+            auth::handle(message, context);
+
+            None
+        }
+    }
 }
