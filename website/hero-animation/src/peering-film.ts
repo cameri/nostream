@@ -31,7 +31,7 @@ const asset = (name: string) => path.join(ROOT, 'assets', 'gen', `${name}.png`)
  * 1200 frames. One job per scene, framed as what peering makes possible.
  *
  * Scene copy doc: docs/peering-film-copy.md (#942). On-screen claims follow the peering plan (#931–#940):
- * - terms are a flat fee for a period the operator sets, never per event
+ * - terms are flat or traffic-based fees for a period the operator sets, never per event
  * - settlement is Lightning between relays, in sats
  * - a cache window is operator-configured; "the last hour" is one such window
  * No named operators, counts, or network statistics.
@@ -259,7 +259,7 @@ export async function buildFilm(): Promise<Composition> {
   // ── Scene 1 · PEOPLE: a relay for your people, not the whole network ───
   {
     const end = PEOPLE.end
-    sceneKicker('01  —  YOUR PEOPLE', PEOPLE.start, end)
+    sceneKicker('01 — YOUR PEOPLE', PEOPLE.start, end)
     add(
       sans('Run a relay for your people.', hx, 196, 72),
       headlineAnim(196, PEOPLE.start, end, 12),
@@ -270,8 +270,8 @@ export async function buildFilm(): Promise<Composition> {
     )
 
     const cards = [
-      { k: 'SCOPE', t: 'Your people', d: 'not the whole network' },
-      { k: 'PEERS FOR', t: 'Its scope', d: 'peers for its scope' },
+      { k: 'SCOPE', t: 'Your people', d: 'the people you follow' },
+      { k: 'PEERING', t: 'Their relays', d: 'the ones your people use' },
       { k: 'FETCHES', t: 'The rest', d: 'on demand' },
     ]
     const cardY = 420
@@ -309,10 +309,10 @@ export async function buildFilm(): Promise<Composition> {
     )
   }
 
-  // ── Scene 2 · WORTH: a flat Lightning fee, never per event ──────────────
+  // ── Scene 2 · WORTH: flat or traffic-based fees, never per event ─────────
   {
     const end = WORTH.end
-    sceneKicker('02  —  YOUR ARCHIVE', WORTH.start, end)
+    sceneKicker('02 — YOUR ARCHIVE', WORTH.start, end)
     add(sans('Your archive', hx, 176, 84), headlineAnim(176, WORTH.start, end, 8))
     add(
       sans('is worth something now.', hx, 274, 84, { fill: PINK }),
@@ -359,7 +359,7 @@ export async function buildFilm(): Promise<Composition> {
     )
 
     const rows = [
-      { k: 'fee', v: 'flat — one charge for the period', color: FG },
+      { k: 'fee', v: 'flat or traffic-based — you set the terms', color: FG },
       { k: 'period', v: 'you set the length', color: FG_2 },
       { k: 'settlement', v: 'Lightning, in sats, between relays', color: FG, icon: true },
       { k: 'per event', v: 'never', color: PINK },
@@ -387,7 +387,7 @@ export async function buildFilm(): Promise<Composition> {
   // ── Scene 3 · FAST: an operator-set cache window, illustrated as an hour ─
   {
     const end = FAST.end
-    sceneKicker('03  —  HOT FEED', FAST.start, end)
+    sceneKicker('03 — HOT FEED', FAST.start, end)
     add(sans('Fast, everywhere.', hx, 196, 88), headlineAnim(196, FAST.start, end, 8))
     add(
       sans('The hot feed, near the readers.', hx, 308, 42, { fill: BODY, fontWeight: 500, letterSpacing: -0.4 }),
@@ -423,7 +423,7 @@ export async function buildFilm(): Promise<Composition> {
 
     const notes = [
       { k: 'BEFORE THIS CUT', t: 'Ask an archive.', d: 'outside the window', edge: PANEL_BORDER },
-      { k: 'CACHE PEERS', t: 'The last hour.', d: 'operator-configured window', edge: TEAL },
+      { k: 'CACHE PEERS', t: 'A rolling window', d: 'the last hour, or whatever you configure', edge: TEAL },
     ]
     const noteY = 548
     const noteW = 760
@@ -459,7 +459,7 @@ export async function buildFilm(): Promise<Composition> {
   // ── Scene 4 · MIDDLE: archives and caches behind user-facing edges ──────
   {
     const end = MIDDLE.end
-    sceneKicker('04  —  THE MIDDLE', MIDDLE.start, end)
+    sceneKicker('04 — THE MIDDLE', MIDDLE.start, end)
     add(sans('Relays that only talk to relays.', hx, 188, 64), headlineAnim(188, MIDDLE.start, end, 8))
     add(
       sans('The network can grow a middle.', hx, 274, 40, { fill: PINK, fontWeight: 600, letterSpacing: -0.5 }),
@@ -469,7 +469,7 @@ export async function buildFilm(): Promise<Composition> {
     const roles = [
       { k: 'ARCHIVE', t: 'Deep history', d: 'backbone infrastructure', accent: false },
       { k: 'CACHE', t: 'Rolling window', d: 'hot feed near readers', accent: false },
-      { k: 'EDGE', t: 'Faces users', d: 'edges facing users', accent: true },
+      { k: 'EDGE', t: 'The relay readers connect to', d: 'users in front', accent: true },
     ]
     const cardY = 430
     const cardW = 500

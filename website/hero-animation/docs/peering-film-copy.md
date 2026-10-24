@@ -9,7 +9,7 @@ Source: [nostream#942](https://github.com/cameri/nostream/issues/942). Compositi
 
 | Claim on screen | Spec / issue |
 |---|---|
-| Flat fee for a **period** the operator sets | #931 paid peering terms (`amount`, `unit`, `period` in NIP-11) |
+| **Flat or traffic-based** fees for a **period** the operator sets | #931 paid peering terms (`amount`, `unit`, `period` in NIP-11) |
 | **Never per event** | #931 out of scope: no per-event payments |
 | **Lightning**, **sats**, **between relays** | #931 / #937 settlement between peer relays |
 | **Cache window** operator-configured; “the last hour” is an **example** | #931 cache peers + rolling-window scope in NIP-11 |
@@ -28,8 +28,8 @@ Source: [nostream#942](https://github.com/cameri/nostream/issues/942). Compositi
 | Kicker | `01 — YOUR PEOPLE` |
 | Headline | Run a relay for your people. |
 | Accent | Not the whole network. |
-| Card 1 | **SCOPE** · Your people · not the whole network |
-| Card 2 | **PEERS FOR** · Its scope · peers for its scope |
+| Card 1 | **SCOPE** · Your people · the people you follow |
+| Card 2 | **PEERING** · Their relays · the ones your people use |
 | Card 3 | **FETCHES** · The rest · on demand |
 | Payoff | Feel complete without ingesting everything. |
 
@@ -47,7 +47,7 @@ Source: [nostream#942](https://github.com/cameri/nostream/issues/942). Compositi
 | Headline | Your archive / is worth something now. |
 | Sub | Sell feeds to other relays — settled in sats. |
 | Panel | PEERING TERMS · **PER PERIOD** chip |
-| Terms | fee: flat — one charge for the period · period: you set the length · settlement: Lightning, in sats, between relays · per event: **never** |
+| Terms | fee: flat or traffic-based — you set the terms · period: you set the length · settlement: Lightning, in sats, between relays · per event: **never** |
 | Payoff | A product, not a cost center. |
 
 **Issue gloss:** Deep history can be sold to other relays; completeness becomes a product.
@@ -65,7 +65,7 @@ Source: [nostream#942](https://github.com/cameri/nostream/issues/942). Compositi
 | Sub | The hot feed, near the readers. |
 | Track | OLDER THAN THE WINDOW · THE HOT FEED |
 | Note A | BEFORE THIS CUT · Ask an archive. · outside the window |
-| Note B | CACHE PEERS · The last hour. · operator-configured window |
+| Note B | CACHE PEERS · A rolling window · the last hour, or whatever you configure |
 | Payoff | Small relays feel instant — without owning the firehose. |
 
 **Issue gloss:** Cache peers holding only the last hour put hot feed near readers.
@@ -83,10 +83,10 @@ Source: [nostream#942](https://github.com/cameri/nostream/issues/942). Compositi
 | Accent | The network can grow a middle. |
 | Archive | Deep history · backbone infrastructure |
 | Cache | Rolling window · hot feed near readers |
-| Edge | Faces users · edges facing users |
+| Edge | **EDGE** · the relay readers connect to |
 | Payoff | Infrastructure behind. Users in front. |
 
-**Issue gloss:** Archives and caches as infrastructure; edges facing users.
+**Issue gloss:** Archives and caches as infrastructure; edge relays facing readers.
 
 ---
 
