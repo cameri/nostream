@@ -469,7 +469,7 @@ export async function buildFilm(): Promise<Composition> {
     const roles = [
       { k: 'ARCHIVE', t: 'Deep history', d: 'backbone infrastructure', accent: false },
       { k: 'CACHE', t: 'Rolling window', d: 'hot feed near readers', accent: false },
-      { k: 'EDGE', t: 'The relay readers connect to', d: 'users in front', accent: true },
+      { k: 'EDGE', t: 'Readers connect', d: 'the relay readers connect to', accent: true },
     ]
     const cardY = 430
     const cardW = 500
@@ -523,9 +523,16 @@ export async function buildFilm(): Promise<Composition> {
         Layer.box({ position: 'absolute', x: centers[i] - 7, y: lineY - 6, width: 14, height: 14, background: c.accent ? PINK : TEAL, borderRadius: 7, opacity: 0 }),
         show(lineY - 6, { start: s, end, inF: 8 }),
       )
+      const textW = cardW - 72
       add(mono(c.k, x + 36, cardY + 40, 18, { fill: TEAL }), show(cardY + 40, { start: s + 8, end, inF: 10 }))
-      add(sans(c.t, x + 36, cardY + 84, 40), show(cardY + 84, { start: s + 12, end, dy: 10, inF: 12 }))
-      add(mono(c.d, x + 36, cardY + 156, 22, { fill: FG_2 }), show(cardY + 156, { start: s + 20, end, inF: 12 }))
+      add(
+        sans(c.t, x + 36, cardY + 84, 40, { width: textW, lineHeight: 1.12 }),
+        show(cardY + 84, { start: s + 12, end, dy: 10, inF: 12 }),
+      )
+      add(
+        mono(c.d, x + 36, cardY + 156, 22, { fill: FG_2, width: textW, lineHeight: 1.35 }),
+        show(cardY + 156, { start: s + 20, end, inF: 12 }),
+      )
     })
 
     add(

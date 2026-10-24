@@ -83,7 +83,7 @@ Source: [nostream#942](https://github.com/cameri/nostream/issues/942). Compositi
 | Accent | The network can grow a middle. |
 | Archive | Deep history · backbone infrastructure |
 | Cache | Rolling window · hot feed near readers |
-| Edge | **EDGE** · the relay readers connect to |
+| Edge | **EDGE** · Readers connect · the relay readers connect to |
 | Payoff | Infrastructure behind. Users in front. |
 
 **Issue gloss:** Archives and caches as infrastructure; edge relays facing readers.
