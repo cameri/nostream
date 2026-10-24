@@ -179,12 +179,14 @@ mod tests {
 
     use super::*;
 
+    // Hex with letters in it: an all-digit fixture makes `to_uppercase()` a no-op, and a
+    // test that uppercases it then asserts equality proves nothing.
     fn pubkey_hex() -> String {
-        "3".repeat(64)
+        "3a".repeat(32)
     }
 
     fn event_id_hex() -> String {
-        "4".repeat(64)
+        "4c".repeat(32)
     }
 
     fn tag(parts: &[&str]) -> Tag {
@@ -276,7 +278,14 @@ mod tests {
     #[test]
     fn uppercase_hex_names_the_same_target() {
         let pubkey = pubkey_hex();
-        let targets = extract_report_targets(&[tag(&["p", &pubkey.to_uppercase()])]);
+        let upper = pubkey.to_uppercase();
+
+        assert_ne!(
+            upper, pubkey,
+            "the fixture must carry a letter, or this test proves nothing"
+        );
+
+        let targets = extract_report_targets(&[tag(&["p", &upper])]);
 
         assert_eq!(targets[0].reported_pubkey, Some(pubkey.parse().unwrap()));
     }
