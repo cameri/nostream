@@ -16,6 +16,33 @@ describe('flattenSettingsToPaths', () => {
     ])
   })
 
+  it('preserves notification event keys that contain dots', () => {
+    expect(
+      flattenSettingsToPaths({
+        admin: {
+          notifications: {
+            events: { 'settings.changed': true, 'mirror.disconnected': false },
+          },
+        },
+      }),
+    ).to.deep.equal([
+      { path: 'admin.notifications.events["settings.changed"]', value: true },
+      { path: 'admin.notifications.events["mirror.disconnected"]', value: false },
+    ])
+  })
+
+  it('stores empty arrays as explicit override rows', () => {
+    expect(
+      flattenSettingsToPaths({
+        limits: {
+          message: {
+            ipWhitelist: [],
+          },
+        },
+      }),
+    ).to.deep.equal([{ path: 'limits.message.ipWhitelist', value: [] }])
+  })
+
   it('flattens indexed array paths', () => {
     expect(
       flattenSettingsToPaths({

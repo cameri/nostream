@@ -12,3 +12,5 @@ export const getDefaultSettingsFilePath = (): string => join(process.cwd(), 'res
 export const getSettingsBackupDir = (): string => join(getConfigBaseDir(), 'backups')
 
 export const getSettingsAuditLogPath = (): string => join(getConfigBaseDir(), 'settings-audit.jsonl')
+
+export const getSettingsDbImportMarkerPath = (): string => join(getConfigBaseDir(), '.settings-db-import-complete')

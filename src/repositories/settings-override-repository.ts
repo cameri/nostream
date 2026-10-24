@@ -33,7 +33,7 @@ export class SettingsOverrideRepository {
       await transaction('settings_overrides').insert(
         entries.map((entry) => ({
           path: entry.path,
-          value: entry.value,
+          value: JSON.stringify(entry.value),
           updated_at: now,
         })),
       )

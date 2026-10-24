@@ -77,12 +77,12 @@ describe('SettingsOverrideRepository', () => {
     expect(insertedRows).to.have.length(2)
     expect(insertedRows[0]).to.deep.include({
       path: 'info.name',
-      value: 'Updated Relay',
+      value: JSON.stringify('Updated Relay'),
     })
     expect(insertedRows[0].updated_at).to.be.instanceOf(Date)
     expect(insertedRows[1]).to.deep.include({
       path: 'admin.enabled',
-      value: true,
+      value: JSON.stringify(true),
     })
     expect(insertedRows[1].updated_at).to.be.instanceOf(Date)
   })

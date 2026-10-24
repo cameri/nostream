@@ -72,6 +72,49 @@ const hasOwn = (object: Record<string, unknown>, key: string): boolean => {
   return Object.prototype.hasOwnProperty.call(object, key)
 }
 
+const QUOTED_PATH_KEY = /^\["((?:\\.|[^"\\])*)"\]$/
+
+export const formatSettingsPathKey = (key: string): string => {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    return key
+  }
+
+  return `["${key.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`
+}
+
+const tokenizePathSegments = (input: string): string[] => {
+  const segments: string[] = []
+  let index = 0
+
+  while (index < input.length) {
+    if (input[index] === '.') {
+      index += 1
+      continue
+    }
+
+    if (input[index] === '[') {
+      const closing = input.indexOf('"]', index + 1)
+      if (closing < 0) {
+        throw new Error(`Invalid path segment in: ${input}`)
+      }
+
+      segments.push(input.slice(index, closing + 2))
+      index = closing + 2
+      continue
+    }
+
+    let next = index
+    while (next < input.length && input[next] !== '.') {
+      next += 1
+    }
+
+    segments.push(input.slice(index, next))
+    index = next
+  }
+
+  return segments.filter(Boolean)
+}
+
 const parsePath = (path: string): PathToken[] => {
   const input = path.trim()
 
@@ -80,11 +123,14 @@ const parsePath = (path: string): PathToken[] => {
   }
 
   const tokens: PathToken[] = []
-  const segments = input.split('.').map((part) => part.trim())
 
-  for (const segment of segments) {
-    if (!segment) {
-      throw new Error(`Invalid path segment in: ${path}`)
+  for (const segment of tokenizePathSegments(input)) {
+    const quoted = segment.match(QUOTED_PATH_KEY)
+    if (quoted) {
+      const key = quoted[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+      assertSafePathKey(key, segment)
+      tokens.push({ type: 'key', key })
+      continue
     }
 
     const match = segment.match(/^([A-Za-z_][A-Za-z0-9_]*)(\[(\d+)\])*$/)
@@ -114,7 +160,8 @@ const formatPathTokens = (tokens: PathToken[]): string => {
 
   for (const token of tokens) {
     if (token.type === 'key') {
-      out = out ? `${out}.${token.key}` : token.key
+      const formatted = formatSettingsPathKey(token.key)
+      out = out ? `${out}.${formatted}` : formatted
       continue
     }
 
@@ -395,6 +442,10 @@ export const flattenSettingsToPaths = (
   prefix = '',
 ): Array<{ path: string; value: unknown }> => {
   if (Array.isArray(value)) {
+    if (value.length === 0 && prefix) {
+      return [{ path: prefix, value: [] }]
+    }
+
     return value.flatMap((entry, index) => {
       const nextPrefix = prefix ? `${prefix}[${index}]` : `[${index}]`
       return flattenSettingsToPaths(entry, nextPrefix)
@@ -408,7 +459,12 @@ export const flattenSettingsToPaths = (
     }
 
     return entries.flatMap(([key, entry]) => {
-      const nextPrefix = prefix ? `${prefix}.${key}` : key
+      const keySegment = formatSettingsPathKey(key)
+      const nextPrefix = prefix
+        ? keySegment.startsWith('[')
+          ? `${prefix}${keySegment}`
+          : `${prefix}.${keySegment}`
+        : keySegment
       if (isPlainObject(entry) || Array.isArray(entry)) {
         return flattenSettingsToPaths(entry, nextPrefix)
       }
@@ -463,7 +519,23 @@ export type SettingsBackupInfo = {
 }
 
 const isSafeBackupFilename = (filename: string): boolean => {
-  return /^settings\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.yaml$/.test(filename)
+  return /^settings(?:-db)?\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.yaml$/.test(filename)
+}
+
+export const backupUserSettingsOverrides = (overrides: Settings): string => {
+  ensureSettingsExists()
+  const backupDirectory = getSettingsBackupDir()
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const filename = `settings-db.${timestamp}.yaml`
+
+  fs.mkdirSync(backupDirectory, { recursive: true })
+  fs.writeFileSync(
+    join(backupDirectory, filename),
+    yaml.dump(toSerializable(overrides), { lineWidth: 120 }),
+    { encoding: 'utf-8', mode: 0o600 },
+  )
+
+  return filename
 }
 
 export const listSettingsBackups = (): SettingsBackupInfo[] => {
