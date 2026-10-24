@@ -24,6 +24,10 @@ import { createPostAdminOpsNip05ReverifyController } from '../../factories/contr
 import { createGetAdminAuditLogController } from '../../factories/controllers/get-admin-audit-log-controller-factory'
 import { createGetAdminDiagnosticsExportController } from '../../factories/controllers/get-admin-diagnostics-export-controller-factory'
 import { createPostAdminNetworkHealthRunController } from '../../factories/controllers/post-admin-network-health-run-controller-factory'
+import { createGetAdminModerationLimitsController } from '../../factories/controllers/get-admin-moderation-limits-controller-factory'
+import { createGetAdminModerationStatsController } from '../../factories/controllers/get-admin-moderation-stats-controller-factory'
+import { createPatchAdminModerationLimitsController } from '../../factories/controllers/patch-admin-moderation-limits-controller-factory'
+import { createPostAdminModerationActionsController } from '../../factories/controllers/post-admin-moderation-actions-controller-factory'
 import { adminAuthGateMiddleware, adminAuthMiddleware } from '../../handlers/request-handlers/admin-auth-middleware'
 import { adminEnabledMiddleware } from '../../handlers/request-handlers/admin-enabled-middleware'
 import { adminJsonBodyMiddleware } from '../../handlers/request-handlers/admin-json-body-middleware'
@@ -98,6 +102,34 @@ router.get(
   adminRateLimitMiddleware,
   adminAuthMiddleware,
   withAdminController(createGetAdminDiagnosticsExportController),
+)
+router.get(
+  '/moderation/limits',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminModerationLimitsController),
+)
+router.patch(
+  '/moderation/limits',
+  adminRateLimitMiddleware,
+  adminAuthGateMiddleware,
+  adminJsonBodyMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPatchAdminModerationLimitsController),
+)
+router.post(
+  '/moderation/actions',
+  adminRateLimitMiddleware,
+  adminAuthGateMiddleware,
+  adminJsonBodyMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPostAdminModerationActionsController),
+)
+router.get(
+  '/moderation/stats',
+  adminRateLimitMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createGetAdminModerationStatsController),
 )
 router.get(
   '/settings',
