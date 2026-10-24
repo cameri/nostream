@@ -181,17 +181,17 @@ Two limits worth recording rather than discovering in production:
   The event level's key count is a property of the *kinds an author uses*, not of the level.
   `resources/default-settings.yaml` ships six kind-scoped 60 s windows — `0,3,40,41`;
   `1,2,4,42`; `5–7,43–49`; `10000–19999,30000–39999`; `445`; `20000–29999` — and the key is
-  `{pubkey}:events:{period}:{kinds}`, so the selector set names the key
-  (`limits.rs`, `event_backoff`). A kind that matches no kind window (`8–10`, `11–39`,
-  `50–444`) spends only the hour key: 65,536 such authors fill the store and are refused
-  until 1 h + 1 s. An author posting one kind from each window holds all seven keys,
-  65,536 ÷ 7 ≈ 9,400 authors fill the same store; their 60 s keys lapse first, which reopens
-  it at 61 s, and a *sustained* flood then accumulates hour keys until those alone reach the
-  ceiling — that is the hour-long closure, and it follows from the kinds such a flood picks,
-  not from the level. A single-kind flood is the common case of two keys: 32,768 authors,
-  reopening at 61 s. Both ends were measured in the round-4 probe: kind 1 → 32,768 authors
-  reopening at 61 s, kind 9999 → 65,536 authors still refused at 61 s and admitting at
-  1 h + 1 s.
+  `{pubkey}:events:{period}:{kinds}`, so the selector set names the key (`limits.rs`,
+  `event_backoff`). A kind outside all six windows — `8–39`, `50–444`, `446–9999`,
+  `40000–65535` — spends only the hour key: 65,536 such authors fill the store and are
+  refused until 1 h + 1 s. An author posting one kind from each window holds all seven keys,
+  so 65,536 ÷ 7 ≈ 9,400 authors fill the same store; their 60 s keys lapse first, which
+  reopens it at 61 s, and a *sustained* flood then accumulates hour keys until those alone
+  reach the ceiling — that is the hour-long closure, and it follows from the kinds such a
+  flood picks, not from the level. A single-kind flood is the common case of two keys:
+  32,768 authors, reopening at 61 s. Both ends were measured in the round-4 probe: kind 1 →
+  32,768 authors reopening at 61 s, kind 9999 → 65,536 authors still refused at 61 s and
+  admitting at 1 h + 1 s.
 
   The closure is per level and it never touches the others, which is the point of four
   stores; it is the price of never freeing a live key. This is also the reason a level's
