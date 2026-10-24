@@ -1,7 +1,7 @@
 {
   "capture": "242a3001d77149e4d70151ec03060c4ef44a1547",
   "generated_by": "crates/nostream-relay/tests/capture/gen-ts-cases.mjs",
-  "total": 557,
+  "total": 658,
   "files": [
     {
       "file": "test/unit/handlers/event-message-handler.spec.ts",
@@ -315,6 +315,19 @@
       ]
     },
     {
+      "file": "test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts",
+      "cases": 7,
+      "titles": [
+        "ContactListEventStrategy execute upserts the event",
+        "ContactListEventStrategy execute updates the wot graph with the p-tagged pubkeys when newly stored",
+        "ContactListEventStrategy execute broadcasts the event when newly stored",
+        "ContactListEventStrategy execute does not broadcast or update the wot graph when the event is a duplicate",
+        "ContactListEventStrategy execute does not fail the event when the wot graph update fails",
+        "ContactListEventStrategy execute emits a rejection when the event already exists",
+        "ContactListEventStrategy execute emits an error message on unexpected upsert failure"
+      ]
+    },
+    {
       "file": "test/unit/handlers/event-strategies/default-event-strategy.spec.ts",
       "cases": 4,
       "titles": [
@@ -322,6 +335,178 @@
         "DefaultEventStrategy execute broadcast event if event is created",
         "DefaultEventStrategy execute does not broadcast event if event is duplicate",
         "DefaultEventStrategy execute rejects if unable to create event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/delete-event-strategy.spec.ts",
+      "cases": 6,
+      "titles": [
+        "DeleteEventStrategy execute creates event",
+        "DeleteEventStrategy execute deletes events if it has e tags",
+        "DeleteEventStrategy execute does not delete events if there are no e tags",
+        "DeleteEventStrategy execute broadcast event if created",
+        "DeleteEventStrategy execute does not broadcast event if duplicate",
+        "DeleteEventStrategy execute rejects if unable to create event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/dvm-job-request-event-strategy.spec.ts",
+      "cases": 6,
+      "titles": [
+        "DvmJobRequestEventStrategy execute creates the event",
+        "DvmJobRequestEventStrategy execute records a dvm job when the event is newly created",
+        "DvmJobRequestEventStrategy execute broadcasts the event when newly created",
+        "DvmJobRequestEventStrategy execute does not broadcast or record a job when the event is a duplicate",
+        "DvmJobRequestEventStrategy execute does not reject the event when job recording fails",
+        "DvmJobRequestEventStrategy execute rejects if unable to create the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/ephemeral-event-strategy.spec.ts",
+      "cases": 1,
+      "titles": [
+        "EphemeralEventStrategy execute broadcasts event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "cases": 9,
+      "titles": [
+        "GiftWrapEventStrategy execute valid gift wrap creates the event in the repository",
+        "GiftWrapEventStrategy execute valid gift wrap sends OK and broadcasts when the event is new",
+        "GiftWrapEventStrategy execute valid gift wrap sends OK with duplicate marker and does not broadcast when event already exists",
+        "GiftWrapEventStrategy execute invalid gift wrap — p tag rejects when the p tag is missing",
+        "GiftWrapEventStrategy execute invalid gift wrap — p tag rejects when there are multiple p tags",
+        "GiftWrapEventStrategy execute invalid gift wrap — p tag accepts p tag with an optional relay hint",
+        "GiftWrapEventStrategy execute invalid gift wrap — content format rejects when content is empty",
+        "GiftWrapEventStrategy execute invalid gift wrap — content format rejects when content is plain text instead of a NIP-44 payload",
+        "GiftWrapEventStrategy execute invalid gift wrap — content format rejects when content signals an unsupported version (#)"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "cases": 12,
+      "titles": [
+        "GroupEventStrategy execute valid group event creates the event in the repository",
+        "GroupEventStrategy execute valid group event sends OK and broadcasts when the event is new",
+        "GroupEventStrategy execute valid group event sends OK with duplicate marker and does not broadcast when event already exists",
+        "GroupEventStrategy execute valid group event accepts an optional expiration tag alongside the h tag",
+        "GroupEventStrategy execute invalid group event — h tag missing rejects when the h tag is absent",
+        "GroupEventStrategy execute invalid group event — h tag missing rejects when the only tag is not an h tag",
+        "GroupEventStrategy execute invalid group event — multiple h tags rejects when there are two h tags",
+        "GroupEventStrategy execute invalid group event — h tag value format rejects when the group id is too short",
+        "GroupEventStrategy execute invalid group event — h tag value format rejects when the group id is too long",
+        "GroupEventStrategy execute invalid group event — h tag value format rejects when the group id contains uppercase hex chars",
+        "GroupEventStrategy execute invalid group event — h tag value format rejects when the group id contains non-hex characters",
+        "GroupEventStrategy execute invalid group event — h tag value format accepts all valid lowercase hex characters (0-9 and a-f)"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/invite-request-event-strategy.spec.ts",
+      "cases": 2,
+      "titles": [
+        "InviteRequestEventStrategy rejects a client-published invite request",
+        "InviteRequestEventStrategy never broadcasts the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts",
+      "cases": 8,
+      "titles": [
+        "JoinRequestEventStrategy rejects when NIP-43 is disabled",
+        "JoinRequestEventStrategy rejects requests with stale created_at",
+        "JoinRequestEventStrategy rejects unauthenticated requests with auth-required prefix",
+        "JoinRequestEventStrategy rejects events missing the claim tag",
+        "JoinRequestEventStrategy returns duplicate when user is already admitted",
+        "JoinRequestEventStrategy rejects when invite code is invalid or expired",
+        "JoinRequestEventStrategy admits user and invalidates admission cache on valid claim",
+        "JoinRequestEventStrategy still admits user when cache invalidation fails"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts",
+      "cases": 8,
+      "titles": [
+        "LeaveRequestEventStrategy rejects when NIP-43 is disabled",
+        "LeaveRequestEventStrategy rejects leave requests missing the NIP-70 \"-\" tag",
+        "LeaveRequestEventStrategy rejects requests with stale created_at",
+        "LeaveRequestEventStrategy rejects unauthenticated requests with auth-required prefix",
+        "LeaveRequestEventStrategy succeeds with no-op when user is not currently admitted",
+        "LeaveRequestEventStrategy succeeds with no-op when user exists but is not admitted",
+        "LeaveRequestEventStrategy revokes admission and invalidates admission cache",
+        "LeaveRequestEventStrategy still revokes admission when cache invalidation fails"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/parameterized-replaceable-event-strategy.spec.ts",
+      "cases": 6,
+      "titles": [
+        "ParameterizedReplaceableEventStrategy execute upserts event without d tag",
+        "ParameterizedReplaceableEventStrategy execute upserts event with d tag and one string",
+        "ParameterizedReplaceableEventStrategy execute upserts event with d tag and two strings",
+        "ParameterizedReplaceableEventStrategy execute broadcast event if event is created",
+        "ParameterizedReplaceableEventStrategy execute does not broadcast event if event is duplicate",
+        "ParameterizedReplaceableEventStrategy execute rejects if unable to upsert event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/replaceable-event-strategy.spec.ts",
+      "cases": 4,
+      "titles": [
+        "ReplaceableEventStrategy execute upserts event",
+        "ReplaceableEventStrategy execute broadcast event if event is created",
+        "ReplaceableEventStrategy execute does not broadcast event if event is duplicate",
+        "ReplaceableEventStrategy execute rejects if unable to upsert event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "cases": 16,
+      "titles": [
+        "ReportEventStrategy execute creates the event",
+        "ReportEventStrategy execute broadcasts the event when newly created",
+        "ReportEventStrategy execute does not broadcast or record a report when the event is a duplicate",
+        "ReportEventStrategy execute records a report with full weight for a direct follow (distance 1)",
+        "ReportEventStrategy execute records a report with zero weight for a reporter outside the trust graph",
+        "ReportEventStrategy execute records an actionable, max-weight report from a trusted moderator regardless of distance",
+        "ReportEventStrategy execute marks the target in the hidden-content cache when hideActionableReports is enabled",
+        "ReportEventStrategy execute does not mark the cache when hideActionableReports is disabled",
+        "ReportEventStrategy execute does not mark the cache for a non-actionable (non-moderator) report even when hideActionableReports is enabled",
+        "ReportEventStrategy execute does not consult the WoT graph for a trusted moderator",
+        "ReportEventStrategy execute does not record any report when the event has no valid target",
+        "ReportEventStrategy execute does not record any report for a moderator event with no valid target",
+        "ReportEventStrategy execute records one row per target, in a single batch, when p and e tags carry different report types",
+        "ReportEventStrategy execute stores the event but does not record a report when nip56 is disabled",
+        "ReportEventStrategy execute does not reject the event when report recording fails",
+        "ReportEventStrategy execute rejects if unable to create the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "cases": 13,
+      "titles": [
+        "TimestampEventStrategy valid opentimestamps event stores and broadcasts the event",
+        "TimestampEventStrategy valid opentimestamps event emits a duplicate OK without broadcasting when the event already exists",
+        "TimestampEventStrategy valid opentimestamps event accepts an event without a k tag",
+        "TimestampEventStrategy invalid opentimestamps event rejects when the e tag is missing",
+        "TimestampEventStrategy invalid opentimestamps event rejects when multiple e tags are present",
+        "TimestampEventStrategy invalid opentimestamps event rejects when the e tag value is not a 32-byte hex id",
+        "TimestampEventStrategy invalid opentimestamps event rejects upper-case hex in the e tag (NIP-01 requires lowercase)",
+        "TimestampEventStrategy invalid opentimestamps event rejects a non-integer k tag",
+        "TimestampEventStrategy invalid opentimestamps event rejects a negative k tag",
+        "TimestampEventStrategy invalid opentimestamps event rejects when multiple k tags are present",
+        "TimestampEventStrategy invalid opentimestamps event rejects when the OTS digest does not match the e-tagged event id",
+        "TimestampEventStrategy invalid opentimestamps event rejects when the content is not a valid OTS proof",
+        "TimestampEventStrategy invalid opentimestamps event rejects when the content is empty"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/vanish-event-strategy.spec.ts",
+      "cases": 3,
+      "titles": [
+        "VanishEventStrategy deletes all events for pubkey except kind 62 events and creates the vanish event",
+        "VanishEventStrategy does not broadcast the vanish event",
+        "VanishEventStrategy returns duplicate OK if the event already exists"
       ]
     },
     {

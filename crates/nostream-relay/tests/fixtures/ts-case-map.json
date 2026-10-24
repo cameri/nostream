@@ -1,7 +1,7 @@
 {
   "capture": "242a3001d77149e4d70151ec03060c4ef44a1547",
   "generated_by": "crates/nostream-relay/tests/ts_case_parity.rs reads this map; a rule table over the census produced it, reviewed case by case",
-  "cases": 557,
+  "cases": 658,
   "groups": [
     {
       "file": "test/unit/handlers/event-message-handler.spec.ts",
@@ -555,6 +555,55 @@
       ]
     },
     {
+      "file": "test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::contact_list_upserts_the_event",
+      "titles": [
+        "ContactListEventStrategy execute upserts the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::contact_list_updates_the_wot_graph_with_the_p_tagged_pubkeys_when_newly_stored",
+      "titles": [
+        "ContactListEventStrategy execute updates the wot graph with the p-tagged pubkeys when newly stored"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::contact_list_broadcasts_the_event_when_newly_stored",
+      "titles": [
+        "ContactListEventStrategy execute broadcasts the event when newly stored"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::contact_list_does_not_broadcast_or_update_the_wot_graph_when_the_event_is_a_duplicate",
+      "titles": [
+        "ContactListEventStrategy execute does not broadcast or update the wot graph when the event is a duplicate"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::contact_list_does_not_fail_the_event_when_the_wot_graph_update_fails",
+      "titles": [
+        "ContactListEventStrategy execute does not fail the event when the wot graph update fails"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::contact_list_emits_a_rejection_when_the_event_already_exists",
+      "titles": [
+        "ContactListEventStrategy execute emits a rejection when the event already exists"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::contact_list_returns_an_error_on_an_unexpected_upsert_failure",
+      "titles": [
+        "ContactListEventStrategy execute emits an error message on unexpected upsert failure"
+      ]
+    },
+    {
       "file": "test/unit/handlers/event-strategies/default-event-strategy.spec.ts",
       "test": "crates/nostream-relay/tests/handlers.rs::the_default_strategy_answers_ok_and_duplicate",
       "titles": [
@@ -568,6 +617,652 @@
       "test": "crates/nostream-relay/tests/handlers.rs::a_failed_insert_answers_with_the_generic_error",
       "titles": [
         "DefaultEventStrategy execute rejects if unable to create event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/delete-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::delete_creates_the_event",
+      "titles": [
+        "DeleteEventStrategy execute creates event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/delete-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::delete_soft_deletes_the_events_its_e_tags_name",
+      "titles": [
+        "DeleteEventStrategy execute deletes events if it has e tags"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/delete-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::delete_does_not_delete_when_there_are_no_e_tags",
+      "titles": [
+        "DeleteEventStrategy execute does not delete events if there are no e tags"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/delete-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::delete_broadcasts_the_event_when_created",
+      "titles": [
+        "DeleteEventStrategy execute broadcast event if created"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/delete-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::delete_does_not_broadcast_when_the_event_is_a_duplicate",
+      "titles": [
+        "DeleteEventStrategy execute does not broadcast event if duplicate"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/delete-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::delete_returns_an_error_when_the_create_fails",
+      "titles": [
+        "DeleteEventStrategy execute rejects if unable to create event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/dvm-job-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::dvm_job_request_creates_the_event",
+      "titles": [
+        "DvmJobRequestEventStrategy execute creates the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/dvm-job-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::dvm_job_request_records_a_job_when_the_event_is_new",
+      "titles": [
+        "DvmJobRequestEventStrategy execute records a dvm job when the event is newly created"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/dvm-job-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::dvm_job_request_broadcasts_the_event_when_new",
+      "titles": [
+        "DvmJobRequestEventStrategy execute broadcasts the event when newly created"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/dvm-job-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::dvm_job_request_does_not_broadcast_or_record_a_job_when_the_event_is_a_duplicate",
+      "titles": [
+        "DvmJobRequestEventStrategy execute does not broadcast or record a job when the event is a duplicate"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/dvm-job-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::dvm_job_request_does_not_reject_the_event_when_job_recording_fails",
+      "titles": [
+        "DvmJobRequestEventStrategy execute does not reject the event when job recording fails"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/dvm-job-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::dvm_job_request_returns_an_error_when_the_create_fails",
+      "titles": [
+        "DvmJobRequestEventStrategy execute rejects if unable to create the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/ephemeral-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::ephemeral_sends_ok_and_broadcasts_without_storing",
+      "titles": [
+        "EphemeralEventStrategy execute broadcasts event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::gift_wrap_stores_a_valid_wrap",
+      "titles": [
+        "GiftWrapEventStrategy execute valid gift wrap creates the event in the repository"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::gift_wrap_sends_ok_and_broadcasts_when_new",
+      "titles": [
+        "GiftWrapEventStrategy execute valid gift wrap sends OK and broadcasts when the event is new"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::gift_wrap_answers_duplicate_without_broadcasting",
+      "titles": [
+        "GiftWrapEventStrategy execute valid gift wrap sends OK with duplicate marker and does not broadcast when event already exists"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::gift_wrap_refuses_a_wrap_without_a_p_tag",
+      "titles": [
+        "GiftWrapEventStrategy execute invalid gift wrap — p tag rejects when the p tag is missing"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::gift_wrap_refuses_multiple_p_tags",
+      "titles": [
+        "GiftWrapEventStrategy execute invalid gift wrap — p tag rejects when there are multiple p tags"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::gift_wrap_accepts_a_p_tag_with_a_relay_hint",
+      "titles": [
+        "GiftWrapEventStrategy execute invalid gift wrap — p tag accepts p tag with an optional relay hint"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::gift_wrap_refuses_empty_content",
+      "titles": [
+        "GiftWrapEventStrategy execute invalid gift wrap — content format rejects when content is empty"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::gift_wrap_refuses_plain_text_content",
+      "titles": [
+        "GiftWrapEventStrategy execute invalid gift wrap — content format rejects when content is plain text instead of a NIP-44 payload"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::gift_wrap_refuses_a_hash_prefixed_content",
+      "titles": [
+        "GiftWrapEventStrategy execute invalid gift wrap — content format rejects when content signals an unsupported version (#)"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_stores_a_valid_group_event",
+      "titles": [
+        "GroupEventStrategy execute valid group event creates the event in the repository"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_sends_ok_and_broadcasts_when_new",
+      "titles": [
+        "GroupEventStrategy execute valid group event sends OK and broadcasts when the event is new"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_answers_duplicate_without_broadcasting",
+      "titles": [
+        "GroupEventStrategy execute valid group event sends OK with duplicate marker and does not broadcast when event already exists"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_accepts_an_expiration_tag_alongside_the_h_tag",
+      "titles": [
+        "GroupEventStrategy execute valid group event accepts an optional expiration tag alongside the h tag"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_refuses_a_missing_h_tag",
+      "titles": [
+        "GroupEventStrategy execute invalid group event — h tag missing rejects when the h tag is absent"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_refuses_a_non_h_tag",
+      "titles": [
+        "GroupEventStrategy execute invalid group event — h tag missing rejects when the only tag is not an h tag"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_refuses_two_h_tags",
+      "titles": [
+        "GroupEventStrategy execute invalid group event — multiple h tags rejects when there are two h tags"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_refuses_a_short_group_id",
+      "titles": [
+        "GroupEventStrategy execute invalid group event — h tag value format rejects when the group id is too short"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_refuses_a_long_group_id",
+      "titles": [
+        "GroupEventStrategy execute invalid group event — h tag value format rejects when the group id is too long"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_refuses_uppercase_hex",
+      "titles": [
+        "GroupEventStrategy execute invalid group event — h tag value format rejects when the group id contains uppercase hex chars"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_refuses_a_non_hex_group_id",
+      "titles": [
+        "GroupEventStrategy execute invalid group event — h tag value format rejects when the group id contains non-hex characters"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::group_accepts_lowercase_hex",
+      "titles": [
+        "GroupEventStrategy execute invalid group event — h tag value format accepts all valid lowercase hex characters (0-9 and a-f)"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/invite-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::invite_request_refuses_a_client_published_request",
+      "titles": [
+        "InviteRequestEventStrategy rejects a client-published invite request"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/invite-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::invite_request_never_broadcasts",
+      "titles": [
+        "InviteRequestEventStrategy never broadcasts the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::join_request_refuses_when_nip43_is_disabled",
+      "titles": [
+        "JoinRequestEventStrategy rejects when NIP-43 is disabled"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::join_request_refuses_a_stale_created_at",
+      "titles": [
+        "JoinRequestEventStrategy rejects requests with stale created_at"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::join_request_refuses_an_unauthenticated_request",
+      "titles": [
+        "JoinRequestEventStrategy rejects unauthenticated requests with auth-required prefix"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::join_request_refuses_a_request_without_a_claim_tag",
+      "titles": [
+        "JoinRequestEventStrategy rejects events missing the claim tag"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::join_request_answers_duplicate_when_already_admitted",
+      "titles": [
+        "JoinRequestEventStrategy returns duplicate when user is already admitted"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::join_request_refuses_an_unusable_invite_code",
+      "titles": [
+        "JoinRequestEventStrategy rejects when invite code is invalid or expired"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts",
+      "exempt": "the admission cache and its invalidation are not ported; job 010 owns the payments surface — job 011",
+      "titles": [
+        "JoinRequestEventStrategy admits user and invalidates admission cache on valid claim",
+        "JoinRequestEventStrategy still admits user when cache invalidation fails"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::leave_request_refuses_when_nip43_is_disabled",
+      "titles": [
+        "LeaveRequestEventStrategy rejects when NIP-43 is disabled"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::leave_request_refuses_a_request_without_the_protected_tag",
+      "titles": [
+        "LeaveRequestEventStrategy rejects leave requests missing the NIP-70 \"-\" tag"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::leave_request_refuses_a_stale_created_at",
+      "titles": [
+        "LeaveRequestEventStrategy rejects requests with stale created_at"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::leave_request_refuses_an_unauthenticated_request",
+      "titles": [
+        "LeaveRequestEventStrategy rejects unauthenticated requests with auth-required prefix"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::leave_request_answers_ok_when_the_user_is_unknown",
+      "titles": [
+        "LeaveRequestEventStrategy succeeds with no-op when user is not currently admitted"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::leave_request_answers_ok_when_the_user_is_not_admitted",
+      "titles": [
+        "LeaveRequestEventStrategy succeeds with no-op when user exists but is not admitted"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts",
+      "exempt": "the admission cache and its invalidation are not ported; job 010 owns the payments surface — job 011",
+      "titles": [
+        "LeaveRequestEventStrategy revokes admission and invalidates admission cache",
+        "LeaveRequestEventStrategy still revokes admission when cache invalidation fails"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/parameterized-replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::parameterized_replaceable_uses_an_empty_deduplication_key_without_a_d_tag",
+      "titles": [
+        "ParameterizedReplaceableEventStrategy execute upserts event without d tag"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/parameterized-replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::parameterized_replaceable_uses_the_first_d_tag_value",
+      "titles": [
+        "ParameterizedReplaceableEventStrategy execute upserts event with d tag and one string"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/parameterized-replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::parameterized_replaceable_uses_only_the_first_d_tag_element",
+      "titles": [
+        "ParameterizedReplaceableEventStrategy execute upserts event with d tag and two strings"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/parameterized-replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::parameterized_replaceable_broadcasts_when_created",
+      "titles": [
+        "ParameterizedReplaceableEventStrategy execute broadcast event if event is created"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/parameterized-replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::parameterized_replaceable_does_not_broadcast_a_duplicate",
+      "titles": [
+        "ParameterizedReplaceableEventStrategy execute does not broadcast event if event is duplicate"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/parameterized-replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::parameterized_replaceable_returns_an_error_when_the_upsert_fails",
+      "titles": [
+        "ParameterizedReplaceableEventStrategy execute rejects if unable to upsert event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::replaceable_upserts_the_event",
+      "titles": [
+        "ReplaceableEventStrategy execute upserts event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::replaceable_broadcasts_when_new",
+      "titles": [
+        "ReplaceableEventStrategy execute broadcast event if event is created"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::replaceable_does_not_broadcast_when_the_stored_row_wins",
+      "titles": [
+        "ReplaceableEventStrategy execute does not broadcast event if event is duplicate"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/replaceable-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::replaceable_returns_an_error_on_an_unexpected_upsert_failure",
+      "titles": [
+        "ReplaceableEventStrategy execute rejects if unable to upsert event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_creates_the_event",
+      "titles": [
+        "ReportEventStrategy execute creates the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_broadcasts_the_event_when_new",
+      "titles": [
+        "ReportEventStrategy execute broadcasts the event when newly created"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_does_not_broadcast_or_record_a_duplicate",
+      "titles": [
+        "ReportEventStrategy execute does not broadcast or record a report when the event is a duplicate"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_records_full_weight_for_a_direct_follow",
+      "titles": [
+        "ReportEventStrategy execute records a report with full weight for a direct follow (distance 1)"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_records_zero_weight_outside_the_graph",
+      "titles": [
+        "ReportEventStrategy execute records a report with zero weight for a reporter outside the trust graph"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_records_a_max_weight_actionable_row_for_a_moderator",
+      "titles": [
+        "ReportEventStrategy execute records an actionable, max-weight report from a trusted moderator regardless of distance"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_marks_the_target_hidden_when_hiding_is_enabled",
+      "titles": [
+        "ReportEventStrategy execute marks the target in the hidden-content cache when hideActionableReports is enabled"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_does_not_mark_the_target_when_hiding_is_disabled",
+      "titles": [
+        "ReportEventStrategy execute does not mark the cache when hideActionableReports is disabled"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_does_not_mark_the_target_for_a_non_moderator",
+      "titles": [
+        "ReportEventStrategy execute does not mark the cache for a non-actionable (non-moderator) report even when hideActionableReports is enabled"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_does_not_consult_the_graph_for_a_moderator",
+      "titles": [
+        "ReportEventStrategy execute does not consult the WoT graph for a trusted moderator"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_records_nothing_without_a_valid_target",
+      "titles": [
+        "ReportEventStrategy execute does not record any report when the event has no valid target"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_records_nothing_for_a_moderator_without_a_valid_target",
+      "titles": [
+        "ReportEventStrategy execute does not record any report for a moderator event with no valid target"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_records_one_row_per_target_in_one_batch",
+      "titles": [
+        "ReportEventStrategy execute records one row per target, in a single batch, when p and e tags carry different report types"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_stores_the_event_without_scoring_when_nip56_is_off",
+      "titles": [
+        "ReportEventStrategy execute stores the event but does not record a report when nip56 is disabled"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_does_not_reject_the_event_when_recording_fails",
+      "titles": [
+        "ReportEventStrategy execute does not reject the event when report recording fails"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::report_returns_an_error_when_the_create_fails",
+      "titles": [
+        "ReportEventStrategy execute rejects if unable to create the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_stores_and_broadcasts_a_valid_proof",
+      "titles": [
+        "TimestampEventStrategy valid opentimestamps event stores and broadcasts the event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_answers_duplicate_without_broadcasting",
+      "titles": [
+        "TimestampEventStrategy valid opentimestamps event emits a duplicate OK without broadcasting when the event already exists"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_accepts_an_event_without_a_k_tag",
+      "titles": [
+        "TimestampEventStrategy valid opentimestamps event accepts an event without a k tag"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_a_missing_e_tag",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects when the e tag is missing"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_multiple_e_tags",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects when multiple e tags are present"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_a_malformed_e_tag",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects when the e tag value is not a 32-byte hex id"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_uppercase_hex_in_the_e_tag",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects upper-case hex in the e tag (NIP-01 requires lowercase)"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_a_non_integer_k_tag",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects a non-integer k tag"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_a_negative_k_tag",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects a negative k tag"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_multiple_k_tags",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects when multiple k tags are present"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_a_mismatched_ots_digest",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects when the OTS digest does not match the e-tagged event id"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_content_that_is_not_an_ots_proof",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects when the content is not a valid OTS proof"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::timestamp_refuses_empty_content",
+      "titles": [
+        "TimestampEventStrategy invalid opentimestamps event rejects when the content is empty"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/vanish-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::vanish_soft_deletes_the_other_events_and_stores_the_request",
+      "titles": [
+        "VanishEventStrategy deletes all events for pubkey except kind 62 events and creates the vanish event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/vanish-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::vanish_never_broadcasts",
+      "titles": [
+        "VanishEventStrategy does not broadcast the vanish event"
+      ]
+    },
+    {
+      "file": "test/unit/handlers/event-strategies/vanish-event-strategy.spec.ts",
+      "test": "crates/nostream-relay/tests/strategies.rs::vanish_answers_duplicate_when_the_request_exists",
+      "titles": [
+        "VanishEventStrategy returns duplicate OK if the event already exists"
       ]
     },
     {

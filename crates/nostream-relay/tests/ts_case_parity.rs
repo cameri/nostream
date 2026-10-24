@@ -1,4 +1,4 @@
-//! R30's checked census: every unit case of the 22 in-scope TypeScript spec files must name the
+//! R30's checked census: every unit case of the 36 in-scope TypeScript spec files must name the
 //! Rust test that carries it.
 //!
 //! The two fixtures are `tests/fixtures/ts-cases.json` (the census, from
@@ -22,8 +22,64 @@ const CENSUS: &[(&str, usize)] = &[
     ("test/unit/handlers/auth-message-handler.spec.ts", 12),
     ("test/unit/handlers/unsubscribe-message-handler.spec.ts", 1),
     (
+        "test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts",
+        7,
+    ),
+    (
         "test/unit/handlers/event-strategies/default-event-strategy.spec.ts",
         4,
+    ),
+    (
+        "test/unit/handlers/event-strategies/delete-event-strategy.spec.ts",
+        6,
+    ),
+    (
+        "test/unit/handlers/event-strategies/dvm-job-request-event-strategy.spec.ts",
+        6,
+    ),
+    (
+        "test/unit/handlers/event-strategies/ephemeral-event-strategy.spec.ts",
+        1,
+    ),
+    (
+        "test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts",
+        9,
+    ),
+    (
+        "test/unit/handlers/event-strategies/group-event-strategy.spec.ts",
+        12,
+    ),
+    (
+        "test/unit/handlers/event-strategies/invite-request-event-strategy.spec.ts",
+        2,
+    ),
+    (
+        "test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts",
+        8,
+    ),
+    (
+        "test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts",
+        8,
+    ),
+    (
+        "test/unit/handlers/event-strategies/parameterized-replaceable-event-strategy.spec.ts",
+        6,
+    ),
+    (
+        "test/unit/handlers/event-strategies/replaceable-event-strategy.spec.ts",
+        4,
+    ),
+    (
+        "test/unit/handlers/event-strategies/report-event-strategy.spec.ts",
+        16,
+    ),
+    (
+        "test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts",
+        13,
+    ),
+    (
+        "test/unit/handlers/event-strategies/vanish-event-strategy.spec.ts",
+        3,
     ),
     ("test/unit/adapters/web-socket-adapter.spec.ts", 60),
     ("test/unit/adapters/web-socket-server-adapter.spec.ts", 17),
@@ -154,7 +210,7 @@ fn the_census_counts_are_the_tables() {
         table.keys().len(),
         "the census covers a different file set than the table: {counted:?}"
     );
-    assert_eq!(total, 557, "the census is 557 cases");
+    assert_eq!(total, 658, "the census is 658 cases");
 }
 
 #[test]
@@ -301,7 +357,7 @@ fn the_map_records_the_census_it_was_built_from() {
     assert_eq!(map["capture"].as_str(), census["capture"].as_str());
     assert_eq!(
         map["cases"].as_u64(),
-        Some(557),
+        Some(658),
         "the map covers the whole census"
     );
 }
