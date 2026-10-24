@@ -9,6 +9,14 @@ pub enum StorageError {
     #[error("not implemented in Phase 1 (job 005): {module}")]
     NotImplemented { module: &'static str },
 
+    /// The event id already exists, which is the capture's `events_event_id_unique`
+    /// violation (`crates/nostream-storage/migrations/20220524153400_create_events_table.sql:3`).
+    /// The two arms that catch it answer `rejected: event already exists`
+    /// (`replaceable-event-strategy.ts:27`, `contact-list-event-strategy.ts:45`); every other
+    /// failure is not a policy answer.
+    #[error("the event id already exists")]
+    DuplicateEvent,
+
     /// A database operation failed. The driver's message names the statement class for an
     /// operator; callers must not match on its text, and a handler must never forward it.
     /// Present only with the `postgres` feature, so the crate's error type names no
@@ -116,6 +124,14 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "database operation failed: no rows returned by a query that expected to return at least one row"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_event_says_so_for_an_operator() {
+        assert_eq!(
+            StorageError::DuplicateEvent.to_string(),
+            "the event id already exists"
         );
     }
 }

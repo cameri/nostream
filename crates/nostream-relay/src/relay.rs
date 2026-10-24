@@ -32,6 +32,7 @@ use crate::limits::RateLimits;
 use crate::relay_key::RelayKeySource;
 use crate::sink::FrameSink;
 use crate::transport;
+use crate::wot::WotGraph;
 
 /// The knobs a [`Relay`] is built with that are not settings: a constant the capture fixes in
 /// code (`liveness`, the NIP-56 refresh) or a policy the port adds with no counterpart there
@@ -81,6 +82,7 @@ impl Default for RelayConfig {
 pub struct Relay {
     settings: Arc<Settings>,
     stores: Arc<Stores>,
+    wot: Arc<dyn WotGraph>,
     clock: Arc<dyn Clock>,
     keys: Arc<RelayKeySource>,
     limits: Arc<RateLimits>,
@@ -102,8 +104,8 @@ impl std::fmt::Debug for Relay {
 }
 
 impl Relay {
-    /// Builds the relay from its collaborators: the settings, the stores, the clock, the key
-    /// source, the randomness and the intervals.
+    /// Builds the relay from its collaborators: the settings, the stores, the trust graph, the
+    /// clock, the key source, the randomness and the intervals.
     ///
     /// Everything the relay runs with is an argument, so a relay that mints from
     /// `SystemRandom` or resolves `WS_DRAIN_TIMEOUT_MS` from the environment is one whose
@@ -113,6 +115,7 @@ impl Relay {
     pub fn new(
         settings: Settings,
         stores: Arc<Stores>,
+        wot: Arc<dyn WotGraph>,
         clock: Arc<dyn Clock>,
         keys: RelayKeySource,
         random: Arc<dyn nostream_core::random::RandomSource>,
@@ -126,6 +129,7 @@ impl Relay {
             random,
             settings,
             stores,
+            wot,
             clock,
             keys: Arc::new(keys),
             hidden: HiddenContentCache::new(),
@@ -150,6 +154,7 @@ impl Relay {
             sink,
             connection,
             stores: Arc::clone(&self.stores),
+            wot: Arc::clone(&self.wot),
             limits: Arc::clone(&self.limits),
             hidden: Arc::clone(&self.hidden),
             keys: Arc::clone(&self.keys),

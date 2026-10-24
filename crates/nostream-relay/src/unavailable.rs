@@ -18,8 +18,9 @@ use nostream_storage::repositories::{
 };
 
 use crate::handlers::Stores;
+use crate::wot::{WotFuture, WotGraph};
 
-/// The six seams, every call reporting `NotImplemented`.
+/// The six stores, every call reporting `NotImplemented`.
 pub fn stores() -> Stores {
     Stores {
         events: std::sync::Arc::new(UnavailableEventRepository),
@@ -34,6 +35,34 @@ pub fn stores() -> Stores {
 fn unavailable() -> StorageError {
     StorageError::NotImplemented {
         module: "storage::backend::wiring",
+    }
+}
+
+/// The trust graph, for a daemon with no `nostream-services` wiring: the composition root hands
+/// it to `Relay::new` where it picks the clock and the key source. "Unavailable" is the
+/// capture's *disabled* graph, not a failure: a follow-list update touches nothing and no
+/// distance is known, so a report is still stored — unweighted, which is what the capture
+/// stores when WoT is off. A genuine failure (a rebuild that could not complete) belongs to the
+/// wrapped service, and both callers log it and carry on.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UnavailableWotGraph;
+
+impl WotGraph for UnavailableWotGraph {
+    fn update_follow_list<'a>(
+        &'a self,
+        _pubkey: &'a Pubkey,
+        _follows: &'a [String],
+    ) -> WotFuture<'a, ()> {
+        // `updateFollowList` returns without touching anything when WoT is disabled
+        // (`src/services/wot-graph-service.ts:74-76`).
+        Box::pin(async { Ok(()) })
+    }
+
+    fn get_distance<'a>(&'a self, _pubkey: &'a Pubkey) -> WotFuture<'a, Option<u32>> {
+        // `getDistance` answers `undefined` when WoT is disabled or has no seed pubkey
+        // (`src/services/wot-graph-service.ts:55-57`), which the report arm stores as an
+        // unweighted row rather than aborting the write.
+        Box::pin(async { Ok(None) })
     }
 }
 

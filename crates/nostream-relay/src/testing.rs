@@ -24,9 +24,9 @@ use nostream_core::{Event, EventId, Filter, Kind, Pubkey};
 use nostream_storage::StorageError;
 use nostream_storage::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobStatus, EventPurgeCounts, EventRecord,
-    EventRepository, EventRetentionOptions, InviteCode, InviteCodeRepository, Nip05Verification,
-    Nip05VerificationRepository, QueryStream, ReconciliationItem, Report, ReportRepository,
-    StorageFuture, User, UserPatch, UserRepository,
+    EventRepository, EventRetentionOptions, FieldUpdate, InviteCode, InviteCodeRepository,
+    NewReport, Nip05Verification, Nip05VerificationRepository, QueryStream, ReconciliationItem,
+    Report, ReportRepository, StorageFuture, User, UserPatch, UserRepository,
 };
 
 use crate::connection::{Connection, Subscription};
@@ -35,6 +35,7 @@ use crate::handlers::{HandlerContext, Stores};
 use crate::hidden_content::HiddenContentCache;
 use crate::limits::RateLimits;
 use crate::relay_key::RelayKeySource;
+use crate::wot::{WotFuture, WotGraph};
 
 /// A settings document with the fields the relay reads, and nothing else.
 ///
@@ -132,12 +133,26 @@ pub fn nip56_settings() -> Nip56Settings {
     }
 }
 
+/// What [`InMemoryEventRepository::fail_upsert`] makes `upsert` answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpsertFailure {
+    /// A store that cannot be reached.
+    Unavailable,
+    /// The event id already exists (`StorageError::DuplicateEvent`).
+    DuplicateEvent,
+}
+
 /// An event repository holding its rows in memory.
 #[derive(Debug, Default)]
 pub struct InMemoryEventRepository {
     records: Mutex<Vec<EventRecord>>,
     fail_count: AtomicBool,
     fail_queries: AtomicBool,
+    fail_delete: AtomicBool,
+    upsert_failure: Mutex<Option<UpsertFailure>>,
+    upserts: Mutex<Vec<Vec<serde_json::Value>>>,
+    deletes: Mutex<Vec<(Pubkey, Vec<EventId>)>>,
+    delete_except_kinds_calls: Mutex<Vec<(Pubkey, Vec<Kind>)>>,
     /// When set, `find_by_filters` holds its stream until a permit is released, which is how
     /// a test gets a read in flight long enough to `CLOSE` it.
     read_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
@@ -220,6 +235,73 @@ impl InMemoryEventRepository {
             .map(|record| record.event.clone())
             .collect()
     }
+
+    /// The events a read still returns, in insertion order: the rows no soft delete touched.
+    pub fn live_events(&self) -> Vec<Event> {
+        self.records
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .filter(|record| record.deleted_at.is_none())
+            .map(|record| record.event.clone())
+            .collect()
+    }
+
+    /// The deduplication key each `upsert` was asked to write, in call order.
+    pub fn upserts(&self) -> Vec<Vec<serde_json::Value>> {
+        self.upserts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// The `(pubkey, ids)` each `delete_by_pubkey_and_ids` was called with.
+    pub fn deletes(&self) -> Vec<(Pubkey, Vec<EventId>)> {
+        self.deletes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// The `(pubkey, excluded kinds)` each `delete_by_pubkey_except_kinds` was called with.
+    pub fn delete_except_kinds_calls(&self) -> Vec<(Pubkey, Vec<Kind>)> {
+        self.delete_except_kinds_calls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Makes every `upsert` answer `failure` before it looks at a row.
+    pub fn fail_upsert(&self, failure: UpsertFailure) {
+        *self
+            .upsert_failure
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(failure);
+    }
+
+    /// Makes both soft deletes fail.
+    pub fn fail_delete(&self) {
+        self.fail_delete.store(true, Ordering::SeqCst);
+    }
+
+    /// Soft-deletes every live row matching `predicate`, returning how many it touched.
+    fn soft_delete(&self, predicate: impl Fn(&EventRecord) -> bool) -> u64 {
+        let now = chrono::Utc::now();
+        let mut records = self
+            .records
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut deleted = 0;
+
+        for record in records.iter_mut() {
+            if record.deleted_at.is_none() && predicate(record) {
+                record.deleted_at = Some(now);
+                deleted += 1;
+            }
+        }
+
+        deleted
+    }
 }
 
 impl EventRepository for InMemoryEventRepository {
@@ -253,12 +335,60 @@ impl EventRepository for InMemoryEventRepository {
         Box::pin(async move { Ok(records.len() as u64) })
     }
 
+    /// The capture's `INSERT … ON CONFLICT (event_pubkey, event_kind, event_deduplication)`:
+    /// the conflict target applies to replaceable kinds only, the incoming row wins when it
+    /// supersedes the stored one, and the answer is whether a row was written.
     fn upsert<'a>(&'a self, record: &'a EventRecord) -> StorageFuture<'a, u64> {
         Box::pin(async move {
+            let deduplication = record.deduplication();
+
+            self.upserts
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(deduplication.clone());
+
+            if let Some(failure) = *self
+                .upsert_failure
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+            {
+                return Err(match failure {
+                    UpsertFailure::Unavailable => StorageError::InvalidArgument {
+                        message: "connection lost",
+                    },
+                    UpsertFailure::DuplicateEvent => StorageError::DuplicateEvent,
+                });
+            }
+
             let mut records = self
                 .records
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+            if record.event.kind.is_replaceable()
+                || record.event.kind.is_parameterized_replaceable()
+            {
+                let stored = records.iter_mut().find(|stored| {
+                    stored.event.pubkey == record.event.pubkey
+                        && stored.event.kind == record.event.kind
+                        && stored.deduplication() == deduplication
+                });
+
+                if let Some(stored) = stored {
+                    if !nostream_core::replaceable::supersedes(
+                        &record.event,
+                        stored.event.created_at,
+                        &stored.event.id,
+                    ) {
+                        return Ok(0);
+                    }
+
+                    *stored = record.clone();
+
+                    return Ok(1);
+                }
+            }
+
             records.push(record.clone());
 
             Ok(1)
@@ -372,27 +502,53 @@ impl EventRepository for InMemoryEventRepository {
         )
     }
 
+    /// `UPDATE … SET deleted_at = now()` for the given ids of one author, skipping kind 62.
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
-        _pubkey: &'a Pubkey,
-        _ids: &'a [EventId],
+        pubkey: &'a Pubkey,
+        ids: &'a [EventId],
     ) -> StorageFuture<'a, u64> {
         Box::pin(async move {
-            Err(StorageError::InvalidArgument {
-                message: "in-memory double: not used by these tests",
-            })
+            self.deletes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push((*pubkey, ids.to_vec()));
+
+            if self.fail_delete.load(Ordering::SeqCst) {
+                return Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the delete failed",
+                });
+            }
+
+            Ok(self.soft_delete(|record| {
+                record.event.pubkey == *pubkey
+                    && ids.contains(&record.event.id)
+                    && record.event.kind != Kind::REQUEST_TO_VANISH
+            }))
         })
     }
 
+    /// The same soft delete over every live row of one author but the excluded kinds.
     fn delete_by_pubkey_except_kinds<'a>(
         &'a self,
-        _pubkey: &'a Pubkey,
-        _excluded_kinds: &'a [Kind],
+        pubkey: &'a Pubkey,
+        excluded_kinds: &'a [Kind],
     ) -> StorageFuture<'a, u64> {
         Box::pin(async move {
-            Err(StorageError::InvalidArgument {
-                message: "in-memory double: not used by these tests",
-            })
+            self.delete_except_kinds_calls
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push((*pubkey, excluded_kinds.to_vec()));
+
+            if self.fail_delete.load(Ordering::SeqCst) {
+                return Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the delete failed",
+                });
+            }
+
+            Ok(self.soft_delete(|record| {
+                record.event.pubkey == *pubkey && !excluded_kinds.contains(&record.event.kind)
+            }))
         })
     }
 
@@ -412,6 +568,7 @@ impl EventRepository for InMemoryEventRepository {
 #[derive(Debug, Default)]
 pub struct InMemoryUserRepository {
     users: Mutex<BTreeMap<Pubkey, User>>,
+    vanish_calls: Mutex<Vec<(Pubkey, bool)>>,
     fail_reads: AtomicBool,
 }
 
@@ -432,6 +589,14 @@ impl InMemoryUserRepository {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(user.pubkey, user);
+    }
+
+    /// The `(pubkey, vanished)` each `set_vanished` was called with.
+    pub fn vanish_calls(&self) -> Vec<(Pubkey, bool)> {
+        self.vanish_calls
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 }
 
@@ -499,37 +664,59 @@ impl UserRepository for InMemoryUserRepository {
         })
     }
 
+    /// The capture's insert-on-conflict-merge (`src/repositories/user-repository.ts:75-92`):
+    /// an absent row is created, so the flag lands for a pubkey this relay has never seen.
     fn set_vanished<'a>(&'a self, pubkey: &'a Pubkey, vanished: bool) -> StorageFuture<'a, u64> {
         Box::pin(async move {
+            self.vanish_calls
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push((*pubkey, vanished));
+
+            let now = chrono::Utc::now();
             let mut users = self
                 .users
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let user = users.entry(*pubkey).or_insert_with(|| User {
+                pubkey: *pubkey,
+                is_admitted: false,
+                is_vanished: false,
+                balance: 0,
+                created_at: now,
+                updated_at: now,
+            });
 
-            match users.get_mut(pubkey) {
-                Some(user) => {
-                    user.is_vanished = vanished;
-                    Ok(1)
-                }
-                None => Ok(0),
-            }
+            user.is_vanished = vanished;
+            user.updated_at = now;
+
+            Ok(1)
         })
     }
 
+    /// The capture's `admit_user` function: an upsert, so a pubkey with no row gets one.
     fn admit_user<'a>(
         &'a self,
         pubkey: &'a Pubkey,
         _admitted_at: chrono::DateTime<chrono::Utc>,
     ) -> StorageFuture<'a, ()> {
         Box::pin(async move {
-            if let Some(user) = self
+            let now = chrono::Utc::now();
+            let mut users = self
                 .users
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .get_mut(pubkey)
-            {
-                user.is_admitted = true;
-            }
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let user = users.entry(*pubkey).or_insert_with(|| User {
+                pubkey: *pubkey,
+                is_admitted: false,
+                is_vanished: false,
+                balance: 0,
+                created_at: now,
+                updated_at: now,
+            });
+
+            user.is_admitted = true;
+            user.updated_at = now;
 
             Ok(())
         })
@@ -634,10 +821,38 @@ impl Nip05VerificationRepository for InMemoryNip05Repository {
     }
 }
 
-/// An invite-code repository that records the codes it mints.
+/// One invite code as the double holds it: the mint options, plus the claim state a claim
+/// mutates.
+#[derive(Debug, Clone)]
+struct InviteCodeRow {
+    options: CreateInviteCodeOptions,
+    claimed_by: Option<Pubkey>,
+    /// `None` is no limit at all, which is the capture's `Clear`.
+    remaining_uses: Option<i32>,
+}
+
+impl InviteCodeRow {
+    fn code(&self, code: &str) -> InviteCode {
+        let now = chrono::Utc::now();
+
+        InviteCode {
+            code: code.to_owned(),
+            created_by: self.options.created_by,
+            claimed_by: self.claimed_by,
+            expires_at: self.options.expires_at,
+            remaining_uses: self.remaining_uses,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+/// An invite-code repository that records the codes it mints and claims.
 #[derive(Debug, Default)]
 pub struct InMemoryInviteCodeRepository {
-    codes: Mutex<BTreeMap<String, CreateInviteCodeOptions>>,
+    codes: Mutex<BTreeMap<String, InviteCodeRow>>,
+    claims: Mutex<Vec<(String, Pubkey)>>,
+    fail_claims: AtomicBool,
     /// When set, `create` holds until a permit is released, which is how a test keeps the
     /// invite mint's one `await` open long enough for a `CLOSE` to land in it.
     create_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
@@ -677,8 +892,21 @@ impl InMemoryInviteCodeRepository {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .iter()
-            .map(|(code, options)| (code.clone(), options.clone()))
+            .map(|(code, row)| (code.clone(), row.options.clone()))
             .collect()
+    }
+
+    /// The `(code, pubkey)` each `claim_code` was called with, in call order.
+    pub fn claims(&self) -> Vec<(String, Pubkey)> {
+        self.claims
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Makes every `claim_code` fail as an unavailable store would.
+    pub fn fail_claims(&self) {
+        self.fail_claims.store(true, Ordering::SeqCst);
     }
 }
 
@@ -701,11 +929,25 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
                 let _ = gate.acquire().await;
             }
 
+            let row = InviteCodeRow {
+                options: options.clone(),
+                claimed_by: None,
+                remaining_uses: match options.remaining_uses {
+                    // The capture's `options.remainingUses === undefined ? 1 : remainingUses`
+                    // (`src/repositories/invite-code-repository.ts:42`): absent is one use,
+                    // `Clear` (the capture's `null`) is unlimited.
+                    FieldUpdate::Absent => Some(1),
+                    FieldUpdate::Clear => None,
+                    FieldUpdate::Set(uses) => Some(uses),
+                },
+            };
+            let invite = row.code(code);
+
             if self
                 .codes
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .insert(code.to_owned(), options.clone())
+                .insert(code.to_owned(), row)
                 .is_some()
             {
                 return Err(StorageError::InvalidArgument {
@@ -713,20 +955,7 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
                 });
             }
 
-            let now = chrono::Utc::now();
-
-            Ok(InviteCode {
-                code: code.to_owned(),
-                created_by: options.created_by,
-                claimed_by: None,
-                expires_at: options.expires_at,
-                remaining_uses: match options.remaining_uses {
-                    nostream_storage::repositories::FieldUpdate::Set(uses) => Some(uses),
-                    _ => None,
-                },
-                created_at: now,
-                updated_at: now,
-            })
+            Ok(invite)
         })
     }
 
@@ -737,20 +966,57 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .get(code)
-                .map(|options| InviteCode {
-                    code: code.to_owned(),
-                    created_by: options.created_by,
-                    claimed_by: None,
-                    expires_at: options.expires_at,
-                    remaining_uses: None,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                }))
+                .map(|row| row.code(code)))
         })
     }
 
-    fn claim_code<'a>(&'a self, _code: &'a str, _pubkey: &'a Pubkey) -> StorageFuture<'a, bool> {
-        Box::pin(async move { Ok(true) })
+    /// One use of the code, refused only when it is absent, expired or out of uses: the
+    /// capture's single conditional update (`claimCode`,
+    /// `src/repositories/invite-code-repository.ts:74-95`, and `invite_claim_code`,
+    /// `crates/nostream-storage/src/postgres/metadata.rs:212-236`). A code shared between
+    /// pubkeys keeps admitting them until its uses run out, and `claimed_by` records the first
+    /// claimant alone (`COALESCE(claimed_by, …)`).
+    fn claim_code<'a>(&'a self, code: &'a str, pubkey: &'a Pubkey) -> StorageFuture<'a, bool> {
+        Box::pin(async move {
+            self.claims
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push((code.to_owned(), *pubkey));
+
+            if self.fail_claims.load(Ordering::SeqCst) {
+                return Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the claim failed",
+                });
+            }
+
+            let mut codes = self
+                .codes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some(row) = codes.get_mut(code) else {
+                return Ok(false);
+            };
+
+            if row
+                .options
+                .expires_at
+                .is_some_and(|expires_at| expires_at <= chrono::Utc::now())
+            {
+                return Ok(false);
+            }
+
+            if let Some(remaining) = row.remaining_uses {
+                if remaining <= 0 {
+                    return Ok(false);
+                }
+
+                row.remaining_uses = Some(remaining - 1);
+            }
+
+            row.claimed_by = row.claimed_by.or(Some(*pubkey));
+
+            Ok(true)
+        })
     }
 
     fn find_active_codes<'a>(&'a self, _limit: u64) -> StorageFuture<'a, Vec<InviteCode>> {
@@ -762,14 +1028,30 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
     }
 }
 
-/// A DVM job repository that records nothing the relay reads.
+/// A DVM job repository that records every job it is asked to create.
 #[derive(Debug, Default)]
-pub struct InMemoryDvmJobRepository;
+pub struct InMemoryDvmJobRepository {
+    jobs: Mutex<Vec<DvmJob>>,
+    fail_writes: AtomicBool,
+}
 
 impl InMemoryDvmJobRepository {
     /// An empty store.
     pub fn new() -> Arc<Self> {
-        Arc::new(Self)
+        Arc::new(Self::default())
+    }
+
+    /// The jobs recorded, in creation order.
+    pub fn jobs(&self) -> Vec<DvmJob> {
+        self.jobs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Makes every write fail, as an unavailable database would.
+    pub fn fail_writes(&self) {
+        self.fail_writes.store(true, Ordering::SeqCst);
     }
 }
 
@@ -781,9 +1063,14 @@ impl nostream_storage::repositories::DvmJobRepository for InMemoryDvmJobReposito
         kind: Kind,
     ) -> StorageFuture<'a, DvmJob> {
         Box::pin(async move {
-            let now = chrono::Utc::now();
+            if self.fail_writes.load(Ordering::SeqCst) {
+                return Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the dvm job write failed",
+                });
+            }
 
-            Ok(DvmJob {
+            let now = chrono::Utc::now();
+            let job = DvmJob {
                 id: *id,
                 requester_pubkey: *requester,
                 kind,
@@ -795,12 +1082,27 @@ impl nostream_storage::repositories::DvmJobRepository for InMemoryDvmJobReposito
                 completed_at: None,
                 created_at: now,
                 updated_at: now,
-            })
+            };
+
+            self.jobs
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(job.clone());
+
+            Ok(job)
         })
     }
 
-    fn find_by_id<'a>(&'a self, _id: &'a EventId) -> StorageFuture<'a, Option<DvmJob>> {
-        Box::pin(async move { Ok(None) })
+    fn find_by_id<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<DvmJob>> {
+        Box::pin(async move {
+            Ok(self
+                .jobs
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .find(|job| job.id == *id)
+                .cloned())
+        })
     }
 
     fn assign_worker<'a>(
@@ -827,12 +1129,15 @@ impl nostream_storage::repositories::DvmJobRepository for InMemoryDvmJobReposito
     }
 }
 
-/// A report repository with one settable actionable-target snapshot.
+/// A report repository with one settable actionable-target snapshot, which also records the
+/// rows it is asked to write.
 #[derive(Debug, Default)]
 pub struct InMemoryReportRepository {
     targets: Mutex<Vec<ActionableTarget>>,
     queries: AtomicU64,
     fail_queries: AtomicBool,
+    writes: Mutex<Vec<Vec<NewReport>>>,
+    fail_writes: AtomicBool,
 }
 
 impl InMemoryReportRepository {
@@ -858,25 +1163,69 @@ impl InMemoryReportRepository {
     pub fn fail_queries(&self) {
         self.fail_queries.store(true, Ordering::SeqCst);
     }
+
+    /// The report rows each write was asked for, one entry per call.
+    pub fn report_writes(&self) -> Vec<Vec<NewReport>> {
+        self.writes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Every report row written, in call order.
+    pub fn reports(&self) -> Vec<NewReport> {
+        self.report_writes().into_iter().flatten().collect()
+    }
+
+    /// Makes every report write fail, as an unavailable database would.
+    pub fn fail_writes(&self) {
+        self.fail_writes.store(true, Ordering::SeqCst);
+    }
 }
 
 impl ReportRepository for InMemoryReportRepository {
-    fn create<'a>(
-        &'a self,
-        _report: &'a nostream_storage::repositories::NewReport,
-    ) -> StorageFuture<'a, Report> {
+    fn create<'a>(&'a self, report: &'a NewReport) -> StorageFuture<'a, Report> {
         Box::pin(async move {
-            Err(StorageError::InvalidArgument {
-                message: "in-memory double: not used by these tests",
-            })
+            if self.fail_writes.load(Ordering::SeqCst) {
+                return Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the report write failed",
+                });
+            }
+
+            let mut writes = self
+                .writes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            writes.push(vec![report.clone()]);
+
+            Ok(stored_report(written_rows(&writes), report))
         })
     }
 
-    fn create_many<'a>(
-        &'a self,
-        _reports: &'a [nostream_storage::repositories::NewReport],
-    ) -> StorageFuture<'a, Vec<Report>> {
-        Box::pin(async move { Ok(Vec::new()) })
+    /// One insert of the whole batch, in input order — one row per input.
+    fn create_many<'a>(&'a self, batch: &'a [NewReport]) -> StorageFuture<'a, Vec<Report>> {
+        Box::pin(async move {
+            if self.fail_writes.load(Ordering::SeqCst) {
+                return Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the report write failed",
+                });
+            }
+
+            let mut writes = self
+                .writes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            writes.push(batch.to_vec());
+
+            let first = written_rows(&writes) - batch.len() as i32;
+            let rows = batch
+                .iter()
+                .enumerate()
+                .map(|(index, report)| stored_report(first + index as i32 + 1, report))
+                .collect();
+
+            Ok(rows)
+        })
     }
 
     fn find_by_event_id<'a>(&'a self, _event_id: &'a EventId) -> StorageFuture<'a, Vec<Report>> {
@@ -904,6 +1253,121 @@ impl ReportRepository for InMemoryReportRepository {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone())
+        })
+    }
+}
+
+/// How many report rows the recorded writes hold.
+fn written_rows(writes: &[Vec<NewReport>]) -> i32 {
+    writes.iter().map(|write| write.len() as i32).sum()
+}
+
+/// The row a report write answers with: the input's fields, a synthesised id.
+fn stored_report(id: i32, report: &NewReport) -> Report {
+    Report {
+        id,
+        event_id: report.event_id,
+        reporter_pubkey: report.reporter_pubkey,
+        reported_pubkey: report.reported_pubkey,
+        reported_event_id: report.reported_event_id,
+        report_type: report.report_type,
+        weight: report.weight,
+        actionable: report.actionable,
+        created_at: chrono::Utc::now(),
+    }
+}
+
+/// A trust graph that records every call, so a test can assert which strategy reached it and
+/// with what.
+#[derive(Debug, Default)]
+pub struct RecordingWotGraph {
+    follow_updates: Mutex<Vec<(Pubkey, Vec<String>)>>,
+    distance_queries: Mutex<Vec<Pubkey>>,
+    distance: Mutex<Option<u32>>,
+    fail_updates: AtomicBool,
+    fail_distances: AtomicBool,
+}
+
+impl RecordingWotGraph {
+    /// An empty graph: every pubkey is outside it.
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    /// The hop distance every query answers; `None` means "outside the graph".
+    pub fn set_distance(&self, distance: Option<u32>) {
+        *self
+            .distance
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = distance;
+    }
+
+    /// The `(pubkey, follows)` each `update_follow_list` was called with.
+    pub fn follow_updates(&self) -> Vec<(Pubkey, Vec<String>)> {
+        self.follow_updates
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// The pubkey each `get_distance` was called with.
+    pub fn distance_queries(&self) -> Vec<Pubkey> {
+        self.distance_queries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Makes every `update_follow_list` fail.
+    pub fn fail_updates(&self) {
+        self.fail_updates.store(true, Ordering::SeqCst);
+    }
+
+    /// Makes every `get_distance` fail.
+    pub fn fail_distances(&self) {
+        self.fail_distances.store(true, Ordering::SeqCst);
+    }
+}
+
+impl WotGraph for RecordingWotGraph {
+    fn update_follow_list<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        follows: &'a [String],
+    ) -> WotFuture<'a, ()> {
+        Box::pin(async move {
+            self.follow_updates
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push((*pubkey, follows.to_vec()));
+
+            if self.fail_updates.load(Ordering::SeqCst) {
+                return Err(RelayError::Storage(StorageError::InvalidArgument {
+                    message: "in-memory double: the wot graph update failed",
+                }));
+            }
+
+            Ok(())
+        })
+    }
+
+    fn get_distance<'a>(&'a self, pubkey: &'a Pubkey) -> WotFuture<'a, Option<u32>> {
+        Box::pin(async move {
+            self.distance_queries
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(*pubkey);
+
+            if self.fail_distances.load(Ordering::SeqCst) {
+                return Err(RelayError::Storage(StorageError::InvalidArgument {
+                    message: "in-memory double: the wot graph query failed",
+                }));
+            }
+
+            Ok(*self
+                .distance
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()))
         })
     }
 }
@@ -936,13 +1400,14 @@ pub fn stores(
     nip05: Arc<InMemoryNip05Repository>,
     invites: Arc<InMemoryInviteCodeRepository>,
     reports: Arc<InMemoryReportRepository>,
+    dvm: Arc<InMemoryDvmJobRepository>,
 ) -> Arc<Stores> {
     Arc::new(Stores {
         events,
         users,
         nip05,
         invites,
-        dvm_jobs: InMemoryDvmJobRepository::new(),
+        dvm_jobs: dvm,
         reports,
     })
 }
@@ -956,6 +1421,8 @@ pub struct Fixture {
     pub nip05: Arc<InMemoryNip05Repository>,
     pub invites: Arc<InMemoryInviteCodeRepository>,
     pub reports: Arc<InMemoryReportRepository>,
+    pub dvm: Arc<InMemoryDvmJobRepository>,
+    pub wot: Arc<RecordingWotGraph>,
     pub hidden: Arc<HiddenContentCache>,
     pub hub: tokio::sync::broadcast::Sender<std::sync::Arc<Event>>,
 }
@@ -968,6 +1435,8 @@ impl Fixture {
         let nip05 = InMemoryNip05Repository::new();
         let invites = InMemoryInviteCodeRepository::new();
         let reports = InMemoryReportRepository::new();
+        let dvm = InMemoryDvmJobRepository::new();
+        let wot = RecordingWotGraph::new();
         let (hub, _receiver) = tokio::sync::broadcast::channel(64);
 
         Self {
@@ -978,15 +1447,28 @@ impl Fixture {
                 Arc::clone(&nip05),
                 Arc::clone(&invites),
                 Arc::clone(&reports),
+                Arc::clone(&dvm),
             ),
             events,
             users,
             nip05,
             invites,
             reports,
+            dvm,
+            wot,
             hidden: HiddenContentCache::new(),
             hub,
         }
+    }
+
+    /// This fixture's trust-graph recorder, as a [`HandlerContext`] holds it.
+    ///
+    /// The coercion from the recorder to the trait object lives here, so every caller that
+    /// builds a context or a [`Relay`](crate::relay::Relay) passes the same handle.
+    pub fn wot_graph(&self) -> Arc<dyn WotGraph> {
+        let recorder: Arc<RecordingWotGraph> = Arc::clone(&self.wot);
+
+        recorder
     }
 
     /// Stores one event as a live row, for a test that reads it back.
@@ -1026,6 +1508,8 @@ impl Fixture {
         sink: crate::sink::FrameSink,
         limits: Arc<RateLimits>,
     ) -> HandlerContext {
+        let wot = self.wot_graph();
+
         HandlerContext {
             settings: Arc::clone(&self.settings),
             clock: Arc::clone(&clock),
@@ -1033,6 +1517,7 @@ impl Fixture {
             sink,
             connection,
             stores: Arc::clone(&self.stores),
+            wot,
             limits,
             hidden: Arc::clone(&self.hidden),
             keys: Arc::new(keys),
@@ -1085,4 +1570,89 @@ pub fn hub_receiver(
     hub: &tokio::sync::broadcast::Sender<std::sync::Arc<Event>>,
 ) -> tokio::sync::broadcast::Receiver<std::sync::Arc<Event>> {
     hub.subscribe()
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    fn claimant(byte: u8) -> Pubkey {
+        Pubkey::from_byte_array([byte; 32])
+    }
+
+    fn options(remaining_uses: FieldUpdate<i32>) -> CreateInviteCodeOptions {
+        CreateInviteCodeOptions {
+            expires_at: None,
+            remaining_uses,
+            created_by: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_shared_invite_code_admits_a_second_pubkey_until_its_uses_run_out() {
+        // The capture's `claimCode` conditions on `code`, the remaining uses and the expiry
+        // only (`src/repositories/invite-code-repository.ts:74-95`), so a code with uses left
+        // admits every claimant and only the count runs out. The double used to refuse the
+        // second pubkey — behaviour the relay does not have.
+        let invites = InMemoryInviteCodeRepository::new();
+        invites
+            .create("shared", &options(FieldUpdate::Set(2)))
+            .await
+            .unwrap();
+
+        assert!(invites.claim_code("shared", &claimant(1)).await.unwrap());
+        assert!(invites.claim_code("shared", &claimant(2)).await.unwrap());
+        assert!(!invites.claim_code("shared", &claimant(3)).await.unwrap());
+
+        let row = invites.find_by_code("shared").await.unwrap().unwrap();
+
+        assert_eq!(row.claimed_by, Some(claimant(1)));
+        assert_eq!(row.remaining_uses, Some(0));
+    }
+
+    #[tokio::test]
+    async fn an_unlimited_invite_code_never_runs_out_and_keeps_the_first_claimant() {
+        // `remaining_uses IS NULL` is the capture's `null` ("unlimited uses"), and the SQL's
+        // `remaining_uses - 1` leaves it null.
+        let invites = InMemoryInviteCodeRepository::new();
+        invites
+            .create("unlimited", &options(FieldUpdate::Clear))
+            .await
+            .unwrap();
+
+        for byte in 1..=3 {
+            assert!(
+                invites
+                    .claim_code("unlimited", &claimant(byte))
+                    .await
+                    .unwrap()
+            );
+        }
+
+        let row = invites.find_by_code("unlimited").await.unwrap().unwrap();
+
+        assert_eq!(row.claimed_by, Some(claimant(1)));
+        assert_eq!(row.remaining_uses, None);
+    }
+
+    #[tokio::test]
+    async fn a_code_created_without_a_use_count_is_single_use() {
+        // The capture's `remainingUses === undefined ? 1 : remainingUses` (`:42`): an absent
+        // count is one use, not unlimited.
+        let invites = InMemoryInviteCodeRepository::new();
+        invites
+            .create("default", &options(FieldUpdate::Absent))
+            .await
+            .unwrap();
+
+        assert!(invites.claim_code("default", &claimant(1)).await.unwrap());
+        assert!(!invites.claim_code("default", &claimant(2)).await.unwrap());
+
+        let row = invites.find_by_code("default").await.unwrap().unwrap();
+
+        assert_eq!(row.claimed_by, Some(claimant(1)));
+        assert_eq!(row.remaining_uses, Some(0));
+    }
 }

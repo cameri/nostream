@@ -58,6 +58,7 @@ impl Server {
         let relay = Relay::new(
             (*fixture.settings).clone(),
             Arc::clone(&fixture.stores),
+            fixture.wot_graph(),
             clock.clone(),
             keys,
             random,

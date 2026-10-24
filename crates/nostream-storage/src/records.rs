@@ -178,6 +178,22 @@ impl DvmJobStatus {
     }
 }
 
+/// The report arm parses NIP-56's seven types, so the mapping is total by construction and
+/// never needs a default.
+impl From<nostream_core::nip56::ReportType> for ReportType {
+    fn from(report_type: nostream_core::nip56::ReportType) -> Self {
+        match report_type {
+            nostream_core::nip56::ReportType::Nudity => Self::Nudity,
+            nostream_core::nip56::ReportType::Malware => Self::Malware,
+            nostream_core::nip56::ReportType::Profanity => Self::Profanity,
+            nostream_core::nip56::ReportType::Illegal => Self::Illegal,
+            nostream_core::nip56::ReportType::Spam => Self::Spam,
+            nostream_core::nip56::ReportType::Impersonation => Self::Impersonation,
+            nostream_core::nip56::ReportType::Other => Self::Other,
+        }
+    }
+}
+
 /// The integer columns are `integer`; a value outside `i32` cannot come from them, and a
 /// negative one cannot name a kind or a creation time.
 pub fn kind_from_i32(value: i32) -> Result<Kind, StorageError> {
@@ -273,6 +289,26 @@ mod tests {
             record.deduplication(),
             vec![serde_json::json!("0d684e8ec2431de5")]
         );
+    }
+
+    #[test]
+    fn a_parsed_report_type_maps_to_the_column_spelling() {
+        use nostream_core::nip56::ReportType as Parsed;
+
+        let cases = [
+            (Parsed::Nudity, "nudity"),
+            (Parsed::Malware, "malware"),
+            (Parsed::Profanity, "profanity"),
+            (Parsed::Illegal, "illegal"),
+            (Parsed::Spam, "spam"),
+            (Parsed::Impersonation, "impersonation"),
+            (Parsed::Other, "other"),
+        ];
+
+        for (parsed, spelling) in cases {
+            assert_eq!(ReportType::from(parsed).as_str(), spelling);
+            assert_eq!(parsed.as_str(), spelling);
+        }
     }
 
     #[test]

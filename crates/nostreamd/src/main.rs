@@ -111,6 +111,8 @@ async fn serve(
     let relay = Relay::new(
         settings,
         std::sync::Arc::new(unavailable::stores()),
+        // No web-of-trust graph is wired yet (#866): the capture's disabled-graph branch.
+        std::sync::Arc::new(unavailable::UnavailableWotGraph),
         std::sync::Arc::new(SystemClock),
         RelayKeySource::from_env(),
         std::sync::Arc::new(nostream_core::random::SystemRandom),

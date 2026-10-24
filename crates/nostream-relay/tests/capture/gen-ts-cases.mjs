@@ -12,7 +12,7 @@
 //   NODE_OPTIONS=--no-experimental-strip-types TS_NODE_TRANSPILE_ONLY=true \
 //     node <this file> [--out-dir <worktree>/crates/nostream-relay/tests/fixtures]
 //
-// The generator runs mocha with its JSON reporter over the 22 in-scope spec files, checks each
+// The generator runs mocha with its JSON reporter over the 36 in-scope spec files, checks each
 // file's case count against the table below (the spec's Context table, measured at the capture),
 // and writes one row per file with every case's full title. `ts-case-map.json` maps those titles
 // to the Rust tests that carry them; `tests/ts_case_parity.rs` holds the two files against each
@@ -23,14 +23,28 @@ import { execFileSync } from 'node:child_process'
 
 const CAPTURE = '242a3001d77149e4d70151ec03060c4ef44a1547'
 
-// The spec's Context table: the 22 in-scope files and their measured case counts.
+// The spec's Context table: the 36 in-scope files and their measured case counts.
 const FILES = [
   ['test/unit/handlers/event-message-handler.spec.ts', 200],
   ['test/unit/handlers/subscribe-message-handler.spec.ts', 58],
   ['test/unit/handlers/count-message-handler.spec.ts', 10],
   ['test/unit/handlers/auth-message-handler.spec.ts', 12],
   ['test/unit/handlers/unsubscribe-message-handler.spec.ts', 1],
+  ['test/unit/handlers/event-strategies/contact-list-event-strategy.spec.ts', 7],
   ['test/unit/handlers/event-strategies/default-event-strategy.spec.ts', 4],
+  ['test/unit/handlers/event-strategies/delete-event-strategy.spec.ts', 6],
+  ['test/unit/handlers/event-strategies/dvm-job-request-event-strategy.spec.ts', 6],
+  ['test/unit/handlers/event-strategies/ephemeral-event-strategy.spec.ts', 1],
+  ['test/unit/handlers/event-strategies/gift-wrap-event-strategy.spec.ts', 9],
+  ['test/unit/handlers/event-strategies/group-event-strategy.spec.ts', 12],
+  ['test/unit/handlers/event-strategies/invite-request-event-strategy.spec.ts', 2],
+  ['test/unit/handlers/event-strategies/join-request-event-strategy.spec.ts', 8],
+  ['test/unit/handlers/event-strategies/leave-request-event-strategy.spec.ts', 8],
+  ['test/unit/handlers/event-strategies/parameterized-replaceable-event-strategy.spec.ts', 6],
+  ['test/unit/handlers/event-strategies/replaceable-event-strategy.spec.ts', 4],
+  ['test/unit/handlers/event-strategies/report-event-strategy.spec.ts', 16],
+  ['test/unit/handlers/event-strategies/timestamp-event-strategy.spec.ts', 13],
+  ['test/unit/handlers/event-strategies/vanish-event-strategy.spec.ts', 3],
   ['test/unit/adapters/web-socket-adapter.spec.ts', 60],
   ['test/unit/adapters/web-socket-server-adapter.spec.ts', 17],
   ['test/unit/utils/nip42.spec.ts', 27],
