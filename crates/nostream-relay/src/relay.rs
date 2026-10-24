@@ -35,8 +35,10 @@ use crate::transport;
 
 /// The knobs a [`Relay`] is built with that are not settings: a constant the capture fixes in
 /// code (`liveness`, the NIP-56 refresh) or a policy the port adds with no counterpart there
-/// (`frame_queue_bytes`, `write_timeout`; ADR 0005). Tests shorten either. A value the
-/// capture's settings document carries belongs in [`Settings`], never here.
+/// (`frame_queue_bytes`, `write_timeout`; ADR 0005). Tests set the cadences they need
+/// (`tests/common/mod.rs::fast_config`); the two policies run at their shipped defaults in
+/// every test so far. A value the capture's settings document carries belongs in [`Settings`],
+/// never here.
 #[derive(Debug, Clone)]
 pub struct RelayConfig {
     /// `WSS_CLIENT_HEALTH_PROBE_INTERVAL` (`web-socket-server-adapter.ts:18`).

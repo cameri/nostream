@@ -37,10 +37,11 @@ once per read either way, and identity would add a *second* watch handle to ever
 sender, plus a receiver the entry never awaits), while the generation adds one `u64` beside
 the one handle the table already holds. The generation is also the value a returning read can
 still carry after its own handle has been replaced, and the value that names the owner in the
-table and in the tests. It fits the locking the file already has: `impl Connection` contains
-no `.await`, so no lock is ever held across a suspension point, and the counter is read and
-written inside the same `insert` that replaces the previous sender. No second lock, no
-allocation outside the guard, and no new state for a caller to keep.
+table; the rule is tested through behaviour (`tests/connection.rs:208-231`), not by value. It
+fits the locking the file already has: `impl Connection` contains no `.await`, so no lock is
+ever held across a suspension point, and the counter is read and written inside the same
+`insert` that replaces the previous sender. No second lock, no allocation outside the guard,
+and no new state for a caller to keep.
 
 The counter is connection-wide and never reset, rather than derived per id from the
 previous entry. `abort_read` removes an entry for a read that is still winding down, so a
@@ -66,17 +67,19 @@ completes. The default bound is 8 MiB, which is above any single outbound frame 
 hundred times below the 405 MiB an unbounded queue reached when 200 000 frames were queued
 with nothing draining.
 
-The full-queue policy is **disconnect**: the connection loop closes the client with 1013
-and the fixed reason `slow consumer: outbound frame queue full`, then falls through to the
-existing cleanup.
+The full-queue policy is **disconnect**: the connection loop closes the client with 1013 and
+the fixed reason `slow consumer: outbound frame queue full` once its socket accepts bytes
+again — a client whose socket never does is ended by `write_timeout` instead, with no close
+frame — and then falls through to the existing cleanup.
 
-What the client experiences at that point is a hard cut, not a partial delivery: it is
-disconnected and receives nothing further, so frames the sink had already admitted and this
-run never wrote are frames it will never read. Draining is not the alternative for the client
-this bound exists for — one that has stopped reading — because draining means writing to a
-socket that is not taking bytes, which is the condition that produced the overflow; the relay
-would be waiting on precisely the client it has already failed to serve. That is the trade
-the policy makes: some frames one client will never read, in exchange for a socket that keeps
+What the client experiences at that point is a truncation, not a clean stop: the frames already
+written to its socket still arrive, in order, and then the close; frames the sink had admitted
+and this run never wrote are frames it will never read, and nothing in the stream marks where
+the cut fell — no `EOSE`, no count, only the close frame. Draining is not the alternative for
+the client this bound exists for — one that has stopped reading — because draining means writing
+to a socket that is not taking bytes, which is the condition that produced the overflow; the
+relay would be waiting on precisely the client it has already failed to serve. That is the trade
+the policy makes: some frames one client will never read, in exchange for a relay that keeps
 serving everyone else.
 
 Three alternatives lost:
@@ -100,8 +103,9 @@ The bound and the timeout are `RelayConfig` fields and not settings. The capture
 counterpart for either — it queues every frame without a limit
 (`src/adapters/web-socket-adapter.ts:150-155`; its pipeline never pushes back,
 `src/utils/stream.ts:11-18`) and its heartbeat is a process-wide interval — so a settings
-key would be an operator-facing surface mirroring nothing. `RelayConfig` is where this
-branch already keeps knobs the capture fixes in code and tests shorten.
+key would be an operator-facing surface mirroring nothing. `RelayConfig` is where this branch
+already keeps the knobs the capture fixes in code — with the tests setting the cadences they
+need — and these two port-only policies, which every test so far runs at their defaults.
 
 ## Liveness under a blocked write — every write carries a timeout
 
