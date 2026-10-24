@@ -34,6 +34,10 @@ pub const DEFAULT_WS_DRAIN_TIMEOUT_MS: u64 = 30_000;
 /// The close reason a draining server sends (`drainAndClose`).
 pub const DRAIN_REASON: &str = "relay shutting down";
 
+/// The close reason a client whose outbound frame queue overflowed is closed with: the port's
+/// own policy, with no counterpart in the capture (ADR 0005).
+pub const SLOW_CONSUMER_REASON: &str = "slow consumer: outbound frame queue full";
+
 /// `network.maxPayloadSize` (`network.max_payload_size` in the shipped YAML), else 131072.
 pub fn max_payload_size(settings: &Settings) -> usize {
     settings

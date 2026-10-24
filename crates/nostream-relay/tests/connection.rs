@@ -410,7 +410,8 @@ async fn closing_the_socket_aborts_an_in_flight_read() {
         .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "stored", NOW_SECS))
         .await;
 
-    let (sink, mut frames) = FrameSink::channel();
+    // The queue's bound plays no part here: the frames are a few hundred bytes.
+    let (sink, mut frames) = FrameSink::channel(1024 * 1024);
     let connection = Arc::new(Connection::new(
         "127.0.0.1".to_owned(),
         nostream_core::nip42::Nip42Session::with_challenge("challenge", 0),
@@ -490,7 +491,7 @@ async fn restricted_read_with(authenticate_mid_read: bool) -> Vec<String> {
         ))
         .await;
 
-    let (sink, mut frames) = FrameSink::channel();
+    let (sink, mut frames) = FrameSink::channel(1024 * 1024);
     // The session outlives the read: this connection is built directly rather than by
     // `Connection::accept`, so the TTL is the one named here and the settings' expiry (a
     // zero TTL) plays no part.

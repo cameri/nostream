@@ -969,7 +969,7 @@ async fn a_failing_event_limiter_limits_the_event_without_a_backoff() {
         ..Default::default()
     }));
 
-    let (sink, mut frames) = nostream_relay::sink::FrameSink::channel();
+    let (sink, mut frames) = nostream_relay::sink::FrameSink::channel(1024 * 1024);
     let clock = Arc::new(TestClock::new(NOW_MS));
     let connection = Arc::new(nostream_relay::connection::Connection::new(
         "127.0.0.1".to_owned(),

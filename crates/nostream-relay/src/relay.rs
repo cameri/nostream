@@ -43,16 +43,32 @@ pub struct RelayConfig {
     pub hidden_refresh_interval: Duration,
     /// `WS_DRAIN_TIMEOUT_MS`, resolved by `getWsDrainTimeoutMs`.
     pub drain_timeout: Duration,
+    /// The byte bound on one socket's outbound frame queue. The capture has no counterpart:
+    /// it queues every frame without a limit (`web-socket-adapter.ts:150-155`), so the bound
+    /// is the port's own policy (ADR 0005).
+    pub frame_queue_bytes: usize,
+    /// How long one socket write may take before the connection ends. The capture has no
+    /// counterpart either: its liveness probe is a process-wide `setInterval` a blocked write
+    /// cannot starve (`web-socket-server-adapter.ts:18,46`), while this loop performs the
+    /// write itself.
+    pub write_timeout: Duration,
 }
 
 impl Default for RelayConfig {
     /// The capture's own constants, and no environment read: `WS_DRAIN_TIMEOUT_MS` is
-    /// resolved by [`transport::drain_timeout`], which the composition root calls (ADR 0004).
+    /// resolved by [`transport::drain_timeout`], which the composition root calls (ADR 0004);
+    /// the queue bound and the write timeout are the port's additions (ADR 0005).
     fn default() -> Self {
         Self {
             liveness_interval: Duration::from_millis(120_000),
             hidden_refresh_interval: DEFAULT_REFRESH_INTERVAL,
             drain_timeout: Duration::from_millis(transport::DEFAULT_WS_DRAIN_TIMEOUT_MS),
+            // 8 MiB: above any single outbound frame, and a few hundred times below the
+            // 405 MiB an unbounded queue reached in the measurement that motivated it.
+            frame_queue_bytes: 8 * 1024 * 1024,
+            // Shorter than the 120 s liveness interval, so a client that stops reading is
+            // closed by the write path before a missed pong could close it.
+            write_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -255,7 +271,7 @@ impl Relay {
         peer: std::net::SocketAddr,
         shutdown: ShutdownState,
     ) {
-        let (sink, mut frames) = FrameSink::channel();
+        let (sink, mut frames) = FrameSink::channel(self.config.frame_queue_bytes);
 
         let connection_context = ConnectionContext {
             settings: Arc::clone(&self.settings),
@@ -296,11 +312,28 @@ impl Relay {
                 break;
             }
 
+            // Read at the top of every iteration, so a flag the producers set while the loop
+            // was parked on a write is acted on as soon as that write returns. No `await`
+            // sits between a write completing and this check.
+            if sink.overflowed() {
+                self.close_slow_consumer(&mut transport, peer).await;
+                break;
+            }
+
             tokio::select! {
                 frame = frames.recv() => {
                     let Some(text) = frame else { break };
 
-                    if transport::send_text(&mut transport, text).await.is_err() {
+                    let bytes = text.len();
+                    let written = tokio::time::timeout(
+                        self.config.write_timeout,
+                        transport::send_text(&mut transport, text),
+                    )
+                    .await;
+
+                    sink.release(bytes);
+
+                    if !matches!(written, Ok(Ok(()))) {
                         break;
                     }
                 }
@@ -318,7 +351,13 @@ impl Relay {
                                 // alive (`web-socket-adapter.ts:342-346`).
                                 alive = true;
 
-                                if transport::send_pong(&mut transport, payload).await.is_err() {
+                                let pong = tokio::time::timeout(
+                                    self.config.write_timeout,
+                                    transport::send_pong(&mut transport, payload),
+                                )
+                                .await;
+
+                                if !matches!(pong, Ok(Ok(()))) {
                                     break;
                                 }
                             }
@@ -358,7 +397,13 @@ impl Relay {
 
                     alive = false;
 
-                    if transport.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    let ping = tokio::time::timeout(
+                        self.config.write_timeout,
+                        transport.send(Message::Ping(Vec::new().into())),
+                    )
+                    .await;
+
+                    if !matches!(ping, Ok(Ok(()))) {
                         break;
                     }
                 }
@@ -371,6 +416,28 @@ impl Relay {
         connection.close();
     }
 
+    /// Closes a client whose outbound frame queue overflowed: 1013 with the reason, then the
+    /// loop's cleanup (`handlers.abort_all()` and `connection.close()`).
+    ///
+    /// The policy is a disconnect, not a silent break: a client cut mid-`REQ` with no frame
+    /// cannot tell a slow link from a relay that forgot it (ADR 0005).
+    async fn close_slow_consumer(
+        &self,
+        transport: &mut AcceptedTransport,
+        peer: std::net::SocketAddr,
+    ) {
+        tracing::debug!(%peer, "closing a client that cannot keep up with its frame queue");
+
+        let _ = tokio::time::timeout(
+            self.config.write_timeout,
+            transport.close(Some(transport::close_frame(
+                CloseCode::Again,
+                transport::SLOW_CONSUMER_REASON,
+            ))),
+        )
+        .await;
+    }
+
     /// The close frame an inbound error implies: 1009 for a message over the limit, 1002 for
     /// a protocol violation (an RSV bit with no negotiated extension), nothing otherwise.
     async fn close_on_error(
@@ -380,12 +447,20 @@ impl Relay {
     ) {
         if transport::is_message_too_long(error) {
             tracing::debug!("client sent a payload too large");
-            let _ = transport.close(Some(transport::too_big_frame())).await;
+
+            let _ = tokio::time::timeout(
+                self.config.write_timeout,
+                transport.close(Some(transport::too_big_frame())),
+            )
+            .await;
         } else if transport::is_protocol_error(error) {
             tracing::debug!(error = %error, "websocket protocol error");
-            let _ = transport
-                .close(Some(transport::protocol_error_frame()))
-                .await;
+
+            let _ = tokio::time::timeout(
+                self.config.write_timeout,
+                transport.close(Some(transport::protocol_error_frame())),
+            )
+            .await;
         } else {
             tracing::debug!(error = %error, "websocket closed");
         }
@@ -464,20 +539,25 @@ impl Relay {
                 params: None,
             });
 
-            if transport::send_text(transport, frame.to_text())
-                .await
-                .is_err()
-            {
+            let written = tokio::time::timeout(
+                self.config.write_timeout,
+                transport::send_text(transport, frame.to_text()),
+            )
+            .await;
+
+            if !matches!(written, Ok(Ok(()))) {
                 return;
             }
         }
 
-        let _ = transport
-            .close(Some(transport::close_frame(
+        let _ = tokio::time::timeout(
+            self.config.write_timeout,
+            transport.close(Some(transport::close_frame(
                 CloseCode::Away,
                 transport::DRAIN_REASON,
-            )))
-            .await;
+            ))),
+        )
+        .await;
     }
 }
 

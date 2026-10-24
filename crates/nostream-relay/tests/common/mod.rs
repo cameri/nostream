@@ -113,6 +113,7 @@ pub fn fast_config() -> RelayConfig {
         liveness_interval: Duration::from_secs(600),
         hidden_refresh_interval: Duration::from_secs(600),
         drain_timeout: Duration::from_millis(300),
+        ..RelayConfig::default()
     }
 }
 

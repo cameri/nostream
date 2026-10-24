@@ -17,7 +17,9 @@ mod common;
 
 use std::time::Duration;
 
-use common::{Client, Server, fast_config, liveness_config, relay_keys};
+use common::{
+    CLIENT_SECRET, Client, NOW_SECS, Server, fast_config, liveness_config, relay_keys, signed_event,
+};
 use futures_util::SinkExt;
 use nostream_relay::testing::{Fixture, settings};
 use nostream_relay::transport::{self, DEFAULT_MAX_PAYLOAD};
@@ -585,4 +587,52 @@ async fn a_connection_with_no_subscriptions_is_closed_without_a_closed_frame() {
         }
         other => panic!("expected only the 1001 close, got {other:?}"),
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// The bounded frame queue (#952)
+// ---------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_client_that_stops_reading_is_closed_with_1013() {
+    // 32 MiB of events against the default 8 MiB queue: more than any autotuned loopback
+    // buffer can absorb, so the bound is reached whatever the kernel's window is. The
+    // timestamps differ so every event is a distinct row.
+    let content = "x".repeat(32 * 1024);
+    let fixture = Fixture::new(settings());
+
+    for index in 0..1024 {
+        fixture
+            .seed_event(signed_event(
+                &CLIENT_SECRET,
+                1,
+                vec![],
+                &content,
+                NOW_SECS + index,
+            ))
+            .await;
+    }
+
+    let server = Server::start_with(fixture, relay_keys(), fast_config()).await;
+    let (mut raw, _head) = RawClient::connect(server.address, None).await;
+
+    // Nothing is read, not even the AUTH challenge: the loop is parked on a socket nobody
+    // drains while the read fills the queue.
+    raw.send_text(r#"["REQ","bulk",{"kinds":[1]}]"#).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let frames = tokio::time::timeout(Duration::from_secs(10), raw.frames_until(0x8))
+        .await
+        .expect("the close frame arrives once the queue overflows");
+    let last = frames.last().expect("a close frame");
+
+    assert_eq!(last.opcode, 0x8, "the last frame is a close frame");
+    assert!(
+        frames.iter().any(|frame| frame.opcode == 0x1),
+        "at least one EVENT preceded the close"
+    );
+    assert_eq!(
+        close_of(last),
+        (1013, transport::SLOW_CONSUMER_REASON.to_owned())
+    );
 }
