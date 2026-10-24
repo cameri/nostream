@@ -638,12 +638,37 @@ impl Nip05VerificationRepository for InMemoryNip05Repository {
 #[derive(Debug, Default)]
 pub struct InMemoryInviteCodeRepository {
     codes: Mutex<BTreeMap<String, CreateInviteCodeOptions>>,
+    /// When set, `create` holds until a permit is released, which is how a test keeps the
+    /// invite mint's one `await` open long enough for a `CLOSE` to land in it.
+    create_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+    creates: AtomicU64,
 }
 
 impl InMemoryInviteCodeRepository {
     /// An empty store.
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// Makes every `create` wait for a permit. Grant one with `Semaphore::add_permits` to
+    /// let the mint through.
+    ///
+    /// A gate rather than a sleeping double: `RateLimits::invite_limited` is synchronous and
+    /// a sleep in it would block the runtime a single-threaded `#[tokio::test]` runs on.
+    pub fn gate_creates(&self) -> Arc<tokio::sync::Semaphore> {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+
+        *self
+            .create_gate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::clone(&gate));
+
+        gate
+    }
+
+    /// How many `create` calls have started, including one a gate is holding.
+    pub fn creates_started(&self) -> u64 {
+        self.creates.load(Ordering::SeqCst)
     }
 
     /// The codes minted, in code order, with the options each was minted with.
@@ -664,6 +689,18 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
         options: &'a CreateInviteCodeOptions,
     ) -> StorageFuture<'a, InviteCode> {
         Box::pin(async move {
+            self.creates.fetch_add(1, Ordering::SeqCst);
+
+            let gate = self
+                .create_gate
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+
+            if let Some(gate) = gate {
+                let _ = gate.acquire().await;
+            }
+
             if self
                 .codes
                 .lock()
