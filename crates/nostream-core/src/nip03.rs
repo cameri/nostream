@@ -10,7 +10,8 @@
 //! kind-1040 strategy puts them in the event's `OK` frame after `invalid: `.
 
 use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
+use base64::alphabet;
+use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig};
 
 use crate::constants::MAX_SAFE_INTEGER;
 use crate::event::EventId;
@@ -154,6 +155,15 @@ pub fn parse_ots_file(bytes: &[u8]) -> Result<OtsSummary, String> {
     })
 }
 
+/// The capture decodes with Node's permissive `Buffer.from(content, 'base64')`, which discards
+/// the final block's unused trailing bits (`src/utils/nip03.ts:368`). The strict `STANDARD`
+/// engine refuses such a proof, which the capture accepts — a wire-visible
+/// `invalid: content is not valid base64` for a proof that is structurally sound.
+const LENIENT: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+);
+
 /// Validates the base64-encoded `.ots` proof in a kind-1040 event's content
 /// (`validateOtsProof`, `src/utils/nip03.ts:357-396`).
 ///
@@ -172,7 +182,7 @@ pub fn validate_ots_proof(base64_content: &str, target_event_id: &EventId) -> Re
         return Err("content is not valid base64".to_owned());
     }
 
-    let bytes = STANDARD
+    let bytes = LENIENT
         .decode(base64_content)
         .map_err(|_| "content is not valid base64".to_owned())?;
 
@@ -407,6 +417,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::*;
+    use base64::engine::general_purpose::STANDARD;
 
     const TARGET: &str = "e71c6ea722987debdb60f81f9ea4f604b5ac0664120dd64fb9d23abc4ec7c323";
 
@@ -689,5 +700,61 @@ mod tests {
             validate_ots_proof(&base64(&proof_for(target_id().as_bytes())), &target_id()),
             Ok(())
         );
+    }
+
+    /// Re-encodes the final base64 block with one non-zero pad bit: the byte string is the
+    /// same, Node's `Buffer.from` decodes it, and a canonical decoder refuses it.
+    fn flip_unused_trailing_bits(encoded: &str) -> String {
+        const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+        let mut characters: Vec<u8> = encoded.bytes().collect();
+        let padding = characters
+            .iter()
+            .rev()
+            .take_while(|byte| **byte == b'=')
+            .count();
+        assert!(
+            padding == 1 || padding == 2,
+            "a final group with unused bits"
+        );
+        let index = characters.len() - padding - 1;
+        let value = ALPHABET
+            .iter()
+            .position(|byte| *byte == characters[index])
+            .expect("a base64 data character");
+
+        characters[index] = ALPHABET[value ^ 1];
+
+        String::from_utf8(characters).expect("the alphabet is ASCII")
+    }
+
+    #[test]
+    fn a_non_canonical_re_encoding_of_a_valid_proof_is_accepted() {
+        // The capture decodes with Node's permissive `Buffer.from(content, 'base64')`, which
+        // discards the final block's unused bits (`src/utils/nip03.ts:368`), so a proof
+        // re-encoded with a set pad bit is accepted. A strict decoder refuses it, and the
+        // refusal would reach the client as `invalid: content is not valid base64`.
+        //
+        // A two-byte block height makes the proof 77 bytes, so its base64 ends in one `=`
+        // and the last data character carries the two unused bits this case needs.
+        let mut bytes = MAGIC_HEADER.to_vec();
+        bytes.push(1);
+        bytes.push(OP_SHA256);
+        bytes.extend(target_id().as_bytes());
+        bytes.extend(attestation(BITCOIN_TAG, 300));
+
+        assert_eq!(bytes.len(), 77);
+
+        let canonical = base64(&bytes);
+        let re_encoded = flip_unused_trailing_bits(&canonical);
+
+        assert_ne!(re_encoded, canonical);
+        assert_eq!(validate_ots_proof(&canonical, &target_id()), Ok(()));
+        assert_eq!(validate_ots_proof(&re_encoded, &target_id()), Ok(()));
+        assert!(
+            STANDARD.decode(&re_encoded).is_err(),
+            "the strict engine refuses the non-canonical encoding"
+        );
+        assert_eq!(LENIENT.decode(&re_encoded).unwrap(), bytes);
     }
 }
