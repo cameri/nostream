@@ -122,8 +122,17 @@ The capture's two Lua scripts set a TTL on every key (`PEXPIRE key period`,
 `retain` pass drops every entry past **its own** window. The pass runs at most once per
 `SWEEP_INTERVAL_MS` (one second), a cadence that belongs to the store — never to the
 caller's window, or one hit on an hour-long window would postpone reclaiming every
-one-second key for an hour — and that keeps a pass costing 1.3–2.0 ms at the ceiling off
-the hot path.
+one-second key for an hour.
+
+The pass is *not* free and it is not off the request path: it runs inside the caller's
+`hit`, holding the store's mutex, to the end of the lock. At the ceiling one pass takes
+1.3–2.0 ms, so the caller that triggers it waits that long and a concurrent `hit` queues
+behind it (measured: 0.96–1.16 ms behind a pass that frees nothing). What the gate buys is
+that this is the *most* a client can be made to pay: bounded to one pass per second per
+store rather than one per hit, which measured 0.035–0.380 % of a core under continuous
+load with a slow flood paying 0.482 ms/s. Sweeping on each refused insert instead made a
+131,072-key test take 193 s against 0.2 s, and would have given a flooding client
+O(store) work per message.
 
 Each of the four levels has a store of its own, so a flood of message keys cannot fill the
 store the event level uses.
@@ -139,14 +148,24 @@ store is full.
 
 Two limits worth recording rather than discovering in production:
 
-- **The ceiling bounds keys, not bytes.** A sliding key holds one entry per hit, so the
-  shipped 60-per-minute windows cap a key at 60 entries and the hour window at 720: 65,536
-  keys × 720 entries is about 1 GB, reachable only at ~47 million accepted events.
+- **The ceiling bounds keys, not bytes.** It is per store, and there are four stores. The
+  shipped EWMA strategy keeps one entry per key, so a full store holds `MAX_STORE_KEYS`
+  (65,536) entries and the whole limiter holds four times that. The sliding strategy keeps
+  one entry per hit instead — its 60-per-minute windows cap a key at 60 entries and its
+  hour window at 720 — so a full *sliding* store is 65,536 × 720 entries, about 1 GB, and
+  is reachable only at ~47 million accepted events.
+- **A full level is closed to new keys until entries lapse.** Refusal is decided per store,
+  so a flood that fills one level (measured: ~32,768 addresses or authors per cycle with
+  the settings the port ships) limits every new address or author *at that level* until
+  its entries pass their window — up to 60 s per cycle — while the other three levels
+  keep serving. That is the price of never freeing a live key.
 - **A relay with no signing key does not rate-limit EVENT at all.** The event key is
   resolved before the limiter (the capture's `isRateLimited` calls `getRelayPublicKey()`,
   which throws), so with neither `SECRET` nor `RELAY_PRIVATE_KEY` set every event is
   answered `error: unable to process event` — AC29's declared outcome — and no window is
-  consulted. `nostreamd` logs it; a deployment that wants the limiter must set a key.
+  consulted (`handlers/event.rs`, "no relay signing key; refusing the event"). The relay
+  logs that at `debug`, so a deployment that wants to see it must run with `debug` enabled;
+  one that wants the limiter must set a key.
 
 ## The accept loop lives in the relay, and serving cannot fail
 
@@ -178,13 +197,20 @@ between two shapes.
 ## Two orders the capture leaves unspecified, fixed deliberately
 
 - **Subscriptions are walked in id order.** The capture's `Map` walks insertion order; the
-  port's `Connection` keeps a `BTreeMap`, so a drain or a fan-out emits `CLOSED`/`EVENT`
-  frames in id order. Observable only when a client's ids are not alphabetical, and the
-  fixture's ids are sorted.
-- **The connection-level limit is keyed on the peer address.** The other three levels key
-  on `Connection::remote_address`, which is derived from the transport; the connection
-  level is decided before the socket is upgraded (a refused client must never see the
-  challenge), so it reads the accept loop's `peer` — the same address.
+  port's `Connection` keeps a `HashMap` and sorts on read (`Connection::subscriptions` sorts
+  by id), so a drain or a fan-out emits `CLOSED`/`EVENT` frames in id order. Observable only
+  when a client's ids are not alphabetical, and the fixture's ids are sorted.
+- **The connection-level limit is keyed on the peer address, and decided after the
+  upgrade.** Not before it: the capture's check lives in `onConnection`
+  (`src/adapters/web-socket-server-adapter.ts:126-143`), which runs after the handshake and
+  before the adapter is registered, and the port does the same — `Relay::handle_socket`
+  upgrades (`relay.rs:217`), asks `is_connection_rate_limited` (`:225`), and only then
+  enters `run_connection` (`:230`). A refused client therefore completes the handshake and
+  is dropped without a close frame or a registration, as the capture's `terminate()` does.
+  It keys on the accept loop's `peer` because no `Connection` exists yet; that is the same
+  string `Connection::remote_address` derives from the transport, since the port
+  implements neither `network.remoteIpHeader` nor `network.trustedProxies` (the only way
+  the capture's two keys differ).
 
 ## The hidden-content mirror is the relay's
 

@@ -48,22 +48,9 @@ impl Server {
 
     /// Starts a relay with an explicit key source and intervals, minting from `SystemRandom`.
     pub async fn start_with(fixture: Fixture, keys: RelayKeySource, config: RelayConfig) -> Self {
-        Self::start_with_random(
-            fixture,
-            keys,
-            config,
-            Arc::new(nostream_core::random::SystemRandom),
-        )
-        .await
-    }
-
-    /// Starts a relay with every collaborator named, the randomness included.
-    pub async fn start_with_random(
-        fixture: Fixture,
-        keys: RelayKeySource,
-        config: RelayConfig,
-        random: Arc<dyn nostream_core::random::RandomSource>,
-    ) -> Self {
+        // The randomness is not a parameter: every caller of this launcher wants system
+        // entropy, and the oracle drives `Relay::new` itself with the recorded source.
+        let random = Arc::new(nostream_core::random::SystemRandom);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let address = listener.local_addr().expect("local addr");
         let clock = Arc::new(TestClock::new(NOW_MS));

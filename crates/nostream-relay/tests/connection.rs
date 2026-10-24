@@ -438,12 +438,10 @@ async fn closing_the_socket_aborts_an_in_flight_read() {
 /// The gate releases one record at a time, so the AUTH lands after the first record has been
 /// judged and before the second one is.
 async fn restricted_read_with(authenticate_mid_read: bool) -> Vec<String> {
+    // Restricted reads on: they are the gate this test exercises. The zero session TTL these
+    // settings carry plays no part — the connection below is built with its own.
     let mut configured = settings();
-    let mut nip42 = nostream_relay::testing::nip42_settings();
-    // A session that lasts: the settings fixture expires one at once, which is what most
-    // AUTH tests want and this one does not.
-    nip42.session_expiry_seconds = Some(3_600);
-    configured.nip42 = Some(nip42);
+    configured.nip42 = Some(nostream_relay::testing::nip42_settings());
 
     let fixture = Fixture::new(configured);
     let gate = fixture.events.gate_reads_per_item();
@@ -461,7 +459,9 @@ async fn restricted_read_with(authenticate_mid_read: bool) -> Vec<String> {
         .await;
 
     let (sink, mut frames) = FrameSink::channel();
-    // The session outlives the read: `Nip42Session` carries the TTL it was built with.
+    // The session outlives the read: this connection is built directly rather than by
+    // `Connection::accept`, so the TTL is the one named here and the settings' expiry (a
+    // zero TTL) plays no part.
     let connection = Arc::new(Connection::new(
         "127.0.0.1".to_owned(),
         nostream_core::nip42::Nip42Session::with_challenge("challenge", 3_600),

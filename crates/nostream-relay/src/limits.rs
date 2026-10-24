@@ -109,7 +109,7 @@ impl<V> Store<V> {
     /// The pass is what prefers a lapsed key over a live one; a store still full after it
     /// refuses the new key rather than displacing a live one, and `false` is the caller's cue
     /// to answer the hit as limited.
-    fn admit(&mut self, key: &str, now_ms: u64, is_live: impl Fn(&V) -> bool + Copy) -> bool {
+    fn admit(&mut self, key: &str, now_ms: u64, is_live: impl Fn(&V) -> bool) -> bool {
         if now_ms >= self.next_sweep_ms {
             self.sweep(now_ms, is_live);
         }
