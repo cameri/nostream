@@ -12,12 +12,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use nostream_core::Event;
 use nostream_core::nip03::validate_ots_proof;
+use nostream_core::{Event, EventId};
 
 use crate::error::RelayError;
 use crate::handlers::HandlerContext;
-use crate::strategies::{EventStrategy, event_record, is_lowercase_hex64};
+use crate::strategies::{EventStrategy, event_record};
 
 /// The `timestamp` arm.
 #[derive(Debug, Clone, Copy, Default)]
@@ -80,11 +80,13 @@ fn validate(event: &Event) -> Option<String> {
 
     let target = &attested[0][1];
 
-    if !is_lowercase_hex64(target) {
+    // `EventId`'s parser is the rule the capture's `/^[0-9a-f]{64}$/` states, so the refusal
+    // and the id the proof is checked against are the same decision.
+    let Ok(target_event_id) = target.parse::<EventId>() else {
         return Some(
             "opentimestamps e tag must contain a 32-byte lowercase hex event id".to_owned(),
         );
-    }
+    };
 
     let kinds: Vec<&Vec<String>> = event
         .tags
@@ -101,8 +103,6 @@ fn validate(event: &Event) -> Option<String> {
     {
         return Some("opentimestamps k tag must be a non-negative integer kind".to_owned());
     }
-
-    let target_event_id = target.parse().ok()?;
 
     validate_ots_proof(&event.content, &target_event_id).err()
 }

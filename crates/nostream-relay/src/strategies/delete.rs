@@ -1,18 +1,19 @@
 //! The `delete` event strategy. Mirrors `src/handlers/event-strategies/delete-event-strategy.ts`.
 //!
-//! A NIP-09 request: every `e` tag whose value is 64 lowercase hex characters is soft-deleted
-//! **before** the request itself is stored, so a client that re-reads after the `OK` sees the
-//! deletions already applied. Then the common create-or-dedupe.
+//! A NIP-09 request: every `e` tag whose value parses as an event id is soft-deleted — exact
+//! 32 bytes of lowercase hex, which is what `EventId`'s own parser accepts — **before** the
+//! request itself is stored, so a client that re-reads after the `OK` sees the deletions
+//! already applied. Then the common create-or-dedupe.
 
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use nostream_core::Event;
+use nostream_core::{Event, EventId};
 
 use crate::error::RelayError;
 use crate::handlers::HandlerContext;
-use crate::strategies::{EventStrategy, event_record, is_lowercase_hex64};
+use crate::strategies::{EventStrategy, event_record};
 
 /// The `delete` arm.
 #[derive(Debug, Clone, Copy, Default)]
@@ -25,11 +26,11 @@ impl EventStrategy for DeleteStrategy {
         context: &'a HandlerContext,
     ) -> Pin<Box<dyn Future<Output = Result<(), RelayError>> + Send + 'a>> {
         Box::pin(async move {
-            let ids: Vec<nostream_core::EventId> = event
+            let ids: Vec<EventId> = event
                 .tags
                 .iter()
-                .filter(|tag| tag.len() >= 2 && tag[0] == "e" && is_lowercase_hex64(&tag[1]))
-                .filter_map(|tag| tag[1].parse().ok())
+                .filter(|tag| tag.len() >= 2 && tag[0] == "e")
+                .filter_map(|tag| tag[1].parse::<EventId>().ok())
                 .collect();
 
             if !ids.is_empty() {

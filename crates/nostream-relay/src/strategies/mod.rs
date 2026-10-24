@@ -177,9 +177,11 @@ fn event_record(event: &Event, context: &HandlerContext) -> EventRecord {
     record
 }
 
-/// Whether a tag value is exactly 32 bytes of lowercase hex — the rule the `delete`,
-/// `gift_wrap`, `group` and `timestamp` arms apply to theirs. The report arm deliberately
-/// accepts either case (`nip56::extract_report_targets`); ADR 0006 records why.
+/// Whether a tag value is exactly 32 bytes of lowercase hex — the `group` arm's rule for its
+/// `h` tag. It is a predicate rather than a parse because a group id has no core type to parse
+/// into; everywhere a value is an event id or a pubkey, `EventId`/`Pubkey`'s own parser decides
+/// it. The report arm deliberately accepts either case (`nip56::extract_report_targets`); ADR
+/// 0006 records why.
 fn is_lowercase_hex64(value: &str) -> bool {
     value.len() == 64
         && value

@@ -111,8 +111,10 @@ accepts uppercase hex. The four validators that refuse uppercase are lowercase-o
 `delete-event-strategy.ts:22`, `gift-wrap-event-strategy.ts:49`,
 `group-event-strategy.ts:50` and `timestamp-event-strategy.ts:70`. The port keeps both
 sides: `nip56::extract_report_targets` hex-decodes either case
-(`crates/nostream-core/src/nip56.rs:165`), and the four arms share
-`strategies::is_lowercase_hex64` (`src/strategies/mod.rs:183`).
+(`crates/nostream-core/src/nip56.rs:165`), and the four arms parse with the types that own
+the rule — `EventId`/`Pubkey` for the delete, gift-wrap and timestamp tags, and
+`strategies::is_lowercase_hex64` (`src/strategies/mod.rs:185`) only for the group arm's
+`h` tag, which has no core type to parse into.
 
 Normalising either way was rejected. "Lowercase everywhere" would refuse a report the
 capture accepts; "insensitive everywhere" would accept a delete, gift wrap, group event or

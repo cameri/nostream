@@ -10,12 +10,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use nostream_core::Event;
 use nostream_core::nip44::validate_payload;
+use nostream_core::{Event, Pubkey};
 
 use crate::error::RelayError;
 use crate::handlers::HandlerContext;
-use crate::strategies::{EventStrategy, event_record, is_lowercase_hex64};
+use crate::strategies::{EventStrategy, event_record};
 
 /// The `gift_wrap` arm.
 #[derive(Debug, Clone, Copy, Default)]
@@ -72,7 +72,7 @@ fn validate_gift_wrap(event: &Event) -> Option<String> {
         return Some("gift wrap event (kind 1059) must have exactly one p tag".to_owned());
     }
 
-    if !is_lowercase_hex64(&recipients[0][1]) {
+    if recipients[0][1].parse::<Pubkey>().is_err() {
         return Some(
             "gift wrap event (kind 1059) p tag must contain a valid 64-character lowercase hex pubkey"
                 .to_owned(),
