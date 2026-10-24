@@ -7,6 +7,7 @@ import { getNip05VerifyExpirationMs, toAdminNip05Row } from '../../utils/admin-o
 import { reverifyNip05Verification } from '../../utils/nip05-reverification'
 import { loadMergedSettings } from '../../utils/settings-config'
 import { pubkeySchema } from '../../schemas/base-schema'
+import { recordAdminAuditFromRequest } from '../../utils/record-admin-audit'
 
 export class PostAdminOpsNip05ReverifyController implements IController {
   public constructor(
@@ -35,6 +36,7 @@ export class PostAdminOpsNip05ReverifyController implements IController {
 
     try {
       const updated = await reverifyNip05Verification(existing, this.nip05VerificationRepository)
+      await recordAdminAuditFromRequest('nip05.reverify', request, { pubkey: pubkeyResult.data })
       const verifyExpirationMs = getNip05VerifyExpirationMs(settings)
       response
         .status(200)

@@ -59,7 +59,7 @@ Bootstrap complete: $TARGET
 
 Next steps:
   1. Edit $TARGET/.env (SECRET, DB_PASSWORD, REDIS_PASSWORD)
-  2. Load ghcr.io/cameri/nostream:main on this host
+  2. Load ghcr.io/cameri/nostream:latest on this host
   3. cd $TARGET && docker compose up -d
 
 Optional relay overrides:

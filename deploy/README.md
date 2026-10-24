@@ -5,8 +5,8 @@ uses a pre-built image from GHCR; migrations and default settings ship inside
 that image.
 
 This guide assumes a Linux host with Docker Engine and the Compose plugin
-installed. Container images are published automatically after CI succeeds on pushes to
-`main`. See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for the CI/CD flow and
+installed. Container images are published automatically when releases are published.
+See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for the CI/CD flow and
 [`docs/DEPLOY-RUNBOOK.md`](../docs/DEPLOY-RUNBOOK.md) for the step-by-step update
 procedure after a new image lands on the host.
 
@@ -33,7 +33,7 @@ chmod +x deploy/bootstrap.sh
 ./deploy/bootstrap.sh /opt/nostream
 ```
 
-Edit `/opt/nostream/.env`, load `ghcr.io/cameri/nostream:main`, then:
+Edit `/opt/nostream/.env`, load `ghcr.io/cameri/nostream:latest`, then:
 
 ```bash
 cd /opt/nostream
@@ -46,7 +46,7 @@ from this repository. You only maintain `.env` and optional settings overrides.
 ## Prerequisites
 
 1. [Docker Engine](https://docs.docker.com/engine/install/) and the Compose plugin
-2. `ghcr.io/cameri/nostream:main` loaded on the host (see
+2. `ghcr.io/cameri/nostream:latest` loaded on the host (see
    [Image delivery](#image-delivery-on-restricted-networks) if `docker pull` fails)
 
 ## Server layout after bootstrap
@@ -65,10 +65,10 @@ from this repository. You only maintain `.env` and optional settings overrides.
 
 | Service           | Image                          | Notes                                                   |
 |-------------------|--------------------------------|---------------------------------------------------------|
-| nostream          | ghcr.io/cameri/nostream:main   | `pull_policy: never` when the image is pre-loaded       |
+| nostream          | ghcr.io/cameri/nostream:latest | `pull_policy: never` when the image is pre-loaded       |
 | nostream-db       | postgres:15                    |                                                         |
 | nostream-cache    | redis:7.0.5-alpine3.16         |                                                         |
-| nostream-migrate  | ghcr.io/cameri/nostream:main   | one-shot `knex migrate:latest`; same image as the relay |
+| nostream-migrate  | ghcr.io/cameri/nostream:latest | one-shot `knex migrate:latest`; same image as the relay |
 
 The relay listens on `127.0.0.1:8008`. Expose it with a reverse proxy or
 tunnel (for example Cloudflare Tunnel).

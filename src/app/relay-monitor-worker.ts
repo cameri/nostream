@@ -5,7 +5,9 @@ import { IRelayProbeSnapshotStore, RelayProbeRunSnapshot } from '../@types/relay
 import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 import { INip66EventPublisher } from '../services/nip66-event-publisher'
+import { recordProbeRunMetrics } from '../telemetry/ops-metrics'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { notifyProbeRunTransition } from '../utils/ops-trust-notifications'
 import { ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS, publishAdminOpsWorkerHeartbeatSafely } from '../utils/admin-ops-store'
 import { getMonitorPrivateKey } from '../utils/monitor-identity'
 import { getEffectiveProbeIntervalSeconds, getNip66HistoryRetention, getProbeIntervalMs } from '../utils/nip66-schedule'
@@ -138,6 +140,7 @@ export class RelayMonitorWorker implements IRunnable {
   }
 
   private async onSchedule(): Promise<void> {
+    const probeRunStartedMs = Date.now()
     const lastRunStartedAt = new Date().toISOString()
     await this.publishOpsHeartbeat({ lastRunStartedAt })
 
@@ -203,6 +206,8 @@ export class RelayMonitorWorker implements IRunnable {
     const expirySeconds = getEffectiveProbeIntervalSeconds(currentSettings) * 2
 
     await this.snapshotStore.saveLatest(snapshot, expirySeconds)
+    recordProbeRunMetrics(snapshot.status, Date.now() - probeRunStartedMs)
+    await notifyProbeRunTransition(this.opsCache, snapshot)
     if (this.historyStore) {
       try {
         await this.historyStore.append(snapshot, getNip66HistoryRetention(currentSettings))

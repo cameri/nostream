@@ -41,6 +41,7 @@
   const networkHealthRunAt = document.getElementById('network-health-run-at')
   const networkHealthTimelineWrap = document.getElementById('network-health-timeline-wrap')
   const networkHealthTimeline = document.getElementById('network-health-timeline')
+  const networkHealthRunButton = document.getElementById('network-health-run-button')
 
   let settingsLoaded = false
   let settingsLoading = false
@@ -220,8 +221,19 @@
     streamStatus.appendChild(document.createTextNode(label))
   }
 
-  const updateSystemAlert = (snapshot) => {
+  let activeDashboardView = 'metrics-view'
+
+  const hideSystemAlert = () => {
     if (!systemAlert) {
+      return
+    }
+
+    systemAlert.className = 'system-alert d-none'
+    systemAlert.textContent = ''
+  }
+
+  const updateSystemAlert = (snapshot) => {
+    if (!systemAlert || activeDashboardView !== 'metrics-view') {
       return
     }
 
@@ -359,6 +371,7 @@
   }
 
   const showDashboard = () => {
+    activeDashboardView = 'metrics-view'
     loginPanel.classList.add('d-none')
     dashboardPanel.classList.remove('d-none')
     dashboardActions.classList.remove('d-none')
@@ -723,6 +736,42 @@
       }
       networkHealthResults.appendChild(card)
     })
+  }
+
+  const runNetworkHealthProbe = async () => {
+    if (!networkHealthRunButton) {
+      return
+    }
+
+    networkHealthRunButton.disabled = true
+    setNetworkHealthSyncLine('manual probe running…')
+
+    try {
+      const response = await fetch(`${adminBase}/network-health/run`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+
+      if (response.status === 401) {
+        showLogin()
+        return
+      }
+
+      if (!response.ok) {
+        setNetworkHealthSyncLine('manual probe failed')
+        return
+      }
+
+      networkHealthHistoryPinned = false
+      selectedNetworkHealthRunAt = null
+      await refreshNetworkHealth()
+      await refreshNetworkHealthHistory()
+      setNetworkHealthSyncLine('manual probe completed')
+    } catch {
+      setNetworkHealthSyncLine('network error during manual probe')
+    } finally {
+      networkHealthRunButton.disabled = false
+    }
   }
 
   const refreshNetworkHealth = async () => {
@@ -1476,6 +1525,11 @@
   }
 
   const showView = (viewId) => {
+    activeDashboardView = viewId
+    if (viewId !== 'metrics-view') {
+      hideSystemAlert()
+    }
+
     dashboardViews.forEach((view) => {
       view.classList.toggle('d-none', view.id !== viewId)
     })
@@ -1506,6 +1560,22 @@
       void refreshNetworkHealthHistory()
       startNetworkHealthPolling()
       window.__ADMIN_OPS__?.load?.()
+      return
+    }
+
+    if (viewId === 'trust-view') {
+      stopNetworkHealthPolling()
+      stopMetricsStream()
+      window.__ADMIN_OPS__?.stop?.()
+      window.__ADMIN_TRUST__?.load?.()
+      return
+    }
+
+    if (viewId === 'moderation-view') {
+      stopNetworkHealthPolling()
+      stopMetricsStream()
+      window.__ADMIN_OPS__?.stop?.()
+      window.__ADMIN_MODERATION__?.load?.()
       return
     }
 
@@ -1797,12 +1867,21 @@
     void loadSettingsData(true)
   })
 
+  networkHealthRunButton?.addEventListener('click', () => {
+    void runNetworkHealthProbe()
+  })
+
   if (liveClock) {
     liveClock.textContent = formatClock()
     setInterval(() => {
       liveClock.textContent = formatClock()
     }, 1000)
   }
+
+  document.addEventListener('admin-unauthorized', () => {
+    window.__ADMIN_TRUST__?.closeDiagnosticsPreview?.()
+    showLogin()
+  })
 
   applyTheme(getTheme())
   checkSession()
