@@ -7,9 +7,10 @@ on:
 jobs:
   build-and-push-image:
     # Changesets tags each workspace package on publish: relay releases tag
-    # vX.Y.Z, website releases tag nostream-website@X.Y.Z. Only a relay tag
-    # should build the relay container image.
-    if: startsWith(github.event.release.tag_name, 'v')
+    # nostream@X.Y.Z, website releases tag nostream-website@X.Y.Z. Only a relay
+    # tag should build the relay container image. The v* branch is kept for the
+    # releases cut before the repo moved to changesets tagging.
+    if: startsWith(github.event.release.tag_name, 'nostream@') || startsWith(github.event.release.tag_name, 'v')
     name: Build and push container image
     runs-on: ubuntu-latest
     env:
@@ -32,6 +33,33 @@ jobs:
         uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Stated rather than inherited from the action's defaults: the deploy
+          # path pulls `:latest`, so a released image must carry it. Naming the
+          # tags here is what makes `latest` something this repository promises
+          # rather than a behaviour of a third-party action.
+          #
+          # Changesets tags a relay release `nostream@3.6.2`, which is not a
+          # semver. A semver rule derives its input from the git ref and emits
+          # NOTHING for it, and with no version the `latest` rule is skipped as
+          # well - so a relay release published no tag at all. `prefix=` cannot
+          # help (it is rendered after parsing), and `value=` cannot help either
+          # (it replaces the whole tag, leaving no room for the prefix).
+          #
+          # So the semver-shaped tag comes from a `match` rule that extracts the
+          # version out of the relay tag, and the release tag itself is resolved
+          # from the git ref, unchanged. The semver rule runs first so the bare
+          # version is the primary tag; the release tag is kept beside it, which
+          # is what a host sees on the GitHub release and pins.
+          #
+          # Verified by running this action revision's own Meta class over this
+          # block: a relay release yields `3.6.2`, `nostream@3.6.2` and `latest`;
+          # a legacy `v3.4.1` yields `3.4.1`, `v3.4.1` and `latest`; a website
+          # release matches neither semver nor `match`, and the job's `if:`
+          # never lets that job run.
+          tags: |
+            type=match,pattern=nostream@(.+),group=1
+            type=ref,event=tag
+            type=raw,value=latest
       - name: Build and push Docker image
         uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
         with:

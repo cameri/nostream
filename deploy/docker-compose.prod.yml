@@ -1,6 +1,6 @@
 services:
   nostream:
-    image: ghcr.io/cameri/nostream:main
+    image: ghcr.io/cameri/nostream:latest
     pull_policy: never
     container_name: nostream
     env_file: .env
@@ -72,7 +72,7 @@ services:
       retries: 10
 
   nostream-migrate:
-    image: ghcr.io/cameri/nostream:main
+    image: ghcr.io/cameri/nostream:latest
     pull_policy: never
     container_name: nostream-migrate
     user: node:node
