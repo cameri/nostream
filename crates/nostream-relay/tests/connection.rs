@@ -185,20 +185,49 @@ fn a_read_is_in_flight_until_it_ends_and_an_abort_notifies_it() {
 
     assert!(!connection.read_in_flight("s1"));
 
-    let cancelled = connection.begin_read("s1");
+    let mut read = connection.begin_read("s1");
 
     assert!(connection.read_in_flight("s1"));
 
     connection.abort_read("s1");
 
-    assert!(*cancelled.borrow());
+    assert!(*read.cancellation().borrow());
     assert!(!connection.read_in_flight("s1"));
 
-    let cancelled = connection.begin_read("s2");
-    connection.end_read("s2");
+    let read = connection.begin_read("s2");
+    connection.end_read(read);
 
-    assert!(!*cancelled.borrow());
     assert!(!connection.read_in_flight("s2"));
+
+    let mut read = connection.begin_read("s3");
+
+    assert!(!*read.cancellation().borrow());
+    connection.end_read(read);
+}
+
+#[test]
+fn a_finished_read_does_not_remove_the_read_that_replaced_it() {
+    let connection = connection();
+
+    let mut first = connection.begin_read("s1");
+    let mut second = connection.begin_read("s1");
+
+    assert!(
+        *first.cancellation().borrow(),
+        "the replaced read is told to abort"
+    );
+
+    connection.end_read(first);
+
+    assert!(
+        connection.read_in_flight("s1"),
+        "the replacement is still in flight"
+    );
+    assert!(
+        second.cancellation().has_changed().is_ok(),
+        "the replacement's sender is alive"
+    );
+    assert!(!*second.cancellation().borrow());
 }
 
 #[test]
@@ -211,14 +240,17 @@ fn close_clears_the_table_the_session_and_the_reads() {
         filters: vec![Filter::default()],
     });
     connection.authenticate(pubkey, EventId::from_byte_array([1; 32]), NOW_SECS);
-    let cancelled = connection.begin_read("s1");
+    let mut read = connection.begin_read("s1");
 
     connection.close();
 
     assert_eq!(connection.subscription_count(), 0);
     assert!(connection.authenticated_pubkeys(NOW_SECS).is_empty());
     assert!(!connection.read_in_flight("s1"));
-    assert!(*cancelled.borrow(), "an in-flight read is aborted");
+    assert!(
+        *read.cancellation().borrow(),
+        "an in-flight read is aborted"
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -378,7 +410,8 @@ async fn closing_the_socket_aborts_an_in_flight_read() {
         .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "stored", NOW_SECS))
         .await;
 
-    let (sink, mut frames) = FrameSink::channel();
+    // The queue's bound plays no part here: the frames are a few hundred bytes.
+    let (sink, mut frames) = FrameSink::channel(1024 * 1024);
     let connection = Arc::new(Connection::new(
         "127.0.0.1".to_owned(),
         nostream_core::nip42::Nip42Session::with_challenge("challenge", 0),
@@ -458,7 +491,7 @@ async fn restricted_read_with(authenticate_mid_read: bool) -> Vec<String> {
         ))
         .await;
 
-    let (sink, mut frames) = FrameSink::channel();
+    let (sink, mut frames) = FrameSink::channel(1024 * 1024);
     // The session outlives the read: this connection is built directly rather than by
     // `Connection::accept`, so the TTL is the one named here and the settings' expiry (a
     // zero TTL) plays no part.

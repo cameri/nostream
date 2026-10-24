@@ -4,7 +4,17 @@
 //! `canSubscribe` limits with the capture's strings and its two typos, closes an
 //! all-restricted REQ from an unauthenticated client, registers the subscription, mints a
 //! NIP-43 invite code when the filters ask for one, then streams the stored events and ends
-//! with `EOSE`. A `CLOSE` or a tripped message limiter aborts the read with no further frame.
+//! with `EOSE`. A `CLOSE`, a socket close or a tripped message limiter aborts the read with
+//! no further frame.
+//!
+//! The in-flight read is registered **before the mint's one `await`**, as the capture sets
+//! `activeSubscriptionId` as its first statement (`subscribe-message-handler.ts:53`), so a
+//! `CLOSE` handled after that registration aborts the stored read and the subscription
+//! streams nothing (a `CLOSE` handled ahead of its own `REQ` finds nothing to abort:
+//! cameri/nostream#958). The invite `EVENT` is emitted in that case: the capture's
+//! emit is unguarded (`subscribe-message-handler.ts:111`) and attaches its abort signal only
+//! to the stored read (`:230`), and parity wins where the two disagree absent a decision
+//! record (ADR 0005).
 
 use futures_util::StreamExt;
 use nostream_core::expiration;
@@ -13,6 +23,7 @@ use nostream_core::messages::{EoseMessage, OutgoingEventMessage, RelayMessage, S
 use nostream_core::nip42;
 use nostream_core::{Filter, Kind};
 
+use crate::connection::InFlightRead;
 use crate::error::RelayError;
 use crate::handlers::HandlerContext;
 
@@ -54,9 +65,12 @@ pub async fn handle(message: SubscribeMessage, context: &HandlerContext) {
             filters: filters.clone(),
         });
 
+    // Registered before the mint's only `await`, so the read a `CLOSE` aborts exists by then.
+    let read = context.connection.begin_read(&subscription_id);
+
     maybe_issue_invite_code(&subscription_id, &filters, context).await;
 
-    fetch_and_send(&subscription_id, &filters, context).await;
+    fetch_and_send(read, &filters, context).await;
 }
 
 /// NIP-43: kind 28935 is never published by a client and never stored. A REQ for it asks the
@@ -199,14 +213,24 @@ async fn mint_invite_code(
 }
 
 /// `fetchAndSend` (`:208-252`): the stored read, abortable, ending in `EOSE` unless aborted.
-async fn fetch_and_send(subscription_id: &str, filters: &[Filter], context: &HandlerContext) {
-    let mut cancellation = context.connection.begin_read(subscription_id);
+///
+/// The read is already in flight when this runs: it is registered before the invite mint, so
+/// a `CLOSE` that landed during the mint has set its cancellation.
+async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &HandlerContext) {
+    let subscription_id = read.subscription_id().to_owned();
+
+    // A cancellation set before the stream was opened (a `CLOSE` during the mint) ends the
+    // read here: no `find_by_filters`, no frames, no `EOSE`.
+    if *read.cancellation().borrow() || read.cancellation().has_changed().is_err() {
+        context.connection.end_read(read);
+        return;
+    }
 
     let stream = match context.stores.events.find_by_filters(filters).await {
         Ok(stream) => stream,
         Err(error) => {
             tracing::error!(error = %error, "unable to stream events");
-            context.connection.end_read(subscription_id);
+            context.connection.end_read(read);
             return;
         }
     };
@@ -218,16 +242,16 @@ async fn fetch_and_send(subscription_id: &str, filters: &[Filter], context: &Han
         |event: &nostream_core::Event| filters.iter().any(|filter| filter.matches(event));
 
     loop {
-        if *cancellation.borrow() {
-            context.connection.end_read(subscription_id);
+        if *read.cancellation().borrow() {
+            context.connection.end_read(read);
             return;
         }
 
         let record = tokio::select! {
-            changed = cancellation.changed() => {
+            changed = read.cancellation().changed() => {
                 // An aborted read sends no frame at all, not even EOSE.
-                if changed.is_err() || *cancellation.borrow() {
-                    context.connection.end_read(subscription_id);
+                if changed.is_err() || *read.cancellation().borrow() {
+                    context.connection.end_read(read);
                     return;
                 }
 
@@ -261,7 +285,7 @@ async fn fetch_and_send(subscription_id: &str, filters: &[Filter], context: &Han
                 context
                     .sink
                     .send(&RelayMessage::Event(OutgoingEventMessage {
-                        subscription_id: subscription_id.to_owned(),
+                        subscription_id: subscription_id.clone(),
                         event: std::sync::Arc::new(event),
                     }));
             }
@@ -272,11 +296,11 @@ async fn fetch_and_send(subscription_id: &str, filters: &[Filter], context: &Han
         }
     }
 
-    context.connection.end_read(subscription_id);
+    context.connection.end_read(read);
 
-    context.sink.send(&RelayMessage::Eose(EoseMessage {
-        subscription_id: subscription_id.to_owned(),
-    }));
+    context
+        .sink
+        .send(&RelayMessage::Eose(EoseMessage { subscription_id }));
 }
 
 /// `canSubscribe` (`:258-301`): six reasons, the capture's strings — including

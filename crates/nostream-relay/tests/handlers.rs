@@ -1091,6 +1091,73 @@ async fn an_invite_request_mints_one_kind_28935_event_before_eose() {
 }
 
 #[tokio::test]
+async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
+    let mut settings = settings();
+    settings.nip43 = Some(nip43_settings());
+
+    let fixture = Fixture::new(settings);
+    let gate = fixture.invites.gate_creates();
+    fixture
+        .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "stored", NOW_SECS))
+        .await;
+
+    let server = start(fixture).await;
+    let (mut client, challenge) = server.connect().await;
+
+    let auth = auth_event(&challenge, NOW_SECS);
+    client
+        .send(&format!(
+            r#"["AUTH",{}]"#,
+            serde_json::to_string(&auth).expect("auth json")
+        ))
+        .await;
+    assert!(client.expect_frame().await.ends_with(r#"true,""]"#));
+
+    client.send(r#"["REQ","invite",{"kinds":[28935,1]}]"#).await;
+
+    // The mint's one `await` is held, which is the window a `CLOSE` lands in.
+    for _ in 0..200 {
+        if server.fixture.invites.creates_started() == 1 {
+            break;
+        }
+
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    assert_eq!(
+        server.fixture.invites.creates_started(),
+        1,
+        "the invite mint is in flight"
+    );
+
+    client.send(r#"["CLOSE","invite"]"#).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    gate.add_permits(1);
+
+    // The capture emits the invite event for a subscription the client has closed
+    // (`subscribe-message-handler.ts:111`), and that stays.
+    let first = client.expect_frame().await;
+    assert!(first.starts_with(r#"["EVENT","invite","#), "{first}");
+
+    let event: serde_json::Value = serde_json::from_str(
+        first
+            .strip_prefix(r#"["EVENT","invite","#)
+            .and_then(|rest| rest.strip_suffix(']'))
+            .expect("an EVENT frame"),
+    )
+    .expect("event json");
+    assert_eq!(event["kind"], 28_935);
+
+    // Nothing else: the stored read was cancelled with the subscription, so no stored
+    // event and no `EOSE`.
+    assert!(
+        client.next_message().await.is_none(),
+        "a closed subscription streams nothing"
+    );
+    assert_eq!(server.fixture.invites.minted().len(), 1);
+}
+
+#[tokio::test]
 async fn an_unauthenticated_invite_request_gets_eose_only() {
     let mut settings = settings();
     settings.nip43 = Some(nip43_settings());

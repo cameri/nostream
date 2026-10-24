@@ -38,7 +38,47 @@ pub struct Connection {
     pub remote_address: String,
     subscriptions: Mutex<HashMap<String, Subscription>>,
     session: Mutex<Nip42Session>,
-    in_flight: Mutex<HashMap<String, watch::Sender<bool>>>,
+    in_flight: Mutex<InFlightReads>,
+}
+
+/// The reads running on one socket, each owned by the generation it was given.
+///
+/// A re-`REQ` replaces the read for its id and signals the old one to abort; the old read
+/// then returns through [`Connection::end_read`] carrying the generation it began with, and
+/// that call must not remove its replacement's entry. The counter is connection-wide and
+/// never reset, so a generation is unique for the socket's life and a fresh read under an
+/// id an aborted read is still winding down from cannot be handed the same number (ADR
+/// 0005).
+#[derive(Debug, Default)]
+struct InFlightReads {
+    /// The generation the next read is given.
+    next_generation: u64,
+    /// The live read per subscription id, with the generation that owns the entry.
+    by_subscription: HashMap<String, (u64, watch::Sender<bool>)>,
+}
+
+/// One read's ownership of its entry in the in-flight table: the subscription it streams,
+/// the generation that owns the entry, and the cancellation signal it watches.
+///
+/// It is passed to [`Connection::end_read`] as the read's last act, so ending a read is
+/// something a read can do exactly once and only to its own entry.
+#[derive(Debug)]
+pub struct InFlightRead {
+    subscription_id: String,
+    generation: u64,
+    cancellation: watch::Receiver<bool>,
+}
+
+impl InFlightRead {
+    /// The subscription this read streams.
+    pub fn subscription_id(&self) -> &str {
+        &self.subscription_id
+    }
+
+    /// The cancellation signal: `true` once this read has been aborted.
+    pub fn cancellation(&mut self) -> &mut watch::Receiver<bool> {
+        &mut self.cancellation
+    }
 }
 
 impl Connection {
@@ -84,7 +124,7 @@ impl Connection {
             remote_address,
             subscriptions: Mutex::new(HashMap::new()),
             session: Mutex::new(session),
-            in_flight: Mutex::new(HashMap::new()),
+            in_flight: Mutex::new(InFlightReads::default()),
         }
     }
 
@@ -204,30 +244,58 @@ impl Connection {
             .authenticate(pubkey, auth_event_id, now)
     }
 
-    /// Starts an abortable read for `subscription_id` and returns its cancellation handle.
+    /// Starts an abortable read for `subscription_id` and returns the read's handle.
     ///
     /// A previous read for the same id is aborted first, so a re-REQ cannot leave two
-    /// streams writing to one subscription (`onClientMessage` replaces the handler).
-    pub fn begin_read(&self, subscription_id: &str) -> watch::Receiver<bool> {
-        let (sender, receiver) = watch::channel(false);
+    /// streams writing to one subscription (`onClientMessage` replaces the handler). The
+    /// new read is given the next generation, which is what makes
+    /// [`Connection::end_read`] remove only its own entry.
+    pub fn begin_read(&self, subscription_id: &str) -> InFlightRead {
+        let (sender, cancellation) = watch::channel(false);
         let mut in_flight = self
             .in_flight
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        if let Some(previous) = in_flight.insert(subscription_id.to_owned(), sender) {
+        let generation = in_flight.next_generation;
+        // A generation is unique for the socket's life; the wrap is unreachable, and a
+        // panic on it would be a panic in the accept path.
+        in_flight.next_generation = in_flight.next_generation.wrapping_add(1);
+
+        if let Some((_, previous)) = in_flight
+            .by_subscription
+            .insert(subscription_id.to_owned(), (generation, sender))
+        {
             let _ = previous.send(true);
         }
 
-        receiver
+        InFlightRead {
+            subscription_id: subscription_id.to_owned(),
+            generation,
+            cancellation,
+        }
     }
 
     /// Ends a read without aborting it (the stream finished).
-    pub fn end_read(&self, subscription_id: &str) {
-        self.in_flight
+    ///
+    /// The entry is removed only while `read`'s generation still owns it: a read that a
+    /// re-`REQ` replaced has nothing left to remove, and leaving the replacement's entry
+    /// alone is what keeps the replacement streaming to its `EOSE`.
+    pub fn end_read(&self, read: InFlightRead) {
+        let mut in_flight = self
+            .in_flight
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove(subscription_id);
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        let owns_entry = in_flight
+            .by_subscription
+            .get(read.subscription_id())
+            .map(|(generation, _)| *generation)
+            == Some(read.generation);
+
+        if owns_entry {
+            in_flight.by_subscription.remove(read.subscription_id());
+        }
     }
 
     /// Aborts the read running for `subscription_id`, if any (`abortInFlightSubscriptionReads`).
@@ -237,7 +305,7 @@ impl Connection {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        if let Some(sender) = in_flight.remove(subscription_id) {
+        if let Some((_, sender)) = in_flight.by_subscription.remove(subscription_id) {
             let _ = sender.send(true);
         }
     }
@@ -247,6 +315,7 @@ impl Connection {
         self.in_flight
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .by_subscription
             .contains_key(subscription_id)
     }
 
@@ -268,7 +337,7 @@ impl Connection {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        for (_, sender) in in_flight.drain() {
+        for (_, (_, sender)) in in_flight.by_subscription.drain() {
             let _ = sender.send(true);
         }
     }
