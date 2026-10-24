@@ -24,7 +24,7 @@ use nostream_core::nip42::Nip42Session;
 use nostream_core::{Event, Kind, SettingsPubkey};
 use nostream_relay::connection::Connection;
 use nostream_relay::error::RelayError;
-use nostream_relay::handlers::HandlerContext;
+use nostream_relay::handlers::{HandlerContext, Stores};
 use nostream_relay::relay_key::RelayKeySource;
 use nostream_relay::sink::FrameSink;
 use nostream_relay::strategies::EventStrategy;
@@ -43,6 +43,7 @@ use nostream_relay::strategies::report::ReportStrategy;
 use nostream_relay::strategies::timestamp::TimestampStrategy;
 use nostream_relay::strategies::vanish::VanishStrategy;
 use nostream_relay::testing::{Fixture, UpsertFailure, hub_receiver, nip43_settings, settings};
+use nostream_relay::unavailable::UnavailableWotGraph;
 use nostream_storage::repositories::{
     CreateInviteCodeOptions, EventRecord, EventRepository, FieldUpdate, InviteCodeRepository,
     NewReport, ReportType, User, UserRepository,
@@ -1649,6 +1650,25 @@ async fn report_records_zero_weight_outside_the_graph() {
 
     assert_eq!(fixture.reports.reports(), vec![expected_report(0.0, false)]);
     assert_eq!(fixture.wot.distance_queries(), vec![author()]);
+}
+
+#[tokio::test]
+async fn report_is_stored_unweighted_when_the_graph_is_unavailable() {
+    let fixture = Fixture::new(nip56_on(Vec::new(), false));
+    let (mut context, mut sink) = socket(&fixture);
+    context.stores = Arc::new(Stores {
+        wot: Arc::new(UnavailableWotGraph),
+        ..(*context.stores).clone()
+    });
+
+    // A daemon with no graph wired is the capture's disabled-WoT branch: no distance is known,
+    // so the row is stored unweighted rather than the write being skipped.
+    let event = report_event();
+
+    ReportStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.reports.reports(), vec![expected_report(0.0, false)]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
 }
 
 #[tokio::test]

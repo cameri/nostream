@@ -38,7 +38,9 @@ use crate::sink::FrameSink;
 use crate::wot::WotGraph;
 
 /// The repository and service seams a handler may call. Every one is a trait object, so a test
-/// supplies in-memory doubles and no handler knows which backend it has.
+/// supplies in-memory doubles and no handler knows which backend it has. Cheap to clone: every
+/// field is an `Arc`, so a test can copy a context's stores and swap the one seam it is about.
+#[derive(Clone)]
 pub struct Stores {
     pub events: Arc<dyn EventRepository>,
     pub users: Arc<dyn UserRepository>,

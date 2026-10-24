@@ -35,12 +35,15 @@ The shapes rejected:
   service; a repository trait here would fix an on-disk shape #866 has not chosen.
 - **Inline the whole graph in the relay.** That is #866's work, not this job's.
 
-`UnavailableWotGraph` (`src/unavailable.rs:46`) answers both methods `NotImplemented`, so
-the daemon in `unavailable::stores()` still serves; both arms treat the seam as
-best-effort, so a graph that is not wired never rejects an event. The consequence is
-recorded where it bites: ADR 0004's adaptive-PoW section already says a missing distance is
-charged in full, and the report arm stores an unweighted row for a reporter it cannot
-place.
+`UnavailableWotGraph` (`src/unavailable.rs:44-69`) is the capture's *disabled* graph, not a
+failing one: a follow-list update touches nothing and `get_distance` answers `None`, which
+`report` stores as an unweighted row — a report from a relay with no graph is still a
+report. `Err` is reserved for a wired implementation's genuine failure (a rebuild that
+could not complete), and both arms log that and carry on, as the capture's `try`/`catch`
+does. Saying `Err` for "no graph" would have dropped every report row on a daemon without
+#866 while the event itself was already stored — unrecoverable, since a resend hits the
+duplicate path. The other consequence is recorded where it bites: ADR 0004's adaptive-PoW
+section says a missing distance is charged in full.
 
 ## The OpenTimestamps parser lives in core
 

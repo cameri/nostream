@@ -17,11 +17,11 @@ use nostream_storage::repositories::{
     StorageFuture, User, UserPatch, UserRepository,
 };
 
-use crate::error::RelayError;
 use crate::handlers::Stores;
 use crate::wot::{WotFuture, WotGraph};
 
-/// The six stores and the trust graph, every call reporting `NotImplemented`.
+/// The six stores, every call reporting `NotImplemented`, and the trust graph, which has no
+/// graph to read.
 pub fn stores() -> Stores {
     Stores {
         events: std::sync::Arc::new(UnavailableEventRepository),
@@ -40,8 +40,11 @@ fn unavailable() -> StorageError {
     }
 }
 
-/// The trust graph, for a daemon with no `nostream-services` wiring: the contact-list and
-/// report arms treat it as best-effort, so every refusal here is logged and the event stands.
+/// The trust graph, for a daemon with no `nostream-services` wiring. "Unavailable" is the
+/// capture's *disabled* graph, not a failure: a follow-list update touches nothing and no
+/// distance is known, so a report is still stored — unweighted, which is what the capture
+/// stores when WoT is off. A genuine failure (a rebuild that could not complete) belongs to the
+/// wrapped service, and both callers log it and carry on.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UnavailableWotGraph;
 
@@ -51,19 +54,16 @@ impl WotGraph for UnavailableWotGraph {
         _pubkey: &'a Pubkey,
         _follows: &'a [String],
     ) -> WotFuture<'a, ()> {
-        Box::pin(async {
-            Err(RelayError::NotImplemented {
-                module: "relay::wot::update_follow_list",
-            })
-        })
+        // `updateFollowList` returns without touching anything when WoT is disabled
+        // (`src/services/wot-graph-service.ts:74-76`).
+        Box::pin(async { Ok(()) })
     }
 
     fn get_distance<'a>(&'a self, _pubkey: &'a Pubkey) -> WotFuture<'a, Option<u32>> {
-        Box::pin(async {
-            Err(RelayError::NotImplemented {
-                module: "relay::wot::get_distance",
-            })
-        })
+        // `getDistance` answers `undefined` when WoT is disabled or has no seed pubkey
+        // (`src/services/wot-graph-service.ts:55-57`), which the report arm stores as an
+        // unweighted row rather than aborting the write.
+        Box::pin(async { Ok(None) })
     }
 }
 
