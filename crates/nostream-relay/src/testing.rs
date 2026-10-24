@@ -933,8 +933,12 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
                 options: options.clone(),
                 claimed_by: None,
                 remaining_uses: match options.remaining_uses {
+                    // The capture's `options.remainingUses === undefined ? 1 : remainingUses`
+                    // (`src/repositories/invite-code-repository.ts:42`): absent is one use,
+                    // `Clear` (the capture's `null`) is unlimited.
+                    FieldUpdate::Absent => Some(1),
+                    FieldUpdate::Clear => None,
                     FieldUpdate::Set(uses) => Some(uses),
-                    FieldUpdate::Absent | FieldUpdate::Clear => None,
                 },
             };
             let invite = row.code(code);
@@ -966,8 +970,12 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
         })
     }
 
-    /// One use of the code, refused when it is absent, expired, claimed by someone else, or
-    /// out of uses (`claimCode`, `src/repositories/invite-code-repository.ts`).
+    /// One use of the code, refused only when it is absent, expired or out of uses: the
+    /// capture's single conditional update (`claimCode`,
+    /// `src/repositories/invite-code-repository.ts:74-95`, and `invite_claim_code`,
+    /// `crates/nostream-storage/src/postgres/metadata.rs:212-236`). A code shared between
+    /// pubkeys keeps admitting them until its uses run out, and `claimed_by` records the first
+    /// claimant alone (`COALESCE(claimed_by, …)`).
     fn claim_code<'a>(&'a self, code: &'a str, pubkey: &'a Pubkey) -> StorageFuture<'a, bool> {
         Box::pin(async move {
             self.claims
@@ -990,13 +998,6 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
             };
 
             if row
-                .claimed_by
-                .is_some_and(|claimed_by| claimed_by != *pubkey)
-            {
-                return Ok(false);
-            }
-
-            if row
                 .options
                 .expires_at
                 .is_some_and(|expires_at| expires_at <= chrono::Utc::now())
@@ -1012,7 +1013,7 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
                 row.remaining_uses = Some(remaining - 1);
             }
 
-            row.claimed_by = Some(*pubkey);
+            row.claimed_by = row.claimed_by.or(Some(*pubkey));
 
             Ok(true)
         })
@@ -1569,4 +1570,89 @@ pub fn hub_receiver(
     hub: &tokio::sync::broadcast::Sender<std::sync::Arc<Event>>,
 ) -> tokio::sync::broadcast::Receiver<std::sync::Arc<Event>> {
     hub.subscribe()
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    fn claimant(byte: u8) -> Pubkey {
+        Pubkey::from_byte_array([byte; 32])
+    }
+
+    fn options(remaining_uses: FieldUpdate<i32>) -> CreateInviteCodeOptions {
+        CreateInviteCodeOptions {
+            expires_at: None,
+            remaining_uses,
+            created_by: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_shared_invite_code_admits_a_second_pubkey_until_its_uses_run_out() {
+        // The capture's `claimCode` conditions on `code`, the remaining uses and the expiry
+        // only (`src/repositories/invite-code-repository.ts:74-95`), so a code with uses left
+        // admits every claimant and only the count runs out. The double used to refuse the
+        // second pubkey — behaviour the relay does not have.
+        let invites = InMemoryInviteCodeRepository::new();
+        invites
+            .create("shared", &options(FieldUpdate::Set(2)))
+            .await
+            .unwrap();
+
+        assert!(invites.claim_code("shared", &claimant(1)).await.unwrap());
+        assert!(invites.claim_code("shared", &claimant(2)).await.unwrap());
+        assert!(!invites.claim_code("shared", &claimant(3)).await.unwrap());
+
+        let row = invites.find_by_code("shared").await.unwrap().unwrap();
+
+        assert_eq!(row.claimed_by, Some(claimant(1)));
+        assert_eq!(row.remaining_uses, Some(0));
+    }
+
+    #[tokio::test]
+    async fn an_unlimited_invite_code_never_runs_out_and_keeps_the_first_claimant() {
+        // `remaining_uses IS NULL` is the capture's `null` ("unlimited uses"), and the SQL's
+        // `remaining_uses - 1` leaves it null.
+        let invites = InMemoryInviteCodeRepository::new();
+        invites
+            .create("unlimited", &options(FieldUpdate::Clear))
+            .await
+            .unwrap();
+
+        for byte in 1..=3 {
+            assert!(
+                invites
+                    .claim_code("unlimited", &claimant(byte))
+                    .await
+                    .unwrap()
+            );
+        }
+
+        let row = invites.find_by_code("unlimited").await.unwrap().unwrap();
+
+        assert_eq!(row.claimed_by, Some(claimant(1)));
+        assert_eq!(row.remaining_uses, None);
+    }
+
+    #[tokio::test]
+    async fn a_code_created_without_a_use_count_is_single_use() {
+        // The capture's `remainingUses === undefined ? 1 : remainingUses` (`:42`): an absent
+        // count is one use, not unlimited.
+        let invites = InMemoryInviteCodeRepository::new();
+        invites
+            .create("default", &options(FieldUpdate::Absent))
+            .await
+            .unwrap();
+
+        assert!(invites.claim_code("default", &claimant(1)).await.unwrap());
+        assert!(!invites.claim_code("default", &claimant(2)).await.unwrap());
+
+        let row = invites.find_by_code("default").await.unwrap().unwrap();
+
+        assert_eq!(row.claimed_by, Some(claimant(1)));
+        assert_eq!(row.remaining_uses, Some(0));
+    }
 }
