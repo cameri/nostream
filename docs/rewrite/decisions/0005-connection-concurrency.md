@@ -162,9 +162,12 @@ runs before the next frame is read, and its continuations stay concurrent.
 the `JoinSet`. The prefixes are `subscribe` (everything through `begin_read`, so the
 subscription and its read exist before a following `CLOSE` is looked at), `unsubscribe` (the
 whole handler) and `auth` (the whole handler, which has no `await`). `EVENT` and `COUNT` keep
-their whole body as one spawned future: what they do before their first `await` touches the
-rate limiters and the settings, which no later frame reads in arrival order, and moving it
-would add loop latency to the hottest inbound path for no capture-visible difference.
+their whole body as one spawned future: no later frame's handler needs an entry they establish,
+so nothing they do before their first `await` has to be ordered. The accepted consequence is
+that two pipelined `EVENT`s may have their rate-limiter hits recorded in either order, so which
+of the two is refused is not fixed by arrival order — parity, because the capture's limiter hit
+also sits after `await this.isEventValid(event)`
+(`src/handlers/event-message-handler.ts:66-86`).
 
 Two shapes were rejected. **Serializing whole handlers** — an ordered queue drained in the
 loop — would run a `REQ`'s invite mint to completion before a `CLOSE` already in the buffer
@@ -177,10 +180,15 @@ or evicted, needs a rule for what an "older" `REQ` means under a re-`REQ`, and o
 
 What this does not decide: it is a guarantee about prefixes, not about handler execution.
 Continuations interleave as before, so a `CLOSE` during a gated invite mint still aborts the
-read and the invite `EVENT` is still emitted. The cost accepted is that
-`normalise_subscription` and `can_subscribe` run on the loop task, bounded by
-`transport::max_payload_size` and, where configured, `max_filters` / `max_filter_values`;
-the capture does the same work on its socket's thread.
+read and the invite `EVENT` is still emitted. The cost accepted is that the prefixes run on the
+loop task. For `REQ` that is `normalise_subscription` and `can_subscribe`, bounded by
+`transport::max_payload_size` and, where configured, `max_filters` / `max_filter_values`; for
+`AUTH` it is the whole `nip42::authenticate`, measured on the 4-vCPU development box at 34.3 µs
+per message (32.2 µs of it the signature verify, 1.28 µs the id hash), against 0.76 µs for
+`REQ` and 0.053 µs for `CLOSE`. The capture does the same work on its socket's thread, but it
+pays in awaited chunks that let other sockets interleave, where a prefix does not yield at all;
+the same verify costs the capture 1.57–1.85 ms/op of CPU on Node, so the loop's per-`AUTH` cost
+is well below the capture's, and what the prefix gives up is interleaving, not throughput.
 
 ## Not decided here — the port's `CLOSE` semantics
 

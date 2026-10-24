@@ -11,8 +11,13 @@
 //! per-connection state a later frame's handler reads and expects to be there. `subscribe`
 //! registers its subscription and its read, `unsubscribe` clears them, and `auth` records the
 //! session a restricted `REQ` is judged against, so those three are prefixes. `event` and
-//! `count` keep their whole body as one future: what they do before their first `await`
-//! touches the rate limiters and the settings, which no later frame reads in arrival order.
+//! `count` keep their whole body as one future: no later frame's handler needs an entry they
+//! establish — `COUNT`'s work before its first `await` mutates nothing shared, and the event
+//! limiter, though keyed on this connection, is consulted by each `EVENT` from its own task —
+//! so none of it has to be ordered. The accepted consequence is that two pipelined `EVENT`s
+//! may have their limiter hits recorded in either order, so which of the two is refused is not
+//! fixed by arrival order; the capture's limiter hit also sits after
+//! `await this.isEventValid(event)` (`event-message-handler.ts:66-86`), so that is parity.
 
 pub mod auth;
 pub mod count;
@@ -198,10 +203,14 @@ pub type HandlerFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 /// Runs one decoded client message's ordering-sensitive prefix on the caller's task, as the
 /// capture's `messageHandlerFactory` switch does, and returns the rest of its handler.
 ///
-/// The connection loop calls this before it reads the next frame, so every statement a
-/// handler executes before its first suspension point has run in arrival order. `None` means
-/// the message was handled inside its prefix; `Some(future)` is the continuation, which is
-/// spawned into the socket's handler set and stays concurrent with its neighbours.
+/// Nothing here can enforce when it is called: the guarantee holds because the connection loop
+/// is the only caller, and it calls this before reading the next frame. For a message with a
+/// prefix, every statement the prefix executes has run by the time this returns. `None` means
+/// the prefix answered the message; `Some(future)` is the rest of the handler, which is spawned
+/// into the socket's handler set and runs unordered with its neighbours.
+///
+/// The postcondition is therefore about the prefix, not the handler: the `Event` and `Count`
+/// arms box the whole handler, so none of their body is ordered.
 pub fn begin(
     message: nostream_core::messages::ClientMessage,
     context: &Arc<HandlerContext>,
@@ -212,6 +221,7 @@ pub fn begin(
         ClientMessage::Event(event) => {
             let context = Arc::clone(context);
 
+            // Whole body by rule: `event` needs no prefix (see the module doc).
             Some(Box::pin(
                 async move { event::handle(event, &context).await },
             ))
@@ -219,6 +229,7 @@ pub fn begin(
         ClientMessage::Count(message) => {
             let context = Arc::clone(context);
 
+            // Whole body by rule: `count` needs no prefix (see the module doc).
             Some(Box::pin(
                 async move { count::handle(message, &context).await },
             ))
