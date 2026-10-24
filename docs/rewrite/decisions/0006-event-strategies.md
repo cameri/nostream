@@ -24,7 +24,10 @@ greppable.
 `report` asks a reporter's distance (`report-event-strategy.ts:53`). The graph is a
 service (`nostream-services`' `wot_graph_service`, #866), and `nostream-relay` takes no
 dependency on that crate: `src/wot.rs:24` declares `WotGraph` beside `limits::Limiter`,
-which is the file's existing precedent for a service the relay needs and does not own.
+which is the file's existing precedent for a service the relay needs and does not own. The
+instance follows the same precedent: the composition root picks it, `Relay::new` takes it,
+and `HandlerContext` carries it beside `limits` — not in `Stores`, which holds storage
+traits only.
 
 The shapes rejected:
 

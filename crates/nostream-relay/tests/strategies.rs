@@ -24,7 +24,7 @@ use nostream_core::nip42::Nip42Session;
 use nostream_core::{Event, Kind, SettingsPubkey};
 use nostream_relay::connection::Connection;
 use nostream_relay::error::RelayError;
-use nostream_relay::handlers::{HandlerContext, Stores};
+use nostream_relay::handlers::HandlerContext;
 use nostream_relay::relay_key::RelayKeySource;
 use nostream_relay::sink::FrameSink;
 use nostream_relay::strategies::EventStrategy;
@@ -1656,10 +1656,7 @@ async fn report_records_zero_weight_outside_the_graph() {
 async fn report_is_stored_unweighted_when_the_graph_is_unavailable() {
     let fixture = Fixture::new(nip56_on(Vec::new(), false));
     let (mut context, mut sink) = socket(&fixture);
-    context.stores = Arc::new(Stores {
-        wot: Arc::new(UnavailableWotGraph),
-        ..(*context.stores).clone()
-    });
+    context.wot = Arc::new(UnavailableWotGraph);
 
     // A daemon with no graph wired is the capture's disabled-WoT branch: no distance is known,
     // so the row is stored unweighted rather than the write being skipped.

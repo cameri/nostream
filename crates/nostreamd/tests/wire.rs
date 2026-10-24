@@ -30,6 +30,7 @@ async fn start() -> (u16, ShutdownState) {
     let relay = Relay::new(
         (*fixture.settings).clone(),
         Arc::clone(&fixture.stores),
+        fixture.wot_graph(),
         Arc::new(TestClock::new(1_700_000_000_000)),
         RelayKeySource::from_values(None, None),
         Arc::new(nostream_core::random::SystemRandom),

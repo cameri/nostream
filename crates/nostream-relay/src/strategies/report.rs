@@ -82,7 +82,7 @@ async fn record_report(event: &Event, context: &HandlerContext) -> Result<(), Re
     let distance = if is_trusted_moderator {
         None
     } else {
-        context.stores.wot.get_distance(&event.pubkey).await?
+        context.wot.get_distance(&event.pubkey).await?
     };
 
     let weight = score_reporter(distance, is_trusted_moderator).weight();

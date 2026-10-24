@@ -251,6 +251,7 @@ impl Server {
         let relay = Relay::new(
             session.settings.clone(),
             Arc::clone(&fixture.stores),
+            fixture.wot_graph(),
             Arc::clone(&clock) as Arc<dyn Clock>,
             keys,
             random,

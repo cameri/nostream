@@ -1392,7 +1392,7 @@ impl crate::limits::Limiter for FailingLimiter {
     }
 }
 
-/// The six doubles and the trust-graph recorder as one [`Stores`] value.
+/// The six doubles as one [`Stores`] value.
 pub fn stores(
     events: Arc<InMemoryEventRepository>,
     users: Arc<InMemoryUserRepository>,
@@ -1400,7 +1400,6 @@ pub fn stores(
     invites: Arc<InMemoryInviteCodeRepository>,
     reports: Arc<InMemoryReportRepository>,
     dvm: Arc<InMemoryDvmJobRepository>,
-    wot: Arc<RecordingWotGraph>,
 ) -> Arc<Stores> {
     Arc::new(Stores {
         events,
@@ -1409,7 +1408,6 @@ pub fn stores(
         invites,
         dvm_jobs: dvm,
         reports,
-        wot,
     })
 }
 
@@ -1449,7 +1447,6 @@ impl Fixture {
                 Arc::clone(&invites),
                 Arc::clone(&reports),
                 Arc::clone(&dvm),
-                Arc::clone(&wot),
             ),
             events,
             users,
@@ -1461,6 +1458,16 @@ impl Fixture {
             hidden: HiddenContentCache::new(),
             hub,
         }
+    }
+
+    /// This fixture's trust-graph recorder, as a [`HandlerContext`] holds it.
+    ///
+    /// The coercion from the recorder to the trait object lives here, so every caller that
+    /// builds a context or a [`Relay`](crate::relay::Relay) passes the same handle.
+    pub fn wot_graph(&self) -> Arc<dyn WotGraph> {
+        let recorder: Arc<RecordingWotGraph> = Arc::clone(&self.wot);
+
+        recorder
     }
 
     /// Stores one event as a live row, for a test that reads it back.
@@ -1500,6 +1507,8 @@ impl Fixture {
         sink: crate::sink::FrameSink,
         limits: Arc<RateLimits>,
     ) -> HandlerContext {
+        let wot = self.wot_graph();
+
         HandlerContext {
             settings: Arc::clone(&self.settings),
             clock: Arc::clone(&clock),
@@ -1507,6 +1516,7 @@ impl Fixture {
             sink,
             connection,
             stores: Arc::clone(&self.stores),
+            wot,
             limits,
             hidden: Arc::clone(&self.hidden),
             keys: Arc::new(keys),

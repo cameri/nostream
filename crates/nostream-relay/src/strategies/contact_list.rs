@@ -66,7 +66,6 @@ impl EventStrategy for ContactListStrategy {
                 .collect();
 
             if let Err(error) = context
-                .stores
                 .wot
                 .update_follow_list(&event.pubkey, &follows)
                 .await

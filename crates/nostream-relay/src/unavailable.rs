@@ -20,8 +20,7 @@ use nostream_storage::repositories::{
 use crate::handlers::Stores;
 use crate::wot::{WotFuture, WotGraph};
 
-/// The six stores, every call reporting `NotImplemented`, and the trust graph, which has no
-/// graph to read.
+/// The six stores, every call reporting `NotImplemented`.
 pub fn stores() -> Stores {
     Stores {
         events: std::sync::Arc::new(UnavailableEventRepository),
@@ -30,7 +29,6 @@ pub fn stores() -> Stores {
         invites: std::sync::Arc::new(UnavailableInviteCodeRepository),
         dvm_jobs: std::sync::Arc::new(UnavailableDvmJobRepository),
         reports: std::sync::Arc::new(UnavailableReportRepository),
-        wot: std::sync::Arc::new(UnavailableWotGraph),
     }
 }
 
@@ -40,7 +38,8 @@ fn unavailable() -> StorageError {
     }
 }
 
-/// The trust graph, for a daemon with no `nostream-services` wiring. "Unavailable" is the
+/// The trust graph, for a daemon with no `nostream-services` wiring: the composition root hands
+/// it to `Relay::new` where it picks the clock and the key source. "Unavailable" is the
 /// capture's *disabled* graph, not a failure: a follow-list update touches nothing and no
 /// distance is known, so a report is still stored — unweighted, which is what the capture
 /// stores when WoT is off. A genuine failure (a rebuild that could not complete) belongs to the

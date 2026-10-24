@@ -37,10 +37,9 @@ use crate::relay_key::RelayKeySource;
 use crate::sink::FrameSink;
 use crate::wot::WotGraph;
 
-/// The repository and service seams a handler may call. Every one is a trait object, so a test
-/// supplies in-memory doubles and no handler knows which backend it has. Cheap to clone: every
-/// field is an `Arc`, so a test can copy a context's stores and swap the one seam it is about.
-#[derive(Clone)]
+/// The repository seams a handler may call. Every one is a trait object, so a test supplies
+/// in-memory doubles and no handler knows which backend it has. Storage only: a service the
+/// relay owns lives on the context beside `limits`.
 pub struct Stores {
     pub events: Arc<dyn EventRepository>,
     pub users: Arc<dyn UserRepository>,
@@ -48,8 +47,6 @@ pub struct Stores {
     pub invites: Arc<dyn InviteCodeRepository>,
     pub dvm_jobs: Arc<dyn DvmJobRepository>,
     pub reports: Arc<dyn ReportRepository>,
-    /// The trust graph `contact_list` and `report` reach for, best-effort.
-    pub wot: Arc<dyn WotGraph>,
 }
 
 /// The context one socket shares across handlers (`src/@types/message-handlers.ts`).
@@ -65,6 +62,9 @@ pub struct HandlerContext {
     pub sink: FrameSink,
     pub connection: Arc<Connection>,
     pub stores: Arc<Stores>,
+    /// The trust graph `contact_list` and `report` reach for, best-effort. A service the relay
+    /// owns rather than a store (`wot.rs`), held here beside `limits`.
+    pub wot: Arc<dyn WotGraph>,
     pub limits: Arc<RateLimits>,
     pub hidden: Arc<HiddenContentCache>,
     pub keys: Arc<RelayKeySource>,

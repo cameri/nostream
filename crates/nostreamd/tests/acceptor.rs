@@ -27,6 +27,7 @@ async fn the_acceptor_binds_an_ephemeral_port_and_drains_on_shutdown() {
     let relay = Relay::new(
         (*fixture.settings).clone(),
         Arc::clone(&fixture.stores),
+        fixture.wot_graph(),
         Arc::new(TestClock::new(1_700_000_000_000)),
         RelayKeySource::from_values(None, None),
         Arc::new(nostream_core::random::SystemRandom),

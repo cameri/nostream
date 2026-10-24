@@ -7,8 +7,9 @@
 //!
 //! The graph itself is a service — `nostream-services`' `wot_graph_service`, issue #866 — and
 //! this crate takes no dependency on that one: it takes the trait, the way it takes
-//! [`crate::limits::Limiter`] for the rate limiter. Both callers treat the seam as
-//! best-effort, so a daemon whose graph is not wired still serves.
+//! [`crate::limits::Limiter`] for the rate limiter — and the composition root supplies the
+//! instance, which [`crate::handlers::HandlerContext`] carries beside `limits`. Both callers
+//! treat the seam as best-effort, so a daemon whose graph is not wired still serves.
 
 use std::future::Future;
 use std::pin::Pin;
