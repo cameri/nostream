@@ -12,13 +12,13 @@
 //! registers its subscription and its read, `unsubscribe` clears them, and `auth` records the
 //! session a restricted `REQ` is judged against, so those three are prefixes. `event` and
 //! `count` keep their whole body as one future: neither establishes per-connection state that a
-//! later frame looks up. What they do touch is not per-connection either — the event limiter's
-//! key is the event's author and window in a table the whole relay shares
-//! (`RateLimits::event_backoff`) — so two pipelined `EVENT`s from one author record their hits
-//! in whichever order their tasks are polled, and which of the two is refused is not fixed by
-//! arrival order. The capture races the same way: each `message` event starts an async handler
-//! the adapter does not await (`web-socket-adapter.ts:79`, `:229`), so the two hits are
-//! unordered there too.
+//! later frame looks up, and the one shared table they touch is relay-wide — the event limiter,
+//! keyed on the event's author and window (`RateLimits::event_backoff`). So two pipelined
+//! `EVENT`s from one author record their hits in whichever order their tasks are polled, and
+//! which of the two is refused is not fixed by arrival order. The capture races the same way:
+//! the socket fires each `'message'` listener without awaiting it (`web-socket-adapter.ts:79`,
+//! `:198`), and the handler is awaited inside that listener (`:229`), so two pipelined `EVENT`s
+//! run as two interleaved chains there too.
 
 pub mod auth;
 pub mod count;

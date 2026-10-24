@@ -13,6 +13,7 @@ so a re-subscribed client could go silent without an `EOSE`. A `CLOSE` that land
 the NIP-43 invite mint was in flight aborted nothing, because the read was registered only
 after that mint returned, so the handler streamed a stored read the client had already
 closed. And the outbound frame queue was an unbounded channel whose only consumer was the
+same select loop that performs the socket write, so a client that stopped reading let the
 queue grow without limit while the liveness probe could not run. And the handlers themselves
 were spawned whole into that task's `JoinSet`, so two frames read in order could run in either
 order (§"Inbound dispatch order").
@@ -164,12 +165,12 @@ the `JoinSet`. The prefixes are `subscribe` (everything through `begin_read`, so
 subscription and its read exist before a following `CLOSE` is looked at), `unsubscribe` (the
 whole handler) and `auth` (the whole handler, which has no `await`). `EVENT` and `COUNT` keep
 their whole body as one spawned future: neither writes per-connection state a later frame looks
-up, so nothing they do before their first `await` has to be ordered. What `EVENT` touches there
-is not per-connection: the rate limiter, keyed on the event's author and window in a table the
-whole relay shares. Two pipelined `EVENT`s from one author therefore record their hits in
-whichever order their tasks are polled, so which of the two is refused is not fixed by arrival
-order — parity, because the capture binds each `message` event to a handler it does not await
-(`src/adapters/web-socket-adapter.ts:79`, `:229`), so its hits are unordered too.
+up, so nothing they do before their first `await` has to be ordered. The one shared table they
+touch is relay-wide: the event limiter, keyed on the event's author and window. Two pipelined
+`EVENT`s from one author therefore record their hits in whichever order their tasks are polled,
+so which of the two is refused is not fixed by arrival order — parity, because the socket fires
+each `'message'` listener without awaiting it (`src/adapters/web-socket-adapter.ts:79`, `:198`)
+and the handler is awaited inside that listener (`:229`), so its hits are unordered too.
 
 Two shapes were rejected. **Serializing whole handlers** — an ordered queue drained in the
 loop — would run a `REQ`'s invite mint to completion before a `CLOSE` already in the buffer
