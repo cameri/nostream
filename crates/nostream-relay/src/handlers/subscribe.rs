@@ -9,8 +9,9 @@
 //!
 //! The in-flight read is registered **before the mint's one `await`**, as the capture sets
 //! `activeSubscriptionId` as its first statement (`subscribe-message-handler.ts:53`), so a
-//! `CLOSE` that lands while the mint is in flight still aborts the stored read and the
-//! subscription streams nothing. The invite `EVENT` is emitted in that case: the capture's
+//! `CLOSE` handled after that registration aborts the stored read and the subscription
+//! streams nothing (a `CLOSE` handled ahead of its own `REQ` finds nothing to abort:
+//! cameri/nostream#958). The invite `EVENT` is emitted in that case: the capture's
 //! emit is unguarded (`subscribe-message-handler.ts:111`) and attaches its abort signal only
 //! to the stored read (`:230`), and parity wins where the two disagree absent a decision
 //! record (ADR 0005).

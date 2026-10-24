@@ -33,8 +33,10 @@ use crate::relay_key::RelayKeySource;
 use crate::sink::FrameSink;
 use crate::transport;
 
-/// The knobs a [`Relay`] is built with that are not settings (`liveness` and the NIP-56
-/// refresh are intervals the capture fixes in code, and tests shorten both).
+/// The knobs a [`Relay`] is built with that are not settings: a constant the capture fixes in
+/// code (`liveness`, the NIP-56 refresh) or a policy the port adds with no counterpart there
+/// (`frame_queue_bytes`, `write_timeout`; ADR 0005). Tests shorten either. A value the
+/// capture's settings document carries belongs in [`Settings`], never here.
 #[derive(Debug, Clone)]
 pub struct RelayConfig {
     /// `WSS_CLIENT_HEALTH_PROBE_INTERVAL` (`web-socket-server-adapter.ts:18`).
@@ -103,8 +105,9 @@ impl Relay {
     ///
     /// Everything the relay runs with is an argument, so a relay that mints from
     /// `SystemRandom` or resolves `WS_DRAIN_TIMEOUT_MS` from the environment is one whose
-    /// composition root asked for it: `RelayConfig::default()` is the capture's constants,
-    /// and the environment read is [`transport::drain_timeout`] at the call site.
+    /// composition root asked for it: `RelayConfig::default()` is the port's own defaults — the
+    /// capture's constants plus the two policies ADR 0005 adds — and the environment read is
+    /// [`transport::drain_timeout`] at the call site.
     pub fn new(
         settings: Settings,
         stores: Arc<Stores>,

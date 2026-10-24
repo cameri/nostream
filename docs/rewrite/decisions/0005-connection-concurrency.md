@@ -29,15 +29,18 @@ generation still matches, so a replaced read's last act is a no-op and the repla
 keeps its sender. `abort_read`, `read_in_flight` and `close` keep their present
 signatures and behaviour.
 
-The generation is a counter and not a per-read token because tokio's `watch` handles
-implement no equality at all — a sender or receiver can only be compared through the
-crate's own `same_channel`, and only against another handle of the same kind. A read
-would therefore have to present a value the table can compare, which means either a
-`u64` or a freshly allocated `Arc<()>`; only the counter allocates nothing. It also fits
-the locking the file already has: `impl Connection` contains no `.await`, so no lock is
-ever held across a suspension point, and the counter is read and written inside the same
-`insert` that replaces the previous sender. No second lock, no allocation outside the
-guard, and no new state for a caller to keep.
+The generation is a counter and not a per-read token. Identity comparison is available —
+`watch::Sender::same_channel` and `watch::Receiver::same_channel` — so an entry holding the
+sender could end a read by comparing the returning read's handle against it. What rejects
+that route is cost, not impossibility: `watch::channel(false)` allocates its shared state
+once per read either way, and identity would add a *second* watch handle to every entry (the
+sender, plus a receiver the entry never awaits), while the generation adds one `u64` beside
+the one handle the table already holds. The generation is also the value a returning read can
+still carry after its own handle has been replaced, and the value that names the owner in the
+table and in the tests. It fits the locking the file already has: `impl Connection` contains
+no `.await`, so no lock is ever held across a suspension point, and the counter is read and
+written inside the same `insert` that replaces the previous sender. No second lock, no
+allocation outside the guard, and no new state for a caller to keep.
 
 The counter is connection-wide and never reset, rather than derived per id from the
 previous entry. `abort_read` removes an entry for a read that is still winding down, so a
@@ -54,17 +57,29 @@ exactly one point where it ends.
 ## The outbound frame queue — a byte bound and a disconnect, not a pause
 
 `FrameSink` counts the bytes it has admitted and drops a frame that would exceed its
-bound, unless the queue is empty, so one frame larger than the whole bound still reaches
-the client instead of closing every client on a large event. A dropped frame sets an
-overflow flag and logs one warning carrying the bound and the current depth; once the flag
-is set every later send is dropped without queueing. The draining side releases a frame's
-bytes when its write completes. The default bound is 8 MiB, which is above any single
-outbound frame and a few hundred times below the 405 MiB an unbounded queue reached when
-200 000 frames were queued with nothing draining.
+bound, unless the queue is empty, so one frame larger than the whole bound still reaches the
+client instead of closing every client on a large event. A dropped frame sets an overflow
+flag and the senders that set it each log one warning carrying the bound and the current
+depth (one line per racing sender, not one per connection); once the flag is set every later
+send is dropped without queueing. The draining side releases a frame's bytes when its write
+completes. The default bound is 8 MiB, which is above any single outbound frame and a few
+hundred times below the 405 MiB an unbounded queue reached when 200 000 frames were queued
+with nothing draining.
 
 The full-queue policy is **disconnect**: the connection loop closes the client with 1013
 and the fixed reason `slow consumer: outbound frame queue full`, then falls through to the
-existing cleanup. Three alternatives lost:
+existing cleanup.
+
+What the client experiences at that point is a hard cut, not a partial delivery: it is
+disconnected and receives nothing further, so frames the sink had already admitted and this
+run never wrote are frames it will never read. Draining is not the alternative for the client
+this bound exists for — one that has stopped reading — because draining means writing to a
+socket that is not taking bytes, which is the condition that produced the overflow; the relay
+would be waiting on precisely the client it has already failed to serve. That is the trade
+the policy makes: some frames one client will never read, in exchange for a socket that keeps
+serving everyone else.
+
+Three alternatives lost:
 
 - **Pause the producer** (a bounded channel and a permit the sender waits for). It is a
   self-deadlock here: `FrameSink::send` is synchronous and `dispatch_live` — which sends to
@@ -103,9 +118,10 @@ connection. The decision is that a write unable to complete within `write_timeou
 itself evidence that the client is not reading, so waiting for the liveness arm would only
 delay the same outcome. The default is 30 s against the capture's 120 s liveness interval:
 shorter, so the write path ends a stuck client before a missed pong could, and long enough
-for a large frame on a slow link. Because no select arm can stay pending longer than that
-timeout, the tick can be delayed by at most 30 s, which is the interval's own order of
-magnitude rather than the unbounded stall it was.
+for a large frame on a slow link. Because no write the connection task performs can hold it
+longer than that timeout — and the drain's own writes are further bounded by `drain_timeout`
+from the serve loop — the tick can be delayed by at most 30 s, which is the interval's own
+order of magnitude rather than the unbounded stall it was.
 
 The overflow flag is read at the top of every loop iteration. No `await` sits between a
 write returning and that check, so a flag a producer set while the loop was parked is acted
@@ -114,8 +130,10 @@ on as soon as the write completes.
 ## The invite emit stays unguarded
 
 The read is registered before the invite mint's only `await`, and its cancellation is
-checked before the stored read opens, so a `CLOSE` that lands during the mint ends the
-subscription with no stored event and no `EOSE`. The invite `EVENT` is nonetheless still
+checked before the stored read opens, so a `CLOSE` that is *handled after that registration*
+ends the subscription with no stored event and no `EOSE`; one whose handler is scheduled
+ahead of its own `REQ` finds nothing to abort, which is pre-existing and tracked as
+cameri/nostream#958. The invite `EVENT` is nonetheless still
 emitted for that closed subscription. That is deliberate parity, not an oversight: the
 capture emits the invite event unguarded
 (`src/handlers/subscribe-message-handler.ts:111`) and attaches its abort signal only to the
