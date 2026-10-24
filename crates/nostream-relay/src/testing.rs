@@ -365,7 +365,8 @@ impl EventRepository for InMemoryEventRepository {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-            if record.event.kind.is_replaceable() || record.event.kind.is_parameterized_replaceable()
+            if record.event.kind.is_replaceable()
+                || record.event.kind.is_parameterized_replaceable()
             {
                 let stored = records.iter_mut().find(|stored| {
                     stored.event.pubkey == record.event.pubkey

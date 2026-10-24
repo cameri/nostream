@@ -39,7 +39,12 @@ impl EventStrategy for TimestampStrategy {
             let record = event_record(event, context);
             let count = context.stores.events.create(&record).await?;
 
-            context.send_ok(event.id, true, if count > 0 { "" } else { "duplicate:" }, None);
+            context.send_ok(
+                event.id,
+                true,
+                if count > 0 { "" } else { "duplicate:" },
+                None,
+            );
 
             if count > 0 {
                 let _ = context.broadcast.send(Arc::new(event.clone()));
@@ -68,7 +73,9 @@ fn validate(event: &Event) -> Option<String> {
     if attested.len() > 1 {
         // A proof commits to one digest, so more than one `e` tag would let a publisher
         // mis-attribute a valid proof to unrelated events.
-        return Some("opentimestamps event (kind 1040) must reference exactly one event".to_owned());
+        return Some(
+            "opentimestamps event (kind 1040) must reference exactly one event".to_owned(),
+        );
     }
 
     let target = &attested[0][1];

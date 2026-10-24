@@ -128,10 +128,7 @@ pub const MAX_TIMESTAMP_DELTA_SECONDS: i64 = 600;
 /// `isNip43RequestTimestampValid` (`src/utils/nip43.ts:28-29`), with the reference time taken
 /// from the caller so the relay's clock decides it rather than `Date.now()`.
 pub fn is_request_timestamp_valid(created_at: i64, now_secs: i64) -> bool {
-    now_secs
-        .saturating_sub(created_at)
-        .saturating_abs()
-        <= MAX_TIMESTAMP_DELTA_SECONDS
+    now_secs.saturating_sub(created_at).saturating_abs() <= MAX_TIMESTAMP_DELTA_SECONDS
 }
 
 #[cfg(test)]

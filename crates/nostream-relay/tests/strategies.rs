@@ -27,6 +27,7 @@ use nostream_relay::error::RelayError;
 use nostream_relay::handlers::HandlerContext;
 use nostream_relay::relay_key::RelayKeySource;
 use nostream_relay::sink::FrameSink;
+use nostream_relay::strategies::EventStrategy;
 use nostream_relay::strategies::contact_list::ContactListStrategy;
 use nostream_relay::strategies::delete::DeleteStrategy;
 use nostream_relay::strategies::dvm_job_request::DvmJobRequestStrategy;
@@ -41,10 +42,7 @@ use nostream_relay::strategies::replaceable::ReplaceableStrategy;
 use nostream_relay::strategies::report::ReportStrategy;
 use nostream_relay::strategies::timestamp::TimestampStrategy;
 use nostream_relay::strategies::vanish::VanishStrategy;
-use nostream_relay::strategies::EventStrategy;
-use nostream_relay::testing::{
-    Fixture, UpsertFailure, hub_receiver, nip43_settings, settings,
-};
+use nostream_relay::testing::{Fixture, UpsertFailure, hub_receiver, nip43_settings, settings};
 use nostream_storage::repositories::{
     CreateInviteCodeOptions, EventRecord, EventRepository, FieldUpdate, InviteCodeRepository,
     NewReport, ReportType, User, UserRepository,
@@ -107,10 +105,7 @@ fn socket(fixture: &Fixture) -> (HandlerContext, mpsc::UnboundedReceiver<String>
         Nip42Session::with_challenge("challenge", 0),
     ));
 
-    (
-        fixture.context(clock(), keys(), connection, sink),
-        frames,
-    )
+    (fixture.context(clock(), keys(), connection, sink), frames)
 }
 
 /// The same, with the socket authenticated as `pubkey`.
@@ -259,7 +254,10 @@ async fn contact_list_does_not_broadcast_or_update_the_wot_graph_when_the_event_
 
     ContactListStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
     assert_eq!(broadcast(&mut hub), None);
     assert_eq!(fixture.wot.follow_updates(), Vec::new());
 }
@@ -321,10 +319,7 @@ async fn contact_list_returns_an_error_on_an_unexpected_upsert_failure() {
 fn delete_event() -> Event {
     event(
         5,
-        vec![
-            tag(&["e", &"0".repeat(64)]),
-            tag(&["e", &"f".repeat(64)]),
-        ],
+        vec![tag(&["e", &"0".repeat(64)]), tag(&["e", &"f".repeat(64)])],
         "",
     )
 }
@@ -418,7 +413,10 @@ async fn delete_does_not_broadcast_when_the_event_is_a_duplicate() {
 
     DeleteStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
     assert_eq!(broadcast(&mut hub), None);
 }
 
@@ -514,7 +512,10 @@ async fn dvm_job_request_does_not_broadcast_or_record_a_job_when_the_event_is_a_
         .await
         .unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
     assert_eq!(fixture.dvm.jobs().len(), 0);
     assert_eq!(broadcast(&mut hub), None);
 }
@@ -542,9 +543,7 @@ async fn dvm_job_request_returns_an_error_when_the_create_fails() {
     fixture.events.fail_create(true);
 
     let context = fixture.anonymous_context(clock(), keys());
-    let outcome = DvmJobRequestStrategy
-        .execute(&dvm_event(), &context)
-        .await;
+    let outcome = DvmJobRequestStrategy.execute(&dvm_event(), &context).await;
 
     assert!(matches!(outcome, Err(RelayError::Storage(_))));
     assert_eq!(fixture.dvm.jobs().len(), 0);
@@ -574,11 +573,7 @@ async fn ephemeral_sends_ok_and_broadcasts_without_storing() {
 
 /// The capture's valid wrap: one `p` tag and a NIP-44 v2 payload.
 fn gift_wrap_event() -> Event {
-    event(
-        1059,
-        vec![tag(&["p", &hex(0xaa, 64)])],
-        &nip44_payload(),
-    )
+    event(1059, vec![tag(&["p", &hex(0xaa, 64)])], &nip44_payload())
 }
 
 #[tokio::test]
@@ -616,7 +611,10 @@ async fn gift_wrap_answers_duplicate_without_broadcasting() {
 
     GiftWrapStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
     assert_eq!(broadcast(&mut hub), None);
 }
 
@@ -645,10 +643,7 @@ async fn gift_wrap_refuses_multiple_p_tags() {
     let fixture = Fixture::new(settings());
     let (context, mut sink) = socket(&fixture);
     let mut event = gift_wrap_event();
-    event.tags = vec![
-        tag(&["p", &hex(0xaa, 64)]),
-        tag(&["p", &hex(0xbb, 64)]),
-    ];
+    event.tags = vec![tag(&["p", &hex(0xaa, 64)]), tag(&["p", &hex(0xbb, 64)])];
 
     GiftWrapStrategy.execute(&event, &context).await.unwrap();
 
@@ -668,11 +663,7 @@ async fn gift_wrap_accepts_a_p_tag_with_a_relay_hint() {
     let fixture = Fixture::new(settings());
     let (context, mut sink) = socket(&fixture);
     let mut event = gift_wrap_event();
-    event.tags = vec![tag(&[
-        "p",
-        &hex(0xaa, 64),
-        "wss://inbox.example.com",
-    ])];
+    event.tags = vec![tag(&["p", &hex(0xaa, 64), "wss://inbox.example.com"])];
 
     GiftWrapStrategy.execute(&event, &context).await.unwrap();
 
@@ -787,7 +778,10 @@ async fn group_answers_duplicate_without_broadcasting() {
 
     GroupStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
     assert_eq!(broadcast(&mut hub), None);
 }
 
@@ -852,10 +846,7 @@ async fn group_refuses_two_h_tags() {
     let fixture = Fixture::new(settings());
     let (context, mut sink) = socket(&fixture);
     let mut event = group_event();
-    event.tags = vec![
-        tag(&["h", &hex(0xaa, 64)]),
-        tag(&["h", &hex(0xbb, 64)]),
-    ];
+    event.tags = vec![tag(&["h", &hex(0xaa, 64)]), tag(&["h", &hex(0xbb, 64)])];
 
     GroupStrategy.execute(&event, &context).await.unwrap();
 
@@ -968,11 +959,7 @@ async fn group_accepts_lowercase_hex() {
 // ---------------------------------------------------------------------------
 
 fn invite_request_event() -> Event {
-    event(
-        28_935,
-        vec![tag(&["claim", "forged-code"])],
-        "",
-    )
+    event(28_935, vec![tag(&["claim", "forged-code"])], "")
 }
 
 #[tokio::test]
@@ -1017,11 +1004,7 @@ async fn invite_request_never_broadcasts() {
 // ---------------------------------------------------------------------------
 
 fn join_request_event() -> Event {
-    event(
-        28_934,
-        vec![tag(&["claim", "valid-code"])],
-        "",
-    )
+    event(28_934, vec![tag(&["claim", "valid-code"])], "")
 }
 
 #[tokio::test]
@@ -1185,7 +1168,10 @@ async fn the_join_request_admits_and_answers_with_the_welcome() {
         .unwrap();
 
     assert_eq!(user.map(|user| user.is_admitted), Some(true));
-    assert_eq!(fixture.invites.claims(), vec![("valid-code".to_owned(), author())]);
+    assert_eq!(
+        fixture.invites.claims(),
+        vec![("valid-code".to_owned(), author())]
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1213,7 +1199,10 @@ async fn leave_request_refuses_when_nip43_is_disabled() {
     let (context, mut sink) = authenticated_socket(&fixture, author());
     let event = leave_request_event();
 
-    LeaveRequestStrategy.execute(&event, &context).await.unwrap();
+    LeaveRequestStrategy
+        .execute(&event, &context)
+        .await
+        .unwrap();
 
     assert_eq!(
         frames(&mut sink),
@@ -1234,7 +1223,10 @@ async fn leave_request_refuses_a_request_without_the_protected_tag() {
     let mut event = leave_request_event();
     event.tags = Vec::new();
 
-    LeaveRequestStrategy.execute(&event, &context).await.unwrap();
+    LeaveRequestStrategy
+        .execute(&event, &context)
+        .await
+        .unwrap();
 
     assert_eq!(
         frames(&mut sink),
@@ -1261,7 +1253,10 @@ async fn leave_request_refuses_a_stale_created_at() {
     let mut event = leave_request_event();
     event.created_at = NOW_SECS - 3600;
 
-    LeaveRequestStrategy.execute(&event, &context).await.unwrap();
+    LeaveRequestStrategy
+        .execute(&event, &context)
+        .await
+        .unwrap();
 
     assert_eq!(
         frames(&mut sink),
@@ -1281,7 +1276,10 @@ async fn leave_request_refuses_an_unauthenticated_request() {
     let (context, mut sink) = socket(&fixture);
     let event = leave_request_event();
 
-    LeaveRequestStrategy.execute(&event, &context).await.unwrap();
+    LeaveRequestStrategy
+        .execute(&event, &context)
+        .await
+        .unwrap();
 
     assert_eq!(
         frames(&mut sink),
@@ -1299,7 +1297,10 @@ async fn leave_request_answers_ok_when_the_user_is_unknown() {
     let (context, mut sink) = authenticated_socket(&fixture, author());
     let event = leave_request_event();
 
-    LeaveRequestStrategy.execute(&event, &context).await.unwrap();
+    LeaveRequestStrategy
+        .execute(&event, &context)
+        .await
+        .unwrap();
 
     assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
 
@@ -1321,7 +1322,10 @@ async fn leave_request_answers_ok_when_the_user_is_not_admitted() {
     let (context, mut sink) = authenticated_socket(&fixture, author());
     let event = leave_request_event();
 
-    LeaveRequestStrategy.execute(&event, &context).await.unwrap();
+    LeaveRequestStrategy
+        .execute(&event, &context)
+        .await
+        .unwrap();
 
     assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
 }
@@ -1335,7 +1339,10 @@ async fn the_leave_request_revokes_the_admission() {
     let (context, mut sink) = authenticated_socket(&fixture, author());
     let event = leave_request_event();
 
-    LeaveRequestStrategy.execute(&event, &context).await.unwrap();
+    LeaveRequestStrategy
+        .execute(&event, &context)
+        .await
+        .unwrap();
 
     assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
 
@@ -1435,9 +1442,15 @@ async fn parameterized_replaceable_does_not_broadcast_a_duplicate() {
         .await
         .unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
     assert_eq!(broadcast(&mut hub), None);
-    assert_eq!(fixture.events.upserts(), vec![vec![json!("one")], vec![json!("one")]]);
+    assert_eq!(
+        fixture.events.upserts(),
+        vec![vec![json!("one")], vec![json!("one")]]
+    );
 }
 
 #[tokio::test]
@@ -1501,7 +1514,10 @@ async fn replaceable_does_not_broadcast_when_the_stored_row_wins() {
 
     ReplaceableStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
     assert_eq!(broadcast(&mut hub), None);
 }
 
@@ -1597,7 +1613,10 @@ async fn report_does_not_broadcast_or_record_a_duplicate() {
 
     ReportStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
     assert_eq!(broadcast(&mut hub), None);
     assert_eq!(fixture.reports.reports(), Vec::new());
 }
@@ -1614,10 +1633,7 @@ async fn report_records_full_weight_for_a_direct_follow() {
         .await
         .unwrap();
 
-    assert_eq!(
-        fixture.reports.reports(),
-        vec![expected_report(1.0, false)]
-    );
+    assert_eq!(fixture.reports.reports(), vec![expected_report(1.0, false)]);
     assert_eq!(fixture.wot.distance_queries(), vec![author()]);
 }
 
@@ -1631,10 +1647,7 @@ async fn report_records_zero_weight_outside_the_graph() {
         .await
         .unwrap();
 
-    assert_eq!(
-        fixture.reports.reports(),
-        vec![expected_report(0.0, false)]
-    );
+    assert_eq!(fixture.reports.reports(), vec![expected_report(0.0, false)]);
     assert_eq!(fixture.wot.distance_queries(), vec![author()]);
 }
 
@@ -1648,10 +1661,7 @@ async fn report_records_a_max_weight_actionable_row_for_a_moderator() {
         .await
         .unwrap();
 
-    assert_eq!(
-        fixture.reports.reports(),
-        vec![expected_report(1.0, true)]
-    );
+    assert_eq!(fixture.reports.reports(), vec![expected_report(1.0, true)]);
 }
 
 #[tokio::test]
@@ -1907,7 +1917,10 @@ async fn timestamp_answers_duplicate_without_broadcasting() {
 
     TimestampStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
     assert_eq!(broadcast(&mut hub), None);
 }
 
@@ -2035,10 +2048,7 @@ async fn timestamp_refuses_a_negative_k_tag() {
     let fixture = Fixture::new(settings());
     let (context, mut sink) = socket(&fixture);
     let mut event = timestamp_event();
-    event.tags = vec![
-        tag(&["e", &attested_id().to_string()]),
-        tag(&["k", "-1"]),
-    ];
+    event.tags = vec![tag(&["e", &attested_id().to_string()]), tag(&["k", "-1"])];
 
     TimestampStrategy.execute(&event, &context).await.unwrap();
 
@@ -2102,9 +2112,8 @@ async fn timestamp_refuses_content_that_is_not_an_ots_proof() {
     let fixture = Fixture::new(settings());
     let (context, mut sink) = socket(&fixture);
     let mut event = timestamp_event();
-    event.content = STANDARD.encode(
-        b"this is long enough to reach the header check, but it is not a proof",
-    );
+    event.content =
+        STANDARD.encode(b"this is long enough to reach the header check, but it is not a proof");
 
     TimestampStrategy.execute(&event, &context).await.unwrap();
 
@@ -2197,5 +2206,8 @@ async fn vanish_answers_duplicate_when_the_request_exists() {
 
     VanishStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "duplicate:")]);
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(&event, true, "duplicate:")]
+    );
 }

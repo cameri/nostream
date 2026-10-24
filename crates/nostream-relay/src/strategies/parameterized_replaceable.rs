@@ -39,7 +39,12 @@ impl EventStrategy for ParameterizedReplaceableStrategy {
                 .with_deduplication(vec![serde_json::Value::String(deduplication)]);
             let count = context.stores.events.upsert(&record).await?;
 
-            context.send_ok(event.id, true, if count > 0 { "" } else { "duplicate:" }, None);
+            context.send_ok(
+                event.id,
+                true,
+                if count > 0 { "" } else { "duplicate:" },
+                None,
+            );
 
             if count > 0 {
                 let _ = context.broadcast.send(Arc::new(event.clone()));

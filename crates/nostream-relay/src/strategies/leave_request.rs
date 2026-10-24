@@ -69,10 +69,7 @@ impl EventStrategy for LeaveRequestStrategy {
                 return Ok(());
             }
 
-            if !context
-                .authenticated_pubkeys()
-                .contains(&event.pubkey)
-            {
+            if !context.authenticated_pubkeys().contains(&event.pubkey) {
                 context.send_ok(
                     event.id,
                     false,
@@ -91,11 +88,7 @@ impl EventStrategy for LeaveRequestStrategy {
                 return Ok(());
             }
 
-            context
-                .stores
-                .users
-                .revoke_admission(&event.pubkey)
-                .await?;
+            context.stores.users.revoke_admission(&event.pubkey).await?;
 
             context.send_ok(event.id, true, "", None);
 

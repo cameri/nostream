@@ -34,7 +34,12 @@ impl EventStrategy for ReportStrategy {
             let record = event_record(event, context);
             let count = context.stores.events.create(&record).await?;
 
-            context.send_ok(event.id, true, if count > 0 { "" } else { "duplicate:" }, None);
+            context.send_ok(
+                event.id,
+                true,
+                if count > 0 { "" } else { "duplicate:" },
+                None,
+            );
 
             if count == 0 {
                 return Ok(());
@@ -57,7 +62,12 @@ impl EventStrategy for ReportStrategy {
 
 /// The NIP-56 block (`report-event-strategy.ts:41-95`), best-effort as one unit.
 async fn record_report(event: &Event, context: &HandlerContext) -> Result<(), RelayError> {
-    let Some(nip56) = context.settings.nip56.as_ref().filter(|nip56| nip56.enabled) else {
+    let Some(nip56) = context
+        .settings
+        .nip56
+        .as_ref()
+        .filter(|nip56| nip56.enabled)
+    else {
         return Ok(());
     };
 

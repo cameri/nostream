@@ -59,10 +59,7 @@ impl EventStrategy for JoinRequestStrategy {
                 return Ok(());
             }
 
-            if !context
-                .authenticated_pubkeys()
-                .contains(&event.pubkey)
-            {
+            if !context.authenticated_pubkeys().contains(&event.pubkey) {
                 context.send_ok(
                     event.id,
                     false,

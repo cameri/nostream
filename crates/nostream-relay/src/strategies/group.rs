@@ -36,7 +36,12 @@ impl EventStrategy for GroupStrategy {
             let record = event_record(event, context);
             let count = context.stores.events.create(&record).await?;
 
-            context.send_ok(event.id, true, if count > 0 { "" } else { "duplicate:" }, None);
+            context.send_ok(
+                event.id,
+                true,
+                if count > 0 { "" } else { "duplicate:" },
+                None,
+            );
 
             if count > 0 {
                 let _ = context.broadcast.send(Arc::new(event.clone()));

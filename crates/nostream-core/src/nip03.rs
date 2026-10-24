@@ -22,13 +22,10 @@ const MAGIC_HEADER: [u8; 31] = [
 ];
 
 /// The 8-byte attestation type tags (`src/utils/nip03.ts:34-37`).
-const BITCOIN_BLOCK_HEADER_ATTESTATION: [u8; 8] =
-    [0x05, 0x88, 0x96, 0x0d, 0x73, 0xd7, 0x19, 0x01];
+const BITCOIN_BLOCK_HEADER_ATTESTATION: [u8; 8] = [0x05, 0x88, 0x96, 0x0d, 0x73, 0xd7, 0x19, 0x01];
 const PENDING_ATTESTATION: [u8; 8] = [0x83, 0xdf, 0xe3, 0x0d, 0x2e, 0xf9, 0x0c, 0x8e];
-const LITECOIN_BLOCK_HEADER_ATTESTATION: [u8; 8] =
-    [0x06, 0x86, 0x9a, 0x0d, 0x73, 0xd7, 0x1b, 0x45];
-const ETHEREUM_BLOCK_HEADER_ATTESTATION: [u8; 8] =
-    [0x30, 0xfe, 0x80, 0x87, 0xb5, 0xc7, 0xea, 0xd7];
+const LITECOIN_BLOCK_HEADER_ATTESTATION: [u8; 8] = [0x06, 0x86, 0x9a, 0x0d, 0x73, 0xd7, 0x1b, 0x45];
+const ETHEREUM_BLOCK_HEADER_ATTESTATION: [u8; 8] = [0x30, 0xfe, 0x80, 0x87, 0xb5, 0xc7, 0xea, 0xd7];
 
 /// Operation tag bytes used in the commitment tree (`src/utils/nip03.ts:40-47`).
 const OP_SHA1: u8 = 0x02;
@@ -179,7 +176,8 @@ pub fn validate_ots_proof(base64_content: &str, target_event_id: &EventId) -> Re
         .decode(base64_content)
         .map_err(|_| "content is not valid base64".to_owned())?;
 
-    let summary = parse_ots_file(&bytes).map_err(|reason| format!("invalid ots proof: {reason}"))?;
+    let summary =
+        parse_ots_file(&bytes).map_err(|reason| format!("invalid ots proof: {reason}"))?;
 
     if summary.file_hash_op != FileHashOp::Sha256 {
         return Err(format!(
@@ -676,9 +674,8 @@ mod tests {
 
     #[test]
     fn content_that_is_not_an_ots_file_is_refused() {
-        let content = base64(
-            b"this is long enough to reach the header check, but it is not a proof",
-        );
+        let content =
+            base64(b"this is long enough to reach the header check, but it is not a proof");
 
         assert_eq!(
             validate_ots_proof(&content, &target_id()),

@@ -43,7 +43,12 @@ impl EventStrategy for ContactListStrategy {
                 Err(error) => return Err(error.into()),
             };
 
-            context.send_ok(event.id, true, if count > 0 { "" } else { "duplicate:" }, None);
+            context.send_ok(
+                event.id,
+                true,
+                if count > 0 { "" } else { "duplicate:" },
+                None,
+            );
 
             if count == 0 {
                 return Ok(());

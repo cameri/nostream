@@ -104,9 +104,7 @@ pub fn extract_report_targets(tags: &[Tag]) -> Vec<ReportTarget> {
             _ => targets.push(ReportTarget {
                 reported_pubkey: Some(Pubkey::from_byte_array(pubkey.1)),
                 reported_event_id: Some(EventId::from_byte_array(event_id.1)),
-                report_type: event_type
-                    .or(pubkey_type)
-                    .unwrap_or(ReportType::Other),
+                report_type: event_type.or(pubkey_type).unwrap_or(ReportType::Other),
             }),
         }
     } else if let Some(event_id) = event_ids.first() {
@@ -197,10 +195,8 @@ mod tests {
     fn the_first_p_and_e_tags_collapse_into_one_target() {
         let pubkey = pubkey_hex();
         let event_id = event_id_hex();
-        let targets = extract_report_targets(&[
-            tag(&["p", &pubkey, "spam"]),
-            tag(&["e", &event_id, "spam"]),
-        ]);
+        let targets =
+            extract_report_targets(&[tag(&["p", &pubkey, "spam"]), tag(&["e", &event_id, "spam"])]);
 
         assert_eq!(
             targets,
@@ -242,10 +238,8 @@ mod tests {
     fn a_type_given_on_one_side_only_is_used_for_both_fields() {
         let pubkey = pubkey_hex();
         let event_id = event_id_hex();
-        let targets = extract_report_targets(&[
-            tag(&["p", &pubkey]),
-            tag(&["e", &event_id, "malware"]),
-        ]);
+        let targets =
+            extract_report_targets(&[tag(&["p", &pubkey]), tag(&["e", &event_id, "malware"])]);
 
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].report_type, ReportType::Malware);
