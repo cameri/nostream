@@ -33,6 +33,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        # Build the code the tag names, not the branch the dispatch was started
+        # from. A release event already carries the tag as GITHUB_REF, so the
+        # input only overrides it; checking out `main` while pushing the image as
+        # `3.7.0` would publish the wrong source under a release version.
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
       - name: Log in to the Container registry
         uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
         with:

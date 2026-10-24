@@ -183,6 +183,17 @@ describe('container image publishing workflow', () => {
     expect(() => imageTags(releaseWorkflow, 'nostream-website@1.3.2')).to.throw(/not a relay release tag/)
   })
 
+  // The image must be built from the code its tag names. A dispatch starts on a
+  // branch, so without this the default ref is checked out and that branch's
+  // HEAD is published as a release version. The expression itself only runs on
+  // GitHub, so this asserts its shape: the tag form for a dispatch, and the
+  // event's own ref when no input is present.
+  it('checks out the release tag rather than the dispatching branch', () => {
+    const step = (releaseWorkflow.jobs['build-and-push-image'].steps ?? []).find((entry) => entry.with?.ref)
+    const expression = (step?.with?.ref ?? '').replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '')
+    expect(expression, 'a dispatch must build the tag it was given').to.include("format('refs/tags/{0}', inputs.tag)")
+    expect(expression, 'a release event already carries its tag in github.ref').to.include('|| github.ref')
+  })
   it('builds with the tags the step computed', () => {
     const build = (releaseWorkflow.jobs['build-and-push-image'].steps ?? []).find((step) => step.with?.tags)
     expect(build?.with?.tags, 'the build must consume the computed tags').to.equal('${{ steps.tags.outputs.tags }}')
