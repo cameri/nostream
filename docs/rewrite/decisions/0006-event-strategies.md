@@ -38,7 +38,7 @@ The shapes rejected:
   service; a repository trait here would fix an on-disk shape #866 has not chosen.
 - **Inline the whole graph in the relay.** That is #866's work, not this job's.
 
-`UnavailableWotGraph` (`src/unavailable.rs:41-66`) is the capture's *disabled* graph, not a
+`UnavailableWotGraph` (`src/unavailable.rs:41-67`) is the capture's *disabled* graph, not a
 failing one: a follow-list update touches nothing and `get_distance` answers `None`, which
 `report` stores as an unweighted row — a report from a relay with no graph is still a
 report. `Err` is reserved for a wired implementation's genuine failure (a rebuild that
@@ -93,7 +93,7 @@ census case reaches it.
 (`replaceable-event-strategy.ts:27`, `contact-list-event-strategy.ts:45`) and answer
 `rejected: event already exists`. `StorageError` had no such variant, and the storage
 crate's own doc forbids forwarding a driver's message to a caller
-(`crates/nostream-storage/src/error.rs:20-23`).
+(`crates/nostream-storage/src/error.rs:20-21`).
 
 So the variant is new (`src/error.rs:18`, Display "the event id already exists"), produced
 by the Postgres backend from SQLSTATE `23505` *and* the constraint name
