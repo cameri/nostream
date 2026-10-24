@@ -20,6 +20,8 @@ import { UserSubscription } from './user-subscription'
 
 export interface EventRetentionOptions {
   maxDays?: number
+  /** Retention in days for subscribers on these plans, replacing `maxDays` for them while their access lasts. */
+  planRetention?: { planId: string; maxDays: number }[]
   kindWhitelist?: (EventKinds | EventKindsRange)[]
   pubkeyWhitelist?: Pubkey[]
 }

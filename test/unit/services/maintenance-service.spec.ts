@@ -111,5 +111,77 @@ describe('MaintenanceService', () => {
 
       expect(eventRepository.deleteExpiredAndRetained).to.have.been.calledOnce
     })
+    describe('plan retention', () => {
+      const plan = (id: string, limits?: unknown) => ({
+        id,
+        amount: 1000000n,
+        intervalSeconds: 2592000,
+        graceSeconds: 259200,
+        ...(limits ? { limits } : {}),
+      })
+
+      const withPlans = (plans: unknown[], payments: Record<string, unknown> = {}) => {
+        settings.returns({
+          payments: { enabled: true, subscriptionPlans: plans, ...payments },
+          limits: { event: { retention: { maxDays: 30 } } },
+        } as any)
+        eventRepository.deleteExpiredAndRetained.resolves({ deleted: 0, expired: 0, retained: 0 })
+      }
+
+      it('hands the retention of each plan that has one to the purge', async () => {
+        withPlans([
+          plan('basic', { retentionMaxDays: 90 }),
+          plan('free'),
+          plan('vip', { retentionMaxDays: 365, rateLimits: [] }),
+        ])
+
+        await service.clearOldEvents()
+
+        expect(eventRepository.deleteExpiredAndRetained).to.have.been.calledOnceWithExactly({
+          maxDays: 30,
+          planRetention: [
+            { planId: 'basic', maxDays: 90 },
+            { planId: 'vip', maxDays: 365 },
+          ],
+          kindWhitelist: undefined,
+          pubkeyWhitelist: undefined,
+        })
+      })
+
+      it('purges as before when no plan has a retention', async () => {
+        withPlans([plan('basic'), plan('vip', { rateLimits: [] })])
+
+        await service.clearOldEvents()
+
+        expect(eventRepository.deleteExpiredAndRetained.firstCall.args[0]).to.not.have.property('planRetention')
+      })
+
+      it('ignores plan retentions while payments are off', async () => {
+        withPlans([plan('basic', { retentionMaxDays: 90 })], { enabled: false })
+
+        await service.clearOldEvents()
+
+        expect(eventRepository.deleteExpiredAndRetained.firstCall.args[0]).to.not.have.property('planRetention')
+      })
+
+      it('ignores plan retentions when no plan is configured', async () => {
+        withPlans([])
+
+        await service.clearOldEvents()
+
+        expect(eventRepository.deleteExpiredAndRetained.firstCall.args[0]).to.not.have.property('planRetention')
+      })
+
+      it('does not purge when the global retention is off, however long the plans keep events', async () => {
+        settings.returns({
+          payments: { enabled: true, subscriptionPlans: [plan('basic', { retentionMaxDays: 90 })] },
+          limits: { event: { retention: { maxDays: 0 } } },
+        } as any)
+
+        await service.clearOldEvents()
+
+        expect(eventRepository.deleteExpiredAndRetained).not.to.have.been.called
+      })
+    })
   })
 })
