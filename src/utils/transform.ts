@@ -163,6 +163,28 @@ export const fromBech32 = (input: string) => {
   ).toString('hex')
 }
 
+/**
+ * The hex of an `npub`. Unlike `fromBech32` it takes only the `npub` prefix and rejects a value that is not exactly 32
+ * bytes, instead of cutting a longer one down to its first 32.
+ */
+export const fromNpub = (input: string): string => {
+  if (input !== input.toLowerCase() && input !== input.toUpperCase()) {
+    throw new Error('Bech32 mixed-case input is invalid')
+  }
+
+  const { prefix, words } = bech32Decode(input)
+  if (prefix !== 'npub') {
+    throw new Error(`Expected an npub, got ${prefix}`)
+  }
+
+  const bytes = bech32Convert(words, 5, 8, false)
+  if (bytes.length !== 32) {
+    throw new Error(`An npub carries 32 bytes, got ${bytes.length}`)
+  }
+
+  return Buffer.from(bytes).toString('hex')
+}
+
 export const toBech32 = (prefix: string) => (input: string): string => {
   return bech32Encode(prefix, bech32Convert(Array.from(Buffer.from(input, 'hex')), 8, 5, true))
 }
