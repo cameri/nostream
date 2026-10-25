@@ -176,7 +176,7 @@ checked in `handle_socket` **after** `is_connection_rate_limited` and **before**
 - before `run_connection`, because `Connection::accept`'s first act is to send the NIP-42 challenge
   as a text frame (`crates/nostream-relay/src/connection.rs:109-115`) — a client refused afterwards
   would already have received a text frame, which the policy forbids. The window is
-  `crates/nostream-relay/src/relay.rs:292-312`.
+  `crates/nostream-relay/src/relay.rs:292-315`.
 
 Acquisition returns a `ConnectionSlot` held for the rest of `handle_socket`
 (`crates/nostream-relay/src/relay.rs:299`), so the normal exit, the registration failure inside
@@ -201,7 +201,7 @@ Two accessors in the `hidden_content()` style, `Relay::frame_budget()` and
 them: `accounted()`, `limit()`, `refusals()` on the budget; `live(ip)`, `max_per_ip()`,
 `refusals()`, `tracked_addresses()` on the cap. Plus two structured log lines, one per refusal — a
 `warn!` carrying `budget_bytes` and `accounted_bytes` from the sink
-(`crates/nostream-relay/src/sink.rs:294-298`), and a `debug!` carrying `peer`,
+(`crates/nostream-relay/src/sink.rs:295-299`), and a `debug!` carrying `peer`,
 `max_connections_per_ip` and `live` from the connection task
 (`crates/nostream-relay/src/relay.rs:300-305`).
 
