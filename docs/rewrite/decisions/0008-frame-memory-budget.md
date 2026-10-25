@@ -389,11 +389,20 @@ paths and gives the line and the exit code for each.
 The rule sits in `validate_document` beside the two adaptive-pow numbers, in the shape they
 already established —
 "            \"frameMemoryBudgetBytes must be greater than 0\","
-(`crates/nostream-config/src/validate.rs:82`) and
+(`crates/nostream-config/src/validate.rs:85`) and
 "            \"maxConnectionsPerIp must be greater than 0\","
-(`crates/nostream-config/src/validate.rs:91`) — and each has one test that a `0` yields that
+(`crates/nostream-config/src/validate.rs:95`) — and each has one test that a `0` yields that
 key's issue and nothing else (`rejects_a_zero_frame_memory_budget`,
 `rejects_a_zero_max_connections_per_ip` in `crates/nostream-config/tests/validator.rs`).
+
+**Only a number takes the rule.** `to_number` reads a null, a boolean and a numeric string as
+numbers, so a guard written on the number alone would report a wrong type twice — once as a zero
+and once as the shape fault — leaving the operator to guess which of two findings for one key is
+the mistake. The rule is therefore entered only on a JSON number —
+"    if let Some(budget @ Value::Number(_)) =" (`crates/nostream-config/src/validate.rs:79`) — and a
+non-number keeps the shape walk's single finding, as it did before this rule existed. One test per
+key pins that (`a_non_number_frame_memory_budget_is_only_a_shape_fault`,
+`a_non_number_max_connections_per_ip_is_only_a_shape_fault`).
 
 **Absent still means the compiled default.** That is the other half of the answer, and the one
 `--check --config-dir <empty>` measures: with no user document `load` returns the shipped
