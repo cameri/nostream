@@ -268,6 +268,16 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
             return;
         }
 
+        // A refused frame is never queued, and the connection loop is about to close this
+        // socket whatever this read does. Encoding the rest of the stream would only discard
+        // it, and with a shared budget the loop can be a whole blocked write away from
+        // running, so the window is not short. The sink must not latch on a budget refusal —
+        // a frame that fits later is admitted — which is why the stop lives here.
+        if context.sink.refusal().is_some() {
+            context.connection.end_read(read);
+            return;
+        }
+
         let record = tokio::select! {
             changed = read.cancellation().changed() => {
                 // An aborted read sends no frame at all, not even EOSE.
@@ -407,4 +417,87 @@ fn can_subscribe(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use nostream_core::clock::TestClock;
+    use nostream_core::event::{EventId, Pubkey, Signature};
+    use nostream_core::nip42::Nip42Session;
+
+    use super::*;
+    use crate::connection::Connection;
+    use crate::relay_key::RelayKeySource;
+    use crate::sink::{FrameBudget, FrameSink, Refusal};
+    use crate::testing::{Fixture, settings};
+
+    /// An event the fixture can hold, signed by `secret`.
+    fn signed_event(secret: &[u8; 32], created_at: i64) -> nostream_core::Event {
+        let mut event = nostream_core::Event {
+            id: EventId::from_byte_array([0; 32]),
+            pubkey: Pubkey::from_byte_array([0; 32]),
+            created_at,
+            kind: Kind(1),
+            tags: Vec::new(),
+            content: "stored".to_owned(),
+            sig: Signature::from_byte_array([0; 64]),
+        };
+
+        nostream_core::crypto::sign_event(secret, &mut event).expect("sign the test event");
+
+        event
+    }
+
+    #[tokio::test]
+    async fn a_refused_sink_stops_the_read_instead_of_encoding_the_rest_of_it() {
+        // Three stored events and a budget of 64 bytes: every event frame is refused and the
+        // read's closing `EOSE` would fit. So the queue says which read ran — a read that
+        // stopped at the first refusal leaves nothing in it, and a read that encoded and
+        // discarded the rest of the stream ends with the `EOSE` that fits.
+        let fixture = Fixture::new(settings());
+
+        for index in 0..3 {
+            fixture
+                .seed_event(signed_event(&[7u8; 32], 1_700_000_000 + index))
+                .await;
+        }
+
+        let budget = Arc::new(FrameBudget::new(64));
+        let (sink, mut frames) = FrameSink::channel(64 * 1024, Some(Arc::clone(&budget)));
+        let refused = sink.clone();
+        let context = Arc::new(fixture.context(
+            Arc::new(TestClock::new(1_700_000_000_000)),
+            RelayKeySource::from_values(None, None),
+            Arc::new(Connection::new(
+                "127.0.0.1".to_owned(),
+                Nip42Session::with_challenge("challenge", 0),
+            )),
+            sink,
+        ));
+
+        let message = SubscribeMessage {
+            subscription_id: "s".to_owned(),
+            filters: vec![Filter {
+                kinds: Some(vec![Kind(1)]),
+                ..Filter::default()
+            }],
+        };
+
+        let read = begin(message, &context).expect("the subscription is registered");
+        read.await;
+
+        assert_eq!(refused.refusal(), Some(Refusal::BudgetExhausted));
+        assert_eq!(refused.queued_bytes(), 0);
+        assert!(
+            frames.try_recv().is_err(),
+            "the read stopped at the first refusal: no event frame and no EOSE reached the queue"
+        );
+        assert_eq!(
+            budget.refusals(),
+            1,
+            "one refusal for the socket, not one per event"
+        );
+    }
 }

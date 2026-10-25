@@ -106,11 +106,16 @@ websocket client reads, rather than in a payload it may never consume.
 
 **Neither refusal is a timeout, and neither is the attempt limiter's.** The attempt limiter's refusal
 is still the silent upgrade-then-drop measured above; this job leaves `RateLimits`, its windows and
-its whitelist untouched. The two new refusals are distinguishable from it and from each other by
-code, reason string, and one counter each (`FrameBudget::refusals`,
-`crates/nostream-relay/src/sink.rs:91`; `ConnectionCap::refusals`,
-`crates/nostream-relay/src/connection_cap.rs:60`), which is what keeps them out of the "looks like a
-network fault" bucket that started this.
+its whitelist untouched. What separates the two new refusals from the limiter's silent drop is that
+they say something: a close frame with **code `1013`** and a fixed reason string. What separates
+them **from each other** is the reason string and the counter, not the code — plus the log line's
+fields (`budget_bytes`/`accounted_bytes` against `peer`/`max_connections_per_ip`/`live`) and, for a
+test driving the relay directly, the accessor (`FrameBudget::refusals` at
+`crates/nostream-relay/src/sink.rs:91` or `ConnectionCap::refusals` at
+`crates/nostream-relay/src/connection_cap.rs:60`). Both bounds use `CloseCode::Again`, so `1013` on
+its own tells a client that it was refused and says nothing about which bound did it; anything that
+wants to tell the two apart reads the reason string. That is what keeps both out of the "looks like
+a network fault" bucket that started this.
 
 **A budget refusal refuses the frame, not the socket.** The refusal cause is recorded once — so the
 counter counts one refused socket, not one per frame, and the warn line is written once — but only a
@@ -119,6 +124,21 @@ un-latched when the drain side frees room, and it buys nothing: the connection l
 at its next iteration whatever the sender does. The accounting therefore stays exact under either
 choice, and the unit test that proves room lets the next frame through
 (`sink.rs::the_budget_binds_across_sockets_and_is_shared`) can say so.
+
+**The refusal stops the reader as well.** The connection loop closes the socket at its next
+iteration, but a stored read is a task of its own and keeps producing events until it notices:
+`fetch_and_send` (`crates/nostream-relay/src/handlers/subscribe.rs:276-279`) encodes one frame per event, and
+each refused frame is encoded and discarded. The window is not short — the loop can be parked in a
+write and then in `close_frame`, each bounded only by the 30 s `write_timeout`, and
+`handlers.abort_all()` runs only after both — and it is the normal case, because the budget binds
+exactly when queues are full and loops are parked in writes. So the read checks
+`context.sink.refusal()` at the top of its loop and ends there, before pulling or encoding the next
+record, with no `EOSE` (there is no socket left to tell). The sink itself must not latch a budget
+refusal — a frame that fits later is admitted, which the shared-budget test relies on — so the stop
+belongs to the reader. `subscribe.rs::a_refused_sink_stops_the_read_instead_of_encoding_the_rest_of_it`
+holds it down: with a 64-byte budget every event frame is refused and the `EOSE` would fit, so the
+queue stays empty only if the read stopped at the first refusal (without the check it holds the
+12-byte `EOSE`).
 
 **The refusal wakes the loop.** Recording the cause is not enough on its own. A budget refusal
 can arrive while *this* socket's queue is empty — the bytes that left no room are another
@@ -152,6 +172,16 @@ which is a second refund path of exactly the kind section 7 exists to eliminate.
 has one lifecycle (bytes are counted when a frame is admitted, uncounted when it is written or when
 the socket's accounting ends) and refuses the frames that actually need the memory.
 
+**The blast radius is one address, and it is new.** The budget is shared, so it is only as fair as
+the sockets already holding it. Eight sockets at the 8 MiB `frame_queue_bytes` ceiling are 64 MiB and
+32 of them are 256 MiB, so **one address stays below its own 64-socket cap and still exhausts the
+budget** — and then every other client's next frame is refused and its socket closed, including a
+new client's AUTH challenge, which is a text frame like any other and is refused before that client
+has been spoken to. Before this change there was no shared bound to exhaust: one address could hold
+`N × 8 MiB` of its own, but it could not make another client's connection fail. That is the shape the
+operator's comment chose — a shared bound over a per-address one — and it is recorded here as a cost
+of it, not as a defect.
+
 ## The refund, and the shape rejected
 
 **Chosen: refund on the last handle's `Drop`.** `FrameSink` holds an `Arc<Account>`
@@ -164,11 +194,13 @@ the refund **exactly this socket's bytes, once**, whatever the connection loop d
 
 **The rejected shape: a decrement at each of the loop's exits.** Today `release` has exactly one
 caller, the drain arm (`crates/nostream-relay/src/relay.rs:407`), and every other exit leaves whatever
-was still queued counted: the overflow close (`:391-394`), the `None` receiver (`:398`), a failed
-write (`:409-411`), the inbound and close arms (`:414`, `:433-435`, `:440`), the lagged hub (`:460`), the
-liveness arms (`:464-469`, `:479-481`) and the final cleanup (`:488-489`). Per socket that leak is invisible
-because the counter dies with the sink; a process-wide budget makes it a leak of up to 8 MiB on every
-disconnect. Writing the decrement at each of those ten sites is the change that looks right and rots:
+was still queued counted: the drain itself (`:384-385`), the refusal close (`:391-394`), the `None`
+receiver (`:398`), a failed write (`:409-411`), the inbound arms (`:414`, `:433-435`, `:440`,
+`:443-445`), the closed hub (`:460`), the liveness arms (`:463-469`, `:479-481`) and the final
+cleanup (`:494-495`); the lagged hub (`:455-457`) warns and does not leave. Per socket that leak is
+invisible because the counter dies with the sink; a process-wide budget makes it a leak of up to
+8 MiB on every disconnect. Writing the decrement at each of those sites is the change that looks
+right and rots:
 the next exit added to the loop silently leaks, and no unit test can reach the exits that need a
 failed handshake or a poisoned store to trigger. `Drop` covers all of them by construction, including
 the registration failure inside `run_connection` — which matters, because a refund that ran only on
@@ -207,6 +239,14 @@ This is a gauge, not a window: no store, no clock, no expiry. `RateLimits` and `
 unchanged, and the measured 20-socket behaviour — 12 served, 8 dropped by the limiter — is unchanged
 with it.
 
+**The key is an address, not an identity.** The cap counts source addresses, which is what the
+policy's name says, and it holds on the shipped bind: `nostreamd` listens on
+`SocketAddr::from((Ipv4Addr::UNSPECIFIED, port))` (`crates/nostreamd/src/main.rs:90`), so every
+client has a distinct IPv4 source address. The relay is a library, though, and a listener bound to
+`[::]` keys an IPv6 peer by its full address: one host holding a /64 may present 2^64 source
+addresses, one socket each, and the cap then bounds nothing. Closing that is a policy about
+prefixes, and it is not this job's.
+
 ## What an operator can see today
 
 Two accessors in the `hidden_content()` style, `Relay::frame_budget()` and
@@ -217,6 +257,19 @@ them: `accounted()`, `limit()`, `refusals()` on the budget; `live(ip)`, `max_per
 (`crates/nostream-relay/src/sink.rs:321-325`), and a `debug!` carrying `peer`,
 `max_connections_per_ip` and `live` from the connection task
 (`crates/nostream-relay/src/relay.rs:300-305`).
+
+**Those two lines are not visible at the same level, and the daemon ships `info`.** The filter is
+`--log-level`, then `LOG_LEVEL`, then `RUST_LOG`, else `info`
+(`crates/nostreamd/src/telemetry.rs:10-23`). At the shipped default an operator therefore sees the
+budget's `warn!` and **not** the cap's `debug!`: a socket refused at the cap leaves no line an
+operator will find, which is the silent-invisibility failure this job exists to remove, restored on
+one of the two paths. Seeing it takes `--log-level debug` (or `LOG_LEVEL=debug`, or a `RUST_LOG`
+directive for `nostream_relay`). The reason the line is `debug!` and not something louder is that it
+carries per-socket detail — `peer`, `live` — and would be log-amplifiable by exactly the client that
+trips it; the process-wide fact belongs to the counter instead. Which leaves the counters as the
+surface that does not depend on a log level, and they are readable only from a `Relay` handle today,
+i.e. from a test or an embedder. **Making either refusal visible to an operator who has not raised
+the filter is an open gap, and #989 or the `/metrics` work is where it closes.**
 
 That is the whole surface, because **a Prometheus endpoint is out of reach right now**: the OTLP
 exporter is a stub returning `NotImplemented` (`crates/nostreamd/src/telemetry.rs:47-52`) and the

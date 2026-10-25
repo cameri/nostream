@@ -40,8 +40,8 @@ use crate::wot::WotGraph;
 /// The knobs a [`Relay`] is built with that are not settings: a constant the capture fixes in
 /// code (`liveness`, the NIP-56 refresh) or a policy the port adds with no counterpart there
 /// (`frame_queue_bytes`, `write_timeout`, `frame_memory_budget_bytes`,
-/// `max_connections_per_ip`; ADR 0005, ADR 0008). Tests set the cadences they need
-/// (`tests/common/mod.rs::fast_config`); the policies run at their shipped defaults. A value
+/// `max_connections_per_ip`; ADR 0005, ADR 0008). Tests set the cadences they need and the
+/// bounds a case asks for; every value here runs at its shipped default otherwise. A value
 /// the capture's settings document carries belongs in [`Settings`], never here.
 #[derive(Debug, Clone)]
 pub struct RelayConfig {
