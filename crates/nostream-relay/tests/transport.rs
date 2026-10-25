@@ -21,6 +21,7 @@ use common::{
     CLIENT_SECRET, Client, NOW_SECS, Server, fast_config, liveness_config, relay_keys, signed_event,
 };
 use futures_util::SinkExt;
+use nostream_relay::RelayConfig;
 use nostream_relay::testing::{Fixture, settings};
 use nostream_relay::transport::{self, DEFAULT_MAX_PAYLOAD};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -244,11 +245,58 @@ fn close_of(frame: &Frame) -> (u16, String) {
     )
 }
 
+/// Asserts that nothing was written to the client before its close frame: a frame the client
+/// will never read cannot be the way to say why it is being closed.
+fn assert_no_text_frame(frames: &[Frame]) {
+    assert!(
+        frames.iter().all(|frame| frame.opcode == 0x8),
+        "a refusal sends no text frame: {:?}",
+        frames.iter().map(Frame::text).collect::<Vec<_>>()
+    );
+}
+
 fn settings_with_payload(size: u64) -> nostream_config::settings::Settings {
     let mut settings = settings();
     settings.network.max_payload_size = Some(size);
 
     settings
+}
+
+/// A config with only the two bounds changed, on the fast intervals the suite runs with.
+fn bounded_config(frame_memory_budget_bytes: usize, max_connections_per_ip: usize) -> RelayConfig {
+    RelayConfig {
+        frame_memory_budget_bytes,
+        max_connections_per_ip,
+        ..fast_config()
+    }
+}
+
+/// Waits up to two seconds for `condition`: a closing socket's slot and bytes are given back
+/// by its own task, which the client's close does not wait for.
+async fn eventually(condition: impl Fn() -> bool) -> bool {
+    for _ in 0..200 {
+        if condition() {
+            return true;
+        }
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    condition()
+}
+
+/// The next text frame's payload, ignoring any other frame before it.
+async fn next_text(client: &mut RawClient) -> String {
+    loop {
+        let frame = tokio::time::timeout(Duration::from_secs(5), client.next_frame())
+            .await
+            .expect("a frame arrives")
+            .expect("the stream is open");
+
+        if frame.opcode == 0x1 {
+            return frame.text();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -617,6 +665,13 @@ async fn a_client_that_stops_reading_is_closed_with_1013() {
     }
 
     let server = Server::start_with(fixture, relay_keys(), fast_config()).await;
+
+    assert_eq!(
+        server.relay.frame_budget().accounted(),
+        0,
+        "nothing is counted before this client asks for anything"
+    );
+
     let (mut raw, _head) = RawClient::connect(server.address, None).await;
 
     // The socket's first frame is the NIP-42 challenge, which is a text frame on every
@@ -681,4 +736,223 @@ async fn a_client_that_stops_reading_is_closed_with_1013() {
         close_of(last),
         (1013, transport::SLOW_CONSUMER_REASON.to_owned())
     );
+
+    // This exit is the loop's overflow arm, not the drain arm's `release`: the frames this
+    // socket admitted and never wrote were still counted when the connection ended, so the
+    // refund on its last sink is the only thing that gives them back. This is the
+    // behaviour-level form of the criterion — a subsequent connection is admitted — and does
+    // not by itself tell a refund from a counter that happened to be zero;
+    // `sink.rs::the_budget_release_refunds_only_the_closing_sockets_bytes` is the test that does.
+    assert!(
+        eventually(|| server.relay.frame_budget().accounted() == 0).await,
+        "a closed socket's bytes return to the budget, found {}",
+        server.relay.frame_budget().accounted()
+    );
+
+    let (mut fresh, _head) = RawClient::connect(server.address, None).await;
+    let auth = tokio::time::timeout(Duration::from_secs(5), fresh.next_frame())
+        .await
+        .expect("the fresh client is served")
+        .expect("the fresh client's challenge");
+
+    assert_eq!(auth.opcode, 0x1);
+    assert!(
+        auth.text().starts_with(r#"["AUTH","#),
+        "a fresh client is served after the refund: {}",
+        auth.text()
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// The frame-memory budget and the per-IP cap (#959, ADR 0008)
+// ---------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn the_default_bounds_are_the_policy_numbers() {
+    let config = RelayConfig::default();
+
+    assert_eq!(config.frame_memory_budget_bytes, 268_435_456);
+    assert_eq!(config.max_connections_per_ip, 64);
+
+    let server = Server::start_with(Fixture::new(settings()), relay_keys(), config).await;
+
+    assert_eq!(
+        server.relay.frame_budget().limit(),
+        RelayConfig::default().frame_memory_budget_bytes
+    );
+    assert_eq!(
+        server.relay.connection_cap().max_per_ip(),
+        RelayConfig::default().max_connections_per_ip
+    );
+    assert_eq!(server.relay.frame_budget().accounted(), 0);
+    assert_eq!(server.relay.frame_budget().refusals(), 0);
+}
+
+#[tokio::test]
+async fn a_socket_above_the_per_ip_cap_is_closed_with_1013_and_no_text_frame() {
+    let server = Server::start_with(
+        Fixture::new(settings()),
+        relay_keys(),
+        bounded_config(256 * 1024 * 1024, 2),
+    )
+    .await;
+
+    let (mut first, first_head) = RawClient::connect(server.address, None).await;
+    let (mut second, second_head) = RawClient::connect(server.address, None).await;
+
+    // Both admitted sockets get the challenge, which is the relay's first text frame.
+    for head in [&first_head, &second_head] {
+        assert!(head.starts_with("HTTP/1.1 101"), "{head}");
+    }
+
+    for client in [&mut first, &mut second] {
+        let challenge = tokio::time::timeout(Duration::from_secs(5), client.next_frame())
+            .await
+            .expect("a challenge arrives")
+            .expect("a challenge frame");
+
+        assert_eq!(challenge.opcode, 0x1);
+        assert!(challenge.text().starts_with(r#"["AUTH","#));
+    }
+
+    let (mut refused, refused_head) = RawClient::connect(server.address, None).await;
+
+    assert!(refused_head.starts_with("HTTP/1.1 101"), "{refused_head}");
+
+    let frames = tokio::time::timeout(Duration::from_secs(5), refused.frames_until(0x8))
+        .await
+        .expect("the refused socket is closed");
+
+    assert_no_text_frame(&frames);
+
+    assert_eq!(frames.len(), 1, "exactly one frame: the close: {frames:?}");
+    assert_eq!(frames[0].opcode, 0x8);
+    assert_eq!(
+        close_of(&frames[0]),
+        (1013, transport::CONNECTION_CAP_REASON.to_owned())
+    );
+
+    // The two admitted sockets are still serving.
+    first.send_text(r#"["REQ","s",{"kinds":[1]}]"#).await;
+
+    assert_eq!(next_text(&mut first).await, r#"["EOSE","s"]"#);
+
+    assert_eq!(server.relay.connection_cap().refusals(), 1);
+    assert_eq!(server.relay.connection_cap().live("127.0.0.1"), 2);
+}
+
+#[tokio::test]
+async fn the_per_ip_cap_releases_a_slot_when_a_socket_closes() {
+    let server = Server::start_with(
+        Fixture::new(settings()),
+        relay_keys(),
+        bounded_config(256 * 1024 * 1024, 1),
+    )
+    .await;
+
+    let (mut first, head) = RawClient::connect(server.address, None).await;
+
+    assert!(head.starts_with("HTTP/1.1 101"), "{head}");
+    assert!(next_text(&mut first).await.starts_with(r#"["AUTH","#));
+
+    let (mut second, _head) = RawClient::connect(server.address, None).await;
+    let frames = tokio::time::timeout(Duration::from_secs(5), second.frames_until(0x8))
+        .await
+        .expect("the second socket is closed");
+
+    assert_no_text_frame(&frames);
+
+    assert_eq!(
+        close_of(frames.last().expect("a close frame")),
+        (1013, transport::CONNECTION_CAP_REASON.to_owned())
+    );
+    assert_eq!(server.relay.connection_cap().live("127.0.0.1"), 1);
+
+    drop(first);
+
+    assert!(
+        eventually(|| server.relay.connection_cap().live("127.0.0.1") == 0).await,
+        "a closed socket's slot is released"
+    );
+    assert_eq!(
+        server.relay.connection_cap().tracked_addresses(),
+        0,
+        "an address that released its last slot leaves no entry"
+    );
+
+    let (mut third, head) = RawClient::connect(server.address, None).await;
+
+    assert!(head.starts_with("HTTP/1.1 101"), "{head}");
+    assert!(next_text(&mut third).await.starts_with(r#"["AUTH","#));
+    assert_eq!(
+        server.relay.connection_cap().refusals(),
+        1,
+        "the released slot admits again without a second refusal"
+    );
+}
+
+#[tokio::test]
+async fn the_per_ip_cap_does_not_lapse_with_time() {
+    let server = Server::start_with(
+        Fixture::new(settings()),
+        relay_keys(),
+        bounded_config(256 * 1024 * 1024, 2),
+    )
+    .await;
+
+    let (mut first, _head) = RawClient::connect(server.address, None).await;
+    let (mut second, _head) = RawClient::connect(server.address, None).await;
+
+    assert!(next_text(&mut first).await.starts_with(r#"["AUTH","#));
+    assert!(next_text(&mut second).await.starts_with(r#"["AUTH","#));
+
+    // Past every rate window the shipped limits use, and past the liveness interval too: the
+    // cap is a count of live sockets, so time passing changes nothing.
+    server.clock.advance(3_600_000);
+
+    let (mut refused, _head) = RawClient::connect(server.address, None).await;
+    let frames = tokio::time::timeout(Duration::from_secs(5), refused.frames_until(0x8))
+        .await
+        .expect("the third socket is closed");
+
+    assert_no_text_frame(&frames);
+
+    assert_eq!(
+        close_of(frames.last().expect("a close frame")),
+        (1013, transport::CONNECTION_CAP_REASON.to_owned())
+    );
+    assert_eq!(server.relay.connection_cap().live("127.0.0.1"), 2);
+}
+
+#[tokio::test]
+async fn a_frame_that_exceeds_the_budget_closes_the_socket_with_1013_and_no_text_frame() {
+    // One byte of budget: not even the AUTH challenge fits, so the very first frame a socket
+    // would send is refused and nothing is ever queued.
+    let server = Server::start_with(
+        Fixture::new(settings()),
+        relay_keys(),
+        bounded_config(1, 64),
+    )
+    .await;
+
+    for refusals in 1..=2 {
+        let (mut client, head) = RawClient::connect(server.address, None).await;
+
+        assert!(head.starts_with("HTTP/1.1 101"), "{head}");
+
+        let frames = tokio::time::timeout(Duration::from_secs(5), client.frames_until(0x8))
+            .await
+            .expect("the refused socket is closed");
+
+        assert_no_text_frame(&frames);
+
+        assert_eq!(frames.len(), 1, "exactly one frame: the close: {frames:?}");
+        assert_eq!(frames[0].opcode, 0x8);
+        assert_eq!(
+            close_of(&frames[0]),
+            (1013, transport::FRAME_BUDGET_REASON.to_owned())
+        );
+        assert_eq!(server.relay.frame_budget().refusals(), refusals);
+        assert_eq!(server.relay.frame_budget().accounted(), 0);
+    }
 }

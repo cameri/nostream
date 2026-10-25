@@ -38,6 +38,14 @@ pub const DRAIN_REASON: &str = "relay shutting down";
 /// own policy, with no counterpart in the capture (ADR 0005).
 pub const SLOW_CONSUMER_REASON: &str = "slow consumer: outbound frame queue full";
 
+/// The close reason a client whose outbound frame did not fit the relay's frame-memory budget
+/// is closed with: the port's own policy, with no counterpart in the capture (ADR 0008).
+pub const FRAME_BUDGET_REASON: &str = "frame memory budget exhausted";
+
+/// The close reason a client above `max_connections_per_ip` is closed with: the port's own
+/// policy, with no counterpart in the capture (ADR 0008).
+pub const CONNECTION_CAP_REASON: &str = "connection cap: too many connections from this address";
+
 /// `network.maxPayloadSize` (`network.max_payload_size` in the shipped YAML), else 131072.
 pub fn max_payload_size(settings: &Settings) -> usize {
     settings
