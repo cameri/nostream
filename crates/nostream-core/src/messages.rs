@@ -15,9 +15,12 @@
 //!
 //! - The detail after `invalid: ` for unparseable JSON, where V8's `JSON.parse` diagnosis is
 //!   not reproducible (tolerance T1, ADR 0004 records it).
-//! - A `kind` at or above `2^64` is refused rather than accepted: the capture's
-//!   `kindSchema` has no ceiling and `Kind` is a `u64`, so the value is unrepresentable here
-//!   (ADR 0002, `docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`).
+//! - A `kind` at or above `2^64`, or a filter's `limit` at or above `2^64` (reachable here as
+//!   a `REQ`/`COUNT` filter field), is refused rather than accepted: the capture's `kindSchema`
+//!   and `limit` have no ceiling and `Kind` and `Filter.limit` are `u64`s, so those values are
+//!   unrepresentable here, and both say so in their own words rather than zod's — `kind value
+//!   does not fit in 64 bits`, `limit does not fit in 64 bits` (ADR 0002,
+//!   `docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`).
 //!
 //! Open, so the capture is authoritative and this decoder is the defect (`CLAUDE.md`
 //! §"Porting discipline"): zod separates a branch that aborted from one that recorded an
