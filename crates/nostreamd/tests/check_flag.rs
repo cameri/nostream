@@ -129,3 +129,24 @@ fn check_refuses_a_settings_yaml_that_is_a_directory() {
     assert_ne!(code, Some(0), "a directory must not read as a clean config");
     assert!(stderr.contains("not a regular file"), "stderr: {stderr}");
 }
+
+#[test]
+fn check_accepts_an_operator_file_that_sets_both_bounds() {
+    // The two bounds #959 added are settings an operator writes, so the document has to carry
+    // their keys: a value the validator does not know is refused as `Unknown setting key`, and
+    // the daemon would keep running on the compiled defaults without saying so.
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "network:\n  frameMemoryBudgetBytes: 134217728\nlimits:\n  connection:\n    maxConnectionsPerIp: 128\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(0), "exit code; stderr: {stderr}");
+    assert_eq!(stdout.trim(), "settings valid: 0 issues");
+}

@@ -96,6 +96,37 @@ impl Default for RelayConfig {
     }
 }
 
+impl RelayConfig {
+    /// The configuration a relay built from `settings` runs with: [`RelayConfig::default`] for
+    /// every knob the capture fixes in code, with the two bounds an operator sets read from
+    /// their leaves — `network.frameMemoryBudgetBytes` and
+    /// `limits.connection.maxConnectionsPerIp` — when present and non-zero.
+    ///
+    /// This is the one place either setting is interpreted, so `nostreamd` and the tests cannot
+    /// disagree about it. `drain_timeout` stays the composition root's to resolve: it is an
+    /// environment read (ADR 0004), not a setting.
+    pub fn from_settings(settings: &Settings) -> Self {
+        let mut config = Self::default();
+        if let Some(bytes) = settings.network.frame_memory_budget_bytes
+            && let Ok(bytes) = usize::try_from(bytes)
+            && bytes > 0
+        {
+            config.frame_memory_budget_bytes = bytes;
+        }
+        if let Some(cap) = settings
+            .limits
+            .as_ref()
+            .and_then(|limits| limits.connection.as_ref())
+            .and_then(|connection| connection.max_connections_per_ip)
+            && let Ok(cap) = usize::try_from(cap)
+            && cap > 0
+        {
+            config.max_connections_per_ip = cap;
+        }
+        config
+    }
+}
+
 /// The relay's shared state: one value handed to every connection task.
 pub struct Relay {
     settings: Arc<Settings>,

@@ -677,6 +677,7 @@ fn the_connection_level_uses_addr_connection_period_and_its_whitelist() {
             }],
             ip_whitelist: Some(vec!["10.0.0.1".to_owned()]),
             ip_blacklist: None,
+            max_connections_per_ip: None,
         }),
         ..Default::default()
     });
@@ -913,6 +914,7 @@ fn a_failing_store_reports_an_error_at_every_level() {
             }],
             ip_whitelist: None,
             ip_blacklist: None,
+            max_connections_per_ip: None,
         }),
         message: Some(MessageLimits {
             rate_limits: Some(vec![MessageRateLimit {

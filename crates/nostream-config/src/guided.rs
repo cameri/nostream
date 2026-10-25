@@ -207,6 +207,12 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                     SafeNonNegativeInteger,
                 ),
                 validated(
+                    "Frame memory budget (bytes)",
+                    "network.frameMemoryBudgetBytes",
+                    Number,
+                    SafeNonNegativeInteger,
+                ),
+                validated(
                     "Worker count",
                     "workers.count",
                     Number,
@@ -260,6 +266,12 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                 validated(
                     "Max subscriptions per connection",
                     "limits.client.subscription.maxSubscriptions",
+                    Number,
+                    SafeNonNegativeInteger,
+                ),
+                validated(
+                    "Max connections per IP",
+                    "limits.connection.maxConnectionsPerIp",
                     Number,
                     SafeNonNegativeInteger,
                 ),

@@ -1715,6 +1715,7 @@ async fn the_connection_limiter_terminates_the_upgrade() {
             }],
             ip_whitelist: None,
             ip_blacklist: None,
+            max_connections_per_ip: None,
         }),
         ..Default::default()
     };

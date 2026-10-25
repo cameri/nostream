@@ -150,6 +150,7 @@ nip56:
   hideActionableReports: false
 network:
   maxPayloadSize: 524288
+  frameMemoryBudgetBytes: 268435456
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
   # remoteIpHeader: x-forwarded-for
   # remoteIpHeader: cf-connecting-ip
@@ -213,6 +214,7 @@ limits:
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
   connection:
+    maxConnectionsPerIp: 64
     rateLimits:
       - period: 1000
         rate: 12

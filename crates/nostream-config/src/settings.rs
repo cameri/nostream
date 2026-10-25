@@ -68,6 +68,8 @@ pub struct Network {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_payload_size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_memory_budget_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_ip_header: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trusted_proxies: Option<Vec<String>>,
@@ -306,6 +308,8 @@ pub struct ConnectionLimits {
     pub ip_whitelist: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip_blacklist: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_connections_per_ip: Option<u64>,
 }
 
 /// `limits.invoice` (`src/@types/settings.ts` `InvoiceLimits`).
