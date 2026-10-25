@@ -211,5 +211,5 @@ capture's only thread. The cost inside that radius is real: the loop is occupied
 
 ## Not decided here — the port's `CLOSE` semantics
 
-Whether a plain `CLOSE` aborts a stored read is out of scope for this record; it is tracked
-as cameri/nostream#957.
+Whether a plain `CLOSE` aborts a stored read was out of scope for this record; it is decided
+in `0007-close-aborts-read.md`.
