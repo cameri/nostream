@@ -103,25 +103,22 @@ impl Default for RelayConfig {
 /// of queued frames for `network.frameMemoryBudgetBytes`, and 1.09 million sockets for
 /// `limits.connection.maxConnectionsPerIp`. One number because one check reads both; it is far
 /// above any deployment each way, and far below `usize::MAX`, so a stray digit cannot reach
-/// [`FrameBudget::admit`]'s arithmetic. A value above it is treated like a zero: the default
-/// stands (ADR 0008).
+/// [`FrameBudget::admit`]'s arithmetic. A value above it keeps the compiled default (ADR 0008).
 pub const MAX_SETTING_BOUND: usize = 1024 * 1024 * 1024 * 1024;
 
-/// Whether an operator's value for a bound is one the relay can run with: positive and at most
+/// Whether an operator's value for a bound is one the relay can run with: at most
 /// [`MAX_SETTING_BOUND`]. Public because the daemon's settings gate reports the same verdict
 /// before a relay exists, and one predicate is what keeps `--check` and the relay from
-/// disagreeing (ADR 0008).
+/// disagreeing (ADR 0008). Zero is in range: the validator refuses it, so a value that reaches
+/// here is one the relay runs with as written.
 pub fn in_range(value: u64) -> bool {
-    value > 0 && value <= MAX_SETTING_BOUND as u64
+    value <= MAX_SETTING_BOUND as u64
 }
 
 /// Why a value was not taken from a bound's setting: the question [`in_range`] answers, said out
-/// loud, so the report can distinguish the two cases the predicate collapses — a zero, which the
-/// document says means the default, from a value above the ceiling, which it does not.
+/// loud, so the report can name the ceiling the value crossed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoundRefusal {
-    /// The operator wrote `0`, which the shipped document documents as "the default".
-    Zero,
     /// The value is above [`MAX_SETTING_BOUND`].
     AboveCeiling(u64),
 }
@@ -149,26 +146,22 @@ pub fn refused_bounds(settings: &Settings) -> Vec<(&'static str, BoundRefusal)> 
     refused
 }
 
-/// The two ways a bound's setting is not taken, or `None` when it is.
+/// Whether a bound's setting is not taken, or `None` when it is.
 ///
 /// It asks [`in_range`] first, so the constructor and every report agree by construction rather
 /// than by two comparisons that happen to match: a value `in_range` accepts is never refused here.
 pub fn bound_refusal(value: u64) -> Option<BoundRefusal> {
     if in_range(value) {
         None
-    } else if value == 0 {
-        Some(BoundRefusal::Zero)
     } else {
         Some(BoundRefusal::AboveCeiling(MAX_SETTING_BOUND as u64))
     }
 }
 
-/// The sentence one refused bound is reported with, for both doors: a zero (documented as the
-/// default) and a value above the ceiling are different facts, and the words live beside the
+/// The sentence one refused bound is reported with, for both doors; the words live beside the
 /// decision so the daemon's gate and the CLI cannot phrase it differently.
 pub fn refusal_message(setting: &str, reason: BoundRefusal) -> String {
     match reason {
-        BoundRefusal::Zero => format!("{setting}: 0 means the default, and the relay runs with it"),
         BoundRefusal::AboveCeiling(ceiling) => {
             format!("{setting}: above the {ceiling} a bound accepts; the key's value is ignored")
         }
@@ -176,13 +169,9 @@ pub fn refusal_message(setting: &str, reason: BoundRefusal) -> String {
 }
 
 /// Reports one bound's setting that the relay will not run with, as one structured line saying
-/// which of the two reasons it was: a zero (documented as the default) and a value above the
-/// ceiling are different facts.
+/// the ceiling it crossed.
 fn warn_refused_bound(setting: &'static str, value: u64, default: usize) {
     match bound_refusal(value) {
-        Some(BoundRefusal::Zero) => {
-            tracing::warn!(setting, default, "a bound set to 0 runs with its default")
-        }
         Some(BoundRefusal::AboveCeiling(ceiling)) => tracing::warn!(
             setting,
             value,
@@ -198,17 +187,19 @@ impl RelayConfig {
     /// The configuration a relay built from `settings` runs with: [`RelayConfig::default`] for
     /// every knob the capture fixes in code, with the two bounds an operator sets read from
     /// their leaves — `network.frameMemoryBudgetBytes` and
-    /// `limits.connection.maxConnectionsPerIp` — when present and non-zero.
+    /// `limits.connection.maxConnectionsPerIp` — when present.
     ///
     /// This is the one place either setting is interpreted, so `nostreamd` and the tests cannot
     /// disagree about it. `drain_timeout` stays the composition root's to resolve: it is an
     /// environment read (ADR 0004), not a setting.
     ///
-    /// A leaf is taken when it is present, non-zero and at most [`MAX_SETTING_BOUND`]; anything
-    /// else keeps the default. The ceiling is not cosmetic: `usize::MAX` fits a `usize`, so it
-    /// would pass a bare `> 0` check and reach [`FrameBudget::admit`], whose fit guard uses
-    /// `saturating_sub` while its accounting adds unchecked — a budget that cannot be
-    /// exhausted, and an add that overflows.
+    /// A leaf is taken as written whenever it is at most [`MAX_SETTING_BOUND`]; an absent leaf
+    /// keeps the default, and so does a value above the ceiling. The ceiling is not cosmetic:
+    /// `usize::MAX` fits a `usize`, so it would pass a bare range check and reach
+    /// [`FrameBudget::admit`], whose fit guard uses `saturating_sub` while its accounting adds
+    /// unchecked — a budget that cannot be exhausted, and an add that overflows. A zero never
+    /// reaches this constructor from a loaded document: the validator refuses it by name
+    /// (ADR 0008).
     pub fn from_settings(settings: &Settings) -> Self {
         let mut config = Self::default();
 

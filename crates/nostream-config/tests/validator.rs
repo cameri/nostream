@@ -194,6 +194,41 @@ fn a_non_array_rate_limits_value_is_left_to_the_shape_validator() {
     );
 }
 
+// --- the two runtime bounds -------------------------------------------------------------
+
+#[test]
+fn rejects_a_zero_frame_memory_budget() {
+    // A zero here is the operator's literal, and the relay must not read it as the default
+    // (#996, ADR 0008). Absent still means the compiled default, which is why the document is
+    // the shipped one with this leaf changed and no other issue can appear.
+    let document = set_by_path(&defaults(), "network.frameMemoryBudgetBytes", number(0))
+        .expect("frameMemoryBudgetBytes is writable");
+    assert_eq!(
+        issues(&document),
+        vec![
+            "network.frameMemoryBudgetBytes: frameMemoryBudgetBytes must be greater than 0"
+                .to_owned()
+        ]
+    );
+}
+
+#[test]
+fn rejects_a_zero_max_connections_per_ip() {
+    let document = set_by_path(
+        &defaults(),
+        "limits.connection.maxConnectionsPerIp",
+        number(0),
+    )
+    .expect("maxConnectionsPerIp is writable");
+    assert_eq!(
+        issues(&document),
+        vec![
+            "limits.connection.maxConnectionsPerIp: maxConnectionsPerIp must be greater than 0"
+                .to_owned()
+        ]
+    );
+}
+
 // --- adaptive pow -----------------------------------------------------------------------
 
 fn pow_with(overrides: &[(&str, Value)]) -> Value {

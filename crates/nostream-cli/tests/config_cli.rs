@@ -68,33 +68,27 @@ fn the_paths_resolver_honours_the_config_dir() {
 }
 
 #[test]
-fn config_validate_says_which_bound_setting_the_relay_will_not_use() {
-    // The CLI door and `nostreamd --check` are the two read-only ways onto the same validator;
-    // a bound the relay replaces must not be silent on one of them. Zero and an over-ceiling
-    // value are different facts and get different sentences.
+fn config_validate_refuses_a_zero_bound() {
+    // The CLI door and `nostreamd --check` are the two read-only ways onto the same validator; a
+    // zero is an issue on both, and the document that carries one is not blessed (#996, ADR 0008).
     let directory = tempfile::tempdir().expect("tempdir");
     let path = directory.path().join("settings.yaml");
     fs::write(
         &path,
-        "network:\n  frameMemoryBudgetBytes: 0\nlimits:\n  connection:\n    maxConnectionsPerIp: 1099511627777\n",
+        "network:\n  frameMemoryBudgetBytes: 0\nlimits:\n  connection:\n    maxConnectionsPerIp: 0\n",
     )
     .expect("write");
 
     let output =
         config::validate(&workspace_root(), Some(directory.path()), Some(&path)).expect("validate");
-    assert_eq!(output.exit_code, 0);
-    let verdict = output.lines.join("\n");
-    assert!(
-        verdict.contains(
-            "network.frameMemoryBudgetBytes: 0 means the default, and the relay runs with it"
-        ),
-        "verdict: {verdict}"
-    );
-    assert!(
-        verdict.contains(
-            "limits.connection.maxConnectionsPerIp: above the 1099511627776 a bound accepts; the key's value is ignored"
-        ),
-        "verdict: {verdict}"
+    assert_eq!(output.exit_code, 2);
+    assert_eq!(
+        output.lines,
+        [
+            "network.frameMemoryBudgetBytes: frameMemoryBudgetBytes must be greater than 0",
+            "limits.connection.maxConnectionsPerIp: maxConnectionsPerIp must be greater than 0",
+            "settings invalid: 2 issues",
+        ]
     );
 }
 

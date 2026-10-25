@@ -70,6 +70,28 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
         ));
     }
 
+    // The two bounds the relay reads at run time are numerical settings before they are anything
+    // else, so a zero written for one is refused here, by name, exactly as the adaptive-pow
+    // numbers below are: absent still means the compiled default, and a stated zero is a literal
+    // the operator wrote (ADR 0008).
+    if let Some(budget) = key_path(candidate, &["network", "frameMemoryBudgetBytes"])
+        && !to_number_is_positive(Some(budget))
+    {
+        issues.push(Issue::new(
+            "network.frameMemoryBudgetBytes",
+            "frameMemoryBudgetBytes must be greater than 0",
+        ));
+    }
+
+    if let Some(cap) = key_path(candidate, &["limits", "connection", "maxConnectionsPerIp"])
+        && !to_number_is_positive(Some(cap))
+    {
+        issues.push(Issue::new(
+            "limits.connection.maxConnectionsPerIp",
+            "maxConnectionsPerIp must be greater than 0",
+        ));
+    }
+
     if let Some(pow) = key_path(candidate, &["limits", "event", "pow"])
         && truthy_opt(key(pow, "enabled"))
     {
