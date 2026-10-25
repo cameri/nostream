@@ -397,11 +397,11 @@ The constructor implements exactly that, and nothing else:
 
 - the budget is taken only when the leaf is present, convertible, positive and within the
   ceiling — "    value > 0 && value <= MAX_SETTING_BOUND as u64" (`crates/nostream-relay/src/relay.rs:115`),
-  applied to the leaf at "        if let Some(bytes) = settings.network.frame_memory_budget_bytes"
-  (`crates/nostream-relay/src/relay.rs:136`);
+  applied to the leaf at "        if let Some(bytes) = settings.network.frame_memory_budget_bytes {"
+  (`crates/nostream-relay/src/relay.rs:215`);
 - the cap likewise, through the two optional levels the typed schema forces —
   "            .and_then(|connection| connection.max_connections_per_ip)"
-  (`crates/nostream-relay/src/relay.rs:157`);
+  (`crates/nostream-relay/src/relay.rs:234`);
 - otherwise the field keeps `RelayConfig::default()`'s value, so a zero, an absent key — absent
   leaf, absent `limits`, absent `limits.connection` — and a number above the ceiling all behave as
   "the shipped default".
@@ -450,33 +450,51 @@ phrase it differently:
 
 `--check` prints it through the gate —
 "        eprintln!("{}", refusal_message(setting, reason));"
-(`crates/nostreamd/src/settings_gate.rs:31`) — and `nostream-cli config validate`, the other
+(`crates/nostreamd/src/settings_gate.rs:34`) — and `nostream-cli config validate`, the other
 read-only door, appends the same strings to its verdict
 (`crates/nostream-cli/src/config.rs:84-98`), from the same `refused_bounds` walk. The gate is not a
 `tracing` line because `--check` returns before the subscriber exists: the gate writes outside the
 filter by design (`crates/nostreamd/src/settings_gate.rs:8-17`), so the report is reached at the
 shipped level.
 
-**On a rejected document neither door reports the bound, and that is not a gap to close here.**
-The loop in the gate is unconditional, but `load` substitutes the shipped defaults for a document
-with any issue — "            settings: defaults_settings,"
-(`crates/nostream-config/src/load.rs:421`) — so there is no operator number left to describe and the
-walk finds nothing. Measured on a document holding both an over-ceiling value and a bad rate-limiter
-strategy: both doors print the schema fault, `settings invalid: 1 issues`, exit 2, and no range
-line. The CLI notes the same in its own comment, and each door has a test pinning it
+**What a rejected document leaves to report, in the two mechanisms that actually apply.**
+
+*Where `load` substitutes, there is no operator value left.* Four early returns replace the whole
+outcome with the shipped defaults and set `used_defaults` — an unreadable user document, a document
+the shape walk refuses, a typed document the fit refuses, and a read failure:
+"    /// Whether the user's document was rejected and the defaults were substituted."
+(`crates/nostream-config/src/load.rs:386`). A document whose **schema** is rejected therefore reaches
+both doors as the defaults, and the schema fault is the whole report. Measured on
+`network.frameMemoryBudgetBytes: 0` with `admin.notifications.deliveryLogRetentionDays: 0`: both
+doors print only `deliveryLogRetentionDays must be at least 1`, then `settings invalid: 1 issues`,
+exit 2. The daemon's gate also refuses to walk a substitution at all:
+"    if !outcome.used_defaults {" (`crates/nostreamd/src/settings_gate.rs:32`), so a substituted
+document can never be described in the operator's terms. Each door has a test pinning this
 (`check_reports_the_schema_fault_and_not_a_bound_it_cannot_read`,
-`config_validate_reports_the_schema_fault_and_not_a_bound_it_cannot_read`). What is deliberately
-unchanged: `--check` still exits 0 on a value it will replace, since that is the policy for a valid
-key with an out-of-range value and refusing it means a validator rule.
+`config_validate_reports_the_schema_fault_and_not_a_bound_it_cannot_read`).
+
+*Where nothing is substituted, there is a leaf to read and both doors read it.* With no user
+document — a fresh install, a different `--config-dir` — `load` returns the shipped defaults with
+`used_defaults` false, and with a valid document it returns the operator's typed settings. The
+walk then reports the operator's values, and reports nothing when they are the shipped ones:
+measured, `--check --config-dir <empty>` prints only `settings valid: 0 issues`, exit 0, because
+`268435456` and `64` are inside the range, while a file setting either bound to `0` or above the
+ceiling prints its line on both doors.
+`check_reports_nothing_for_the_shipped_defaults` pins the empty case.
+
+What is deliberately unchanged: `--check` still exits 0 on a value it will replace, since that is
+the policy for a valid key with an out-of-range value and refusing it means a validator rule.
 
 **What putting this beside the arithmetic costs, measured.** `nostream-cli` depends on
 `nostream-relay` to reach `refused_bounds` and `refusal_message`, and that edge drags the websocket
 and storage graph into a settings-check binary: `cargo tree -p nostream-cli --edges normal` is 469
-lines with the edge and 177 without, and a cold `cargo build -p nostream-cli --all-features` took
-51.3 s without it and 63 s with it on this host (single runs, shared machine — direction, not a
-ratio). The alternative is to move the decision into `nostream-config`, which would invert the
-dependency the bound's arithmetic lives behind (`RelayConfig` is `nostream-relay`'s), so it is
-recorded rather than taken.
+lines with the edge and 177 without (reproduced by two lenses), and a cold
+`cargo build -p nostream-cli --all-features` took **32.4 s without it and 87.1 s with it** — the
+performance lens's measurement, taken on this host (single runs, shared host — direction, not a
+ratio; an independent measurement by the code lens read 39.9 s and 96.7 s, so the direction is
+agreed and the ratio is not). The alternative is to move the decision into `nostream-config`, which
+would invert the dependency the bound's arithmetic lives behind (`RelayConfig` is
+`nostream-relay`'s), so it is recorded rather than taken.
 
 **The pair's real ceiling is not the cap's.** The budget is process-wide and the cap is per
 address, so what the two bound together is `min(budget, addresses × cap × frame_queue_bytes)` — the
