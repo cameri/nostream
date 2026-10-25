@@ -27,11 +27,11 @@
 //!
 //! **The sum is bounded too**, which the per-socket bound cannot do: one address that opens
 //! sockets and stops reading held a multiple of the per-socket bound, so every socket's
-//! queue is also counted against one process-wide [`FrameBudget`] (ADR 0008). An admission
-//! needs room in both bounds; the budget has no empty-queue exception, so a frame that does
-//! not fit the budget is refused however empty its own queue. The socket's share of the
-//! budget is refunded when its last sink handle drops — see [`Account`] — because the next
-//! socket's admission depends on it.
+//! queue also counts against one process-wide frame memory budget ([`FrameBudget`],
+//! ADR 0008). An admission needs room in both bounds; the budget has no empty-queue
+//! exception, so a frame that does not fit the budget is refused however empty its own
+//! queue. The socket's share of the budget is refunded when its last sink handle drops —
+//! see [`Account`] — because the next socket's admission depends on it.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
