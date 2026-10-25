@@ -8,15 +8,24 @@
 //!
 //! The positional decoder replaces the capture's `attemptValidation(messageSchema)` call
 //! (`src/adapters/web-socket-adapter.ts:199`). The zod messages it reports are reproduced
-//! from `src/schemas/{message,event,filter}-schema.ts`; the one deliberate difference is the
-//! detail after `invalid: ` for unparseable JSON, where V8's `JSON.parse` diagnosis is not
-//! reproducible (ADR 0004 records the tolerance).
+//! from `src/schemas/{message,event,filter}-schema.ts`. This list is the decoder's own
+//! statement of where it deliberately differs from the capture:
+//!
+//! - The detail after `invalid: ` for unparseable JSON, where V8's `JSON.parse` diagnosis is
+//!   not reproducible (tolerance T1, ADR 0004 records it).
+//! - A `kind` at or above `2^64` is refused rather than accepted: the capture's
+//!   `kindSchema` has no ceiling and `Kind` is a `u64`, so the value is unrepresentable here
+//!   (ADR 0002, `docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`).
+//! - A wrong-typed field answers that field's own message here and `Invalid input` there,
+//!   because a wrong-typed member aborts the capture's `z.union`
+//!   (`src/schemas/message-schema.ts:61`). Open, and tracked separately.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Number, Value};
 
 use crate::event::{Event, EventId, Pubkey};
-use crate::filter::{Filter, SubscriptionId, validate_filter};
+use crate::filter::{Filter, KIND_DOES_NOT_FIT, SubscriptionId, U64_RANGE_END, validate_filter};
+use crate::validation::CREATED_AT_LIMIT;
 
 /// The wire message kinds (`src/@types/messages.ts` `MessageType`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -337,8 +346,11 @@ pub fn decode(text: &str) -> Result<ClientMessage, WireError> {
     match verb {
         Some("EVENT") => {
             let event = items.get(1).ok_or_else(|| invalid("Invalid input"))?;
+            let event = validate_event_value(event)?;
 
-            Ok(ClientMessage::Event(validate_event_value(event)?))
+            exactly(&items, 2)?;
+
+            Ok(ClientMessage::Event(event))
         }
         Some("REQ") => {
             let (subscription_id, filters) = decode_request(&items, "REQ")?;
@@ -365,19 +377,37 @@ pub fn decode(text: &str) -> Result<ClientMessage, WireError> {
                 return Err(invalid("String must contain at least 1 character(s)"));
             }
 
+            exactly(&items, 2)?;
+
             Ok(ClientMessage::Unsubscribe(UnsubscribeMessage {
                 subscription_id: subscription_id.clone(),
             }))
         }
         Some("AUTH") => {
             let event = items.get(1).ok_or_else(|| invalid("Invalid input"))?;
+            let event = validate_event_value(event)?;
 
-            Ok(ClientMessage::Auth(AuthMessage {
-                event: validate_event_value(event)?,
-            }))
+            exactly(&items, 2)?;
+
+            Ok(ClientMessage::Auth(AuthMessage { event }))
         }
         _ => Err(invalid("Invalid input")),
     }
+}
+
+/// A fixed-arity client verb refuses a frame longer than its tuple: `EVENT`, `AUTH` and
+/// `CLOSE` are `z.tuple`s with no `.rest()` (`src/schemas/message-schema.ts:8,56,59`), and
+/// zod reports the tuple's `too_big` issue, whose message is this one. The lower bound stays
+/// each arm's own `Invalid input` — what an aborted union answers for a missing element — so
+/// this never reports one.
+fn exactly(items: &[Value], expected: usize) -> Result<(), WireError> {
+    if items.len() > expected {
+        return Err(invalid(&format!(
+            "Array must contain at most {expected} element(s)"
+        )));
+    }
+
+    Ok(())
 }
 
 /// `reqMessageSchema`/`countMessageSchema`: the id, then one to eleven filters.
@@ -427,6 +457,28 @@ fn decode_request(items: &[Value], verb: &str) -> Result<(String, Vec<Filter>), 
     Ok((subscription_id.clone(), filters))
 }
 
+/// `z.number().int().min(0)` for an event's numeric fields (`src/schemas/base-schema.ts:17`),
+/// in zod's order: a fractional value answers `Expected integer, received float`, then a
+/// negative one answers `Number must be greater than or equal to 0`. A zero-fraction float
+/// spelling is the integer it denotes — JavaScript has no float/int distinction after
+/// `JSON.parse`, so the capture admits `1700000000.0` — and a value that is not a number
+/// aborts the union with `Invalid input`.
+fn integer_value(number: &Number) -> Result<f64, WireError> {
+    let Some(value) = number.as_f64() else {
+        return Err(invalid("Invalid input"));
+    };
+
+    if value.fract() != 0.0 {
+        return Err(invalid("Expected integer, received float"));
+    }
+
+    if value < 0.0 {
+        return Err(invalid("Number must be greater than or equal to 0"));
+    }
+
+    Ok(value)
+}
+
 /// `eventSchema.parse` at the value level: the shape checks in field order, the `.strict()`
 /// rule, and the kind-7/17/10002/geohash refinements of `src/schemas/event-schema.ts`.
 ///
@@ -473,13 +525,15 @@ pub fn validate_event_value(value: &Value) -> Result<Event, WireError> {
     };
 
     let created_at = match object.get("created_at") {
-        Some(Value::Number(number)) => match number.as_i64() {
-            Some(value) if (0..10_000_000_000).contains(&value) => value,
-            Some(value) if value < 0 => {
-                return Err(invalid("Number must be greater than or equal to 0"));
+        Some(Value::Number(number)) => {
+            let value = integer_value(number)?;
+
+            if value >= CREATED_AT_LIMIT as f64 {
+                return Err(invalid("Invalid timestamp"));
             }
-            _ => return Err(invalid("Invalid timestamp")),
-        },
+
+            value as i64
+        }
         other => {
             return Err(invalid(&format!(
                 "Expected number, received {}",
@@ -491,13 +545,15 @@ pub fn validate_event_value(value: &Value) -> Result<Event, WireError> {
     let kind = match object.get("kind") {
         Some(Value::Number(number)) => match number.as_u64() {
             Some(value) => crate::event::Kind(value),
-            None if number.as_f64().is_some_and(|value| value.fract() != 0.0) => {
-                return Err(invalid("Expected integer, received float"));
+            None => {
+                let value = integer_value(number)?;
+
+                if value >= U64_RANGE_END {
+                    return Err(invalid(KIND_DOES_NOT_FIT));
+                }
+
+                crate::event::Kind(value as u64)
             }
-            None if number.as_i64().is_some_and(|value| value < 0) => {
-                return Err(invalid("Number must be greater than or equal to 0"));
-            }
-            None => return Err(invalid("Number must be greater than or equal to 0")),
         },
         other => {
             return Err(invalid(&format!(

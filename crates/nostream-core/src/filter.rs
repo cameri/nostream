@@ -26,7 +26,13 @@ const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 /// `2^64`, the first value a `u64` cannot hold. `u64::MAX as f64` **is** this number — the
 /// largest `f64` below it is `u64::MAX - 2047` — so the comparison must be `>=`, not `>`:
 /// with `>`, exactly `2^64` passed and `as u64` silently saturated it to `u64::MAX`.
-const U64_RANGE_END: f64 = 18_446_744_073_709_551_616.0;
+pub(crate) const U64_RANGE_END: f64 = 18_446_744_073_709_551_616.0;
+
+/// The refusal for a `kind` no `u64` can hold. The capture's `kindSchema` has no ceiling, so
+/// the message is a representability divergence rather than a zod rule, decided in
+/// `docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`. One statement of the
+/// wording, shared with the event decoder.
+pub(crate) const KIND_DOES_NOT_FIT: &str = "kind value does not fit in 64 bits";
 
 /// A Nostr REQ filter (`src/@types/subscription.ts` `SubscriptionFilter`).
 ///
@@ -445,7 +451,7 @@ fn validate_kinds(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
         match item.as_u64() {
             Some(kind) => kinds.push(Kind(kind)),
             None if number >= U64_RANGE_END => {
-                issue(&element, "kind value does not fit in 64 bits", issues);
+                issue(&element, KIND_DOES_NOT_FIT, issues);
             }
             None => kinds.push(Kind(number as u64)),
         }
