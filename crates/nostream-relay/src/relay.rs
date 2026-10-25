@@ -4,9 +4,11 @@
 //!
 //! Each connection task owns its socket and the state machine R26 lists: `alive`, the
 //! subscription table, the NIP-42 session, the in-flight handler set and the sink. Outbound
-//! frames travel through [`FrameSink`]; inbound text is rate-limited, decoded, and handed to
-//! the handler `messageHandlerFactory` would pick. Accepted events fan out to this process's
-//! connections through one broadcast channel (cross-worker fan-out stays a stub).
+//! frames travel through [`FrameSink`]; inbound text is rate-limited, decoded, and given to
+//! the handler `messageHandlerFactory` would pick — the handler's ordering-sensitive prefix
+//! runs here, on the loop, before the next frame is read, and the rest of it is spawned into
+//! the per-socket handler set. Accepted events fan out to this process's connections through
+//! one broadcast channel (cross-worker fan-out stays a stub).
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -478,6 +480,9 @@ impl Relay {
 
     /// One inbound text frame: the message limiter first, then the decoder, then the handler
     /// (`web-socket-adapter.ts:198-240`).
+    ///
+    /// The handler's prefix runs here, before the loop reads the next frame; its continuation
+    /// joins the socket's handler set.
     fn on_client_message(
         &self,
         text: &str,
@@ -504,8 +509,9 @@ impl Relay {
 
         match messages::decode(text) {
             Ok(message) => {
-                let context = Arc::clone(context);
-                handlers.spawn(handlers::dispatch(message, context));
+                if let Some(handler) = handlers::begin(message, context) {
+                    handlers.spawn(handler);
+                }
             }
             Err(error) => context.send_notice(&error.notice()),
         }

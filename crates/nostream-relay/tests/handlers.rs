@@ -67,6 +67,30 @@ async fn send_event(server: &Server, event: &Event) -> String {
     client.expect_frame().await
 }
 
+/// The text frames that arrive within `window`, read straight off the socket so a test can
+/// bound a silence shorter than `Client::next_message`'s two-second deadline.
+async fn frames_within(client: &mut common::Client, window: Duration) -> Vec<String> {
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let deadline = tokio::time::Instant::now() + window;
+    let stream = client.stream();
+    let mut frames = Vec::new();
+
+    while let Ok(Some(Ok(message))) = tokio::time::timeout_at(deadline, stream.next()).await {
+        if let Message::Text(text) = message {
+            frames.push(text.as_str().to_owned());
+        }
+    }
+
+    frames
+}
+
+/// Whether a frame names the closed subscription: a live dispatch to it, or its `EOSE`.
+fn names_s1(frame: &str) -> bool {
+    frame.starts_with(r#"["EVENT","s1""#) || frame == r#"["EOSE","s1"]"#
+}
+
 // ---------------------------------------------------------------------------------------
 // EVENT (R9)
 // ---------------------------------------------------------------------------------------
@@ -1025,6 +1049,89 @@ async fn a_close_aborts_an_in_flight_read_without_a_frame() {
     assert_eq!(frames[1], r#"["EOSE","s1"]"#);
 }
 
+/// A `CLOSE` must not be handled ahead of the `REQ` it closes.
+///
+/// The `REQ` and the `CLOSE` leave in one flush, followed by a frame that cannot be decoded:
+/// its `NOTICE` is written by the connection loop itself, so receiving it proves the loop has
+/// read the two frames ahead of it. No wall-clock wait stands in for an observation — the
+/// barrier orders the live event after both frames, and the live event's own `OK` (on the
+/// client's deadline) is the only other anchor. The stored read stays parked at its gate until
+/// the test releases it, which is what keeps the assertion about ordering: without the gate
+/// the in-memory read finishes in one poll and its frames arrive even when the ordering is
+/// right. `multi_thread, worker_threads = 1` is the flavour the defect was measured on (30/30);
+/// on `current_thread` a spawned handler cannot be polled before the spawning task yields, so
+/// the test would pass on a wrong tree.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn a_close_that_overtakes_its_req_streams_nothing() {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let fixture = Fixture::new(settings());
+    let gate = fixture.events.gate_reads();
+    fixture
+        .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "stored", NOW_SECS))
+        .await;
+
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+    let live = signed_event(&CLIENT_SECRET, 1, vec![], "live", NOW_SECS);
+    let accepted = format!(r#"["OK","{}",true,""]"#, live.id);
+
+    // One flush, so the loop reads the three frames in the order they are written here.
+    let stream = client.stream();
+    stream
+        .feed(Message::Text(
+            r#"["REQ","s1",{"kinds":[1]}]"#.to_owned().into(),
+        ))
+        .await
+        .expect("feed the REQ");
+    stream
+        .feed(Message::Text(r#"["CLOSE","s1"]"#.to_owned().into()))
+        .await
+        .expect("feed the CLOSE");
+    stream
+        .feed(Message::Text(r#"{"kind":"#.to_owned().into()))
+        .await
+        .expect("feed the undecodable frame");
+    stream.flush().await.expect("flush the three frames");
+
+    // The loop's own answer to the third frame: the `REQ` and the `CLOSE` have been read.
+    let barrier = client.expect_frame().await;
+    assert!(barrier.starts_with(r#"["NOTICE","invalid: "#), "{barrier}");
+
+    // The live event's `OK` is the second anchor: nothing for `s1` may reach the client on
+    // the way to it, and the client's own deadline bounds the wait.
+    client.send(&event_frame(&live)).await;
+
+    loop {
+        let Some(message) = client.next_message().await else {
+            panic!("the live event's OK never arrived");
+        };
+        let Message::Text(frame) = message else {
+            continue;
+        };
+
+        assert!(
+            !names_s1(frame.as_str()),
+            "a closed subscription streamed: {frame}"
+        );
+
+        if frame.as_str() == accepted {
+            break;
+        }
+    }
+
+    // Releasing the read decides nothing new: the read either never opened or was aborted.
+    gate.add_permits(4);
+
+    let frames = frames_within(&mut client, Duration::from_millis(300)).await;
+
+    assert!(
+        frames.iter().all(|frame| !names_s1(frame)),
+        "a closed subscription streamed: {frames:?}"
+    );
+}
+
 #[tokio::test]
 async fn a_new_filter_set_replaces_the_subscription() {
     let fixture = Fixture::new(settings());
@@ -1487,6 +1594,53 @@ async fn nip42_sessions_expire_at_the_ttl_boundary() {
     let mut forever = Nip42Session::with_challenge("challenge", 0);
     assert!(forever.authenticate(pubkey, event_id, 0));
     assert!(forever.is_authenticated(&pubkey, i64::MAX));
+}
+
+/// An `AUTH` must be handled before the restricted `REQ` that follows it in the stream.
+///
+/// The existing NIP-42 tests read the `OK` before sending their `REQ`, which serialises the
+/// pair; pipelined in one flush they exercise the loop's ordering. Two workers, the flavour
+/// this symptom was measured on (10/10 refused before the ordering fix).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pipelined_auth_before_a_restricted_req_is_ordered() {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut settings = settings();
+    settings.nip42 = Some(nip42_settings());
+    let server = start(Fixture::new(settings)).await;
+    let (mut client, challenge) = server.connect().await;
+    let auth = auth_event(&challenge, NOW_SECS);
+
+    // One flush, so both frames are buffered before the loop reads either of them.
+    let stream = client.stream();
+    stream
+        .feed(Message::Text(
+            format!(
+                r#"["AUTH",{}]"#,
+                serde_json::to_string(&auth).expect("auth json")
+            )
+            .into(),
+        ))
+        .await
+        .expect("feed the AUTH");
+    stream
+        .feed(Message::Text(
+            r#"["REQ","s1",{"kinds":[4]}]"#.to_owned().into(),
+        ))
+        .await
+        .expect("feed the REQ");
+    stream.flush().await.expect("flush both frames");
+
+    let first = client.expect_frame().await;
+    let second = client.expect_frame().await;
+
+    assert_eq!(first, format!(r#"["OK","{}",true,""]"#, auth.id));
+    assert_eq!(second, r#"["EOSE","s1"]"#);
+    assert!(
+        !first.starts_with(r#"["CLOSED","s1""#) && !second.starts_with(r#"["CLOSED","s1""#),
+        "the REQ was refused: {first} {second}"
+    );
 }
 
 // ---------------------------------------------------------------------------------------

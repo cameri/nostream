@@ -2,6 +2,9 @@
 //!
 //! A `CLOSE` removes the subscription, aborts its in-flight read, and emits **no frame**
 //! (`:9-11`; measured: `CLOSE s1` → no frame).
+//!
+//! It runs whole as the message's prefix, on the connection loop, so a `CLOSE` behind its own
+//! `REQ` in the stream always finds the subscription and the read it aborts.
 
 use nostream_core::messages::UnsubscribeMessage;
 

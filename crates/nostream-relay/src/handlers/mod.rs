@@ -5,6 +5,24 @@
 //! write-point sink, the read-through settings, the clock, the connection state and the
 //! repository seams.
 
+//! [`begin`] runs a message's **ordering-sensitive prefix** on the caller's task — the
+//! connection loop — before the loop reads the next frame, and returns the rest of the
+//! handler as a future to spawn. The rule for which handler takes a prefix: it is the
+//! per-connection state a later frame's handler reads and expects to be there. `subscribe`
+//! registers its subscription and its read, `unsubscribe` clears them, and `auth` records the
+//! session a restricted `REQ` is judged against, so those three are prefixes. For `auth` this is
+//! stronger than the capture, whose handler awaits two checks before recording the session, so a
+//! `REQ` pipelined behind an `AUTH` may be refused there and is served here; ADR 0005 records the
+//! deviation. `event` and `count` keep their whole body as one future: neither establishes
+//! per-connection state that a later frame looks up, and the one shared table they touch is
+//! relay-wide — the event limiter, keyed on the event's author and window
+//! (`RateLimits::event_backoff`). So two pipelined `EVENT`s from one author record their hits in
+//! whichever order their tasks are polled, and which of the two is refused is not fixed by
+//! arrival order. The capture races the same way:
+//! the socket fires each `'message'` listener without awaiting it (`web-socket-adapter.ts:79`,
+//! `:198`), and the handler is awaited inside that listener (`:229`), so two pipelined `EVENT`s
+//! run as two interleaved chains there too.
+
 pub mod auth;
 pub mod count;
 pub mod event;
@@ -162,7 +180,7 @@ impl ReadGuard {
     }
 }
 
-/// `getRestrictedReadKinds` (`src/utils/nip42.ts:15-23`): the configured kinds when
+/// `getRestrictedReadKinds` (`src/utils/nip42.ts:17-24`): the configured kinds when
 /// restricted reads are enabled, the NIP-42 defaults when no list is given, none when off.
 pub fn restricted_read_kinds(settings: Option<&Nip42Settings>) -> Vec<KindSelector> {
     let Some(settings) = settings else {
@@ -186,20 +204,51 @@ pub fn restricted_read_kinds(settings: Option<&Nip42Settings>) -> Vec<KindSelect
 /// One handler's future, boxed so a connection task can spawn it without naming its type.
 pub type HandlerFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 
-/// Runs one decoded client message as the capture's `messageHandlerFactory` switch does.
-pub fn dispatch(
+/// Runs one decoded client message's ordering-sensitive prefix on the caller's task, as the
+/// capture's `messageHandlerFactory` switch does, and returns the rest of its handler.
+///
+/// Nothing here can enforce when it is called: the guarantee holds because the connection loop
+/// is the only caller in `src`, and it calls this before reading the next frame. For a message
+/// with a prefix, every statement the prefix executes has run by the time this returns. `None`
+/// means the prefix handled the message and nothing is left to run — it writes whatever frames
+/// its handler writes, and `CLOSE` writes none; `Some(future)` is the rest of the handler, which
+/// is spawned into the socket's handler set and runs unordered with its neighbours.
+///
+/// The postcondition is therefore about the prefix, not the handler: the `Event` and `Count`
+/// arms box the whole handler, so none of their body is ordered.
+pub fn begin(
     message: nostream_core::messages::ClientMessage,
-    context: Arc<HandlerContext>,
-) -> HandlerFuture {
+    context: &Arc<HandlerContext>,
+) -> Option<HandlerFuture> {
     use nostream_core::messages::ClientMessage;
 
-    Box::pin(async move {
-        match message {
-            ClientMessage::Event(event) => event::handle(event, &context).await,
-            ClientMessage::Subscribe(message) => subscribe::handle(message, &context).await,
-            ClientMessage::Count(message) => count::handle(message, &context).await,
-            ClientMessage::Unsubscribe(message) => unsubscribe::handle(message, &context),
-            ClientMessage::Auth(message) => auth::handle(message, &context).await,
+    match message {
+        ClientMessage::Event(event) => {
+            let context = Arc::clone(context);
+
+            // Whole body by rule: `event` needs no prefix (see the module doc).
+            Some(Box::pin(
+                async move { event::handle(event, &context).await },
+            ))
         }
-    })
+        ClientMessage::Count(message) => {
+            let context = Arc::clone(context);
+
+            // Whole body by rule: `count` needs no prefix (see the module doc).
+            Some(Box::pin(
+                async move { count::handle(message, &context).await },
+            ))
+        }
+        ClientMessage::Subscribe(message) => subscribe::begin(message, context),
+        ClientMessage::Unsubscribe(message) => {
+            unsubscribe::handle(message, context);
+
+            None
+        }
+        ClientMessage::Auth(message) => {
+            auth::handle(message, context);
+
+            None
+        }
+    }
 }

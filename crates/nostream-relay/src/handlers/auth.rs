@@ -10,7 +10,11 @@ use crate::handlers::HandlerContext;
 /// The seven outcomes are `nip42::authenticate`'s failures in the capture's order, then the
 /// replay check, then `["OK",<id>,true,""]`. The challenge is never rotated by AUTH
 /// (`web-socket-adapter.ts:186-196`).
-pub async fn handle(message: AuthMessage, context: &HandlerContext) {
+///
+/// It contains no `.await`, so it runs whole as the message's prefix, on the connection loop:
+/// a restricted `REQ` behind this `AUTH` in the stream is judged against the session it
+/// records.
+pub fn handle(message: AuthMessage, context: &HandlerContext) {
     let event = message.event;
     let now = context.now_secs();
     let challenge = context.connection.challenge();

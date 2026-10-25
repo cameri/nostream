@@ -9,12 +9,15 @@
 //!
 //! The in-flight read is registered **before the mint's one `await`**, as the capture sets
 //! `activeSubscriptionId` as its first statement (`subscribe-message-handler.ts:53`), so a
-//! `CLOSE` handled after that registration aborts the stored read and the subscription
-//! streams nothing (a `CLOSE` handled ahead of its own `REQ` finds nothing to abort:
-//! cameri/nostream#958). The invite `EVENT` is emitted in that case: the capture's
-//! emit is unguarded (`subscribe-message-handler.ts:111`) and attaches its abort signal only
-//! to the stored read (`:230`), and parity wins where the two disagree absent a decision
-//! record (ADR 0005).
+//! `CLOSE` aborts the stored read and the subscription streams nothing. Everything through
+//! that registration is the handler's ordering-sensitive prefix and runs on the connection
+//! loop, so a `CLOSE` behind this `REQ` in the stream cannot be handled ahead of it — the
+//! defect cameri/nostream#958 reported, closed by the decision recorded in ADR 0005. The
+//! invite `EVENT` is emitted even then: the capture's emit is unguarded
+//! (`subscribe-message-handler.ts:111`) and attaches its abort signal only to the stored read
+//! (`:230`), and parity wins where the two disagree absent a decision record (ADR 0005).
+
+use std::sync::Arc;
 
 use futures_util::StreamExt;
 use nostream_core::expiration;
@@ -25,13 +28,33 @@ use nostream_core::{Filter, Kind};
 
 use crate::connection::InFlightRead;
 use crate::error::RelayError;
-use crate::handlers::HandlerContext;
+use crate::handlers::{HandlerContext, HandlerFuture};
 
 /// `EventKinds.NIP43_INVITE_REQUEST`.
 const INVITE_REQUEST_KIND: Kind = Kind(28_935);
 
 /// The handler's entry point (`handleMessage`, `:51-82`).
-pub async fn handle(message: SubscribeMessage, context: &HandlerContext) {
+///
+/// Its ordering-sensitive prefix — everything through `begin_read` — runs on the caller's
+/// task, so the connection loop has the subscription and its read registered before it reads
+/// the next frame. The continuation starts at the invite mint and is spawned into the
+/// socket's handler set, where it interleaves with the frames that follow.
+pub fn begin(message: SubscribeMessage, context: &Arc<HandlerContext>) -> Option<HandlerFuture> {
+    let (read, filters) = register(message, context)?;
+    let context = Arc::clone(context);
+
+    Some(Box::pin(async move {
+        maybe_issue_invite_code(read.subscription_id(), &filters, &context).await;
+
+        fetch_and_send(read, &filters, &context).await;
+    }))
+}
+
+/// The prefix (`handleMessage`, `:51-69`): what the capture runs before its first `await`.
+fn register(
+    message: SubscribeMessage,
+    context: &HandlerContext,
+) -> Option<(InFlightRead, Vec<Filter>)> {
     let subscription_id = message.subscription_id;
     let search_enabled = context
         .settings
@@ -43,7 +66,7 @@ pub async fn handle(message: SubscribeMessage, context: &HandlerContext) {
 
     if let Some(reason) = can_subscribe(&subscription_id, &filters, context) {
         context.send_notice(&format!("Subscription rejected: {reason}"));
-        return;
+        return None;
     }
 
     let restricted = context.restricted_read_kinds();
@@ -55,7 +78,7 @@ pub async fn handle(message: SubscribeMessage, context: &HandlerContext) {
             "auth-required: authentication is required to request these event kinds",
             None,
         );
-        return;
+        return None;
     }
 
     context
@@ -68,9 +91,7 @@ pub async fn handle(message: SubscribeMessage, context: &HandlerContext) {
     // Registered before the mint's only `await`, so the read a `CLOSE` aborts exists by then.
     let read = context.connection.begin_read(&subscription_id);
 
-    maybe_issue_invite_code(&subscription_id, &filters, context).await;
-
-    fetch_and_send(read, &filters, context).await;
+    Some((read, filters))
 }
 
 /// NIP-43: kind 28935 is never published by a client and never stored. A REQ for it asks the

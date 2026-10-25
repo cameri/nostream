@@ -1,20 +1,22 @@
-# ADR 0005: Connection concurrency — read ownership, a bounded frame queue, and liveness under a blocked write (job 010)
+# ADR 0005: Connection concurrency — read ownership, a bounded frame queue, liveness under a blocked write, and inbound dispatch order (jobs 010 and 012)
 
-- **Status:** accepted (job 010, Phase 2)
-- **Deciders:** the rewrite team, on the evidence in job 010's recon and spec
+- **Status:** accepted (job 010 and job 012, Phase 2)
+- **Deciders:** the rewrite team, on the evidence in job 010's recon and spec, and job 012's for §"Inbound dispatch order"
 - **Date:** 2026-10-24
 
 ## Context
 
-One task per socket owns the transport, and three of its concurrent relationships were
-wrong. A re-`REQ` replaces the read registered for a subscription id and aborts the old
+One task per socket owns the transport, and four of its concurrent relationships were wrong.
+A re-`REQ` replaces the read registered for a subscription id and aborts the old
 one, and the old read's own cleanup then removed the *replacement's* cancellation sender,
 so a re-subscribed client could go silent without an `EOSE`. A `CLOSE` that landed while
 the NIP-43 invite mint was in flight aborted nothing, because the read was registered only
 after that mint returned, so the handler streamed a stored read the client had already
 closed. And the outbound frame queue was an unbounded channel whose only consumer was the
 same select loop that performs the socket write, so a client that stopped reading let the
-queue grow without limit while the liveness probe could not run.
+queue grow without limit while the liveness probe could not run. And the handlers themselves
+were spawned whole into that task's `JoinSet`, so two frames read in order could run in either
+order (§"Inbound dispatch order").
 
 Each fix had more than one plausible shape. This ADR records the shape chosen, the shape
 rejected, and why — the code shows the first and cannot show the second.
@@ -134,17 +136,78 @@ on as soon as the write completes.
 ## The invite emit stays unguarded
 
 The read is registered before the invite mint's only `await`, and its cancellation is
-checked before the stored read opens, so a `CLOSE` that is *handled after that registration*
-ends the subscription with no stored event and no `EOSE`; one whose handler is scheduled
-ahead of its own `REQ` finds nothing to abort, which is pre-existing and tracked as
-cameri/nostream#958. The invite `EVENT` is nonetheless still
-emitted for that closed subscription. That is deliberate parity, not an oversight: the
+checked before the stored read opens, so a `CLOSE` ends the subscription with no stored
+event and no `EOSE`. Since §"Inbound dispatch order" below, that `CLOSE` cannot be handled
+ahead of its own `REQ` either: a handler's prefix runs on the connection loop before the next
+frame is read, which is what closed cameri/nostream#958. The invite `EVENT` is nonetheless
+still emitted for that closed subscription. That is deliberate parity, not an oversight: the
 capture emits the invite event unguarded
 (`src/handlers/subscribe-message-handler.ts:111`) and attaches its abort signal only to the
 stored read (`:230`), while it sets the abortable subscription id as the handler's first
 statement (`:53`). The TypeScript tree wins where the two trees disagree absent a decision
 record, so the fix must not reach for the emit; the exposure it leaves is one stray
 `EVENT`, which is the capture's own.
+
+## Inbound dispatch order — a prefix on the loop, not a serialized handler
+
+An inbound frame's handler was spawned whole into the per-socket `JoinSet`, so two frames
+read in order ran in whichever order the scheduler picked: a `CLOSE` could be handled ahead
+of its own `REQ` and find nothing to abort, and a restricted `REQ` could be refused before
+the `AUTH` that preceded it had been handled. Both were measured through a real socket —
+30/30 runs at one worker for the `REQ`/`CLOSE` pair, 10/10 at two for `AUTH`/`REQ` — and
+neither was visible to the suite, because `#[tokio::test]` defaults to the one runtime flavour
+in which a spawned handler cannot overtake the task that spawned it.
+
+The decision is the capture's own division of a message: its **ordering-sensitive prefix**
+runs before the next frame is read, and its continuations stay concurrent.
+`handlers::begin` runs each prefix on the connection loop and returns the continuation for
+the `JoinSet`. The prefixes are `subscribe` (everything through `begin_read`, so the
+subscription and its read exist before a following `CLOSE` is looked at), `unsubscribe` (the
+whole handler) and `auth` (the whole handler, which has no `await`).
+
+`AUTH` is the one prefix that is deliberately **stronger** than the capture rather than parity
+with it. The capture's `AuthMessageHandler.handleMessage` awaits `isEventIdValid`
+(`src/handlers/auth-message-handler.ts:30`) and `isEventSignatureValid` (`:35`) before it
+records the session in `addAuthenticatedPubkey` (`:65`), and the listener awaits the whole
+handler, so a `REQ` pipelined behind an `AUTH` can be judged against a session that has not
+been recorded yet and be refused as needing authentication. Rust verifies and records on the
+loop (`handlers::auth::handle` is synchronous), so the session exists by the time the next
+frame is read. The difference is one-sided — a pipelined `REQ` the capture may refuse, this
+relay serves — and it is what a client reads NIP-42 as promising, so it is taken rather than
+reproduced. The cost is real and named: the read path waits for two signature checks it could
+have overlapped, once per `AUTH` frame rather than per connection.
+
+`EVENT` and `COUNT` keep their whole body as one spawned future: neither writes
+per-connection state a later frame looks up, so nothing they do before their first `await` has
+to be ordered. The one shared table they touch is relay-wide: the event limiter, keyed on the
+event's author and window. Two pipelined `EVENT`s from one author therefore record their hits
+in whichever order their tasks are polled, so which of the two is refused is not fixed by
+arrival order — parity, because the socket fires
+each `'message'` listener without awaiting it (`src/adapters/web-socket-adapter.ts:79`, `:198`)
+and the handler is awaited inside that listener (`:229`), so its hits are unordered too.
+
+Two shapes were rejected. **Serializing whole handlers** — an ordered queue drained in the
+loop — would run a `REQ`'s invite mint to completion before a `CLOSE` already in the buffer
+is looked at, which the capture permits and `tests/handlers.rs` asserts, and it would put
+every database write in front of the socket's whole read path. **An ordering token per
+connection** — a per-id "closed at sequence N" consulted by `begin_read` — needs the second
+structure in `InFlightReads` this record argues against in §"Read ownership", must be bounded
+or evicted, needs a rule for what an "older" `REQ` means under a re-`REQ`, and orders
+`AUTH` before a restricted `REQ` only with a second, unrelated rule.
+
+What this does not decide: it is a guarantee about prefixes, not about handler execution.
+Continuations interleave as before, so a `CLOSE` during a gated invite mint still aborts the
+read and the invite `EVENT` is still emitted. The cost accepted is that the prefixes run on the
+loop task: `REQ`'s `normalise_subscription` and `can_subscribe`, bounded by
+`transport::max_payload_size` and, where configured, `max_filters` / `max_filter_values`, and
+`AUTH`'s whole `nip42::authenticate`. Measured for this branch on the 4-vCPU development box:
+`AUTH` 34.3 µs per message (a 32.2–32.5 µs signature verify plus a 1.28 µs id hash), `REQ`
+0.72–0.76 µs (0.11 µs normalisation plus 0.61–0.65 µs of subscription-table work, measured
+separately), `CLOSE` 0.053 µs. The capture does the same work on its socket's thread, but it
+pays in awaited chunks that let other sockets interleave, where a prefix does not yield at all;
+what the port buys is blast radius — one socket's read path rather than 1.57–1.85 ms/op of the
+capture's only thread. The cost inside that radius is real: the loop is occupied for those
+34 µs, and a client that pipelines `AUTH` is capped at roughly 29 000 per second.
 
 ## Not decided here — the port's `CLOSE` semantics
 
