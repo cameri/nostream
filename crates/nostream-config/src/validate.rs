@@ -73,8 +73,11 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
     // The two bounds the relay reads at run time are numerical settings before they are anything
     // else, so a zero written for one is refused here, by name, exactly as the adaptive-pow
     // numbers below are: absent still means the compiled default, and a stated zero is a literal
-    // the operator wrote (ADR 0008).
-    if let Some(budget) = key_path(candidate, &["network", "frameMemoryBudgetBytes"])
+    // the operator wrote (ADR 0008). Only a JSON number takes this rule: `to_number` reads a null,
+    // a boolean and a numeric string as numbers too, and a wrong type is the shape walk's one
+    // finding to make — two issues for one key would leave the operator to guess which to fix.
+    if let Some(budget @ Value::Number(_)) =
+        key_path(candidate, &["network", "frameMemoryBudgetBytes"])
         && !to_number_is_positive(Some(budget))
     {
         issues.push(Issue::new(
@@ -83,7 +86,8 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
         ));
     }
 
-    if let Some(cap) = key_path(candidate, &["limits", "connection", "maxConnectionsPerIp"])
+    if let Some(cap @ Value::Number(_)) =
+        key_path(candidate, &["limits", "connection", "maxConnectionsPerIp"])
         && !to_number_is_positive(Some(cap))
     {
         issues.push(Issue::new(

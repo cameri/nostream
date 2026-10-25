@@ -229,6 +229,55 @@ fn rejects_a_zero_max_connections_per_ip() {
     );
 }
 
+/// The shape walk's one finding for a wrong type, which is all such a document gets.
+fn shape_only(path: &str, got: &str) -> Vec<String> {
+    vec![format!("{path}: Expected number, got {got}")]
+}
+
+#[test]
+fn a_non_number_frame_memory_budget_is_only_a_shape_fault() {
+    // `to_number` reads a null, a boolean and a numeric string as numbers, so a rule written on
+    // the number alone reports twice for one key: two things for the operator to act on, and no
+    // way to tell which one is the mistake. The zero rule is the shape walk's neighbour, not its
+    // replacement (#996).
+    for (value, got) in [
+        (Value::String("0".to_owned()), "string"),
+        (Value::Null, "null"),
+        (Value::String("abc".to_owned()), "string"),
+        (Value::Bool(true), "boolean"),
+    ] {
+        let document = set_by_path(&defaults(), "network.frameMemoryBudgetBytes", value.clone())
+            .expect("frameMemoryBudgetBytes is writable");
+        assert_eq!(
+            issues(&document),
+            shape_only("network.frameMemoryBudgetBytes", got),
+            "for {value:?}"
+        );
+    }
+}
+
+#[test]
+fn a_non_number_max_connections_per_ip_is_only_a_shape_fault() {
+    for (value, got) in [
+        (Value::String("0".to_owned()), "string"),
+        (Value::Null, "null"),
+        (Value::String("abc".to_owned()), "string"),
+        (Value::Bool(false), "boolean"),
+    ] {
+        let document = set_by_path(
+            &defaults(),
+            "limits.connection.maxConnectionsPerIp",
+            value.clone(),
+        )
+        .expect("maxConnectionsPerIp is writable");
+        assert_eq!(
+            issues(&document),
+            shape_only("limits.connection.maxConnectionsPerIp", got),
+            "for {value:?}"
+        );
+    }
+}
+
 // --- adaptive pow -----------------------------------------------------------------------
 
 fn pow_with(overrides: &[(&str, Value)]) -> Value {
