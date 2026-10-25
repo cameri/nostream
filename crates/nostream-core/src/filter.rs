@@ -26,7 +26,9 @@ const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
 /// `2^64`, the first value a `u64` cannot hold. `u64::MAX as f64` **is** this number — the
 /// largest `f64` below it is `u64::MAX - 2047` — so the comparison must be `>=`, not `>`:
-/// with `>`, exactly `2^64` passed and `as u64` silently saturated it to `u64::MAX`.
+/// with `>`, exactly `2^64` passed and `as u64` silently saturated it to `u64::MAX`. It bounds
+/// both refusals ADR 0002 decides:
+/// `docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`.
 pub(crate) const U64_RANGE_END: f64 = 18_446_744_073_709_551_616.0;
 
 /// The refusal for a `kind` no `u64` can hold. The capture's `kindSchema` has no ceiling, so
@@ -492,7 +494,8 @@ fn validate_timestamp(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) 
     if valid { Some(number as i64) } else { None }
 }
 
-/// `z.number().int().min(0)` for `limit`.
+/// `z.number().int().min(0)` for `limit`, whose representability refusal is ADR 0002's
+/// (`docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`).
 fn validate_limit(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> Option<u64> {
     let Some(number) = value.as_f64() else {
         issue(path, invalid_type("number", value), issues);
