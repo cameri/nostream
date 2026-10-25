@@ -54,3 +54,71 @@ fn the_compiled_bounds_equal_the_shipped_defaults() {
         config.max_connections_per_ip
     );
 }
+
+/// A `Settings` whose two bounds are whatever the caller asks for — `None` for a key the operator
+/// did not write. Everything else is the shipped defaults, so a difference in the result can only
+/// come from the two leaves.
+fn settings_with_bounds(budget: Option<u64>, cap: Option<u64>) -> Settings {
+    let mut settings = defaults_settings();
+    settings.network.frame_memory_budget_bytes = budget;
+    settings
+        .limits
+        .as_mut()
+        .and_then(|limits| limits.connection.as_mut())
+        .expect("the shipped defaults carry limits.connection")
+        .max_connections_per_ip = cap;
+    settings
+}
+
+#[test]
+fn a_non_default_setting_is_the_value_the_relay_runs_with() {
+    // The behaviour #989 exists for: what the operator wrote is what the relay gets. Asserted by
+    // value on both bounds, because "differs from the default" passes when the constructor swaps
+    // one number for the other.
+    let config = RelayConfig::from_settings(&settings_with_bounds(Some(1_234), Some(7)));
+    let defaults = RelayConfig::default();
+
+    assert_eq!(config.frame_memory_budget_bytes, 1_234);
+    assert_eq!(config.max_connections_per_ip, 7);
+    assert_eq!(
+        config.frame_queue_bytes, defaults.frame_queue_bytes,
+        "the settings must not change any other field"
+    );
+    assert_eq!(config.write_timeout, defaults.write_timeout);
+    assert_eq!(config.liveness_interval, defaults.liveness_interval);
+    assert_eq!(config.drain_timeout, defaults.drain_timeout);
+}
+
+#[test]
+fn a_zero_setting_falls_back_to_the_compiled_default() {
+    // The answer ADR 0008's `What 0 means` gives, for each bound on its own so a constructor that
+    // read only one leaf cannot pass both cases.
+    let budget_only = RelayConfig::from_settings(&settings_with_bounds(Some(0), Some(7)));
+    assert_eq!(
+        budget_only.frame_memory_budget_bytes,
+        RelayConfig::default().frame_memory_budget_bytes
+    );
+    assert_eq!(budget_only.max_connections_per_ip, 7);
+
+    let cap_only = RelayConfig::from_settings(&settings_with_bounds(Some(1_234), Some(0)));
+    assert_eq!(cap_only.frame_memory_budget_bytes, 1_234);
+    assert_eq!(
+        cap_only.max_connections_per_ip,
+        RelayConfig::default().max_connections_per_ip
+    );
+}
+
+#[test]
+fn an_absent_setting_falls_back_to_the_compiled_default() {
+    let config = RelayConfig::from_settings(&settings_with_bounds(None, None));
+    let defaults = RelayConfig::default();
+
+    assert_eq!(
+        config.frame_memory_budget_bytes,
+        defaults.frame_memory_budget_bytes
+    );
+    assert_eq!(
+        config.max_connections_per_ip,
+        defaults.max_connections_per_ip
+    );
+}
