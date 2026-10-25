@@ -4,11 +4,11 @@
 fix(config): refuse a zero frame-memory budget or per-IP cap in the validator
 
 #989 gave `network.frameMemoryBudgetBytes` and `limits.connection.maxConnectionsPerIp` a
-meaning for `0` — *use the compiled default* — which contradicts what ADR 0008 already said
-about a zero: "A zero budget or a zero cap
-   is a literal the operator wrote" (`docs/rewrite/decisions/0008-frame-memory-budget.md:405`).
-It is also a fourth meaning for the same numeral in one repository, where
-`limits.client.subscription` reads a zero as *disabled* and
+meaning for `0` — *use the compiled default* — and ADR 0008 at this branch's base states it as
+policy: "- **Any validation of the two numbers.** A zero budget or a zero cap is still not
+refused — it is" (`docs/rewrite/decisions/0008-frame-memory-budget.md:369`). This change is the
+one that supersedes those lines. It is also a fourth meaning for the same numeral in one
+repository, where `limits.client.subscription` reads a zero as *disabled* and
 `limits.event.pow.targetEventsPerSecond` reads it as *invalid*.
 
 A stated `0` is now an issue, in the shape the validator already uses for the adaptive-pow
