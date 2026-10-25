@@ -90,24 +90,29 @@ impl Default for RelayConfig {
             // before the budget binds, which is below the 48 a single address gets through
             // the shipped attempt limits alone (ADR 0008).
             frame_memory_budget_bytes: 256 * 1024 * 1024,
-            // 64: four times the concurrent total one well-behaved client needs. The cap
-            // bounds sockets, the budget bounds bytes, so its own worst case (64 × 8 MiB) sits
-            // above the budget on purpose (ADR 0008).
+            // 64: four times the concurrent total one well-behaved client needs. The cap is per
+            // address while the budget is process-wide, so what the pair really bounds is
+            // `min(budget, addresses × cap × frame_queue_bytes)` — the cap alone cannot be
+            // read as the memory ceiling (ADR 0008).
             max_connections_per_ip: 64,
         }
     }
 }
 
-/// The largest value either bound accepts from a setting: 1 TiB of queued frames, and a million
-/// sockets from one address. Both are far above any deployment and far below `usize::MAX`, so a
-/// stray digit cannot reach [`FrameBudget::admit`]'s arithmetic. A value above it is treated like
-/// a zero: the default stands (ADR 0008).
+/// The ceiling a setting's bound may carry, in that bound's own unit: 1 TiB (1 099 511 627 776)
+/// of queued frames for `network.frameMemoryBudgetBytes`, and 1.09 million sockets for
+/// `limits.connection.maxConnectionsPerIp`. One number because one check reads both; it is far
+/// above any deployment each way, and far below `usize::MAX`, so a stray digit cannot reach
+/// [`FrameBudget::admit`]'s arithmetic. A value above it is treated like a zero: the default
+/// stands (ADR 0008).
 pub const MAX_SETTING_BOUND: usize = 1024 * 1024 * 1024 * 1024;
 
 /// Whether an operator's value for a bound is one the relay can run with: positive and at most
-/// [`MAX_SETTING_BOUND`].
-fn in_range(value: usize) -> bool {
-    value > 0 && value <= MAX_SETTING_BOUND
+/// [`MAX_SETTING_BOUND`]. Public because the daemon's settings gate reports the same verdict
+/// before a relay exists, and one predicate is what keeps `--check` and the relay from
+/// disagreeing (ADR 0008).
+pub fn in_range(value: u64) -> bool {
+    value > 0 && value <= MAX_SETTING_BOUND as u64
 }
 
 impl RelayConfig {
@@ -127,22 +132,43 @@ impl RelayConfig {
     /// exhausted, and an add that overflows.
     pub fn from_settings(settings: &Settings) -> Self {
         let mut config = Self::default();
-        if let Some(bytes) = settings.network.frame_memory_budget_bytes
-            && let Ok(bytes) = usize::try_from(bytes)
-            && in_range(bytes)
-        {
-            config.frame_memory_budget_bytes = bytes;
+
+        if let Some(bytes) = settings.network.frame_memory_budget_bytes {
+            if in_range(bytes) {
+                config.frame_memory_budget_bytes = bytes as usize;
+            } else {
+                // `warn!`, not `debug!`: the value passes `--check` and is then quietly
+                // replaced, so this line and the gate's report are the only places an operator
+                // learns that the number they wrote is not the number the relay runs with.
+                tracing::warn!(
+                    setting = "network.frameMemoryBudgetBytes",
+                    value = bytes,
+                    ceiling = MAX_SETTING_BOUND,
+                    default = config.frame_memory_budget_bytes,
+                    "setting out of range for a bound; using the default"
+                );
+            }
         }
+
         if let Some(cap) = settings
             .limits
             .as_ref()
             .and_then(|limits| limits.connection.as_ref())
             .and_then(|connection| connection.max_connections_per_ip)
-            && let Ok(cap) = usize::try_from(cap)
-            && in_range(cap)
         {
-            config.max_connections_per_ip = cap;
+            if in_range(cap) {
+                config.max_connections_per_ip = cap as usize;
+            } else {
+                tracing::warn!(
+                    setting = "limits.connection.maxConnectionsPerIp",
+                    value = cap,
+                    ceiling = MAX_SETTING_BOUND,
+                    default = config.max_connections_per_ip,
+                    "setting out of range for a bound; using the default"
+                );
+            }
         }
+
         config
     }
 }

@@ -17,12 +17,42 @@
 //! request, per message or per streamed record.
 
 use nostream_config::LoadOutcome;
+use nostream_relay::relay::{MAX_SETTING_BOUND, in_range};
 
 use crate::error::DaemonError;
+
+/// The two settings whose value the relay bounds at run time, with the default it falls back to.
+/// A value out of range is not a schema fault — the key is valid and the number is a number — so
+/// it is neither an issue nor fatal; but `--check` is where an operator looks before starting, so
+/// a value about to be replaced is reported here rather than only at start-up (ADR 0008).
+fn out_of_range_bounds(settings: &nostream_config::settings::Settings) -> Vec<(&'static str, u64)> {
+    let mut dropped = Vec::new();
+    if let Some(bytes) = settings.network.frame_memory_budget_bytes
+        && !in_range(bytes)
+    {
+        dropped.push(("network.frameMemoryBudgetBytes", bytes));
+    }
+    if let Some(cap) = settings
+        .limits
+        .as_ref()
+        .and_then(|limits| limits.connection.as_ref())
+        .and_then(|connection| connection.max_connections_per_ip)
+        && !in_range(cap)
+    {
+        dropped.push(("limits.connection.maxConnectionsPerIp", cap));
+    }
+    dropped
+}
 
 /// Applies the gate to one load outcome: report the findings, decide whether they are fatal.
 pub fn apply_settings_gate(outcome: &LoadOutcome, check: bool) -> Result<(), DaemonError> {
     if outcome.issues.is_empty() {
+        for (setting, value) in out_of_range_bounds(&outcome.settings) {
+            eprintln!(
+                "{setting}: {value} is above the {MAX_SETTING_BOUND} a bound accepts; \
+                 the relay runs with its default"
+            );
+        }
         if check {
             println!("settings valid: 0 issues");
         }

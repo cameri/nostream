@@ -150,3 +150,31 @@ fn check_accepts_an_operator_file_that_sets_both_bounds() {
     assert_eq!(code, Some(0), "exit code; stderr: {stderr}");
     assert_eq!(stdout.trim(), "settings valid: 0 issues");
 }
+
+#[test]
+fn check_reports_a_bound_it_would_replace_with_the_default() {
+    // The key and the number are both valid, so this is not an issue and not fatal — but a value
+    // discarded at start-up used to be silent, and `--check` is where an operator looks first.
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "network:\n  frameMemoryBudgetBytes: 1099511627777\nlimits:\n  connection:\n    maxConnectionsPerIp: 1099511627777\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(0), "exit code");
+    assert_eq!(stdout.trim(), "settings valid: 0 issues");
+    assert!(
+        stderr.contains("network.frameMemoryBudgetBytes: 1099511627777"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("limits.connection.maxConnectionsPerIp: 1099511627777"),
+        "stderr: {stderr}"
+    );
+}
