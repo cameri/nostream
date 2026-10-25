@@ -207,7 +207,7 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                     SafeNonNegativeInteger,
                 ),
                 validated(
-                    "Frame memory budget (bytes, 0 means the default)",
+                    "Frame memory budget (bytes)",
                     "network.frameMemoryBudgetBytes",
                     Number,
                     SafeNonNegativeInteger,
@@ -270,7 +270,7 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                     SafeNonNegativeInteger,
                 ),
                 validated(
-                    "Max connections per IP (sockets, 0 means the default)",
+                    "Max connections per IP (sockets)",
                     "limits.connection.maxConnectionsPerIp",
                     Number,
                     SafeNonNegativeInteger,
