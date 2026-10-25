@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::event::{Event, Kind};
+use crate::validation::CREATED_AT_LIMIT;
 
 /// A subscription id (`src/@types/subscription.ts` `SubscriptionId`).
 pub type SubscriptionId = String;
@@ -25,8 +26,16 @@ const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
 /// `2^64`, the first value a `u64` cannot hold. `u64::MAX as f64` **is** this number — the
 /// largest `f64` below it is `u64::MAX - 2047` — so the comparison must be `>=`, not `>`:
-/// with `>`, exactly `2^64` passed and `as u64` silently saturated it to `u64::MAX`.
-const U64_RANGE_END: f64 = 18_446_744_073_709_551_616.0;
+/// with `>`, exactly `2^64` passed and `as u64` silently saturated it to `u64::MAX`. It bounds
+/// both refusals ADR 0002 decides:
+/// `docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`.
+pub(crate) const U64_RANGE_END: f64 = 18_446_744_073_709_551_616.0;
+
+/// The refusal for a `kind` no `u64` can hold. The capture's `kindSchema` has no ceiling, so
+/// the message is a representability divergence rather than a zod rule, decided in
+/// `docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`. One statement of the
+/// wording, shared with the event decoder.
+pub(crate) const KIND_DOES_NOT_FIT: &str = "kind value does not fit in 64 bits";
 
 /// A Nostr REQ filter (`src/@types/subscription.ts` `SubscriptionFilter`).
 ///
@@ -445,7 +454,7 @@ fn validate_kinds(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
         match item.as_u64() {
             Some(kind) => kinds.push(Kind(kind)),
             None if number >= U64_RANGE_END => {
-                issue(&element, "kind value does not fit in 64 bits", issues);
+                issue(&element, KIND_DOES_NOT_FIT, issues);
             }
             None => kinds.push(Kind(number as u64)),
         }
@@ -454,7 +463,8 @@ fn validate_kinds(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
     Some(kinds)
 }
 
-/// `createdAtSchema`: integers `>= 0` below `10^10` (`src/schemas/base-schema.ts:25-30`).
+/// `createdAtSchema`: integers `>= 0` below `10^10` (`src/schemas/base-schema.ts:25-30`), the
+/// window `validation::CREATED_AT_LIMIT` holds for this check and the decoder's `created_at`.
 fn validate_timestamp(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> Option<i64> {
     let Some(number) = value.as_f64() else {
         issue(path, invalid_type("number", value), issues);
@@ -474,7 +484,7 @@ fn validate_timestamp(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) 
     }
 
     let safe_integer = number.fract() == 0.0 && number.abs() <= MAX_SAFE_INTEGER;
-    let in_range = safe_integer && (0.0..1e10).contains(&number);
+    let in_range = safe_integer && (0.0..CREATED_AT_LIMIT as f64).contains(&number);
 
     if !in_range {
         issue(path, "Invalid timestamp", issues);
@@ -484,7 +494,8 @@ fn validate_timestamp(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) 
     if valid { Some(number as i64) } else { None }
 }
 
-/// `z.number().int().min(0)` for `limit`.
+/// `z.number().int().min(0)` for `limit`, whose representability refusal is ADR 0002's
+/// (`docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`).
 fn validate_limit(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> Option<u64> {
     let Some(number) = value.as_f64() else {
         issue(path, invalid_type("number", value), issues);
