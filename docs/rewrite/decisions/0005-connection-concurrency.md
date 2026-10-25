@@ -118,7 +118,7 @@ constant wearing a config field's name — the state #989 was filed against. Bot
 (`network.frameMemoryBudgetBytes` and `limits.connection.maxConnectionsPerIp`), read into
 `RelayConfig` in one place, so the compiled default and the document cannot disagree:
 "pub fn from_settings(settings: &Settings) -> Self {"
-(`crates/nostream-relay/src/relay.rs:108`), from leaves the document carries:
+(`crates/nostream-relay/src/relay.rs:133`), from leaves the document carries:
 "pub frame_memory_budget_bytes: Option<u64>," (`crates/nostream-config/src/settings.rs:71`). The
 write timeout and the per-socket queue bound stay
 `RelayConfig`-only, as this section decided; ADR 0008 carries what a zero means for the two that

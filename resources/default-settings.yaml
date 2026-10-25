@@ -219,7 +219,7 @@ limits:
   connection:
     # The live sockets one source address may hold at once. Unit: sockets; the guided editor calls
     # it "Max connections per IP (0 means the default)". Defaults to 64; 0 — or anything above
-    # 1099511627776 — means the default (ADR 0008).
+    # 1099511627776 (about a million times any deployment) — means the default (ADR 0008).
     maxConnectionsPerIp: 64
     rateLimits:
       - period: 1000

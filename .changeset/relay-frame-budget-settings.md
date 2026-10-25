@@ -18,9 +18,12 @@ Both are now settings the operator writes:
 `RelayConfig::from_settings` reads both leaves, in the one place either is interpreted, and falls
 back to the compiled default when a leaf is absent, zero, or above the ceiling that keeps an
 operator's number out of the frame accounting:
-"    value > 0 && value <= MAX_SETTING_BOUND" (`crates/nostream-relay/src/relay.rs:109`). The daemon
-builds its config through it: "let mut relay_config = RelayConfig::from_settings(&settings);"
-(`crates/nostreamd/src/main.rs:110`), keeping its one environment read.
+"    value > 0 && value <= MAX_SETTING_BOUND as u64" (`crates/nostream-relay/src/relay.rs:115`). The
+daemon builds its config through it: "let mut relay_config = RelayConfig::from_settings(&settings);"
+(`crates/nostreamd/src/main.rs:110`), keeping its one environment read. A value it replaces is not
+silent: the constructor warns with the setting, the value, the ceiling and the default
+(`crates/nostream-relay/src/relay.rs:148`), and `nostreamd --check` reports the same before a relay
+exists (`crates/nostreamd/src/settings_gate.rs:28-45`).
 
 The defaults document's values equal `RelayConfig::default()`'s, and a test in
 `crates/nostream-relay/tests/config_defaults.rs` holds the two together. No validator rule is
