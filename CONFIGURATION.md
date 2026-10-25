@@ -161,7 +161,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
 | limits.client.subscription.maxFilterValues  | Maximum number of values allowed in each filter, counting its array criteria (`ids`, `authors`, `kinds`, `#<tag>`) together. Defaults to 2500. Disabled when set to zero. |
 | limits.client.subscription.maxSubscriptions | Maximum number of subscriptions per connected client. Defaults to 10. Disabled when set to zero. |
-| limits.connection.maxConnectionsPerIp      | Maximum number of live sockets one source address may hold at once; a socket above the count is closed with `1013` and the reason `connection cap: too many connections from this address`. Defaults to 64. A value of zero means the default, never unlimited. |
+| limits.connection.maxConnectionsPerIp      | Maximum number of live sockets one source address may hold at once. Defaults to 64. Zero means the default, never unlimited. |
 | limits.event.content[].kinds                | List of event kinds to apply limit. Use `[min, max]` for ranges. Optional. |
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.createdAt.maxNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
@@ -200,7 +200,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | mirroring.static[].limits.event             | Event limit overrides for this mirror. See configurations under limits.event. |
 | mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
 | mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
-| network.frameMemoryBudgetBytes              | The queued outbound payload bytes every socket of this relay shares, in bytes; a frame that would overrun it is refused and the socket closed with `1013` and the reason `frame memory budget exhausted`. Defaults to 268435456 (256 MiB). A value of zero means the default, never unlimited. |
+| network.frameMemoryBudgetBytes              | The queued outbound payload bytes every socket of this relay shares. Unit: bytes. Defaults to 268435456 (256 MiB). Zero means the default, never unlimited. |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
 | nip05.domainBlacklist                       | List of domains blocked from NIP-05 verification. Authors with NIP-05 at these domains will be rejected. |

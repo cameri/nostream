@@ -381,14 +381,44 @@ strictly worse than the default it replaced, which is the wrong direction for a 
 
 The constructor implements exactly that, and nothing else:
 
-- the budget is taken only when the leaf is present, convertible and positive —
-  "        if let Some(bytes) = settings.network.frame_memory_budget_bytes"
-  (`crates/nostream-relay/src/relay.rs:110`);
+- the budget is taken only when the leaf is present, convertible, positive and within the
+  ceiling — "    value > 0 && value <= MAX_SETTING_BOUND" (`crates/nostream-relay/src/relay.rs:109`),
+  applied to the leaf at "        if let Some(bytes) = settings.network.frame_memory_budget_bytes"
+  (`crates/nostream-relay/src/relay.rs:130`);
 - the cap likewise, through the two optional levels the typed schema forces —
   "            .and_then(|connection| connection.max_connections_per_ip)"
-  (`crates/nostream-relay/src/relay.rs:120`);
-- otherwise the field keeps `RelayConfig::default()`'s value, so a zero, an absent key and a
-  number too large for `usize` all behave as "the shipped default".
+  (`crates/nostream-relay/src/relay.rs:140`);
+- otherwise the field keeps `RelayConfig::default()`'s value, so a zero, an absent key — absent
+  leaf, absent `limits`, absent `limits.connection` — and a number above the ceiling all behave as
+  "the shipped default".
+
+**Why a ceiling, and not just `> 0`.** `usize::MAX` *is* a `usize`, so a bare positivity check
+passes it through, and the budget then stops bounding anything: the fit guard subtracts with
+`            if bytes > self.limit_bytes.saturating_sub(accounted) {`
+(`crates/nostream-relay/src/sink.rs:107`), which can never be true against a limit of
+`usize::MAX`, while the accounting that follows adds unchecked —
+"                accounted + bytes," (`crates/nostream-relay/src/sink.rs:113`) — so it panics in a
+debug build and wraps in a release one, and a wrapped counter refills the budget it was meant to
+exhaust. The ceiling is what keeps an operator's number out of that arithmetic:
+"pub const MAX_SETTING_BOUND: usize = 1024 * 1024 * 1024 * 1024;"
+(`crates/nostream-relay/src/relay.rs:105`). A TiB of queued frames and a million sockets from one
+address are far above any deployment; a too-large value falls back exactly as a zero does, and a
+value at the ceiling is accepted. **The unchecked add itself is not this job's** — it predates the
+bounds and is unreachable through settings now — so it is reported rather than changed here.
+
+**The guided catalogue does not bound these two, and no validator in the repository does.** The
+catalogue has two validators — "    SafeNonNegativeInteger," (`crates/nostream-config/src/guided.rs:25`)
+and `NonEmpty` — and `SafeNonNegativeInteger`'s ceiling is the capture's maximum safe integer:
+"        Ok(number) if number <= 9_007_199_254_740_991 => None,"
+(`crates/nostream-config/src/guided.rs:77`). That is the capture's only number validator
+(`src/utils/settings-guided-schema.ts` has one), so both entries carry it as its precedent
+`network.maxPayloadSize` does, and an editor accepts about 9 exabytes of budget and about 9
+quadrillion sockets — values the constructor then treats as the shipped default, at the operator's
+console. A bounded-integer validator is the fix and is **not** in this job: it is a new validator
+kind with its own messages, and it belongs with the guided catalogue's unimplemented consumers.
+Both entries say what the number accepts and what a zero means in their labels — "Frame memory
+budget (bytes, 0 means the default)" (`crates/nostream-config/src/guided.rs:210`) — so the editor
+at least does not mislabel the value.
 
 **The cost, stated:** an operator who wants no budget has no way to ask for one, and this record
 is the place that says so rather than a surprise at the console. That is the safe reading, not a

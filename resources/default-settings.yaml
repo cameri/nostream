@@ -150,8 +150,9 @@ nip56:
   hideActionableReports: false
 network:
   maxPayloadSize: 524288
-  # The queued outbound payload bytes every socket of this relay shares, in bytes.
-  # Defaults to 268435456 (256 MiB); a value of 0 means the default (ADR 0008).
+  # The queued outbound payload bytes every socket of this relay shares. Unit: bytes; the guided
+  # editor calls it "Frame memory budget (bytes, 0 means the default)". Defaults to 268435456
+  # (256 MiB); 0 — or anything above 1099511627776 (1 TiB) — means the default (ADR 0008).
   frameMemoryBudgetBytes: 268435456
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
   # remoteIpHeader: x-forwarded-for
@@ -216,8 +217,9 @@ limits:
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
   connection:
-    # The live sockets one source address may hold at once.
-    # Defaults to 64; a value of 0 means the default (ADR 0008).
+    # The live sockets one source address may hold at once. Unit: sockets; the guided editor calls
+    # it "Max connections per IP (0 means the default)". Defaults to 64; 0 — or anything above
+    # 1099511627776 — means the default (ADR 0008).
     maxConnectionsPerIp: 64
     rateLimits:
       - period: 1000

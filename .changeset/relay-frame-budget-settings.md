@@ -15,11 +15,11 @@ Both are now settings the operator writes:
 - `limits.connection.maxConnectionsPerIp` in `resources/default-settings.yaml` — the live
   sockets one source address may hold at once.
 
-`RelayConfig::from_settings` reads both leaves, in the one place either is interpreted, and
-falls back to the compiled default when a leaf is absent or zero:
-"if let Some(bytes) = settings.network.frame_memory_budget_bytes"
-(`crates/nostream-relay/src/relay.rs:110`). The daemon builds its config through it:
-"let mut relay_config = RelayConfig::from_settings(&settings);"
+`RelayConfig::from_settings` reads both leaves, in the one place either is interpreted, and falls
+back to the compiled default when a leaf is absent, zero, or above the ceiling that keeps an
+operator's number out of the frame accounting:
+"    value > 0 && value <= MAX_SETTING_BOUND" (`crates/nostream-relay/src/relay.rs:109`). The daemon
+builds its config through it: "let mut relay_config = RelayConfig::from_settings(&settings);"
 (`crates/nostreamd/src/main.rs:110`), keeping its one environment read.
 
 The defaults document's values equal `RelayConfig::default()`'s, and a test in
