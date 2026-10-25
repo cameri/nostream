@@ -1,6 +1,6 @@
 # ADR 0007: A `CLOSE` aborts the read it closes (job 015)
 
-- **Status:** accepted (job 015, Phase 2)
+- **Status:** proposed — accepted on merge by the maintainer
 - **Deciders:** the maintainer, on the evidence in job 015's recon and the argument below
 - **Date:** 2026-10-24
 
@@ -25,7 +25,7 @@ capture's read is overridden for this message alone. ADR 0005 settled the invite
 > Whether a plain `CLOSE` aborts a stored read is out of scope for this record; it is
 > tracked as cameri/nostream#957.
 >
-> — `0005:212-215`
+> — `0005:212-215`, before this record amended it
 
 The behaviour pre-exists the record (`unsubscribe.rs:3-7`); nothing here changes code.
 
