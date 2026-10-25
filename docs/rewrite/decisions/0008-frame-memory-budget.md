@@ -226,9 +226,11 @@ but not for ever: sqlx's `&Pool` executor draws a pooled connection for as long 
 alive, and `DB_MAX_POOL_SIZE` defaults to **3** (`crates/nostream-storage/src/postgres/mod.rs:362`),
 so three refused reads parked at once would hold every connection in the pool and stall every other
 read in the process. Whoever wires the store leaves the loop before parking — returning from
-`fetch_and_send`, or dropping the stream first — and in doing so takes the close's promptness back
-onto the refusal signal, because a handler that returns is a handler whose completion wakes the loop
-(static round 2 is what that looked like). The choice is recorded here so it is made on purpose.
+`fetch_and_send`, or dropping the stream first — and pays for it in test power: a handler that
+returns wakes the loop on completion, so the close arrives promptly even with the refusal signal
+deleted, and the wire test below then holds down nothing (static round 2 is exactly what that looked
+like). That trade — a pooled connection against the signal being load-bearing — is recorded here so
+it is made on purpose rather than by accident.
 
 ## The per-IP cap
 
