@@ -275,11 +275,12 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
         // a frame that fits later is admitted — which is why the stop lives here.
         //
         // The read then waits for the close that retires it instead of unwinding: it has
-        // nothing left to send, and the connection loop's `abort_all` and `close` are the one
-        // owner of the teardown, so this handler must not run `end_read` against the same
-        // state while the loop is closing the socket. Parking also keeps the close's
-        // promptness a property of the refusal signal rather than of this handler happening
-        // to finish.
+        // nothing left to send, and parking keeps the close's promptness a property of the
+        // refusal signal rather than of this handler happening to finish. The `end_read`
+        // below is the same call every other exit of this function makes, and it is safe
+        // beside the loop's own `close` because it removes the entry only while the generation
+        // it carries still matches (`connection.rs:290-297`): whichever of the two runs
+        // second finds no entry of its own and does nothing.
         if context.sink.refusal().is_some() {
             let _ = read.cancellation().changed().await;
             context.connection.end_read(read);
