@@ -16,9 +16,10 @@
 //! - A `kind` at or above `2^64` is refused rather than accepted: the capture's
 //!   `kindSchema` has no ceiling and `Kind` is a `u64`, so the value is unrepresentable here
 //!   (ADR 0002, `docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`).
-//! - A wrong-typed field answers that field's own message here and `Invalid input` there,
-//!   because a wrong-typed member aborts the capture's `z.union`
-//!   (`src/schemas/message-schema.ts:61`). Open, and tracked separately.
+//! - A wrong-typed field answers that field's own message here and `Invalid input` there: a
+//!   wrong-typed member of the capture's `z.union` (`src/schemas/message-schema.ts:61`) yields
+//!   one `invalid_union` issue, whose message is `Invalid input`. Open, and tracked
+//!   separately.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
