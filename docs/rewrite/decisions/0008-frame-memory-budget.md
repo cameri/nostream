@@ -34,7 +34,7 @@ reason and its own counter.
 ## The two numbers, as deviations from the capture, with the arithmetic
 
 The capture has neither bound. Its connection limits are `ConnectionLimits` — `rateLimits`,
-`ipWhitelist`, `ipBlacklist` and no count (`src/@types/settings.ts:163-167`) — and its outbound
+`ipWhitelist`, `ipBlacklist` and no count, in the capture's settings types — and its outbound
 queue is unbounded (`src/adapters/web-socket-adapter.ts:150-155`). Both numbers below are therefore
 deviations from the capture, and both are correct because the operator's comment names them, not
 because a captured transcript shows them. There is no parity oracle for either: `wire_parity` cannot
@@ -77,15 +77,36 @@ of knob:
 
 — `docs/rewrite/decisions/0005-connection-concurrency.md:104-110`
 
-**The honest cost:** an operator cannot change either number without a rebuild. "Configurable" here
-means the value is readable and settable through a `RelayConfig` literal rather than buried in a
-call site — a settings key, a YAML entry and a validator/guided-catalogue entry are **#989** and out
-of scope for this job. Say it plainly rather than letting "configurable" read as a knob an operator
-can edit in production; today they cannot.
+**The honest cost, as this job left it:** an operator could not change either number without a
+rebuild, because "configurable" meant readable and settable through a `RelayConfig` literal rather
+than buried in a call site. **#989 resolved that, and the resolution is recorded here rather than
+in a second document.** Both numbers are now operator settings, `network.frameMemoryBudgetBytes` and
+`limits.connection.maxConnectionsPerIp` in `resources/default-settings.yaml`, typed as optional
+leaves beside the keys that already live in those sections:
+"pub max_connections_per_ip: Option<u64>," (`crates/nostream-config/src/settings.rs:312`).
 
-`nostreamd` keeps `..Default::default()` in its `RelayConfig` literal
-(`crates/nostreamd/src/main.rs:120-123`), and all five `Relay::new` call sites already did, so no
-call site had to change.
+One function reads them and nothing else does — the daemon and the test share it, so they cannot
+drift: "pub fn from_settings(settings: &Settings) -> Self {"
+(`crates/nostream-relay/src/relay.rs:108`). The daemon calls it once and keeps its one environment
+read: "let mut relay_config = RelayConfig::from_settings(&settings);"
+(`crates/nostreamd/src/main.rs:110`). `RelayConfig::default()` remains the single source of the two
+numbers — the document mirrors it, and a test in `crates/nostream-relay/tests/config_defaults.rs`
+fails when they part — because a missing key must still mean a working relay, not a relay that
+needs the document at start-up. The compiled values are unchanged:
+"frame_memory_budget_bytes: 256 * 1024 * 1024," (`crates/nostream-relay/src/relay.rs:90`) and
+"max_connections_per_ip: 64," (`crates/nostream-relay/src/relay.rs:94`).
+
+Two consequences a reader should have in one place. The document gains its first key whose name
+states a byte unit, `frameMemoryBudgetBytes`; the convention it breaks is that the unit lives in
+prose (`network.maxPayloadSize` is "bytes accepted per WebSocket frame" in `CONFIGURATION.md` and
+carries no suffix). The suffix stays because #989 names the field `frame_memory_budget_bytes`, and
+a YAML key that disagreed with the Rust field would be a second name for one number; the comment
+above the key states the unit regardless. And no validator rule was added: the document is the
+schema the shape validator walks, so the two keys alone make an operator's file acceptable, and
+every existing message stays byte-identical (`crates/nostream-config/tests/ts_parity.rs` pins
+them).
+
+**A zero is not "disabled" for either number** — see *What `0` means*, below.
 
 ## The refusal — `1013`, immediate, no text frame
 
@@ -306,7 +327,9 @@ carries per-socket detail — `peer`, `live` — and would be log-amplifiable by
 trips it; the process-wide fact belongs to the counter instead. Which leaves the counters as the
 surface that does not depend on a log level, and they are readable only from a `Relay` handle today,
 i.e. from a test or an embedder. **Making either refusal visible to an operator who has not raised
-the filter is an open gap, and #989 or the `/metrics` work is where it closes.**
+the filter is an open gap. #989 did not close it either: the in-budget fix is a `debug!` → `warn!`
+flip that reverses the log-amplification reasoning above, and the real surface is two
+`NotImplemented` stubs, so #989 recorded the gap as a disposition and moved no log level.**
 
 That is the whole surface, because **a Prometheus endpoint is out of reach right now**: the OTLP
 exporter is a stub returning `NotImplemented` (`crates/nostreamd/src/telemetry.rs:47-52`) and the
@@ -317,8 +340,9 @@ this job deliberately adds no metrics subsystem.
 
 ## What this does not decide
 
-- **The operator-facing settings key** for either number: #989, with the YAML entry, the validator
-  and the guided catalogue it drags in.
+- **~~The operator-facing settings key~~ for either number** — settled by #989, and recorded in
+  *The config surface* above: two YAML keys, the `RelayConfig::from_settings` constructor, and no
+  validator rule.
 - **Any exporter, dashboard or alerting.** No registry, no `/metrics` controller, no admin or
   telemetry change.
 - **Anything per listener.** One `Relay` carries one budget, and a second listener served by the same
@@ -328,5 +352,46 @@ this job deliberately adds no metrics subsystem.
   are the only way to get two budgets, and production makes one.
 - **The per-socket bound's own empty-queue exception**, its default, and `SLOW_CONSUMER_REASON`.
 - **Inbound memory or handler state**, neither of which the budget counts.
-- **Any validation of the two numbers.** A zero budget or a zero cap is a literal the operator wrote;
-  policing it is a settings decision this job does not own.
+- **Any validation of the two numbers.** A zero budget or a zero cap is still not refused — it is
+  read as the default, which is the answer *What `0` means* gives and the only reading that cannot
+  turn a typo into a waiver of the bounds. There is no rule for it in the validator.
+
+## What `0` means
+
+#989 left this question here by name and this section answers it, after the code was final.
+
+**What `0` means: the default.** Neither key's zero disables its bound; the relay keeps the
+compiled `256 * 1024 * 1024` bytes and `64` sockets and says nothing at start-up. Neither `0` is
+refused. The repository had two precedents to choose from:
+
+- **"use the default"** — `transport::max_payload_size` reads an absent or zero
+  `network.maxPayloadSize` as the compiled value:
+  ".filter(|size| *size > 0)" (`crates/nostream-relay/src/transport.rs:55`).
+- **"disabled"** — `max_subscriptions` treats a zero as no limit:
+  "    if max_subscriptions > 0" (`crates/nostream-relay/src/handlers/subscribe.rs:376`), which is
+  what `CONFIGURATION.md` documents for the `limits.client.subscription` family.
+
+These two numbers follow the first. "Disabled" is defensible for a subscription count: zero
+subscriptions is a legal relay for a read-only deployment, and the operator loses only a feature
+they asked to lose. It is not defensible for a memory budget or a connection cap, because
+"disabled" there means an unbounded outbound queue — the 384 MiB-per-address state the bound at
+`crates/nostream-relay/src/relay.rs:90` exists to end — and an unlimited socket count per address,
+which is the exposure measured in *The two numbers* above. A `0` typed by mistake would then be
+strictly worse than the default it replaced, which is the wrong direction for a typo to fail in.
+
+The constructor implements exactly that, and nothing else:
+
+- the budget is taken only when the leaf is present, convertible and positive —
+  "        if let Some(bytes) = settings.network.frame_memory_budget_bytes"
+  (`crates/nostream-relay/src/relay.rs:110`);
+- the cap likewise, through the two optional levels the typed schema forces —
+  "            .and_then(|connection| connection.max_connections_per_ip)"
+  (`crates/nostream-relay/src/relay.rs:120`);
+- otherwise the field keeps `RelayConfig::default()`'s value, so a zero, an absent key and a
+  number too large for `usize` all behave as "the shipped default".
+
+**The cost, stated:** an operator who wants no budget has no way to ask for one, and this record
+is the place that says so rather than a surprise at the console. That is the safe reading, not a
+neutral one, and it is reversible later by a validator rule that rejects `0` with a message of its
+own — the change this job deliberately did not make, because it would move validation output that
+`crates/nostream-config/tests/ts_parity.rs` pins byte-for-byte.

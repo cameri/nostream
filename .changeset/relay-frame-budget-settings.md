@@ -1,0 +1,31 @@
+---
+---
+
+feat(config): expose the frame budget and the per-IP cap as settings keys
+
+The two bounds #959 added were `RelayConfig` fields only:
+"pub frame_memory_budget_bytes: usize," (`crates/nostream-relay/src/relay.rs:65`) and
+"pub max_connections_per_ip: usize," (`crates/nostream-relay/src/relay.rs:69`). A running
+daemon could not change either number without a rebuild, which is what #989 is about.
+
+Both are now settings the operator writes:
+
+- `network.frameMemoryBudgetBytes` in `resources/default-settings.yaml` — the byte count every
+  socket's queued outbound payload is counted against.
+- `limits.connection.maxConnectionsPerIp` in `resources/default-settings.yaml` — the live
+  sockets one source address may hold at once.
+
+`RelayConfig::from_settings` reads both leaves, in the one place either is interpreted, and
+falls back to the compiled default when a leaf is absent or zero:
+"if let Some(bytes) = settings.network.frame_memory_budget_bytes"
+(`crates/nostream-relay/src/relay.rs:110`). The daemon builds its config through it:
+"let mut relay_config = RelayConfig::from_settings(&settings);"
+(`crates/nostreamd/src/main.rs:110`), keeping its one environment read.
+
+The defaults document's values equal `RelayConfig::default()`'s, and a test in
+`crates/nostream-relay/tests/config_defaults.rs` holds the two together. No validator rule is
+added: the document is the validator's schema, so the two keys alone make an operator's file
+valid. See ADR 0008 for what a zero means and why.
+
+The TypeScript tree is untouched: no `src/` or `test/` file changes, so the published package
+has no user-visible change.
