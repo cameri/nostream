@@ -48,6 +48,21 @@ fn frame_document(event: &Event) -> String {
     serde_json::to_string(event).unwrap()
 }
 
+/// The `event()` payload with `created_at` respelled. `serde_json` writes `1700000000.0` for
+/// the value but never `1.7e9`, and the measured row is the spelling, so the number is
+/// substituted as raw JSON text.
+fn event_timestamp_spelled_as(spelling: &str) -> String {
+    frame_document(&event()).replace(
+        r#""created_at":1648339664"#,
+        &format!(r#""created_at":{spelling}"#),
+    )
+}
+
+/// The `event()` payload with `kind` respelled, for the same reason.
+fn event_kind_spelled_as(spelling: &str) -> String {
+    frame_document(&event()).replace(r#""kind":1"#, &format!(r#""kind":{spelling}"#))
+}
+
 #[test]
 fn notice_frame_is_a_two_element_array() {
     let frame = RelayMessage::Notice(NoticeMessage {
@@ -482,4 +497,131 @@ fn signature_and_pubkey_hex_rules_are_reported() {
 
     let _: Pubkey = PUBKEY.parse().unwrap();
     let _: Signature = SIG.parse().unwrap();
+}
+
+#[test]
+fn decode_accepts_an_integer_valued_float_timestamp() {
+    // JavaScript has no float/int distinction after `JSON.parse`, so the capture admits
+    // these spellings and holds the integer each denotes.
+    for (spelling, expected) in [
+        ("1700000000.0", 1_700_000_000),
+        ("1.7e9", 1_700_000_000),
+        ("0.0", 0),
+    ] {
+        let document = event_timestamp_spelled_as(spelling);
+        let frame = format!(r#"["EVENT",{document}]"#);
+        let ClientMessage::Event(event) = decode(&frame).unwrap() else {
+            panic!("{frame} did not decode as EVENT");
+        };
+
+        assert_eq!(event.created_at, expected, "{spelling}");
+    }
+
+    let document = event_timestamp_spelled_as("1700000000.0");
+    let frame = format!(r#"["AUTH",{document}]"#);
+    let ClientMessage::Auth(auth) = decode(&frame).unwrap() else {
+        panic!("{frame} did not decode as AUTH");
+    };
+
+    assert_eq!(auth.event.created_at, 1_700_000_000);
+}
+
+#[test]
+fn decode_refuses_a_fractional_timestamp_with_the_capture_message() {
+    for (spelling, detail) in [
+        ("1700000000.5", "Expected integer, received float"),
+        ("-1.5", "Expected integer, received float"),
+        ("-1", "Number must be greater than or equal to 0"),
+        ("1672295751103", "Invalid timestamp"),
+        ("10000000000", "Invalid timestamp"),
+    ] {
+        let document = event_timestamp_spelled_as(spelling);
+        let frame = format!(r#"["EVENT",{document}]"#);
+
+        assert_eq!(
+            decode(&frame).unwrap_err(),
+            WireError::Validation(detail.to_owned()),
+            "{spelling}"
+        );
+    }
+}
+
+#[test]
+fn decode_accepts_an_integer_valued_float_kind() {
+    let document = event_kind_spelled_as("1.0");
+    let frame = format!(r#"["EVENT",{document}]"#);
+    let ClientMessage::Event(event) = decode(&frame).unwrap() else {
+        panic!("{frame} did not decode as EVENT");
+    };
+
+    assert_eq!(event.kind, Kind(1));
+
+    for (spelling, detail) in [
+        ("1.5", "Expected integer, received float"),
+        ("-1", "Number must be greater than or equal to 0"),
+        // Representability, not a capture string: the capture accepts a kind at or above
+        // `2^64` and `Kind` is a `u64`, so the value is refused rather than saturated
+        // (ADR 0002).
+        ("18446744073709551616", "kind value does not fit in 64 bits"),
+    ] {
+        let document = event_kind_spelled_as(spelling);
+        let frame = format!(r#"["EVENT",{document}]"#);
+
+        assert_eq!(
+            decode(&frame).unwrap_err(),
+            WireError::Validation(detail.to_owned()),
+            "{spelling}"
+        );
+    }
+}
+
+#[test]
+fn decode_refuses_an_over_long_fixed_arity_frame() {
+    let document = frame_document(&event());
+
+    for frame in [
+        format!(r#"["EVENT",{document},"junk"]"#),
+        format!(r#"["EVENT",{document},"junk","junk"]"#),
+        format!(r#"["AUTH",{document},"junk"]"#),
+        format!(r#"["AUTH",{document},"junk","junk"]"#),
+        r#"["CLOSE","c1","junk"]"#.to_owned(),
+        r#"["CLOSE","c1","junk","junk"]"#.to_owned(),
+    ] {
+        assert_eq!(
+            decode(&frame).unwrap_err(),
+            WireError::Validation("Array must contain at most 2 element(s)".to_owned()),
+            "{frame}"
+        );
+    }
+
+    // The lower bound is already right on all three verbs, and an element check still
+    // answers before the length check, which is what the capture's aborted union does.
+    for (frame, detail) in [
+        (r#"["EVENT"]"#, "Invalid input"),
+        (r#"["CLOSE"]"#, "Invalid input"),
+        (r#"["AUTH"]"#, "Invalid input"),
+        (
+            r#"["CLOSE",""]"#,
+            "String must contain at least 1 character(s)",
+        ),
+        (r#"["CLOSE",42,"junk"]"#, "Invalid input"),
+        (
+            r#"["REQ","s1"]"#,
+            "REQ message must contain at least one filter",
+        ),
+        (
+            r#"["COUNT","c1"]"#,
+            "COUNT message must contain at least one filter",
+        ),
+        (
+            r#"["REQ","s1",{"kinds":[1]},"junk"]"#,
+            "Expected object, received string",
+        ),
+    ] {
+        assert_eq!(
+            decode(frame).unwrap_err(),
+            WireError::Validation(detail.to_owned()),
+            "{frame}"
+        );
+    }
 }
