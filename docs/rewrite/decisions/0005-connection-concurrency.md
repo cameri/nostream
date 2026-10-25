@@ -119,7 +119,7 @@ constant wearing a config field's name — the state #989 was filed against. Bot
 place — `from_settings` is the only answer the relay runs with, so the compiled default and the
 document cannot disagree:
 "pub fn from_settings(settings: &Settings) -> Self {"
-(`crates/nostream-relay/src/relay.rs:196`), from leaves the document carries:
+(`crates/nostream-relay/src/relay.rs:212`), from leaves the document carries:
 "pub frame_memory_budget_bytes: Option<u64>," (`crates/nostream-config/src/settings.rs:71`). The
 write timeout and the per-socket queue bound stay
 `RelayConfig`-only, as this section decided; ADR 0008 carries what a zero means for the two that

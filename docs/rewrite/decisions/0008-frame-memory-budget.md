@@ -12,7 +12,7 @@ The outbound frame queue was bounded per socket and nothing bounded their sum.
 (`crates/nostream-relay/src/sink.rs:260-334`), and `Relay::serve` accepted every connection with
 no count at all. The only per-address bookkeeping was the **attempt** limiter, which throttles how
 fast connections open, not how many are held (`crates/nostream-relay/src/limits.rs`, windows
-consumed at `crates/nostream-relay/src/relay.rs:463`).
+consumed at `crates/nostream-relay/src/relay.rs:479`).
 
 The operator's policy comment on #959 chose the numbers and the refusal and asked for two
 consequences a reviewer can hold the change to: both bounds refuse the same way, and the budget is
@@ -27,7 +27,7 @@ the pre-change worst case is **384 MiB**, and that figure is **arithmetic from n
 back on a fresh daemon: the first twelve received `HTTP/1.1 101 Switching Protocols` and then a text
 frame starting `["AUTH","…`, and the remaining eight were upgraded and dropped with **no websocket
 close frame at all** — the attempt limiter's silent return
-(`crates/nostream-relay/src/relay.rs:423-426`). A refusal indistinguishable from a network fault is
+(`crates/nostream-relay/src/relay.rs:439-442`). A refusal indistinguishable from a network fault is
 exactly what the new bounds are not allowed to be, so each of them closes with a code, a fixed
 reason and its own counter.
 
@@ -87,14 +87,20 @@ leaves beside the keys that already live in those sections:
 
 `from_settings` is the one place either setting is *interpreted* — the daemon and the test share
 it, so they cannot drift: "pub fn from_settings(settings: &Settings) -> Self {"
-(`crates/nostream-relay/src/relay.rs:196`). The daemon calls it once and keeps its one environment
+(`crates/nostream-relay/src/relay.rs:212`). The daemon calls it once and keeps its one environment
 read: "let mut relay_config = RelayConfig::from_settings(&settings);"
 (`crates/nostreamd/src/main.rs:110`). One other function walks the same two leaves — `refused_bounds`,
-so the gate and the CLI can report a value the constructor will not take — and it shares
-`bound_refusal` with the constructor, so the two cannot disagree about which values those are:
+so the gate and the CLI can report a value the constructor will not take:
 "pub fn refused_bounds(settings: &Settings) -> Vec<(&'static str, BoundRefusal)> {"
 (`crates/nostream-relay/src/relay.rs:133`). It never produces a config;
-`from_settings` is the only reader whose answer the relay runs with. `RelayConfig::default()` remains the single source of the two
+`from_settings` is the only reader whose answer the relay runs with.
+
+The two cannot disagree because `bound_refusal` **asks `in_range` first** rather than comparing the
+ceiling a second time — "    if in_range(value) {" (`crates/nostream-relay/src/relay.rs:157`) — so a
+value the constructor accepts is never reported as refused, and a typed edit that retyped the
+comparison would fail `the_refusal_verdict_and_the_range_agree_at_every_boundary`
+(`crates/nostream-relay/tests/config_defaults.rs`), which asserts the verdict at the ceiling, one
+over it, and at zero. `RelayConfig::default()` remains the single source of the two
 numbers — the document mirrors it, and a test in `crates/nostream-relay/tests/config_defaults.rs`
 fails when they part — because a missing key must still mean a working relay, not a relay that
 needs the document at start-up. The compiled values are unchanged:
@@ -117,7 +123,7 @@ them).
 
 Both bounds close the socket with `CloseCode::Again` (1013) written straight to the transport rather
 than through the sink, bounded by `config.write_timeout` exactly as the existing slow-consumer close
-is (`Relay::close_frame`, `crates/nostream-relay/src/relay.rs:666-677`). Three fixed reason strings
+is (`Relay::close_frame`, `crates/nostream-relay/src/relay.rs:682-693`). Three fixed reason strings
 now exist, each lowercase and resource-stating, per the convention
 `SLOW_CONSUMER_REASON` set (`crates/nostream-relay/src/transport.rs:37-47`):
 
@@ -168,8 +174,8 @@ the queue bound has already latched does not even pay that, because `send` retur
 
 The read does not finish there: it waits on the read's cancellation watch and then calls `end_read`.
 **On the refusal path that wait is never resolved.** Every exit of the connection loop is a `break`,
-`handlers.abort_all()` runs before `connection.close()` (`crates/nostream-relay/src/relay.rs:630-631`),
-and a task aborted by the `JoinSet` it was spawned into (`crates/nostream-relay/src/relay.rs:513`,
+`handlers.abort_all()` runs before `connection.close()` (`crates/nostream-relay/src/relay.rs:646-647`),
+and a task aborted by the `JoinSet` it was spawned into (`crates/nostream-relay/src/relay.rs:529`,
 `:602-603`) is dropped without being polled again: the parked read is dropped inside the watch, the
 `end_read` below it never runs, and the store stream goes with it. What retires a refused read in
 production is therefore the abort, not the watch — the watch is the path a client can still take, by
@@ -238,12 +244,12 @@ send holds a sink and therefore cannot be in flight or begin once that drop star
 the refund **exactly this socket's bytes, once**, whatever the connection loop did on the way out.
 
 **The rejected shape: a decrement at each of the loop's exits.** Today `release` has exactly one
-caller, the release after a frame is written (`crates/nostream-relay/src/relay.rs:543`), and every
-other exit leaves whatever was still queued counted: the drain entry (`:519-521`), the refusal
-close (`:527-529`), the closed frame queue (`:534`), a failed write (`:545-547`), the closed
-inbound stream (`:550`), an inbound `CLOSE` (`:576`), a failed read (`:578-580`), a failed pong
-write (`:568-570`), the closed hub (`:596`), the pong timeout (`:603`) and a failed ping write
-(`:611-615`) and the final cleanup (`:630-631`); the lagged hub (`:591-593`) warns and does not
+caller, the release after a frame is written (`crates/nostream-relay/src/relay.rs:559`), and every
+other exit leaves whatever was still queued counted: the drain entry (`:535-537`), the refusal
+close (`:543-545`), the closed frame queue (`:550`), a failed write (`:561-563`), the closed
+inbound stream (`:566`), an inbound `CLOSE` (`:592`), a failed read (`:594-596`), a failed pong
+write (`:585-587`), the closed hub (`:612`), the pong timeout (`:619`) and a failed ping write
+(`:631-633`) and the final cleanup (`:646-647`); the lagged hub (`:607-609`) warns and does not
 leave. Per socket that leak is
 invisible because the counter dies with the sink; a process-wide budget makes it a leak of up to
 8 MiB on every disconnect. Writing the decrement at each of those sites is the change that looks
@@ -286,10 +292,10 @@ checked in `handle_socket` **after** `is_connection_rate_limited` and **before**
 - before `run_connection`, because `Connection::accept`'s first act is to send the NIP-42 challenge
   as a text frame (`crates/nostream-relay/src/connection.rs:109-115`) — a client refused afterwards
   would already have received a text frame, which the policy forbids. The window is
-  `crates/nostream-relay/src/relay.rs:428-452`.
+  `crates/nostream-relay/src/relay.rs:444-468`.
 
 Acquisition returns a `ConnectionSlot` held for the rest of `handle_socket`
-(`crates/nostream-relay/src/relay.rs:435`), so the normal exit, the registration failure inside
+(`crates/nostream-relay/src/relay.rs:451`), so the normal exit, the registration failure inside
 `run_connection`, and any early return added later all release it through `Drop`
 (`crates/nostream-relay/src/connection_cap.rs:101-116`). A count that leaks makes the cap permanent
 for that address, which is a defect and not a memory leak. The map entry is removed when its count
@@ -315,14 +321,14 @@ prefixes, and it is not this job's.
 ## What an operator can see today
 
 Two accessors in the `hidden_content()` style, `Relay::frame_budget()` and
-`Relay::frame_budget()` (`crates/nostream-relay/src/relay.rs:311-313`) and
-`Relay::connection_cap()` (`crates/nostream-relay/src/relay.rs:316-318`), and the counters behind
+`Relay::frame_budget()` (`crates/nostream-relay/src/relay.rs:327-329`) and
+`Relay::connection_cap()` (`crates/nostream-relay/src/relay.rs:332-334`), and the counters behind
 them: `accounted()`, `limit()`, `refusals()` on the budget; `live(ip)`, `max_per_ip()`,
 `refusals()`, `tracked_addresses()` on the cap. Plus two structured log lines, one per refusal — a
 `warn!` carrying `budget_bytes` and `accounted_bytes` from the sink
 (`crates/nostream-relay/src/sink.rs:321-325`), and a `debug!` carrying `peer`,
 `max_connections_per_ip` and `live` from the connection task
-(`crates/nostream-relay/src/relay.rs:436-441`).
+(`crates/nostream-relay/src/relay.rs:452-457`).
 
 **Those two lines are not visible at the same level, and the daemon ships `info`.** The filter is
 `--log-level`, then `LOG_LEVEL`, then `RUST_LOG`, else `info`
@@ -427,35 +433,50 @@ three places an operator looks say it, in two different sentences, because **a z
 over-ceiling value are different facts**: zero is the documented "use the default", and the
 ceiling is a violation. `in_range` stays the one range question; `bound_refusal` says why —
 "pub fn bound_refusal(value: u64) -> Option<BoundRefusal> {"
-(`crates/nostream-relay/src/relay.rs:153`).
+(`crates/nostream-relay/src/relay.rs:156`).
 
 At start-up the constructor warns, once per leaf — "a bound above its ceiling runs with its
-default" (`crates/nostream-relay/src/relay.rs:175`) or, for a zero,
+default" (`crates/nostream-relay/src/relay.rs:191`) or, for a zero,
 "            tracing::warn!(setting, default, "a bound set to 0 runs with its default")"
-(`crates/nostream-relay/src/relay.rs:168`) — naming the setting, the value where there is one,
+(`crates/nostream-relay/src/relay.rs:184`) — naming the setting, the value where there is one,
 the ceiling and the default. `warn!` rather than `debug!` because the start-up line is a one-off
 statement about a configuration that is wrong, not a per-request event, so it is not
 log-amplifiable by a client.
 
-`--check` reports the same through the gate —
-"            eprintln!("{setting}: 0 means the default, and the relay runs with it");"
-(`crates/nostreamd/src/settings_gate.rs:31`) and
-"            eprintln!("{setting}: above the {ceiling} a bound accepts; the key's value is ignored")"
-(`crates/nostreamd/src/settings_gate.rs:34`) — and `nostream-cli config validate`, the other
-read-only door, appends the same two sentences to its verdict line
-(`crates/nostream-cli/src/config.rs:86-93`), from the same `refused_bounds` walk. The gate is not a
+**One place produces the words.** `refusal_message` sits beside the decision, so neither door can
+phrase it differently:
+"pub fn refusal_message(setting: &str, reason: BoundRefusal) -> String {"
+(`crates/nostream-relay/src/relay.rs:169`).
+
+`--check` prints it through the gate —
+"        eprintln!("{}", refusal_message(setting, reason));"
+(`crates/nostreamd/src/settings_gate.rs:31`) — and `nostream-cli config validate`, the other
+read-only door, appends the same strings to its verdict
+(`crates/nostream-cli/src/config.rs:84-98`), from the same `refused_bounds` walk. The gate is not a
 `tracing` line because `--check` returns before the subscriber exists: the gate writes outside the
 filter by design (`crates/nostreamd/src/settings_gate.rs:8-17`), so the report is reached at the
 shipped level.
 
-**A rejected document changes what these lines can say.** `--check` prints the range report
-whether or not the schema is clean, because an unrelated typo must not hide it; but when the
-document is rejected it has already been replaced whole —
-"            settings: defaults_settings," (`crates/nostream-config/src/load.rs:421`) — so the
-report then describes the operator's number, not the relay's behaviour that would have followed,
-which is why neither sentence claims the relay is running on this key's default. What is
-deliberately unchanged: `--check` still exits 0 on a value it will replace, since that is the
-policy for a valid key with an out-of-range value and refusing it means a validator rule.
+**On a rejected document neither door reports the bound, and that is not a gap to close here.**
+The loop in the gate is unconditional, but `load` substitutes the shipped defaults for a document
+with any issue — "            settings: defaults_settings,"
+(`crates/nostream-config/src/load.rs:421`) — so there is no operator number left to describe and the
+walk finds nothing. Measured on a document holding both an over-ceiling value and a bad rate-limiter
+strategy: both doors print the schema fault, `settings invalid: 1 issues`, exit 2, and no range
+line. The CLI notes the same in its own comment, and each door has a test pinning it
+(`check_reports_the_schema_fault_and_not_a_bound_it_cannot_read`,
+`config_validate_reports_the_schema_fault_and_not_a_bound_it_cannot_read`). What is deliberately
+unchanged: `--check` still exits 0 on a value it will replace, since that is the policy for a valid
+key with an out-of-range value and refusing it means a validator rule.
+
+**What putting this beside the arithmetic costs, measured.** `nostream-cli` depends on
+`nostream-relay` to reach `refused_bounds` and `refusal_message`, and that edge drags the websocket
+and storage graph into a settings-check binary: `cargo tree -p nostream-cli --edges normal` is 469
+lines with the edge and 177 without, and a cold `cargo build -p nostream-cli --all-features` took
+51.3 s without it and 63 s with it on this host (single runs, shared machine — direction, not a
+ratio). The alternative is to move the decision into `nostream-config`, which would invert the
+dependency the bound's arithmetic lives behind (`RelayConfig` is `nostream-relay`'s), so it is
+recorded rather than taken.
 
 **The pair's real ceiling is not the cap's.** The budget is process-wide and the cap is per
 address, so what the two bound together is `min(budget, addresses × cap × frame_queue_bytes)` — the
