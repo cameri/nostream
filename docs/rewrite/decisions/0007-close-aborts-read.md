@@ -107,8 +107,10 @@ see the difference. The pins are the socket test
 `crates/nostream-relay/tests/connection.rs:621-662`, which covers the table entry.
 
 **An abort is not a recall.** Frames already in `FrameSink` are written after the `CLOSE` is
-handled: an unbounded mpsc queue (`crates/nostream-relay/src/sink.rs:35-51`) drained by the same
-loop without consulting the subscription table (`crates/nostream-relay/src/relay.rs:336-351`).
+handled. The queue is byte-bounded, with a drop-and-close policy on an unbounded channel
+(`crates/nostream-relay/src/sink.rs:35-51`, `:77-125`): a frame that does not fit is dropped,
+every later send too, and the loop closes the client and drains the queue
+(`crates/nostream-relay/src/relay.rs:330-351`) without consulting the subscription table.
 Whether a race shows a client a stray frame is **unmeasured** and no test exercises it — the
 gated test holds the read before any record.
 
@@ -124,8 +126,7 @@ The socket test gates the store read before any record (`:1029`; the gate is
 covers the table side: `read_in_flight("s1")` is false and no subscription remains. The one
 census case for `test/unit/handlers/unsubscribe-message-handler.spec.ts`
 (`crates/nostream-relay/tests/fixtures/ts-case-map.json:550-556`) maps to
-`crates/nostream-relay/tests/connection.rs:65-78`, which pins the table removal — its title is
-the emit, so the row carries the emit and not the abort.
+`crates/nostream-relay/tests/connection.rs:65-78` — the table removal, its title the emit.
 
 The three recorded sessions containing a `CLOSE` are `measured-session`, `rate-limit-message`
 and `req-close-abort`: in `req-close-abort` the `REQ` expects `["EOSE","c1"]` and the `CLOSE`
