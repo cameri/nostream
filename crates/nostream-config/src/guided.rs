@@ -270,7 +270,7 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                     SafeNonNegativeInteger,
                 ),
                 validated(
-                    "Max connections per IP (0 means the default)",
+                    "Max connections per IP (sockets, 0 means the default)",
                     "limits.connection.maxConnectionsPerIp",
                     Number,
                     SafeNonNegativeInteger,
