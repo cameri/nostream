@@ -15,7 +15,8 @@ const GEOHASH_BASE32: &str = "0123456789bcdefghjkmnpqrstuvwxyz";
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
 /// The exclusive upper bound of `createdAtSchema` (`Math.log10(value) < 10`), shared with the
-/// decoder's `created_at` check so the window is written once.
+/// decoder's `created_at` check and the filter's `since`/`until` validation, so the window is
+/// written once.
 pub(crate) const CREATED_AT_LIMIT: i64 = 10_000_000_000;
 
 /// Kind 7, `EventKinds.REACTION`.

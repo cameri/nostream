@@ -9,17 +9,24 @@
 //! The positional decoder replaces the capture's `attemptValidation(messageSchema)` call
 //! (`src/adapters/web-socket-adapter.ts:199`). The zod messages it reports are reproduced
 //! from `src/schemas/{message,event,filter}-schema.ts`. This list is the decoder's own
-//! statement of where it deliberately differs from the capture:
+//! statement of where it differs from the capture, and which of those the tree decided.
+//!
+//! Decided, so reproducing it is the job:
 //!
 //! - The detail after `invalid: ` for unparseable JSON, where V8's `JSON.parse` diagnosis is
 //!   not reproducible (tolerance T1, ADR 0004 records it).
 //! - A `kind` at or above `2^64` is refused rather than accepted: the capture's
 //!   `kindSchema` has no ceiling and `Kind` is a `u64`, so the value is unrepresentable here
 //!   (ADR 0002, `docs/rewrite/decisions/0002-core-crypto-and-negentropy.md:125-136`).
-//! - A wrong-typed field answers that field's own message here and `Invalid input` there: a
-//!   wrong-typed member of the capture's `z.union` (`src/schemas/message-schema.ts:61`) yields
-//!   one `invalid_union` issue, whose message is `Invalid input`. Open, and tracked
-//!   separately.
+//!
+//! Open, so the capture is authoritative and this decoder is the defect (`CLAUDE.md`
+//! §"Porting discipline"): zod separates a branch that aborted from one that recorded an
+//! issue, and this decoder reports the issue either way. Where a member of the capture's
+//! `z.union` (`src/schemas/message-schema.ts:61`) aborts, the union reports one
+//! `invalid_union` issue whose message is `Invalid input`, and this decoder reports the
+//! field's own message instead; a frame that is both over-long and carries a dirty element
+//! likewise answers the element's message here and the tuple's `Array must contain at most N
+//! element(s)` there (`["CLOSE","","junk"]`). Tracked in #979.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
@@ -401,6 +408,10 @@ pub fn decode(text: &str) -> Result<ClientMessage, WireError> {
 /// zod reports the tuple's `too_big` issue, whose message is this one. The lower bound stays
 /// each arm's own `Invalid input` — what an aborted union answers for a missing element — so
 /// this never reports one.
+///
+/// Call it after the arm's element checks: an element's own message answers before the length
+/// one, which is what the capture's aborted union does, so `["CLOSE",42,"junk"]` stays
+/// `Invalid input` while `["CLOSE","c1","junk"]` is refused here.
 fn exactly(items: &[Value], expected: usize) -> Result<(), WireError> {
     if items.len() > expected {
         return Err(invalid(&format!(
@@ -464,6 +475,9 @@ fn decode_request(items: &[Value], verb: &str) -> Result<(String, Vec<Filter>), 
 /// spelling is the integer it denotes — JavaScript has no float/int distinction after
 /// `JSON.parse`, so the capture admits `1700000000.0` — and a value that is not a number
 /// aborts the union with `Invalid input`.
+///
+/// The value comes back as an `f64`; each caller bounds its own domain and casts only after
+/// that check, which is what keeps the cast exact.
 fn integer_value(number: &Number) -> Result<f64, WireError> {
     let Some(value) = number.as_f64() else {
         return Err(invalid("Invalid input"));

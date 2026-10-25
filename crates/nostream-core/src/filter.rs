@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::event::{Event, Kind};
+use crate::validation::CREATED_AT_LIMIT;
 
 /// A subscription id (`src/@types/subscription.ts` `SubscriptionId`).
 pub type SubscriptionId = String;
@@ -460,7 +461,8 @@ fn validate_kinds(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> O
     Some(kinds)
 }
 
-/// `createdAtSchema`: integers `>= 0` below `10^10` (`src/schemas/base-schema.ts:25-30`).
+/// `createdAtSchema`: integers `>= 0` below `10^10` (`src/schemas/base-schema.ts:25-30`), the
+/// window `validation::CREATED_AT_LIMIT` holds for this check and the decoder's `created_at`.
 fn validate_timestamp(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) -> Option<i64> {
     let Some(number) = value.as_f64() else {
         issue(path, invalid_type("number", value), issues);
@@ -480,7 +482,7 @@ fn validate_timestamp(path: &str, value: &Value, issues: &mut Vec<FilterIssue>) 
     }
 
     let safe_integer = number.fract() == 0.0 && number.abs() <= MAX_SAFE_INTEGER;
-    let in_range = safe_integer && (0.0..1e10).contains(&number);
+    let in_range = safe_integer && (0.0..CREATED_AT_LIMIT as f64).contains(&number);
 
     if !in_range {
         issue(path, "Invalid timestamp", issues);
