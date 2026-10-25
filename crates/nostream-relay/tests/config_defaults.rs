@@ -90,6 +90,66 @@ fn a_non_default_setting_is_the_value_the_relay_runs_with() {
 }
 
 #[test]
+fn a_setting_above_the_ceiling_falls_back_to_the_compiled_default() {
+    // `usize::MAX` is a `usize`, so a bare `> 0` check would pass it to `FrameBudget::admit`,
+    // whose guard cannot trip and whose accounting adds unchecked.
+    let config = RelayConfig::from_settings(&settings_with_bounds(Some(u64::MAX), Some(u64::MAX)));
+    let defaults = RelayConfig::default();
+
+    assert_eq!(
+        config.frame_memory_budget_bytes,
+        defaults.frame_memory_budget_bytes
+    );
+    assert_eq!(
+        config.max_connections_per_ip,
+        defaults.max_connections_per_ip
+    );
+
+    // The documented ceiling is accepted; one byte over it is not. Spelled out here rather than
+    // imported, so lowering the constant cannot quietly lower this test with it.
+    let ceiling = 1024 * 1024 * 1024 * 1024_usize;
+    let at_ceiling = RelayConfig::from_settings(&settings_with_bounds(
+        Some(ceiling as u64),
+        Some(ceiling as u64),
+    ));
+    assert_eq!(at_ceiling.frame_memory_budget_bytes, ceiling);
+    assert_eq!(at_ceiling.max_connections_per_ip, ceiling);
+
+    let over = RelayConfig::from_settings(&settings_with_bounds(
+        Some(ceiling as u64 + 1),
+        Some(ceiling as u64 + 1),
+    ));
+    assert_eq!(
+        over.frame_memory_budget_bytes,
+        defaults.frame_memory_budget_bytes
+    );
+    assert_eq!(over.max_connections_per_ip, defaults.max_connections_per_ip);
+}
+
+#[test]
+fn absent_sections_fall_back_to_the_compiled_default() {
+    // Not just absent leaves: an operator file may omit `limits` entirely, or `limits` without
+    // `connection`, and the two-level `and_then` chain must survive both.
+    let mut without_limits = defaults_settings();
+    without_limits.limits = None;
+
+    let mut without_connection = defaults_settings();
+    without_connection
+        .limits
+        .as_mut()
+        .expect("the shipped defaults carry limits")
+        .connection = None;
+
+    for settings in [without_limits, without_connection] {
+        let config = RelayConfig::from_settings(&settings);
+        assert_eq!(
+            config.max_connections_per_ip,
+            RelayConfig::default().max_connections_per_ip
+        );
+    }
+}
+
+#[test]
 fn a_zero_setting_falls_back_to_the_compiled_default() {
     // The answer ADR 0008's `What 0 means` gives, for each bound on its own so a constructor that
     // read only one leaf cannot pass both cases.

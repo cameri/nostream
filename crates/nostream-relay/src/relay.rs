@@ -37,12 +37,13 @@ use crate::sink::{FrameBudget, FrameSink, Refusal};
 use crate::transport;
 use crate::wot::WotGraph;
 
-/// The knobs a [`Relay`] is built with that are not settings: a constant the capture fixes in
+/// The knobs a [`Relay`] is built with. Most are not settings: a constant the capture fixes in
 /// code (`liveness`, the NIP-56 refresh) or a policy the port adds with no counterpart there
-/// (`frame_queue_bytes`, `write_timeout`, `frame_memory_budget_bytes`,
-/// `max_connections_per_ip`; ADR 0005, ADR 0008). Tests set the cadences they need and the
-/// bounds a case asks for; every value here runs at its shipped default otherwise. A value
-/// the capture's settings document carries belongs in [`Settings`], never here.
+/// (`frame_queue_bytes`, `write_timeout`; ADR 0005). The two bounds are settings an operator
+/// writes — `network.frameMemoryBudgetBytes` and `limits.connection.maxConnectionsPerIp` — and
+/// [`RelayConfig::from_settings`] is what reads them; [`RelayConfig::default`] is the value a
+/// relay runs with when the key is absent. Tests set the cadences they need and the bounds a
+/// case asks for. A new value the capture's settings document carries belongs in [`Settings`].
 #[derive(Debug, Clone)]
 pub struct RelayConfig {
     /// `WSS_CLIENT_HEALTH_PROBE_INTERVAL` (`web-socket-server-adapter.ts:18`).
@@ -72,7 +73,8 @@ pub struct RelayConfig {
 impl Default for RelayConfig {
     /// The capture's own constants, and no environment read: `WS_DRAIN_TIMEOUT_MS` is
     /// resolved by [`transport::drain_timeout`], which the composition root calls (ADR 0004);
-    /// the queue bound and the write timeout are the port's additions (ADR 0005).
+    /// the queue bound and the write timeout are the port's additions (ADR 0005). The two
+    /// bounds are the shipped default an operator's setting overrides, not the only value.
     fn default() -> Self {
         Self {
             liveness_interval: Duration::from_millis(120_000),
@@ -96,6 +98,18 @@ impl Default for RelayConfig {
     }
 }
 
+/// The largest value either bound accepts from a setting: 1 TiB of queued frames, and a million
+/// sockets from one address. Both are far above any deployment and far below `usize::MAX`, so a
+/// stray digit cannot reach [`FrameBudget::admit`]'s arithmetic. A value above it is treated like
+/// a zero: the default stands (ADR 0008).
+pub const MAX_SETTING_BOUND: usize = 1024 * 1024 * 1024 * 1024;
+
+/// Whether an operator's value for a bound is one the relay can run with: positive and at most
+/// [`MAX_SETTING_BOUND`].
+fn in_range(value: usize) -> bool {
+    value > 0 && value <= MAX_SETTING_BOUND
+}
+
 impl RelayConfig {
     /// The configuration a relay built from `settings` runs with: [`RelayConfig::default`] for
     /// every knob the capture fixes in code, with the two bounds an operator sets read from
@@ -105,11 +119,17 @@ impl RelayConfig {
     /// This is the one place either setting is interpreted, so `nostreamd` and the tests cannot
     /// disagree about it. `drain_timeout` stays the composition root's to resolve: it is an
     /// environment read (ADR 0004), not a setting.
+    ///
+    /// A leaf is taken when it is present, non-zero and at most [`MAX_SETTING_BOUND`]; anything
+    /// else keeps the default. The ceiling is not cosmetic: `usize::MAX` fits a `usize`, so it
+    /// would pass a bare `> 0` check and reach [`FrameBudget::admit`], whose fit guard uses
+    /// `saturating_sub` while its accounting adds unchecked — a budget that cannot be
+    /// exhausted, and an add that overflows.
     pub fn from_settings(settings: &Settings) -> Self {
         let mut config = Self::default();
         if let Some(bytes) = settings.network.frame_memory_budget_bytes
             && let Ok(bytes) = usize::try_from(bytes)
-            && bytes > 0
+            && in_range(bytes)
         {
             config.frame_memory_budget_bytes = bytes;
         }
@@ -119,7 +139,7 @@ impl RelayConfig {
             .and_then(|limits| limits.connection.as_ref())
             .and_then(|connection| connection.max_connections_per_ip)
             && let Ok(cap) = usize::try_from(cap)
-            && cap > 0
+            && in_range(cap)
         {
             config.max_connections_per_ip = cap;
         }
