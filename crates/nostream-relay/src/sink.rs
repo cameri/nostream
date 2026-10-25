@@ -33,10 +33,11 @@
 //! queue. The socket's share of the budget is refunded when its last sink handle drops —
 //! see [`Account`] — because the next socket's admission depends on it.
 
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 use nostream_core::messages::RelayMessage;
 
@@ -146,6 +147,14 @@ impl FrameBudget {
 struct Account {
     queued_bytes: AtomicUsize,
     refusal: AtomicU8,
+    /// Resolved when the first refusal is recorded. A refusal can arrive while this socket's
+    /// own queue is empty — the budget is shared, so another socket's frames are what left no
+    /// room — and the connection task may then have nothing else to wake it: signalling here
+    /// is what makes the close immediate rather than the next liveness tick.
+    ///
+    /// `notify_one` stores a permit when nothing is waiting, so a refusal recorded between the
+    /// loop's check and its `select!` is not lost, and two racing refusals leave one permit.
+    refusal_signal: Notify,
     budget: Option<Arc<FrameBudget>>,
 }
 
@@ -166,9 +175,16 @@ impl Account {
             Refusal::BudgetExhausted => BUDGET_EXHAUSTED,
         };
 
-        self.refusal
+        let first = self
+            .refusal
             .compare_exchange(NO_REFUSAL, cause, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
+            .is_ok();
+
+        if first {
+            self.refusal_signal.notify_one();
+        }
+
+        first
     }
 }
 
@@ -209,6 +225,7 @@ impl FrameSink {
                 account: Arc::new(Account {
                     queued_bytes: AtomicUsize::new(0),
                     refusal: AtomicU8::new(NO_REFUSAL),
+                    refusal_signal: Notify::new(),
                     budget,
                 }),
             },
@@ -225,6 +242,7 @@ impl FrameSink {
             account: Arc::new(Account {
                 queued_bytes: AtomicUsize::new(0),
                 refusal: AtomicU8::new(NO_REFUSAL),
+                refusal_signal: Notify::new(),
                 budget: None,
             }),
         }
@@ -233,13 +251,20 @@ impl FrameSink {
     /// Sends one frame. A closed socket drops the frame and is not an error.
     ///
     /// A queue-full refusal latches the socket shut, as the overflow always has: every later
-    /// send is dropped. A budget refusal does not — it is one frame that did not fit at that
-    /// instant, and the connection task closes the socket at its next iteration whatever the
-    /// sender does — so the accounting stays exact and a frame that fits later is admitted.
+    /// send is dropped, and the check comes before the frame is encoded — a stored read can
+    /// keep producing events until the connection task closes it, and each discarded event
+    /// would otherwise cost an allocation and a serialisation that nothing reads. A budget
+    /// refusal does not latch — it is one frame that did not fit at that instant, and the
+    /// connection task closes the socket at its next iteration whatever the sender does — so
+    /// the accounting stays exact and a frame that fits later is admitted.
     pub fn send(&self, message: &RelayMessage) {
         let Some(sender) = &self.sender else {
             return;
         };
+
+        if self.account.refusal() == Some(Refusal::QueueFull) {
+            return;
+        }
 
         let text = message.to_text();
         let length = text.len();
@@ -252,6 +277,7 @@ impl FrameSink {
             if self.account.refusal() == Some(Refusal::QueueFull) {
                 return;
             }
+
             // An empty queue admits its frame whatever the size, so an event larger than the
             // whole bound still reaches the client instead of closing it.
             if queued > 0 && queued + length > self.bound_bytes {
@@ -326,6 +352,14 @@ impl FrameSink {
     /// closes the client once this is set.
     pub fn refusal(&self) -> Option<Refusal> {
         self.account.refusal()
+    }
+
+    /// Resolves when a refusal is recorded on this socket, so the connection task can close it
+    /// without waiting for a read, a write or a liveness tick to wake it. A permit is stored
+    /// when nothing is waiting, so a refusal recorded before the loop reaches its `select!` is
+    /// delivered rather than lost.
+    pub fn refused(&self) -> impl Future<Output = ()> + '_ {
+        self.account.refusal_signal.notified()
     }
 
     /// The bytes admitted into the queue and not yet written.
@@ -552,6 +586,7 @@ mod tests {
         const SENDERS: usize = 8;
         let budget = Arc::new(FrameBudget::new(SENDERS * len));
         let max_seen = AtomicUsize::new(0);
+        let finished = AtomicUsize::new(0);
         let start = std::sync::Barrier::new(SENDERS + 1);
 
         let mut sinks = Vec::new();
@@ -564,31 +599,30 @@ mod tests {
             for sink in &sinks {
                 let frame = &frame;
                 let start = &start;
+                let finished = &finished;
 
                 scope.spawn(move || {
                     start.wait();
                     sink.send(frame);
+                    finished.fetch_add(1, Ordering::SeqCst);
                 });
             }
 
-            // A sampler reading the counter while the sends run: it stops when the budget is
-            // full, so it cannot outlive the sends it observes.
+            // A sampler reading the counter while the sends run. It stops when the last sender
+            // has finished rather than when the counter reaches the expected total, so the
+            // accounting bug this test exists to catch fails it with numbers instead of
+            // leaving it spinning inside the scope.
             {
                 let budget = Arc::clone(&budget);
                 let max_seen = &max_seen;
+                let finished = &finished;
                 let start = &start;
 
                 scope.spawn(move || {
                     start.wait();
 
-                    loop {
-                        let accounted = budget.accounted();
-                        max_seen.fetch_max(accounted, Ordering::SeqCst);
-
-                        if accounted == SENDERS * len {
-                            break;
-                        }
-
+                    while finished.load(Ordering::SeqCst) < SENDERS {
+                        max_seen.fetch_max(budget.accounted(), Ordering::SeqCst);
                         std::hint::spin_loop();
                     }
                 });

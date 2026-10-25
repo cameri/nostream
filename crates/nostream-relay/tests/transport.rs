@@ -956,3 +956,94 @@ async fn a_frame_that_exceeds_the_budget_closes_the_socket_with_1013_and_no_text
         assert_eq!(server.relay.frame_budget().accounted(), 0);
     }
 }
+
+#[tokio::test]
+async fn a_shared_budget_refusal_closes_the_socket_without_waiting_for_a_tick() {
+    // The budget is shared, so the frame that does not fit may be refused while *this*
+    // socket's own queue is empty: nothing here is ready to wake its loop — no queued frame,
+    // no inbound message, no handler finishing — and the close must not wait for the 600 s
+    // liveness tick. One socket holds the budget and never reads, so its write blocks with
+    // ~7 MiB of the 8 MiB still counted; the second socket's 2 MiB frame then does not fit
+    // what is left (7 + 2 > 8).
+    const BUDGET: usize = 8 * 1024 * 1024;
+    const HELD: usize = 7 * 1024 * 1024;
+
+    let fixture = Fixture::new(settings());
+    let held_content = "h".repeat(HELD);
+    let refused_content = "r".repeat(2 * 1024 * 1024);
+
+    fixture
+        .seed_event(signed_event(
+            &CLIENT_SECRET,
+            1,
+            vec![],
+            &held_content,
+            NOW_SECS,
+        ))
+        .await;
+    fixture
+        .seed_event(signed_event(
+            &CLIENT_SECRET,
+            2,
+            vec![],
+            &refused_content,
+            NOW_SECS + 1,
+        ))
+        .await;
+    // A second kind-2 event, so the read that loses its frame stays in flight afterwards
+    // instead of finishing and waking the loop through `handlers.join_next()`.
+    fixture
+        .seed_event(signed_event(
+            &CLIENT_SECRET,
+            2,
+            vec![],
+            "tail",
+            NOW_SECS + 2,
+        ))
+        .await;
+
+    let server = Server::start_with(fixture, relay_keys(), bounded_config(BUDGET, 64)).await;
+
+    // The socket that holds the budget: it never reads, so the loop's write of its one frame
+    // cannot finish and the bytes stay counted.
+    let (mut holder, _head) = RawClient::connect(server.address, None).await;
+    assert!(next_text(&mut holder).await.starts_with(r#"["AUTH","#));
+
+    holder.send_text(r#"["REQ","hold",{"kinds":[1]}]"#).await;
+
+    assert!(
+        eventually(|| server.relay.frame_budget().accounted() > BUDGET / 2).await,
+        "the socket that never reads holds its frame in the budget, found {}",
+        server.relay.frame_budget().accounted()
+    );
+    assert_eq!(server.relay.frame_budget().refusals(), 0);
+
+    // From here every stored read waits on the gate, so the second socket's first event is
+    // delivered from its read task — with this loop parked in `select!` — rather than inside
+    // the `REQ`'s ordered prefix.
+    let gate = server.fixture.events.gate_reads_per_item();
+
+    let (mut refused, _head) = RawClient::connect(server.address, None).await;
+    assert!(next_text(&mut refused).await.starts_with(r#"["AUTH","#));
+
+    refused.send_text(r#"["REQ","now",{"kinds":[2]}]"#).await;
+    // The loop answers a ping in place, so the pong proves the `REQ` was taken and its read is
+    // parked: nothing in this socket's loop is ready after that.
+    refused.send_frame(true, false, 0x9, b"budget").await;
+    tokio::time::timeout(Duration::from_secs(5), refused.frames_until(0xa))
+        .await
+        .expect("the loop answers the ping");
+
+    gate.add_permits(1);
+
+    let frames = tokio::time::timeout(Duration::from_secs(2), refused.frames_until(0x8))
+        .await
+        .expect("the refusal closes the socket without waiting for a liveness tick");
+
+    assert_no_text_frame(&frames);
+    assert_eq!(
+        close_of(frames.last().expect("a close frame")),
+        (1013, transport::FRAME_BUDGET_REASON.to_owned())
+    );
+    assert_eq!(server.relay.frame_budget().refusals(), 1);
+}
