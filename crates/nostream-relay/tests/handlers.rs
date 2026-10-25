@@ -1237,33 +1237,26 @@ async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
         sink,
     ));
 
-    let reading = tokio::spawn({
-        let context = Arc::clone(&context);
+    // The seam runs the handler's prefix on this task, so the subscription and its read are
+    // registered by the time `begin` returns; only the mint and the read are spawned.
+    let reading = tokio::spawn(
+        nostream_relay::handlers::subscribe::begin(
+            SubscribeMessage {
+                subscription_id: "invite".to_owned(),
+                filters: vec![Filter {
+                    kinds: Some(vec![nostream_core::Kind(28_935), nostream_core::Kind(1)]),
+                    ..Default::default()
+                }],
+            },
+            &context,
+        )
+        .expect("the subscription is accepted"),
+    );
 
-        async move {
-            nostream_relay::handlers::subscribe::handle(
-                SubscribeMessage {
-                    subscription_id: "invite".to_owned(),
-                    filters: vec![Filter {
-                        kinds: Some(vec![nostream_core::Kind(28_935), nostream_core::Kind(1)]),
-                        ..Default::default()
-                    }],
-                },
-                &context,
-            )
-            .await;
-        }
-    });
-
-    // The read is registered before the mint's only `await`, so it exists by the time the
-    // mint is held.
-    for _ in 0..100 {
-        if connection.read_in_flight("invite") {
-            break;
-        }
-
-        tokio::task::yield_now().await;
-    }
+    assert!(
+        connection.read_in_flight("invite"),
+        "the read is registered before the mint starts"
+    );
 
     // The mint's one `await` is held, which is the window a `CLOSE` lands in.
     for _ in 0..100 {
@@ -1279,7 +1272,6 @@ async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
         1,
         "the invite mint is in flight"
     );
-    assert!(connection.read_in_flight("invite"), "the read is in flight");
 
     nostream_relay::handlers::unsubscribe::handle(
         UnsubscribeMessage {
