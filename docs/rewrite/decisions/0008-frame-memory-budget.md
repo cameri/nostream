@@ -125,26 +125,37 @@ at its next iteration whatever the sender does. The accounting therefore stays e
 choice, and the unit test that proves room lets the next frame through
 (`sink.rs::the_budget_binds_across_sockets_and_is_shared`) can say so.
 
-**The refusal stops the reader too, and the reader then waits for the close.** The connection loop
+**The refusal stops the reader too, and the abort eventually retires it.** The connection loop
 closes the socket at its next iteration, but a stored read is a task of its own and keeps producing
 events until it notices: `fetch_and_send` encodes one frame per event
-(`crates/nostream-relay/src/handlers/subscribe.rs:325-330`), and each refused frame was encoded and
-discarded. The window is not short — the loop can be parked in a write and then in `close_frame`,
-each bounded only by the 30 s `write_timeout`, and `handlers.abort_all()` runs only after both — and
-it is the normal case, because the budget binds exactly when queues are full and loops are parked in
-writes. So the read checks `context.sink.refusal()` at the top of its loop, before pulling or
-encoding the next record (`crates/nostream-relay/src/handlers/subscribe.rs:284-288`), and sends
-nothing more: no further event, and no `EOSE`, which would be a frame this client is not reading.
+(`crates/nostream-relay/src/handlers/subscribe.rs:326-331`), so a frame that does not fit has been
+encoded by the time the sink refuses it. The window is not short — the loop can be parked in a write
+and then in `close_frame`, each bounded only by the 30 s `write_timeout`, and `handlers.abort_all()`
+runs only after both — and it is the normal case, because the budget binds exactly when queues are
+full and loops are parked in writes. So the read checks `context.sink.refusal()` at the top of its
+loop, before pulling or encoding the next record
+(`crates/nostream-relay/src/handlers/subscribe.rs:285-289`), and sends nothing more: no further
+event, and no `EOSE`, which would be a frame this client is not reading. That leaves the frame that
+was refused as the only one encoded and thrown away per read — one, not one per event — and a socket
+the queue bound has already latched does not even pay that, because `send` returns before `to_text()`
+(`crates/nostream-relay/src/sink.rs:260-266`).
 
-What the read does **not** do is finish there. It waits for the close that retires it — the
-cancellation watch, then `end_read` — and what delivers that close is `handlers.abort_all()` and
-`connection.close()` on the loop's way out (`crates/nostream-relay/src/relay.rs:494-495`). So a
-refused client at this head holds two things until its socket actually closes: the read task, and
-the store stream inside it (§7 records the second). The sink itself must not latch a budget refusal —
-a frame that fits later is admitted, which the shared-budget test relies on — so the stop belongs to
-the reader. `subscribe.rs::a_refused_sink_stops_the_read_instead_of_encoding_the_rest_of_it` holds it
-down: with a 64-byte budget every event frame is refused and the `EOSE` would fit, so the queue stays
-empty only if the read stopped at the first refusal, and the store's per-item gate shows it asked for
+The read does not finish there: it waits on the read's cancellation watch and then calls `end_read`.
+**On the refusal path that wait is never resolved.** Every exit of the connection loop is a `break`,
+`handlers.abort_all()` runs before `connection.close()` (`crates/nostream-relay/src/relay.rs:494-495`),
+and a task aborted by the `JoinSet` it was spawned into (`crates/nostream-relay/src/relay.rs:377`,
+`:602-603`) is dropped without being polled again: the parked read is dropped inside the watch, the
+`end_read` below it never runs, and the store stream goes with it. What retires a refused read in
+production is therefore the abort, not the watch — the watch is the path a client can still take, by
+a `CLOSE` or a re-`REQ`, and it is the one the unit test exercises, because the test closes the
+connection rather than aborting the task. So a refused client holds two things until the loop aborts
+it, a close frame later: the read task, and the store stream inside it (§7 records the second).
+
+The sink itself must not latch a budget refusal — a frame that fits later is admitted, which the
+shared-budget test relies on — so the stop belongs to the reader.
+`subscribe.rs::a_refused_sink_stops_the_read_instead_of_encoding_the_rest_of_it` holds it down with a
+64-byte budget, where every event frame is refused and the `EOSE` would fit: the queue stays empty
+only if the read stopped at the first refusal, and the store's per-item gate shows it asked for
 exactly one record (without the check it drains the stream and holds the 12-byte `EOSE`).
 
 **The refusal wakes the loop.** Recording the cause is not enough on its own. A budget refusal
@@ -220,17 +231,21 @@ written.
 
 **The parked read holds its store stream, and that is what must change when a store is wired.**
 Stopping at the refusal without leaving the loop keeps the stream from `find_by_filters` alive until
-the close retires the read; the version before this one dropped it at the refusal. Latent today — the
-daemon wires `unavailable::stores()` (`crates/nostreamd/src/main.rs:113`), whose reads are stubs —
-but not for ever: sqlx's `&Pool` executor draws a pooled connection for as long as a query stream is
-alive, and `DB_MAX_POOL_SIZE` defaults to **3** (`crates/nostream-storage/src/postgres/mod.rs:362`),
-so three refused reads parked at once would hold every connection in the pool and stall every other
-read in the process. Whoever wires the store leaves the loop before parking — returning from
-`fetch_and_send`, or dropping the stream first — and pays for it in test power: a handler that
-returns wakes the loop on completion, so the close arrives promptly even with the refusal signal
-deleted, and the wire test below then holds down nothing (static round 2 is exactly what that looked
-like). That trade — a pooled connection against the signal being load-bearing — is recorded here so
-it is made on purpose rather than by accident.
+the loop aborts the read, a close frame later; the version before this one dropped it at the refusal.
+Latent today — the daemon wires `unavailable::stores()` (`crates/nostreamd/src/main.rs:113`), whose
+reads are stubs — but not for ever: sqlx's `&Pool` executor draws a pooled connection for as long as a
+query stream is alive. The size that matters is the deployed one, not the code's: `DB_MAX_POOL_SIZE`
+defaults to **3** (`crates/nostream-storage/src/postgres/mod.rs:362`) but
+`deploy/docker-compose.prod.yml` sets **64** (`:16`) and configures no replica, so the connection a
+refused read holds is one the master cannot serve a *write* with either — and the pool goes at one
+connection per parked read: three read only because the code default is 3, sixty-four because the
+deployed one is 64. Whoever wires the store leaves the
+loop before parking — returning from `fetch_and_send`, or dropping the stream first — and pays for it
+in test power: a handler that returns wakes the loop on completion, so the close arrives promptly
+even with the refusal signal deleted, and the wire test in the wake-up paragraph above then holds
+down nothing (static round 2 is exactly what that looked like). That trade — a pooled connection
+against the signal being load-bearing — is recorded here so it is made on purpose rather than by
+accident.
 
 ## The per-IP cap
 

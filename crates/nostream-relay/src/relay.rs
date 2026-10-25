@@ -483,7 +483,7 @@ impl Relay {
                 _ = drained.changed() => drain_seen = *drained.borrow_and_update(),
                 // A refusal can arrive with nothing else to wake this loop: the budget is
                 // shared, so the frame that did not fit may have left this socket's own queue
-                // empty, the socket idle, and its read stopped and waiting for this close.
+                // empty, the socket idle, and its read stopped and parked with nothing to run it.
                 // The producer signals when it records the refusal, and the next iteration's
                 // check closes the client — immediate, not one liveness tick away (ADR 0008).
                 _ = sink.refused() => {}
