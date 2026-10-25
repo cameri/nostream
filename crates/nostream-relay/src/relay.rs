@@ -115,6 +115,69 @@ pub fn in_range(value: u64) -> bool {
     value > 0 && value <= MAX_SETTING_BOUND as u64
 }
 
+/// Why a value was not taken from a bound's setting: the question [`in_range`] answers, said out
+/// loud, so the report can distinguish the two cases the predicate collapses — a zero, which the
+/// document says means the default, from a value above the ceiling, which it does not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundRefusal {
+    /// The operator wrote `0`, which the shipped document documents as "the default".
+    Zero,
+    /// The value is above [`MAX_SETTING_BOUND`].
+    AboveCeiling(u64),
+}
+
+/// The two settings whose value is a bound, each with the value the operator wrote when that value
+/// is not taken. This is the only walk of the two leaves outside [`RelayConfig::from_settings`]:
+/// the daemon's gate and the CLI's `config validate` both report from it, so a key added to one
+/// surface cannot be reported by one door and ignored by another (ADR 0008).
+pub fn refused_bounds(settings: &Settings) -> Vec<(&'static str, BoundRefusal)> {
+    let mut refused = Vec::new();
+    if let Some(bytes) = settings.network.frame_memory_budget_bytes
+        && let Some(reason) = bound_refusal(bytes)
+    {
+        refused.push(("network.frameMemoryBudgetBytes", reason));
+    }
+    if let Some(cap) = settings
+        .limits
+        .as_ref()
+        .and_then(|limits| limits.connection.as_ref())
+        .and_then(|connection| connection.max_connections_per_ip)
+        && let Some(reason) = bound_refusal(cap)
+    {
+        refused.push(("limits.connection.maxConnectionsPerIp", reason));
+    }
+    refused
+}
+
+/// The two ways a bound's setting is not taken, or `None` when it is.
+pub fn bound_refusal(value: u64) -> Option<BoundRefusal> {
+    if value == 0 {
+        Some(BoundRefusal::Zero)
+    } else if value > MAX_SETTING_BOUND as u64 {
+        Some(BoundRefusal::AboveCeiling(MAX_SETTING_BOUND as u64))
+    } else {
+        None
+    }
+}
+
+/// Reports one bound's setting that the relay will not run with, saying which of the two reasons
+/// it was: a zero (documented as the default) and a value above the ceiling are different facts.
+fn warn_refused_bound(setting: &'static str, value: u64, default: usize) {
+    match bound_refusal(value) {
+        Some(BoundRefusal::Zero) => {
+            tracing::warn!(setting, default, "a bound set to 0 runs with its default")
+        }
+        Some(BoundRefusal::AboveCeiling(ceiling)) => tracing::warn!(
+            setting,
+            value,
+            ceiling,
+            default,
+            "a bound above its ceiling runs with its default"
+        ),
+        None => {}
+    }
+}
+
 impl RelayConfig {
     /// The configuration a relay built from `settings` runs with: [`RelayConfig::default`] for
     /// every knob the capture fixes in code, with the two bounds an operator sets read from
@@ -140,12 +203,10 @@ impl RelayConfig {
                 // `warn!`, not `debug!`: the value passes `--check` and is then quietly
                 // replaced, so this line and the gate's report are the only places an operator
                 // learns that the number they wrote is not the number the relay runs with.
-                tracing::warn!(
-                    setting = "network.frameMemoryBudgetBytes",
-                    value = bytes,
-                    ceiling = MAX_SETTING_BOUND,
-                    default = config.frame_memory_budget_bytes,
-                    "setting out of range for a bound; using the default"
+                warn_refused_bound(
+                    "network.frameMemoryBudgetBytes",
+                    bytes,
+                    config.frame_memory_budget_bytes,
                 );
             }
         }
@@ -159,12 +220,10 @@ impl RelayConfig {
             if in_range(cap) {
                 config.max_connections_per_ip = cap as usize;
             } else {
-                tracing::warn!(
-                    setting = "limits.connection.maxConnectionsPerIp",
-                    value = cap,
-                    ceiling = MAX_SETTING_BOUND,
-                    default = config.max_connections_per_ip,
-                    "setting out of range for a bound; using the default"
+                warn_refused_bound(
+                    "limits.connection.maxConnectionsPerIp",
+                    cap,
+                    config.max_connections_per_ip,
                 );
             }
         }

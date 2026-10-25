@@ -17,42 +17,35 @@
 //! request, per message or per streamed record.
 
 use nostream_config::LoadOutcome;
-use nostream_relay::relay::{MAX_SETTING_BOUND, in_range};
+use nostream_relay::relay::{BoundRefusal, refused_bounds};
 
 use crate::error::DaemonError;
 
-/// The two settings whose value the relay bounds at run time, with the default it falls back to.
-/// A value out of range is not a schema fault — the key is valid and the number is a number — so
-/// it is neither an issue nor fatal; but `--check` is where an operator looks before starting, so
-/// a value about to be replaced is reported here rather than only at start-up (ADR 0008).
-fn out_of_range_bounds(settings: &nostream_config::settings::Settings) -> Vec<(&'static str, u64)> {
-    let mut dropped = Vec::new();
-    if let Some(bytes) = settings.network.frame_memory_budget_bytes
-        && !in_range(bytes)
-    {
-        dropped.push(("network.frameMemoryBudgetBytes", bytes));
+/// Prints one refused bound. A zero is the documented "use the default", so its line says only
+/// that; an over-ceiling value names the ceiling. Neither says the relay falls back to *this key's*
+/// default on top of a schema fault, because it would not: a rejected document is replaced whole —
+/// "            settings: defaults_settings," (`crates/nostream-config/src/load.rs:421`).
+fn report_refused_bound(setting: &str, reason: BoundRefusal) {
+    match reason {
+        BoundRefusal::Zero => {
+            eprintln!("{setting}: 0 means the default, and the relay runs with it");
+        }
+        BoundRefusal::AboveCeiling(ceiling) => {
+            eprintln!("{setting}: above the {ceiling} a bound accepts; the key's value is ignored")
+        }
     }
-    if let Some(cap) = settings
-        .limits
-        .as_ref()
-        .and_then(|limits| limits.connection.as_ref())
-        .and_then(|connection| connection.max_connections_per_ip)
-        && !in_range(cap)
-    {
-        dropped.push(("limits.connection.maxConnectionsPerIp", cap));
-    }
-    dropped
 }
 
 /// Applies the gate to one load outcome: report the findings, decide whether they are fatal.
 pub fn apply_settings_gate(outcome: &LoadOutcome, check: bool) -> Result<(), DaemonError> {
+    // Independent of the schema verdict: an unrelated typo must not hide a range report, and a
+    // rejected document has already been replaced whole, so the report says what happened to the
+    // number rather than what the relay runs with.
+    for (setting, reason) in refused_bounds(&outcome.settings) {
+        report_refused_bound(setting, reason);
+    }
+
     if outcome.issues.is_empty() {
-        for (setting, value) in out_of_range_bounds(&outcome.settings) {
-            eprintln!(
-                "{setting}: {value} is above the {MAX_SETTING_BOUND} a bound accepts; \
-                 the relay runs with its default"
-            );
-        }
         if check {
             println!("settings valid: 0 issues");
         }

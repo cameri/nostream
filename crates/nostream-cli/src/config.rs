@@ -11,6 +11,7 @@ use nostream_config::{
     SettingsPaths, fit, load, load_defaults, load_document, load_user_settings, merge,
     validate_document,
 };
+use nostream_relay::relay::{BoundRefusal, refused_bounds};
 use serde_yaml::Value;
 
 use crate::error::CliError;
@@ -67,8 +68,32 @@ pub fn validate(
         }
     }
     if issues.is_empty() {
+        // The daemon bounds two settings at run time and ignores a value it cannot use. That is
+        // not a schema fault, so it is not an issue and not fatal — but this door and the
+        // daemon's `--check` are the two read-only ways an operator looks, so the verdict says
+        // it here too, in the same words the daemon's gate uses (ADR 0008).
+        let refused =
+            match serde_yaml::from_value::<nostream_config::settings::Settings>(merged.clone()) {
+                Ok(settings) => refused_bounds(&settings),
+                // The document already passed `fit`, so this cannot fail; with no typed value there
+                // is nothing to report rather than a reason to refuse a config the daemon can load.
+                Err(_) => Vec::new(),
+            };
+
+        let mut verdict = "settings valid: 0 issues".to_owned();
+        for (setting, reason) in refused {
+            match reason {
+                BoundRefusal::Zero => verdict.push_str(&format!(
+                    "; {setting}: 0 means the default, and the relay runs with it"
+                )),
+                BoundRefusal::AboveCeiling(ceiling) => verdict.push_str(&format!(
+                    "; {setting}: above the {ceiling} a bound accepts; \
+                     the key's value is ignored"
+                )),
+            }
+        }
         return Ok(CommandOutput {
-            lines: vec!["settings valid: 0 issues".to_owned()],
+            lines: vec![verdict],
             exit_code: 0,
         });
     }

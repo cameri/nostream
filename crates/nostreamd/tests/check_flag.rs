@@ -170,11 +170,41 @@ fn check_reports_a_bound_it_would_replace_with_the_default() {
     assert_eq!(code, Some(0), "exit code");
     assert_eq!(stdout.trim(), "settings valid: 0 issues");
     assert!(
-        stderr.contains("network.frameMemoryBudgetBytes: 1099511627777"),
+        stderr.contains("network.frameMemoryBudgetBytes: above the 1099511627776 a bound accepts"),
         "stderr: {stderr}"
     );
     assert!(
-        stderr.contains("limits.connection.maxConnectionsPerIp: 1099511627777"),
+        stderr.contains(
+            "limits.connection.maxConnectionsPerIp: above the 1099511627776 a bound accepts"
+        ),
         "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn check_reports_a_zero_bound_as_the_documented_default() {
+    // Zero is not "out of range": both the defaults document and `--check` document it as the
+    // default, so the line must not call it a violation.
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "network:\n  frameMemoryBudgetBytes: 0\nlimits:\n  connection:\n    maxConnectionsPerIp: 0\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(0), "exit code");
+    assert_eq!(stdout.trim(), "settings valid: 0 issues");
+    assert!(
+        stderr.contains("network.frameMemoryBudgetBytes: 0 means the default"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("above the"),
+        "a zero must not be reported as above the ceiling: {stderr}"
     );
 }
