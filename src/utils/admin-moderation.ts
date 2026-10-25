@@ -165,15 +165,15 @@ const persistAdminModerationLimitsUnlocked = (next: AdminModerationLimits): void
   saveSettings(nextUserSettings)
 }
 
-export const updateAdminModerationLimits = (updater: AdminModerationLimitsUpdater): void => {
-  withSettingsWriteLock(() => {
+export const updateAdminModerationLimits = async (updater: AdminModerationLimitsUpdater): Promise<void> => {
+  await withSettingsWriteLock(() => {
     const current = readAdminModerationLimits()
     persistAdminModerationLimitsUnlocked(updater(current))
   })
 }
 
-export const persistAdminModerationLimits = (next: AdminModerationLimits): void => {
-  updateAdminModerationLimits(() => next)
+export const persistAdminModerationLimits = async (next: AdminModerationLimits): Promise<void> => {
+  await updateAdminModerationLimits(() => next)
 }
 
 export class ValidationError extends Error {
@@ -211,6 +211,15 @@ export const mergeAdminModerationLimitsPatch = (
 })
 
 const withoutValue = <T>(list: T[], value: T): T[] => list.filter((entry) => entry !== value)
+
+const withoutNormalizedModerationIp = (list: string[], normalizedTarget: string): string[] =>
+  list.filter((stored) => {
+    try {
+      return normalizeModerationIpAddress(stored) !== normalizedTarget
+    } catch {
+      return stored.trim().toLowerCase() !== normalizedTarget.trim().toLowerCase()
+    }
+  })
 
 export const applyAdminModerationAction = (
   current: AdminModerationLimits,
@@ -300,7 +309,7 @@ export const applyAdminModerationAction = (
         ...current,
         rateLimitBypass: {
           ...current.rateLimitBypass,
-          ipAddresses: withoutValue(current.rateLimitBypass.ipAddresses, ip),
+          ipAddresses: withoutNormalizedModerationIp(current.rateLimitBypass.ipAddresses, ip),
         },
       }
     }

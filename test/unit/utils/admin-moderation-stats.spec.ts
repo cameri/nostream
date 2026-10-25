@@ -1,15 +1,12 @@
-import { createRequire } from 'node:module'
-
 import { expect } from 'chai'
 import Sinon from 'sinon'
 
-const require = createRequire(import.meta.url)
-const {
+import {
   parseModerationStatsLimit,
   parseModerationStatsWindowHours,
   queryTopClientIps,
   queryTopPublishingPubkeys,
-} = require('../../../src/utils/admin-moderation-stats') as typeof import('../../../src/utils/admin-moderation-stats')
+} from '../../../src/utils/admin-moderation-stats'
 
 describe('admin-moderation-stats parsing', () => {
   it('parses windowHours', () => {

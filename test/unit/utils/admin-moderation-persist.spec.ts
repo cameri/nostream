@@ -1,14 +1,15 @@
 import { createRequire } from 'node:module'
+import { join } from 'node:path'
 
 import chai from 'chai'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
-const require = createRequire(import.meta.url)
-const adminModeration = require('../../../src/utils/admin-moderation') as typeof import('../../../src/utils/admin-moderation')
-const adminModerationPersist = require('../../../src/utils/admin-moderation-persist') as typeof import('../../../src/utils/admin-moderation-persist')
-const recordAdminAudit = require('../../../src/utils/record-admin-audit') as typeof import('../../../src/utils/record-admin-audit')
-const settingsConfig = require('../../../src/utils/settings-config') as typeof import('../../../src/utils/settings-config')
+const loadFromRepo = createRequire(join(process.cwd(), 'package.json'))
+const adminModeration = loadFromRepo('./src/utils/admin-moderation') as typeof import('../../../src/utils/admin-moderation')
+const adminModerationPersist = loadFromRepo('./src/utils/admin-moderation-persist') as typeof import('../../../src/utils/admin-moderation-persist')
+const recordAdminAudit = loadFromRepo('./src/utils/record-admin-audit') as typeof import('../../../src/utils/record-admin-audit')
+const settingsConfig = loadFromRepo('./src/utils/settings-config') as typeof import('../../../src/utils/settings-config')
 
 chai.use(sinonChai)
 
@@ -25,7 +26,7 @@ describe('saveModerationLimitsFromRequest', () => {
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
-    sandbox.stub(adminModeration, 'updateAdminModerationLimits')
+    sandbox.stub(adminModeration, 'updateAdminModerationLimits').resolves()
     sandbox.stub(settingsConfig, 'appendSettingsAuditLog')
     sandbox.stub(recordAdminAudit, 'recordAdminAuditFromRequest').resolves()
   })

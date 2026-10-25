@@ -30,7 +30,7 @@ export const saveModerationLimitsFromRequest = async (
   auditDetail?: Record<string, unknown>,
 ): Promise<void> => {
   try {
-    updateAdminModerationLimits(update)
+    await updateAdminModerationLimits(update)
   } catch (error) {
     if (error instanceof ValidationError) {
       throw error
