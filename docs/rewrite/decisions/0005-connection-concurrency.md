@@ -163,12 +163,26 @@ runs before the next frame is read, and its continuations stay concurrent.
 `handlers::begin` runs each prefix on the connection loop and returns the continuation for
 the `JoinSet`. The prefixes are `subscribe` (everything through `begin_read`, so the
 subscription and its read exist before a following `CLOSE` is looked at), `unsubscribe` (the
-whole handler) and `auth` (the whole handler, which has no `await`). `EVENT` and `COUNT` keep
-their whole body as one spawned future: neither writes per-connection state a later frame looks
-up, so nothing they do before their first `await` has to be ordered. The one shared table they
-touch is relay-wide: the event limiter, keyed on the event's author and window. Two pipelined
-`EVENT`s from one author therefore record their hits in whichever order their tasks are polled,
-so which of the two is refused is not fixed by arrival order — parity, because the socket fires
+whole handler) and `auth` (the whole handler, which has no `await`).
+
+`AUTH` is the one prefix that is deliberately **stronger** than the capture rather than parity
+with it. The capture's `AuthMessageHandler.handleMessage` awaits `isEventIdValid`
+(`src/handlers/auth-message-handler.ts:30`) and `isEventSignatureValid` (`:35`) before it
+records the session in `addAuthenticatedPubkey` (`:65`), and the listener awaits the whole
+handler, so a `REQ` pipelined behind an `AUTH` can be judged against a session that has not
+been recorded yet and be refused as needing authentication. Rust verifies and records on the
+loop (`handlers::auth::handle` is synchronous), so the session exists by the time the next
+frame is read. The difference is one-sided — a pipelined `REQ` the capture may refuse, this
+relay serves — and it is what a client reads NIP-42 as promising, so it is taken rather than
+reproduced. The cost is real and named: the read path waits for two signature checks it could
+have overlapped, once per `AUTH` frame rather than per connection.
+
+`EVENT` and `COUNT` keep their whole body as one spawned future: neither writes
+per-connection state a later frame looks up, so nothing they do before their first `await` has
+to be ordered. The one shared table they touch is relay-wide: the event limiter, keyed on the
+event's author and window. Two pipelined `EVENT`s from one author therefore record their hits
+in whichever order their tasks are polled, so which of the two is refused is not fixed by
+arrival order — parity, because the socket fires
 each `'message'` listener without awaiting it (`src/adapters/web-socket-adapter.ts:79`, `:198`)
 and the handler is awaited inside that listener (`:229`), so its hits are unordered too.
 

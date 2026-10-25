@@ -10,12 +10,15 @@
 //! handler as a future to spawn. The rule for which handler takes a prefix: it is the
 //! per-connection state a later frame's handler reads and expects to be there. `subscribe`
 //! registers its subscription and its read, `unsubscribe` clears them, and `auth` records the
-//! session a restricted `REQ` is judged against, so those three are prefixes. `event` and
-//! `count` keep their whole body as one future: neither establishes per-connection state that a
-//! later frame looks up, and the one shared table they touch is relay-wide — the event limiter,
-//! keyed on the event's author and window (`RateLimits::event_backoff`). So two pipelined
-//! `EVENT`s from one author record their hits in whichever order their tasks are polled, and
-//! which of the two is refused is not fixed by arrival order. The capture races the same way:
+//! session a restricted `REQ` is judged against, so those three are prefixes. For `auth` this is
+//! stronger than the capture, whose handler awaits two checks before recording the session, so a
+//! `REQ` pipelined behind an `AUTH` may be refused there and is served here; ADR 0005 records the
+//! deviation. `event` and `count` keep their whole body as one future: neither establishes
+//! per-connection state that a later frame looks up, and the one shared table they touch is
+//! relay-wide — the event limiter, keyed on the event's author and window
+//! (`RateLimits::event_backoff`). So two pipelined `EVENT`s from one author record their hits in
+//! whichever order their tasks are polled, and which of the two is refused is not fixed by
+//! arrival order. The capture races the same way:
 //! the socket fires each `'message'` listener without awaiting it (`web-socket-adapter.ts:79`,
 //! `:198`), and the handler is awaited inside that listener (`:229`), so two pipelined `EVENT`s
 //! run as two interleaved chains there too.
