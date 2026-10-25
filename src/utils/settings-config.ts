@@ -14,6 +14,7 @@ import {
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
+  getSettingsWriteLockPath,
 } from './settings-paths'
 
 export {
@@ -23,7 +24,62 @@ export {
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
+  getSettingsWriteLockPath,
 } from './settings-paths'
+
+const SETTINGS_WRITE_LOCK_STALE_MS = 60_000
+const SETTINGS_WRITE_LOCK_RETRY_MS = 25
+const SETTINGS_WRITE_LOCK_MAX_WAIT_MS = 30_000
+
+const sleepSync = (milliseconds: number): void => {
+  const deadline = Date.now() + milliseconds
+  while (Date.now() < deadline) {
+    // Busy-wait so lock acquisition stays synchronous with saveSettings.
+  }
+}
+
+export const withSettingsWriteLock = <T>(operation: () => T): T => {
+  ensureSettingsExists()
+  const lockPath = getSettingsWriteLockPath()
+  const deadline = Date.now() + SETTINGS_WRITE_LOCK_MAX_WAIT_MS
+  let lockFd: number | undefined
+
+  while (Date.now() < deadline) {
+    try {
+      lockFd = fs.openSync(lockPath, 'wx')
+      fs.writeFileSync(lockFd, `${process.pid}\n${Date.now()}\n`)
+      break
+    } catch (error) {
+      const errno = error as NodeJS.ErrnoException
+      if (errno.code !== 'EEXIST') {
+        throw error
+      }
+
+      try {
+        const stat = fs.statSync(lockPath)
+        if (Date.now() - stat.mtimeMs > SETTINGS_WRITE_LOCK_STALE_MS) {
+          fs.rmSync(lockPath, { force: true })
+          continue
+        }
+      } catch {
+        // Another worker may have released the lock.
+      }
+
+      sleepSync(SETTINGS_WRITE_LOCK_RETRY_MS)
+    }
+  }
+
+  if (lockFd === undefined) {
+    throw new Error('Timed out waiting for settings write lock')
+  }
+
+  try {
+    return operation()
+  } finally {
+    fs.closeSync(lockFd)
+    fs.rmSync(lockPath, { force: true })
+  }
+}
 
 const logger = createLogger('settings-config')
 

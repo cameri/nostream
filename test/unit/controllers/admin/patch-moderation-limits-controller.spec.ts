@@ -74,6 +74,21 @@ describe('PatchAdminModerationLimitsController', () => {
   it('merges patches and persists limits', async () => {
     const controller = new PatchAdminModerationLimitsController(outboxRepository as any)
     const pubkey = 'c'.repeat(64)
+    const savedLimits = {
+      ...baseLimits,
+      pubkey: { blacklist: [pubkey], whitelist: [] },
+    }
+    sandbox.restore()
+    sandbox = Sinon.createSandbox()
+    outboxRepository = { enqueue: sandbox.stub().resolves() }
+    response = {
+      status: sandbox.stub().returnsThis(),
+      setHeader: sandbox.stub().returnsThis(),
+      send: sandbox.stub().returnsThis(),
+    }
+    sandbox.stub(adminModeration, 'readAdminModerationLimits').returns(savedLimits)
+    sandbox.stub(adminModerationPersist, 'saveModerationLimitsFromRequest').resolves()
+
     await controller.handleRequest(
       { body: { pubkey: { blacklist: [pubkey] } }, ip: '127.0.0.1' } as any,
       response as any,

@@ -22,10 +22,9 @@ export class PostAdminModerationActionsController implements IController {
     }
 
     const { action, pubkey, ip } = validation.value
-    let next
 
     try {
-      next = applyAdminModerationAction(readAdminModerationLimits(), action, { pubkey, ip })
+      applyAdminModerationAction(readAdminModerationLimits(), action, { pubkey, ip })
     } catch (error) {
       response
         .status(400)
@@ -35,11 +34,17 @@ export class PostAdminModerationActionsController implements IController {
     }
 
     try {
-      await saveModerationLimitsFromRequest(next, request, this.notificationOutboxRepository, 'moderation.action', {
-        action,
-        pubkey,
-        ip,
-      })
+      await saveModerationLimitsFromRequest(
+        (current) => applyAdminModerationAction(current, action, { pubkey, ip }),
+        request,
+        this.notificationOutboxRepository,
+        'moderation.action',
+        {
+          action,
+          pubkey,
+          ip,
+        },
+      )
     } catch (error) {
       if (error instanceof ValidationError) {
         response
@@ -57,6 +62,9 @@ export class PostAdminModerationActionsController implements IController {
       throw error
     }
 
-    response.status(200).setHeader('content-type', 'application/json').send({ ok: true, limits: next })
+    response
+      .status(200)
+      .setHeader('content-type', 'application/json')
+      .send({ ok: true, limits: readAdminModerationLimits() })
   }
 }

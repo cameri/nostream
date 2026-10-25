@@ -83,6 +83,23 @@ describe('PostAdminModerationActionsController', () => {
   it('applies ban-pubkey and persists limits', async () => {
     const controller = new PostAdminModerationActionsController(outboxRepository as any)
     const pubkey = 'c'.repeat(64)
+    const savedLimits = {
+      ...baseLimits,
+      pubkey: { blacklist: [pubkey], whitelist: [] },
+    }
+    sandbox.restore()
+    sandbox = Sinon.createSandbox()
+    outboxRepository = { enqueue: sandbox.stub().resolves() }
+    response = {
+      status: sandbox.stub().returnsThis(),
+      setHeader: sandbox.stub().returnsThis(),
+      send: sandbox.stub().returnsThis(),
+    }
+    sandbox.stub(adminModeration, 'readAdminModerationLimits')
+    ;(adminModeration.readAdminModerationLimits as Sinon.SinonStub).onFirstCall().returns(baseLimits)
+    ;(adminModeration.readAdminModerationLimits as Sinon.SinonStub).onSecondCall().returns(savedLimits)
+    sandbox.stub(adminModerationPersist, 'saveModerationLimitsFromRequest').resolves()
+
     await controller.handleRequest(
       { body: { action: 'ban-pubkey', pubkey }, ip: '127.0.0.1' } as any,
       response as any,

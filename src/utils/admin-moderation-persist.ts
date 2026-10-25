@@ -5,7 +5,11 @@ import { INotificationOutboxRepository } from '../@types/repositories'
 import { createLogger } from '../factories/logger-factory'
 import { appendSettingsAuditLog } from './settings-config'
 import { recordAdminAuditFromRequest } from './record-admin-audit'
-import { AdminModerationLimits, persistAdminModerationLimits, ValidationError } from './admin-moderation'
+import {
+  AdminModerationLimitsUpdater,
+  updateAdminModerationLimits,
+  ValidationError,
+} from './admin-moderation'
 
 const logger = createLogger('admin-moderation-persist')
 
@@ -19,14 +23,14 @@ const MODERATION_SETTINGS_PATHS = [
 ] as const
 
 export const saveModerationLimitsFromRequest = async (
-  limits: AdminModerationLimits,
+  update: AdminModerationLimitsUpdater,
   request: Request,
   notificationOutboxRepository: INotificationOutboxRepository,
   auditAction: 'moderation.limits.updated' | 'moderation.action',
   auditDetail?: Record<string, unknown>,
 ): Promise<void> => {
   try {
-    persistAdminModerationLimits(limits)
+    updateAdminModerationLimits(update)
   } catch (error) {
     if (error instanceof ValidationError) {
       throw error

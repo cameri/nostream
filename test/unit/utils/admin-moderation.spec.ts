@@ -105,6 +105,15 @@ describe('admin-moderation', () => {
     expect(withoutIp.rateLimitBypass.ipAddresses).to.not.include('203.0.113.10')
   })
 
+  it('normalizes IPv6 bypass addresses to match client socket spelling', () => {
+    const expanded = '2001:0db8:0:0:0:0:0:1'
+    const withIp = applyAdminModerationAction(baseLimits, 'whitelist-ip', { ip: expanded })
+    expect(withIp.rateLimitBypass.ipAddresses).to.include('2001:db8::1')
+
+    const withoutIp = applyAdminModerationAction(withIp, 'unwhitelist-ip', { ip: '2001:db8::1' })
+    expect(withoutIp.rateLimitBypass.ipAddresses).to.not.include('2001:db8::1')
+  })
+
   it('persists normalized moderation limits to settings', () => {
     const pubkey = 'c'.repeat(64)
     persistAdminModerationLimits({
