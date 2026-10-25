@@ -228,7 +228,7 @@ Acquisition returns a `ConnectionSlot` held for the rest of `handle_socket`
 `run_connection`, and any early return added later all release it through `Drop`
 (`crates/nostream-relay/src/connection_cap.rs:101-116`). A count that leaks makes the cap permanent
 for that address, which is a defect and not a memory leak. The map entry is removed when its count
-reaches zero (`:111-114`), so an address that once connected leaves nothing behind and the map is
+reaches zero (`:112-114`), so an address that once connected leaves nothing behind and the map is
 bounded by live addresses.
 
 The cap applies to **every address, including whitelisted ones**. An exempt address would bypass the
