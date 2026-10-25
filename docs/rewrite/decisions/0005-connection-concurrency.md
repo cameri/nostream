@@ -115,10 +115,11 @@ need — and these two port-only policies, which every test so far runs at their
 argument against porting a *captured* key, and these two are not captured knobs. They are the
 port's own denial-of-service bounds, and a bound an operator cannot set in production is a policy
 constant wearing a config field's name — the state #989 was filed against. Both are now settings
-(`network.frameMemoryBudgetBytes` and `limits.connection.maxConnectionsPerIp`), read into
-`RelayConfig` in one place, so the compiled default and the document cannot disagree:
+(`network.frameMemoryBudgetBytes` and `limits.connection.maxConnectionsPerIp`), interpreted in one
+place — `from_settings` is the only answer the relay runs with, so the compiled default and the
+document cannot disagree:
 "pub fn from_settings(settings: &Settings) -> Self {"
-(`crates/nostream-relay/src/relay.rs:133`), from leaves the document carries:
+(`crates/nostream-relay/src/relay.rs:196`), from leaves the document carries:
 "pub frame_memory_budget_bytes: Option<u64>," (`crates/nostream-config/src/settings.rs:71`). The
 write timeout and the per-socket queue bound stay
 `RelayConfig`-only, as this section decided; ADR 0008 carries what a zero means for the two that
