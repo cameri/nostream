@@ -17,32 +17,18 @@
 //! request, per message or per streamed record.
 
 use nostream_config::LoadOutcome;
-use nostream_relay::relay::{BoundRefusal, refused_bounds};
+use nostream_relay::relay::{refusal_message, refused_bounds};
 
 use crate::error::DaemonError;
 
-/// Prints one refused bound. A zero is the documented "use the default", so its line says only
-/// that; an over-ceiling value names the ceiling. Neither says the relay falls back to *this key's*
-/// default on top of a schema fault, because it would not: a rejected document is replaced whole —
-/// "            settings: defaults_settings," (`crates/nostream-config/src/load.rs:421`).
-fn report_refused_bound(setting: &str, reason: BoundRefusal) {
-    match reason {
-        BoundRefusal::Zero => {
-            eprintln!("{setting}: 0 means the default, and the relay runs with it");
-        }
-        BoundRefusal::AboveCeiling(ceiling) => {
-            eprintln!("{setting}: above the {ceiling} a bound accepts; the key's value is ignored")
-        }
-    }
-}
-
 /// Applies the gate to one load outcome: report the findings, decide whether they are fatal.
 pub fn apply_settings_gate(outcome: &LoadOutcome, check: bool) -> Result<(), DaemonError> {
-    // Independent of the schema verdict: an unrelated typo must not hide a range report, and a
-    // rejected document has already been replaced whole, so the report says what happened to the
-    // number rather than what the relay runs with.
+    // Unconditional here, but there is only something to say when the outcome carries a typed
+    // value: on a rejected document `load` has already substituted the shipped defaults —
+    // "            settings: defaults_settings," (`crates/nostream-config/src/load.rs:421`) — so
+    // the walk finds nothing and the schema fault is the whole report.
     for (setting, reason) in refused_bounds(&outcome.settings) {
-        report_refused_bound(setting, reason);
+        eprintln!("{}", refusal_message(setting, reason));
     }
 
     if outcome.issues.is_empty() {

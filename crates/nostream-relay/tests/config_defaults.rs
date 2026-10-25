@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 
 use nostream_config::settings::Settings;
-use nostream_relay::relay::RelayConfig;
+use nostream_relay::relay::{BoundRefusal, RelayConfig, bound_refusal, refusal_message};
 
 fn defaults_settings() -> Settings {
     let path =
@@ -180,5 +180,67 @@ fn an_absent_setting_falls_back_to_the_compiled_default() {
     assert_eq!(
         config.max_connections_per_ip,
         defaults.max_connections_per_ip
+    );
+}
+
+#[test]
+fn the_refusal_verdict_and_the_range_agree_at_every_boundary() {
+    // `bound_refusal` must derive its answer from `in_range`, not compare the ceiling again: with
+    // the comparison retyped as `>=`, the documented at-ceiling value would be reported as above
+    // the ceiling while the relay runs with it, and every other test here would still pass.
+    const CEILING: u64 = 1024 * 1024 * 1024 * 1024;
+
+    assert_eq!(bound_refusal(0), Some(BoundRefusal::Zero));
+    assert_eq!(bound_refusal(CEILING - 1), None);
+    assert_eq!(
+        bound_refusal(CEILING),
+        None,
+        "the ceiling itself is accepted"
+    );
+    assert_eq!(
+        bound_refusal(CEILING + 1),
+        Some(BoundRefusal::AboveCeiling(CEILING))
+    );
+
+    // And the same three cases through the constructor, by value.
+    let at_ceiling =
+        RelayConfig::from_settings(&settings_with_bounds(Some(CEILING), Some(CEILING)));
+    assert_eq!(at_ceiling.frame_memory_budget_bytes, CEILING as usize);
+    assert_eq!(at_ceiling.max_connections_per_ip, CEILING as usize);
+
+    let over =
+        RelayConfig::from_settings(&settings_with_bounds(Some(CEILING + 1), Some(CEILING + 1)));
+    assert_eq!(
+        over.frame_memory_budget_bytes,
+        RelayConfig::default().frame_memory_budget_bytes
+    );
+    assert_eq!(
+        over.max_connections_per_ip,
+        RelayConfig::default().max_connections_per_ip
+    );
+
+    let zero = RelayConfig::from_settings(&settings_with_bounds(Some(0), Some(0)));
+    assert_eq!(
+        zero.frame_memory_budget_bytes,
+        RelayConfig::default().frame_memory_budget_bytes
+    );
+    assert_eq!(
+        zero.max_connections_per_ip,
+        RelayConfig::default().max_connections_per_ip
+    );
+}
+
+#[test]
+fn a_refusal_is_reported_in_one_place_for_both_doors() {
+    assert_eq!(
+        refusal_message("network.frameMemoryBudgetBytes", BoundRefusal::Zero),
+        "network.frameMemoryBudgetBytes: 0 means the default, and the relay runs with it"
+    );
+    assert_eq!(
+        refusal_message(
+            "limits.connection.maxConnectionsPerIp",
+            BoundRefusal::AboveCeiling(1024)
+        ),
+        "limits.connection.maxConnectionsPerIp: above the 1024 a bound accepts; the key's value is ignored"
     );
 }

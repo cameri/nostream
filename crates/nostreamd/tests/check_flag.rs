@@ -208,3 +208,29 @@ fn check_reports_a_zero_bound_as_the_documented_default() {
         "a zero must not be reported as above the ceiling: {stderr}"
     );
 }
+
+#[test]
+fn check_reports_the_schema_fault_and_not_a_bound_it_cannot_read() {
+    // On a rejected document `load` substitutes the shipped defaults, so there is no operator
+    // number left to describe: the gate is unconditional but has nothing to walk. This pins that
+    // it does not invent a range line, and that the exit code stays the schema verdict (2).
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "network:\n  frameMemoryBudgetBytes: 1099511627777\nlimits:\n  rateLimiter:\n    strategy: random\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(2), "exit code");
+    assert!(!stdout.contains("settings valid"), "stdout: {stdout}");
+    assert!(
+        stderr.contains("strategy must be ewma or sliding_window"),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains("above the"), "no range line: {stderr}");
+}

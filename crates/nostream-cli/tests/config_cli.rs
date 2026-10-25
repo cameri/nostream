@@ -93,3 +93,30 @@ fn config_validate_says_which_bound_setting_the_relay_will_not_use() {
         "verdict: {verdict}"
     );
 }
+
+#[test]
+fn config_validate_reports_the_schema_fault_and_not_a_bound_it_cannot_read() {
+    // The same mixed document through the other door: the bound is not described, because a
+    // rejected document has no typed value to walk, and the exit code is the schema verdict.
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("settings.yaml");
+    fs::write(
+        &path,
+        "network:\n  frameMemoryBudgetBytes: 1099511627777\nlimits:\n  rateLimiter:\n    strategy: random\n",
+    )
+    .expect("write");
+
+    let output =
+        config::validate(&workspace_root(), Some(directory.path()), Some(&path)).expect("validate");
+    assert_eq!(output.exit_code, 2);
+    let text = output.lines.join("\n");
+    assert!(
+        text.contains("strategy must be ewma or sliding_window"),
+        "{text}"
+    );
+    assert!(!text.contains("above the"), "no range line: {text}");
+    assert_eq!(
+        output.lines.last().map(String::as_str),
+        Some("settings invalid: 1 issues")
+    );
+}

@@ -11,7 +11,7 @@ use nostream_config::{
     SettingsPaths, fit, load, load_defaults, load_document, load_user_settings, merge,
     validate_document,
 };
-use nostream_relay::relay::{BoundRefusal, refused_bounds};
+use nostream_relay::relay::{refusal_message, refused_bounds};
 use serde_yaml::Value;
 
 use crate::error::CliError;
@@ -58,39 +58,42 @@ pub fn validate(
     };
 
     let mut issues = validate_document(&merged, &defaults);
+    // The typed value the document fits, kept rather than parsed again: it is what the daemon
+    // would load, and it is what the range report walks.
+    let mut fitted = None;
     if issues.is_empty() {
         // The document walk grades JavaScript types; the typed schema is stricter. A document
         // the walk approves but the daemon cannot load (a fractional integer, for one) is
         // refused here, with the field named, so `config validate` never blesses a config the
         // daemon will discard.
-        if let Err(issue) = fit(&merged, &defaults) {
-            issues.push(issue);
+        match fit(&merged, &defaults) {
+            Ok(settings) => fitted = Some(settings),
+            Err(issue) => issues.push(issue),
         }
     }
-    if issues.is_empty() {
-        // The daemon bounds two settings at run time and ignores a value it cannot use. That is
-        // not a schema fault, so it is not an issue and not fatal — but this door and the
-        // daemon's `--check` are the two read-only ways an operator looks, so the verdict says
-        // it here too, in the same words the daemon's gate uses (ADR 0008).
-        let refused =
-            match serde_yaml::from_value::<nostream_config::settings::Settings>(merged.clone()) {
-                Ok(settings) => refused_bounds(&settings),
-                // The document already passed `fit`, so this cannot fail; with no typed value there
-                // is nothing to report rather than a reason to refuse a config the daemon can load.
-                Err(_) => Vec::new(),
-            };
 
+    // The daemon bounds two settings at run time and ignores a value it cannot use. That is not a
+    // schema fault, so it is not an issue and not fatal — but this door and the daemon's `--check`
+    // are the two read-only ways an operator looks, so the verdict says it here too, in the words
+    // `refusal_message` produces for both (ADR 0008). A document the walk refused has no typed
+    // value to walk — `fit` is what produces one, and it is not reached — so this door is silent
+    // about the bound on a rejected document, exactly as the daemon's gate is, and for the same
+    // reason the gate's comment gives.
+    let refused: Vec<String> = fitted
+        .as_ref()
+        .map(|settings| {
+            refused_bounds(settings)
+                .into_iter()
+                .map(|(setting, reason)| refusal_message(setting, reason))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if issues.is_empty() {
         let mut verdict = "settings valid: 0 issues".to_owned();
-        for (setting, reason) in refused {
-            match reason {
-                BoundRefusal::Zero => verdict.push_str(&format!(
-                    "; {setting}: 0 means the default, and the relay runs with it"
-                )),
-                BoundRefusal::AboveCeiling(ceiling) => verdict.push_str(&format!(
-                    "; {setting}: above the {ceiling} a bound accepts; \
-                     the key's value is ignored"
-                )),
-            }
+        for line in refused {
+            verdict.push_str("; ");
+            verdict.push_str(&line);
         }
         return Ok(CommandOutput {
             lines: vec![verdict],
@@ -98,15 +101,14 @@ pub fn validate(
         });
     }
 
+    // A refused document is reported too, and only when there is a typed value to walk (the gate's
+    // `settings_gate.rs:41-43` comment says the same, from the daemon's side).
+    let mut lines: Vec<String> = issues.iter().map(|issue| issue.to_string()).collect();
+    lines.extend(refused);
+    lines.push(format!("settings invalid: {} issues", issues.len()));
+
     Ok(CommandOutput {
-        lines: issues
-            .iter()
-            .map(|issue| issue.to_string())
-            .chain(std::iter::once(format!(
-                "settings invalid: {} issues",
-                issues.len()
-            )))
-            .collect(),
+        lines,
         exit_code: 2,
     })
 }

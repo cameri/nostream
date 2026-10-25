@@ -150,18 +150,34 @@ pub fn refused_bounds(settings: &Settings) -> Vec<(&'static str, BoundRefusal)> 
 }
 
 /// The two ways a bound's setting is not taken, or `None` when it is.
+///
+/// It asks [`in_range`] first, so the constructor and every report agree by construction rather
+/// than by two comparisons that happen to match: a value `in_range` accepts is never refused here.
 pub fn bound_refusal(value: u64) -> Option<BoundRefusal> {
-    if value == 0 {
-        Some(BoundRefusal::Zero)
-    } else if value > MAX_SETTING_BOUND as u64 {
-        Some(BoundRefusal::AboveCeiling(MAX_SETTING_BOUND as u64))
-    } else {
+    if in_range(value) {
         None
+    } else if value == 0 {
+        Some(BoundRefusal::Zero)
+    } else {
+        Some(BoundRefusal::AboveCeiling(MAX_SETTING_BOUND as u64))
     }
 }
 
-/// Reports one bound's setting that the relay will not run with, saying which of the two reasons
-/// it was: a zero (documented as the default) and a value above the ceiling are different facts.
+/// The sentence one refused bound is reported with, for both doors: a zero (documented as the
+/// default) and a value above the ceiling are different facts, and the words live beside the
+/// decision so the daemon's gate and the CLI cannot phrase it differently.
+pub fn refusal_message(setting: &str, reason: BoundRefusal) -> String {
+    match reason {
+        BoundRefusal::Zero => format!("{setting}: 0 means the default, and the relay runs with it"),
+        BoundRefusal::AboveCeiling(ceiling) => {
+            format!("{setting}: above the {ceiling} a bound accepts; the key's value is ignored")
+        }
+    }
+}
+
+/// Reports one bound's setting that the relay will not run with, as one structured line saying
+/// which of the two reasons it was: a zero (documented as the default) and a value above the
+/// ceiling are different facts.
 fn warn_refused_bound(setting: &'static str, value: u64, default: usize) {
     match bound_refusal(value) {
         Some(BoundRefusal::Zero) => {
