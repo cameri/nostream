@@ -379,10 +379,14 @@ this job deliberately adds no metrics subsystem.
 zero is rejected, by name, before a relay exists.
 
 **What `0` means: invalid.** Neither key's zero disables its bound and neither is read as the
-default. A `0` written for either key is a validator issue, and both doors to the validator
-report it and exit 2: `network.frameMemoryBudgetBytes: frameMemoryBudgetBytes must be greater
-than 0` and `limits.connection.maxConnectionsPerIp: maxConnectionsPerIp must be greater than
-0`. The rule sits in `validate_document` beside the two adaptive-pow numbers, in the shape they
+default. A `0` written for either key is a validator issue: `network.frameMemoryBudgetBytes:
+frameMemoryBudgetBytes must be greater than 0` and `limits.connection.maxConnectionsPerIp:
+maxConnectionsPerIp must be greater than 0`. Both verdict surfaces — `nostreamd --check` and
+`nostream-cli config validate` — report it and exit 2; a normal start reports it and serves on the
+shipped defaults. *What a rejected document leaves to report*, below, separates the two start
+paths and gives the line and the exit code for each.
+
+The rule sits in `validate_document` beside the two adaptive-pow numbers, in the shape they
 already established —
 "            \"frameMemoryBudgetBytes must be greater than 0\","
 (`crates/nostream-config/src/validate.rs:82`) and
@@ -495,14 +499,37 @@ outcome with the shipped defaults and set `used_defaults` — an unreadable user
 the shape walk refuses, a typed document the fit refuses, and a read failure:
 "    /// Whether the user's document was rejected and the defaults were substituted."
 (`crates/nostream-config/src/load.rs:386`). A zero bound is now one of these: the document is
-refused by the walk, so both doors print the issue itself and nothing describes a bound, because
-the gate will not walk a substitution —
-"    if !outcome.used_defaults {" (`crates/nostreamd/src/settings_gate.rs:32`). Measured on
-`network: {frameMemoryBudgetBytes: 0}`, `--check` prints the issue line, then
-`nostreamd: continuing on the shipped defaults (1 issue(s) in the user settings)`;
-`config validate` prints the issue line, then `settings invalid: 1 issues`, exit 2. Both are
-pinned (`check_refuses_a_zero_bound`, `config_validate_refuses_a_zero_bound`,
-`a_zero_bound_is_an_issue_at_the_gate`).
+refused by the walk, so every surface prints the issue itself and nothing describes a bound,
+because the gate will not walk a substitution —
+"    if !outcome.used_defaults {" (`crates/nostreamd/src/settings_gate.rs:32`).
+
+What each surface then does with the issue is **not one behaviour**, and the two start paths must
+be read apart. Measured on `network: {frameMemoryBudgetBytes: 0}` with this build:
+
+- **`nostreamd --check`** prints the issue, then `settings invalid: 1 issues`, and exits **2**. The
+  gate's `check` branch returns before the continuation line:
+  "    if check {" (`crates/nostreamd/src/settings_gate.rs:48`) →
+  "        return Err(DaemonError::InvalidSettings {" (`crates/nostreamd/src/settings_gate.rs:49`),
+  which `main` maps to "            ExitCode::from(2)"
+  (`crates/nostreamd/src/main.rs:44`) after printing
+  "            eprintln!(\"settings invalid: {count} issues\");"
+  (`crates/nostreamd/src/main.rs:43`). It never prints the continuation line.
+- **A normal start** (`nostreamd --config-dir <dir>`) prints the issue, then
+  "        \"nostreamd: continuing on the shipped defaults ({} issue(s) in the user settings)\""
+  (`crates/nostreamd/src/settings_gate.rs:54`), serves on the shipped defaults, and exits **0** when
+  it drains — the same branch's "    Ok(())"
+  (`crates/nostreamd/src/settings_gate.rs:57`) reaching the signal path, not an error. Measured
+  on stdout: `INFO the acceptor is listening`, then `INFO drained; exiting`; exit code 0. (The
+  port it names is the `--listen-port` it was given; the line is not a citation.)
+- **`nostream-cli config validate`** prints the issue, then `settings invalid: 1 issues`, and exits
+  **2** — the schema verdict, from its own `issues.is_empty()` branch, with no continuation line
+  (`crates/nostream-cli/src/config.rs:93` and `:108`).
+
+So a rejected document is fatal where a verdict is being asked for (`--check`, `config validate`)
+and survivable where a relay is being started, and only the start path says it is continuing. All
+four measurements are pinned (`check_refuses_a_zero_bound`, `config_validate_refuses_a_zero_bound`,
+`a_zero_bound_is_an_issue_at_the_gate`, and the serving path's "    Ok(())" arm through that same
+gate test's `check = false` call).
 
 *Where nothing is substituted, there is a leaf to read and both doors read it.* With no user
 document — a fresh install, a different `--config-dir` — `load` returns the shipped defaults with
