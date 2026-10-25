@@ -273,7 +273,15 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
         // it, and with a shared budget the loop can be a whole blocked write away from
         // running, so the window is not short. The sink must not latch on a budget refusal —
         // a frame that fits later is admitted — which is why the stop lives here.
+        //
+        // The read then waits for the close that retires it instead of unwinding: it has
+        // nothing left to send, and the connection loop's `abort_all` and `close` are the one
+        // owner of the teardown, so this handler must not run `end_read` against the same
+        // state while the loop is closing the socket. Parking also keeps the close's
+        // promptness a property of the refusal signal rather than of this handler happening
+        // to finish.
         if context.sink.refusal().is_some() {
+            let _ = read.cancellation().changed().await;
             context.connection.end_read(read);
             return;
         }
@@ -423,6 +431,8 @@ fn can_subscribe(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+    use std::time::Duration;
+
     use nostream_core::clock::TestClock;
     use nostream_core::event::{EventId, Pubkey, Signature};
     use nostream_core::nip42::Nip42Session;
@@ -452,11 +462,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_refused_sink_stops_the_read_instead_of_encoding_the_rest_of_it() {
-        // Three stored events and a budget of 64 bytes: every event frame is refused and the
-        // read's closing `EOSE` would fit. So the queue says which read ran — a read that
-        // stopped at the first refusal leaves nothing in it, and a read that encoded and
-        // discarded the rest of the stream ends with the `EOSE` that fits.
+        // Three stored events behind a per-item gate, and a 64-byte budget: every event frame
+        // is refused, so the read must neither take another record nor encode one. The gate is
+        // the measure — two permits left means one record was taken and the stream was not
+        // drained — and the queue is the other: a read that ran on to the end would leave the
+        // 12-byte `EOSE` in it, which does fit.
         let fixture = Fixture::new(settings());
+        let gate = fixture.events.gate_reads_per_item();
 
         for index in 0..3 {
             fixture
@@ -467,13 +479,14 @@ mod tests {
         let budget = Arc::new(FrameBudget::new(64));
         let (sink, mut frames) = FrameSink::channel(64 * 1024, Some(Arc::clone(&budget)));
         let refused = sink.clone();
+        let connection = Arc::new(Connection::new(
+            "127.0.0.1".to_owned(),
+            Nip42Session::with_challenge("challenge", 0),
+        ));
         let context = Arc::new(fixture.context(
             Arc::new(TestClock::new(1_700_000_000_000)),
             RelayKeySource::from_values(None, None),
-            Arc::new(Connection::new(
-                "127.0.0.1".to_owned(),
-                Nip42Session::with_challenge("challenge", 0),
-            )),
+            Arc::clone(&connection),
             sink,
         ));
 
@@ -485,19 +498,33 @@ mod tests {
             }],
         };
 
-        let read = begin(message, &context).expect("the subscription is registered");
-        read.await;
+        let mut read = begin(message, &context).expect("the subscription is registered");
+        gate.add_permits(3);
 
-        assert_eq!(refused.refusal(), Some(Refusal::BudgetExhausted));
-        assert_eq!(refused.queued_bytes(), 0);
         assert!(
-            frames.try_recv().is_err(),
-            "the read stopped at the first refusal: no event frame and no EOSE reached the queue"
+            tokio::time::timeout(Duration::from_millis(200), &mut read)
+                .await
+                .is_err(),
+            "the read parks once its frame is refused instead of draining the stream"
         );
+        assert_eq!(refused.refusal(), Some(Refusal::BudgetExhausted));
+        assert_eq!(
+            gate.available_permits(),
+            2,
+            "one record was taken and the rest of the stream was never asked for"
+        );
+        assert!(frames.try_recv().is_err(), "no EOSE reached the queue");
+        assert_eq!(refused.queued_bytes(), 0);
         assert_eq!(
             budget.refusals(),
             1,
             "one refusal for the socket, not one per event"
         );
+
+        // The close the read is waiting for ends it.
+        connection.close();
+        tokio::time::timeout(Duration::from_secs(1), read)
+            .await
+            .expect("the connection's close ends the read");
     }
 }
