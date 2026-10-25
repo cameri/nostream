@@ -1288,8 +1288,9 @@ async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
         &context,
     );
 
-    // The abort precedes the release below, so a reintroduced timer or a reordered release
-    // fails with this sentence rather than as a flake.
+    // Nothing between the abort above and the release below suspends, so a read still
+    // registered here means the `unsubscribe::handle` call was dropped or moved behind this
+    // assertion; whether the cancellation reaches the read is what the frames below decide.
     assert!(
         !connection.read_in_flight("invite"),
         "the abort precedes the release of the mint"
