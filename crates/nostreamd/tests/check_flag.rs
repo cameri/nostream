@@ -169,13 +169,16 @@ fn check_reports_a_bound_it_would_replace_with_the_default() {
     );
     assert_eq!(code, Some(0), "exit code");
     assert_eq!(stdout.trim(), "settings valid: 0 issues");
+    // Whole lines, not prefixes: dropping the second clause must fail here.
     assert!(
-        stderr.contains("network.frameMemoryBudgetBytes: above the 1099511627776 a bound accepts"),
+        stderr.contains(
+            "network.frameMemoryBudgetBytes: above the 1099511627776 a bound accepts; the key's value is ignored"
+        ),
         "stderr: {stderr}"
     );
     assert!(
         stderr.contains(
-            "limits.connection.maxConnectionsPerIp: above the 1099511627776 a bound accepts"
+            "limits.connection.maxConnectionsPerIp: above the 1099511627776 a bound accepts; the key's value is ignored"
         ),
         "stderr: {stderr}"
     );
@@ -200,7 +203,9 @@ fn check_reports_a_zero_bound_as_the_documented_default() {
     assert_eq!(code, Some(0), "exit code");
     assert_eq!(stdout.trim(), "settings valid: 0 issues");
     assert!(
-        stderr.contains("network.frameMemoryBudgetBytes: 0 means the default"),
+        stderr.contains(
+            "network.frameMemoryBudgetBytes: 0 means the default, and the relay runs with it"
+        ),
         "stderr: {stderr}"
     );
     assert!(
@@ -233,4 +238,21 @@ fn check_reports_the_schema_fault_and_not_a_bound_it_cannot_read() {
         "stderr: {stderr}"
     );
     assert!(!stderr.contains("above the"), "no range line: {stderr}");
+}
+
+#[test]
+fn check_reports_nothing_for_the_shipped_defaults() {
+    // With no user document, `settings` is the shipped defaults with `used_defaults` false, so a
+    // report that walked them would describe the document's own values as violations on a fresh
+    // install. The guard is what prevents it; without the guard this test sees two lines.
+    let directory = tempfile::tempdir().expect("tempdir");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(0), "exit code");
+    assert_eq!(stdout.trim(), "settings valid: 0 issues");
+    assert_eq!(stderr, "", "the shipped defaults are not a violation");
 }

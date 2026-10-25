@@ -85,11 +85,15 @@ fn config_validate_says_which_bound_setting_the_relay_will_not_use() {
     assert_eq!(output.exit_code, 0);
     let verdict = output.lines.join("\n");
     assert!(
-        verdict.contains("network.frameMemoryBudgetBytes: 0 means the default"),
+        verdict.contains(
+            "network.frameMemoryBudgetBytes: 0 means the default, and the relay runs with it"
+        ),
         "verdict: {verdict}"
     );
     assert!(
-        verdict.contains("limits.connection.maxConnectionsPerIp: above the 1099511627776"),
+        verdict.contains(
+            "limits.connection.maxConnectionsPerIp: above the 1099511627776 a bound accepts; the key's value is ignored"
+        ),
         "verdict: {verdict}"
     );
 }
