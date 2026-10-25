@@ -60,7 +60,7 @@ Its `CLOSE` handler emits one event, and that event's only listener deletes one 
 > — `src/adapters/web-socket-adapter.ts:107-110`
 
 The read never consults that entry: its pipeline is a deleted-at filter, a tag-expiry filter, the
-read-authorization guard and `isSubscribedToEvent`
+read-authorization guard and `isClientSubscribedToEvent`
 (`src/handlers/subscribe-message-handler.ts:232-242`), a filter match —
 `anyPass(map(isEventMatchingFilter)(filters))` (`:254-256`) — not a liveness check, while
 `sendMessage` writes whatever it is handed to an `OPEN` socket
@@ -106,13 +106,13 @@ see the difference. The pins are the socket test
 (`crates/nostream-relay/tests/common/mod.rs:156-164`) rather than "no frame ever", plus
 `crates/nostream-relay/tests/connection.rs:621-662`, which covers the table entry.
 
-**An abort is not a recall.** Frames already in `FrameSink` are written after the `CLOSE` is
-handled. The queue is byte-bounded, with a drop-and-close policy on an unbounded channel
-(`crates/nostream-relay/src/sink.rs:35-51`, `:77-125`): a frame that does not fit is dropped,
-every later send too, and the loop closes the client and drains the queue
-(`crates/nostream-relay/src/relay.rs:330-351`) without consulting the subscription table.
-Whether a race shows a client a stray frame is **unmeasured** and no test exercises it — the
-gated test holds the read before any record.
+**An abort is not a recall.** Frames already in `FrameSink` are still written after the `CLOSE` is
+handled: a byte-bounded queue on an unbounded channel (`crates/nostream-relay/src/sink.rs:35-51`,
+`:77-125`), where a frame that does not fit is dropped, later sends too, and the loop closes the
+client with 1013 and discards the queue (`crates/nostream-relay/src/relay.rs:330-333`, `:427-428`)
+— never reaching the drain at `:336-351`. Below the bound the drain writes what was queued,
+without a subscription check. Whether a race shows a client a stray frame is **unmeasured** and no
+test exercises it — the gated test holds the read before any record.
 
 **What would reopen it.** A paced recording plus a replay step kind that releases the pace —
 both halves, because a fixture alone passes for either implementation — or a measured capture
