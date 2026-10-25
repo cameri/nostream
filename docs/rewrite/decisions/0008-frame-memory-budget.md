@@ -416,25 +416,30 @@ constructor.
 1. **A literal the operator wrote.** A zero here is a claim about the relay, not a request for
    a number the operator did not type. The record **at the base this job branches from** says the
    opposite, in the bullet that disposes of validation outright — quoted here as the text this
-   job supersedes, not as authority:
+   job supersedes, not as authority. *The line numbers in this reason are the base's and the
+   ADR's own, not this file's: resolve them with `git show <rev>:<path>`. They are written in full
+   so the citation is unambiguous, and a reader holding this file must read the `says:` line beside
+   each one as belonging to that tree, not to this one.*
+
    "- **Any validation of the two numbers.** A zero budget or a zero cap is still not refused — it is"
-   (`0008-frame-memory-budget.md:369`), continuing "  read as the default, which is the answer
-   *What `0` means* gives and the only reading that cannot" (`0008-frame-memory-budget.md:370`) and
-   "  turn a typo into a waiver of the bounds. There is no rule for it in the validator."
-   (`0008-frame-memory-budget.md:371`). Those lines are resolved against the base checkout of `60aa7e9`,
-   which is the only tree they are true in; in this document they are gone, replaced by the answer
-   above.
+   (`docs/rewrite/decisions/0008-frame-memory-budget.md:369`), continuing "  read as the default,
+   which is the answer *What `0` means* gives and the only reading that cannot"
+   (`docs/rewrite/decisions/0008-frame-memory-budget.md:370`) and "  turn a typo into a waiver of
+   the bounds. There is no rule for it in the validator."
+   (`docs/rewrite/decisions/0008-frame-memory-budget.md:371`). Those lines are the base's `60aa7e9`,
+   the only tree they are true in; in this document they are gone, replaced by the answer above.
 
    **The sentence they replaced is the one this job restores.** Written by the ADR itself, it read
    "- **Any validation of the two numbers.** A zero budget or a zero cap is a literal the operator wrote;"
-   (`0008-frame-memory-budget.md:228`) followed by
-   "  policing it is a settings decision this job does not own." (`0008-frame-memory-budget.md:229`),
-   resolved against the `7f16351` snapshot beside this one. There "a literal the operator wrote" is
-   already a statement *against* reading the zero as the default, and the second half is a deferral
-   — policing it belongs to a later job, which is this one. #017 (`717e4cb`) then replaced those two
-   lines with the "read as the default" bullet quoted above, so the base contains the deferral's
-   conclusion but not its premise. This answer takes the premise back as a rule and spends the
-   deferral: one sentence, one reading, and it is the record's original one.
+   (`docs/rewrite/decisions/0008-frame-memory-budget.md:228`) followed by "  policing it is a
+   settings decision this job does not own."
+   (`docs/rewrite/decisions/0008-frame-memory-budget.md:229`), both the ADR as `7f16351` wrote it.
+   There "a literal the operator wrote" is already a statement *against* reading the zero as the
+   default, and the second half is a deferral — policing it belongs to a later job, which is this
+   one. #017 (`717e4cb`) then replaced those two lines with the "read as the default" bullet quoted
+   above, so the base contains the deferral's conclusion but not its premise. This answer takes the
+   premise back as a rule and spends the deferral: one sentence, one reading, and it is the
+   record's original one.
 2. **It would be a fourth meaning for the same numeral.** The repository already has two, and
    they are both in the code, each with its own idiom: *disabled* —
    "    if max_subscriptions > 0" (`crates/nostream-relay/src/handlers/subscribe.rs:376`),
