@@ -254,6 +254,18 @@ describe('rootRequestHandler', () => {
         expect(doc.peering).to.not.have.property('contact')
         expect(doc.peering.endpoint).to.equal('wss://relay.example.com')
       })
+
+      it('trims addresses and omits whitespace-only ones', () => {
+        const doc = sendWithPeering({
+          enabled: true,
+          contact: '  mailto:peering@relay.example.com  ',
+          endpoint: '   ',
+          scopes: [{ kinds: [1] }],
+        })
+
+        expect(doc.peering.contact).to.equal('mailto:peering@relay.example.com')
+        expect(doc.peering).to.not.have.property('endpoint')
+      })
     })
 
     // NIP-43 clients verify relay-signed events against `self`, so the document

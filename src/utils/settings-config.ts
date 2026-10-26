@@ -843,14 +843,29 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
     }
   }
 
-  if (typeof peering.endpoint === 'string' && peering.endpoint.trim()) {
+  const endpoint = typeof peering.endpoint === 'string' ? peering.endpoint.trim() : ''
+  if (endpoint) {
     try {
-      const endpoint = new URL(peering.endpoint)
-      if (!['ws:', 'wss:'].includes(endpoint.protocol) || !endpoint.host) {
+      const parsed = new URL(endpoint)
+      if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.host) {
         issues.push({ path: 'peering.endpoint', message: 'must be a ws:// or wss:// URL' })
       }
     } catch {
       issues.push({ path: 'peering.endpoint', message: 'must be a valid ws:// or wss:// URL' })
+    }
+  }
+
+  // NIP-11 calls `contact` a URI. Reject free text so a relay does not publish
+  // an address other relays cannot use to reach the operator.
+  const contact = typeof peering.contact === 'string' ? peering.contact.trim() : ''
+  if (contact) {
+    try {
+      new URL(contact)
+    } catch {
+      issues.push({
+        path: 'peering.contact',
+        message: 'must be a valid URI (for example mailto: or https:)',
+      })
     }
   }
 
@@ -865,9 +880,7 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
     issues.push({ path: 'peering.scopes', message: 'at least one scope is required when peering is enabled' })
   }
 
-  const hasContact = typeof peering.contact === 'string' && peering.contact.trim().length > 0
-  const hasEndpoint = typeof peering.endpoint === 'string' && peering.endpoint.trim().length > 0
-  if (!hasContact && !hasEndpoint) {
+  if (!contact && !endpoint) {
     issues.push({ path: 'peering.contact', message: 'contact or endpoint is required when peering is enabled' })
   }
 }

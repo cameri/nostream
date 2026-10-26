@@ -294,6 +294,11 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | peering.terms[].period                      | Peering period in seconds. |
 | peering.terms[].unit                        | Fee unit (for example `msats`). An empty `terms` list means settlement-free peering. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |
+| wot.enabled                                 | Enables the Web of Trust graph, rooted at `wot.seedPubkey`, built from NIP-02 contact lists. Defaults to false. |
+| wot.maxDepth                                | How many hops out from `wot.seedPubkey` the trust graph extends. Direct follows are distance 1. Defaults to 2. |
+| wot.minimumFollowers                        | Minimum number of already-trusted accounts that must follow a pubkey before it enters the graph at 2+ hops. Direct follows are always trusted. Defaults to 1. |
+| wot.refreshIntervalHours                    | Reserved for a future periodic full rebuild; not yet read by any code (real-time kind-3 ingestion already keeps the graph current). Defaults to 24. |
+| wot.seedPubkey                              | The relay owner's pubkey in hex. Root of the trust graph. Required when `wot.enabled` is true. |
 
 ## Peering advertisement (NIP-11)
 
@@ -325,8 +330,3 @@ signal, not a zero amount. `min_pow_difficulty` is the NIP-13 work a peering
 request must carry; `0` means there is no requirement. When peering is
 disabled, the section is published as `{ "enabled": false }` and no scopes,
 terms, or contact details are exposed.
-| wot.enabled                                 | Enables the Web of Trust graph, rooted at `wot.seedPubkey`, built from NIP-02 contact lists. Defaults to false. |
-| wot.maxDepth                                | How many hops out from `wot.seedPubkey` the trust graph extends. Direct follows are distance 1. Defaults to 2. |
-| wot.minimumFollowers                        | Minimum number of already-trusted accounts that must follow a pubkey before it enters the graph at 2+ hops. Direct follows are always trusted. Defaults to 1. |
-| wot.refreshIntervalHours                    | Reserved for a future periodic full rebuild; not yet read by any code (real-time kind-3 ingestion already keeps the graph current). Defaults to 24. |
-| wot.seedPubkey                              | The relay owner's pubkey in hex. Root of the trust graph. Required when `wot.enabled` is true. |

@@ -48,10 +48,13 @@ export const buildPeeringDocument = (peering: PeeringSettings | undefined) => {
     return { enabled: false }
   }
 
+  const contact = peering.contact?.trim()
+  const endpoint = peering.endpoint?.trim()
+
   return {
     enabled: true,
-    ...(peering.contact ? { contact: peering.contact } : {}),
-    ...(peering.endpoint ? { endpoint: peering.endpoint } : {}),
+    ...(contact ? { contact } : {}),
+    ...(endpoint ? { endpoint } : {}),
     // NIP-11 convention: snake_case in the document, and 0/absent both mean
     // no proof-of-work requirement.
     min_pow_difficulty: peering.minRequestPowDifficulty ?? 0,

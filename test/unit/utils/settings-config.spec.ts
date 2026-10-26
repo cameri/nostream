@@ -164,6 +164,17 @@ describe('settings-config', () => {
       expect(issues.some((issue) => issue.path === 'peering.endpoint')).to.equal(true)
     })
 
+    it('rejects a contact that is not a URI', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, contact: 'not-a-uri' })
+
+      expect(issues.some((issue) => issue.path === 'peering.contact')).to.equal(true)
+      expect(issues.find((issue) => issue.path === 'peering.contact')?.message).to.include('valid URI')
+    })
+
+    it('accepts a mailto contact and ignores a whitespace-only endpoint', () => {
+      expect(peeringIssues({ ...settlementFreePeering, endpoint: '   ' })).to.deep.equal([])
+    })
+
     it('rejects an empty kinds list', () => {
       const issues = peeringIssues({ ...settlementFreePeering, scopes: [{ kinds: [] }] })
 
