@@ -184,6 +184,78 @@ describe('rootRequestHandler', () => {
       expect(doc).to.not.have.property('terms_of_service')
     })
 
+    describe('peering advertisement', () => {
+      const settlementFreePeering = {
+        enabled: true,
+        contact: 'mailto:peering@relay.example.com',
+        endpoint: 'wss://relay.example.com',
+        scopes: [
+          { kinds: [1, 6, [10000, 19999]], windowSeconds: 3600 },
+          { kinds: [3], since: 1700000000, until: 1800000000 },
+        ],
+      }
+
+      const sendWithPeering = (peering?: Record<string, unknown>) => {
+        createSettingsStub.returns({
+          ...baseSettings,
+          ...(peering !== undefined ? { peering } : {}),
+        })
+
+        rootRequestHandler(req, res, next)
+
+        return res.send.firstCall.args[0]
+      }
+
+      it('advertises only enabled: false when peering is not configured', () => {
+        expect(sendWithPeering()).to.have.property('peering').deep.equal({ enabled: false })
+      })
+
+      it('does not expose terms, scopes or contact while peering is disabled', () => {
+        const doc = sendWithPeering({ ...settlementFreePeering, enabled: false })
+
+        expect(doc.peering).to.deep.equal({ enabled: false })
+      })
+
+      it('advertises settlement-free scopes with no fee entry', () => {
+        const doc = sendWithPeering(settlementFreePeering)
+
+        expect(doc.peering).to.deep.equal({
+          enabled: true,
+          contact: 'mailto:peering@relay.example.com',
+          endpoint: 'wss://relay.example.com',
+          min_pow_difficulty: 0,
+          scopes: [
+            { kinds: [1, 6, [10000, 19999]], window_seconds: 3600 },
+            { kinds: [3], since: 1700000000, until: 1800000000 },
+          ],
+          terms: [],
+        })
+      })
+
+      it('advertises paid terms and a minimum request proof-of-work', () => {
+        const doc = sendWithPeering({
+          ...settlementFreePeering,
+          contact: 'mailto:peering@relay.example.com',
+          minRequestPowDifficulty: 20,
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
+        })
+
+        expect(doc.peering.min_pow_difficulty).to.equal(20)
+        expect(doc.peering.terms).to.deep.equal([{ amount: 21000, unit: 'msats', period: 2592000 }])
+      })
+
+      it('omits an unset contact or endpoint from the advertisement', () => {
+        const doc = sendWithPeering({
+          enabled: true,
+          endpoint: 'wss://relay.example.com',
+          scopes: [{ kinds: [1] }],
+        })
+
+        expect(doc.peering).to.not.have.property('contact')
+        expect(doc.peering.endpoint).to.equal('wss://relay.example.com')
+      })
+    })
+
     // NIP-43 clients verify relay-signed events against `self`, so the document
     // must advertise the key the relay actually signs with, not a stale or
     // placeholder string.

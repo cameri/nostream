@@ -168,6 +168,34 @@ nip77:
   maxSessionsPerConnection: 3
   # Close a session with no NEG-MSG for this long.
   sessionIdleTimeoutMs: 60000
+peering:
+  # Relay peering advertisement, served as the `peering` section of the NIP-11
+  # document. This is a discovery surface: it states the feeds and terms other
+  # relays can read. Enabling it does not accept peers by itself.
+  enabled: false
+  # How to ask for a peering relationship: a contact URI (mailto:, https:) and/or
+  # the WebSocket endpoint peers should connect to. At least one is required when
+  # peering is enabled.
+  contact: ""
+  endpoint: ""
+  # NIP-13 proof-of-work bits a peering request must carry. 0 means none.
+  # Advertised as peering.min_pow_difficulty.
+  minRequestPowDifficulty: 0
+  # Feeds this relay is willing to serve. Each scope lists event kinds and,
+  # optionally, an absolute time range (unix seconds) or a rolling window.
+  # At least one scope is required when peering is enabled.
+  # Example:
+  #   scopes:
+  #     - kinds: [1, 3, 6, 7, 30023]
+  #     - kinds: [[0, 9999]]
+  #       since: 1700000000
+  #     - kinds: [1, 6]
+  #       windowSeconds: 3600
+  scopes: []
+  # Terms for peering, reusing the NIP-11 fee-object shape. `period` is in
+  # seconds. An empty list means settlement-free peering.
+  # Example: [{ amount: 1000, unit: msats, period: 2592000 }]
+  terms: []
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
