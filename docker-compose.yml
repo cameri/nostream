@@ -210,7 +210,17 @@ networks:
     ipam:
       driver: default
       config:
+        # Dynamic addresses are confined to .128/26 so they can never land on a
+        # static one: nostream is .2, and the observability stack takes the first
+        # three free addresses — which were .2, .3 and .4, taken by nostream,
+        # nostream-db and nostream-cache. Docker allocates from the bottom of the
+        # subnet, and otel-collector has no dependency that would order it after
+        # nostream, so whichever container came up first won the address and the
+        # other failed with "Address already in use". The overlays pin .5
+        # (local), .252 (i2p) and .253 (tor) for the same reason.
         - subnet: 10.10.10.0/24
+          gateway: 10.10.10.1
+          ip_range: 10.10.10.128/26
 
 volumes:
   cache:

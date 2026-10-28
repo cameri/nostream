@@ -22,6 +22,7 @@ import { INotificationOutboxRepository } from '../../@types/repositories'
 import { OperatorNotificationEventType } from '../../@types/operator-notifications'
 import { redactSettingsSecrets } from '../../utils/settings-redaction'
 import { createLogger } from '../../factories/logger-factory'
+import { recordAdminAuditFromRequest } from '../../utils/record-admin-audit'
 
 const logger = createLogger('patch-admin-settings-controller')
 
@@ -79,6 +80,9 @@ export class PatchAdminSettingsController implements IController {
       action: 'settings.updated',
       changes: updatedChanges.map(({ path, reload }) => ({ path, reload })),
       remoteAddress: request.ip,
+    })
+    await recordAdminAuditFromRequest('settings.updated', request, {
+      changes: updatedChanges.map(({ path, reload }) => ({ path, reload })),
     })
 
     try {

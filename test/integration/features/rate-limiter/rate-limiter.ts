@@ -7,6 +7,7 @@ import { createEvent } from '../helpers'
 import { Event } from '../../../../src/@types/event'
 import { getCacheConfig } from '../../../../src/cache/client'
 import { SettingsStatic } from '../../../../src/utils/settings'
+import { ewmaKey } from '../../../../src/utils/ewma-rate-limiter'
 
 let testCacheClient: any
 const rateLimitKeys: string[] = []
@@ -25,7 +26,9 @@ Given(/(\w+)'s message rate is already at the limit/, async function(name: strin
   const ws = this.parameters.clients[name] as WebSocket
   const address = (ws as any)._socket?.remoteAddress ?? '::1'
   const period = 60000
-  const key = `${address}:message:${period}`
+  // EWMA reads its own namespace; seeding the un-namespaced key would leave the
+  // limiter on a fresh window and the scenario would not rate limit at all.
+  const key = ewmaKey(`${address}:message:${period}`)
 
   await testCacheClient.hSet(key, {
     rate: '999',
@@ -52,6 +55,22 @@ When(/(\w+) sends a text_note event expecting to be rate limited/, async functio
   })
 
   this.parameters.events[name].push(event)
+})
+
+Given(/(\w+)'s Redis holds a sliding-window key left by an older version/, async function(name: string) {
+  const ws = this.parameters.clients[name] as WebSocket
+  const address = (ws as any)._socket?.remoteAddress ?? '::1'
+  const period = 60000
+  // Exactly what a 2.x relay, or a sliding_window run, leaves behind: a sorted
+  // set under the key name EWMA used to share. Reading it as a hash raised
+  // WRONGTYPE on every message, which is the regression this guards.
+  const key = `${address}:message:${period}`
+
+  await testCacheClient.del(key)
+  await testCacheClient.zAdd(key, [{ score: Date.now(), value: `${Date.now()}:1` }])
+  await testCacheClient.pExpire(key, period)
+
+  rateLimitKeys.push(key)
 })
 
 After({ tags: '@rate-limiter' }, async function() {

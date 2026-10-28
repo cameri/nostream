@@ -1,5 +1,90 @@
 # nostream
 
+## 3.8.0
+
+### Minor Changes
+
+- [#941](https://github.com/cameri/nostream/pull/941) [`42ed39e`](https://github.com/cameri/nostream/commit/42ed39edf61ef6e8091e2fa32cad8e76823bb67d) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(admin): moderation tools for pubkey, kind, and IP limits (closes [#634](https://github.com/cameri/nostream/issues/634))
+
+  Adds admin API and console view to read and update event pubkey/kind lists, rate-limit bypass lists, quick ban/unban actions, and activity stats for top publishers, client IPs, and rate-limit hits.
+
+### Patch Changes
+
+- [#968](https://github.com/cameri/nostream/pull/968) [`98bd234`](https://github.com/cameri/nostream/commit/98bd2340af5bfd79deaa83bcd3a145550e269343) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - chore(deps): build and test on Node 24.22.1, which patches the Brotli decoder
+
+  CVE-2026-111497 is an out-of-bounds write in every Brotli decoder up to 1.2.0,
+  reachable by anything that decodes a `br` stream. Node bundles its own decoder,
+  so the fix is the Node release: 24.22.1 on the 24 line. `.nvmrc` and both
+  Dockerfile stages move from floating `node:24-alpine` to a pinned
+  `node:24.22.1-alpine`.
+
+- [#945](https://github.com/cameri/nostream/pull/945) [`062ee00`](https://github.com/cameri/nostream/commit/062ee007d150b7c4d0daff5032be3ad71de7773e) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Namespace EWMA rate-limiter keys so they cannot collide with sliding-window keys
+
+  The two strategies store different Redis types under the same key name: a sliding
+  window keeps a sorted set, EWMA keeps a hash. A cache volume carried over from 2.x,
+  or an operator switching `limits.rateLimiter.strategy`, therefore left EWMA reading a
+  sorted set as a hash — a `WRONGTYPE` error on every connection and message until the
+  old key expired. EWMA now writes under an `ewma:` prefix, which also keeps both
+  strategies' windows intact if the strategy is switched back.
+
+- [#965](https://github.com/cameri/nostream/pull/965) [`ee65257`](https://github.com/cameri/nostream/commit/ee652577236a2a2da6499f3a58f98e0ed3e581c4) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(ci): publish legal image tags and keep `latest` off prereleases
+
+  A changesets relay release is tagged `nostream@3.7.0`, and `@` is not legal in a
+  Docker tag, so the `type=ref,event=tag` rule handed buildx a tag it refused: the
+  first live run of the Release workflow failed with `invalid tag ...: invalid
+reference format` and published no image for the release ([#964](https://github.com/cameri/nostream/issues/964)).
+
+  The tags are now computed by a shell step, so every tag is a value this
+  repository chose and can check: the bare version, `vX.Y.Z` as well beside it for
+  a legacy tag, and `latest` only when the release is not a prerelease. Each tag is
+  validated against Docker's grammar before the build, so an illegal one fails by
+  name at that step instead of at buildx.
+
+  `docs/CI-MIGRATION.md`, `docs/DEPLOYMENT.md` and `docs/DEPLOY-RUNBOOK.md` no
+  longer promise `nostream@X.Y.Z` as a pinnable image tag, and the runbook now
+  names the receiver change that subscribing to `release` events depends on.
+
+- [#969](https://github.com/cameri/nostream/pull/969) [`8ea15fc`](https://github.com/cameri/nostream/commit/8ea15fce0f65916d6c9c1956eb2a3a77eb121a2b) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(website): add the relay peering launch film and home-page section
+
+- [#967](https://github.com/cameri/nostream/pull/967) [`9c736c8`](https://github.com/cameri/nostream/commit/9c736c83d7ea116cd9492c619c7a2f7a156c20ba) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - ci(release): allow the image build to be dispatched for an existing tag
+
+  A published release is immutable, so when the image build fails while publishing
+  it, the release cannot be re-published to retry: GitHub refuses the round trip
+  with `immutable cannot be changed when release is immutable`. That left [#964](https://github.com/cameri/nostream/issues/964)'s
+  release with no image and no way to build one.
+
+  `release.yml` now accepts `workflow_dispatch` with a `tag` input, and refuses a
+  tag that is not a relay release, since the event carries no tag of its own. With
+  no release flags present the prerelease is read from the version, so a dispatch
+  of `nostream@3.8.0-rc.1` still leaves `latest` where it is.
+
+## 3.7.0
+
+### Minor Changes
+
+- [#895](https://github.com/cameri/nostream/pull/895) [`a52cbfd`](https://github.com/cameri/nostream/commit/a52cbfd3149b68327f046ecc78e485746ba5cd58) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add admin Operations area with mirror and worker heartbeats, NIP-05 verification ops, storage counts, and dashboard view.
+
+- [#920](https://github.com/cameri/nostream/pull/920) [`abd4a1b`](https://github.com/cameri/nostream/commit/abd4a1bf96698b8f829d1d1a3bb86ecc1f405f4d) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add admin trust and automation: Redis-backed audit log API and UI, signed HTTP webhooks for probe/mirror/SSL events, OpenTelemetry probe and mirror metrics, and redacted diagnostics export.
+
+- [#849](https://github.com/cameri/nostream/pull/849) [`7e504e1`](https://github.com/cameri/nostream/commit/7e504e1a377822d7cfbb199f143b088c8d9db776) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(payments): add the subscription data model and plan settings
+
+- [#909](https://github.com/cameri/nostream/pull/909) [`7b4f627`](https://github.com/cameri/nostream/commit/7b4f6278a1ee500088c9e7b06d4a5af968eec227) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(payments): add the subscription lifecycle, renewal invoices and plan-based write access
+
+- [#924](https://github.com/cameri/nostream/pull/924) [`e417437`](https://github.com/cameri/nostream/commit/e41743788e603b3b549dd80ca381f671690679d6) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - chore: sunset the StaticMirroringWorker
+
+  The static mirroring worker is removed, together with the `mirroring.static` settings and the mirror health table and `/admin/ops/mirrors` route of the admin console. A `mirroring.static` that is still configured is ignored and logs a warning at start-up. To sync events with another relay, use NIP-77 (Negentropy), for example with `strfry sync`.
+
+### Patch Changes
+
+- [#943](https://github.com/cameri/nostream/pull/943) [`17157d5`](https://github.com/cameri/nostream/commit/17157d54513ba0424ccae512b5fdd7eb02bafdc5) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(payments): parse the ISO 8601 `time`/`expiry` returned by LNbits >= 1.0 so paid admissions are confirmed and expired invoices are retired
+
+- [#944](https://github.com/cameri/nostream/pull/944) [`82124b0`](https://github.com/cameri/nostream/commit/82124b02180b3c722e217ed39eb71c324ddec1a9) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(ci): stop building and pushing container images outside a release
+
+  Remove the container publish job from checks.yml so pushes to main no longer publish
+  images to GHCR. Container image builds and pushes are now restricted exclusively to
+  release.yml on published releases. Update deployment documentation and reference compose
+  stacks to target the released image tag (:latest) instead of :main.
+
 ## 3.6.2
 
 ### Patch Changes

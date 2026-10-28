@@ -42,44 +42,16 @@ describe('relay-probe-targets', () => {
     expect(resolveProbeTargets(settings)).to.deep.equal(['wss://one.example', 'wss://two.example'])
   })
 
-  it('does not include mirroring.static in public publish targets', () => {
+  it('does not probe mirroring.static addresses, which are no longer supported', () => {
     const settings = {
       ...baseSettings,
       mirroring: {
         static: [{ address: 'wss://mirror.example' }],
       },
-    } as Settings
+    } as unknown as Settings
 
     expect(resolvePublicProbeTargets(settings)).to.deep.equal(['wss://relay.example.com'])
-  })
-
-  it('includes mirroring.static addresses in addition to configured targets', () => {
-    const settings = {
-      ...baseSettings,
-      nip66: {
-        ...baseSettings.nip66!,
-        targets: ['wss://one.example'],
-      },
-      mirroring: {
-        static: [{ address: 'wss://mirror.example' }, { address: 'wss://one.example' }],
-      },
-    } as Settings
-
-    expect(resolveProbeTargets(settings)).to.deep.equal(['wss://one.example', 'wss://mirror.example'])
-  })
-
-  it('includes mirror targets when falling back to info.relay_url', () => {
-    const settings = {
-      ...baseSettings,
-      mirroring: {
-        static: [{ address: 'wss://mirror.example' }],
-      },
-    } as Settings
-
-    expect(resolveProbeTargets(settings)).to.deep.equal([
-      'wss://relay.example.com',
-      'wss://mirror.example',
-    ])
+    expect(resolveProbeTargets(settings)).to.deep.equal(['wss://relay.example.com'])
   })
 
   it('filters invalid probe targets', () => {

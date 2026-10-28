@@ -66,6 +66,7 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import { IWotGraphService } from '../@types/services'
 import { Nip05Verification } from '../@types/nip05'
 import { WebSocketAdapterEvent } from '../constants/adapter'
+import { recordModerationRateLimitHitSafely } from '../utils/moderation-rate-limit-stats'
 
 const logger = createLogger('event-message-handler')
 
@@ -109,6 +110,10 @@ export class EventMessageHandler implements IMessageHandler {
     if (rateLimited) {
       logger('event %s rejected: rate-limited', event.id)
       const retryAfterMs = typeof rateLimited === 'number' ? String(rateLimited) : undefined
+      void recordModerationRateLimitHitSafely(this.cache, {
+        pubkey: event.pubkey,
+        ip: event[ContextMetadataKey]?.remoteAddress?.address,
+      })
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
         createEventCommandResult(event.id, false, 'rate-limited: slow down', retryAfterMs),

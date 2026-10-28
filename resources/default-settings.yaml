@@ -185,8 +185,6 @@ workers:
 eventStore:
   # Only postgres for now. Changing it needs a restart.
   backend: postgres
-mirroring:
-  static: []
 dvm:
   workers: []
 limits:
@@ -384,6 +382,9 @@ admin:
       admission.invoice.failed: true
       settings.changed: true
       relay.restarted: false
+      probe.failed: true
+      probe.recovered: true
+      ssl.expiring: true
     retry:
       maxAttempts: 5
       baseDelayMs: 1000
