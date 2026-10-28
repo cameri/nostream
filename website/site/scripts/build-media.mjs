@@ -15,6 +15,8 @@ const HERO_META = path.join(MEDIA, 'hero.meta.json')
 const LANDING_POSTER = 'f0130.png'
 const ADMIN_LANDING = path.join(LANDING, 'admin')
 const ADMIN_POSTER = 'f0050.png'
+const PEERING_LANDING = path.join(LANDING, 'peering')
+const PEERING_POSTER = 'f1100.png'
 
 mkdirSync(MEDIA, { recursive: true })
 
@@ -131,6 +133,38 @@ if (adminVideo) {
   console.log('admin.mp4 ← admin film (re-encoded for site / Workers asset limit)')
 } else {
   console.warn('skip admin.mp4: run `pnpm run render:admin` in website/hero-animation first')
+}
+
+const peeringPoster = path.join(PEERING_LANDING, 'frames', PEERING_POSTER)
+if (existsSync(peeringPoster)) {
+  await sharp(peeringPoster).resize(1920).webp({ quality: 90 }).toFile(path.join(MEDIA, 'peering-poster.webp'))
+  console.log('peering poster → public/media')
+} else {
+  console.warn(`skip peering poster: run \`pnpm run frames:peering\` in website/hero-animation (need frames/${PEERING_POSTER})`)
+}
+
+const peeringVideo = [
+  process.env.PEERING_SRC,
+  path.join(PEERING_LANDING, 'nostream-peering.mp4'),
+  path.join(PEERING_LANDING, 'nostream-peering-very_high.mp4'),
+  path.join(PEERING_LANDING, 'nostream-peering-low.mp4'),
+].find((p) => p && existsSync(p))
+
+const peeringLowVideo = [
+  process.env.PEERING_LOW_SRC,
+  path.join(PEERING_LANDING, 'nostream-peering-low.mp4'),
+  peeringVideo === path.join(PEERING_LANDING, 'nostream-peering-low.mp4') ? null : peeringVideo,
+].find((p) => p && existsSync(p) && p !== peeringVideo)
+
+if (peeringVideo) {
+  encodeHero(peeringVideo, path.join(MEDIA, 'peering.mp4'), 15)
+  console.log('peering.mp4 ← peering launch film')
+  if (peeringLowVideo) {
+    encodeHero(peeringLowVideo, path.join(MEDIA, 'peering-low.mp4'), 22)
+    console.log('peering-low.mp4 ← peering launch film (low variant)')
+  }
+} else {
+  console.warn('skip peering.mp4: run `pnpm run render:peering` in website/hero-animation first')
 }
 
 console.log('done → public/media/')
