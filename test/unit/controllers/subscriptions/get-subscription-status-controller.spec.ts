@@ -213,6 +213,15 @@ describe('GetSubscriptionStatusController', () => {
   })
 
   describe('the pubkey', () => {
+    it('accepts an npub in upper case, which bech32 allows', async () => {
+      const res = makeRes()
+
+      await makeController().handleRequest(makeReq({ pubkey: toBech32('npub')(PUBKEY).toUpperCase() }), res)
+
+      expect(res.status).to.have.been.calledWith(200)
+      expect(repository.findByPubkey).to.have.been.calledOnceWithExactly(PUBKEY)
+    })
+
     it('accepts an npub and looks it up by its hex', async () => {
       const res = makeRes()
 
@@ -273,6 +282,64 @@ describe('GetSubscriptionStatusController', () => {
       await makeController().handleRequest(makeReq(), res)
 
       expect(res.status).to.have.been.calledWith(404)
+    })
+  })
+
+  describe('cross-origin reads', () => {
+    const expectCors = (res: any) => {
+      expect(res.setHeader).to.have.been.calledWith('access-control-allow-origin', '*')
+      expect(res.setHeader).to.have.been.calledWith('access-control-allow-headers', '*')
+      expect(res.setHeader).to.have.been.calledWith('access-control-allow-methods', 'GET, OPTIONS')
+    }
+
+    it('lets a page from another origin read a subscription', async () => {
+      const res = makeRes()
+
+      await makeController().handleRequest(makeReq(), res)
+
+      expect(res.status).to.have.been.calledWith(200)
+      expectCors(res)
+    })
+
+    it('lets it read an answer for a pubkey with no subscription', async () => {
+      repository.findByPubkey.resolves(undefined)
+      const res = makeRes()
+
+      await makeController().handleRequest(makeReq(), res)
+
+      expectCors(res)
+    })
+
+    it('adds the headers to a 400, so a client can tell the pubkey was refused', async () => {
+      const res = makeRes()
+
+      await makeController().handleRequest(makeReq({ pubkey: 'abc' }), res)
+
+      expect(res.status).to.have.been.calledWith(400)
+      expectCors(res)
+    })
+
+    it('adds the headers to a 404 while plans are off', async () => {
+      currentSettings = baseSettings({ payments: { enabled: true, subscriptionPlans: [] } })
+      const res = makeRes()
+
+      await makeController().handleRequest(makeReq(), res)
+
+      expect(res.status).to.have.been.calledWith(404)
+      expectCors(res)
+    })
+
+    it('adds the headers to a 429, so a client can tell it was rate limited', async () => {
+      currentSettings = baseSettings({
+        limits: { invoice: { rateLimits: [{ rate: 2, period: 60000 }], ipWhitelist: [] } },
+      })
+      rateLimiterHit.resolves(true)
+      const res = makeRes()
+
+      await makeController().handleRequest(makeReq(), res)
+
+      expect(res.status).to.have.been.calledWith(429)
+      expectCors(res)
     })
   })
 

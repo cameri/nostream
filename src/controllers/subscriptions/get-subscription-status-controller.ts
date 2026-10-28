@@ -29,6 +29,12 @@ export class GetSubscriptionStatusController implements IController {
   ) {}
 
   public async handleRequest(request: Request, response: Response): Promise<void> {
+    // The endpoint is public, so a client served from another site may read it, errors included.
+    response
+      .setHeader('access-control-allow-origin', '*')
+      .setHeader('access-control-allow-headers', '*')
+      .setHeader('access-control-allow-methods', 'GET, OPTIONS')
+
     const currentSettings = this.settings()
 
     if (await this.isRateLimited(request, currentSettings)) {
@@ -57,8 +63,11 @@ export class GetSubscriptionStatusController implements IController {
           status: subscription.status,
           active: hasSubscriptionAccess(subscription, new Date()),
           currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
-          accessEndsAt: this.getAccessEndedOrEndsAt(subscription, findSubscriptionPlan(currentSettings, subscription.planId))
-            ?.toISOString() ?? null,
+          accessEndsAt:
+            this.getAccessEndedOrEndsAt(
+              subscription,
+              findSubscriptionPlan(currentSettings, subscription.planId),
+            )?.toISOString() ?? null,
         }
       : { pubkey, planId: null, status: null, active: false, currentPeriodEnd: null, accessEndsAt: null }
 
@@ -90,7 +99,7 @@ export class GetSubscriptionStatusController implements IController {
       return raw
     }
 
-    if (/^npub1/.test(raw)) {
+    if (/^npub1/i.test(raw)) {
       try {
         return fromNpub(raw)
       } catch (_error) {
