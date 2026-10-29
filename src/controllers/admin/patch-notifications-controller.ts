@@ -17,9 +17,9 @@ import {
   loadDefaults,
   loadMergedSettings,
   loadUserSettings,
-  saveSettings,
   validateSettings,
 } from '../../utils/settings-config'
+import { saveUserSettingsOverrides } from '../../utils/settings-store'
 import { validateSchema } from '../../utils/validation'
 import { recordAdminAuditFromRequest } from '../../utils/record-admin-audit'
 
@@ -55,7 +55,7 @@ export class PatchAdminNotificationsController implements IController {
       return
     }
 
-    saveSettings(nextUserSettings)
+    await saveUserSettingsOverrides(nextUserSettings)
     appendSettingsAuditLog({
       action: 'settings.updated',
       changes: [{ path: 'admin.notifications', reload: 'hot-reload' }],

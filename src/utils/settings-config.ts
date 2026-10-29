@@ -72,6 +72,49 @@ const hasOwn = (object: Record<string, unknown>, key: string): boolean => {
   return Object.prototype.hasOwnProperty.call(object, key)
 }
 
+const QUOTED_PATH_KEY = /^\["((?:\\.|[^"\\])*)"\]$/
+
+export const formatSettingsPathKey = (key: string): string => {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    return key
+  }
+
+  return `["${key.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`
+}
+
+const tokenizePathSegments = (input: string): string[] => {
+  const segments: string[] = []
+  let index = 0
+
+  while (index < input.length) {
+    if (input[index] === '.') {
+      index += 1
+      continue
+    }
+
+    if (input[index] === '[') {
+      const closing = input.indexOf('"]', index + 1)
+      if (closing < 0) {
+        throw new Error(`Invalid path segment in: ${input}`)
+      }
+
+      segments.push(input.slice(index, closing + 2))
+      index = closing + 2
+      continue
+    }
+
+    let next = index
+    while (next < input.length && input[next] !== '.') {
+      next += 1
+    }
+
+    segments.push(input.slice(index, next))
+    index = next
+  }
+
+  return segments.filter(Boolean)
+}
+
 const parsePath = (path: string): PathToken[] => {
   const input = path.trim()
 
@@ -80,11 +123,14 @@ const parsePath = (path: string): PathToken[] => {
   }
 
   const tokens: PathToken[] = []
-  const segments = input.split('.').map((part) => part.trim())
 
-  for (const segment of segments) {
-    if (!segment) {
-      throw new Error(`Invalid path segment in: ${path}`)
+  for (const segment of tokenizePathSegments(input)) {
+    const quoted = segment.match(QUOTED_PATH_KEY)
+    if (quoted) {
+      const key = quoted[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+      assertSafePathKey(key, segment)
+      tokens.push({ type: 'key', key })
+      continue
     }
 
     const match = segment.match(/^([A-Za-z_][A-Za-z0-9_]*)(\[(\d+)\])*$/)
@@ -114,7 +160,8 @@ const formatPathTokens = (tokens: PathToken[]): string => {
 
   for (const token of tokens) {
     if (token.type === 'key') {
-      out = out ? `${out}.${token.key}` : token.key
+      const formatted = formatSettingsPathKey(token.key)
+      out = out ? `${out}.${formatted}` : formatted
       continue
     }
 
@@ -316,7 +363,7 @@ export const loadDefaults = (): Settings => {
   return yaml.load(defaultsRaw) as Settings
 }
 
-export const loadUserSettings = (): Settings => {
+export const loadUserSettingsFromFiles = (): Settings => {
   ensureSettingsExists()
   const settingsPath = getSettingsFilePath()
 
@@ -334,6 +381,17 @@ export const loadUserSettings = (): Settings => {
   }
 
   return {} as Settings
+}
+
+export const loadUserSettings = (): Settings => {
+  if (process.env.SETTINGS_BACKEND === 'db') {
+    // Lazy import avoids a circular dependency with settings-store bootstrap.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getDbOverridesCache } = require('./settings-store') as typeof import('./settings-store')
+    return getDbOverridesCache()
+  }
+
+  return loadUserSettingsFromFiles()
 }
 
 export const loadMergedSettings = (): Settings => {
@@ -379,6 +437,49 @@ export const filterSettingsAgainstDefaults = (settings: unknown, defaults: unkno
   return settings
 }
 
+export const flattenSettingsToPaths = (
+  value: unknown,
+  prefix = '',
+): Array<{ path: string; value: unknown }> => {
+  if (Array.isArray(value)) {
+    if (value.length === 0 && prefix) {
+      return [{ path: prefix, value: [] }]
+    }
+
+    return value.flatMap((entry, index) => {
+      const nextPrefix = prefix ? `${prefix}[${index}]` : `[${index}]`
+      return flattenSettingsToPaths(entry, nextPrefix)
+    })
+  }
+
+  if (isPlainObject(value)) {
+    const entries = Object.entries(value)
+    if (entries.length === 0 && prefix) {
+      return [{ path: prefix, value: {} }]
+    }
+
+    return entries.flatMap(([key, entry]) => {
+      const keySegment = formatSettingsPathKey(key)
+      const nextPrefix = prefix
+        ? keySegment.startsWith('[')
+          ? `${prefix}${keySegment}`
+          : `${prefix}.${keySegment}`
+        : keySegment
+      if (isPlainObject(entry) || Array.isArray(entry)) {
+        return flattenSettingsToPaths(entry, nextPrefix)
+      }
+
+      return [{ path: nextPrefix, value: entry }]
+    })
+  }
+
+  if (prefix) {
+    return [{ path: prefix, value }]
+  }
+
+  return []
+}
+
 export const saveSettings = (settings: Settings): void => {
   ensureSettingsExists()
   const serialized = yaml.dump(toSerializable(settings), { lineWidth: 120 })
@@ -418,7 +519,23 @@ export type SettingsBackupInfo = {
 }
 
 const isSafeBackupFilename = (filename: string): boolean => {
-  return /^settings\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.yaml$/.test(filename)
+  return /^settings(?:-db)?\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.yaml$/.test(filename)
+}
+
+export const backupUserSettingsOverrides = (overrides: Settings): string => {
+  ensureSettingsExists()
+  const backupDirectory = getSettingsBackupDir()
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const filename = `settings-db.${timestamp}.yaml`
+
+  fs.mkdirSync(backupDirectory, { recursive: true })
+  fs.writeFileSync(
+    join(backupDirectory, filename),
+    yaml.dump(toSerializable(overrides), { lineWidth: 120 }),
+    { encoding: 'utf-8', mode: 0o600 },
+  )
+
+  return filename
 }
 
 export const listSettingsBackups = (): SettingsBackupInfo[] => {
@@ -441,7 +558,7 @@ export const listSettingsBackups = (): SettingsBackupInfo[] => {
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
-export const restoreSettingsBackup = (filename: string): Settings => {
+const loadValidatedSettingsBackup = (filename: string): Settings => {
   if (!isSafeBackupFilename(filename)) {
     throw new Error('Invalid backup filename')
   }
@@ -457,7 +574,15 @@ export const restoreSettingsBackup = (filename: string): Settings => {
     throw new Error(`Backup failed validation: ${issues.map((issue) => issue.path).join(', ')}`)
   }
 
-  saveSettings(restored)
+  return restored
+}
+
+export const restoreSettingsBackup = async (filename: string): Promise<Settings> => {
+  const restored = loadValidatedSettingsBackup(filename)
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { saveUserSettingsOverrides } = require('./settings-store') as typeof import('./settings-store')
+  await saveUserSettingsOverrides(restored)
   return restored
 }
 

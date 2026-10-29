@@ -6,7 +6,6 @@ import {
   loadMergedSettings,
   loadUserSettings,
   parseTypedValue,
-  saveSettings,
   setByPath,
   toCategoryLabel,
   validatePathAgainstDefaults,
@@ -21,6 +20,7 @@ import {
   validateEnvPair,
   validateEnvValues,
 } from '../utils/env-config'
+import { bootstrapSettingsStore, saveUserSettingsOverrides } from '../../utils/settings-store'
 import { logError, logInfo } from '../utils/output'
 import { runStart } from './start'
 import { runStop } from './stop'
@@ -77,6 +77,7 @@ const restartRelay = async (): Promise<number> => {
 }
 
 export const runConfigList = async (options: { json?: boolean } = {}): Promise<number> => {
+  await bootstrapSettingsStore()
   const settings = loadMergedSettings()
 
   if (options.json) {
@@ -89,6 +90,7 @@ export const runConfigList = async (options: { json?: boolean } = {}): Promise<n
 }
 
 export const runConfigGet = async (path: string, options: { json?: boolean } = {}): Promise<number> => {
+  await bootstrapSettingsStore()
   const settings = loadMergedSettings() as unknown as Record<string, unknown>
   const value = getByPath(settings, path)
 
@@ -122,6 +124,8 @@ export const runConfigSet = async (
 ): Promise<number> => {
   const valueType = options.valueType ?? 'inferred'
 
+  await bootstrapSettingsStore()
+
   const pathIssues = validatePathAgainstDefaults(path)
   if (pathIssues.length > 0) {
     logError(pathIssues[0].message)
@@ -146,7 +150,7 @@ export const runConfigSet = async (
     }
   }
 
-  saveSettings(next as any)
+  await saveUserSettingsOverrides(next as any)
 
   logInfo(`Updated ${path}`)
 
@@ -158,6 +162,7 @@ export const runConfigSet = async (
 }
 
 export const runConfigValidate = async (): Promise<number> => {
+  await bootstrapSettingsStore()
   const settings = loadMergedSettings()
   const issues = validateSettings(settings)
 

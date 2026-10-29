@@ -5,6 +5,7 @@ import sinonChai from 'sinon-chai'
 import { OperatorNotificationEventType } from '../../../../src/@types/operator-notifications'
 import * as adminNotificationsSettings from '../../../../src/utils/admin-notifications-settings'
 import * as settingsConfig from '../../../../src/utils/settings-config'
+import * as settingsStore from '../../../../src/utils/settings-store'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { PatchAdminNotificationsController } = require('../../../../src/controllers/admin/patch-notifications-controller')
@@ -49,7 +50,7 @@ describe('PatchAdminNotificationsController', () => {
 
     sandbox.stub(settingsConfig, 'loadMergedSettings').returns(baseMergedSettings as any)
     sandbox.stub(settingsConfig, 'loadUserSettings').returns({ admin: { notifications: baseNotifications } } as any)
-    sandbox.stub(settingsConfig, 'saveSettings')
+    sandbox.stub(settingsStore, 'saveUserSettingsOverrides').resolves()
     sandbox.stub(settingsConfig, 'appendSettingsAuditLog')
     sandbox.stub(adminNotificationsSettings, 'getRedactedAdminNotifications').returns({
       ...baseNotifications,
@@ -93,7 +94,7 @@ describe('PatchAdminNotificationsController', () => {
     expect(response.status.calledOnceWithExactly(400)).to.equal(true)
     expect(response.send.firstCall.args[0].error).to.equal('Validation failed')
     expect(response.send.firstCall.args[0].issues).to.be.an('array').that.is.not.empty
-    expect(settingsConfig.saveSettings).to.not.have.been.called
+    expect(settingsStore.saveUserSettingsOverrides).to.not.have.been.called
     expect(outboxRepository.enqueue).to.not.have.been.called
   })
 
@@ -118,8 +119,8 @@ describe('PatchAdminNotificationsController', () => {
     )
 
     expect(response.status.calledOnceWithExactly(200)).to.equal(true)
-    expect(settingsConfig.saveSettings).to.have.been.calledOnce
-    const saved = (settingsConfig.saveSettings as Sinon.SinonStub).firstCall.args[0]
+    expect(settingsStore.saveUserSettingsOverrides).to.have.been.calledOnce
+    const saved = (settingsStore.saveUserSettingsOverrides as Sinon.SinonStub).firstCall.args[0]
     expect(saved.admin.notifications.enabled).to.equal(true)
     expect(saved.admin.notifications.targets[0].enabled).to.equal(false)
     expect(saved.admin.notifications.targets[0].url).to.equal('https://discord.com/api/webhooks/secret')
@@ -137,6 +138,6 @@ describe('PatchAdminNotificationsController', () => {
     await controller.handleRequest({ body: { enabled: true }, ip: '127.0.0.1' } as any, response as any)
 
     expect(response.status.calledOnceWithExactly(200)).to.equal(true)
-    expect(settingsConfig.saveSettings).to.have.been.calledOnce
+    expect(settingsStore.saveUserSettingsOverrides).to.have.been.calledOnce
   })
 })
