@@ -7,6 +7,7 @@ import { DEFAULT_FILTER_LIMIT } from '../../constants/base'
 import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
 import { getPublicPathPrefix, joinPathPrefix } from '../../utils/http'
+import { areSubscriptionsEnabled, getSubscriptionPlans } from '../../utils/subscription'
 import { isNip77Active } from '../../utils/nip77'
 import { resolveRelaySelfPubkey } from '../../utils/nip43'
 import packageJson from '../../../package.json'
@@ -89,8 +90,11 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     const hasAdmissionRestriction =
       settings.payments?.enabled === true &&
       Boolean(settings.payments?.feeSchedules?.admission?.some((feeSchedule) => feeSchedule.enabled))
+    const subscriptionsEnabled = areSubscriptionsEnabled(settings)
     const hasWriteRestriction =
       hasAdmissionRestriction ||
+      // With plans a subscription is what lets a pubkey write, whether or not an admission fee is set.
+      subscriptionsEnabled ||
       settings.nip43?.enabled === true ||
       // Publish-only NIP-42 auth is a write condition, not connection-wide auth_required.
       settings.nip42?.authRequired === true ||
@@ -171,23 +175,37 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         search_supported: settings.nip50?.enabled ?? false,
       },
       payments_url: paymentsUrl.toString(),
-      fees: settings.payments
-        ? Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(
-            (prev, feeName) => {
-              const feeSchedules = settings.payments.feeSchedules[feeName] as FeeSchedule[]
+      fees: {
+        ...(settings.payments
+          ? Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(
+              (prev, feeName) => {
+                const feeSchedules = settings.payments.feeSchedules[feeName] as FeeSchedule[]
 
-              return {
-                ...prev,
-                [feeName]: feeSchedules.reduce(
-                  (fees, fee) => (fee.enabled ? [...fees, { amount: fee.amount, unit: 'msats' }] : fees),
-                  [],
-                ),
-              }
-            },
-            {} as Record<string, { amount: number | bigint; unit: string }[]>,
-          )
-        : {},
-      peering: buildPeeringDocument(settings.peering),
+                return {
+                  ...prev,
+                  [feeName]: feeSchedules.reduce(
+                    (fees, fee) => (fee.enabled ? [...fees, { amount: fee.amount, unit: 'msats' }] : fees),
+                    [],
+                  ),
+                }
+              },
+              {} as Record<string, { amount: number | bigint; unit: string }[]>,
+            )
+          : {}),
+        // NIP-11 `fees.subscription`: one entry per plan, `period` in seconds. `id` is what a client sends as
+        // `planId` to `POST /invoices`; clients that do not know it ignore it.
+        ...(subscriptionsEnabled
+          ? {
+              subscription: getSubscriptionPlans(settings).map((plan) => ({
+                id: plan.id,
+                amount: Number(plan.amount),
+                unit: 'msats',
+                period: plan.intervalSeconds,
+                ...(plan.description ? { description: plan.description } : {}),
+              })),
+            }
+          : {}),
+      },
     }
 
     response
