@@ -134,15 +134,14 @@ Pull the image onto the server:
 sudo docker pull ghcr.io/cameri/nostream:latest
 ```
 
-> [!IMPORTANT]
-> `docker-compose.yml` sets `pull_policy: never` on relay services so that Docker Compose does not attempt to pull during startup or flapping network conditions. You explicitly pull images when deploying or upgrading.
->
-> That also means **the tag in `docker-compose.yml` is the tag that runs.** Pulling `ghcr.io/cameri/nostream:v3.6.2` while the compose file still says `:latest` deploys `:latest`, not the version you pulled. To pin, set the same tag in both places:
->
-> ```bash
-> sudo sed -i 's|ghcr.io/cameri/nostream:.*|ghcr.io/cameri/nostream:v3.6.2|' /opt/nostream/docker-compose.yml
-> sudo docker pull ghcr.io/cameri/nostream:v3.6.2
-> ```
+**Note on `pull_policy`.** `docker-compose.yml` sets `pull_policy: never` on relay services so that Docker Compose does not attempt to pull during startup or flapping network conditions. You explicitly pull images when deploying or upgrading.
+
+That also means **the tag in `docker-compose.yml` is the tag that runs.** Pulling `ghcr.io/cameri/nostream:v3.6.2` while the compose file still says `:latest` deploys `:latest`, not the version you pulled. To pin, set the same tag in both places:
+
+```bash
+sudo sed -i 's|ghcr.io/cameri/nostream:.*|ghcr.io/cameri/nostream:v3.6.2|' /opt/nostream/docker-compose.yml
+sudo docker pull ghcr.io/cameri/nostream:v3.6.2
+```
 
 ---
 
@@ -220,11 +219,11 @@ info:
   contact: "mailto:operator@example.com"
 ```
 
-### Tell the relay about your reverse proxy
+### Tell the relay about your reverse proxy (required)
 
-By default the relay trusts **only loopback** as a proxy, and `network.remoteIpHeader` is unset. Behind Caddy or Nginx every request therefore appears to come from `127.0.0.1`, which means **all clients share one rate-limit bucket** — one busy client can rate-limit everyone else.
+The relay binds to `127.0.0.1` and **cannot be exposed without a reverse proxy** (step 8), so this applies to every deployment. By default it trusts only loopback and leaves `network.remoteIpHeader` unset, so every request arrives looking like `127.0.0.1` and **all clients share one rate-limit bucket** — one busy client can rate-limit everyone else.
 
-If you fronted the relay with the proxy configured in step 8, uncomment and set these in the same file:
+Add this to `/opt/nostream/.nostr/settings.yaml`. `deploy/settings.yaml.example` does not contain a `network` block, so add it rather than uncommenting:
 
 ```yaml
 network:
@@ -444,10 +443,33 @@ This runs database migrations, recreates the container, and verifies readiness.
 For zero-downtime rolling deploys with blue/green backends, consult the [`Deploy Runbook & HAProxy Guide`](../docs/DEPLOY-RUNBOOK.md).
 
 ### Backups
-Back up the following paths regularly:
-- `/opt/nostream/.env` (Secrets and credentials)
-- `/opt/nostream/.nostr/data/` (PostgreSQL database volume)
-- `/opt/nostream/.nostr/settings.yaml` (Optional custom settings)
+
+Take two kinds, because they fail differently:
+
+**A logical database dump** is the one that restores reliably. Copying `/opt/nostream/.nostr/data/` while PostgreSQL is running captures a torn, mid-write state that may not start again; use `pg_dump` instead:
+
+```bash
+set -a; . /opt/nostream/.env; set +a
+sudo docker compose -f /opt/nostream/docker-compose.yml exec -T nostream-db \
+  pg_dump -U "$DB_USER" "$DB_NAME" | gzip > ~/nostream-$(date +%F).sql.gz
+```
+
+Restore into an empty database:
+
+```bash
+set -a; . /opt/nostream/.env; set +a
+gunzip -c ~/nostream-2026-10-29.sql.gz | sudo docker compose -f /opt/nostream/docker-compose.yml exec -T nostream-db \
+  psql -U "$DB_USER" -d "$DB_NAME"
+```
+
+**Configuration** can be copied directly — these are plain files:
+- `/opt/nostream/.env` (secrets and credentials, mode 600)
+- `/opt/nostream/.nostr/settings.yaml` (if you created one)
+- `/opt/nostream/docker-compose.yml` (your copy may carry local edits)
+
+A filesystem snapshot of the whole host taken with the database stopped is the only safe way to back up the data directory itself.
+
+Test a restore before you need one.
 
 ---
 
