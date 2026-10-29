@@ -44,6 +44,7 @@
 
 pub mod broadcast;
 pub mod connection;
+pub mod connection_cap;
 pub mod error;
 pub mod handlers;
 pub mod hidden_content;

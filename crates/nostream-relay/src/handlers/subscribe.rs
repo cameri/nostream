@@ -268,6 +268,26 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
             return;
         }
 
+        // A refused frame is never queued, and the connection loop is about to close this
+        // socket whatever this read does. Encoding the rest of the stream would only discard
+        // it, and with a shared budget the loop can be a whole blocked write away from
+        // running, so the window is not short. The sink must not latch on a budget refusal —
+        // a frame that fits later is admitted — which is why the stop lives here.
+        //
+        // The read then parks instead of unwinding: it has nothing left to send, and parking
+        // keeps the close's promptness a property of the refusal signal rather than of this
+        // handler happening to finish. On the refusal path the loop's `abort_all` drops the
+        // parked task before the watch below ever resolves, so the `end_read` after it is the
+        // path a client `CLOSE` or a re-`REQ` takes, not the refusal's. It is the same call
+        // every other exit of this function makes, and it is safe beside the loop's own
+        // `close` because it removes the entry only while the generation it carries still
+        // matches (`connection.rs:290-297`): whichever of the two runs second does nothing.
+        if context.sink.refusal().is_some() {
+            let _ = read.cancellation().changed().await;
+            context.connection.end_read(read);
+            return;
+        }
+
         let record = tokio::select! {
             changed = read.cancellation().changed() => {
                 // An aborted read sends no frame at all, not even EOSE.
@@ -407,4 +427,106 @@ fn can_subscribe(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::time::Duration;
+
+    use nostream_core::clock::TestClock;
+    use nostream_core::event::{EventId, Pubkey, Signature};
+    use nostream_core::nip42::Nip42Session;
+
+    use super::*;
+    use crate::connection::Connection;
+    use crate::relay_key::RelayKeySource;
+    use crate::sink::{FrameBudget, FrameSink, Refusal};
+    use crate::testing::{Fixture, settings};
+
+    /// An event the fixture can hold, signed by `secret`.
+    fn signed_event(secret: &[u8; 32], created_at: i64) -> nostream_core::Event {
+        let mut event = nostream_core::Event {
+            id: EventId::from_byte_array([0; 32]),
+            pubkey: Pubkey::from_byte_array([0; 32]),
+            created_at,
+            kind: Kind(1),
+            tags: Vec::new(),
+            content: "stored".to_owned(),
+            sig: Signature::from_byte_array([0; 64]),
+        };
+
+        nostream_core::crypto::sign_event(secret, &mut event).expect("sign the test event");
+
+        event
+    }
+
+    #[tokio::test]
+    async fn a_refused_sink_stops_the_read_instead_of_encoding_the_rest_of_it() {
+        // Three stored events behind a per-item gate, and a 64-byte budget: every event frame
+        // is refused, so the read must neither take another record nor encode one. The gate is
+        // the measure — two permits left means one record was taken and the stream was not
+        // drained — and the queue is the other: a read that ran on to the end would leave the
+        // 12-byte `EOSE` in it, which does fit.
+        let fixture = Fixture::new(settings());
+        let gate = fixture.events.gate_reads_per_item();
+
+        for index in 0..3 {
+            fixture
+                .seed_event(signed_event(&[7u8; 32], 1_700_000_000 + index))
+                .await;
+        }
+
+        let budget = Arc::new(FrameBudget::new(64));
+        let (sink, mut frames) = FrameSink::channel(64 * 1024, Some(Arc::clone(&budget)));
+        let refused = sink.clone();
+        let connection = Arc::new(Connection::new(
+            "127.0.0.1".to_owned(),
+            Nip42Session::with_challenge("challenge", 0),
+        ));
+        let context = Arc::new(fixture.context(
+            Arc::new(TestClock::new(1_700_000_000_000)),
+            RelayKeySource::from_values(None, None),
+            Arc::clone(&connection),
+            sink,
+        ));
+
+        let message = SubscribeMessage {
+            subscription_id: "s".to_owned(),
+            filters: vec![Filter {
+                kinds: Some(vec![Kind(1)]),
+                ..Filter::default()
+            }],
+        };
+
+        let mut read = begin(message, &context).expect("the subscription is registered");
+        gate.add_permits(3);
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut read)
+                .await
+                .is_err(),
+            "the read parks once its frame is refused instead of draining the stream"
+        );
+        assert_eq!(refused.refusal(), Some(Refusal::BudgetExhausted));
+        assert_eq!(
+            gate.available_permits(),
+            2,
+            "one record was taken and the rest of the stream was never asked for"
+        );
+        assert!(frames.try_recv().is_err(), "no EOSE reached the queue");
+        assert_eq!(refused.queued_bytes(), 0);
+        assert_eq!(
+            budget.refusals(),
+            1,
+            "one refusal for the socket, not one per event"
+        );
+
+        // The close the read is waiting for ends it.
+        connection.close();
+        tokio::time::timeout(Duration::from_secs(1), read)
+            .await
+            .expect("the connection's close ends the read");
+    }
 }

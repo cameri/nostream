@@ -100,7 +100,7 @@ fn keys() -> RelayKeySource {
 
 /// A context whose sink a test can read, with its frames.
 fn socket(fixture: &Fixture) -> (HandlerContext, mpsc::UnboundedReceiver<String>) {
-    let (sink, frames) = FrameSink::channel(64 * 1024);
+    let (sink, frames) = FrameSink::channel(64 * 1024, None);
     let connection = Arc::new(Connection::new(
         "127.0.0.1".to_owned(),
         Nip42Session::with_challenge("challenge", 0),

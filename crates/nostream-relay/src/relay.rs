@@ -28,20 +28,21 @@ use nostream_core::messages::RelayMessage;
 use nostream_core::{Event, messages};
 
 use crate::connection::{AcceptedTransport, Connection, ConnectionContext};
+use crate::connection_cap::ConnectionCap;
 use crate::handlers::{self, HandlerContext, Stores};
 use crate::hidden_content::{DEFAULT_REFRESH_INTERVAL, HiddenContentCache};
 use crate::limits::RateLimits;
 use crate::relay_key::RelayKeySource;
-use crate::sink::FrameSink;
+use crate::sink::{FrameBudget, FrameSink, Refusal};
 use crate::transport;
 use crate::wot::WotGraph;
 
 /// The knobs a [`Relay`] is built with that are not settings: a constant the capture fixes in
 /// code (`liveness`, the NIP-56 refresh) or a policy the port adds with no counterpart there
-/// (`frame_queue_bytes`, `write_timeout`; ADR 0005). Tests set the cadences they need
-/// (`tests/common/mod.rs::fast_config`); the two policies run at their shipped defaults in
-/// every test so far. A value the capture's settings document carries belongs in [`Settings`],
-/// never here.
+/// (`frame_queue_bytes`, `write_timeout`, `frame_memory_budget_bytes`,
+/// `max_connections_per_ip`; ADR 0005, ADR 0008). Tests set the cadences they need and the
+/// bounds a case asks for; every value here runs at its shipped default otherwise. A value
+/// the capture's settings document carries belongs in [`Settings`], never here.
 #[derive(Debug, Clone)]
 pub struct RelayConfig {
     /// `WSS_CLIENT_HEALTH_PROBE_INTERVAL` (`web-socket-server-adapter.ts:18`).
@@ -59,6 +60,13 @@ pub struct RelayConfig {
     /// cannot starve (`web-socket-server-adapter.ts:18,46`), while this loop performs the
     /// write itself.
     pub write_timeout: Duration,
+    /// The queued outbound payload bytes every socket of this relay shares. The capture has
+    /// no counterpart: it bounds neither one socket's queue nor their sum (ADR 0008).
+    pub frame_memory_budget_bytes: usize,
+    /// The live sockets one source address may hold at once. The capture has no counterpart
+    /// either: its connection limits are rates, not counts (`src/@types/settings.ts:163-167`;
+    /// ADR 0008).
+    pub max_connections_per_ip: usize,
 }
 
 impl Default for RelayConfig {
@@ -76,6 +84,14 @@ impl Default for RelayConfig {
             // Shorter than the 120 s liveness interval, so a client that stops reading is
             // closed by the write path before a missed pong could close it.
             write_timeout: Duration::from_secs(30),
+            // 256 MiB: 32 sockets at the `frame_queue_bytes` ceiling can be fully buffered
+            // before the budget binds, which is below the 48 a single address gets through
+            // the shipped attempt limits alone (ADR 0008).
+            frame_memory_budget_bytes: 256 * 1024 * 1024,
+            // 64: four times the concurrent total one well-behaved client needs. The cap
+            // bounds sockets, the budget bounds bytes, so its own worst case (64 × 8 MiB) sits
+            // above the budget on purpose (ADR 0008).
+            max_connections_per_ip: 64,
         }
     }
 }
@@ -92,6 +108,8 @@ pub struct Relay {
     hidden: Arc<HiddenContentCache>,
     hub: broadcast::Sender<Arc<Event>>,
     pow: Arc<Mutex<AdaptivePowState>>,
+    frame_budget: Arc<FrameBudget>,
+    connection_cap: Arc<ConnectionCap>,
     config: RelayConfig,
 }
 
@@ -112,8 +130,8 @@ impl Relay {
     /// Everything the relay runs with is an argument, so a relay that mints from
     /// `SystemRandom` or resolves `WS_DRAIN_TIMEOUT_MS` from the environment is one whose
     /// composition root asked for it: `RelayConfig::default()` is the port's own defaults — the
-    /// capture's constants plus the two policies ADR 0005 adds — and the environment read is
-    /// [`transport::drain_timeout`] at the call site.
+    /// capture's constants plus the policies ADR 0005 and ADR 0008 add — and the environment
+    /// read is [`transport::drain_timeout`] at the call site.
     pub fn new(
         settings: Settings,
         stores: Arc<Stores>,
@@ -125,6 +143,8 @@ impl Relay {
     ) -> Arc<Self> {
         let settings = Arc::new(settings);
         let (hub, _receiver) = broadcast::channel(1024);
+        let frame_budget = Arc::new(FrameBudget::new(config.frame_memory_budget_bytes));
+        let connection_cap = Arc::new(ConnectionCap::new(config.max_connections_per_ip));
 
         Arc::new(Self {
             limits: Arc::new(RateLimits::new(&settings, Arc::clone(&clock))),
@@ -137,6 +157,8 @@ impl Relay {
             hidden: HiddenContentCache::new(),
             hub,
             pow: Arc::new(Mutex::new(AdaptivePowState::default())),
+            frame_budget,
+            connection_cap,
             config,
         })
     }
@@ -145,6 +167,18 @@ impl Relay {
     /// that seeds it; nothing else in the workspace calls this.
     pub fn hidden_content(&self) -> &Arc<HiddenContentCache> {
         &self.hidden
+    }
+
+    /// The process-wide bound on queued outbound payload bytes. The counter it carries is what
+    /// a metrics exporter would read once the admin `/metrics` route is implemented; the warn
+    /// line on a refusal is what an operator has today (ADR 0008).
+    pub fn frame_budget(&self) -> &Arc<FrameBudget> {
+        &self.frame_budget
+    }
+
+    /// The live-connection cap per source address, and its refusal counter.
+    pub fn connection_cap(&self) -> &Arc<ConnectionCap> {
+        &self.connection_cap
     }
 
     /// The context one socket's handlers run in.
@@ -242,7 +276,7 @@ impl Relay {
     ) {
         let max_payload = transport::max_payload_size(&self.settings);
 
-        let transport = match transport::upgrade(stream, max_payload).await {
+        let mut transport = match transport::upgrade(stream, max_payload).await {
             Ok(transport) => transport,
             Err(error) => {
                 tracing::debug!(%peer, error = %error, "websocket handshake failed");
@@ -254,6 +288,30 @@ impl Relay {
             tracing::debug!(%peer, "client terminated: rate-limited");
             return;
         }
+
+        // After the attempt limiter, so a rate-limited socket is still dropped silently as it
+        // always was and takes no slot; before `run_connection`, because registering the
+        // `Connection` sends the NIP-42 challenge as a text frame and a refused client must
+        // receive no text frame (ADR 0008). The slot is held until this function returns,
+        // which covers the registration failure inside `run_connection` as well as its
+        // normal exit.
+        let ip = peer.ip().to_string();
+        let Some(_slot) = self.connection_cap.acquire(&ip) else {
+            tracing::debug!(
+                %peer,
+                max_connections_per_ip = self.connection_cap.max_per_ip(),
+                live = self.connection_cap.live(&ip),
+                "client terminated: connection cap"
+            );
+            self.close_frame(
+                &mut transport,
+                CloseCode::Again,
+                transport::CONNECTION_CAP_REASON,
+            )
+            .await;
+
+            return;
+        };
 
         self.run_connection(transport, peer, shutdown).await;
     }
@@ -283,7 +341,10 @@ impl Relay {
         peer: std::net::SocketAddr,
         shutdown: ShutdownState,
     ) {
-        let (sink, mut frames) = FrameSink::channel(self.config.frame_queue_bytes);
+        let (sink, mut frames) = FrameSink::channel(
+            self.config.frame_queue_bytes,
+            Some(Arc::clone(&self.frame_budget)),
+        );
 
         let connection_context = ConnectionContext {
             settings: Arc::clone(&self.settings),
@@ -327,8 +388,8 @@ impl Relay {
             // Read at the top of every iteration, so a flag the producers set while the loop
             // was parked on a write is acted on as soon as that write returns. No `await`
             // sits between a write completing and this check.
-            if sink.overflowed() {
-                self.close_slow_consumer(&mut transport, peer).await;
+            if let Some(refusal) = sink.refusal() {
+                self.close_refused(&mut transport, peer, refusal).await;
                 break;
             }
 
@@ -420,6 +481,12 @@ impl Relay {
                     }
                 }
                 _ = drained.changed() => drain_seen = *drained.borrow_and_update(),
+                // A refusal can arrive with nothing else to wake this loop: the budget is
+                // shared, so the frame that did not fit may have left this socket's own queue
+                // empty, the socket idle, and its read stopped and parked with nothing to run it.
+                // The producer signals when it records the refusal, and the next iteration's
+                // check closes the client — immediate, not one liveness tick away (ADR 0008).
+                _ = sink.refused() => {}
                 Some(_) = handlers.join_next(), if !handlers.is_empty() => {}
             }
         }
@@ -428,24 +495,47 @@ impl Relay {
         connection.close();
     }
 
-    /// Closes a client whose outbound frame queue overflowed: 1013 with the reason, then the
-    /// loop's cleanup (`handlers.abort_all()` and `connection.close()`).
+    /// Closes a client whose frame was refused, with the close its bound implies: 1013 and the
+    /// reason for that bound, then the loop's cleanup (`handlers.abort_all()` and
+    /// `connection.close()`).
     ///
-    /// The policy is a disconnect, not a silent break: a client cut mid-`REQ` with no frame
-    /// cannot tell a slow link from a relay that forgot it (ADR 0005).
-    async fn close_slow_consumer(
+    /// The policy is a disconnect, not a silent break, for both bounds: a client cut mid-`REQ`
+    /// with no frame cannot tell a slow link from a relay that forgot it (ADR 0005), and a
+    /// refusal that looked like a network fault is exactly what the two reason strings and
+    /// their counters exist to keep out of the logs (ADR 0008).
+    async fn close_refused(
         &self,
         transport: &mut AcceptedTransport,
         peer: std::net::SocketAddr,
+        refusal: Refusal,
     ) {
-        tracing::debug!(%peer, "closing a client that cannot keep up with its frame queue");
+        match refusal {
+            Refusal::QueueFull => {
+                tracing::debug!(%peer, "closing a client that cannot keep up with its frame queue");
 
+                self.close_frame(transport, CloseCode::Again, transport::SLOW_CONSUMER_REASON)
+                    .await;
+            }
+            Refusal::BudgetExhausted => {
+                tracing::debug!(%peer, "closing a client that exhausted the frame memory budget");
+
+                self.close_frame(transport, CloseCode::Again, transport::FRAME_BUDGET_REASON)
+                    .await;
+            }
+        }
+    }
+
+    /// Writes one close frame straight to the transport, bounded by the write timeout so a
+    /// client that stopped reading cannot hold the task open.
+    async fn close_frame(
+        &self,
+        transport: &mut AcceptedTransport,
+        code: CloseCode,
+        reason: &'static str,
+    ) {
         let _ = tokio::time::timeout(
             self.config.write_timeout,
-            transport.close(Some(transport::close_frame(
-                CloseCode::Again,
-                transport::SLOW_CONSUMER_REASON,
-            ))),
+            transport.close(Some(transport::close_frame(code, reason))),
         )
         .await;
     }
