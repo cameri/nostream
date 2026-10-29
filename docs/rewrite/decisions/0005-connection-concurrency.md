@@ -39,7 +39,7 @@ once per read either way, and identity would add a *second* watch handle to ever
 sender, plus a receiver the entry never awaits), while the generation adds one `u64` beside
 the one handle the table already holds. The generation is also the value a returning read can
 still carry after its own handle has been replaced, and the value that names the owner in the
-table; the rule is tested through behaviour (`tests/connection.rs:208-231`), not by value. It
+table; the rule is tested through behaviour (`crates/nostream-relay/tests/connection.rs:208-231`), not by value. It
 fits the locking the file already has: `impl Connection` contains no `.await`, so no lock is
 ever held across a suspension point, and the counter is read and written inside the same
 `insert` that replaces the previous sender. No second lock, no allocation outside the guard,
@@ -211,5 +211,5 @@ capture's only thread. The cost inside that radius is real: the loop is occupied
 
 ## Not decided here — the port's `CLOSE` semantics
 
-Whether a plain `CLOSE` aborts a stored read is out of scope for this record; it is tracked
-as cameri/nostream#957.
+Whether a plain `CLOSE` aborts a stored read was out of scope for this record; it is decided
+in `0007-close-aborts-read.md`.
