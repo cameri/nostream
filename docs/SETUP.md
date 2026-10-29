@@ -2,6 +2,8 @@
 
 > **Verified against:** nostream v3.6.2 (Ubuntu 24.04 LTS, Docker Engine 27+, Docker Compose v2)  
 > **Maintenance:** Maintained in-tree and reviewed whenever changes land in `deploy/` or compose configurations.
+>
+> The steps below pull `:latest`, which may be newer than the version above. Pin a tag in both `docker-compose.yml` and the `docker pull` command (step 4) if you need a known version.
 
 This is the canonical first-party guide for deploying and operating a production [nostream](https://github.com/cameri/nostream) Nostr relay. It covers host preparation, the automated deployment bootstrap, reverse proxy configuration with automatic TLS, verification, and ongoing maintenance.
 
@@ -23,6 +25,10 @@ Before you begin, ensure you have:
    - Port `80` (HTTP, for ACME certificate issuance and redirect)
    - Port `443` (HTTPS / WSS, for secure client connections)
    - Port `22` (SSH, management)
+4. **A few command-line tools** used later in this guide. `curl` and `openssl` generate your secrets and probe the relay; `jq` pretty-prints the JSON responses:
+   ```bash
+   sudo apt-get install -y curl openssl jq
+   ```
 
 ---
 
@@ -39,7 +45,7 @@ If you have read older community guides, be aware of the following anti-patterns
 
 ## 1. Install Docker Engine and Compose
 
-Install Docker Engine and the Compose plugin from the official Docker repository:
+Install Docker Engine and the Compose plugin from the official Docker repository. The repository path differs by distribution — Debian and Ubuntu use separate trees, and pointing a Debian host at the Ubuntu tree makes `apt-get update` fail with a 404.
 
 ```bash
 # Remove any conflicting packages
@@ -47,17 +53,27 @@ for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do
   sudo apt-get remove -y $pkg || true
 done
 
-# Add Docker's official GPG key
+# Add Docker's official GPG key. The distro is detected from /etc/os-release so this works on
+# both Debian and Ubuntu; download.docker.com/linux/<distro> only exists for the matching OS.
+source /etc/os-release
+case "${ID}" in
+  debian|ubuntu) DOCKER_DISTRO="${ID}" ;;
+  *)
+    echo "Unsupported distribution '${ID}'. Install Docker Engine manually; see https://docs.docker.com/engine/install/" >&2
+    exit 1
+    ;;
+esac
+
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gnupg
 sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+curl -fsSL "https://download.docker.com/linux/${DOCKER_DISTRO}/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
 # Add the repository to Apt sources
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${DOCKER_DISTRO} \
+  ${VERSION_CODENAME} stable" | \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 # Install Docker packages
@@ -118,8 +134,15 @@ Pull the image onto the server:
 sudo docker pull ghcr.io/cameri/nostream:latest
 ```
 
-> [!NOTE]
+> [!IMPORTANT]
 > `docker-compose.yml` sets `pull_policy: never` on relay services so that Docker Compose does not attempt to pull during startup or flapping network conditions. You explicitly pull images when deploying or upgrading.
+>
+> That also means **the tag in `docker-compose.yml` is the tag that runs.** Pulling `ghcr.io/cameri/nostream:v3.6.2` while the compose file still says `:latest` deploys `:latest`, not the version you pulled. To pin, set the same tag in both places:
+>
+> ```bash
+> sudo sed -i 's|ghcr.io/cameri/nostream:.*|ghcr.io/cameri/nostream:v3.6.2|' /opt/nostream/docker-compose.yml
+> sudo docker pull ghcr.io/cameri/nostream:v3.6.2
+> ```
 
 ---
 
@@ -197,6 +220,26 @@ info:
   contact: "mailto:operator@example.com"
 ```
 
+### Tell the relay about your reverse proxy
+
+By default the relay trusts **only loopback** as a proxy, and `network.remoteIpHeader` is unset. Behind Caddy or Nginx every request therefore appears to come from `127.0.0.1`, which means **all clients share one rate-limit bucket** — one busy client can rate-limit everyone else.
+
+If you fronted the relay with the proxy configured in step 8, uncomment and set these in the same file:
+
+```yaml
+network:
+  # Which header the proxy sets. Every proxy below sets X-Forwarded-For by default.
+  remoteIpHeader: x-forwarded-for
+  # Only these addresses may set that header. Keep loopback, and add your proxy's address.
+  trustedProxies:
+    - "127.0.0.1"
+    - "::1"
+```
+
+Caddy and Nginx on the same host connect over loopback, so the defaults above already cover them. A proxy in another container or on another host needs its address added here; otherwise the header is ignored and the warning below appears in the logs.
+
+> `remoteIpHeader` set without a matching `trustedProxies` entry is silently ignored. The relay logs `WARNING: network.remoteIpHeader is set but network.trustedProxies is empty` at startup — if you see that line, clients are not being identified individually.
+
 ---
 
 ## 7. Start the Stack
@@ -227,10 +270,11 @@ curl -s http://127.0.0.1:8008/healthz
 curl -s http://127.0.0.1:8008/readyz
 ```
 
-Expected output for `/readyz`:
+Expected output for `/readyz` (HTTP 200; the relay returns 503 when either dependency is down):
 ```json
-{"status":"ready","database":{"ok":true},"cache":{"ok":true}}
+{"status":"ok","database":{"ok":true},"redis":{"ok":true}}
 ```
+The key is `redis`, not `cache`, and a healthy status is `ok`. When relay broadcast fanout is enabled an extra `relayBroadcast` key appears.
 
 ---
 
@@ -382,16 +426,21 @@ When a new nostream version is released:
    cd ~/nostream
    git pull
    ```
-2. Pull the updated Docker image:
+2. Re-sync the release-managed compose file. `git pull` updates your clone, but the running stack reads `/opt/nostream/docker-compose.yml`, which is a copy taken at bootstrap time — it does not follow the repository on its own:
+   ```bash
+   sudo cp ~/nostream/deploy/docker-compose.prod.yml /opt/nostream/docker-compose.yml
+   ```
+   Diff it first if you edited the copy by hand; this overwrites it.
+3. Pull the updated Docker image:
    ```bash
    sudo docker pull ghcr.io/cameri/nostream:latest
    ```
-3. Run the automated recreate script:
+4. Run the automated recreate script:
    ```bash
    sudo ./deploy/recreate-relay.sh /opt/nostream
    ```
 
-This runs database migrations, recreates the container, and verifies readiness.  
+This runs database migrations, recreates the container, and verifies readiness.
 For zero-downtime rolling deploys with blue/green backends, consult the [`Deploy Runbook & HAProxy Guide`](../docs/DEPLOY-RUNBOOK.md).
 
 ### Backups
