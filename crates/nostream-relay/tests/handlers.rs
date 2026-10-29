@@ -1220,7 +1220,7 @@ async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
         .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "stored", NOW_SECS))
         .await;
 
-    let (sink, mut frames) = FrameSink::channel(1024 * 1024);
+    let (sink, mut frames) = FrameSink::channel(1024 * 1024, None);
     let connection = Arc::new(Connection::new(
         "127.0.0.1".to_owned(),
         nostream_core::nip42::Nip42Session::with_challenge("challenge", 0),
