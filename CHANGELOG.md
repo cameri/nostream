@@ -1,5 +1,37 @@
 # nostream
 
+## 3.9.0
+
+### Minor Changes
+
+- [#999](https://github.com/cameri/nostream/pull/999) [`469f1b1`](https://github.com/cameri/nostream/commit/469f1b17851c1e8be1836c3e49b0d248ca5df306) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): advertise peering terms and scopes in NIP-11
+
+  The relay information document now carries a `peering` section built from the new
+  `peering` settings block. It advertises whether peering is offered, the feeds
+  available as `kinds` scopes with an absolute `since`/`until` range or a rolling
+  `windowSeconds`, terms in the existing NIP-11 fee-object shape (`amount`, `unit`,
+  `period`) where an empty `terms` list means settlement-free, a peer `contact` or
+  WebSocket `endpoint`, and `min_pow_difficulty` — the NIP-13 work a peering request
+  must carry, `0` meaning none.
+
+  Disabled peering publishes only `{ "enabled": false }`, so half-configured terms are
+  never read as an accepted peer: this is the discovery surface other relays read
+  before connecting, not a peer-acceptance path. Settings validation rejects invalid
+  scopes, terms, time ranges, endpoints and proof-of-work bounds with a clear path, and
+  all `peering.*` fields are documented in `CONFIGURATION.md` with an example document.
+
+  Closes [#932](https://github.com/cameri/nostream/issues/932).
+
+- [#926](https://github.com/cameri/nostream/pull/926) [`2819e30`](https://github.com/cameri/nostream/commit/2819e3044aef89298955c4aef6272a1c7132ff09) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(payments): let clients see their subscription tier
+
+### Patch Changes
+
+- [#972](https://github.com/cameri/nostream/pull/972) [`a46ae06`](https://github.com/cameri/nostream/commit/a46ae06afc508735eac23f7a8eb4b7f7fbfb400e) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(compose): keep dynamic container addresses off the static ones
+
+  `docker-compose.yml` pins `nostream`, `nostream-db` and `nostream-cache` to `10.10.10.2`–`.4`, but dynamic allocation drew from the bottom of the same `/24`. The observability stack has no dependency that orders it after `nostream`, so `otel-collector` could be given `.2` and `nostream` then failed to start with `Address already in use` — most reliably after a host reboot, when the daemon starts containers in arbitrary order.
+
+  Dynamic allocation is now confined to `10.10.10.128/26`. The subnet and gateway are unchanged, so `10.10.10.1` stays the trusted proxy, and the overlay pins (`.5`, `.252`, `.253`) stay outside the pool.
+
 ## 3.8.0
 
 ### Minor Changes
