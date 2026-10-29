@@ -206,6 +206,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
             }
           : {}),
       },
+      peering: buildPeeringDocument(settings.peering),
     }
 
     response
