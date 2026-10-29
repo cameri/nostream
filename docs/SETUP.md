@@ -224,13 +224,21 @@ network:
     # Append your proxy's address if it is not one of the above.
 ```
 
-The list above is the image default. `10.10.10.1` is the Docker bridge gateway, which the shipped compose confines dynamic addresses to (`#972`); a proxy running in its own container reaches the relay through it. Caddy or Nginx installed directly on the host connect over loopback.
+The list above is the image default. `10.10.10.1` is the gateway of the network the shipped compose defines; a proxy in its own container reaches the relay through it. Caddy or Nginx installed directly on the host connect over loopback.
+
+If your proxy runs in a container on a **different** network — a plain Docker default bridge is usually `172.17.0.1` or `172.18.0.1` — it will not match. Matching is exact, with no CIDR support, so read the proxy container's address rather than guessing:
+
+```bash
+sudo docker inspect <proxy-container> --format '{{range $net, $cfg := .NetworkSettings.Networks}}{{$net}}={{$cfg.IPAddress}} {{end}}'
+```
+
+Add that address to `trustedProxies`.
 
 > `remoteIpHeader` set without a matching `trustedProxies` entry is silently ignored. The relay logs `WARNING: network.remoteIpHeader is set but network.trustedProxies is empty` at startup — if you see that line, clients are not being identified individually.
 
 ### Relay metadata (optional)
 
-To set your relay name, description, contact email or pubkey, add an `info` block to the same file:
+To set your relay name, description, contact email or pubkey, **edit the `info` block that is already in the file** — do not add a second one. YAML rejects a duplicated key, and as above, a file that fails to parse is discarded entirely:
 
 ```yaml
 info:
