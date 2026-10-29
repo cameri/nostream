@@ -195,20 +195,39 @@ RELAY_BROADCAST_STREAM_KEY=nostream:relay:broadcast
 
 ---
 
-## 6. (Optional) Custom Relay Metadata and Settings
+## 6. Configure Relay Settings
 
-By default, the relay uses internal defaults from the image (`resources/default-settings.yaml`).
-
-If you want to set your relay name, description, contact email, or pubkey, create an overrides file:
+Both the proxy settings below and any metadata overrides live in one file. Create it from the shipped example:
 
 ```bash
 sudo cp ~/nostream/deploy/settings.yaml.example /opt/nostream/.nostr/settings.yaml
 sudo chown 1000:1000 /opt/nostream/.nostr/settings.yaml
 sudo chmod 600 /opt/nostream/.nostr/settings.yaml
-sudo nano /opt/nostream/.nostr/settings.yaml
 ```
 
-Edit the fields you wish to override:
+### Proxy trust (required)
+
+The relay binds to `127.0.0.1` and **cannot be exposed without a reverse proxy** (step 8), so this applies to every deployment. By default it trusts only loopback and leaves `network.remoteIpHeader` unset, so every request arrives looking like `127.0.0.1` and **all clients share one rate-limit bucket** — one busy client can rate-limit everyone else.
+
+`deploy/settings.yaml.example` has no `network` section, so add one:
+
+```yaml
+network:
+  # Which header the proxy sets. Both proxies in step 8 set X-Forwarded-For by default.
+  remoteIpHeader: x-forwarded-for
+  # Only these addresses may set that header.
+  trustedProxies:
+    - "127.0.0.1"
+    - "::1"
+```
+
+Caddy and Nginx on the same host connect over loopback, so the list above covers them. A proxy in another container or on another host needs its address added here; otherwise the header is ignored.
+
+> `remoteIpHeader` set without a matching `trustedProxies` entry is silently ignored. The relay logs `WARNING: network.remoteIpHeader is set but network.trustedProxies is empty` at startup — if you see that line, clients are not being identified individually.
+
+### Relay metadata (optional)
+
+To set your relay name, description, contact email or pubkey, add an `info` block to the same file:
 
 ```yaml
 info:
@@ -219,25 +238,7 @@ info:
   contact: "mailto:operator@example.com"
 ```
 
-### Tell the relay about your reverse proxy (required)
-
-The relay binds to `127.0.0.1` and **cannot be exposed without a reverse proxy** (step 8), so this applies to every deployment. By default it trusts only loopback and leaves `network.remoteIpHeader` unset, so every request arrives looking like `127.0.0.1` and **all clients share one rate-limit bucket** — one busy client can rate-limit everyone else.
-
-Add this to `/opt/nostream/.nostr/settings.yaml`. `deploy/settings.yaml.example` does not contain a `network` block, so add it rather than uncommenting:
-
-```yaml
-network:
-  # Which header the proxy sets. Every proxy below sets X-Forwarded-For by default.
-  remoteIpHeader: x-forwarded-for
-  # Only these addresses may set that header. Keep loopback, and add your proxy's address.
-  trustedProxies:
-    - "127.0.0.1"
-    - "::1"
-```
-
-Caddy and Nginx on the same host connect over loopback, so the defaults above already cover them. A proxy in another container or on another host needs its address added here; otherwise the header is ignored and the warning below appears in the logs.
-
-> `remoteIpHeader` set without a matching `trustedProxies` entry is silently ignored. The relay logs `WARNING: network.remoteIpHeader is set but network.trustedProxies is empty` at startup — if you see that line, clients are not being identified individually.
+Anything you omit falls back to `resources/default-settings.yaml` in the image.
 
 ---
 
@@ -449,15 +450,26 @@ Take two kinds, because they fail differently:
 **A logical database dump** is the one that restores reliably. Copying `/opt/nostream/.nostr/data/` while PostgreSQL is running captures a torn, mid-write state that may not start again; use `pg_dump` instead:
 
 ```bash
-set -a; . /opt/nostream/.env; set +a
+set -o pipefail   # otherwise the pipeline exits with gzip's status and a failed pg_dump looks fine
+# .env is mode 600 and root-owned, so read just the two values we need.
+DB_USER="$(sudo sed -n 's/^DB_USER=//p' /opt/nostream/.env)"
+DB_NAME="$(sudo sed -n 's/^DB_NAME=//p' /opt/nostream/.env)"
 sudo docker compose -f /opt/nostream/docker-compose.yml exec -T nostream-db \
   pg_dump -U "$DB_USER" "$DB_NAME" | gzip > ~/nostream-$(date +%F).sql.gz
+```
+
+Check the dump opens and is not empty before trusting it — `pg_dump` writing into a pipe can fail while still leaving a valid gzip of nothing:
+
+```bash
+gzip -t ~/nostream-$(date +%F).sql.gz && [ "$(gunzip -c ~/nostream-$(date +%F).sql.gz | wc -c)" -gt 1000 ] && echo "archive OK"
 ```
 
 Restore into an empty database:
 
 ```bash
-set -a; . /opt/nostream/.env; set +a
+# .env is mode 600 and root-owned, so read just the two values we need.
+DB_USER="$(sudo sed -n 's/^DB_USER=//p' /opt/nostream/.env)"
+DB_NAME="$(sudo sed -n 's/^DB_NAME=//p' /opt/nostream/.env)"
 gunzip -c ~/nostream-2026-10-29.sql.gz | sudo docker compose -f /opt/nostream/docker-compose.yml exec -T nostream-db \
   psql -U "$DB_USER" -d "$DB_NAME"
 ```
