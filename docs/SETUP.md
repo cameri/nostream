@@ -240,6 +240,14 @@ info:
 
 Anything you omit falls back to `resources/default-settings.yaml` in the image.
 
+**A malformed `settings.yaml` fails silently.** If the file does not parse, the relay logs the error and starts with the image defaults — so your relay name, proxy trust and every other override quietly disappear while the process still comes up healthy. After editing, check the log for `error reading config file`:
+
+```bash
+sudo docker compose -f /opt/nostream/docker-compose.yml logs nostream | grep -i 'error reading config'
+```
+
+No output means it parsed. Note that the relay rewrites this file from the admin console, which drops comments but keeps the values.
+
 ---
 
 ## 7. Start the Stack
@@ -451,9 +459,10 @@ Take two kinds, because they fail differently:
 
 ```bash
 set -o pipefail   # otherwise the pipeline exits with gzip's status and a failed pg_dump looks fine
-# .env is mode 600 and root-owned, so read just the two values we need.
-DB_USER="$(sudo sed -n 's/^DB_USER=//p' /opt/nostream/.env)"
-DB_NAME="$(sudo sed -n 's/^DB_NAME=//p' /opt/nostream/.env)"
+# .env is mode 600 and root-owned, so read just the two values we need, stripping any quotes.
+envval() { sudo sed -n "s/^$1=//p" /opt/nostream/.env | tr -d "\"'"; }
+DB_USER="$(envval DB_USER)"
+DB_NAME="$(envval DB_NAME)"
 sudo docker compose -f /opt/nostream/docker-compose.yml exec -T nostream-db \
   pg_dump -U "$DB_USER" "$DB_NAME" | gzip > ~/nostream-$(date +%F).sql.gz
 ```
@@ -467,9 +476,10 @@ gzip -t ~/nostream-$(date +%F).sql.gz && [ "$(gunzip -c ~/nostream-$(date +%F).s
 Restore into an empty database:
 
 ```bash
-# .env is mode 600 and root-owned, so read just the two values we need.
-DB_USER="$(sudo sed -n 's/^DB_USER=//p' /opt/nostream/.env)"
-DB_NAME="$(sudo sed -n 's/^DB_NAME=//p' /opt/nostream/.env)"
+# .env is mode 600 and root-owned, so read just the two values we need, stripping any quotes.
+envval() { sudo sed -n "s/^$1=//p" /opt/nostream/.env | tr -d "\"'"; }
+DB_USER="$(envval DB_USER)"
+DB_NAME="$(envval DB_NAME)"
 gunzip -c ~/nostream-2026-10-29.sql.gz | sudo docker compose -f /opt/nostream/docker-compose.yml exec -T nostream-db \
   psql -U "$DB_USER" -d "$DB_NAME"
 ```
