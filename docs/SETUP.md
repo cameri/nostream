@@ -209,19 +209,22 @@ sudo chmod 600 /opt/nostream/.nostr/settings.yaml
 
 The relay binds to `127.0.0.1` and **cannot be exposed without a reverse proxy** (step 8), so this applies to every deployment. By default it trusts only loopback and leaves `network.remoteIpHeader` unset, so every request arrives looking like `127.0.0.1` and **all clients share one rate-limit bucket** — one busy client can rate-limit everyone else.
 
-`deploy/settings.yaml.example` has no `network` section, so add one:
+`deploy/settings.yaml.example` has no `network` section, so add one. Copy the default `trustedProxies` list **in full** and append to it — arrays are replaced wholesale by the settings merge, not appended, so a shortened list deletes addresses the image ships:
 
 ```yaml
 network:
   # Which header the proxy sets. Both proxies in step 8 set X-Forwarded-For by default.
   remoteIpHeader: x-forwarded-for
-  # Only these addresses may set that header.
   trustedProxies:
     - "127.0.0.1"
+    - "::ffff:127.0.0.1"
     - "::1"
+    - "10.10.10.1"
+    - "::ffff:10.10.10.1"
+    # Append your proxy's address if it is not one of the above.
 ```
 
-Caddy and Nginx on the same host connect over loopback, so the list above covers them. A proxy in another container or on another host needs its address added here; otherwise the header is ignored.
+The list above is the image default. `10.10.10.1` is the Docker bridge gateway, which the shipped compose confines dynamic addresses to (`#972`); a proxy running in its own container reaches the relay through it. Caddy or Nginx installed directly on the host connect over loopback.
 
 > `remoteIpHeader` set without a matching `trustedProxies` entry is silently ignored. The relay logs `WARNING: network.remoteIpHeader is set but network.trustedProxies is empty` at startup — if you see that line, clients are not being identified individually.
 
@@ -240,13 +243,15 @@ info:
 
 Anything you omit falls back to `resources/default-settings.yaml` in the image.
 
-**A malformed `settings.yaml` fails silently.** If the file does not parse, the relay logs the error and starts with the image defaults — so your relay name, proxy trust and every other override quietly disappear while the process still comes up healthy. After editing, check the log for `error reading config file`:
+**A malformed `settings.yaml` fails silently.** If the file does not parse, the relay logs the error and starts with the image defaults — so your relay name, proxy trust and every other override quietly disappear while the process still comes up healthy.
+
+Do not rely on a log grep to catch this: `docker compose logs` shows only the current container's output, so after any restart the line is gone and silence proves nothing. Verify the *effective* settings instead, which is what the relay actually loaded:
 
 ```bash
-sudo docker compose -f /opt/nostream/docker-compose.yml logs nostream | grep -i 'error reading config'
+curl -s -H 'Accept: application/nostr+json' http://127.0.0.1:8008/ | jq '{name, description}'
 ```
 
-No output means it parsed. Note that the relay rewrites this file from the admin console, which drops comments but keeps the values.
+If `name` is `null` or shows the image default rather than the value you set, the file did not load. Note that the relay rewrites `settings.yaml` from the admin console, which drops comments but keeps values.
 
 ---
 
