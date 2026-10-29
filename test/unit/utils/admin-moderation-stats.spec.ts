@@ -46,6 +46,7 @@ describe('admin-moderation-stats queries', () => {
 
     expect(rows).to.deep.equal([{ pubkey: 'e'.repeat(64), eventCount: 7 }])
     expect(chain.limit.callCount).to.equal(1)
+    expect(chain.where.calledWith('first_seen', '>=', new Date(1_700_000_000 * 1000))).to.equal(true)
   })
 
   it('maps top client IPs from the database', async () => {
@@ -57,5 +58,6 @@ describe('admin-moderation-stats queries', () => {
 
     expect(rows).to.deep.equal([{ ip: '203.0.113.4', eventCount: 2 }])
     expect(chain.whereNotNull.callCount).to.equal(1)
+    expect(chain.where.calledWith('first_seen', '>=', new Date(1_700_000_000 * 1000))).to.equal(true)
   })
 })

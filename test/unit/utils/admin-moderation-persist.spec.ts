@@ -1,11 +1,15 @@
+import { createRequire } from 'node:module'
+import { join } from 'node:path'
+
 import chai from 'chai'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
-import * as adminModeration from '../../../src/utils/admin-moderation'
-import { saveModerationLimitsFromRequest } from '../../../src/utils/admin-moderation-persist'
-import * as recordAdminAudit from '../../../src/utils/record-admin-audit'
-import * as settingsConfig from '../../../src/utils/settings-config'
+const loadFromRepo = createRequire(join(process.cwd(), 'package.json'))
+const adminModeration = loadFromRepo('./src/utils/admin-moderation') as typeof import('../../../src/utils/admin-moderation')
+const adminModerationPersist = loadFromRepo('./src/utils/admin-moderation-persist') as typeof import('../../../src/utils/admin-moderation-persist')
+const recordAdminAudit = loadFromRepo('./src/utils/record-admin-audit') as typeof import('../../../src/utils/record-admin-audit')
+const settingsConfig = loadFromRepo('./src/utils/settings-config') as typeof import('../../../src/utils/settings-config')
 
 chai.use(sinonChai)
 
@@ -22,7 +26,7 @@ describe('saveModerationLimitsFromRequest', () => {
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
-    sandbox.stub(adminModeration, 'persistAdminModerationLimits')
+    sandbox.stub(adminModeration, 'updateAdminModerationLimits').resolves()
     sandbox.stub(settingsConfig, 'appendSettingsAuditLog')
     sandbox.stub(recordAdminAudit, 'recordAdminAuditFromRequest').resolves()
   })
@@ -33,14 +37,15 @@ describe('saveModerationLimitsFromRequest', () => {
 
   it('persists limits, audits, and enqueues notification', async () => {
     const enqueue = sandbox.stub().resolves()
-    await saveModerationLimitsFromRequest(
-      limits,
+    await adminModerationPersist.saveModerationLimitsFromRequest(
+      () => limits,
       { ip: '127.0.0.1' } as any,
       { enqueue } as any,
       'moderation.limits.updated',
     )
 
-    expect(adminModeration.persistAdminModerationLimits).to.have.been.calledOnceWithExactly(limits)
+    expect(adminModeration.updateAdminModerationLimits).to.have.been.calledOnce
+    expect(adminModeration.updateAdminModerationLimits.firstCall.args[0]).to.be.a('function')
     expect(settingsConfig.appendSettingsAuditLog).to.have.been.calledOnce
     expect(recordAdminAudit.recordAdminAuditFromRequest).to.have.been.calledOnce
     expect(enqueue).to.have.been.calledOnce
@@ -48,14 +53,14 @@ describe('saveModerationLimitsFromRequest', () => {
 
   it('still completes when notification enqueue fails', async () => {
     const enqueue = sandbox.stub().rejects(new Error('db unavailable'))
-    await saveModerationLimitsFromRequest(
-      limits,
+    await adminModerationPersist.saveModerationLimitsFromRequest(
+      () => limits,
       { ip: '127.0.0.1' } as any,
       { enqueue } as any,
       'moderation.action',
       { action: 'ban-pubkey' },
     )
 
-    expect(adminModeration.persistAdminModerationLimits).to.have.been.calledOnce
+    expect(adminModeration.updateAdminModerationLimits).to.have.been.calledOnce
   })
 })

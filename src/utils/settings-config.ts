@@ -1,4 +1,5 @@
 import fs from 'fs'
+import { setTimeout as delay } from 'node:timers/promises'
 import { join } from 'path'
 import yaml from 'js-yaml'
 import { isNil, mergeDeepRight } from 'ramda'
@@ -14,6 +15,7 @@ import {
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
+  getSettingsWriteLockPath,
 } from './settings-paths'
 
 export {
@@ -23,7 +25,107 @@ export {
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
+  getSettingsWriteLockPath,
 } from './settings-paths'
+
+const SETTINGS_WRITE_LOCK_STALE_MS = 60_000
+const SETTINGS_WRITE_LOCK_RETRY_MS = 25
+const SETTINGS_WRITE_LOCK_MAX_WAIT_MS = 30_000
+
+type SettingsWriteLockMetadata = {
+  pid: number
+  acquiredAt: number
+}
+
+const readSettingsWriteLockMetadata = (lockPath: string): SettingsWriteLockMetadata | undefined => {
+  try {
+    const raw = fs.readFileSync(lockPath, 'utf-8')
+    const [pidLine, acquiredLine] = raw.split('\n')
+    const pid = Number(pidLine)
+    const acquiredAt = Number(acquiredLine)
+    if (!Number.isFinite(pid) || !Number.isFinite(acquiredAt)) {
+      return undefined
+    }
+    return { pid, acquiredAt }
+  } catch {
+    return undefined
+  }
+}
+
+const isSettingsWriteLockStale = (metadata: SettingsWriteLockMetadata): boolean => {
+  if (Date.now() - metadata.acquiredAt > SETTINGS_WRITE_LOCK_STALE_MS) {
+    return true
+  }
+
+  try {
+    process.kill(metadata.pid, 0)
+    return false
+  } catch {
+    return true
+  }
+}
+
+const attemptStealStaleSettingsWriteLock = (
+  lockPath: string,
+  expected: SettingsWriteLockMetadata,
+): boolean => {
+  try {
+    const current = readSettingsWriteLockMetadata(lockPath)
+    if (
+      !current ||
+      current.pid !== expected.pid ||
+      current.acquiredAt !== expected.acquiredAt ||
+      !isSettingsWriteLockStale(current)
+    ) {
+      return false
+    }
+
+    const reclaimPath = `${lockPath}.reclaim.${process.pid}.${Date.now()}`
+    fs.renameSync(lockPath, reclaimPath)
+    fs.rmSync(reclaimPath, { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> => {
+  ensureSettingsExists()
+  const lockPath = getSettingsWriteLockPath()
+  const deadline = Date.now() + SETTINGS_WRITE_LOCK_MAX_WAIT_MS
+  let lockFd: number | undefined
+
+  while (Date.now() < deadline) {
+    try {
+      lockFd = fs.openSync(lockPath, 'wx')
+      fs.writeFileSync(lockFd, `${process.pid}\n${Date.now()}\n`)
+      break
+    } catch (error) {
+      const errno = error as NodeJS.ErrnoException
+      if (errno.code !== 'EEXIST') {
+        throw error
+      }
+
+      const metadata = readSettingsWriteLockMetadata(lockPath)
+      if (metadata && isSettingsWriteLockStale(metadata)) {
+        attemptStealStaleSettingsWriteLock(lockPath, metadata)
+      }
+
+      await delay(SETTINGS_WRITE_LOCK_RETRY_MS)
+    }
+  }
+
+  if (lockFd === undefined) {
+    throw new Error('Timed out waiting for settings write lock')
+  }
+
+  try {
+    return operation()
+  } finally {
+    fs.closeSync(lockFd)
+    fs.rmSync(lockPath, { force: true })
+  }
+}
 
 const logger = createLogger('settings-config')
 

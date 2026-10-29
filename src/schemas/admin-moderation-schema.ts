@@ -1,6 +1,12 @@
 import { z } from 'zod'
 
-const kindRuleSchema = z.union([z.number().int().min(0).max(65535), z.tuple([z.number().int(), z.number().int()])])
+const kindValueSchema = z.number().int().min(0).max(65535)
+const kindRuleSchema = z.union([
+  kindValueSchema,
+  z.tuple([kindValueSchema, kindValueSchema]).refine(([start, end]) => start <= end, {
+    message: 'Kind range start must not exceed its end',
+  }),
+])
 
 export const adminModerationLimitsPatchSchema = z
   .object({

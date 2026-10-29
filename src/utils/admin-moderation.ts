@@ -1,4 +1,4 @@
-import { isIP } from 'node:net'
+import { isIP, SocketAddress } from 'node:net'
 import { mergeDeepRight } from 'ramda'
 
 import { Settings } from '../@types/settings'
@@ -9,6 +9,7 @@ import {
   loadUserSettings,
   saveSettings,
   validateSettings,
+  withSettingsWriteLock,
 } from './settings-config'
 
 export interface AdminModerationLimits {
@@ -53,13 +54,28 @@ const normalizePubkeyList = (values: string[], label: string): string[] => {
   return normalized
 }
 
+export const normalizeModerationIpAddress = (raw: string): string => {
+  const ip = raw.trim()
+  if (!ip || isIP(ip) === 0) {
+    throw new Error('ip must be a valid IPv4 or IPv6 address')
+  }
+
+  const family = isIP(ip)
+  return new SocketAddress({
+    address: ip,
+    family: family === 6 ? 'ipv6' : 'ipv4',
+  }).address
+}
+
 const normalizeIpList = (values: string[], label: string): string[] => {
   const normalized: string[] = []
   const seen = new Set<string>()
 
   for (const raw of values) {
-    const ip = raw.trim()
-    if (!ip || isIP(ip) === 0) {
+    let ip: string
+    try {
+      ip = normalizeModerationIpAddress(raw)
+    } catch {
       throw new Error(`${label} must contain valid IPv4 or IPv6 addresses`)
     }
 
@@ -119,7 +135,9 @@ const applyLimitsToUserSettings = (userSettings: Settings, limits: AdminModerati
   }
 }
 
-export const persistAdminModerationLimits = (next: AdminModerationLimits): void => {
+export type AdminModerationLimitsUpdater = (current: AdminModerationLimits) => AdminModerationLimits
+
+const persistAdminModerationLimitsUnlocked = (next: AdminModerationLimits): void => {
   const normalized: AdminModerationLimits = {
     pubkey: {
       blacklist: normalizePubkeyList(next.pubkey.blacklist, 'pubkey blacklist'),
@@ -145,6 +163,17 @@ export const persistAdminModerationLimits = (next: AdminModerationLimits): void 
   }
 
   saveSettings(nextUserSettings)
+}
+
+export const updateAdminModerationLimits = async (updater: AdminModerationLimitsUpdater): Promise<void> => {
+  await withSettingsWriteLock(() => {
+    const current = readAdminModerationLimits()
+    persistAdminModerationLimitsUnlocked(updater(current))
+  })
+}
+
+export const persistAdminModerationLimits = async (next: AdminModerationLimits): Promise<void> => {
+  await updateAdminModerationLimits(() => next)
 }
 
 export class ValidationError extends Error {
@@ -182,6 +211,15 @@ export const mergeAdminModerationLimitsPatch = (
 })
 
 const withoutValue = <T>(list: T[], value: T): T[] => list.filter((entry) => entry !== value)
+
+const withoutNormalizedModerationIp = (list: string[], normalizedTarget: string): string[] =>
+  list.filter((stored) => {
+    try {
+      return normalizeModerationIpAddress(stored) !== normalizedTarget
+    } catch {
+      return stored.trim().toLowerCase() !== normalizedTarget.trim().toLowerCase()
+    }
+  })
 
 export const applyAdminModerationAction = (
   current: AdminModerationLimits,
@@ -248,10 +286,11 @@ export const applyAdminModerationAction = (
       }
     }
     case 'whitelist-ip': {
-      const ip = fields.ip?.trim()
-      if (!ip || isIP(ip) === 0) {
+      const rawIp = fields.ip?.trim()
+      if (!rawIp) {
         throw new Error('ip is required and must be a valid IPv4 or IPv6 address')
       }
+      const ip = normalizeModerationIpAddress(rawIp)
       return {
         ...current,
         rateLimitBypass: {
@@ -261,15 +300,16 @@ export const applyAdminModerationAction = (
       }
     }
     case 'unwhitelist-ip': {
-      const ip = fields.ip?.trim()
-      if (!ip || isIP(ip) === 0) {
+      const rawIp = fields.ip?.trim()
+      if (!rawIp) {
         throw new Error('ip is required and must be a valid IPv4 or IPv6 address')
       }
+      const ip = normalizeModerationIpAddress(rawIp)
       return {
         ...current,
         rateLimitBypass: {
           ...current.rateLimitBypass,
-          ipAddresses: withoutValue(current.rateLimitBypass.ipAddresses, ip),
+          ipAddresses: withoutNormalizedModerationIp(current.rateLimitBypass.ipAddresses, ip),
         },
       }
     }
