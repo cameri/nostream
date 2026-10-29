@@ -224,15 +224,31 @@ network:
     # Append your proxy's address if it is not one of the above.
 ```
 
-The list above is the image default. `10.10.10.1` is the gateway of the network the shipped compose defines; a proxy in its own container reaches the relay through it. Caddy or Nginx installed directly on the host connect over loopback.
+The list above is the image default. Entries `10.10.10.x` come from the development `docker-compose.yml`, which pins its own subnet; the production compose uses the default bridge and publishes the relay on `127.0.0.1:8008`.
 
-If your proxy runs in a container on a **different** network — a plain Docker default bridge is usually `172.17.0.1` or `172.18.0.1` — it will not match. Matching is exact, with no CIDR support, so read the proxy container's address rather than guessing:
+Which address the relay sees depends on how your proxy reaches it, and matching is exact — no CIDR, no ranges — so work it out rather than guessing:
+
+- **Proxy installed on the host** (the Caddy and Nginx setups below) connects to `127.0.0.1:8008`. Traffic arrives from loopback, which is already in the list. No change needed.
+- **Proxy in its own container** reaches the relay over the Docker network, so the source is the proxy container's own address. Read it, then add it:
 
 ```bash
 sudo docker inspect <proxy-container> --format '{{range $net, $cfg := .NetworkSettings.Networks}}{{$net}}={{$cfg.IPAddress}} {{end}}'
 ```
 
-Add that address to `trustedProxies`.
+```yaml
+  trustedProxies:
+    - "127.0.0.1"
+    # ... keep the other defaults ...
+    - "172.18.0.5"   # <-- your proxy container
+```
+
+To confirm the relay agrees, look for a source address in its log after a client is rate-limited or rejected:
+
+```bash
+sudo docker compose -f /opt/nostream/docker-compose.yml logs nostream | grep -oE '(rate limited|unauthorized request from) [0-9a-f.:]+' | sort -u
+```
+
+If every client shows the same address there, proxy trust is still not working.
 
 > `remoteIpHeader` set without a matching `trustedProxies` entry is silently ignored. The relay logs `WARNING: network.remoteIpHeader is set but network.trustedProxies is empty` at startup — if you see that line, clients are not being identified individually.
 
