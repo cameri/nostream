@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 import { path, pathEq } from 'ramda'
 import { createSettings } from '../../factories/settings-factory'
 import { escapeHtml } from '../../utils/html'
-import { FeeSchedule } from '../../@types/settings'
+import { FeeSchedule, PeeringSettings } from '../../@types/settings'
 import { DEFAULT_FILTER_LIMIT } from '../../constants/base'
 import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
@@ -40,6 +40,35 @@ export const hasExplicitNostrJsonAcceptHeader = (request: Request): boolean => {
 
     return !Number.isNaN(qValue) && qValue > 0
   })
+}
+
+export const buildPeeringDocument = (peering: PeeringSettings | undefined) => {
+  // Disabled peering advertises only the fact that no feeds are offered, so a
+  // half-configured section never reads as an offer.
+  if (peering?.enabled !== true) {
+    return { enabled: false }
+  }
+
+  const contact = peering.contact?.trim()
+  const endpoint = peering.endpoint?.trim()
+
+  return {
+    enabled: true,
+    ...(contact ? { contact } : {}),
+    ...(endpoint ? { endpoint } : {}),
+    // NIP-11 convention: snake_case in the document, and 0/absent both mean
+    // no proof-of-work requirement.
+    min_pow_difficulty: peering.minRequestPowDifficulty ?? 0,
+    scopes: (peering.scopes ?? []).map((scope) => ({
+      kinds: scope.kinds,
+      ...(scope.since !== undefined ? { since: scope.since } : {}),
+      ...(scope.until !== undefined ? { until: scope.until } : {}),
+      ...(scope.windowSeconds !== undefined ? { window_seconds: scope.windowSeconds } : {}),
+    })),
+    // An empty list is the settlement-free case: terms are expressed as fee
+    // entries, so "no fee entry" is meaningful rather than a zero amount.
+    terms: (peering.terms ?? []).map(({ amount, unit, period }) => ({ amount, unit, period })),
+  }
 }
 
 export const rootRequestHandler = (request: Request, response: Response, next: NextFunction) => {
@@ -177,6 +206,7 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
             }
           : {}),
       },
+      peering: buildPeeringDocument(settings.peering),
     }
 
     response

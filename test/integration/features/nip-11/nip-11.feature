@@ -31,6 +31,25 @@ Feature: NIP-11
     When a client requests the relay information document
     Then the limitation object contains a max_filters field
 
+  Scenario: Relay information document advertises configured peering terms
+    When a client requests the relay information document
+    Then the peering object matches the configured peering settings
+
+  Scenario: Settings validation accepts a complete peering configuration
+    When peering settings are validated with a complete configuration
+    Then the peering settings validation reports no issues
+
+  Scenario: Settings validation rejects invalid peering configuration
+    When peering settings are validated with an invalid configuration
+    Then the peering settings validation reports an issue at "peering.contact"
+    And the peering settings validation reports an issue at "peering.endpoint"
+    And the peering settings validation reports an issue at "peering.minRequestPowDifficulty"
+    And the peering settings validation reports an issue at "peering.scopes"
+    And the peering settings validation reports an issue at "peering.scopes[0]"
+    And the peering settings validation reports an issue at "peering.scopes[0].kinds[0]"
+    And the peering settings validation reports an issue at "peering.terms[0].amount"
+    And the peering settings validation reports an issue at "peering.terms[0].period"
+
   Scenario: WebSocket connections coexist with HTTP on the same port
     Given someone called Alice
     When Alice sends a text_note event with content "nostr is great"
