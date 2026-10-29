@@ -242,13 +242,13 @@ sudo docker inspect <proxy-container> --format '{{range $net, $cfg := .NetworkSe
     - "172.18.0.5"   # <-- your proxy container
 ```
 
-To confirm the relay agrees, look for a source address in its log after a client is rate-limited or rejected:
+The relay logs the address it resolved for each websocket client, but that line is written at `debug` level and the default is `info`, so it does not appear by default. Set `LOG_LEVEL=debug` in `/opt/nostream/.env`, restart, connect two different clients, then:
 
 ```bash
-sudo docker compose -f /opt/nostream/docker-compose.yml logs nostream | grep -oE '(rate limited|unauthorized request from) [0-9a-f.:]+' | sort -u
+sudo docker compose -f /opt/nostream/docker-compose.yml logs nostream | grep -oE 'client [0-9a-f.:]+ connected' | sort | uniq -c | sort -rn | head
 ```
 
-If every client shows the same address there, proxy trust is still not working.
+If both clients show the **same** address, trust is not working — that is the collision this section prevents. If they show their own addresses, it is configured correctly. Turn the log level back to `info` afterwards; `debug` logs request headers for every connection.
 
 > `remoteIpHeader` set without a matching `trustedProxies` entry is silently ignored. The relay logs `WARNING: network.remoteIpHeader is set but network.trustedProxies is empty` at startup — if you see that line, clients are not being identified individually.
 
