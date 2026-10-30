@@ -11,7 +11,7 @@ use clap::Parser;
 use nostream_config::SettingsPaths;
 use nostream_core::clock::SystemClock;
 use nostream_core::lifecycle::ShutdownState;
-use nostream_relay::{Relay, relay_key::RelayKeySource, unavailable};
+use nostream_relay::{Relay, relay::RelayConfig, relay_key::RelayKeySource, unavailable};
 use nostreamd::{DaemonError, settings_gate, telemetry};
 
 #[derive(Debug, Parser)]
@@ -106,6 +106,11 @@ async fn serve(
     let acceptor = nostreamd::Acceptor::bind(listen).await?;
     let shutdown = ShutdownState::new();
 
+    // The two bounds are the operator's; `from_settings` is where they are read.
+    let mut relay_config = RelayConfig::from_settings(&settings);
+    // The one environment read: the drain deadline is the operator's.
+    relay_config.drain_timeout = nostream_relay::transport::drain_timeout();
+
     // The storage backend is not wired yet (the LMDB environment is a stub), so the relay
     // runs over seams that report `NotImplemented`; the wire itself is served in full.
     let relay = Relay::new(
@@ -116,11 +121,7 @@ async fn serve(
         std::sync::Arc::new(SystemClock),
         RelayKeySource::from_env(),
         std::sync::Arc::new(nostream_core::random::SystemRandom),
-        // The one environment read: the drain deadline is the operator's.
-        nostream_relay::relay::RelayConfig {
-            drain_timeout: nostream_relay::transport::drain_timeout(),
-            ..Default::default()
-        },
+        relay_config,
     );
 
     tracing::info!(at = %acceptor.local_addr(), "the acceptor is listening");

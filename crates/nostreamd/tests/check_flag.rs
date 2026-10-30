@@ -129,3 +129,130 @@ fn check_refuses_a_settings_yaml_that_is_a_directory() {
     assert_ne!(code, Some(0), "a directory must not read as a clean config");
     assert!(stderr.contains("not a regular file"), "stderr: {stderr}");
 }
+
+#[test]
+fn check_accepts_an_operator_file_that_sets_both_bounds() {
+    // The two bounds #959 added are settings an operator writes, so the document has to carry
+    // their keys: a value the validator does not know is refused as `Unknown setting key`, and
+    // the daemon would keep running on the compiled defaults without saying so.
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "network:\n  frameMemoryBudgetBytes: 134217728\nlimits:\n  connection:\n    maxConnectionsPerIp: 128\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(0), "exit code; stderr: {stderr}");
+    assert_eq!(stdout.trim(), "settings valid: 0 issues");
+}
+
+#[test]
+fn check_reports_a_bound_it_would_replace_with_the_default() {
+    // The key and the number are both valid, so this is not an issue and not fatal — but a value
+    // discarded at start-up used to be silent, and `--check` is where an operator looks first.
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "network:\n  frameMemoryBudgetBytes: 1099511627777\nlimits:\n  connection:\n    maxConnectionsPerIp: 1099511627777\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(0), "exit code");
+    assert_eq!(stdout.trim(), "settings valid: 0 issues");
+    // Whole lines, not prefixes: dropping the second clause must fail here.
+    assert!(
+        stderr.contains(
+            "network.frameMemoryBudgetBytes: above the 1099511627776 a bound accepts; the key's value is ignored"
+        ),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "limits.connection.maxConnectionsPerIp: above the 1099511627776 a bound accepts; the key's value is ignored"
+        ),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn check_reports_a_zero_bound_as_the_documented_default() {
+    // Zero is not "out of range": both the defaults document and `--check` document it as the
+    // default, so the line must not call it a violation.
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "network:\n  frameMemoryBudgetBytes: 0\nlimits:\n  connection:\n    maxConnectionsPerIp: 0\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(0), "exit code");
+    assert_eq!(stdout.trim(), "settings valid: 0 issues");
+    assert!(
+        stderr.contains(
+            "network.frameMemoryBudgetBytes: 0 means the default, and the relay runs with it"
+        ),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("above the"),
+        "a zero must not be reported as above the ceiling: {stderr}"
+    );
+}
+
+#[test]
+fn check_reports_the_schema_fault_and_not_a_bound_it_cannot_read() {
+    // On a rejected document `load` substitutes the shipped defaults, so there is no operator
+    // number left to describe: the gate is unconditional but has nothing to walk. This pins that
+    // it does not invent a range line, and that the exit code stays the schema verdict (2).
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "network:\n  frameMemoryBudgetBytes: 1099511627777\nlimits:\n  rateLimiter:\n    strategy: random\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(2), "exit code");
+    assert!(!stdout.contains("settings valid"), "stdout: {stdout}");
+    assert!(
+        stderr.contains("strategy must be ewma or sliding_window"),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains("above the"), "no range line: {stderr}");
+}
+
+#[test]
+fn check_reports_nothing_for_the_shipped_defaults() {
+    // With no user document, `settings` is the shipped defaults with `used_defaults` false, so a
+    // report that walked them would describe the document's own values as violations on a fresh
+    // install. The guard is what prevents it; without the guard this test sees two lines.
+    let directory = tempfile::tempdir().expect("tempdir");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(0), "exit code");
+    assert_eq!(stdout.trim(), "settings valid: 0 issues");
+    assert_eq!(stderr, "", "the shipped defaults are not a violation");
+}

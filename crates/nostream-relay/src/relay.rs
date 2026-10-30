@@ -37,12 +37,13 @@ use crate::sink::{FrameBudget, FrameSink, Refusal};
 use crate::transport;
 use crate::wot::WotGraph;
 
-/// The knobs a [`Relay`] is built with that are not settings: a constant the capture fixes in
+/// The knobs a [`Relay`] is built with. Most are not settings: a constant the capture fixes in
 /// code (`liveness`, the NIP-56 refresh) or a policy the port adds with no counterpart there
-/// (`frame_queue_bytes`, `write_timeout`, `frame_memory_budget_bytes`,
-/// `max_connections_per_ip`; ADR 0005, ADR 0008). Tests set the cadences they need and the
-/// bounds a case asks for; every value here runs at its shipped default otherwise. A value
-/// the capture's settings document carries belongs in [`Settings`], never here.
+/// (`frame_queue_bytes`, `write_timeout`; ADR 0005). The two bounds are settings an operator
+/// writes — `network.frameMemoryBudgetBytes` and `limits.connection.maxConnectionsPerIp` — and
+/// [`RelayConfig::from_settings`] is what reads them; [`RelayConfig::default`] is the value a
+/// relay runs with when the key is absent. Tests set the cadences they need and the bounds a
+/// case asks for. A new value the capture's settings document carries belongs in [`Settings`].
 #[derive(Debug, Clone)]
 pub struct RelayConfig {
     /// `WSS_CLIENT_HEALTH_PROBE_INTERVAL` (`web-socket-server-adapter.ts:18`).
@@ -72,7 +73,8 @@ pub struct RelayConfig {
 impl Default for RelayConfig {
     /// The capture's own constants, and no environment read: `WS_DRAIN_TIMEOUT_MS` is
     /// resolved by [`transport::drain_timeout`], which the composition root calls (ADR 0004);
-    /// the queue bound and the write timeout are the port's additions (ADR 0005).
+    /// the queue bound and the write timeout are the port's additions (ADR 0005). The two
+    /// bounds are the shipped default an operator's setting overrides, not the only value.
     fn default() -> Self {
         Self {
             liveness_interval: Duration::from_millis(120_000),
@@ -88,11 +90,161 @@ impl Default for RelayConfig {
             // before the budget binds, which is below the 48 a single address gets through
             // the shipped attempt limits alone (ADR 0008).
             frame_memory_budget_bytes: 256 * 1024 * 1024,
-            // 64: four times the concurrent total one well-behaved client needs. The cap
-            // bounds sockets, the budget bounds bytes, so its own worst case (64 × 8 MiB) sits
-            // above the budget on purpose (ADR 0008).
+            // 64: four times the concurrent total one well-behaved client needs. The cap is per
+            // address while the budget is process-wide, so what the pair really bounds is
+            // `min(budget, addresses × cap × frame_queue_bytes)` — the cap alone cannot be
+            // read as the memory ceiling (ADR 0008).
             max_connections_per_ip: 64,
         }
+    }
+}
+
+/// The ceiling a setting's bound may carry, in that bound's own unit: 1 TiB (1 099 511 627 776)
+/// of queued frames for `network.frameMemoryBudgetBytes`, and 1.09 million sockets for
+/// `limits.connection.maxConnectionsPerIp`. One number because one check reads both; it is far
+/// above any deployment each way, and far below `usize::MAX`, so a stray digit cannot reach
+/// [`FrameBudget::admit`]'s arithmetic. A value above it is treated like a zero: the default
+/// stands (ADR 0008).
+pub const MAX_SETTING_BOUND: usize = 1024 * 1024 * 1024 * 1024;
+
+/// Whether an operator's value for a bound is one the relay can run with: positive and at most
+/// [`MAX_SETTING_BOUND`]. Public because the daemon's settings gate reports the same verdict
+/// before a relay exists, and one predicate is what keeps `--check` and the relay from
+/// disagreeing (ADR 0008).
+pub fn in_range(value: u64) -> bool {
+    value > 0 && value <= MAX_SETTING_BOUND as u64
+}
+
+/// Why a value was not taken from a bound's setting: the question [`in_range`] answers, said out
+/// loud, so the report can distinguish the two cases the predicate collapses — a zero, which the
+/// document says means the default, from a value above the ceiling, which it does not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundRefusal {
+    /// The operator wrote `0`, which the shipped document documents as "the default".
+    Zero,
+    /// The value is above [`MAX_SETTING_BOUND`].
+    AboveCeiling(u64),
+}
+
+/// The two settings whose value is a bound, each with the value the operator wrote when that value
+/// is not taken. This is the only walk of the two leaves outside [`RelayConfig::from_settings`]:
+/// the daemon's gate and the CLI's `config validate` both report from it, so a key added to one
+/// surface cannot be reported by one door and ignored by another (ADR 0008).
+pub fn refused_bounds(settings: &Settings) -> Vec<(&'static str, BoundRefusal)> {
+    let mut refused = Vec::new();
+    if let Some(bytes) = settings.network.frame_memory_budget_bytes
+        && let Some(reason) = bound_refusal(bytes)
+    {
+        refused.push(("network.frameMemoryBudgetBytes", reason));
+    }
+    if let Some(cap) = settings
+        .limits
+        .as_ref()
+        .and_then(|limits| limits.connection.as_ref())
+        .and_then(|connection| connection.max_connections_per_ip)
+        && let Some(reason) = bound_refusal(cap)
+    {
+        refused.push(("limits.connection.maxConnectionsPerIp", reason));
+    }
+    refused
+}
+
+/// The two ways a bound's setting is not taken, or `None` when it is.
+///
+/// It asks [`in_range`] first, so the constructor and every report agree by construction rather
+/// than by two comparisons that happen to match: a value `in_range` accepts is never refused here.
+pub fn bound_refusal(value: u64) -> Option<BoundRefusal> {
+    if in_range(value) {
+        None
+    } else if value == 0 {
+        Some(BoundRefusal::Zero)
+    } else {
+        Some(BoundRefusal::AboveCeiling(MAX_SETTING_BOUND as u64))
+    }
+}
+
+/// The sentence one refused bound is reported with, for both doors: a zero (documented as the
+/// default) and a value above the ceiling are different facts, and the words live beside the
+/// decision so the daemon's gate and the CLI cannot phrase it differently.
+pub fn refusal_message(setting: &str, reason: BoundRefusal) -> String {
+    match reason {
+        BoundRefusal::Zero => format!("{setting}: 0 means the default, and the relay runs with it"),
+        BoundRefusal::AboveCeiling(ceiling) => {
+            format!("{setting}: above the {ceiling} a bound accepts; the key's value is ignored")
+        }
+    }
+}
+
+/// Reports one bound's setting that the relay will not run with, as one structured line saying
+/// which of the two reasons it was: a zero (documented as the default) and a value above the
+/// ceiling are different facts.
+fn warn_refused_bound(setting: &'static str, value: u64, default: usize) {
+    match bound_refusal(value) {
+        Some(BoundRefusal::Zero) => {
+            tracing::warn!(setting, default, "a bound set to 0 runs with its default")
+        }
+        Some(BoundRefusal::AboveCeiling(ceiling)) => tracing::warn!(
+            setting,
+            value,
+            ceiling,
+            default,
+            "a bound above its ceiling runs with its default"
+        ),
+        None => {}
+    }
+}
+
+impl RelayConfig {
+    /// The configuration a relay built from `settings` runs with: [`RelayConfig::default`] for
+    /// every knob the capture fixes in code, with the two bounds an operator sets read from
+    /// their leaves — `network.frameMemoryBudgetBytes` and
+    /// `limits.connection.maxConnectionsPerIp` — when present and non-zero.
+    ///
+    /// This is the one place either setting is interpreted, so `nostreamd` and the tests cannot
+    /// disagree about it. `drain_timeout` stays the composition root's to resolve: it is an
+    /// environment read (ADR 0004), not a setting.
+    ///
+    /// A leaf is taken when it is present, non-zero and at most [`MAX_SETTING_BOUND`]; anything
+    /// else keeps the default. The ceiling is not cosmetic: `usize::MAX` fits a `usize`, so it
+    /// would pass a bare `> 0` check and reach [`FrameBudget::admit`], whose fit guard uses
+    /// `saturating_sub` while its accounting adds unchecked — a budget that cannot be
+    /// exhausted, and an add that overflows.
+    pub fn from_settings(settings: &Settings) -> Self {
+        let mut config = Self::default();
+
+        if let Some(bytes) = settings.network.frame_memory_budget_bytes {
+            if in_range(bytes) {
+                config.frame_memory_budget_bytes = bytes as usize;
+            } else {
+                // `warn!`, not `debug!`: the value passes `--check` and is then quietly
+                // replaced, so this line and the gate's report are the only places an operator
+                // learns that the number they wrote is not the number the relay runs with.
+                warn_refused_bound(
+                    "network.frameMemoryBudgetBytes",
+                    bytes,
+                    config.frame_memory_budget_bytes,
+                );
+            }
+        }
+
+        if let Some(cap) = settings
+            .limits
+            .as_ref()
+            .and_then(|limits| limits.connection.as_ref())
+            .and_then(|connection| connection.max_connections_per_ip)
+        {
+            if in_range(cap) {
+                config.max_connections_per_ip = cap as usize;
+            } else {
+                warn_refused_bound(
+                    "limits.connection.maxConnectionsPerIp",
+                    cap,
+                    config.max_connections_per_ip,
+                );
+            }
+        }
+
+        config
     }
 }
 

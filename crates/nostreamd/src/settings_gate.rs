@@ -17,11 +17,24 @@
 //! request, per message or per streamed record.
 
 use nostream_config::LoadOutcome;
+use nostream_relay::relay::{refusal_message, refused_bounds};
 
 use crate::error::DaemonError;
 
 /// Applies the gate to one load outcome: report the findings, decide whether they are fatal.
 pub fn apply_settings_gate(outcome: &LoadOutcome, check: bool) -> Result<(), DaemonError> {
+    // `settings` is what the relay would run with, so on a rejected document it is the shipped
+    // defaults ("                    format!(\"failed to load user settings: {error}\"),",
+    // `crates/nostream-config/src/load.rs:402`) and a walk of it would describe the document's own
+    // values rather than the operator's. The guard keeps a substitution from being read as a
+    // violation; it cannot recover the operator's leaf, which is why a rejected document reports
+    // the schema fault and nothing else.
+    if !outcome.used_defaults {
+        for (setting, reason) in refused_bounds(&outcome.settings) {
+            eprintln!("{}", refusal_message(setting, reason));
+        }
+    }
+
     if outcome.issues.is_empty() {
         if check {
             println!("settings valid: 0 issues");

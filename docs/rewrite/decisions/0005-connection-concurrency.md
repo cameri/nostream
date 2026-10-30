@@ -39,7 +39,8 @@ once per read either way, and identity would add a *second* watch handle to ever
 sender, plus a receiver the entry never awaits), while the generation adds one `u64` beside
 the one handle the table already holds. The generation is also the value a returning read can
 still carry after its own handle has been replaced, and the value that names the owner in the
-table; the rule is tested through behaviour (`crates/nostream-relay/tests/connection.rs:208-231`), not by value. It
+table; the rule is tested through behaviour
+(`crates/nostream-relay/tests/connection.rs:208-231`), not by value. It
 fits the locking the file already has: `impl Connection` contains no `.await`, so no lock is
 ever held across a suspension point, and the counter is read and written inside the same
 `insert` that replaces the previous sender. No second lock, no allocation outside the guard,
@@ -108,6 +109,21 @@ counterpart for either — it queues every frame without a limit
 key would be an operator-facing surface mirroring nothing. `RelayConfig` is where this branch
 already keeps the knobs the capture fixes in code — with the tests setting the cadences they
 need — and these two port-only policies, which every test so far runs at their defaults.
+
+**Reversed for the two bounds, by #989.** The reason above does not hold for
+`frame_memory_budget_bytes` and `max_connections_per_ip`: mirroring nothing in the capture is an
+argument against porting a *captured* key, and these two are not captured knobs. They are the
+port's own denial-of-service bounds, and a bound an operator cannot set in production is a policy
+constant wearing a config field's name — the state #989 was filed against. Both are now settings
+(`network.frameMemoryBudgetBytes` and `limits.connection.maxConnectionsPerIp`), interpreted in one
+place — `from_settings` is the only answer the relay runs with, so the compiled default and the
+document cannot disagree:
+"pub fn from_settings(settings: &Settings) -> Self {"
+(`crates/nostream-relay/src/relay.rs:212`), from leaves the document carries:
+"pub frame_memory_budget_bytes: Option<u64>," (`crates/nostream-config/src/settings.rs:71`). The
+write timeout and the per-socket queue bound stay
+`RelayConfig`-only, as this section decided; ADR 0008 carries what a zero means for the two that
+moved.
 
 ## Liveness under a blocked write — every write carries a timeout
 
