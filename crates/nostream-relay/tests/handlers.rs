@@ -1,7 +1,10 @@
 //! The five handlers over a real socket. Carries the behaviour of
 //! `test/unit/handlers/event-message-handler.spec.ts` (200 cases),
 //! `subscribe-message-handler.spec.ts` (58), `count-message-handler.spec.ts` (10),
-//! `auth-message-handler.spec.ts` (12) and `unsubscribe-message-handler.spec.ts` (1).
+//! `auth-message-handler.spec.ts` (12) and `unsubscribe-message-handler.spec.ts` (1). One
+//! exception, `a_close_during_the_invite_mint_leaves_the_event_but_not_the_read`,
+//! drives the two handlers directly so its `CLOSE` is ordered against a held mint by
+//! program order, not a timer.
 //!
 //! Every assertion is a frame as received, byte for byte, which is what makes these a port
 //! rather than an approximation. The EVENT pipeline's reason strings are pinned one test per
@@ -12,16 +15,22 @@
 
 mod common;
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use common::{CLIENT_SECRET, NOW_SECS, RELAY_SECRET, Server, relay_keys, signed_event};
+use common::{CLIENT_SECRET, NOW_MS, NOW_SECS, RELAY_SECRET, Server, relay_keys, signed_event};
 use nostream_config::settings::{
     ClientLimits, ClientSubscriptionLimits, ConnectionLimits, CreatedAtLimits, EventIdLimits,
     EventLimits, EventRateLimit, KindLimits, Limits, MessageLimits, MessageRateLimit,
     Nip05Settings, Payments, PubkeyLimits, RateLimit,
 };
 use nostream_core::Event;
+use nostream_core::clock::TestClock;
+use nostream_core::filter::Filter;
+use nostream_core::messages::{SubscribeMessage, UnsubscribeMessage};
+use nostream_relay::connection::Connection;
 use nostream_relay::relay_key::RelayKeySource;
+use nostream_relay::sink::FrameSink;
 use nostream_relay::testing::{Fixture, nip42_settings, nip43_settings, nip45_settings, settings};
 use nostream_storage::repositories::User;
 
@@ -1199,6 +1208,9 @@ async fn an_invite_request_mints_one_kind_28935_event_before_eose() {
 
 #[tokio::test]
 async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
+    // The `CLOSE` is a direct handler call: `unsubscribe::handle` is synchronous, so in this
+    // task the abort is a program-order predecessor of the gate release. A `CLOSE` over a
+    // socket is covered by `a_close_aborts_an_in_flight_read_without_a_frame`.
     let mut settings = settings();
     settings.nip43 = Some(nip43_settings());
 
@@ -1208,42 +1220,82 @@ async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
         .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "stored", NOW_SECS))
         .await;
 
-    let server = start(fixture).await;
-    let (mut client, challenge) = server.connect().await;
+    let (sink, mut frames) = FrameSink::channel(1024 * 1024, None);
+    let connection = Arc::new(Connection::new(
+        "127.0.0.1".to_owned(),
+        nostream_core::nip42::Nip42Session::with_challenge("challenge", 0),
+    ));
+    assert!(connection.authenticate(
+        nostream_core::crypto::public_key(&CLIENT_SECRET).expect("client public key"),
+        nostream_core::EventId::from_byte_array([3; 32]),
+        NOW_SECS,
+    ));
+    let context = Arc::new(fixture.context(
+        Arc::new(TestClock::new(NOW_MS)),
+        relay_keys(),
+        Arc::clone(&connection),
+        sink,
+    ));
 
-    let auth = auth_event(&challenge, NOW_SECS);
-    client
-        .send(&format!(
-            r#"["AUTH",{}]"#,
-            serde_json::to_string(&auth).expect("auth json")
-        ))
-        .await;
-    assert!(client.expect_frame().await.ends_with(r#"true,""]"#));
+    // The seam runs the handler's prefix on this task, so the subscription and its read are
+    // registered by the time `begin` returns; only the mint and the read are spawned.
+    let reading = tokio::spawn(
+        nostream_relay::handlers::subscribe::begin(
+            SubscribeMessage {
+                subscription_id: "invite".to_owned(),
+                filters: vec![Filter {
+                    kinds: Some(vec![nostream_core::Kind(28_935), nostream_core::Kind(1)]),
+                    ..Default::default()
+                }],
+            },
+            &context,
+        )
+        .expect("the subscription is accepted"),
+    );
 
-    client.send(r#"["REQ","invite",{"kinds":[28935,1]}]"#).await;
+    assert!(
+        connection.read_in_flight("invite"),
+        "the read is registered before the mint starts"
+    );
 
     // The mint's one `await` is held, which is the window a `CLOSE` lands in.
-    for _ in 0..200 {
-        if server.fixture.invites.creates_started() == 1 {
+    for _ in 0..100 {
+        if fixture.invites.creates_started() == 1 {
             break;
         }
 
-        tokio::time::sleep(Duration::from_millis(5)).await;
+        tokio::task::yield_now().await;
     }
 
     assert_eq!(
-        server.fixture.invites.creates_started(),
+        fixture.invites.creates_started(),
         1,
         "the invite mint is in flight"
     );
 
-    client.send(r#"["CLOSE","invite"]"#).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    nostream_relay::handlers::unsubscribe::handle(
+        UnsubscribeMessage {
+            subscription_id: "invite".to_owned(),
+        },
+        &context,
+    );
+
+    // Nothing between the abort above and the release below suspends, so a read still
+    // registered here means the `unsubscribe::handle` call was dropped or moved behind this
+    // assertion; whether the cancellation reaches the read is what the frames below decide.
+    assert!(
+        !connection.read_in_flight("invite"),
+        "the abort precedes the release of the mint"
+    );
+
     gate.add_permits(1);
+    reading
+        .await
+        .expect("the handler finishes once the mint is released");
 
     // The capture emits the invite event for a subscription the client has closed
     // (`subscribe-message-handler.ts:111`), and that stays.
-    let first = client.expect_frame().await;
+    let first = frames.try_recv().expect("the invite event frame");
     assert!(first.starts_with(r#"["EVENT","invite","#), "{first}");
 
     let event: serde_json::Value = serde_json::from_str(
@@ -1258,10 +1310,10 @@ async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
     // Nothing else: the stored read was cancelled with the subscription, so no stored
     // event and no `EOSE`.
     assert!(
-        client.next_message().await.is_none(),
+        frames.try_recv().is_err(),
         "a closed subscription streams nothing"
     );
-    assert_eq!(server.fixture.invites.minted().len(), 1);
+    assert_eq!(fixture.invites.minted().len(), 1);
 }
 
 #[tokio::test]
