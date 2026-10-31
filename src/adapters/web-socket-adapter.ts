@@ -37,18 +37,33 @@ import { SocketAddress } from 'net'
 const logger = createLogger('web-socket-adapter')
 
 /**
- * The NIP-01 type of a client frame, or `unknown` before it can be parsed.
+ * The NIP-01 type of a client frame, or `OTHER` when it is not one.
  *
  * The message limiter runs before validation — it has to, or a client could
  * spend the parse budget first — so it reads a bounded prefix instead of
  * decoding the frame. A frame that does not start with `["WORD"` shares the
- * `unknown` bucket; it is refused a moment later anyway.
+ * `OTHER` bucket; it is refused a moment later anyway.
  */
+const THROTTLED_MESSAGE_TYPES = new Set<string>([
+  'REQ',
+  'EVENT',
+  'COUNT',
+  'CLOSE',
+  'AUTH',
+  'NEG-OPEN',
+  'NEG-MSG',
+  'NEG-CLOSE',
+])
+
 const messageType = (raw: Buffer): string => {
   const prefix = raw.toString('utf8', 0, Math.min(raw.length, 32))
-  const match = /^\s*\[\s*"([A-Za-z]{1,8})"/.exec(prefix)
+  const match = /^\s*\[\s*"([A-Za-z-]{1,8})"/.exec(prefix)
+  const type = match ? match[1].toUpperCase() : ''
 
-  return match ? match[1].toUpperCase() : 'unknown'
+  // A closed set, not whatever the frame claims. Bucketing by an arbitrary word
+  // would let a client rotate invented types (`["AAAA"]`, `["BBBB"]`, …) and
+  // keep every bucket empty; anything unrecognised shares one bucket.
+  return THROTTLED_MESSAGE_TYPES.has(type) ? type : 'OTHER'
 }
 const debugHeartbeat = logger.extend('heartbeat')
 

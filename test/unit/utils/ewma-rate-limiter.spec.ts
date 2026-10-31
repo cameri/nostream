@@ -76,15 +76,24 @@ describe('EWMARateLimiter', () => {
         evalStub.resolves('6.4')
         const result = await rateLimiter.hit('key', 1, { period: 60000, rate: 6 })
         expect(result.limited).to.be.true
-        expect(result.retryAfterMs).to.equal(Math.ceil(60000 * Math.log2(6.4 / 6)))
+        expect(result.retryAfterMs).to.equal(Math.ceil(60000 * Math.log2(6.4 / 5)))
         })
 
-        // `period` is the half-life. Four times over the rate is two half-lives,
-        // so the caller must wait 2 * period, not period.
-        it('sends the half-life backoff, not the period', async () => {
+        // `period` is the half-life, and the next hit adds its step before the
+        // comparison, so the score has to fall to `rate - step`: 24 down to 5 at
+        // half-life 60 s is 2.26 periods, ~136 s, not the 60 s we used to send.
+        it('sends the half-life backoff the next hit actually needs', async () => {
         evalStub.resolves('24')
         const result = await rateLimiter.hit('key', 1, { period: 60000, rate: 6 })
-        expect(result.retryAfterMs).to.equal(120000)
+        expect(result.retryAfterMs).to.equal(135783)
+        })
+
+        // rate 1 with step 1 leaves no headroom: no decay admits another hit, so
+        // the honest answer is one period, which is also the key's TTL.
+        it('falls back to the period when no decay can admit a hit', async () => {
+        evalStub.resolves('3')
+        const result = await rateLimiter.hit('key', 1, { period: 60000, rate: 1 })
+        expect(result.retryAfterMs).to.equal(60000)
         })
 
         it('never sends a zero or sub-millisecond backoff', async () => {

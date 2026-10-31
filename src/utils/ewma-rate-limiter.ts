@@ -91,12 +91,20 @@ export class EWMARateLimiter implements IRateLimiter {
     }
 
     // `period` is the half-life, not the wait: the score decays as
-    // `score * 2^(-t/period)`, so it takes `period * log2(score / rate)` for the
-    // score to fall back to `rate`. Reporting `period` understates a four-times
-    // overrun by half (rate 6, score 24, period 60 s: 120 s, not 60 s).
+    // `score * 2^(-t/period)`, so it takes `period * log2(score / target)` to
+    // fall back to `target`. Reporting `period` understates a four-times
+    // overrun by half (rate 6, score 24, period 60 s: ~136 s, not 60 s).
+    //
+    // The target is `rate - step`, not `rate`: the script adds this hit's step
+    // before comparing, so a score that has decayed to exactly `rate` still
+    // exceeds it. With no headroom (`rate <= step`) no amount of decay admits
+    // another hit, and the key's TTL is what eventually clears it.
+    const headroom = rate - step
     return {
         limited: true,
-        retryAfterMs: Math.max(1, Math.ceil(period * Math.log2(score / rate))),
+        retryAfterMs: headroom > 0
+            ? Math.max(1, Math.ceil(period * Math.log2(score / headroom)))
+            : Math.max(1, Math.ceil(period)),
     }
   }
 

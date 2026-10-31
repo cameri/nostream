@@ -65,7 +65,7 @@ describe('GetSubscriptionStatusController', () => {
 
   beforeEach(() => {
     repository = { findByPubkey: sinon.stub().resolves(subscription()) }
-    rateLimiterHit = sinon.stub().resolves(false)
+    rateLimiterHit = sinon.stub().resolves({ limited: false })
     currentSettings = baseSettings()
   })
 
@@ -333,7 +333,7 @@ describe('GetSubscriptionStatusController', () => {
       currentSettings = baseSettings({
         limits: { invoice: { rateLimits: [{ rate: 2, period: 60000 }], ipWhitelist: [] } },
       })
-      rateLimiterHit.resolves(true)
+      rateLimiterHit.resolves({ limited: true })
       const res = makeRes()
 
       await makeController().handleRequest(makeReq(), res)
@@ -349,7 +349,7 @@ describe('GetSubscriptionStatusController', () => {
 
     it('returns 429 when the invoice limits are exceeded, without reading anything', async () => {
       currentSettings = limited()
-      rateLimiterHit.resolves(true)
+      rateLimiterHit.resolves({ limited: true })
       const res = makeRes()
 
       await makeController().handleRequest(makeReq(), res)
@@ -373,7 +373,7 @@ describe('GetSubscriptionStatusController', () => {
       currentSettings = baseSettings({
         limits: { invoice: { rateLimits: [{ rate: 2, period: 60000 }], ipWhitelist: ['1.2.3.4'] } },
       })
-      rateLimiterHit.resolves(true)
+      rateLimiterHit.resolves({ limited: true })
       const res = makeRes()
 
       await makeController().handleRequest(makeReq(), res)

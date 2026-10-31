@@ -668,6 +668,19 @@ describe('WebSocketAdapter', () => {
         )
       })
 
+      // A closed set of types, or a client could rotate invented ones and keep
+      // every bucket empty.
+      it('buckets an invented message type with everything else unrecognised', async () => {
+        const hitStub = sandbox.stub().resolves({ limited: false })
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+
+        await onMessage(Buffer.from(JSON.stringify(['AAAA'])))
+        await onMessage(Buffer.from(JSON.stringify(['BBBB'])))
+
+        expect(hitStub.firstCall.args[0]).to.equal('127.0.0.1:message:OTHER:60000')
+        expect(hitStub.secondCall.args[0]).to.equal('127.0.0.1:message:OTHER:60000')
+      })
+
       it('falls back to the notice when the frame is not valid JSON', async () => {
         await onMessage(Buffer.from('not-json'))
 
