@@ -135,6 +135,11 @@ const resolveOnPath = (command: string): string | undefined => {
   return undefined
 }
 
+// The script also warns when coreutils is absent (stock macOS), and that line is
+// present on every run there. Assertions about retries must name the retry line,
+// or they would fail on a laptop and pass in CI.
+const RETRY_WARNING = /::warning::wrangler deploy attempt/g
+
 describe('deploy-with-retry.sh', () => {
   let dir: string
 
@@ -167,7 +172,7 @@ describe('deploy-with-retry.sh', () => {
 
     expect(result.status).to.not.equal(0)
     expect(result.attempts).to.equal(1)
-    expect(result.stdout).to.not.include('::warning::')
+    expect(result.stdout).to.not.match(RETRY_WARNING)
     expect(result.stderr).to.include('::error::')
   })
 
@@ -178,7 +183,7 @@ describe('deploy-with-retry.sh', () => {
 
     expect(result.status).to.not.equal(0)
     expect(result.attempts).to.equal(1)
-    expect(result.stdout).to.not.include('::warning::')
+    expect(result.stdout).to.not.match(RETRY_WARNING)
   })
 
   it('retries an HTTP 5xx from the Cloudflare API', () => {
@@ -206,7 +211,7 @@ describe('deploy-with-retry.sh', () => {
     expect(result.stderr).to.include('::error::deploy failed after 3 attempts')
     expect(result.stderr).to.include('10013')
     // One warning per retry, none for the first attempt.
-    expect(result.stdout.match(/::warning::/g)).to.have.length(2)
+    expect(result.stdout.match(RETRY_WARNING)).to.have.length(2)
   })
 
   it('passes the wrangler arguments through unchanged, one argument at a time', () => {
