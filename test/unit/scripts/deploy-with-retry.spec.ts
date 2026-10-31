@@ -33,7 +33,10 @@ const writeStub = (dir: string, attempts: Attempt[]): string => {
     })
     .join('\n')
   const stub = `#!/usr/bin/env bash
-printf '%s\\n' "$*" >> "$STUB_ARGS"
+# One line per attempt, one field per argument: "$*" would join the arguments
+# and hide an unquoted "$@" in the script under test.
+for arg in "$@"; do printf '%s<ARG>' "$arg" >> "$STUB_ARGS"; done
+printf '\\n' >> "$STUB_ARGS"
 attempt=$(wc -l < "$STUB_ARGS")
 case "$attempt" in
 ${cases}
@@ -45,19 +48,49 @@ esac
   return binDir
 }
 
-type Run = { status: number | null; stdout: string; stderr: string; attempts: number; args: string[] }
+const ARG_SEPARATOR = '<ARG>'
 
-const runScript = (dir: string, attempts: Attempt[], args: string[], env: NodeJS.ProcessEnv = {}): Run => {
+const parseAttempts = (recorded: string): string[][] => {
+  const trimmed = recorded.trim()
+  if (trimmed === '') {
+    return []
+  }
+  return trimmed.split('\n').map((line) => {
+    const fields = line.split(ARG_SEPARATOR)
+    // Every argument is followed by the separator, so the split leaves a
+    // trailing empty field.
+    return fields[fields.length - 1] === '' ? fields.slice(0, -1) : fields
+  })
+}
+
+type Run = {
+  status: number | null
+  stdout: string
+  stderr: string
+  attempts: number
+  invocations: string[][]
+  /** Arguments of the first attempt, the one every test's expectation is about. */
+  args: string[]
+}
+
+type RunOptions = { env?: NodeJS.ProcessEnv; pathPrefixes?: string[]; systemPath?: boolean }
+
+const runScript = (dir: string, attempts: Attempt[], args: string[], options: RunOptions = {}): Run => {
   const binDir = writeStub(dir, attempts)
   const counter = path.join(dir, 'invocations.txt')
   fs.writeFileSync(counter, '')
+  const searchPath = [
+    ...(options.pathPrefixes ?? []),
+    binDir,
+    ...(options.systemPath === false ? [] : [process.env.PATH]),
+  ].join(':')
   const result = spawnSync('bash', [scriptPath, ...args], {
     cwd: projectRoot,
     env: {
       ...process.env,
-      ...env,
+      ...options.env,
       STUB_ARGS: counter,
-      PATH: `${binDir}:${process.env.PATH}`,
+      PATH: searchPath,
       // The production defaults wait 10 s then 30 s; the tests assert the
       // retry happened, not how long it took.
       DEPLOY_BACKOFFS: '0 0',
@@ -65,24 +98,40 @@ const runScript = (dir: string, attempts: Attempt[], args: string[], env: NodeJS
     encoding: 'utf-8',
     timeout: 30_000,
   })
-  const invocations = fs.readFileSync(counter, 'utf-8').trim()
+  const invocations = parseAttempts(fs.readFileSync(counter, 'utf-8'))
 
   return {
     status: result.status,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
-    attempts: invocations === '' ? 0 : invocations.split('\n').length,
-    args: invocations === '' ? [] : invocations.split('\n'),
+    attempts: invocations.length,
+    invocations,
+    args: invocations[0] ?? [],
   }
 }
 
-const deploy = (dir: string, attempts: Attempt[], env: NodeJS.ProcessEnv = {}): Run =>
-  runScript(
-    dir,
-    attempts,
-    ['wrangler', 'deploy', '--config', 'wrangler.router.jsonc', '--var', 'CANONICAL_HOST:nostream.dev'],
-    env,
-  )
+const WRANGLER_ARGS = [
+  'wrangler',
+  'deploy',
+  '--config',
+  'wrangler.router.jsonc',
+  '--var',
+  'CANONICAL_HOST:nostream.dev',
+]
+
+const deploy = (dir: string, attempts: Attempt[], options: RunOptions = {}): Run =>
+  runScript(dir, attempts, WRANGLER_ARGS, options)
+
+/** Resolve a command the way a shell would, for building a restricted PATH. */
+const resolveOnPath = (command: string): string | undefined => {
+  for (const entry of (process.env.PATH ?? '').split(':')) {
+    const candidate = path.join(entry, command)
+    if (fs.existsSync(candidate)) {
+      return candidate
+    }
+  }
+  return undefined
+}
 
 describe('deploy-with-retry.sh', () => {
   let dir: string
@@ -158,17 +207,52 @@ describe('deploy-with-retry.sh', () => {
     expect(result.stdout.match(/::warning::/g)).to.have.length(2)
   })
 
-  it('passes the wrangler arguments through unchanged', () => {
+  it('passes the wrangler arguments through unchanged, one argument at a time', () => {
     const result = deploy(dir, [])
 
     expect(result.status, result.stderr).to.equal(0)
     expect(result.attempts).to.equal(1)
-    expect(result.args[0]).to.equal('deploy --config wrangler.router.jsonc --var CANONICAL_HOST:nostream.dev')
+    expect(result.args).to.deep.equal(['deploy', '--config', 'wrangler.router.jsonc', '--var', 'CANONICAL_HOST:nostream.dev'])
+  })
+
+  it('keeps an argument that contains spaces as one argument', () => {
+    const args = ['wrangler', 'deploy', '--var', 'SITE_TITLE:Oh My Relay']
+    const result = runScript(dir, [], args)
+
+    expect(result.status, result.stderr).to.equal(0)
+    // Unquoted `$@` in the script would split this into four arguments.
+    expect(result.args).to.deep.equal(['deploy', '--var', 'SITE_TITLE:Oh My Relay'])
+  })
+
+  it('still deploys when no timeout command is installed (stock macOS)', () => {
+    // A PATH with the tools the script needs and, deliberately, neither
+    // `timeout` nor `gtimeout`. The script must degrade to an unbounded
+    // attempt and say so, not exit 127 before the deploy runs.
+    const restricted = path.join(dir, 'restricted-bin')
+    fs.mkdirSync(restricted, { recursive: true })
+    for (const tool of ['bash', 'cat', 'grep', 'head', 'mktemp', 'rm', 'sleep', 'tail', 'wc']) {
+      const resolved = resolveOnPath(tool)
+      if (!resolved) {
+        throw new Error(`${tool} not found on PATH; cannot build the restricted environment`)
+      }
+      fs.symlinkSync(resolved, path.join(restricted, tool))
+    }
+
+    const result = deploy(dir, [], { pathPrefixes: [restricted], systemPath: false })
+
+    expect(result.status, result.stderr).to.equal(0)
+    expect(result.attempts).to.equal(1)
+    expect(result.stdout).to.match(/::warning::no 'timeout' or 'gtimeout' on PATH/)
   })
 
   it('retries an attempt that exceeds the per-attempt timeout', function () {
+    if (!resolveOnPath('timeout') && !resolveOnPath('gtimeout')) {
+      // Only reached on a host without coreutils, where the script has no bound
+      // to exceed in the first place.
+      this.skip()
+    }
     this.timeout(20_000)
-    const result = deploy(dir, [{ sleep: 30 }], { DEPLOY_ATTEMPT_TIMEOUT: '1' })
+    const result = deploy(dir, [{ sleep: 30 }], { env: { DEPLOY_ATTEMPT_TIMEOUT: '1' } })
 
     expect(result.status, result.stderr).to.equal(0)
     expect(result.attempts).to.equal(2)

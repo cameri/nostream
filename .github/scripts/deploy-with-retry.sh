@@ -46,6 +46,19 @@ if ! [[ "$attempts" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
+# `timeout` is coreutils: every GitHub runner has it, a stock macOS does not.
+# Falling back keeps the script usable from a laptop (the unit suite runs it),
+# and says so rather than silently dropping the bound. Bash 3.2 ships on macOS,
+# so an empty array cannot be expanded with "${timeout_cmd[@]}" under `set -u`.
+timeout_cmd=()
+if command -v timeout >/dev/null 2>&1; then
+  timeout_cmd=(timeout --kill-after=10 "$attempt_timeout")
+elif command -v gtimeout >/dev/null 2>&1; then
+  timeout_cmd=(gtimeout --kill-after=10 "$attempt_timeout")
+else
+  echo "::warning::no 'timeout' or 'gtimeout' on PATH — deploy attempts are not bounded (install coreutils to restore the per-attempt limit)"
+fi
+
 logs=$(mktemp -d)
 trap 'rm -rf "$logs"' EXIT
 
@@ -78,8 +91,9 @@ for (( attempt = 1; attempt <= attempts; attempt++ )); do
   echo "deploy attempt $attempt/$attempts: $*"
   # The whole attempt is bounded: an upload that stops making progress must not
   # hold the job until the workflow's own timeout. `--kill-after` covers a
-  # process that ignores TERM.
-  timeout --kill-after=10 "$attempt_timeout" "$@" >"$log" 2>&1 || status=$?
+  # process that ignores TERM. Without coreutils the bound is dropped and the
+  # warning above says so, rather than turning every deploy into exit 127.
+  ${timeout_cmd[@]+"${timeout_cmd[@]}"} "$@" >"$log" 2>&1 || status=$?
   cat "$log"
 
   if [ "$status" -eq 0 ]; then
