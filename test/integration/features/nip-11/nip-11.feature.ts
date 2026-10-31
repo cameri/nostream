@@ -3,8 +3,10 @@ import axios, { AxiosResponse } from 'axios'
 import chai from 'chai'
 
 import packageJson from '../../../../package.json'
+import { Settings } from '../../../../src/@types/settings'
 import { DEFAULT_FILTER_LIMIT } from '../../../../src/constants/base'
 import { createSettings } from '../../../../src/factories/settings-factory'
+import { validateSettings } from '../../../../src/utils/settings-config'
 
 chai.use(require('sinon-chai'))
 const { expect } = chai
@@ -82,6 +84,71 @@ Then('the limitation object contains a max_filters field', function(this: World<
   const doc = this.parameters.httpResponse.data
   const expectedMaxFilters = createSettings().limits?.client?.subscription?.maxFilters
   expect(doc.limitation.max_filters).to.equal(expectedMaxFilters)
+})
+
+Then('the peering object matches the configured peering settings', function(this: World<Record<string, any>>) {
+  const doc = this.parameters.httpResponse.data
+  expect(doc.peering).to.deep.equal({
+    enabled: true,
+    contact: 'mailto:peering@example.com',
+    endpoint: 'wss://relay.example.com',
+    min_pow_difficulty: 16,
+    scopes: [
+      { kinds: [1, 6], window_seconds: 3600 },
+      { kinds: [3], since: 1700000000 },
+    ],
+    terms: [{ amount: 1000, unit: 'msats', period: 2592000 }],
+  })
+})
+
+const peeringIssuesFor = (peering: unknown) =>
+  validateSettings({ ...createSettings(), peering } as Settings).filter((issue) => issue.path.startsWith('peering'))
+
+When('peering settings are validated with a complete configuration', function(this: World<Record<string, any>>) {
+  this.parameters.peeringValidationIssues = peeringIssuesFor({
+    enabled: true,
+    contact: 'mailto:peering@example.com',
+    endpoint: 'wss://relay.example.com',
+    minRequestPowDifficulty: 16,
+    scopes: [
+      { kinds: [1, [10000, 19999]], windowSeconds: 3600 },
+      { kinds: [3], since: 1700000000, until: 1800000000 },
+    ],
+    terms: [{ amount: 1000, unit: 'msats', period: 2592000 }],
+  })
+})
+
+When('peering settings are validated with an invalid configuration', function(this: World<Record<string, any>>) {
+  this.parameters.peeringValidationIssues = [
+    {
+      enabled: true,
+      contact: 'not-a-uri',
+      endpoint: 'not-a-websocket',
+      minRequestPowDifficulty: 300,
+      scopes: [],
+    },
+    {
+      enabled: true,
+      contact: '',
+      endpoint: '',
+      scopes: [{ kinds: [65536, [100, 1]], since: 200, until: 100, windowSeconds: 0, extra: true }],
+      terms: [{ amount: -1, unit: '', period: 0, extra: true }],
+    },
+  ].flatMap(peeringIssuesFor)
+})
+
+Then('the peering settings validation reports no issues', function(this: World<Record<string, any>>) {
+  expect(this.parameters.peeringValidationIssues).to.deep.equal([])
+})
+
+Then('the peering settings validation reports an issue at {string}', function(
+  this: World<Record<string, any>>,
+  path: string,
+) {
+  expect(
+    this.parameters.peeringValidationIssues.some((issue: { path: string }) => issue.path === path),
+    `expected a validation issue at "${path}"`,
+  ).to.equal(true)
 })
 
 Then('the relay information response includes required NIP-11 CORS headers', function(

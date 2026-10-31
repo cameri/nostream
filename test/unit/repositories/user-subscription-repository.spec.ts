@@ -27,6 +27,10 @@ describe('UserSubscriptionRepository', () => {
   const real = knex({ client: 'pg' })
   let sql: string[]
 
+  // How the driver prints a date in a statement. It prints it in the local time zone of the machine, so what a test
+  // expects is the same date printed the same way, not a literal that holds in one time zone only.
+  const printed = (date: Date): string => real.raw('?', [date]).toString()
+
   // A client that builds real knex queries, records the SQL they would run and answers with `result`.
   const clientReturning = (result: unknown): DatabaseClient =>
     ((table: string) => {
@@ -142,7 +146,7 @@ describe('UserSubscriptionRepository', () => {
       expect(sql[0]).to.include(`"pubkey" = X'${pubkeyHex}'`)
       expect(sql[0]).to.include(`"status" = 'active'`)
       expect(sql[0]).to.include(`"plan_id" = 'basic'`)
-      expect(sql[0]).to.include(`current_period_end IS NOT DISTINCT FROM '2026-01-31`)
+      expect(sql[0]).to.include(`current_period_end IS NOT DISTINCT FROM ${printed(end)}`)
       expect(sql[0]).to.include('grace_ends_at IS NOT DISTINCT FROM NULL')
     })
 
@@ -156,7 +160,7 @@ describe('UserSubscriptionRepository', () => {
       )
 
       expect(sql[0]).to.include(`"status" = 'past_due'`)
-      expect(sql[0]).to.include(`grace_ends_at IS NOT DISTINCT FROM '2026-02-03`)
+      expect(sql[0]).to.include(`grace_ends_at IS NOT DISTINCT FROM ${printed(graceEndsAt)}`)
       expect(sql[0]).to.include('"grace_ends_at" = NULL')
     })
 
@@ -187,7 +191,7 @@ describe('UserSubscriptionRepository', () => {
       expect(sql[0]).to.include(`"status" = 'active'`)
       expect(sql[0]).to.include('"cancel_at_period_end" = false')
       expect(sql[0]).to.include('"current_period_end" is not null')
-      expect(sql[0]).to.include(`"current_period_end" <= '2026-01-31`)
+      expect(sql[0]).to.include(`"current_period_end" <= ${printed(end)}`)
       expect(sql[0]).to.include('order by "current_period_end" asc')
       expect(sql[0]).to.include('limit 10')
     })
@@ -217,7 +221,7 @@ describe('UserSubscriptionRepository', () => {
 
       expect(sql[0]).to.include(`"status" in ('active', 'renewal_pending')`)
       expect(sql[0]).to.include('"current_period_end" is not null')
-      expect(sql[0]).to.include(`"current_period_end" <= '2026-01-31`)
+      expect(sql[0]).to.include(`"current_period_end" <= ${printed(end)}`)
       expect(sql[0]).to.include('limit 10')
     })
 
@@ -239,7 +243,7 @@ describe('UserSubscriptionRepository', () => {
 
       expect(sql[0]).to.include(`"status" = 'past_due'`)
       expect(sql[0]).to.include('"grace_ends_at" is not null')
-      expect(sql[0]).to.include(`"grace_ends_at" <= '2026-01-31`)
+      expect(sql[0]).to.include(`"grace_ends_at" <= ${printed(end)}`)
       expect(sql[0]).to.include('order by "grace_ends_at" asc')
     })
 
