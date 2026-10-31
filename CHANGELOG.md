@@ -1,5 +1,25 @@
 # nostream
 
+## 3.10.0
+
+### Minor Changes
+
+- [#922](https://github.com/cameri/nostream/pull/922) [`fcb33de`](https://github.com/cameri/nostream/commit/fcb33de228c9d53fd0a2dcae412996563ca1ed99) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(payments): add per-plan event rate limits and retention
+
+### Patch Changes
+
+- [#1009](https://github.com/cameri/nostream/pull/1009) [`ad8c5c4`](https://github.com/cameri/nostream/commit/ad8c5c4b9d2e6df34704741465d2505d811fe7b7) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - build: pin the node base image in every file that names one
+
+  `Dockerfile` pinned `node:24.22.1-alpine` by digest, but `Dockerfile.railwayapp`, `Dockerfile.test`, `docker-compose.yml` and `test/integration/docker-compose.yml` still said `node:24-alpine`. The relay image, the CI image, the Railway image and both migration containers could each start from a different base, and a floating tag moves under a release — so the same commit built twice could run different node code without a change saying so.
+
+  All five now carry the same tag and digest, and a unit test holds them there: it fails if any reference loses its digest, and it fails if two different references appear.
+
+- [#1010](https://github.com/cameri/nostream/pull/1010) [`fa54cb0`](https://github.com/cameri/nostream/commit/fa54cb074beda6af556c93c25a7f77f569dc82dd) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(settings): state that rate-limit periods are milliseconds and reject a period that is not one
+
+  Every shipped limit counts in milliseconds — `1000`, `60000`, `900000`, `3600000` — but nothing said so. `RateLimit.period` is a bare `number`, so an operator writing `period: 60` for a minute got a 60 ms window — and because `rate` is hits per window, that is a limit a thousand times **looser** than intended, honoured without complaint, and caught by nothing.
+
+  The unit is now stated on `RateLimit` and on every `rateLimits` block in `resources/default-settings.yaml`, and `validateRateLimitPeriods` rejects what cannot be a count of milliseconds: a fraction, a string, a non-number, or anything below one millisecond. A whole number is not enough to tell 60 from 60000, which is why the unit is documented where it is set.
+
 ## 3.9.0
 
 ### Minor Changes
