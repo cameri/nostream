@@ -25,3 +25,12 @@ export const RELAY_BANNER_LINES: readonly string[] = [
  */
 export const centre = (line: string, width: number = BANNER_WIDTH): string =>
   ' '.repeat(Math.max(0, (width - line.length) >> 1)) + line
+
+/**
+ * `LOG_FORMAT=json` promises a stream in which every line parses as JSON. The
+ * banner cannot keep that promise, so it is replaced by one record carrying the
+ * same facts. Anything else — unset, `pretty`, a typo — keeps the banner: the
+ * person reading `docker compose logs` is the default audience.
+ */
+export const isStructuredLogFormat = (format: string | undefined): boolean =>
+  (format ?? '').trim().toLowerCase() === 'json'

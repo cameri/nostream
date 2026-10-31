@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 
-import { BANNER_WIDTH, centre, RELAY_BANNER_LINES } from '../../../src/utils/banner'
+import { BANNER_WIDTH, centre, isStructuredLogFormat, RELAY_BANNER_LINES } from '../../../src/utils/banner'
 
 describe('startup banner', () => {
   // The banner is printed to stdout as text. A line wider than the block would
@@ -30,5 +30,19 @@ describe('startup banner', () => {
     const exact = 'x'.repeat(BANNER_WIDTH)
 
     expect(centre(exact)).to.equal(exact)
+  })
+
+  // LOG_FORMAT=json is a promise made to a log pipeline, so it is read strictly:
+  // an unrecognised value falls back to the banner a person can read.
+  it('reads LOG_FORMAT=json, trimmed and case-insensitively', () => {
+    expect(isStructuredLogFormat('json')).to.equal(true)
+    expect(isStructuredLogFormat(' JSON ')).to.equal(true)
+  })
+
+  it('keeps the banner for anything else', () => {
+    expect(isStructuredLogFormat(undefined)).to.equal(false)
+    expect(isStructuredLogFormat('')).to.equal(false)
+    expect(isStructuredLogFormat('pretty')).to.equal(false)
+    expect(isStructuredLogFormat('jsonlines')).to.equal(false)
   })
 })

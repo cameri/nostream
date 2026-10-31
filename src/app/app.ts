@@ -1,5 +1,6 @@
 import { Cluster, Worker } from 'cluster'
 import { cpus, hostname } from 'os'
+import { levels } from 'pino'
 import { path, pathEq } from 'ramda'
 import { FSWatcher } from 'fs'
 
@@ -11,7 +12,7 @@ import packageJson from '../../package.json'
 import { Serializable } from 'child_process'
 import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
-import { BANNER_WIDTH, centre, RELAY_BANNER_LINES } from '../utils/banner'
+import { BANNER_WIDTH, centre, isStructuredLogFormat, RELAY_BANNER_LINES } from '../utils/banner'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import { RedisRelayBroadcastFanout } from '../relay-broadcast/redis-relay-broadcast-fanout'
@@ -56,9 +57,14 @@ export class App implements IRunnable {
     this.watchers = SettingsStatic.watchSettings()
     // Plain text on stdout, not through the logger: in JSON output every line of
     // the logo arrived as its own record with the newlines escaped, which is not
-    // a logo. Nothing is lost for a log pipeline — `createLogger` stringifies an
-    // object argument anyway, so every other line in this file is text too.
+    // a logo. A pipeline that insists every line parse sets LOG_FORMAT=json and
+    // gets one record instead of artwork (see below).
+    const structuredLogs = isStructuredLogFormat(this.process.env.LOG_FORMAT)
     const logLine = (text: string) => {
+      if (structuredLogs) {
+        return
+      }
+
       this.process.stdout.write(`${text}\n`)
     }
 
@@ -101,6 +107,29 @@ export class App implements IRunnable {
     const workerCount = process.env.WORKER_COUNT
       ? Number(process.env.WORKER_COUNT)
       : this.settings().workers?.count || cpus().length
+
+    // The structured form of the banner: the same facts as fields, written once
+    // and before any worker forks, so it opens the stream. The keys are pino's
+    // own so a pipeline reads this line like every other one.
+    if (structuredLogs) {
+      const dvmWorkerCount = Array.isArray(settings?.dvm?.workers) ? settings.dvm.workers.length : 0
+      this.process.stdout.write(`${JSON.stringify({
+        level: levels.values.info,
+        time: Date.now(),
+        pid: process.pid,
+        hostname: hostname(),
+        msg: 'relay starting',
+        version: packageJson.version,
+        supportedNips: packageJson.supportedNips,
+        payments: paymentsEnabled ? 'enabled' : 'disabled',
+        paymentsProvider: paymentsEnabled ? path(['payments', 'processor'], settings) : undefined,
+        eventStore: eventStoreBackend,
+        clientWorkers: workerCount,
+        maintenanceWorkers: 1,
+        relayMonitor: settings.nip66?.enabled === true,
+        dvmWorkers: dvmWorkerCount,
+      })}\n`)
+    }
 
     const createWorker = (env: Record<string, string>) => {
       const workerEnv = { ...env, [EVENT_STORE_BACKEND_ENV]: eventStoreBackend }

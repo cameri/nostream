@@ -175,6 +175,49 @@ describe('App', () => {
     expect(written).not.to.include('{"level"')
   })
 
+  // LOG_FORMAT=json promises a stream in which every line parses. The logo
+  // cannot keep that promise, so it becomes one record with the same facts.
+  it('writes one structured record instead of the banner when LOG_FORMAT=json', () => {
+    sandbox.stub(SettingsStatic, 'watchSettings').returns([])
+    sandbox.stub(operatorNotificationEnqueue, 'enqueueOperatorNotification').resolves()
+    sandbox.stub(torClient, 'addOnion').rejects(new Error('tor is not configured'))
+    let pid = 2001
+    cluster.fork.callsFake(() => createWorker(String(pid), pid++))
+    fakeProcess.env = { LOG_FORMAT: 'json' }
+    const app = new App(
+      fakeProcess as any,
+      cluster as any,
+      sandbox.stub().returns({
+        payments: { enabled: false },
+        workers: { count: 1 },
+        eventStore: { backend: 'postgres' },
+      } as Settings),
+    )
+
+    app.run()
+
+    const lines = fakeProcess.stdout.write.getCalls()
+      .map((call) => String(call.args[0]).trim())
+      .filter(Boolean)
+
+    expect(lines).to.have.lengthOf(1)
+
+    const record = JSON.parse(lines[0])
+
+    expect(record).to.include({
+      level: 30,
+      msg: 'relay starting',
+      payments: 'disabled',
+      eventStore: 'postgres',
+      clientWorkers: 1,
+      maintenanceWorkers: 1,
+      relayMonitor: false,
+      dvmWorkers: 0,
+    })
+    expect(record.version).to.match(/^\d+\.\d+\.\d+/)
+    expect(record.time).to.be.a('number')
+  })
+
   it('hands every worker, re-forked ones included, the event store resolved at startup', async () => {
     // run() reads both from process.env
     const env = { ...process.env }
