@@ -24,6 +24,18 @@ export interface Network {
 
 export interface RateLimit {
   description?: string
+  /**
+   * Length of the window in milliseconds.
+   *
+   * Every shipped limit counts this way (`1000`, `60000`, `900000`, `3600000`),
+   * and `rate` is how many hits one window allows. `period: 60`, written as if
+   * it meant 60 seconds, is therefore read as a 60 ms window and makes the
+   * limit a thousand times LOOSER: twelve hits per minute becomes twelve hits
+   * per 60 ms. The relay honours it without complaint, and nothing can tell the
+   * two apart from the number alone, which is why the unit is documented where
+   * the value is set. The validator rejects anything that is not a whole count
+   * of milliseconds, at least one.
+   */
   period: number
   rate: number
 }

@@ -387,6 +387,34 @@ describe('settings-config', () => {
       expect(issues.some((issue) => issue.path.startsWith('limits.event.rateLimits'))).to.equal(false)
     })
 
+    // The window is milliseconds everywhere, but 60 is as plausible a number as
+    // 60000, so the unit cannot be inferred. What can be refused is a value that
+    // is not a whole count of milliseconds at all: a fraction (0.5 ms), a string
+    // from a hand-edited YAML, and a value that is not a number.
+    const invalidPeriodCases: { label: string; period: unknown }[] = [
+      { label: 'a fractional period', period: 0.5 },
+      { label: 'a string period', period: '60000' },
+      { label: 'a NaN period', period: Number.NaN },
+    ]
+
+    for (const { label, period } of invalidPeriodCases) {
+      it(`rejects ${label} on limits.event.rateLimits`, () => {
+        const settings = baseSettings()
+        settings.limits = { event: { rateLimits: [{ period, rate: 10 }] } }
+
+        const issues = validateSettings(settings)
+        expect(issues.some((issue) => issue.path === 'limits.event.rateLimits[0].period')).to.equal(true)
+      })
+    }
+
+    it('names milliseconds in the period message, so a rejected value is not read as seconds', () => {
+      const settings = baseSettings()
+      settings.limits = { event: { rateLimits: [{ period: 0.5, rate: 10 }] } }
+
+      const message = validateSettings(settings).find((issue) => issue.path === 'limits.event.rateLimits[0].period')?.message
+      expect(message).to.contain('milliseconds')
+    })
+
     it('rejects a null entry in limits.event.rateLimits without throwing', () => {
       const settings = baseSettings()
       settings.limits = { event: { rateLimits: [null] } }

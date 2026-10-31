@@ -595,8 +595,16 @@ const validateRateLimitPeriods = (
       issues.push({ path: `${pathPrefix}[${index}]`, message: 'rateLimits entry must be an object' })
       return
     }
-    if (!(entry.period > 0)) {
-      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be greater than 0' })
+    // The window is in milliseconds, and 60 is as valid a number as 60000, so
+    // the unit cannot be inferred here: it is stated on RateLimit and on each
+    // block in resources/default-settings.yaml. What this can refuse is a value
+    // that is not a whole count of milliseconds at all.
+    if (typeof entry.period !== 'number' || !Number.isFinite(entry.period)) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be a number of milliseconds' })
+    } else if (!Number.isInteger(entry.period)) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be a whole number of milliseconds' })
+    } else if (entry.period < 1) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be at least 1 millisecond' })
     }
   })
 }
