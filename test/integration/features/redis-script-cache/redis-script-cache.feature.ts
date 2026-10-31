@@ -1,9 +1,16 @@
-import { Before, When } from '@cucumber/cucumber'
+import { After, Before, When } from '@cucumber/cucumber'
 import { assocPath, pipe } from 'ramda'
 import { createClient } from 'redis'
 
+import { Settings } from '../../../../src/@types/settings'
 import { getCacheConfig } from '../../../../src/cache/client'
 import { SettingsStatic } from '../../../../src/utils/settings'
+
+// One worker serves every scenario in this process, and controllers read
+// `SettingsStatic._settings` through `createSettings()` on each request, so a
+// mutation here would outlive the scenario and make whatever runs next depend on
+// test order. The tagged After below puts the previous object back.
+let settingsBefore: Settings | undefined
 
 // The relay only touches Lua when a rate limit is configured: both limiters
 // return early on an empty list. A scenario that never configures one would pass
@@ -11,11 +18,16 @@ import { SettingsStatic } from '../../../../src/utils/settings'
 // that proves nothing. A generous limit keeps the window from tripping while
 // still forcing the script through `EVALSHA`.
 Before({ tags: '@script-cache' }, async function () {
+  settingsBefore = SettingsStatic._settings
   SettingsStatic._settings = pipe(
     assocPath(['limits', 'rateLimiter', 'strategy'], 'ewma'),
     assocPath(['limits', 'message', 'rateLimits'], [{ period: 60000, rate: 100 }]),
     assocPath(['limits', 'message', 'ipWhitelist'], []),
   )(SettingsStatic._settings) as any
+})
+
+After({ tags: '@script-cache' }, async function () {
+  SettingsStatic._settings = settingsBefore
 })
 
 // `SCRIPT FLUSH` is the whole of a Redis restart as far as the relay can tell:
