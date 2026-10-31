@@ -216,10 +216,14 @@ eventStore:
 dvm:
   workers: []
 limits:
+  # Every `period` below is in milliseconds. `period: 60` would be a 60 ms
+  # window and is not rejected, because 60 is a valid count of milliseconds.
+  # See RateLimit in src/@types/settings.ts.
   # strategy selection configuration for rate limiting:
   rateLimiter:
     strategy: ewma
   invoice:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - period: 60000
         rate: 12
@@ -232,11 +236,13 @@ limits:
   invite:
     # Per-pubkey limit on kind 28935 invite requests. Each mint writes a row to
     # invite_codes, so this is the main defence against a code flood.
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 5 invite requests per hour per pubkey
         period: 3600000
         rate: 5
   admissionCheck:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 30 admission checks/min or 1 check every 2 seconds
         period: 60000
@@ -246,10 +252,12 @@ limits:
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
   admin:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 30 admin requests/min
         period: 60000
         rate: 30
+    # period is milliseconds (60000 = one minute)
     loginRateLimits:
       - description: 10 login attempts per 15 minutes
         period: 900000
@@ -259,6 +267,7 @@ limits:
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
   connection:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - period: 1000
         rate: 12
@@ -323,6 +332,7 @@ limits:
             - 39
           - - 50
             - 9007199254740991
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 6 events/min for event kinds 0, 3, 40 and 41
         kinds:
@@ -386,6 +396,7 @@ limits:
       maxLimit: 5000
       minPrefixLength: 4
   message:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 240 raw messages/min
         period: 60000
