@@ -26,6 +26,14 @@ export const NAV = [
 /** Repository markdown rendered under /docs/<slug>. Paths are relative to the repo root. */
 export const DOCS = [
   {
+    slug: 'setup',
+    file: 'docs/SETUP.md',
+    title: 'Production setup guide',
+    group: 'Start here',
+    blurb:
+      'Step-by-step production setup: host requirements, bootstrap, compose, reverse proxy with TLS, and verification.',
+  },
+  {
     slug: 'quick-start',
     file: 'README.md',
     title: 'Quick start',
@@ -120,4 +128,5 @@ export const NIP_TITLES: Record<number, string> = {
   66: 'Relay discovery & monitoring',
 }
 
-export const nipUrl = (n: number) => `https://github.com/nostr-protocol/nips/blob/master/${String(n).padStart(2, '0')}.md`
+export const nipUrl = (n: number) =>
+  `https://github.com/nostr-protocol/nips/blob/master/${String(n).padStart(2, '0')}.md`
