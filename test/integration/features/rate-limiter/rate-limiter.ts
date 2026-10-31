@@ -26,9 +26,10 @@ Given(/(\w+)'s message rate is already at the limit/, async function(name: strin
   const ws = this.parameters.clients[name] as WebSocket
   const address = (ws as any)._socket?.remoteAddress ?? '::1'
   const period = 60000
-  // EWMA reads its own namespace; seeding the un-namespaced key would leave the
-  // limiter on a fresh window and the scenario would not rate limit at all.
-  const key = ewmaKey(`${address}:message:${period}`)
+  // EWMA reads its own namespace, and the message bucket carries the message
+  // type (a REQ is not refused because its EVENTs filled the bucket), so the
+  // seed has to name both: `:message:EVENT:` rather than `:message:`.
+  const key = ewmaKey(`${address}:message:EVENT:${period}`)
 
   await testCacheClient.hSet(key, {
     rate: '999',
@@ -62,8 +63,10 @@ Given(/(\w+)'s Redis holds a sliding-window key left by an older version/, async
   const address = (ws as any)._socket?.remoteAddress ?? '::1'
   const period = 60000
   // Exactly what a 2.x relay, or a sliding_window run, leaves behind: a sorted
-  // set under the key name EWMA used to share. Reading it as a hash raised
-  // WRONGTYPE on every message, which is the regression this guards.
+  // set under the un-namespaced, un-typed key name. EWMA reads
+  // `<client>:message:EVENT:<period>` behind its own prefix, so this data is
+  // inert rather than fatal — and reading it as a hash used to raise WRONGTYPE
+  // on every message, which is the regression this guards.
   const key = `${address}:message:${period}`
 
   await testCacheClient.del(key)

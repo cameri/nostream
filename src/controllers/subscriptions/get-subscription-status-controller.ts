@@ -124,7 +124,7 @@ export class GetSubscriptionStatusController implements IController {
     if (Array.isArray(ipWhitelist) && !ipWhitelist.includes(remoteAddress)) {
       const rateLimiter = this.rateLimiter()
       for (const { rate, period } of rateLimits) {
-        if (await rateLimiter.hit(`${remoteAddress}:subscription-status:${period}`, 1, { period, rate })) {
+        if ((await rateLimiter.hit(`${remoteAddress}:subscription-status:${period}`, 1, { period, rate })).limited) {
           logger('rate limited %s: %d in %d milliseconds', remoteAddress, rate, period)
           limited = true
         }

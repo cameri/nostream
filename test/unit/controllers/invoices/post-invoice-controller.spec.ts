@@ -44,7 +44,7 @@ const makeController = (
       }),
     },
     overrides.settings ?? (() => baseSettings),
-    overrides.rateLimiter ?? (() => ({ hit: sinon.stub().resolves(false) })),
+    overrides.rateLimiter ?? (() => ({ hit: sinon.stub().resolves({ limited: false }) })),
   )
 }
 
@@ -80,7 +80,7 @@ describe('PostInvoiceController', () => {
 
   describe('rate limiting', () => {
     it('returns 429 when rate limited', async () => {
-      const rateLimiter = { hit: sinon.stub().resolves(true) }
+      const rateLimiter = { hit: sinon.stub().resolves({ limited: true }) }
       const settings = () => ({
         ...baseSettings,
         limits: {
