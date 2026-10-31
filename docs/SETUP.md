@@ -15,7 +15,7 @@ Before you begin, ensure you have:
 
 1. **A Linux host:** A VPS or dedicated server (Ubuntu 24.04 LTS or Debian 12 recommended) with at least:
    - 2 vCPUs
-   - 4 GB RAM
+   - 4 GB RAM — the database configuration this repository ships is tuned for a ~16 GB host, so on 4 or 8 GB you have to size it down in step 3 before starting the stack
    - 20+ GB SSD disk space (PostgreSQL event store grows over time)
    - A public IPv4 address (and optional IPv6)
 2. **A domain name:** A domain or subdomain you control (e.g. `relay.example.com`).
@@ -119,6 +119,25 @@ This creates the production directory structure:
     ├── data/               # PostgreSQL data directory (created at start)
     └── db-logs/            # PostgreSQL log directory
 ```
+
+### Size the database for your host
+
+The `postgresql.conf` that bootstrap installs is `postgresql.conf` from the repository root, tuned for a large host: `shared_buffers = 4GB`, `maintenance_work_mem = 1GB` and `effective_cache_size = 12GB`. Those are startup allocations, so on the 4 GB minimum host this guide recommends, PostgreSQL alone reserves the whole machine and the relay, Redis and the OS are left to the kernel's OOM killer.
+
+On anything smaller than about 16 GB, lower the three values before you start the stack. These are safe for the stated minimum:
+
+```bash
+# 4 GB host. Use 2GB / 512MB / 6GB on an 8 GB host.
+sudo sed -i \
+  -e 's/^shared_buffers = .*/shared_buffers = 1GB/' \
+  -e 's/^maintenance_work_mem = .*/maintenance_work_mem = 256MB/' \
+  -e 's/^effective_cache_size = .*/effective_cache_size = 3GB/' \
+  /opt/nostream/postgresql.conf
+```
+
+The rule of thumb behind those numbers: `shared_buffers` at 25% of RAM, `maintenance_work_mem` at RAM/16 up to 1 GB, and `effective_cache_size` at 50–75% of RAM. `postgresql.conf` is a release-managed file, so an update can overwrite your edits — the update section below says how to reapply them and how to make a running database pick them up.
+
+If you raise the host size instead, run `free -g` and compare: the shipped values want a 16 GB machine, not 8.
 
 ---
 
@@ -483,6 +502,14 @@ When a new nostream version is released:
    ```bash
    sudo ./deploy/recreate-relay.sh /opt/nostream
    ```
+5. If the release changed `postgresql.conf` — or you re-applied your own sizing after step 2 overwrote it — restart the database. Step 4 recreates `nostream` and `nostream-migrate` only, and none of the settings in that file (`shared_buffers`, `maintenance_work_mem`, `max_connections`) apply to a running server:
+   ```bash
+   envval() { sudo sed -n "s/^$1=//p" /opt/nostream/.env | tr -d "\"'"; }
+   sudo docker compose -f /opt/nostream/docker-compose.yml restart nostream-db
+   sudo docker compose -f /opt/nostream/docker-compose.yml exec -T nostream-db \
+     psql -U "$(envval DB_USER)" -d "$(envval DB_NAME)" -c 'SHOW shared_buffers;'
+   ```
+   If the value does not match the file, the container is still reading a stale copy: check that `docker-compose.yml` mounts `/opt/nostream/postgresql.conf` and not a path inside the image.
 
 This runs database migrations, recreates the container, and verifies readiness.
 For zero-downtime rolling deploys with blue/green backends, consult the [`Deploy Runbook & HAProxy Guide`](../docs/DEPLOY-RUNBOOK.md).

@@ -50,7 +50,7 @@ The project master repository is available on [GitHub](https://github.com/cameri
   - [Importing events from JSON Lines or JSON Arrays](#importing-events-from-json-lines-or-json-arrays)
   - [NIP-43 invite codes](#nip-43-invite-codes)
 - [Quick start (Standalone)](#quick-start-standalone)
-- [Full guide](#full-guide)
+- [Production Setup Guide](#production-setup-guide)
   - [Accepting payments](#accepting-payments)
 - [Running as a Service](#running-as-a-service)
 - [Troubleshooting](#troubleshooting)
