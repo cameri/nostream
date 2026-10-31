@@ -252,8 +252,8 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.subscriptionPlans[].intervalSeconds | Length of one paid period, in seconds. |
 | payments.subscriptionPlans[].graceSeconds   | How long access lasts after a period ends without a renewal, in seconds. `0` ends access straight away. |
 | payments.subscriptionPlans[].description    | Optional text shown to users. |
-| payments.subscriptionPlans[].limits.rateLimits | Optional event rate limits for subscribers on this plan, in the same format as `limits.event.rateLimits`. |
-| payments.subscriptionPlans[].limits.retentionMaxDays | Optional event retention in days for subscribers on this plan. |
+| payments.subscriptionPlans[].limits.rateLimits | Optional event rate limits for subscribers on this plan, in the same format as `limits.event.rateLimits`. They replace the global limits for a subscriber while their subscription gives access, grace period included; an empty list means no limit. Everyone else, and subscribers whose subscription ended, keep the global limits. The plan is cached with admission, so a change of plan takes effect within five minutes. |
+| payments.subscriptionPlans[].limits.retentionMaxDays | Optional event retention in days for subscribers on this plan. It replaces `limits.event.retention.maxDays` for a subscriber while their subscription gives access, so it only applies while that is set. Once the subscription ends, the global window purges their events at the next pass. The kind and pubkey whitelists apply as before. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. |
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |

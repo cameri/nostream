@@ -1039,6 +1039,115 @@ describe('EventRepository', () => {
       )
     })
 
+    describe('with plan retention', () => {
+      beforeEach(() => {
+        sandbox.useFakeTimers(new Date('2023-11-14T22:13:20.000Z'))
+      })
+
+      // knex prints dates in the local time zone of the machine, so the moment is masked.
+      const purge = (options: Parameters<typeof repository.deleteExpiredAndRetained>[0]) =>
+        repository
+          .deleteExpiredAndRetained(options)
+          .toString()
+          .replace(/'\d{4}-\d{2}-\d{2}[ T][^']*'/g, '<now>')
+
+      it('purges as before when no plan has its own retention', () => {
+        expect(purge({ maxDays: 7, planRetention: [] })).to.equal(purge({ maxDays: 7 }))
+      })
+
+      it('holds the subscribers of a plan to its retention and everyone else to the global one', () => {
+        const query = purge({ maxDays: 7, planRetention: [{ planId: 'premium', maxDays: 90 }] })
+
+        // 1700000000 is now; 7 days back is 1699395200, 90 days back is 1692224000
+        const active =
+          'not "status" = \'expired\' and (COALESCE(grace_ends_at, current_period_end) IS NULL or COALESCE(grace_ends_at, current_period_end) > <now>)'
+        expect(query).to.equal(
+          'delete from "events" where "event_id" in (select "event_id" from "events" where ("expires_at" < 1700000000 or "deleted_at" is not null' +
+            ` or ("event_created_at" < 1699395200 and "event_pubkey" not in (select "pubkey" from "user_subscriptions" where "plan_id" in ('premium') and ${active}))` +
+            ` or ("event_created_at" < 1692224000 and "event_pubkey" in (select "pubkey" from "user_subscriptions" where "plan_id" in ('premium') and ${active})))` +
+            ' and not ("event_kind" = 62) limit 1000) returning "deleted_at", "expires_at", "event_created_at"',
+        )
+      })
+
+      it('keeps the whitelists in force for subscribers too', () => {
+        const query = purge({
+          maxDays: 7,
+          kindWhitelist: [1],
+          pubkeyWhitelist: ['001122'],
+          planRetention: [{ planId: 'premium', maxDays: 90 }],
+        })
+
+        expect(query).to.contain('and not ("event_kind" = 1 or "event_kind" = 62) and "event_pubkey" not in (X\'001122\') limit 1000')
+      })
+
+      it('gives each plan its own window, excluding the subscribers of all of them from the global one', () => {
+        const query = purge({
+          maxDays: 7,
+          planRetention: [
+            { planId: 'basic', maxDays: 30 },
+            { planId: 'vip', maxDays: 365 },
+          ],
+        })
+
+        expect(query).to.contain(`"event_created_at" < 1699395200 and "event_pubkey" not in (select "pubkey" from "user_subscriptions" where "plan_id" in ('basic', 'vip')`)
+        expect(query).to.contain(`"event_created_at" < ${1700000000 - 30 * 86400} and "event_pubkey" in (select "pubkey" from "user_subscriptions" where "plan_id" in ('basic')`)
+        expect(query).to.contain(`"event_created_at" < ${1700000000 - 365 * 86400} and "event_pubkey" in (select "pubkey" from "user_subscriptions" where "plan_id" in ('vip')`)
+      })
+
+      it('applies a plan retention that is shorter than the global one', () => {
+        expect(purge({ maxDays: 90, planRetention: [{ planId: 'free', maxDays: 7 }] })).to.contain(
+          `"event_created_at" < 1699395200 and "event_pubkey" in (select "pubkey" from "user_subscriptions" where "plan_id" in ('free')`,
+        )
+      })
+
+      it('only counts subscriptions whose access has not ended, so an expired subscriber falls back to the global window', () => {
+        const query = purge({ maxDays: 7, planRetention: [{ planId: 'premium', maxDays: 90 }] })
+
+        expect(query).to.contain('not "status" = \'expired\'')
+        expect(query).to.contain('COALESCE(grace_ends_at, current_period_end) IS NULL')
+        expect(query).to.contain('COALESCE(grace_ends_at, current_period_end) > <now>')
+      })
+
+      it('ignores plan retentions that are not positive numbers', () => {
+        const options = { maxDays: 7 }
+
+        expect(
+          purge({
+            ...options,
+            planRetention: [
+              { planId: 'zero', maxDays: 0 },
+              { planId: 'negative', maxDays: -5 },
+              { planId: 'nan', maxDays: Number.NaN },
+            ],
+          }),
+        ).to.equal(purge(options))
+      })
+
+      it('does not purge anything when the global retention is off, whatever the plans say', async () => {
+        const result = await repository.deleteExpiredAndRetained({
+          maxDays: 0,
+          planRetention: [{ planId: 'premium', maxDays: 90 }],
+        })
+
+        expect(result).to.deep.equal({ deleted: 0, expired: 0, retained: 0 })
+      })
+
+      it('counts a row purged by a longer or shorter plan window as retained', () => {
+        const now = 1700000000
+        const result = (repository as any).mapToPurgeCounts(
+          [
+            // purged by a 7 day plan window although it is newer than the 90 day global one
+            { deleted_at: null, expires_at: null, event_created_at: now - 20 * 86400 },
+            { deleted_at: null, expires_at: null, event_created_at: now - 120 * 86400 },
+          ],
+          now,
+          now - 7 * 86400,
+        )
+
+        expect(result.retained).to.equal(2)
+      })
+    })
+
     it('maps purged rows to deleted, expired, and retained counts', () => {
       const result = (repository as any).mapToPurgeCounts(
         [
