@@ -216,9 +216,10 @@ eventStore:
 dvm:
   workers: []
 limits:
-  # Every `period` below is a count of milliseconds. `period: 60`, written as if
-  # it meant 60 seconds, is read as 60 ms: the window shrinks a thousandfold, so
-  # the limit becomes a thousand times stricter than the author meant. Nothing
+  # Every `period` below is a count of milliseconds, and `rate` is how many hits
+  # one window allows. `period: 60`, written as if it meant 60 seconds, is read
+  # as a 60 ms window - which makes the limit a thousand times LOOSER, not
+  # stricter: twelve hits per minute becomes twelve hits per 60 ms. Nothing
   # rejects it, because 60 is a valid count of milliseconds. The unit cannot be
   # inferred from the number, so it is stated here and on RateLimit in
   # src/@types/settings.ts.
