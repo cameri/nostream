@@ -11,6 +11,7 @@ import packageJson from '../../package.json'
 import { Serializable } from 'child_process'
 import { Settings } from '../@types/settings'
 import { SettingsStatic } from '../utils/settings'
+import { BANNER_WIDTH, centre, RELAY_BANNER_LINES } from '../utils/banner'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import { RedisRelayBroadcastFanout } from '../relay-broadcast/redis-relay-broadcast-fanout'
@@ -53,30 +54,27 @@ export class App implements IRunnable {
   public run(): void {
     const settings = this.settings()
     this.watchers = SettingsStatic.watchSettings()
-    logger.info(`
- ███▄    █  ▒█████    ██████ ▄▄▄█████▓ ██▀███  ▓█████ ▄▄▄       ███▄ ▄███▓
- ██ ▀█   █ ▒██▒  ██▒▒██    ▒ ▓  ██▒ ▓▒▓██ ▒ ██▒▓█   ▀▒████▄    ▓██▒▀█▀ ██▒
-▓██  ▀█ ██▒▒██░  ██▒░ ▓██▄   ▒ ▓██░ ▒░▓██ ░▄█ ▒▒███  ▒██  ▀█▄  ▓██    ▓██░
-▓██▒  ▐▌██▒▒██   ██░  ▒   ██▒░ ▓██▓ ░ ▒██▀▀█▄  ▒▓█  ▄░██▄▄▄▄██ ▒██    ▒██
-▒██░   ▓██░░ ████▓▒░▒██████▒▒  ▒██▒ ░ ░██▓ ▒██▒░▒████▒▓█   ▓██▒▒██▒   ░██▒
-░ ▒░   ▒ ▒ ░ ▒░▒░▒░ ▒ ▒▓▒ ▒ ░  ▒ ░░   ░ ▒▓ ░▒▓░░░ ▒░ ░▒▒   ▓▒█░░ ▒░   ░  ░
-░ ░░   ░ ▒░  ░ ▒ ▒░ ░ ░▒  ░ ░    ░      ░▒ ░ ▒░ ░ ░  ░ ▒   ▒▒ ░░  ░      ░
-   ░   ░ ░ ░ ░ ░ ▒  ░  ░  ░    ░        ░░   ░    ░    ░   ▒   ░      ░
-         ░     ░ ░        ░              ░        ░  ░     ░  ░       ░`)
-    const width = 74
+    // Plain text on stdout, not through the logger: in JSON output every line of
+    // the logo arrived as its own record with the newlines escaped, which is not
+    // a logo. Nothing is lost for a log pipeline — `createLogger` stringifies an
+    // object argument anyway, so every other line in this file is text too.
+    const logLine = (text: string) => {
+      this.process.stdout.write(`${text}\n`)
+    }
+
+    logLine(RELAY_BANNER_LINES.join('\n'))
+
+    const width = BANNER_WIDTH
     const torHiddenServicePort = process.env.HIDDEN_SERVICE_PORT ? Number(process.env.HIDDEN_SERVICE_PORT) : 80
     const port = process.env.RELAY_PORT ? Number(process.env.RELAY_PORT) : 8008
 
-    const logCentered = (input: string, width: number) => {
-      const start = Math.max(0, (width - input.length) >> 1)
-      logger.info(' '.repeat(start), input)
-    }
-    logCentered(`v${packageJson.version}`, width)
-    logCentered(`NIPs implemented: ${packageJson.supportedNips}`, width)
+    const logCentered = (input: string) => logLine(centre(input, width))
+    logCentered(`v${packageJson.version}`)
+    logCentered(`NIPs implemented: ${packageJson.supportedNips}`)
     const paymentsEnabled = pathEq(['payments', 'enabled'], true, settings)
-    logCentered(`Pay-to-relay ${paymentsEnabled ? 'enabled' : 'disabled'}`, width)
+    logCentered(`Pay-to-relay ${paymentsEnabled ? 'enabled' : 'disabled'}`)
     if (paymentsEnabled) {
-      logCentered(`Payments provider: ${path(['payments', 'processor'], settings)}`, width)
+      logCentered(`Payments provider: ${path(['payments', 'processor'], settings)}`)
     }
 
     if (
@@ -98,7 +96,7 @@ export class App implements IRunnable {
       this.process.exit(1)
       return
     }
-    logCentered(`Event store: ${eventStoreBackend}`, width)
+    logCentered(`Event store: ${eventStoreBackend}`)
 
     const workerCount = process.env.WORKER_COUNT
       ? Number(process.env.WORKER_COUNT)
@@ -117,25 +115,25 @@ export class App implements IRunnable {
         WORKER_INDEX: i.toString(),
       })
     }
-    logCentered(`${workerCount} client workers started`, width)
+    logCentered(`${workerCount} client workers started`)
 
     createWorker({
       WORKER_TYPE: 'maintenance',
     })
 
-    logCentered('1 maintenance worker started', width)
+    logCentered('1 maintenance worker started')
     if (Array.isArray(settings?.mirroring?.static) && settings.mirroring.static.length) {
       logger.warn(
         'mirroring.static is no longer supported and is ignored; sync with another relay over NIP-77 (negentropy) instead',
       )
-      logCentered('mirroring.static is no longer supported (ignored)', width)
+      logCentered('mirroring.static is no longer supported (ignored)')
     }
 
     if (settings.nip66?.enabled) {
       createWorker({
         WORKER_TYPE: 'relay-monitor',
       })
-      logCentered('1 relay-monitor worker started', width)
+      logCentered('1 relay-monitor worker started')
     }
 
     const dvmWorkers = settings?.dvm?.workers
@@ -147,7 +145,7 @@ export class App implements IRunnable {
           DVM_WORKER_INDEX: i.toString(),
         })
       }
-      logCentered(`${dvmWorkers.length} dvm-orchestrator worker started`, width)
+      logCentered(`${dvmWorkers.length} dvm-orchestrator worker started`)
     }
 
     logger('settings: %O', settings)
@@ -159,7 +157,7 @@ export class App implements IRunnable {
         .start((message) => this.onRelayBroadcastFromPeer(message))
         .then(() => {
           setRelayBroadcastFanoutReady(true)
-          logCentered('Relay broadcast fan-out enabled (Redis stream)', width)
+          logCentered('Relay broadcast fan-out enabled (Redis stream)')
         })
         .catch((error) => {
           setRelayBroadcastFanoutReady(false)
@@ -177,10 +175,10 @@ export class App implements IRunnable {
     const host = `${hostname()}:${port}`
     addOnion(torHiddenServicePort, host).then(
       (value) => {
-        logCentered(`Tor hidden service: ${value}:${torHiddenServicePort}`, width)
+        logCentered(`Tor hidden service: ${value}:${torHiddenServicePort}`)
       },
       () => {
-        logCentered('Tor hidden service: disabled', width)
+        logCentered('Tor hidden service: disabled')
       },
     )
   }

@@ -17,7 +17,12 @@ const { expect } = chai
 
 describe('App', () => {
   let sandbox: Sinon.SinonSandbox
-  let fakeProcess: EventEmitter & { exit: Sinon.SinonStub; on: Sinon.SinonStub; env: NodeJS.ProcessEnv }
+  let fakeProcess: EventEmitter & {
+    exit: Sinon.SinonStub
+    on: Sinon.SinonStub
+    env: NodeJS.ProcessEnv
+    stdout: { write: Sinon.SinonStub }
+  }
   let cluster: EventEmitter & {
     on: Sinon.SinonStub
     workers: Record<string, any>
@@ -49,7 +54,14 @@ describe('App', () => {
       exit: sandbox.stub(),
       on: sandbox.stub().returnsThis(),
       env: {},
-    }) as EventEmitter & { exit: Sinon.SinonStub; on: Sinon.SinonStub; env: NodeJS.ProcessEnv }
+      // The banner is written straight to stdout, so the process fake needs one.
+      stdout: { write: sandbox.stub() },
+    }) as EventEmitter & {
+      exit: Sinon.SinonStub
+      on: Sinon.SinonStub
+      env: NodeJS.ProcessEnv
+      stdout: { write: Sinon.SinonStub }
+    }
 
     cluster = Object.assign(new EventEmitter(), {
       on: sandbox.stub().returnsThis(),
@@ -134,6 +146,33 @@ describe('App', () => {
 
     expect(fakeProcess.exit).to.have.been.calledOnceWithExactly(1)
     expect(cluster.fork).not.to.have.been.called
+  })
+
+  // The banner is for a person reading `docker compose logs`: plain text on
+  // stdout, never a log record with the newlines escaped.
+  it('writes the banner to stdout as text, not through the logger', () => {
+    sandbox.stub(SettingsStatic, 'watchSettings').returns([])
+    sandbox.stub(operatorNotificationEnqueue, 'enqueueOperatorNotification').resolves()
+    sandbox.stub(torClient, 'addOnion').rejects(new Error('tor is not configured'))
+    let pid = 1001
+    cluster.fork.callsFake(() => createWorker(String(pid), pid++))
+    const app = new App(
+      fakeProcess as any,
+      cluster as any,
+      sandbox.stub().returns({
+        payments: { enabled: false },
+        workers: { count: 1 },
+        eventStore: { backend: 'postgres' },
+      } as Settings),
+    )
+
+    app.run()
+
+    const written = fakeProcess.stdout.write.getCalls().map((call) => call.args[0]).join('')
+
+    expect(written).to.include('███▄    █  ▒█████')
+    expect(written).to.match(/v\d+\.\d+\.\d+/)
+    expect(written).not.to.include('{"level"')
   })
 
   it('hands every worker, re-forked ones included, the event store resolved at startup', async () => {
