@@ -25,10 +25,11 @@ Before you begin, ensure you have:
    - Port `80` (HTTP, for ACME certificate issuance and redirect)
    - Port `443` (HTTPS / WSS, for secure client connections)
    - Port `22` (SSH, management)
-4. **A few command-line tools** used later in this guide. `curl` and `openssl` generate your secrets and probe the relay; `jq` pretty-prints the JSON responses:
+4. **A few command-line tools** used later in this guide. `git` fetches the deployment files; `curl` and `openssl` generate your secrets and probe the relay; `jq` pretty-prints the JSON responses:
    ```bash
-   sudo apt-get install -y curl openssl jq
+   sudo apt-get install -y git curl openssl jq
    ```
+   Step 9's optional `npx nak` check needs Node.js 18 or newer (`sudo apt-get install -y nodejs npm`), installed only if you want that check; nothing else in this guide uses it.
 
 ---
 
@@ -466,11 +467,12 @@ When a new nostream version is released:
    cd ~/nostream
    git pull
    ```
-2. Re-sync the release-managed compose file. `git pull` updates your clone, but the running stack reads `/opt/nostream/docker-compose.yml`, which is a copy taken at bootstrap time — it does not follow the repository on its own:
+2. Refresh the release-managed files. `git pull` updates your clone, but the running stack reads the copies under `/opt/nostream` — `docker-compose.yml` and `postgresql.conf` — and they do not follow the repository on their own. Re-run bootstrap, which refreshes both and keeps your existing `.env` and `.nostr/settings.yaml`:
    ```bash
-   sudo cp ~/nostream/deploy/docker-compose.prod.yml /opt/nostream/docker-compose.yml
+   cd ~/nostream
+   sudo ./deploy/bootstrap.sh /opt/nostream
    ```
-   Diff it first if you edited the copy by hand; this overwrites it.
+   Diff the copies first if you edited either by hand; bootstrap overwrites both.
 3. Pull the updated Docker image:
    ```bash
    sudo docker pull ghcr.io/cameri/nostream:latest
@@ -495,11 +497,15 @@ set -o pipefail   # otherwise the pipeline exits with gzip's status and a failed
 envval() { sudo sed -n "s/^$1=//p" /opt/nostream/.env | tr -d "\"'"; }
 DB_USER="$(envval DB_USER)"
 DB_NAME="$(envval DB_NAME)"
+dump="$HOME/nostream-$(date +%F).sql.gz"
+# Write beside the final name and rename only once the whole pipeline succeeds: a failed
+# pg_dump must not leave a fresh .sql.gz that looks like tonight's backup.
 sudo docker compose -f /opt/nostream/docker-compose.yml exec -T nostream-db \
-  pg_dump -U "$DB_USER" "$DB_NAME" | gzip > ~/nostream-$(date +%F).sql.gz
+  pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "$dump.part" \
+  && mv "$dump.part" "$dump" || { rm -f "$dump.part"; false; }
 ```
 
-Check the dump opens and is not empty before trusting it — `pg_dump` writing into a pipe can fail while still leaving a valid gzip of nothing:
+The rename only happens on success, so a failure leaves no `$dump` at all. Check the dump opens and is not empty before trusting it — `pg_dump` writing into a pipe can still produce a valid gzip of nothing:
 
 ```bash
 gzip -t ~/nostream-$(date +%F).sql.gz && [ "$(gunzip -c ~/nostream-$(date +%F).sql.gz | wc -c)" -gt 1000 ] && echo "archive OK"
