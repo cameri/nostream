@@ -61,12 +61,25 @@ import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
 import { ICacheAdapter } from '../@types/adapters'
 import { IncomingEventMessage } from '../@types/messages'
-import { IRateLimiter } from '../@types/utils'
+import { IRateLimiter, IRateLimiterResult } from '../@types/utils'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { IWotGraphService } from '../@types/services'
 import { Nip05Verification } from '../@types/nip05'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 import { recordModerationRateLimitHitSafely } from '../utils/moderation-rate-limit-stats'
+
+/**
+ * Why an event was admitted or refused, in the terms the wire needs.
+ *
+ * `limited` always carries a backoff — the strategy's estimate when it has one,
+ * the period when it does not. `unavailable` is our fault, not the client's, and
+ * must not be announced as `rate-limited`: every client would back off for a
+ * backend outage.
+ */
+type RateLimitVerdict =
+  | { status: 'allowed' }
+  | { status: 'limited', retryAfterMs: number }
+  | { status: 'unavailable' }
 
 const logger = createLogger('event-message-handler')
 
@@ -106,17 +119,27 @@ export class EventMessageHandler implements IMessageHandler {
 
     event = this.addExpirationMetadata(event)
 
-    const rateLimited = await this.isRateLimited(event)
-    if (rateLimited) {
+    const rateLimit = await this.isRateLimited(event)
+    if (rateLimit.status === 'limited') {
       logger('event %s rejected: rate-limited', event.id)
-      const retryAfterMs = typeof rateLimited === 'number' ? String(rateLimited) : undefined
       void recordModerationRateLimitHitSafely(this.cache, {
         pubkey: event.pubkey,
         ip: event[ContextMetadataKey]?.remoteAddress?.address,
       })
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
-        createEventCommandResult(event.id, false, 'rate-limited: slow down', retryAfterMs),
+        createEventCommandResult(event.id, false, 'rate-limited: slow down', String(rateLimit.retryAfterMs)),
+      )
+      return
+    }
+
+    if (rateLimit.status === 'unavailable') {
+      // Not the client's fault, so it gets `error:` and no backoff: telling it to
+      // slow down would make every client back off at once for our outage.
+      logger('event %s rejected: rate limiter unavailable', event.id)
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createEventCommandResult(event.id, false, 'error: rate limiter unavailable'),
       )
       return
     }
@@ -404,12 +427,17 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   /**
-   * Resolves to false when allowed; otherwise to the tripped window's period in ms,
-   * sent as the NIP-01 `rate-limited` backoff, or true when no backoff can be given.
+   * Why an event was not admitted, in the terms the wire needs.
+   *
+   * `limited` carries the backoff when the strategy can estimate one, and the
+   * caller sends the period when it cannot. `unavailable` is a different thing:
+   * the limiter backend failed, so the event is rejected fail-closed, but the
+   * client must not be told to slow down — every client would back off at once
+   * for a fault that is ours.
    */
-  protected async isRateLimited(event: Event): Promise<boolean | number> {
+  protected async isRateLimited(event: Event): Promise<RateLimitVerdict> {
     if (this.getRelayPublicKey() === event.pubkey) {
-      return false
+      return { status: 'allowed' }
     }
 
     const currentSettings = this.settings()
@@ -418,7 +446,7 @@ export class EventMessageHandler implements IMessageHandler {
     const rateLimits =
       (await this.getPlanRateLimits(event, currentSettings)) ?? currentSettings.limits?.event?.rateLimits
     if (!rateLimits || !rateLimits.length) {
-      return false
+      return { status: 'allowed' }
     }
 
     if (
@@ -426,7 +454,7 @@ export class EventMessageHandler implements IMessageHandler {
       Array.isArray(whitelists?.pubkeys) &&
       whitelists.pubkeys.includes(event.pubkey)
     ) {
-      return false
+      return { status: 'allowed' }
     }
 
     if (
@@ -434,7 +462,7 @@ export class EventMessageHandler implements IMessageHandler {
       Array.isArray(whitelists?.ipAddresses) &&
       whitelists.ipAddresses.includes(this.webSocket.getClientAddress())
     ) {
-      return false
+      return { status: 'allowed' }
     }
 
     const rateLimiter = this.rateLimiter()
@@ -457,23 +485,28 @@ export class EventMessageHandler implements IMessageHandler {
         continue
       }
 
-      let isRateLimited = false
+      let result: IRateLimiterResult
       try {
-        isRateLimited = await hit({ period, rate, kinds })
+        result = await hit({ period, rate, kinds })
       } catch (error) {
-        // Fail closed when the rate limiter backend is unavailable.
+        // Fail closed when the rate limiter backend is unavailable, but say so:
+        // announcing `rate-limited` here made every connected client back off
+        // for a fault on this side.
         logger('rate limiter unavailable for %s (%d/%d): %o', event.pubkey, rate, period, error)
-        return true
+        return { status: 'unavailable' }
       }
 
-      if (isRateLimited) {
+      if (result.limited) {
         logger('rate limited %s: %d events / %d ms exceeded', event.pubkey, rate, period)
 
-        return Math.max(1, Math.ceil(period))
+        return {
+          status: 'limited',
+          retryAfterMs: result.retryAfterMs ?? Math.max(1, Math.ceil(period)),
+        }
       }
     }
 
-    return false
+    return { status: 'allowed' }
   }
 
   /** The rate limits of the plan the sender is subscribed to, if it has its own and the subscription still gives access. */

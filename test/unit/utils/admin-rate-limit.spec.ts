@@ -29,7 +29,7 @@ describe('isAdminRateLimited', () => {
     }) as any
 
   it('returns false when no rate limits are configured', async () => {
-    const rateLimiter = { hit: sinon.stub().resolves(false) }
+    const rateLimiter = { hit: sinon.stub().resolves({ limited: false }) }
     const settings = { ...baseSettings, limits: { admin: { ipWhitelist: [] } } }
 
     const limited = await isAdminRateLimited(makeRequest(), settings as any, () => rateLimiter, 'admin')
@@ -39,7 +39,7 @@ describe('isAdminRateLimited', () => {
   })
 
   it('returns true when login rate limit is exceeded', async () => {
-    const rateLimiter = { hit: sinon.stub().resolves(true) }
+    const rateLimiter = { hit: sinon.stub().resolves({ limited: true }) }
 
     const limited = await isAdminRateLimited(makeRequest(), baseSettings as any, () => rateLimiter, 'login')
 
@@ -51,7 +51,7 @@ describe('isAdminRateLimited', () => {
   })
 
   it('returns true when admin route rate limit is exceeded', async () => {
-    const rateLimiter = { hit: sinon.stub().resolves(true) }
+    const rateLimiter = { hit: sinon.stub().resolves({ limited: true }) }
 
     const limited = await isAdminRateLimited(makeRequest(), baseSettings as any, () => rateLimiter, 'admin')
 

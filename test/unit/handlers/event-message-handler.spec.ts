@@ -92,7 +92,7 @@ describe('EventMessageHandler', () => {
       webSocket = new EventEmitter() as any
       webSocket.on(WebSocketAdapterEvent.Message, onMessageSpy)
       message = [MessageType.EVENT, event]
-      isRateLimitedStub = sandbox.stub(EventMessageHandler.prototype, 'isRateLimited' as any)
+      isRateLimitedStub = sandbox.stub(EventMessageHandler.prototype, 'isRateLimited' as any).resolves({ status: 'allowed' })
       handler = new EventMessageHandler(
         webSocket as any,
         strategyFactoryStub,
@@ -104,7 +104,7 @@ describe('EventMessageHandler', () => {
           }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -126,7 +126,7 @@ describe('EventMessageHandler', () => {
     })
 
     it('rejects event if rate-limited with the backoff in ms', async () => {
-      isRateLimitedStub.resolves(60000)
+      isRateLimitedStub.resolves({ status: 'limited', retryAfterMs: 60000 })
 
       await handler.handleMessage(message)
 
@@ -141,8 +141,10 @@ describe('EventMessageHandler', () => {
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
-    it('rejects event if rate-limited without a backoff when none is known', async () => {
-      isRateLimitedStub.resolves(true)
+    // A limiter outage is our fault. Announcing `rate-limited` made every
+    // connected client back off for it, so the refusal names the error instead.
+    it('rejects event with an error, not a backoff, when the limiter is unavailable', async () => {
+      isRateLimitedStub.resolves({ status: 'unavailable' })
 
       await handler.handleMessage(message)
 
@@ -150,7 +152,7 @@ describe('EventMessageHandler', () => {
         MessageType.OK,
         event.id,
         false,
-        'rate-limited: slow down',
+        'error: rate limiter unavailable',
       ])
       expect(strategyFactoryStub).not.to.have.been.called
     })
@@ -280,7 +282,7 @@ describe('EventMessageHandler', () => {
           powSettings,
           {} as any,
           { hasKey: async () => false, setKey: async () => true } as any,
-          () => ({ hit: async () => false }),
+          () => ({ hit: async () => ({ limited: false }) }),
           {} as any,
         )
         canAcceptEventStub.returns('rejected: pow')
@@ -299,10 +301,10 @@ describe('EventMessageHandler', () => {
           powSettings,
           {} as any,
           { hasKey: async () => false, setKey: async () => true } as any,
-          () => ({ hit: async () => false }),
+          () => ({ hit: async () => ({ limited: false }) }),
           {} as any,
         )
-        isRateLimitedStub.resolves(true)
+        isRateLimitedStub.resolves({ status: 'limited', retryAfterMs: 60000 })
 
         await powHandler.handleMessage(message)
 
@@ -318,7 +320,7 @@ describe('EventMessageHandler', () => {
           powSettings,
           {} as any,
           { hasKey: async () => false, setKey: async () => true } as any,
-          () => ({ hit: async () => false }),
+          () => ({ hit: async () => ({ limited: false }) }),
           {} as any,
         )
         isEventValidStub.returns(undefined)
@@ -378,7 +380,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -718,7 +720,7 @@ describe('EventMessageHandler', () => {
               () => settings,
               {} as any,
               { hasKey: async () => false, setKey: async () => true } as any,
-              () => ({ hit: async () => false }),
+              () => ({ hit: async () => ({ limited: false }) }),
               { getDistance: getDistanceStub } as any,
             )
 
@@ -1037,7 +1039,7 @@ describe('EventMessageHandler', () => {
           }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -1075,7 +1077,7 @@ describe('EventMessageHandler', () => {
           event: eventLimits,
         },
       } as any
-      rateLimiterHitStub = sandbox.stub()
+      rateLimiterHitStub = sandbox.stub().resolves({ limited: false })
       getClientAddressStub = sandbox.stub()
       webSocket = {
         getClientAddress: getClientAddressStub,
@@ -1098,22 +1100,22 @@ describe('EventMessageHandler', () => {
 
     it('fulfills with false if limits setting is not set', async () => {
       settings.limits = undefined
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+      return expect((handler as any).isRateLimited(event)).to.eventually.deep.equal({ status: 'allowed' })
     })
 
     it('fulfills with false if event limits setting is not set', async () => {
       settings.limits.event = undefined
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+      return expect((handler as any).isRateLimited(event)).to.eventually.deep.equal({ status: 'allowed' })
     })
 
     it('fulfills with false if rate limits setting is not set', async () => {
       eventLimits.rateLimits = undefined
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+      return expect((handler as any).isRateLimited(event)).to.eventually.deep.equal({ status: 'allowed' })
     })
 
     it('fulfills with false if rate limits setting is empty', async () => {
       eventLimits.rateLimits = []
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+      return expect((handler as any).isRateLimited(event)).to.eventually.deep.equal({ status: 'allowed' })
     })
 
     it("fulfills with false if event pubkey equals relay's own public key", async () => {
@@ -1127,7 +1129,7 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(actualResult).to.be.false
+      expect(actualResult.status).to.equal('allowed')
       expect(rateLimiterHitStub).not.to.have.been.called
     })
 
@@ -1144,7 +1146,7 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(actualResult).to.be.false
+      expect(actualResult.status).to.equal('allowed')
       expect(rateLimiterHitStub).not.to.have.been.called
     })
 
@@ -1176,7 +1178,7 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(actualResult).to.be.false
+      expect(actualResult.status).to.equal('allowed')
       expect(rateLimiterHitStub).not.to.have.been.called
     })
 
@@ -1255,7 +1257,7 @@ describe('EventMessageHandler', () => {
         },
       ]
 
-      rateLimiterHitStub.resolves(false)
+      rateLimiterHitStub.resolves({ limited: false })
 
       const actualResult = await (handler as any).isRateLimited(event)
 
@@ -1267,7 +1269,7 @@ describe('EventMessageHandler', () => {
           rate: 1,
         },
       )
-      expect(actualResult).to.be.false
+      expect(actualResult.status).to.equal('allowed')
     })
 
     it('fulfills with the tripped period if rate limited by second rate limit setting', async () => {
@@ -1288,8 +1290,8 @@ describe('EventMessageHandler', () => {
         },
       ]
 
-      rateLimiterHitStub.onFirstCall().resolves(false)
-      rateLimiterHitStub.onSecondCall().resolves(true)
+      rateLimiterHitStub.onFirstCall().resolves({ limited: false })
+      rateLimiterHitStub.onSecondCall().resolves({ limited: true, retryAfterMs: 180 })
 
       const actualResult = await (handler as any).isRateLimited(event)
 
@@ -1309,7 +1311,7 @@ describe('EventMessageHandler', () => {
           rate: 3,
         },
       )
-      expect(actualResult).to.equal(180)
+      expect(actualResult).to.deep.equal({ status: 'limited', retryAfterMs: 180 })
     })
 
     it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
@@ -1324,12 +1326,12 @@ describe('EventMessageHandler', () => {
         },
       ]
 
-      rateLimiterHitStub.onFirstCall().resolves(true)
+      rateLimiterHitStub.onFirstCall().resolves({ limited: true, retryAfterMs: 60000 })
 
       const actualResult = await (handler as any).isRateLimited(event)
 
       expect(rateLimiterHitStub).to.have.been.calledOnce
-      expect(actualResult).to.equal(60000)
+      expect(actualResult).to.deep.equal({ status: 'limited', retryAfterMs: 60000 })
     })
 
     it('fails closed when the rate limiter backend is unavailable', async () => {
@@ -1343,7 +1345,7 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(actualResult).to.be.true
+      expect(actualResult).to.deep.equal({ status: 'unavailable' })
       expect(rateLimiterHitStub).to.have.been.calledOnce
     })
 
@@ -1384,7 +1386,7 @@ describe('EventMessageHandler', () => {
             { id: 'basic', amount: 1000000n, intervalSeconds: 2_592_000, graceSeconds: 259_200 },
           ],
         } as any
-        rateLimiterHitStub.resolves(false)
+        rateLimiterHitStub.resolves({ limited: false })
         subscriptionFindByPubkeyStub = sandbox.stub().resolves(subscription())
         cacheStub = { getKey: sandbox.stub().resolves(null), setKey: sandbox.stub().resolves(true) }
         handler = new EventMessageHandler(
@@ -1402,7 +1404,7 @@ describe('EventMessageHandler', () => {
       })
 
       it('holds a subscriber to the limits of their plan instead of the global ones, keyed the same way', async () => {
-        await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(false)
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'allowed' })
 
         expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${PUBKEY}:events:60000`, 1, {
           period: 60000,
@@ -1422,9 +1424,9 @@ describe('EventMessageHandler', () => {
       })
 
       it('limits a subscriber who tops the plan limit', async () => {
-        rateLimiterHitStub.resolves(true)
+        rateLimiterHitStub.resolves({ limited: true })
 
-        await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(60000)
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'limited', retryAfterMs: 60000 })
       })
 
       it('keeps the global limits for a plan that has none of its own', async () => {
@@ -1438,7 +1440,7 @@ describe('EventMessageHandler', () => {
       it('lets a plan with an empty list of limits send without limit', async () => {
         settings.payments.subscriptionPlans[0].limits.rateLimits = []
 
-        await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(false)
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'allowed' })
 
         expect(rateLimiterHitStub).not.to.have.been.called
       })
@@ -1509,7 +1511,7 @@ describe('EventMessageHandler', () => {
       it('still lets a whitelisted pubkey send without limit', async () => {
         ;(eventLimits as any).whitelists = { pubkeys: [PUBKEY] }
 
-        await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(false)
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'allowed' })
 
         expect(rateLimiterHitStub).not.to.have.been.called
       })
@@ -1640,7 +1642,7 @@ describe('EventMessageHandler', () => {
         it('falls back to the global limits when the subscription cannot be read, and caches nothing', async () => {
           subscriptionFindByPubkeyStub.rejects(new Error('db unavailable'))
 
-          await expect((handler as any).isRateLimited(subscriber)).to.eventually.equal(false)
+          await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'allowed' })
 
           expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
           expect(cacheStub.setKey).not.to.have.been.called
@@ -1718,7 +1720,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         {} as any,
         cacheStub,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -1979,7 +1981,7 @@ describe('EventMessageHandler', () => {
           () => settings,
           {} as any,
           cacheStub,
-          () => ({ hit: async () => false }),
+          () => ({ hit: async () => ({ limited: false }) }),
           {} as any,
           { findByPubkey: subscriptionFindByPubkeyStub } as any,
         )
@@ -2164,7 +2166,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2320,7 +2322,7 @@ describe('EventMessageHandler', () => {
           }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2371,7 +2373,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2615,7 +2617,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2792,7 +2794,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2991,7 +2993,7 @@ describe('EventMessageHandler', () => {
         () => ({ info: { relay_url: 'relay_url' }, nip42: { authRequired: false } }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
 
@@ -3007,7 +3009,7 @@ describe('EventMessageHandler', () => {
         () => ({ info: { relay_url: 'relay_url' }, nip42: { authRequired: true } }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
 
@@ -3025,7 +3027,7 @@ describe('EventMessageHandler', () => {
         () => ({ info: { relay_url: 'relay_url' }, nip42: { authRequired: true } }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
 
@@ -3048,7 +3050,7 @@ describe('EventMessageHandler', () => {
           }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -3081,7 +3083,7 @@ describe('EventMessageHandler', () => {
         () => ({ info: { relay_url: 'relay_url' } }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
       expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined

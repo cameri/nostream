@@ -57,16 +57,55 @@ describe('EWMARateLimiter', () => {
     })
 
     describe('hit', () => {
-        it('returns false on first request', async () => {
-        evalStub.resolves(0)
+        it('reports no limit below the rate', async () => {
+        evalStub.resolves('1')
         const result = await rateLimiter.hit('key', 1, { period: 120000, rate: 10 })
-        expect(result).to.be.false
+        expect(result.limited).to.be.false
+        expect(result.retryAfterMs).to.be.undefined
         })
 
-        it('returns true when rate limit exceeded', async () => {
-        evalStub.resolves(1)
-        const result = await rateLimiter.hit('key', 1, { period: 120000, rate: 10 })
-        expect(result).to.be.true
+        it('reports a limit above the rate', async () => {
+        evalStub.resolves('24')
+        const result = await rateLimiter.hit('key', 1, { period: 60000, rate: 6 })
+        expect(result.limited).to.be.true
+        })
+
+        // The script returns the score, not a verdict, so a truncated integer
+        // would make the backoff wrong: 6.4 must not arrive as 6.
+        it('reads a fractional score', async () => {
+        evalStub.resolves('6.4')
+        const result = await rateLimiter.hit('key', 1, { period: 60000, rate: 6 })
+        expect(result.limited).to.be.true
+        expect(result.retryAfterMs).to.equal(Math.ceil(60000 * Math.log2(6.4 / 6)))
+        })
+
+        // `period` is the half-life. Four times over the rate is two half-lives,
+        // so the caller must wait 2 * period, not period.
+        it('sends the half-life backoff, not the period', async () => {
+        evalStub.resolves('24')
+        const result = await rateLimiter.hit('key', 1, { period: 60000, rate: 6 })
+        expect(result.retryAfterMs).to.equal(120000)
+        })
+
+        it('never sends a zero or sub-millisecond backoff', async () => {
+        evalStub.resolves('6.0000001')
+        const result = await rateLimiter.hit('key', 1, { period: 60000, rate: 6 })
+        expect(result.limited).to.be.true
+        expect(result.retryAfterMs).to.be.at.least(1)
+        })
+
+        // A non-numeric answer means the script and the client disagree about
+        // the protocol. Reading it as "allowed" would silently disable the
+        // limiter; the caller fails closed on a throw.
+        it('throws when the script returns something that is not a score', async () => {
+        evalStub.resolves(null)
+        let error: unknown
+        try {
+            await rateLimiter.hit('key', 1, { period: 120000, rate: 10 })
+        } catch (caught) {
+            error = caught
+        }
+        expect(error).to.be.instanceOf(Error)
         })
 
         // EWMA and sliding_window store different Redis types under the same
@@ -74,7 +113,7 @@ describe('EWMARateLimiter', () => {
         // volume, or an operator switching strategy, leaves a sorted set where
         // EWMA would then HSET and fail with WRONGTYPE on every request.
         it('namespaces the key it writes', async () => {
-        evalStub.resolves(0)
+        evalStub.resolves('0')
         await rateLimiter.hit('1.2.3.4:connection:120000', 1, { period: 120000, rate: 10 })
 
         expect(evalStub.calledOnce).to.be.true

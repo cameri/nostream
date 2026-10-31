@@ -188,7 +188,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     for (const { period, rate } of rateLimits) {
       let isRateLimited: boolean
       try {
-        isRateLimited = await rateLimiter.hit(`${pubkey}:invites:${period}`, 1, { period, rate })
+        isRateLimited = (await rateLimiter.hit(`${pubkey}:invites:${period}`, 1, { period, rate })).limited
       } catch (error) {
         // Fail closed: minting writes to the database, so an unavailable limiter
         // must not leave the gate open.
