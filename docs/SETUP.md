@@ -207,7 +207,7 @@ sudo chmod 600 /opt/nostream/.nostr/settings.yaml
 
 ### Proxy trust (required)
 
-The relay binds to `127.0.0.1` and **cannot be exposed without a reverse proxy** (step 8), so this applies to every deployment. By default it trusts only loopback and leaves `network.remoteIpHeader` unset, so every request arrives looking like `127.0.0.1` and **all clients share one rate-limit bucket** — one busy client can rate-limit everyone else.
+The relay binds to `127.0.0.1` and **cannot be exposed without a reverse proxy** (step 8), so this applies to every deployment. By default it trusts only loopback and leaves `network.remoteIpHeader` unset, so every request arrives carrying the proxy's address — or, for a published port, the Docker gateway that forwards it — and **all clients share one rate-limit bucket** — one busy client can rate-limit everyone else.
 
 `deploy/settings.yaml.example` has no `network` section, so add one. Copy the default `trustedProxies` list **in full** and append to it — arrays are replaced wholesale by the settings merge, not appended, so a shortened list deletes addresses the image ships:
 
@@ -224,11 +224,14 @@ network:
     # Append your proxy's address if it is not one of the above.
 ```
 
-The list above is the image default. Entries `10.10.10.x` come from the development `docker-compose.yml`, which pins its own subnet; the production compose uses the default bridge and publishes the relay on `127.0.0.1:8008`.
+The list above is the image default. Entries `10.10.10.x` come from the development `docker-compose.yml`, which pins its own subnet; the production compose publishes the relay on `127.0.0.1:8008` from its own bridge network (`nostream_default`), whose gateway no default entry covers.
 
 Which address the relay sees depends on how your proxy reaches it, and matching is exact — no CIDR, no ranges — so work it out rather than guessing:
 
-- **Proxy installed on the host** (the Caddy and Nginx setups below) connects to `127.0.0.1:8008`. Traffic arrives from loopback, which is already in the list. No change needed.
+- **Proxy installed on the host** (the Caddy and Nginx setups below) connects to `127.0.0.1:8008`, but the relay does not see loopback: Docker forwards the published port, so the source is typically the compose network's gateway address, which is not in the default list. The debug line below reports the address the relay actually resolved. Read it and add it:
+  ```bash
+  sudo docker network inspect nostream_default --format '{{(index .IPAM.Config 0).Gateway}}'
+  ```
 - **Proxy in its own container** reaches the relay over the Docker network, so the source is the proxy container's own address. Read it, then add it:
 
 ```bash
@@ -245,12 +248,12 @@ sudo docker inspect <proxy-container> --format '{{range $net, $cfg := .NetworkSe
 The relay logs the address it resolved for each websocket client, but that line is written at `debug` level and the default is `info`, so it does not appear by default. Set `LOG_LEVEL=debug` in `/opt/nostream/.env`, restart, connect two different clients, then:
 
 ```bash
-sudo docker compose -f /opt/nostream/docker-compose.yml logs nostream | grep -oE 'client [0-9a-f.:]+ connected' | sort | uniq -c | sort -rn | head
+sudo docker compose -f /opt/nostream/docker-compose.yml logs nostream | grep -oE 'client [0-9a-f.:]+ connected:' | sort | uniq -c | sort -rn | head
 ```
 
-If both clients show the **same** address, trust is not working — that is the collision this section prevents. If they show their own addresses, it is configured correctly. Turn the log level back to `info` afterwards; `debug` logs request headers for every connection.
+Use two clients on **different public IP addresses** for this check: clients on the same home network or VPN legitimately share one address, so two identical values prove nothing there. Compare each logged address with that client's expected public IP. If both match their own address, proxy trust is working; if both show the same address, trust is not working — that is the collision this section prevents. Turn the log level back to `info` afterwards; `debug` logs request headers for every connection.
 
-> `remoteIpHeader` set without a matching `trustedProxies` entry is silently ignored. The relay logs `WARNING: network.remoteIpHeader is set but network.trustedProxies is empty` at startup — if you see that line, clients are not being identified individually.
+> `remoteIpHeader` set without a matching `trustedProxies` entry is silently ignored. The next client connection logs `WARNING: network.remoteIpHeader is set but network.trustedProxies is empty` at `warn`, which is visible at the default level — if that line appears, clients are not being identified individually. It is written per connection, not once at startup, so look for it with `sudo docker compose logs nostream | grep remoteIpHeader` while a client is connected.
 
 ### Relay metadata (optional)
 
