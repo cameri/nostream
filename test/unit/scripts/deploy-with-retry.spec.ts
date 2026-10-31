@@ -37,7 +37,9 @@ const writeStub = (dir: string, attempts: Attempt[]): string => {
 # and hide an unquoted "$@" in the script under test.
 for arg in "$@"; do printf '%s<ARG>' "$arg" >> "$STUB_ARGS"; done
 printf '\\n' >> "$STUB_ARGS"
-attempt=$(wc -l < "$STUB_ARGS")
+# BSD wc -l pads its count with leading spaces, which would make every case
+# branch miss; the arithmetic expansion normalises it to a plain integer.
+attempt=$(( $(wc -l < "$STUB_ARGS") ))
 case "$attempt" in
 ${cases}
     *) echo "deployed"; exit 0;;
