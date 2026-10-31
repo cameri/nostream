@@ -36,6 +36,9 @@ on:
       # at all: PR 885 touches none of the website paths.)
       - ".github/workflows/deploy-website.yml"
       - "website/site/worker/**"
+      # The deploy step above runs this script; a change to it changes how the
+      # preview is deployed, so the previews must be rebuilt by it.
+      - ".github/scripts/**"
 
 concurrency:
   group: website-preview-${{ github.event.pull_request.number }}
@@ -131,11 +134,19 @@ jobs:
       - name: Deploy the preview worker
         if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
         working-directory: website/site
+        # A transient Cloudflare failure must not leave the previous build being
+        # served while the PR reads as deployed (#970). The shared script retries
+        # code 10013, an HTTP 5xx and a reset connection — about a minute of
+        # backoff in total — and fails on the first attempt for anything else,
+        # including an auth failure. timeout-minutes bounds the retries plus the
+        # per-attempt timeout the script applies.
+        timeout-minutes: 12
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          npx wrangler deploy \
+          bash "$GITHUB_WORKSPACE/.github/scripts/deploy-with-retry.sh" \
+            npx wrangler deploy \
             --config wrangler.preview.jsonc \
             --name nostream-web-pr-${{ github.event.pull_request.number }}
 
