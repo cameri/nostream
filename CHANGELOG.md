@@ -1,5 +1,61 @@
 # nostream
 
+## 3.9.0
+
+### Minor Changes
+
+- [#999](https://github.com/cameri/nostream/pull/999) [`469f1b1`](https://github.com/cameri/nostream/commit/469f1b17851c1e8be1836c3e49b0d248ca5df306) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): advertise peering terms and scopes in NIP-11
+
+  The relay information document now carries a `peering` section built from the new
+  `peering` settings block. It advertises whether peering is offered, the feeds
+  available as `kinds` scopes with an absolute `since`/`until` range or a rolling
+  `windowSeconds`, terms in the existing NIP-11 fee-object shape (`amount`, `unit`,
+  `period`) where an empty `terms` list means settlement-free, a peer `contact` or
+  WebSocket `endpoint`, and `min_pow_difficulty` — the NIP-13 work a peering request
+  must carry, `0` meaning none.
+
+  Disabled peering publishes only `{ "enabled": false }`, so half-configured terms are
+  never read as an accepted peer: this is the discovery surface other relays read
+  before connecting, not a peer-acceptance path. Settings validation rejects invalid
+  scopes, terms, time ranges, endpoints and proof-of-work bounds with a clear path, and
+  all `peering.*` fields are documented in `CONFIGURATION.md` with an example document.
+
+  Closes [#932](https://github.com/cameri/nostream/issues/932).
+
+- [#926](https://github.com/cameri/nostream/pull/926) [`2819e30`](https://github.com/cameri/nostream/commit/2819e3044aef89298955c4aef6272a1c7132ff09) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(payments): let clients see their subscription tier
+
+### Patch Changes
+
+- [#972](https://github.com/cameri/nostream/pull/972) [`a46ae06`](https://github.com/cameri/nostream/commit/a46ae06afc508735eac23f7a8eb4b7f7fbfb400e) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(compose): keep dynamic container addresses off the static ones
+
+  `docker-compose.yml` pins `nostream`, `nostream-db` and `nostream-cache` to `10.10.10.2`–`.4`, but dynamic allocation drew from the bottom of the same `/24`. The observability stack has no dependency that orders it after `nostream`, so `otel-collector` could be given `.2` and `nostream` then failed to start with `Address already in use` — most reliably after a host reboot, when the daemon starts containers in arbitrary order.
+
+  Dynamic allocation is now confined to `10.10.10.128/26`. The subnet and gateway are unchanged, so `10.10.10.1` stays the trusted proxy, and the overlay pins (`.5`, `.252`, `.253`) stay outside the pool.
+
+- [#1005](https://github.com/cameri/nostream/pull/1005) [`b185f35`](https://github.com/cameri/nostream/commit/b185f35cd4de4ba20f60ac0b2dc5876e6c710343) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - ci(deploy): retry the website deploy on a transient Cloudflare failure
+
+  Run 40103130697 failed at `Deploy the preview worker` with Cloudflare API error
+  `code: 10013` after a build that had already succeeded, and the next push deployed
+  the same commit successfully — a transient upstream failure, not a defect in the
+  site or the workflow.
+
+  Both website deploys now run through `.github/scripts/deploy-with-retry.sh`, which
+  wraps the deploy step (not the build) in three attempts with a 10 s then 30 s
+  backoff, a per-attempt timeout, and a step-level `timeout-minutes`. It retries only
+  `code: 10013`, an HTTP 5xx, a connection reset and an expired attempt timeout; an
+  authentication failure, a missing environment or a wrangler validation error still
+  fails on the first attempt. Every retry emits a `::warning::` naming the attempt and
+  the reason, so the flake rate stays visible instead of disappearing behind a
+  passing job.
+
+- [#1000](https://github.com/cameri/nostream/pull/1000) [`dff00ba`](https://github.com/cameri/nostream/commit/dff00baca20dba191858abc1de50b69a743063e7) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Add canonical first-party production relay setup guide at `/docs/setup` and replace outdated third-party guides in `README.md`.
+
+- [#1003](https://github.com/cameri/nostream/pull/1003) [`80b0a9e`](https://github.com/cameri/nostream/commit/80b0a9e52412ce4f554065fe5a6c6fac62af99b6) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - test(redis): prove the relay keeps publishing after the cache loses its scripts
+
+  Nothing is shipped in this change — it is coverage for [#1002](https://github.com/cameri/nostream/issues/1002). The relay issues `EVALSHA`, and Lua scripts live in the cache's memory, so a Redis restart leaves every script call answering `NOSCRIPT`. The adapter's retry for that was added in [#920](https://github.com/cameri/nostream/issues/920) and had only a stubbed unit test: `evalSha` was mocked, which cannot catch a retry that stops working through the workers that actually call it.
+
+  The new integration scenario publishes, runs `SCRIPT FLUSH` against the same Redis, then publishes twice more. `SCRIPT FLUSH` is the whole of a restart as far as the relay can tell, and it is deterministic — no container to restart and no reconnect to wait for. The scenario configures a message rate limit on purpose, because both limiters return early on an empty list and a scenario without one would pass whether or not the fallback existed.
+
 ## 3.8.0
 
 ### Minor Changes
