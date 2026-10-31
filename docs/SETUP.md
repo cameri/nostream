@@ -323,6 +323,8 @@ The key is `redis`, not `cache`, and a healthy status is `ok`. When relay broadc
 
 The relay listens on `127.0.0.1:8008` and requires a reverse proxy to terminate TLS on port 443 and handle WebSocket upgrades.
 
+Both options below depend on the proxy-trust settings from step 6. Without them the relay sees every client as the proxy — or, for a published port, the Docker gateway — and one busy client can rate-limit everyone else.
+
 ### Option A: Caddy (Recommended)
 
 Caddy provides automatic HTTPS with Let's Encrypt certificates and native WebSocket proxying out of the box with zero boilerplate.
@@ -467,7 +469,7 @@ When a new nostream version is released:
    cd ~/nostream
    git pull
    ```
-2. Refresh the release-managed files. `git pull` updates your clone, but the running stack reads the copies under `/opt/nostream` — `docker-compose.yml` and `postgresql.conf` — and they do not follow the repository on their own. Re-run bootstrap, which refreshes both and keeps your existing `.env` and `.nostr/settings.yaml`:
+2. Refresh the release-managed files. `git pull` updates your clone, but the running stack reads the copies under `/opt/nostream` — `docker-compose.yml` and `postgresql.conf` — and they do not follow the repository on their own. When a release changes either file, re-run bootstrap, which refreshes both and keeps your existing `.env` and `.nostr/settings.yaml`; running it on every update is harmless and saves tracking which files changed:
    ```bash
    cd ~/nostream
    sudo ./deploy/bootstrap.sh /opt/nostream
