@@ -2,6 +2,9 @@
 //! The document is what an operator reads and edits; the compiled default is what a relay runs
 //! on when the key is absent. A divergence is silent in both directions, so it is asserted here
 //! rather than left to whichever of the two a reader happens to open (ADR 0008, #989).
+//!
+//! A *present* leaf is taken as written, zero included; a stated zero is refused by the validator
+//! before a relay is built, so it never reaches this constructor from a loaded document (#996).
 
 // This integration-test target may unwrap and panic: a failed assertion here is a failed test,
 // which is the point. The allowance names this file rather than exempting test targets
@@ -150,22 +153,17 @@ fn absent_sections_fall_back_to_the_compiled_default() {
 }
 
 #[test]
-fn a_zero_setting_falls_back_to_the_compiled_default() {
-    // The answer ADR 0008's `What 0 means` gives, for each bound on its own so a constructor that
-    // read only one leaf cannot pass both cases.
+fn a_zero_setting_is_the_value_the_relay_runs_with() {
+    // A zero is the operator's literal, and the validator is what refuses it before a relay is
+    // built (#996, ADR 0008). This constructor therefore takes it as written, per leaf, so a
+    // constructor that read only one leaf cannot pass both cases.
     let budget_only = RelayConfig::from_settings(&settings_with_bounds(Some(0), Some(7)));
-    assert_eq!(
-        budget_only.frame_memory_budget_bytes,
-        RelayConfig::default().frame_memory_budget_bytes
-    );
+    assert_eq!(budget_only.frame_memory_budget_bytes, 0);
     assert_eq!(budget_only.max_connections_per_ip, 7);
 
     let cap_only = RelayConfig::from_settings(&settings_with_bounds(Some(1_234), Some(0)));
     assert_eq!(cap_only.frame_memory_budget_bytes, 1_234);
-    assert_eq!(
-        cap_only.max_connections_per_ip,
-        RelayConfig::default().max_connections_per_ip
-    );
+    assert_eq!(cap_only.max_connections_per_ip, 0);
 }
 
 #[test]
@@ -187,10 +185,17 @@ fn an_absent_setting_falls_back_to_the_compiled_default() {
 fn the_refusal_verdict_and_the_range_agree_at_every_boundary() {
     // `bound_refusal` must derive its answer from `in_range`, not compare the ceiling again: with
     // the comparison retyped as `>=`, the documented at-ceiling value would be reported as above
-    // the ceiling while the relay runs with it, and every other test here would still pass.
+    // the ceiling while the relay runs with it, and every other test here would still pass. Zero
+    // is the other end of the same predicate: it is in range here, and the validator is what
+    // refuses it (#996).
     const CEILING: u64 = 1024 * 1024 * 1024 * 1024;
 
-    assert_eq!(bound_refusal(0), Some(BoundRefusal::Zero));
+    assert_eq!(
+        bound_refusal(0),
+        None,
+        "a zero is in range; the validator refuses it"
+    );
+    assert_eq!(bound_refusal(1), None);
     assert_eq!(bound_refusal(CEILING - 1), None);
     assert_eq!(
         bound_refusal(CEILING),
@@ -202,7 +207,7 @@ fn the_refusal_verdict_and_the_range_agree_at_every_boundary() {
         Some(BoundRefusal::AboveCeiling(CEILING))
     );
 
-    // And the same three cases through the constructor, by value.
+    // And the same cases through the constructor, by value.
     let at_ceiling =
         RelayConfig::from_settings(&settings_with_bounds(Some(CEILING), Some(CEILING)));
     assert_eq!(at_ceiling.frame_memory_budget_bytes, CEILING as usize);
@@ -220,22 +225,12 @@ fn the_refusal_verdict_and_the_range_agree_at_every_boundary() {
     );
 
     let zero = RelayConfig::from_settings(&settings_with_bounds(Some(0), Some(0)));
-    assert_eq!(
-        zero.frame_memory_budget_bytes,
-        RelayConfig::default().frame_memory_budget_bytes
-    );
-    assert_eq!(
-        zero.max_connections_per_ip,
-        RelayConfig::default().max_connections_per_ip
-    );
+    assert_eq!(zero.frame_memory_budget_bytes, 0);
+    assert_eq!(zero.max_connections_per_ip, 0);
 }
 
 #[test]
 fn a_refusal_is_reported_in_one_place_for_both_doors() {
-    assert_eq!(
-        refusal_message("network.frameMemoryBudgetBytes", BoundRefusal::Zero),
-        "network.frameMemoryBudgetBytes: 0 means the default, and the relay runs with it"
-    );
     assert_eq!(
         refusal_message(
             "limits.connection.maxConnectionsPerIp",

@@ -185,9 +185,10 @@ fn check_reports_a_bound_it_would_replace_with_the_default() {
 }
 
 #[test]
-fn check_reports_a_zero_bound_as_the_documented_default() {
-    // Zero is not "out of range": both the defaults document and `--check` document it as the
-    // default, so the line must not call it a violation.
+fn check_refuses_a_zero_bound() {
+    // A zero is a literal the operator wrote, so it is an issue like any other and `--check`
+    // exits 2 on it. The daemon then continues on the shipped defaults, not on the zero (#996,
+    // ADR 0008).
     let directory = tempfile::tempdir().expect("tempdir");
     std::fs::write(
         directory.path().join("settings.yaml"),
@@ -200,17 +201,28 @@ fn check_reports_a_zero_bound_as_the_documented_default() {
         Duration::from_secs(30),
         &["--check", "--config-dir", &config_dir],
     );
-    assert_eq!(code, Some(0), "exit code");
-    assert_eq!(stdout.trim(), "settings valid: 0 issues");
+    assert_eq!(code, Some(2), "exit code; stderr: {stderr}");
+    assert!(!stdout.contains("settings valid"), "stdout: {stdout}");
+    // Whole lines, not prefixes: the key and its sentence both have to be there.
     assert!(
         stderr.contains(
-            "network.frameMemoryBudgetBytes: 0 means the default, and the relay runs with it"
+            "network.frameMemoryBudgetBytes: frameMemoryBudgetBytes must be greater than 0"
         ),
         "stderr: {stderr}"
     );
     assert!(
-        !stderr.contains("above the"),
-        "a zero must not be reported as above the ceiling: {stderr}"
+        stderr.contains(
+            "limits.connection.maxConnectionsPerIp: maxConnectionsPerIp must be greater than 0"
+        ),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("settings invalid: 2 issues"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("means the default"),
+        "a zero is not a documented default any more: {stderr}"
     );
 }
 
