@@ -505,11 +505,18 @@ When a new nostream version is released:
 5. If the release changed `postgresql.conf` — or you re-applied your own sizing after step 2 overwrote it — restart the database. Step 4 recreates `nostream` and `nostream-migrate` only, and none of the settings in that file (`shared_buffers`, `maintenance_work_mem`, `max_connections`) apply to a running server:
    ```bash
    envval() { sudo sed -n "s/^$1=//p" /opt/nostream/.env | tr -d "\"'"; }
-   sudo docker compose -f /opt/nostream/docker-compose.yml restart nostream-db
-   sudo docker compose -f /opt/nostream/docker-compose.yml exec -T nostream-db \
+   compose() { sudo docker compose -f /opt/nostream/docker-compose.yml "$@"; }
+   compose restart nostream-db
+   # `restart` returns before PostgreSQL accepts connections, and the healthcheck's
+   # 360 s start period means a slow start is normal, not a failure.
+   for _ in $(seq 1 60); do
+     compose exec -T nostream-db pg_isready -q -U "$(envval DB_USER)" 2>/dev/null && break
+     sleep 2
+   done
+   compose exec -T nostream-db \
      psql -U "$(envval DB_USER)" -d "$(envval DB_NAME)" -c 'SHOW shared_buffers;'
    ```
-   If the value does not match the file, the container is still reading a stale copy: check that `docker-compose.yml` mounts `/opt/nostream/postgresql.conf` and not a path inside the image.
+   The loop gives up after two minutes rather than hanging forever. If `pg_isready` never succeeds, read `compose logs nostream-db` before anything else — a rejected `postgresql.conf` stops PostgreSQL from starting at all. If the value does not match the file once it does answer, the container is still reading a stale copy: check that `docker-compose.yml` mounts `/opt/nostream/postgresql.conf` and not a path inside the image.
 
 This runs database migrations, recreates the container, and verifies readiness.
 For zero-downtime rolling deploys with blue/green backends, consult the [`Deploy Runbook & HAProxy Guide`](../docs/DEPLOY-RUNBOOK.md).
