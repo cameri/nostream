@@ -43,6 +43,9 @@ jobs:
               # must run the suite that asserts on it. #965 changed release.yml
               # and skipped the very tests that change broke.
               - '.github/workflows/**'
+              # test/unit/scripts/deploy-with-retry.spec.ts runs the deploy
+              # script, so a change to it must run the suite that asserts on it.
+              - '.github/scripts/**'
 
   commit-lint:
     name: Lint commits
