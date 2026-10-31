@@ -1,5 +1,11 @@
 # nostream-website
 
+## 1.3.4
+
+### Patch Changes
+
+- [#1000](https://github.com/cameri/nostream/pull/1000) [`dff00ba`](https://github.com/cameri/nostream/commit/dff00baca20dba191858abc1de50b69a743063e7) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Add canonical first-party production relay setup guide at `/docs/setup` and replace outdated third-party guides in `README.md`.
+
 ## 1.3.3
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "nostream-website",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "private": true,
   "type": "module",
   "description": "nostream.dev landing page and docs, built with Astro",
