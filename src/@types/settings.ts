@@ -28,10 +28,11 @@ export interface RateLimit {
    * Length of the window in milliseconds.
    *
    * Every shipped limit counts this way (`1000`, `60000`, `900000`, `3600000`),
-   * so `period: 60` asks for a 60 ms window: a thousand times tighter than a
-   * minute, and the relay honours it without complaint. Nothing can tell the
-   * two apart from the number alone, so the unit is documented where the value
-   * is set. The validator rejects anything that is not a whole count of
+   * so `period: 60`, written as if it meant 60 seconds, is read as a 60 ms
+   * window and makes the limit a thousand times stricter than intended. The
+   * relay honours it without complaint, and nothing can tell the two apart from
+   * the number alone, which is why the unit is documented where the value is
+   * set. The validator rejects anything that is not a whole count of
    * milliseconds, at least one.
    */
   period: number
