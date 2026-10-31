@@ -1,5 +1,27 @@
 # nostream
 
+## 3.10.1
+
+### Patch Changes
+
+- [#1011](https://github.com/cameri/nostream/pull/1011) [`fd7679b`](https://github.com/cameri/nostream/commit/fd7679bed7ba2b10f5148f50ece415e869814475) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(rate-limit): send the backoff the strategy actually means, name an outage as an error, and bucket messages by type
+
+  Three defects on one wire path, from the spike in [#1004](https://github.com/cameri/nostream/issues/1004).
+
+  **The EWMA backoff was a half-life, sent as a delay.** `RateLimit.period` is the decay half-life under `ewma`, so the time until a limit lifts is `period · log2(R_new / rate)`, not `period`. With `rate: 6, period: 60000`, a client four times over the limit was told to wait 60 s and needed 120 s. The Lua script now returns its score instead of a yes/no, and the limiter returns `period · log2(score / rate)`. It was only accidentally safe before: the hash carried a TTL of exactly `period`, so a quiet client's state expired anyway — an unstated coupling that would break the moment anyone lengthened the TTL to keep state warm.
+
+  **A limiter outage was announced as `rate-limited`.** A failing backend made every connected client back off for a fault on this side. It now answers `error: rate limiter unavailable` and still rejects the event; fail-closed behaviour is unchanged.
+
+  **The message bucket ignored the message type.** One bucket per client meant a `REQ` could be refused because its `EVENT`s had filled it — the wrong message throttled, and the wrong one told to back off. The bucket key now carries the type, read from a bounded prefix of the frame because the limiter runs before validation.
+
+  `IRateLimiter.hit` returns `IRateLimiterResult` (`limited`, plus `retryAfterMs` when the strategy can estimate one) so each strategy answers in its own terms; a caller with no estimate keeps sending the period.
+
+- [#1012](https://github.com/cameri/nostream/pull/1012) [`d8095de`](https://github.com/cameri/nostream/commit/d8095de9bdf8f5174c62cc2f1372472731e286ae) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(startup): print the banner as text, and let `LOG_FORMAT=json` opt out of it
+
+  `docker compose logs nostream` showed the logo as a single log record with the newlines escaped. The banner and its centred facts now go to stdout as text.
+
+  A pipeline that requires every line to parse sets `LOG_FORMAT=json`: the logo is then replaced by one `relay starting` record carrying the same facts as fields (`version`, `supportedNips`, `payments`, `eventStore`, `clientWorkers`, …). Any other value keeps the banner, which is what a person reading the logs wants.
+
 ## 3.10.0
 
 ### Minor Changes
