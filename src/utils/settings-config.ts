@@ -8,7 +8,7 @@ import { createLogger } from '../factories/logger-factory'
 import { EVENT_STORE_BACKENDS, isEventStoreBackend } from './event-store'
 import { GRANDFATHERED_PLAN_ID } from '../@types/user-subscription'
 import { Settings } from '../@types/settings'
-import { parsePeeringPeerPubkey } from './peering-identity'
+import { parsePeeringPeerPubkey } from './peering-auth'
 import {
   getConfigBaseDir,
   getDefaultSettingsFilePath,

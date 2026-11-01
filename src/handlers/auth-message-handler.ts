@@ -7,7 +7,7 @@ import { IMessageHandler } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { Settings } from '../@types/settings'
 import { WebSocketAdapterEvent } from '../constants/adapter'
-import { isConfiguredPeeringPeer } from '../utils/peering-identity'
+import { isConfiguredPeeringPeer } from '../utils/peering-auth'
 
 const logger = createLogger('auth-message-handler')
 

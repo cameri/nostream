@@ -77,8 +77,14 @@ authenticated as an ordinary client and receives no peer recognition.
 `authenticateToPeeringRelay` connects to a peer, waits for its AUTH challenge,
 builds the same kind 22242 event with this relay's keypair, sends it, and
 resolves only after the peer answers `OK true`. The returned socket is open and
-authenticated for the caller to use for a feed or negentropy session.
+authenticated for the caller to use for a feed or negentropy session. This
+proves our identity to the peer; it does not verify the peer's identity in
+return.
 
-Only the public half of the keypair is ever visible on the wire. Both sides
-check the event id and signature; neither trusts the other's claimed URL or
-pubkey without that proof.
+Only the public half of the keypair is ever visible on the wire. Inbound AUTH is
+verified by `AuthMessageHandler`: event id, signature, timestamp, challenge, and
+relay host. Outbound AUTH proves this relay's identity to the peer; it does not
+authenticate the remote relay, because NIP-42 is a client-to-relay proof. The
+remote relay's identity is established separately by the configured
+`peering.peers` pubkey (and, in later phases, by discovery and owner
+attestation).

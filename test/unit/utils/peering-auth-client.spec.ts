@@ -7,10 +7,10 @@ import { AuthMessage } from '../../../src/@types/messages'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 import { EventKinds, EventTags } from '../../../src/constants/base'
 import { AuthMessageHandler } from '../../../src/handlers/auth-message-handler'
-import { authenticateToPeeringRelay } from '../../../src/services/peering-auth-service'
 import { getPublicKey, isEventIdValid, isEventSignatureValid } from '../../../src/utils/event'
+import { authenticateToPeeringRelay } from '../../../src/utils/peering-auth'
 
-describe('peering-auth-service', () => {
+describe('peering-auth client', () => {
   const privateKey = 'a'.repeat(64)
   const pubkey = getPublicKey(privateKey)
 

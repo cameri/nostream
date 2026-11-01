@@ -7,10 +7,10 @@ import {
   findConfiguredPeeringPeer,
   isConfiguredPeeringPeer,
   parsePeeringPeerPubkey,
-} from '../../../src/utils/peering-identity'
+} from '../../../src/utils/peering-auth'
 import { toBech32 } from '../../../src/utils/transform'
 
-describe('peering-identity', () => {
+describe('peering-auth identity', () => {
   const privateKey = 'a'.repeat(64)
   const pubkey = getPublicKey(privateKey)
   const otherPubkey = getPublicKey('b'.repeat(64))
