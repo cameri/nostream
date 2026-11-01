@@ -27,6 +27,7 @@ import { Event } from '../@types/event'
 import { getRemoteAddress } from '../utils/http'
 import { createReadAuthorizationGuard } from '../utils/nip42'
 import { Nip42SessionManager } from '../utils/nip42-session'
+import { isConfiguredPeeringPeer } from '../utils/peering-auth'
 import { IRateLimiter } from '../@types/utils'
 import { isEventMatchingFilter } from '../utils/event'
 import { isHidden } from '../utils/hidden-content-cache'
@@ -75,6 +76,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
   private readonly session: Nip42SessionManager
+  /** Configured peering peer proven by AUTH on this socket, if any. */
+  private peerPubkey: string | undefined
   // NIP-77
   private readonly negentropySessions: NegentropySessions
 
@@ -243,6 +246,30 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     return this.session.authenticate(pubkey, authEventId)
   }
 
+  public getPeerPubkey(): string | undefined {
+    if (!this.peerPubkey) {
+      return undefined
+    }
+
+    // Peer status lives and dies with its AUTH session, and with the operator's
+    // current trust list: disabling or removing the peer revokes it on the next
+    // read even if the socket stays authenticated.
+    if (
+      !this.session.getAuthenticatedPubkeys().has(this.peerPubkey) ||
+      !isConfiguredPeeringPeer(this.settings(), this.peerPubkey)
+    ) {
+      this.peerPubkey = undefined
+      return undefined
+    }
+
+    return this.peerPubkey
+  }
+
+  public setPeerPubkey(pubkey: string): void {
+    const authenticated = this.session.getAuthenticatedPubkeys().has(pubkey)
+    this.peerPubkey = authenticated && isConfiguredPeeringPeer(this.settings(), pubkey) ? pubkey : undefined
+  }
+
   private async onClientMessage(raw: Buffer) {
     this.alive = true
     let abortable = false
@@ -405,6 +432,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.subscriptions.clear()
     this.negentropySessions.closeAll()
     this.session.clear()
+    this.peerPubkey = undefined
 
     const handlers = abortableMessageHandlers.get(this.client)
     if (Array.isArray(handlers) && handlers.length) {

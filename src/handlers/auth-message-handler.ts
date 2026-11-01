@@ -7,6 +7,7 @@ import { IMessageHandler } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { Settings } from '../@types/settings'
 import { WebSocketAdapterEvent } from '../constants/adapter'
+import { isConfiguredPeeringPeer } from '../utils/peering-auth'
 
 const logger = createLogger('auth-message-handler')
 
@@ -66,6 +67,13 @@ export class AuthMessageHandler implements IMessageHandler {
       this.sendResult(event.id, false, 'invalid: auth event already used')
       return
     }
+
+    // Peer identity is a verified AUTH from a configured pubkey, never a URL
+    // or a self-declared key. Unconfigured pubkeys stay ordinary clients.
+    if (isConfiguredPeeringPeer(this.settings(), event.pubkey)) {
+      this.webSocket.setPeerPubkey(event.pubkey)
+    }
+
     this.sendResult(event.id, true, '')
   }
 

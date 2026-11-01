@@ -196,6 +196,15 @@ peering:
   # seconds. An empty list means settlement-free peering.
   # Example: [{ amount: 1000, unit: msats, period: 2592000 }]
   terms: []
+  # Peering peers trusted by their relay pubkey (hex or npub), never by URL
+  # alone. A connection that proves one of these keys with NIP-42 AUTH is
+  # recognized as a peer; any other key gets no peer recognition.
+  # Example:
+  #   peers:
+  #     - pubkey: replace-with-peer-relay-pubkey-in-hex
+  #       relayUrl: wss://peer.example.com
+  #       enabled: true
+  peers: []
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.

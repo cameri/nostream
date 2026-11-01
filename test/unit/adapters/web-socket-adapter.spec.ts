@@ -991,6 +991,55 @@ describe('WebSocketAdapter', () => {
       expect(adapter.addAuthenticatedPubkey(pubkey, eventId)).to.equal(false)
     })
 
+    it('exposes a peer pubkey only after it authenticates', () => {
+      const pubkey = 'a'.repeat(64)
+      settingsFactory.returns({
+        peering: { enabled: true, peers: [{ pubkey, relayUrl: 'wss://peer.example.com' }] },
+      })
+
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+    })
+
+    it('drops peer status when the AUTH session expires', () => {
+      const clock = sandbox.useFakeTimers({ now: 1_700_000_000_000 })
+      const pubkey = 'a'.repeat(64)
+      settingsFactory.returns({
+        nip42: { sessionExpirySeconds: 60 },
+        peering: { enabled: true, peers: [{ pubkey, relayUrl: 'wss://peer.example.com' }] },
+      })
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+
+      clock.tick(60_000)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
+    it('revokes peer status when the peer is disabled or removed from settings', () => {
+      const pubkey = 'a'.repeat(64)
+      const peer = { pubkey, relayUrl: 'wss://peer.example.com' }
+      settingsFactory.returns({ peering: { enabled: true, peers: [peer] } })
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+
+      settingsFactory.returns({ peering: { enabled: true, peers: [{ ...peer, enabled: false }] } })
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+
+      settingsFactory.returns({ peering: { enabled: true, peers: [] } })
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
     it('expires authenticated pubkeys after sessionExpirySeconds', () => {
       const clock = sandbox.useFakeTimers({ now: 1_700_000_000_000 })
       settingsFactory.returns({ nip42: { sessionExpirySeconds: 60 } })

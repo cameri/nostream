@@ -81,6 +81,8 @@ describe('AuthMessageHandler', () => {
       getChallenge: Sinon.stub().returns(challenge),
       getAuthenticatedPubkeys: Sinon.stub().returns(new Set()),
       addAuthenticatedPubkey: Sinon.stub().returns(true),
+      getPeerPubkey: Sinon.stub().returns(undefined),
+      setPeerPubkey: Sinon.stub(),
     } as any as IWebSocketAdapter
 
     settingsFactory = Sinon.stub().returns({
@@ -240,6 +242,37 @@ describe('AuthMessageHandler', () => {
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
       expect(args[1][3]).to.include('auth event already used')
+    })
+
+    it('marks a configured peer pubkey as the connection peer', async () => {
+      settingsFactory.returns({
+        info: { relay_url: relayUrl },
+        peering: {
+          enabled: true,
+          peers: [{ pubkey, relayUrl: 'wss://peer.example.com', enabled: true }],
+        },
+      } as Partial<Settings>)
+      const message = await createAuthEvent()
+
+      await handler.handleMessage(message)
+
+      expect(webSocket.setPeerPubkey as Sinon.SinonStub).to.have.been.calledOnceWithExactly(pubkey)
+    })
+
+    it('does not mark an unconfigured pubkey as a peer', async () => {
+      settingsFactory.returns({
+        info: { relay_url: relayUrl },
+        peering: {
+          enabled: true,
+          peers: [{ pubkey: getPublicKey('b'.repeat(64)), relayUrl: 'wss://peer.example.com' }],
+        },
+      } as Partial<Settings>)
+      const message = await createAuthEvent()
+
+      await handler.handleMessage(message)
+
+      expect(webSocket.setPeerPubkey as Sinon.SinonStub).not.to.have.been.called
+      expect(emitStub.firstCall.args[1][2]).to.equal(true)
     })
   })
 })
