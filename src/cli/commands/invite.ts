@@ -6,6 +6,7 @@ import { IInviteCodeRepository } from '../../@types/repositories'
 import { Settings } from '../../@types/settings'
 import { InviteCodeRepository } from '../../repositories/invite-code-repository'
 import { issueInviteCode, parseRelayPubkey } from '../../utils/nip43-invites'
+import { bootstrapSettingsStore, shutdownSettingsStore } from '../../utils/settings-store'
 import { loadMergedSettings } from '../utils/config'
 import { readEnvValues } from '../utils/env-config'
 import { logInfo } from '../utils/output'
@@ -146,6 +147,13 @@ export const runInviteCreate = async (
   const loadSettings = deps.loadSettings ?? loadMergedSettings
   const issue = deps.issue ?? issueInviteCode
   const now = deps.now ?? Date.now
+
+  const shouldBootstrapSettings = !deps.loadSettings
+
+  if (shouldBootstrapSettings) {
+    await bootstrapSettingsStore()
+  }
+
   const settings = loadSettings()
 
   const overrides: Parameters<typeof issueInviteCode>[2] = {}
@@ -185,6 +193,10 @@ export const runInviteCreate = async (
   } finally {
     if (dbClient && typeof (dbClient as Knex).destroy === 'function') {
       await (dbClient as Knex).destroy()
+    }
+
+    if (shouldBootstrapSettings) {
+      await shutdownSettingsStore()
     }
   }
 }

@@ -82,6 +82,28 @@ export const formatSettingsPathKey = (key: string): string => {
   return `["${key.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`
 }
 
+const readQuotedBracketSegment = (input: string, start: number): number => {
+  if (input[start] !== '[' || input[start + 1] !== '"') {
+    throw new Error(`Invalid path segment in: ${input}`)
+  }
+
+  let index = start + 2
+  while (index < input.length) {
+    if (input[index] === '\\') {
+      index += 2
+      continue
+    }
+
+    if (input[index] === '"' && input[index + 1] === ']') {
+      return index + 2
+    }
+
+    index += 1
+  }
+
+  throw new Error(`Invalid path segment in: ${input}`)
+}
+
 const tokenizePathSegments = (input: string): string[] => {
   const segments: string[] = []
   let index = 0
@@ -92,24 +114,54 @@ const tokenizePathSegments = (input: string): string[] => {
       continue
     }
 
+    const start = index
+
     if (input[index] === '[') {
-      const closing = input.indexOf('"]', index + 1)
-      if (closing < 0) {
-        throw new Error(`Invalid path segment in: ${input}`)
+      if (input[index + 1] === '"') {
+        index = readQuotedBracketSegment(input, index)
+      } else {
+        const closing = input.indexOf(']', index)
+        if (closing < 0) {
+          throw new Error(`Invalid path segment in: ${input}`)
+        }
+        index = closing + 1
       }
 
-      segments.push(input.slice(index, closing + 2))
-      index = closing + 2
+      while (index < input.length && input[index] === '[') {
+        if (input[index + 1] === '"') {
+          index = readQuotedBracketSegment(input, index)
+          continue
+        }
+
+        const closing = input.indexOf(']', index)
+        if (closing < 0) {
+          throw new Error(`Invalid path segment in: ${input}`)
+        }
+        index = closing + 1
+      }
+
+      segments.push(input.slice(start, index))
       continue
     }
 
-    let next = index
-    while (next < input.length && input[next] !== '.') {
-      next += 1
+    while (index < input.length && input[index] !== '.' && input[index] !== '[') {
+      index += 1
     }
 
-    segments.push(input.slice(index, next))
-    index = next
+    while (index < input.length && input[index] === '[') {
+      if (input[index + 1] === '"') {
+        index = readQuotedBracketSegment(input, index)
+        continue
+      }
+
+      const closing = input.indexOf(']', index)
+      if (closing < 0) {
+        throw new Error(`Invalid path segment in: ${input}`)
+      }
+      index = closing + 1
+    }
+
+    segments.push(input.slice(start, index))
   }
 
   return segments.filter(Boolean)
@@ -125,11 +177,47 @@ const parsePath = (path: string): PathToken[] => {
   const tokens: PathToken[] = []
 
   for (const segment of tokenizePathSegments(input)) {
+    const indexOnly = segment.match(/^(\[\d+\])+$/)
+    if (indexOnly) {
+      for (const entry of segment.matchAll(/\[(\d+)\]/g)) {
+        tokens.push({
+          type: 'index',
+          index: Number(entry[1]),
+        })
+      }
+      continue
+    }
+
     const quoted = segment.match(QUOTED_PATH_KEY)
     if (quoted) {
       const key = quoted[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
       assertSafePathKey(key, segment)
       tokens.push({ type: 'key', key })
+
+      for (const entry of segment.matchAll(/\[(\d+)\]/g)) {
+        tokens.push({
+          type: 'index',
+          index: Number(entry[1]),
+        })
+      }
+      continue
+    }
+
+    const identifierQuoted = segment.match(/^([A-Za-z_][A-Za-z0-9_]*)\["((?:\\.|[^"\\])*)"\](.*)$/)
+    if (identifierQuoted) {
+      assertSafePathKey(identifierQuoted[1], segment)
+      tokens.push({ type: 'key', key: identifierQuoted[1] })
+
+      const nestedKey = identifierQuoted[2].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+      assertSafePathKey(nestedKey, segment)
+      tokens.push({ type: 'key', key: nestedKey })
+
+      for (const entry of identifierQuoted[3].matchAll(/\[(\d+)\]/g)) {
+        tokens.push({
+          type: 'index',
+          index: Number(entry[1]),
+        })
+      }
       continue
     }
 
@@ -161,7 +249,12 @@ const formatPathTokens = (tokens: PathToken[]): string => {
   for (const token of tokens) {
     if (token.type === 'key') {
       const formatted = formatSettingsPathKey(token.key)
-      out = out ? `${out}.${formatted}` : formatted
+      if (!out) {
+        out = formatted
+        continue
+      }
+
+      out = formatted.startsWith('[') ? `${out}${formatted}` : `${out}.${formatted}`
       continue
     }
 

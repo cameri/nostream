@@ -14,5 +14,8 @@ describe('cli env config helpers', () => {
     expect(validateEnvPair('RELAY_PORT', 'bad')).to.include('must be an integer')
     expect(validateEnvPair('READ_REPLICA_ENABLED', 'true')).to.equal(undefined)
     expect(validateEnvPair('READ_REPLICA_ENABLED', 'yes')).to.include('must be true or false')
+    expect(isSupportedEnvKey('SETTINGS_BACKEND')).to.equal(true)
+    expect(validateEnvPair('SETTINGS_BACKEND', 'db')).to.equal(undefined)
+    expect(validateEnvPair('SETTINGS_BACKEND', 'files')).to.include('must be one of')
   })
 })

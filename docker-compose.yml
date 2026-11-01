@@ -7,6 +7,7 @@ services:
       RELAY_PORT: 8008
       # Master
       NOSTR_CONFIG_DIR: /home/node/.nostr
+      SETTINGS_BACKEND: ${SETTINGS_BACKEND:-file}
       DB_HOST: nostream-db
       DB_PORT: 5432
       DB_USER: nostr_ts_relay

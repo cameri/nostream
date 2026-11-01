@@ -26,6 +26,10 @@ import {
 } from '../utils/relay-broadcast-message'
 import { setRelayBroadcastFanoutReady } from '../utils/relay-broadcast-state'
 import { getPrimaryShutdownDeadlineMs } from '../utils/shutdown-state'
+import {
+  handleSettingsOverridesClusterSyncFromWorker,
+  isSettingsOverridesClusterSyncMessage,
+} from '../utils/settings-store'
 
 const logger = createLogger('app-primary')
 
@@ -214,6 +218,13 @@ export class App implements IRunnable {
 
   private onClusterMessage(source: Worker, message: Serializable) {
     logger('message received from worker %s: %o', source.process.pid, message)
+
+    if (isSettingsOverridesClusterSyncMessage(message)) {
+      void handleSettingsOverridesClusterSyncFromWorker(source).catch((error) => {
+        logger.error('settings overrides cluster sync failed: %o', error)
+      })
+      return
+    }
 
     if (isRelayBroadcastMessage(message)) {
       this.relayBroadcastDeduplicator.mark(message.event.id)

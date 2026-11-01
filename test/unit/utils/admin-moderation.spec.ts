@@ -105,9 +105,9 @@ describe('admin-moderation', () => {
     expect(withoutIp.rateLimitBypass.ipAddresses).to.not.include('203.0.113.10')
   })
 
-  it('persists normalized moderation limits to settings', () => {
+  it('persists normalized moderation limits to settings', async () => {
     const pubkey = 'c'.repeat(64)
-    persistAdminModerationLimits({
+    await persistAdminModerationLimits({
       ...baseLimits,
       pubkey: { blacklist: [pubkey], whitelist: [] },
     })
@@ -116,16 +116,14 @@ describe('admin-moderation', () => {
     expect(limits.pubkey.blacklist).to.include(pubkey)
   })
 
-  it('persists when user settings only override part of info', () => {
+  it('persists when user settings only override part of info', async () => {
     settingsConfig.saveSettings({ info: { relay_url: 'wss://relay.example' } } as any)
     const pubkey = 'f'.repeat(64)
 
-    expect(() =>
-      persistAdminModerationLimits({
-        ...baseLimits,
-        pubkey: { blacklist: [pubkey], whitelist: [] },
-      }),
-    ).to.not.throw()
+    await persistAdminModerationLimits({
+      ...baseLimits,
+      pubkey: { blacklist: [pubkey], whitelist: [] },
+    })
 
     expect(readAdminModerationLimits().pubkey.blacklist).to.include(pubkey)
   })

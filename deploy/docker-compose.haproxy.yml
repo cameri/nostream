@@ -16,6 +16,7 @@ x-nostream-relay: &nostream-relay
   environment:
     RELAY_PORT: 8008
     NOSTR_CONFIG_DIR: /home/node/.nostr
+    SETTINGS_BACKEND: ${SETTINGS_BACKEND:-file}
     DB_HOST: nostream-db
     DB_PORT: 5432
     DB_USER: ${DB_USER}

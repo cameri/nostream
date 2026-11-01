@@ -107,3 +107,17 @@ export const getReadReplicaDbClient = () => {
 
   return readClient
 }
+
+export const destroyMasterDbClient = async (): Promise<void> => {
+  if (writeClient) {
+    await writeClient.destroy()
+    writeClient = undefined as unknown as Knex
+  }
+}
+
+export const destroyReadReplicaDbClient = async (): Promise<void> => {
+  if (readClient) {
+    await readClient.destroy()
+    readClient = undefined as unknown as Knex
+  }
+}

@@ -2,6 +2,7 @@ import fs from 'fs'
 import { Client } from 'pg'
 
 import packageJson from '../../../package.json'
+import { bootstrapSettingsStore, shutdownSettingsStore } from '../../utils/settings-store'
 import { loadMergedSettings } from '../utils/config'
 import { tryGetRelayNip43Pubkey } from '../../utils/nip43'
 import { logError, logInfo } from '../utils/output'
@@ -152,6 +153,15 @@ export const getInfoPayload = async () => {
 }
 
 export const runInfo = async (options: InfoOptions): Promise<number> => {
+  try {
+    await bootstrapSettingsStore()
+    return await runInfoWithBootstrappedSettings(options)
+  } finally {
+    await shutdownSettingsStore()
+  }
+}
+
+const runInfoWithBootstrappedSettings = async (options: InfoOptions): Promise<number> => {
   const payload = await getInfoPayload()
 
   if (options.torHostname) {

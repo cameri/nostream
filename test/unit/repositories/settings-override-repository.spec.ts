@@ -93,4 +93,24 @@ describe('SettingsOverrideRepository', () => {
     expect(transactionBuilder.delete).to.have.been.calledOnce
     expect(transactionBuilder.insert).not.to.have.been.called
   })
+
+  it('loads overrides whose paths contain dotted notification keys', async () => {
+    queryBuilder.select.resolves([
+      { path: 'admin.notifications.events["settings.changed"]', value: true },
+      { path: 'admin.notifications.events["mirror.disconnected"]', value: false },
+    ])
+
+    const overrides = await repository.loadOverrides()
+
+    expect(overrides).to.deep.equal({
+      admin: {
+        notifications: {
+          events: {
+            'settings.changed': true,
+            'mirror.disconnected': false,
+          },
+        },
+      },
+    })
+  })
 })

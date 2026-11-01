@@ -7,12 +7,11 @@ import {
   appendSettingsAuditLog,
   getByPath,
   loadMergedSettings,
-  loadUserSettings,
   setByPath,
   validatePathAgainstDefaults,
   validateSettings,
 } from '../../utils/settings-config'
-import { saveUserSettingsOverrides } from '../../utils/settings-store'
+import { updateUserSettingsOverrides } from '../../utils/settings-store'
 import {
   isWriteProtectedSettingsPath,
   redactSettingsValue,
@@ -50,17 +49,12 @@ export class PatchAdminSettingsController implements IController {
       return
     }
 
-    const userSettings = loadUserSettings() as unknown as Record<string, unknown>
-    const nextUserSettings = changes.reduce(
-      (settings, change) => setByPath(settings, change.path, change.value),
-      userSettings,
-    )
     const merged = loadMergedSettings() as unknown as Record<string, unknown>
-    const mergedNext = changes.reduce(
-      (settings, change) => setByPath(settings, change.path, getByPath(nextUserSettings, change.path)),
+    const mergedPreview = changes.reduce(
+      (settings, change) => setByPath(settings, change.path, change.value),
       merged,
     )
-    const validationIssues = validateSettings(mergedNext as unknown as Settings)
+    const validationIssues = validateSettings(mergedPreview as unknown as Settings)
 
     if (validationIssues.length > 0) {
       response
@@ -70,7 +64,14 @@ export class PatchAdminSettingsController implements IController {
       return
     }
 
-    await saveUserSettingsOverrides(nextUserSettings as unknown as Settings)
+    let nextUserSettings: Record<string, unknown> = {}
+    await updateUserSettingsOverrides((currentUserSettings) => {
+      nextUserSettings = changes.reduce(
+        (settings, change) => setByPath(settings as Record<string, unknown>, change.path, change.value),
+        currentUserSettings as unknown as Record<string, unknown>,
+      )
+      return nextUserSettings as unknown as Settings
+    })
     const updatedChanges = changes.map(({ path }) => ({
       path,
       value: redactSettingsValue(path, getByPath(nextUserSettings, path)),

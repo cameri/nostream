@@ -7,9 +7,9 @@ import {
   loadDefaults,
   loadMergedSettings,
   loadUserSettings,
-  saveSettings,
   validateSettings,
 } from './settings-config'
+import { updateUserSettingsOverrides } from './settings-store'
 
 export interface AdminModerationLimits {
   pubkey: {
@@ -119,7 +119,7 @@ const applyLimitsToUserSettings = (userSettings: Settings, limits: AdminModerati
   }
 }
 
-export const persistAdminModerationLimits = (next: AdminModerationLimits): void => {
+export const persistAdminModerationLimits = async (next: AdminModerationLimits): Promise<void> => {
   const normalized: AdminModerationLimits = {
     pubkey: {
       blacklist: normalizePubkeyList(next.pubkey.blacklist, 'pubkey blacklist'),
@@ -135,16 +135,17 @@ export const persistAdminModerationLimits = (next: AdminModerationLimits): void 
     },
   }
 
-  const userSettings = loadUserSettings() as Settings
-  const nextUserSettings = applyLimitsToUserSettings(userSettings, normalized)
-  const mergedNext = mergeDeepRight(loadDefaults(), nextUserSettings) as Settings
+  await updateUserSettingsOverrides((userSettings) => {
+    const nextUserSettings = applyLimitsToUserSettings(userSettings as Settings, normalized)
+    const mergedNext = mergeDeepRight(loadDefaults(), nextUserSettings) as Settings
 
-  const issues = validateSettings(mergedNext)
-  if (issues.length > 0) {
-    throw new ValidationError('Validation failed', issues)
-  }
+    const issues = validateSettings(mergedNext)
+    if (issues.length > 0) {
+      throw new ValidationError('Validation failed', issues)
+    }
 
-  saveSettings(nextUserSettings)
+    return nextUserSettings
+  })
 }
 
 export class ValidationError extends Error {

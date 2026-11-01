@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 
-import { flattenSettingsToPaths } from '../../../src/utils/settings-config'
+import { flattenSettingsToPaths, getByPath, setByPath } from '../../../src/utils/settings-config'
 
 describe('flattenSettingsToPaths', () => {
   it('flattens nested objects into dot paths', () => {
@@ -51,5 +51,25 @@ describe('flattenSettingsToPaths', () => {
         },
       }),
     ).to.deep.equal([{ path: 'nip66.targets[0]', value: 'wss://relay.example.com' }])
+  })
+
+  it('round-trips dotted notification keys through setByPath', () => {
+    const source = {
+      admin: {
+        notifications: {
+          events: { 'settings.changed': true, 'mirror.disconnected': false },
+          targets: [{ id: 'ops', type: 'http', url: 'https://example.com/hook' }],
+        },
+      },
+    }
+
+    let rebuilt: Record<string, unknown> = {}
+    for (const entry of flattenSettingsToPaths(source)) {
+      rebuilt = setByPath(rebuilt, entry.path, entry.value)
+    }
+
+    expect(getByPath(rebuilt, 'admin.notifications.events["settings.changed"]')).to.equal(true)
+    expect(getByPath(rebuilt, 'admin.notifications.targets[0].id')).to.equal('ops')
+    expect(rebuilt).to.deep.equal(source)
   })
 })

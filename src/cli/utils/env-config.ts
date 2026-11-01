@@ -42,6 +42,7 @@ const SUPPORTED_ENV_KEYS = new Set([
   'REDIS_USER',
   'REDIS_PASSWORD',
   'NOSTR_CONFIG_DIR',
+  'SETTINGS_BACKEND',
   'DEBUG',
   'ZEBEDEE_API_KEY',
   'NODELESS_API_KEY',
@@ -67,6 +68,10 @@ const INTEGER_KEYS = new Set([
 ])
 
 const BOOLEAN_KEYS = new Set(['READ_REPLICA_ENABLED'])
+
+const ENUM_KEYS: Record<string, Set<string>> = {
+  SETTINGS_BACKEND: new Set(['file', 'db']),
+}
 
 const RR_INTEGER_KEY_REGEX = /^RR\d+_DB_(PORT|MIN_POOL_SIZE|MAX_POOL_SIZE|ACQUIRE_CONNECTION_TIMEOUT)$/
 
@@ -146,6 +151,11 @@ export const validateEnvPair = (key: string, value: string): string | undefined 
 
   if (BOOLEAN_KEYS.has(key)) {
     return validateBoolean(key, value)
+  }
+
+  const allowedValues = ENUM_KEYS[key]
+  if (allowedValues && !allowedValues.has(value.trim())) {
+    return `${key} must be one of: ${[...allowedValues].join(', ')}`
   }
 
   return undefined

@@ -4,6 +4,7 @@ import {
   runConfigSet,
   runConfigValidate,
 } from '../../commands/config'
+import { bootstrapSettingsStore, shutdownSettingsStore } from '../../../utils/settings-store'
 import { getByPath, getTopLevelSettingCategories, loadMergedSettings, toCategoryLabel } from '../../../utils/settings-config'
 import {
   type GuidedSettingField,
@@ -209,6 +210,15 @@ const runGuidedConfigureMenu = async (): Promise<number> => {
 }
 
 export const runConfigureMenu = async (): Promise<number> => {
+  try {
+    await bootstrapSettingsStore()
+    return await runConfigureMenuWithStore()
+  } finally {
+    await shutdownSettingsStore()
+  }
+}
+
+const runConfigureMenuWithStore = async (): Promise<number> => {
   const action = await tuiPrompts.select({
     message: 'Configuration action',
     options: [

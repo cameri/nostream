@@ -4,7 +4,6 @@ import yaml from 'js-yaml'
 import {
   getByPath,
   loadMergedSettings,
-  loadUserSettings,
   parseTypedValue,
   setByPath,
   toCategoryLabel,
@@ -20,12 +19,24 @@ import {
   validateEnvPair,
   validateEnvValues,
 } from '../utils/env-config'
-import { bootstrapSettingsStore, saveUserSettingsOverrides } from '../../utils/settings-store'
+import {
+  bootstrapSettingsStore,
+  shutdownSettingsStore,
+  updateUserSettingsOverrides,
+} from '../../utils/settings-store'
 import { logError, logInfo } from '../utils/output'
 import { runStart } from './start'
 import { runStop } from './stop'
 
 type ValueType = 'inferred' | 'json'
+
+const withSettingsCliSession = async (operation: () => Promise<number>): Promise<number> => {
+  try {
+    return await operation()
+  } finally {
+    await shutdownSettingsStore()
+  }
+}
 
 const toJson = (value: unknown): string => {
   return JSON.stringify(
@@ -76,42 +87,44 @@ const restartRelay = async (): Promise<number> => {
   return 0
 }
 
-export const runConfigList = async (options: { json?: boolean } = {}): Promise<number> => {
-  await bootstrapSettingsStore()
-  const settings = loadMergedSettings()
+export const runConfigList = async (options: { json?: boolean } = {}): Promise<number> =>
+  withSettingsCliSession(async () => {
+    await bootstrapSettingsStore()
+    const settings = loadMergedSettings()
 
-  if (options.json) {
-    logInfo(toJson(settings))
-    return 0
-  }
-
-  logInfo(yaml.dump(settings, { lineWidth: 120 }))
-  return 0
-}
-
-export const runConfigGet = async (path: string, options: { json?: boolean } = {}): Promise<number> => {
-  await bootstrapSettingsStore()
-  const settings = loadMergedSettings() as unknown as Record<string, unknown>
-  const value = getByPath(settings, path)
-
-  if (value === undefined) {
     if (options.json) {
-      process.stderr.write(`${JSON.stringify({ error: { message: `Path not found: ${path}`, code: 1 } })}\n`)
+      logInfo(toJson(settings))
+      return 0
+    }
+
+    logInfo(yaml.dump(settings, { lineWidth: 120 }))
+    return 0
+  })
+
+export const runConfigGet = async (path: string, options: { json?: boolean } = {}): Promise<number> =>
+  withSettingsCliSession(async () => {
+    await bootstrapSettingsStore()
+    const settings = loadMergedSettings() as unknown as Record<string, unknown>
+    const value = getByPath(settings, path)
+
+    if (value === undefined) {
+      if (options.json) {
+        process.stderr.write(`${JSON.stringify({ error: { message: `Path not found: ${path}`, code: 1 } })}\n`)
+        return 1
+      }
+
+      logError(`Path not found: ${path}`)
       return 1
     }
 
-    logError(`Path not found: ${path}`)
-    return 1
-  }
+    if (options.json) {
+      logInfo(toJson(value))
+      return 0
+    }
 
-  if (options.json) {
-    logInfo(toJson(value))
+    logInfo(serialize(value))
     return 0
-  }
-
-  logInfo(serialize(value))
-  return 0
-}
+  })
 
 export const runConfigSet = async (
   path: string,
@@ -121,63 +134,67 @@ export const runConfigSet = async (
     validate?: boolean
     valueType?: ValueType
   } = {},
-): Promise<number> => {
-  const valueType = options.valueType ?? 'inferred'
+): Promise<number> =>
+  withSettingsCliSession(async () => {
+    const valueType = options.valueType ?? 'inferred'
 
-  await bootstrapSettingsStore()
+    await bootstrapSettingsStore()
 
-  const pathIssues = validatePathAgainstDefaults(path)
-  if (pathIssues.length > 0) {
-    logError(pathIssues[0].message)
-    return 1
-  }
-
-  const settings = loadUserSettings() as unknown as Record<string, unknown>
-  const next = setByPath(settings, path, parseTypedValue(rawValue, valueType))
-
-  if (options.validate !== false) {
-    const merged = loadMergedSettings() as unknown as Record<string, unknown>
-    const mergedNext = setByPath(merged, path, getByPath(next, path))
-    const validationIssues = validateSettings(mergedNext as any)
-
-    if (validationIssues.length > 0) {
-      logError('Config update rejected by validation:')
-      for (const issue of validationIssues) {
-        logError(`- ${issue.path}: ${issue.message}`)
-      }
-
+    const pathIssues = validatePathAgainstDefaults(path)
+    if (pathIssues.length > 0) {
+      logError(pathIssues[0].message)
       return 1
     }
-  }
 
-  await saveUserSettingsOverrides(next as any)
+    const parsedValue = parseTypedValue(rawValue, valueType)
 
-  logInfo(`Updated ${path}`)
+    if (options.validate !== false) {
+      const merged = loadMergedSettings() as unknown as Record<string, unknown>
+      const mergedNext = setByPath(merged, path, parsedValue)
+      const validationIssues = validateSettings(mergedNext as any)
 
-  if (options.restart) {
-    return restartRelay()
-  }
+      if (validationIssues.length > 0) {
+        logError('Config update rejected by validation:')
+        for (const issue of validationIssues) {
+          logError(`- ${issue.path}: ${issue.message}`)
+        }
 
-  return 0
-}
+        return 1
+      }
+    }
 
-export const runConfigValidate = async (): Promise<number> => {
-  await bootstrapSettingsStore()
-  const settings = loadMergedSettings()
-  const issues = validateSettings(settings)
+    await updateUserSettingsOverrides((userSettings) =>
+      setByPath(userSettings as unknown as Record<string, unknown>, path, parsedValue) as unknown as typeof userSettings,
+    )
 
-  if (issues.length === 0) {
-    logInfo('Settings are valid')
+    logInfo(`Updated ${path}`)
+
+    if (options.restart) {
+      return restartRelay()
+    }
+
     return 0
-  }
+  })
 
-  logError('Settings validation failed:')
-  for (const issue of issues) {
-    logError(`- ${issue.path}: ${issue.message}`)
-  }
+export const runConfigValidate = async (): Promise<number> =>
+  withSettingsCliSession(async () => {
+    await bootstrapSettingsStore()
+    const settings = loadMergedSettings()
+    const issues = validateSettings(settings)
 
-  return 1
-}
+    if (issues.length === 0) {
+      logInfo('Settings are valid')
+      return 0
+    }
+
+    logError('Settings validation failed:')
+    for (const issue of issues) {
+      logError(`- ${issue.path}: ${issue.message}`)
+    }
+
+    return 1
+  })
+
 export const runConfigEnvList = async (options: { showSecrets?: boolean } = {}): Promise<number> => {
   const values = readEnvValues()
   const entries = Object.entries(values).sort(([a], [b]) => a.localeCompare(b))
