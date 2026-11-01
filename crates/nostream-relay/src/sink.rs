@@ -34,11 +34,11 @@
 //! see [`Account`] — because the next socket's admission depends on it.
 //!
 //! **A refusal is stored as one byte**, and [`Refusal`] owns both ends of it: [`Refusal`]'s
-//! `word` encodes a variant and `from_word` decodes the byte, both exhaustively, so the byte's
+//! `word` encodes a variant exhaustively and `from_word` decodes every byte, so the byte's
 //! meaning cannot drift from the enum. The type names its own "nothing refused" case,
 //! [`Refusal::None`], as byte `0` — the value the first-cause-wins latch compares against —
-//! instead of hiding it in an `Option`. That is what makes a new cause a compile error at
-//! every reader that has to decide, rather than a word that silently reads as "no refusal";
+//! instead of hiding it in an `Option`. A new cause is then a compile error at the encoder
+//! and at every reader that matches, rather than a word that silently reads as "no refusal";
 //! the rule is on [`Refusal`] itself and the trap beside the decode.
 
 use std::future::Future;
@@ -55,10 +55,12 @@ use nostream_core::messages::RelayMessage;
 /// The variant is the byte it is stored as, and the whole of the contract is three statements.
 /// First, `0` is no refusal, `1` is a full frame queue and `2` is an exhausted frame memory
 /// budget, and no other byte is ever stored. Second, a cause is added by adding a variant
-/// here, giving it a byte in `word` and answering the compiler at every reader of it — the
-/// connection loop, the stored read's refusal guard and `close_refused`. Third, a word
-/// outside `{0, 1, 2}` traps: it is neither a refusal nor no refusal, so no reader can read it
-/// as either.
+/// here and giving it a byte in `word`, which the compiler asks for, then answering it at
+/// every reader that matches — the connection loop, the stored read's refusal guard and
+/// `close_refused`. The decode is not asked: `from_word` ends in a wildcard, so a cause needs
+/// its own arm there by hand, and skipping it traps the first time that cause's byte is read
+/// instead of failing the build. Third, a word outside `{0, 1, 2}` traps: it is neither a
+/// refusal nor no refusal, so no reader can read it as either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Refusal {
