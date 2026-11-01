@@ -1,4 +1,5 @@
 import fs from 'fs'
+import { setTimeout as delay } from 'node:timers/promises'
 import { join } from 'path'
 import yaml from 'js-yaml'
 import { isNil, mergeDeepRight } from 'ramda'
@@ -14,6 +15,7 @@ import {
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
+  getSettingsWriteLockPath,
 } from './settings-paths'
 
 export {
@@ -23,7 +25,148 @@ export {
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
+  getSettingsWriteLockPath,
 } from './settings-paths'
+
+const SETTINGS_WRITE_LOCK_STALE_MS = 60_000
+const SETTINGS_WRITE_LOCK_RETRY_MS = 25
+const SETTINGS_WRITE_LOCK_MAX_WAIT_MS = 30_000
+
+type SettingsWriteLockMetadata = {
+  pid: number
+  acquiredAt: number
+}
+
+const readSettingsWriteLockMetadata = (lockPath: string): SettingsWriteLockMetadata | undefined => {
+  try {
+    const raw = fs.readFileSync(lockPath, 'utf-8')
+    const [pidLine, acquiredLine] = raw.split('\n')
+    const pid = Number(pidLine)
+    const acquiredAt = Number(acquiredLine)
+    if (!Number.isFinite(pid) || !Number.isFinite(acquiredAt)) {
+      return undefined
+    }
+    return { pid, acquiredAt }
+  } catch {
+    return undefined
+  }
+}
+
+const isSettingsWriteLockStale = (metadata: SettingsWriteLockMetadata): boolean => {
+  if (Date.now() - metadata.acquiredAt > SETTINGS_WRITE_LOCK_STALE_MS) {
+    return true
+  }
+
+  try {
+    process.kill(metadata.pid, 0)
+    return false
+  } catch (error) {
+    // Only ESRCH proves the owner is gone. EPERM means the process exists under
+    // another user, and any other error is treated as alive so a failed check
+    // can never steal a live lock; the age rule above remains the fallback.
+    return (error as NodeJS.ErrnoException).code === 'ESRCH'
+  }
+}
+
+const reclaimSettingsWriteLock = (lockPath: string): void => {
+  const reclaimPath = `${lockPath}.reclaim.${process.pid}.${Date.now()}`
+  fs.renameSync(lockPath, reclaimPath)
+  fs.rmSync(reclaimPath, { force: true })
+}
+
+const attemptStealStaleSettingsWriteLock = (
+  lockPath: string,
+  expected: SettingsWriteLockMetadata,
+): boolean => {
+  try {
+    const current = readSettingsWriteLockMetadata(lockPath)
+    if (
+      !current ||
+      current.pid !== expected.pid ||
+      current.acquiredAt !== expected.acquiredAt ||
+      !isSettingsWriteLockStale(current)
+    ) {
+      return false
+    }
+
+    reclaimSettingsWriteLock(lockPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// A writer holds the lock between openSync and writeFileSync, so a lock with
+// missing or unparseable metadata is only abandoned once it has been untouched
+// for the same grace period as a stale lock. Reclaiming it immediately would
+// race a live writer.
+const attemptStealAbandonedSettingsWriteLock = (lockPath: string): boolean => {
+  try {
+    const stats = fs.statSync(lockPath)
+    if (Date.now() - stats.mtimeMs <= SETTINGS_WRITE_LOCK_STALE_MS) {
+      return false
+    }
+
+    reclaimSettingsWriteLock(lockPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> => {
+  ensureSettingsExists()
+  const lockPath = getSettingsWriteLockPath()
+  const deadline = Date.now() + SETTINGS_WRITE_LOCK_MAX_WAIT_MS
+  let lockFd: number | undefined
+
+  while (Date.now() < deadline) {
+    try {
+      const lockFdLocal = fs.openSync(lockPath, 'wx')
+      try {
+        fs.writeFileSync(lockFdLocal, `${process.pid}\n${Date.now()}\n`)
+      } catch (error) {
+        // The lock exists before it has contents; leaving that empty file
+        // behind would block every later writer until someone removes it.
+        try {
+          fs.closeSync(lockFdLocal)
+        } finally {
+          fs.rmSync(lockPath, { force: true })
+        }
+        throw error
+      }
+      lockFd = lockFdLocal
+      break
+    } catch (error) {
+      const errno = error as NodeJS.ErrnoException
+      if (errno.code !== 'EEXIST') {
+        throw error
+      }
+
+      const metadata = readSettingsWriteLockMetadata(lockPath)
+      if (metadata) {
+        if (isSettingsWriteLockStale(metadata)) {
+          attemptStealStaleSettingsWriteLock(lockPath, metadata)
+        }
+      } else {
+        attemptStealAbandonedSettingsWriteLock(lockPath)
+      }
+
+      await delay(SETTINGS_WRITE_LOCK_RETRY_MS)
+    }
+  }
+
+  if (lockFd === undefined) {
+    throw new Error('Timed out waiting for settings write lock')
+  }
+
+  try {
+    return operation()
+  } finally {
+    fs.closeSync(lockFd)
+    fs.rmSync(lockPath, { force: true })
+  }
+}
 
 const logger = createLogger('settings-config')
 

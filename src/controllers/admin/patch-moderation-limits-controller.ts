@@ -21,11 +21,9 @@ export class PatchAdminModerationLimitsController implements IController {
       return
     }
 
-    const next = mergeAdminModerationLimitsPatch(readAdminModerationLimits(), validation.value)
-
     try {
       await saveModerationLimitsFromRequest(
-        next,
+        (current) => mergeAdminModerationLimitsPatch(current, validation.value),
         request,
         this.notificationOutboxRepository,
         'moderation.limits.updated',
@@ -47,6 +45,9 @@ export class PatchAdminModerationLimitsController implements IController {
       throw error
     }
 
-    response.status(200).setHeader('content-type', 'application/json').send({ ok: true, limits: next })
+    response
+      .status(200)
+      .setHeader('content-type', 'application/json')
+      .send({ ok: true, limits: readAdminModerationLimits() })
   }
 }

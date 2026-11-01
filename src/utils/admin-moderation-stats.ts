@@ -42,6 +42,13 @@ export const parseModerationStatsLimit = (raw: unknown): number => {
   return limit
 }
 
+// `first_seen` is a timestamp without time zone written in UTC. Build the
+// cutoff from the unix timestamp in SQL: a JS Date is sent with the process's
+// local offset, which PostgreSQL ignores for timestamp-without-time-zone
+// comparisons, shifting the window by the difference between the two zones.
+const firstSeenCutoff = (db: Knex, sinceUnixSeconds: number) =>
+  db.raw(`to_timestamp(?) at time zone 'UTC'`, [sinceUnixSeconds])
+
 export const queryTopPublishingPubkeys = async (
   db: Knex,
   sinceUnixSeconds: number,
@@ -51,7 +58,7 @@ export const queryTopPublishingPubkeys = async (
     .select(db.raw(`encode(event_pubkey, 'hex') as pubkey`))
     .count('* as eventCount')
     .whereNull('deleted_at')
-    .where('event_created_at', '>=', sinceUnixSeconds)
+    .where('first_seen', '>=', firstSeenCutoff(db, sinceUnixSeconds))
     .groupBy('event_pubkey')
     .orderBy('eventCount', 'desc')
     .limit(limit)
@@ -73,7 +80,7 @@ export const queryTopClientIps = async (
     .count('* as eventCount')
     .whereNull('deleted_at')
     .whereNotNull('remote_address')
-    .where('event_created_at', '>=', sinceUnixSeconds)
+    .where('first_seen', '>=', firstSeenCutoff(db, sinceUnixSeconds))
     .groupBy('remote_address')
     .orderBy('eventCount', 'desc')
     .limit(limit)

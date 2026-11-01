@@ -105,9 +105,30 @@ describe('admin-moderation', () => {
     expect(withoutIp.rateLimitBypass.ipAddresses).to.not.include('203.0.113.10')
   })
 
-  it('persists normalized moderation limits to settings', () => {
+  it('normalizes IPv6 bypass addresses to match client socket spelling', () => {
+    const expanded = '2001:0db8:0:0:0:0:0:1'
+    const withIp = applyAdminModerationAction(baseLimits, 'whitelist-ip', { ip: expanded })
+    expect(withIp.rateLimitBypass.ipAddresses).to.include('2001:db8::1')
+
+    const withoutIp = applyAdminModerationAction(withIp, 'unwhitelist-ip', { ip: '2001:db8::1' })
+    expect(withoutIp.rateLimitBypass.ipAddresses).to.not.include('2001:db8::1')
+  })
+
+  it('removes IPv6 bypass entries stored in alternate spelling', () => {
+    const limits = {
+      ...baseLimits,
+      rateLimitBypass: {
+        ...baseLimits.rateLimitBypass,
+        ipAddresses: ['2001:0db8:0:0:0:0:0:1'],
+      },
+    }
+    const withoutIp = applyAdminModerationAction(limits, 'unwhitelist-ip', { ip: '2001:db8::1' })
+    expect(withoutIp.rateLimitBypass.ipAddresses).to.be.empty
+  })
+
+  it('persists normalized moderation limits to settings', async () => {
     const pubkey = 'c'.repeat(64)
-    persistAdminModerationLimits({
+    await persistAdminModerationLimits({
       ...baseLimits,
       pubkey: { blacklist: [pubkey], whitelist: [] },
     })
@@ -116,16 +137,14 @@ describe('admin-moderation', () => {
     expect(limits.pubkey.blacklist).to.include(pubkey)
   })
 
-  it('persists when user settings only override part of info', () => {
+  it('persists when user settings only override part of info', async () => {
     settingsConfig.saveSettings({ info: { relay_url: 'wss://relay.example' } } as any)
     const pubkey = 'f'.repeat(64)
 
-    expect(() =>
-      persistAdminModerationLimits({
-        ...baseLimits,
-        pubkey: { blacklist: [pubkey], whitelist: [] },
-      }),
-    ).to.not.throw()
+    await persistAdminModerationLimits({
+      ...baseLimits,
+      pubkey: { blacklist: [pubkey], whitelist: [] },
+    })
 
     expect(readAdminModerationLimits().pubkey.blacklist).to.include(pubkey)
   })

@@ -1,6 +1,15 @@
 import { z } from 'zod'
 
-const kindRuleSchema = z.union([z.number().int().min(0).max(65535), z.tuple([z.number().int(), z.number().int()])])
+import { kindSchema } from './base-schema'
+
+// Match event admission (`kindSchema`), which accepts any non-negative integer,
+// so moderation rules can configure and round-trip every kind admission allows.
+const kindRuleSchema = z.union([
+  kindSchema,
+  z.tuple([kindSchema, kindSchema]).refine(([start, end]) => start <= end, {
+    message: 'Kind range start must not exceed its end',
+  }),
+])
 
 export const adminModerationLimitsPatchSchema = z
   .object({
