@@ -5,3 +5,17 @@ nip50:
   enabled: true
   language: simple
   maxQueryLength: 256
+peering:
+  enabled: true
+  contact: mailto:peering@example.com
+  endpoint: wss://relay.example.com
+  minRequestPowDifficulty: 16
+  scopes:
+    - kinds: [1, 6]
+      windowSeconds: 3600
+    - kinds: [3]
+      since: 1700000000
+  terms:
+    - amount: 1000
+      unit: msats
+      period: 2592000

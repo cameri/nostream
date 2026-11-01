@@ -15,6 +15,7 @@ import {
   verifyNip05Identifier,
 } from '../utils/nip05'
 import { Event, ExpiringEvent } from '../@types/event'
+import { UserSubscription } from '../@types/user-subscription'
 import { EventRateLimit, FeeSchedule, Settings } from '../@types/settings'
 import {
   getEventExpiration,
@@ -33,7 +34,13 @@ import {
   isSealEvent,
   isWelcomeRumorEvent,
 } from '../utils/event'
-import { areSubscriptionsEnabled, getAccessEndsAt, hasSubscriptionAccess } from '../utils/subscription'
+import {
+  areSubscriptionsEnabled,
+  findSubscriptionPlan,
+  getAccessEndsAt,
+  getSubscriptionPlans,
+  hasSubscriptionAccess,
+} from '../utils/subscription'
 import { isAuthRequired } from '../utils/nip42'
 import {
   IEventRepository,
@@ -42,17 +49,37 @@ import {
   IUserSubscriptionRepository,
 } from '../@types/repositories'
 import { IEventStrategy, IMessageHandler } from '../@types/message-handlers'
-import { admissionCacheKey, CacheAdmissionState } from '../constants/caching'
+import {
+  admissionCacheKey,
+  CacheAdmissionState,
+  NO_SUBSCRIPTION_PLAN,
+  SUBSCRIPTION_PLAN_PREFIX,
+  subscriptionPlanCacheKey,
+} from '../constants/caching'
 import { createEventCommandResult } from '../telemetry/event-metrics'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
 import { ICacheAdapter } from '../@types/adapters'
 import { IncomingEventMessage } from '../@types/messages'
-import { IRateLimiter } from '../@types/utils'
+import { IRateLimiter, IRateLimiterResult } from '../@types/utils'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { IWotGraphService } from '../@types/services'
 import { Nip05Verification } from '../@types/nip05'
 import { WebSocketAdapterEvent } from '../constants/adapter'
+import { recordModerationRateLimitHitSafely } from '../utils/moderation-rate-limit-stats'
+
+/**
+ * Why an event was admitted or refused, in the terms the wire needs.
+ *
+ * `limited` always carries a backoff — the strategy's estimate when it has one,
+ * the period when it does not. `unavailable` is our fault, not the client's, and
+ * must not be announced as `rate-limited`: every client would back off for a
+ * backend outage.
+ */
+type RateLimitVerdict =
+  | { status: 'allowed' }
+  | { status: 'limited', retryAfterMs: number }
+  | { status: 'unavailable' }
 
 const logger = createLogger('event-message-handler')
 
@@ -69,6 +96,8 @@ export class EventMessageHandler implements IMessageHandler {
     private readonly wotGraphService: IWotGraphService,
     private readonly userSubscriptionRepository?: IUserSubscriptionRepository,
   ) {}
+
+  private readonly subscriptionReads = new WeakMap<Event, Promise<UserSubscription | undefined>>()
 
   public async handleMessage(message: IncomingEventMessage): Promise<void> {
     let [, event] = message
@@ -90,13 +119,27 @@ export class EventMessageHandler implements IMessageHandler {
 
     event = this.addExpirationMetadata(event)
 
-    const rateLimited = await this.isRateLimited(event)
-    if (rateLimited) {
+    const rateLimit = await this.isRateLimited(event)
+    if (rateLimit.status === 'limited') {
       logger('event %s rejected: rate-limited', event.id)
-      const retryAfterMs = typeof rateLimited === 'number' ? String(rateLimited) : undefined
+      void recordModerationRateLimitHitSafely(this.cache, {
+        pubkey: event.pubkey,
+        ip: event[ContextMetadataKey]?.remoteAddress?.address,
+      })
       this.webSocket.emit(
         WebSocketAdapterEvent.Message,
-        createEventCommandResult(event.id, false, 'rate-limited: slow down', retryAfterMs),
+        createEventCommandResult(event.id, false, 'rate-limited: slow down', String(rateLimit.retryAfterMs)),
+      )
+      return
+    }
+
+    if (rateLimit.status === 'unavailable') {
+      // Not the client's fault, so it gets `error:` and no backoff: telling it to
+      // slow down would make every client back off at once for our outage.
+      logger('event %s rejected: rate limiter unavailable', event.id)
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createEventCommandResult(event.id, false, 'error: rate limiter unavailable'),
       )
       return
     }
@@ -384,17 +427,26 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   /**
-   * Resolves to false when allowed; otherwise to the tripped window's period in ms,
-   * sent as the NIP-01 `rate-limited` backoff, or true when no backoff can be given.
+   * Why an event was not admitted, in the terms the wire needs.
+   *
+   * `limited` carries the backoff when the strategy can estimate one, and the
+   * caller sends the period when it cannot. `unavailable` is a different thing:
+   * the limiter backend failed, so the event is rejected fail-closed, but the
+   * client must not be told to slow down — every client would back off at once
+   * for a fault that is ours.
    */
-  protected async isRateLimited(event: Event): Promise<boolean | number> {
+  protected async isRateLimited(event: Event): Promise<RateLimitVerdict> {
     if (this.getRelayPublicKey() === event.pubkey) {
-      return false
+      return { status: 'allowed' }
     }
 
-    const { whitelists, rateLimits } = this.settings().limits?.event ?? {}
+    const currentSettings = this.settings()
+    const { whitelists } = currentSettings.limits?.event ?? {}
+    // A subscriber's plan can replace the global limits, which carry on for everyone else.
+    const rateLimits =
+      (await this.getPlanRateLimits(event, currentSettings)) ?? currentSettings.limits?.event?.rateLimits
     if (!rateLimits || !rateLimits.length) {
-      return false
+      return { status: 'allowed' }
     }
 
     if (
@@ -402,7 +454,7 @@ export class EventMessageHandler implements IMessageHandler {
       Array.isArray(whitelists?.pubkeys) &&
       whitelists.pubkeys.includes(event.pubkey)
     ) {
-      return false
+      return { status: 'allowed' }
     }
 
     if (
@@ -410,7 +462,7 @@ export class EventMessageHandler implements IMessageHandler {
       Array.isArray(whitelists?.ipAddresses) &&
       whitelists.ipAddresses.includes(this.webSocket.getClientAddress())
     ) {
-      return false
+      return { status: 'allowed' }
     }
 
     const rateLimiter = this.rateLimiter()
@@ -433,23 +485,107 @@ export class EventMessageHandler implements IMessageHandler {
         continue
       }
 
-      let isRateLimited = false
+      let result: IRateLimiterResult
       try {
-        isRateLimited = await hit({ period, rate, kinds })
+        result = await hit({ period, rate, kinds })
       } catch (error) {
-        // Fail closed when the rate limiter backend is unavailable.
+        // Fail closed when the rate limiter backend is unavailable, but say so:
+        // announcing `rate-limited` here made every connected client back off
+        // for a fault on this side.
         logger('rate limiter unavailable for %s (%d/%d): %o', event.pubkey, rate, period, error)
-        return true
+        return { status: 'unavailable' }
       }
 
-      if (isRateLimited) {
+      if (result.limited) {
         logger('rate limited %s: %d events / %d ms exceeded', event.pubkey, rate, period)
 
-        return Math.max(1, Math.ceil(period))
+        return {
+          status: 'limited',
+          retryAfterMs: result.retryAfterMs ?? Math.max(1, Math.ceil(period)),
+        }
       }
     }
 
-    return false
+    return { status: 'allowed' }
+  }
+
+  /** The rate limits of the plan the sender is subscribed to, if it has its own and the subscription still gives access. */
+  private async getPlanRateLimits(event: Event, settings: Settings): Promise<EventRateLimit[] | undefined> {
+    if (!areSubscriptionsEnabled(settings) || !this.userSubscriptionRepository) {
+      return undefined
+    }
+
+    if (!getSubscriptionPlans(settings).some((plan) => plan.limits?.rateLimits !== undefined)) {
+      return undefined
+    }
+
+    return findSubscriptionPlan(settings, await this.getActivePlanId(event))?.limits?.rateLimits
+  }
+
+  /** Cached like admission, so it is read from the database once per pubkey and not once per event. */
+  private async getActivePlanId(event: Event): Promise<string | undefined> {
+    const pubkey = event.pubkey
+    const cacheKey = subscriptionPlanCacheKey(pubkey)
+
+    try {
+      const cached = await this.cache.getKey(cacheKey)
+      if (cached === NO_SUBSCRIPTION_PLAN) {
+        return undefined
+      }
+      if (typeof cached === 'string' && cached.startsWith(SUBSCRIPTION_PLAN_PREFIX)) {
+        return cached.slice(SUBSCRIPTION_PLAN_PREFIX.length)
+      }
+    } catch (error) {
+      logger('cache error for %s subscription plan: %o', pubkey, error)
+    }
+
+    let subscription
+    try {
+      subscription = await this.readSubscription(event)
+    } catch (error) {
+      // Without the subscription the global limits apply, and nothing is cached so the next event asks again.
+      logger('unable to read the subscription of %s: %o', pubkey, error)
+      return undefined
+    }
+
+    const now = new Date()
+    const planId = subscription && hasSubscriptionAccess(subscription, now) ? subscription.planId : undefined
+    this.cacheSubscriptionPlan(pubkey, planId, subscription ? getAccessEndsAt(subscription) : undefined, now)
+
+    return planId
+  }
+
+  private cacheSubscriptionPlan(pubkey: string, planId: string | undefined, accessEndsAt: Date | undefined, now: Date) {
+    // Only a plan that is being cached ends with access; "no plan" is rechecked after a minute whatever the end was.
+    const ttl = planId ? this.cacheTtlUntil(300, accessEndsAt, now) : 60
+    this.cacheSet(
+      subscriptionPlanCacheKey(pubkey),
+      planId ? `${SUBSCRIPTION_PLAN_PREFIX}${planId}` : NO_SUBSCRIPTION_PLAN,
+      ttl,
+    )
+  }
+
+  /**
+   * The subscription of the sender, read once per message: the rate limits and the admission check both need it,
+   * and on a cold cache they would otherwise each ask the database for the same row.
+   */
+  private readSubscription(event: Event): Promise<UserSubscription | undefined> {
+    let read = this.subscriptionReads.get(event)
+    if (!read) {
+      read = (this.userSubscriptionRepository as IUserSubscriptionRepository).findByPubkey(event.pubkey)
+      this.subscriptionReads.set(event, read)
+    }
+
+    return read
+  }
+
+  /** No longer than access lasts, so a plan's limits end when its period does rather than minutes later. */
+  private cacheTtlUntil(ttl: number, accessEndsAt: Date | undefined, now: Date): number {
+    if (!accessEndsAt) {
+      return ttl
+    }
+
+    return Math.max(1, Math.min(ttl, Math.ceil((accessEndsAt.getTime() - now.getTime()) / 1000)))
   }
 
   protected async isUserAdmitted(event: Event): Promise<string | undefined> {
@@ -534,7 +670,7 @@ export class EventMessageHandler implements IMessageHandler {
 
     let admittedTtl = 300
     if (subscriptionsEnabled && this.userSubscriptionRepository) {
-      const subscription = await this.userSubscriptionRepository.findByPubkey(event.pubkey)
+      const subscription = await this.readSubscription(event)
       const now = new Date()
       if (!hasSubscriptionAccess(subscription, now)) {
         this.cacheSet(cacheKey, CacheAdmissionState.BLOCKED_NOT_ADMITTED, 60)
@@ -543,9 +679,9 @@ export class EventMessageHandler implements IMessageHandler {
 
       // Cache no longer than access lasts, so the block lands when the period ends rather than minutes later.
       const accessEndsAt = subscription ? getAccessEndsAt(subscription) : undefined
-      if (accessEndsAt) {
-        admittedTtl = Math.max(1, Math.min(admittedTtl, Math.ceil((accessEndsAt.getTime() - now.getTime()) / 1000)))
-      }
+      admittedTtl = this.cacheTtlUntil(admittedTtl, accessEndsAt, now)
+      // The plan was just read, so what the rate limits need is cached with it.
+      this.cacheSubscriptionPlan(event.pubkey, subscription?.planId, accessEndsAt, now)
     }
 
     this.cacheSet(cacheKey, CacheAdmissionState.ADMITTED, admittedTtl)

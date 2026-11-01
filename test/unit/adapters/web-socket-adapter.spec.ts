@@ -576,7 +576,7 @@ describe('WebSocketAdapter', () => {
         })
 
         slidingWindowRateLimiter.returns({
-          hit: sandbox.stub().resolves(true),
+          hit: sandbox.stub().resolves({ limited: true }),
         })
 
         onMessage = client.on.getCalls().find((call: any) => call.args[0] === 'message').args[1]
@@ -611,8 +611,8 @@ describe('WebSocketAdapter', () => {
         }
 
         const hitStub = sandbox.stub()
-        hitStub.onFirstCall().resolves(false)
-        hitStub.resolves(true)
+        hitStub.onFirstCall().resolves({ limited: false })
+        hitStub.resolves({ limited: true })
         slidingWindowRateLimiter.returns({ hit: hitStub })
         createMessageHandler.returns(inFlightHandler)
 
@@ -641,6 +641,46 @@ describe('WebSocketAdapter', () => {
         expect(sentFrame()).to.deep.equal(['CLOSED', 'q1', 'rate-limited: slow down', '60000'])
       })
 
+      // The strategy's own estimate wins when it has one: a sliding window's
+      // period is the upper bound, an EWMA half-life is not.
+      it('sends the limiter\'s own backoff when it has one', async () => {
+        slidingWindowRateLimiter.returns({
+          hit: sandbox.stub().resolves({ limited: true, retryAfterMs: 120000 }),
+        })
+
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
+
+        expect(sentFrame()).to.deep.equal(['CLOSED', 'sub1', 'rate-limited: slow down', '120000'])
+      })
+
+      it('buckets the limit by message type, so a REQ is not refused for EVENTs', async () => {
+        const hitStub = sandbox.stub()
+        hitStub.withArgs(Sinon.match(/:message:EVENT:/)).resolves({ limited: true })
+        hitStub.withArgs(Sinon.match(/:message:REQ:/)).resolves({ limited: false })
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
+
+        expect(hitStub).to.have.been.calledOnceWithExactly(
+          '127.0.0.1:message:REQ:60000',
+          1,
+          { period: 60000, rate: 1 },
+        )
+      })
+
+      // A closed set of types, or a client could rotate invented ones and keep
+      // every bucket empty.
+      it('buckets an invented message type with everything else unrecognised', async () => {
+        const hitStub = sandbox.stub().resolves({ limited: false })
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+
+        await onMessage(Buffer.from(JSON.stringify(['AAAA'])))
+        await onMessage(Buffer.from(JSON.stringify(['BBBB'])))
+
+        expect(hitStub.firstCall.args[0]).to.equal('127.0.0.1:message:OTHER:60000')
+        expect(hitStub.secondCall.args[0]).to.equal('127.0.0.1:message:OTHER:60000')
+      })
+
       it('falls back to the notice when the frame is not valid JSON', async () => {
         await onMessage(Buffer.from('not-json'))
 
@@ -652,7 +692,7 @@ describe('WebSocketAdapter', () => {
     it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
       client.readyState = WebSocket.OPEN
 
-      const hitStub = sandbox.stub().resolves(true)
+      const hitStub = sandbox.stub().resolves({ limited: true })
 
       settingsFactory.returns({
         network: { remoteIpHeader: '' },

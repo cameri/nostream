@@ -10,6 +10,7 @@ The following environment variables can be set:
 | RELAY_PORT                       | Relay's server port            | 8008                   |
 | RELAY_PRIVATE_KEY                | Relay's private key in hex     | (auto-generated)       |
 | WORKER_COUNT                     | Number of workers override     | No. of available CPUs  |
+| LOG_FORMAT                       | Set to `json` to replace the startup banner with one `relay starting` record, so every line the relay writes parses as JSON. | (banner) |
 | DB_URI                           | PostgreSQL URI (overrides DB_HOST, DB_PORT, etc.) | |
 | DB_HOST                          | PostgresSQL Hostname           |                        |
 | DB_PORT                          | PostgreSQL Port                | 5432                   |
@@ -247,14 +248,14 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
-| payments.subscriptionPlans                  | Recurring membership plans. Leave empty to keep the one-time admission fee. With plans and `payments.enabled`, `POST /invoices` takes a `planId` instead of a fee schedule, a payment of at least the plan price starts or extends a period (from the period end while access is still running, otherwise from now), and writes need an active subscription or grace period. Admitted users with no subscription keep access. About three days before a period ends the relay creates a renewal invoice and sends it to the subscriber in a kind 402 event, replacing it if it expires unpaid; it moves the subscription through grace to expired once the period and grace pass without payment. Users still have to pay renewal invoices themselves, since Lightning cannot be charged automatically. The invoice page lets users pick a plan. |
+| payments.subscriptionPlans                  | Recurring membership plans. Leave empty to keep the one-time admission fee. With plans and `payments.enabled`, `POST /invoices` takes a `planId` instead of a fee schedule, a payment of at least the plan price starts or extends a period (from the period end while access is still running, otherwise from now), and writes need an active subscription or grace period. Admitted users with no subscription keep access. About three days before a period ends the relay creates a renewal invoice and sends it to the subscriber in a kind 402 event, replacing it if it expires unpaid; it moves the subscription through grace to expired once the period and grace pass without payment. Users still have to pay renewal invoices themselves, since Lightning cannot be charged automatically. The invoice page lets users pick a plan. Clients see the plans in the NIP-11 document under `fees.subscription` (`id`, `amount` in msats, `unit`, `period` in seconds, and `description` when set), and with plans `limitation.restricted_writes` is true. `GET /subscriptions/status?pubkey=<hex or npub>` returns a pubkey's `planId`, `status`, `active`, `currentPeriodEnd` and `accessEndsAt` (without a subscription `active` is false and the other fields are null), counted against `limits.invoice.rateLimits`; it answers 404 while plans are off. |
 | payments.subscriptionPlans[].id             | Unique plan name, for example `basic`. `grandfathered` is reserved: users admitted before plans existed are moved onto it and keep access without a paid period. |
 | payments.subscriptionPlans[].amount         | Price of one period in msats. Must be unique across plans. A payment below it does not start or extend a period. |
 | payments.subscriptionPlans[].intervalSeconds | Length of one paid period, in seconds. |
 | payments.subscriptionPlans[].graceSeconds   | How long access lasts after a period ends without a renewal, in seconds. `0` ends access straight away. |
 | payments.subscriptionPlans[].description    | Optional text shown to users. |
-| payments.subscriptionPlans[].limits.rateLimits | Optional event rate limits for subscribers on this plan, in the same format as `limits.event.rateLimits`. |
-| payments.subscriptionPlans[].limits.retentionMaxDays | Optional event retention in days for subscribers on this plan. |
+| payments.subscriptionPlans[].limits.rateLimits | Optional event rate limits for subscribers on this plan, in the same format as `limits.event.rateLimits`. They replace the global limits for a subscriber while their subscription gives access, grace period included; an empty list means no limit. Everyone else, and subscribers whose subscription ended, keep the global limits. The plan is cached with admission, so a change of plan takes effect within five minutes. |
+| payments.subscriptionPlans[].limits.retentionMaxDays | Optional event retention in days for subscribers on this plan. It replaces `limits.event.retention.maxDays` for a subscriber while their subscription gives access, so it only applies while that is set. Once the subscription ends, the global window purges their events at the next pass. The kind and pubkey whitelists apply as before. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. |
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
@@ -283,9 +284,51 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `nwc`. |
+| peering.contact                             | Contact URI (e.g. `mailto:peering@your-domain.com`) advertised to other relays for establishing peering. At least one of `contact` or `endpoint` is required when peering is enabled. |
+| peering.enabled                             | Advertise a `peering` section in the NIP-11 document. This only expresses feeds and terms; it does not accept peers. Defaults to false. |
+| peering.endpoint                            | WebSocket endpoint (`ws://` or `wss://`) peers should connect to, advertised to other relays. At least one of `contact` or `endpoint` is required when peering is enabled. |
+| peering.minRequestPowDifficulty             | NIP-13 proof-of-work bits required on peering requests, advertised as `peering.min_pow_difficulty`. `0` (default) means none. Applies to peering requests only, never to operational traffic. |
+| peering.scopes[].kinds                      | Event kinds this feed covers, as kinds or `[min, max]` ranges. Required for every scope. At least one scope is required when peering is enabled. |
+| peering.scopes[].since                      | Inclusive lower bound of the feed's time range as a unix timestamp in seconds. Omit for no lower bound. Mutually exclusive with `windowSeconds`. |
+| peering.scopes[].until                      | Inclusive upper bound of the feed's time range as a unix timestamp in seconds. Omit for a feed that stays current. Mutually exclusive with `windowSeconds`. |
+| peering.scopes[].windowSeconds              | Rolling window in seconds: the feed covers the most recent `windowSeconds` of events. Mutually exclusive with `since` and `until`. |
+| peering.terms[].amount                      | Fee amount charged per peering period, denominated in `unit`. |
+| peering.terms[].period                      | Peering period in seconds. |
+| peering.terms[].unit                        | Fee unit (for example `msats`). An empty `terms` list means settlement-free peering. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | wot.enabled                                 | Enables the Web of Trust graph, rooted at `wot.seedPubkey`, built from NIP-02 contact lists. Defaults to false. |
 | wot.maxDepth                                | How many hops out from `wot.seedPubkey` the trust graph extends. Direct follows are distance 1. Defaults to 2. |
 | wot.minimumFollowers                        | Minimum number of already-trusted accounts that must follow a pubkey before it enters the graph at 2+ hops. Direct follows are always trusted. Defaults to 1. |
 | wot.refreshIntervalHours                    | Reserved for a future periodic full rebuild; not yet read by any code (real-time kind-3 ingestion already keeps the graph current). Defaults to 24. |
 | wot.seedPubkey                              | The relay owner's pubkey in hex. Root of the trust graph. Required when `wot.enabled` is true. |
+
+## Peering advertisement (NIP-11)
+
+When `peering.enabled` is true, the relay information document served with
+`Accept: application/nostr+json` includes a `peering` section built from the
+settings above:
+
+```json
+{
+  "peering": {
+    "enabled": true,
+    "contact": "mailto:peering@your-domain.com",
+    "endpoint": "wss://relay.example.com",
+    "min_pow_difficulty": 0,
+    "scopes": [
+      { "kinds": [1, 6], "window_seconds": 3600 },
+      { "kinds": [3, 10002], "since": 1700000000 }
+    ],
+    "terms": [
+      { "amount": 1000, "unit": "msats", "period": 2592000 }
+    ]
+  }
+}
+```
+
+`terms` uses the NIP-11 fee-object shape (`amount`, `unit`, `period`). An empty
+`terms` list is settlement-free peering: the absence of a fee entry is the
+signal, not a zero amount. `min_pow_difficulty` is the NIP-13 work a peering
+request must carry; `0` means there is no requirement. When peering is
+disabled, the section is published as `{ "enabled": false }` and no scopes,
+terms, or contact details are exposed.

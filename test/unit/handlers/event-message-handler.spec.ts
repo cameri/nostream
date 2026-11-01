@@ -92,7 +92,7 @@ describe('EventMessageHandler', () => {
       webSocket = new EventEmitter() as any
       webSocket.on(WebSocketAdapterEvent.Message, onMessageSpy)
       message = [MessageType.EVENT, event]
-      isRateLimitedStub = sandbox.stub(EventMessageHandler.prototype, 'isRateLimited' as any)
+      isRateLimitedStub = sandbox.stub(EventMessageHandler.prototype, 'isRateLimited' as any).resolves({ status: 'allowed' })
       handler = new EventMessageHandler(
         webSocket as any,
         strategyFactoryStub,
@@ -104,7 +104,7 @@ describe('EventMessageHandler', () => {
           }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -126,7 +126,7 @@ describe('EventMessageHandler', () => {
     })
 
     it('rejects event if rate-limited with the backoff in ms', async () => {
-      isRateLimitedStub.resolves(60000)
+      isRateLimitedStub.resolves({ status: 'limited', retryAfterMs: 60000 })
 
       await handler.handleMessage(message)
 
@@ -141,8 +141,10 @@ describe('EventMessageHandler', () => {
       expect(strategyFactoryStub).not.to.have.been.called
     })
 
-    it('rejects event if rate-limited without a backoff when none is known', async () => {
-      isRateLimitedStub.resolves(true)
+    // A limiter outage is our fault. Announcing `rate-limited` made every
+    // connected client back off for it, so the refusal names the error instead.
+    it('rejects event with an error, not a backoff, when the limiter is unavailable', async () => {
+      isRateLimitedStub.resolves({ status: 'unavailable' })
 
       await handler.handleMessage(message)
 
@@ -150,7 +152,7 @@ describe('EventMessageHandler', () => {
         MessageType.OK,
         event.id,
         false,
-        'rate-limited: slow down',
+        'error: rate limiter unavailable',
       ])
       expect(strategyFactoryStub).not.to.have.been.called
     })
@@ -280,7 +282,7 @@ describe('EventMessageHandler', () => {
           powSettings,
           {} as any,
           { hasKey: async () => false, setKey: async () => true } as any,
-          () => ({ hit: async () => false }),
+          () => ({ hit: async () => ({ limited: false }) }),
           {} as any,
         )
         canAcceptEventStub.returns('rejected: pow')
@@ -299,10 +301,10 @@ describe('EventMessageHandler', () => {
           powSettings,
           {} as any,
           { hasKey: async () => false, setKey: async () => true } as any,
-          () => ({ hit: async () => false }),
+          () => ({ hit: async () => ({ limited: false }) }),
           {} as any,
         )
-        isRateLimitedStub.resolves(true)
+        isRateLimitedStub.resolves({ status: 'limited', retryAfterMs: 60000 })
 
         await powHandler.handleMessage(message)
 
@@ -318,7 +320,7 @@ describe('EventMessageHandler', () => {
           powSettings,
           {} as any,
           { hasKey: async () => false, setKey: async () => true } as any,
-          () => ({ hit: async () => false }),
+          () => ({ hit: async () => ({ limited: false }) }),
           {} as any,
         )
         isEventValidStub.returns(undefined)
@@ -378,7 +380,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -718,7 +720,7 @@ describe('EventMessageHandler', () => {
               () => settings,
               {} as any,
               { hasKey: async () => false, setKey: async () => true } as any,
-              () => ({ hit: async () => false }),
+              () => ({ hit: async () => ({ limited: false }) }),
               { getDistance: getDistanceStub } as any,
             )
 
@@ -1037,7 +1039,7 @@ describe('EventMessageHandler', () => {
           }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -1075,7 +1077,7 @@ describe('EventMessageHandler', () => {
           event: eventLimits,
         },
       } as any
-      rateLimiterHitStub = sandbox.stub()
+      rateLimiterHitStub = sandbox.stub().resolves({ limited: false })
       getClientAddressStub = sandbox.stub()
       webSocket = {
         getClientAddress: getClientAddressStub,
@@ -1098,22 +1100,22 @@ describe('EventMessageHandler', () => {
 
     it('fulfills with false if limits setting is not set', async () => {
       settings.limits = undefined
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+      return expect((handler as any).isRateLimited(event)).to.eventually.deep.equal({ status: 'allowed' })
     })
 
     it('fulfills with false if event limits setting is not set', async () => {
       settings.limits.event = undefined
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+      return expect((handler as any).isRateLimited(event)).to.eventually.deep.equal({ status: 'allowed' })
     })
 
     it('fulfills with false if rate limits setting is not set', async () => {
       eventLimits.rateLimits = undefined
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+      return expect((handler as any).isRateLimited(event)).to.eventually.deep.equal({ status: 'allowed' })
     })
 
     it('fulfills with false if rate limits setting is empty', async () => {
       eventLimits.rateLimits = []
-      return expect((handler as any).isRateLimited(event)).to.eventually.be.false
+      return expect((handler as any).isRateLimited(event)).to.eventually.deep.equal({ status: 'allowed' })
     })
 
     it("fulfills with false if event pubkey equals relay's own public key", async () => {
@@ -1127,7 +1129,7 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(actualResult).to.be.false
+      expect(actualResult.status).to.equal('allowed')
       expect(rateLimiterHitStub).not.to.have.been.called
     })
 
@@ -1144,7 +1146,7 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(actualResult).to.be.false
+      expect(actualResult.status).to.equal('allowed')
       expect(rateLimiterHitStub).not.to.have.been.called
     })
 
@@ -1176,7 +1178,7 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(actualResult).to.be.false
+      expect(actualResult.status).to.equal('allowed')
       expect(rateLimiterHitStub).not.to.have.been.called
     })
 
@@ -1255,7 +1257,7 @@ describe('EventMessageHandler', () => {
         },
       ]
 
-      rateLimiterHitStub.resolves(false)
+      rateLimiterHitStub.resolves({ limited: false })
 
       const actualResult = await (handler as any).isRateLimited(event)
 
@@ -1267,7 +1269,7 @@ describe('EventMessageHandler', () => {
           rate: 1,
         },
       )
-      expect(actualResult).to.be.false
+      expect(actualResult.status).to.equal('allowed')
     })
 
     it('fulfills with the tripped period if rate limited by second rate limit setting', async () => {
@@ -1288,8 +1290,8 @@ describe('EventMessageHandler', () => {
         },
       ]
 
-      rateLimiterHitStub.onFirstCall().resolves(false)
-      rateLimiterHitStub.onSecondCall().resolves(true)
+      rateLimiterHitStub.onFirstCall().resolves({ limited: false })
+      rateLimiterHitStub.onSecondCall().resolves({ limited: true, retryAfterMs: 180 })
 
       const actualResult = await (handler as any).isRateLimited(event)
 
@@ -1309,7 +1311,7 @@ describe('EventMessageHandler', () => {
           rate: 3,
         },
       )
-      expect(actualResult).to.equal(180)
+      expect(actualResult).to.deep.equal({ status: 'limited', retryAfterMs: 180 })
     })
 
     it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
@@ -1324,12 +1326,12 @@ describe('EventMessageHandler', () => {
         },
       ]
 
-      rateLimiterHitStub.onFirstCall().resolves(true)
+      rateLimiterHitStub.onFirstCall().resolves({ limited: true, retryAfterMs: 60000 })
 
       const actualResult = await (handler as any).isRateLimited(event)
 
       expect(rateLimiterHitStub).to.have.been.calledOnce
-      expect(actualResult).to.equal(60000)
+      expect(actualResult).to.deep.equal({ status: 'limited', retryAfterMs: 60000 })
     })
 
     it('fails closed when the rate limiter backend is unavailable', async () => {
@@ -1343,8 +1345,309 @@ describe('EventMessageHandler', () => {
 
       const actualResult = await (handler as any).isRateLimited(event)
 
-      expect(actualResult).to.be.true
+      expect(actualResult).to.deep.equal({ status: 'unavailable' })
       expect(rateLimiterHitStub).to.have.been.calledOnce
+    })
+
+    describe('subscription plans', () => {
+      const DAY = 86_400_000
+      const PUBKEY = 'f'.repeat(64)
+      let subscriptionFindByPubkeyStub: SinonStub
+      let cacheStub: { getKey: SinonStub; setKey: SinonStub }
+      let subscriber: Event
+
+      const subscription = (overrides: Partial<UserSubscription> = {}): UserSubscription => ({
+        pubkey: PUBKEY,
+        planId: 'premium',
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodStart: new Date(Date.now() - 10 * DAY),
+        currentPeriodEnd: new Date(Date.now() + 20 * DAY),
+        graceEndsAt: new Date(Date.now() + 23 * DAY),
+        cancelAtPeriodEnd: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...overrides,
+      })
+
+      beforeEach(() => {
+        subscriber = { ...event, pubkey: PUBKEY, kind: 1 }
+        eventLimits.rateLimits = [{ period: 60000, rate: 1 }]
+        settings.payments = {
+          enabled: true,
+          feeSchedules: { admission: [] },
+          subscriptionPlans: [
+            {
+              id: 'premium',
+              amount: 5000000n,
+              intervalSeconds: 2_592_000,
+              graceSeconds: 259_200,
+              limits: { rateLimits: [{ period: 60000, rate: 100 }] },
+            },
+            { id: 'basic', amount: 1000000n, intervalSeconds: 2_592_000, graceSeconds: 259_200 },
+          ],
+        } as any
+        rateLimiterHitStub.resolves({ limited: false })
+        subscriptionFindByPubkeyStub = sandbox.stub().resolves(subscription())
+        cacheStub = { getKey: sandbox.stub().resolves(null), setKey: sandbox.stub().resolves(true) }
+        handler = new EventMessageHandler(
+          webSocket,
+          () => null,
+          {} as any,
+          userRepository,
+          () => settings,
+          {} as any,
+          cacheStub as any,
+          () => ({ hit: rateLimiterHitStub }),
+          {} as any,
+          { findByPubkey: subscriptionFindByPubkeyStub } as any,
+        )
+      })
+
+      it('holds a subscriber to the limits of their plan instead of the global ones, keyed the same way', async () => {
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'allowed' })
+
+        expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${PUBKEY}:events:60000`, 1, {
+          period: 60000,
+          rate: 100,
+        })
+      })
+
+      it('holds everyone else to the global limits', async () => {
+        subscriptionFindByPubkeyStub.resolves(undefined)
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${PUBKEY}:events:60000`, 1, {
+          period: 60000,
+          rate: 1,
+        })
+      })
+
+      it('limits a subscriber who tops the plan limit', async () => {
+        rateLimiterHitStub.resolves({ limited: true })
+
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'limited', retryAfterMs: 60000 })
+      })
+
+      it('keeps the global limits for a plan that has none of its own', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription({ planId: 'basic' }))
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+      })
+
+      it('lets a plan with an empty list of limits send without limit', async () => {
+        settings.payments.subscriptionPlans[0].limits.rateLimits = []
+
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'allowed' })
+
+        expect(rateLimiterHitStub).not.to.have.been.called
+      })
+
+      it('replaces the whole global list, including limits for kinds the plan does not mention', async () => {
+        eventLimits.rateLimits = [
+          { period: 60000, rate: 1, kinds: [1] },
+          { period: 3600000, rate: 5 },
+        ]
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub).to.have.been.calledOnce
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+      })
+
+      it('applies the plan limits for the kinds the plan limits name, as the global ones do', async () => {
+        settings.payments.subscriptionPlans[0].limits.rateLimits = [{ period: 60000, rate: 100, kinds: [7] }]
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub).not.to.have.been.called
+      })
+
+      it('falls back to the global limits once the subscription expired', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription({ status: SubscriptionStatus.EXPIRED }))
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+      })
+
+      it('falls back to the global limits when the period and grace have both passed, before the sweep ran', async () => {
+        subscriptionFindByPubkeyStub.resolves(
+          subscription({
+            currentPeriodEnd: new Date(Date.now() - 5 * DAY),
+            graceEndsAt: new Date(Date.now() - DAY),
+          }),
+        )
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+      })
+
+      it('keeps the plan limits through the grace period', async () => {
+        subscriptionFindByPubkeyStub.resolves(
+          subscription({
+            status: SubscriptionStatus.PAST_DUE,
+            currentPeriodEnd: new Date(Date.now() - DAY),
+            graceEndsAt: new Date(Date.now() + 2 * DAY),
+          }),
+        )
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+      })
+
+      it('falls back to the global limits when the plan was removed from the settings', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription({ planId: 'retired' }))
+
+        await (handler as any).isRateLimited(subscriber)
+
+        expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+      })
+
+      it('still lets a whitelisted pubkey send without limit', async () => {
+        ;(eventLimits as any).whitelists = { pubkeys: [PUBKEY] }
+
+        await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'allowed' })
+
+        expect(rateLimiterHitStub).not.to.have.been.called
+      })
+
+      describe('when subscriptions are not in use', () => {
+        it('does not look at subscriptions while payments are off', async () => {
+          settings.payments.enabled = false
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(cacheStub.getKey).not.to.have.been.called
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+        })
+
+        it('does not look at subscriptions when no plan is configured', async () => {
+          settings.payments.subscriptionPlans = []
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(cacheStub.getKey).not.to.have.been.called
+        })
+
+        it('does not look at subscriptions when no plan has limits of its own', async () => {
+          delete settings.payments.subscriptionPlans[0].limits
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(cacheStub.getKey).not.to.have.been.called
+        })
+      })
+
+      describe('caching', () => {
+        it('reads the plan from the database once and caches it, no longer than the usual 300s', async () => {
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).to.have.been.calledOnceWithExactly(PUBKEY)
+          expect(cacheStub.setKey).to.have.been.calledOnceWithExactly(`${PUBKEY}:subscription-plan`, 'plan:premium', 300)
+        })
+
+        it('uses the cached plan without reading the database', async () => {
+          cacheStub.getKey.withArgs(`${PUBKEY}:subscription-plan`).resolves('plan:premium')
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+        })
+
+        it('uses a cached "no plan" without reading the database', async () => {
+          cacheStub.getKey.withArgs(`${PUBKEY}:subscription-plan`).resolves('none')
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).not.to.have.been.called
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+        })
+
+        it('keeps a plan whose id is "none" apart from "no plan"', async () => {
+          settings.payments.subscriptionPlans[0].id = 'none'
+          cacheStub.getKey.withArgs(`${PUBKEY}:subscription-plan`).resolves('plan:none')
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+        })
+
+        it('caches "no plan" for 60s', async () => {
+          subscriptionFindByPubkeyStub.resolves(undefined)
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(cacheStub.setKey).to.have.been.calledOnceWithExactly(`${PUBKEY}:subscription-plan`, 'none', 60)
+        })
+
+        it('caches "no plan" for a full 60s after the subscription expired, not just until its past end', async () => {
+          subscriptionFindByPubkeyStub.resolves(
+            subscription({ status: SubscriptionStatus.EXPIRED, currentPeriodEnd: new Date(Date.now() - 5 * DAY) }),
+          )
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(cacheStub.setKey).to.have.been.calledOnceWithExactly(`${PUBKEY}:subscription-plan`, 'none', 60)
+        })
+
+        it('reads the subscription once for a message that is rate limited and then checked for admission', async () => {
+          sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any).returns('a'.repeat(64))
+          userRepository.findByPubkey = sandbox.stub().resolves({ isAdmitted: true, balance: 0n })
+
+          await (handler as any).isRateLimited(subscriber)
+          await expect((handler as any).isUserAdmitted(subscriber)).to.eventually.be.undefined
+
+          expect(subscriptionFindByPubkeyStub).to.have.been.calledOnce
+        })
+
+        it('reads the subscription again for the next message of the same sender', async () => {
+          sandbox.stub(EventMessageHandler.prototype, 'getRelayPublicKey' as any).returns('a'.repeat(64))
+          userRepository.findByPubkey = sandbox.stub().resolves({ isAdmitted: true, balance: 0n })
+
+          await (handler as any).isRateLimited(subscriber)
+          await (handler as any).isRateLimited({ ...subscriber, id: 'e'.repeat(64) })
+
+          expect(subscriptionFindByPubkeyStub).to.have.been.calledTwice
+        })
+
+        it('caches the plan no longer than access lasts', async () => {
+          subscriptionFindByPubkeyStub.resolves(
+            subscription({ currentPeriodEnd: new Date(Date.now() + 20_000), graceEndsAt: new Date(Date.now() + 40_000) }),
+          )
+
+          await (handler as any).isRateLimited(subscriber)
+
+          const [, , ttl] = cacheStub.setKey.firstCall.args
+          expect(ttl).to.be.within(39, 41)
+        })
+
+        it('reads the database when the cache cannot be read', async () => {
+          cacheStub.getKey.rejects(new Error('cache unavailable'))
+
+          await (handler as any).isRateLimited(subscriber)
+
+          expect(subscriptionFindByPubkeyStub).to.have.been.calledOnce
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 100 })
+        })
+
+        it('falls back to the global limits when the subscription cannot be read, and caches nothing', async () => {
+          subscriptionFindByPubkeyStub.rejects(new Error('db unavailable'))
+
+          await expect((handler as any).isRateLimited(subscriber)).to.eventually.deep.equal({ status: 'allowed' })
+
+          expect(rateLimiterHitStub.firstCall.args[2]).to.deep.equal({ period: 60000, rate: 1 })
+          expect(cacheStub.setKey).not.to.have.been.called
+        })
+      })
     })
   })
 
@@ -1417,7 +1720,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         {} as any,
         cacheStub,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -1678,7 +1981,7 @@ describe('EventMessageHandler', () => {
           () => settings,
           {} as any,
           cacheStub,
-          () => ({ hit: async () => false }),
+          () => ({ hit: async () => ({ limited: false }) }),
           {} as any,
           { findByPubkey: subscriptionFindByPubkeyStub } as any,
         )
@@ -1754,6 +2057,22 @@ describe('EventMessageHandler', () => {
 
         const [, , ttl] = cacheStub.setKey.lastCall.args
         expect(ttl).to.be.within(39, 41)
+      })
+
+      it('caches the plan with the admission, so the rate limits need no second read', async () => {
+        subscriptionFindByPubkeyStub.resolves(subscription())
+
+        await (handler as any).isUserAdmitted(event)
+
+        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:subscription-plan`, 'plan:basic', 300)
+      })
+
+      it('caches that a user admitted without a subscription has no plan', async () => {
+        subscriptionFindByPubkeyStub.resolves(undefined)
+
+        await (handler as any).isUserAdmitted(event)
+
+        expect(cacheStub.setKey).to.have.been.calledWith(`${event.pubkey}:subscription-plan`, 'none', 60)
       })
 
       it('caches admission for the usual 300s when access lasts longer', async () => {
@@ -1847,7 +2166,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2003,7 +2322,7 @@ describe('EventMessageHandler', () => {
           }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2054,7 +2373,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2298,7 +2617,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2475,7 +2794,7 @@ describe('EventMessageHandler', () => {
         () => settings,
         nip05VerificationRepository,
         { hasKey: async () => false, setKey: async () => true, getKey: async () => null } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2674,7 +2993,7 @@ describe('EventMessageHandler', () => {
         () => ({ info: { relay_url: 'relay_url' }, nip42: { authRequired: false } }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
 
@@ -2690,7 +3009,7 @@ describe('EventMessageHandler', () => {
         () => ({ info: { relay_url: 'relay_url' }, nip42: { authRequired: true } }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
 
@@ -2708,7 +3027,7 @@ describe('EventMessageHandler', () => {
         () => ({ info: { relay_url: 'relay_url' }, nip42: { authRequired: true } }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
 
@@ -2731,7 +3050,7 @@ describe('EventMessageHandler', () => {
           }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
     })
@@ -2764,7 +3083,7 @@ describe('EventMessageHandler', () => {
         () => ({ info: { relay_url: 'relay_url' } }) as any,
         {} as any,
         { hasKey: async () => false, setKey: async () => true } as any,
-        () => ({ hit: async () => false }),
+        () => ({ hit: async () => ({ limited: false }) }),
         {} as any,
       )
       expect(await (handler as any).isProtectedEventBlocked(event)).to.be.undefined

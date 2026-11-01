@@ -168,6 +168,34 @@ nip77:
   maxSessionsPerConnection: 3
   # Close a session with no NEG-MSG for this long.
   sessionIdleTimeoutMs: 60000
+peering:
+  # Relay peering advertisement, served as the `peering` section of the NIP-11
+  # document. This is a discovery surface: it states the feeds and terms other
+  # relays can read. Enabling it does not accept peers by itself.
+  enabled: false
+  # How to ask for a peering relationship: a contact URI (mailto:, https:) and/or
+  # the WebSocket endpoint peers should connect to. At least one is required when
+  # peering is enabled.
+  contact: ""
+  endpoint: ""
+  # NIP-13 proof-of-work bits a peering request must carry. 0 means none.
+  # Advertised as peering.min_pow_difficulty.
+  minRequestPowDifficulty: 0
+  # Feeds this relay is willing to serve. Each scope lists event kinds and,
+  # optionally, an absolute time range (unix seconds) or a rolling window.
+  # At least one scope is required when peering is enabled.
+  # Example:
+  #   scopes:
+  #     - kinds: [1, 3, 6, 7, 30023]
+  #     - kinds: [[0, 9999]]
+  #       since: 1700000000
+  #     - kinds: [1, 6]
+  #       windowSeconds: 3600
+  scopes: []
+  # Terms for peering, reusing the NIP-11 fee-object shape. `period` is in
+  # seconds. An empty list means settlement-free peering.
+  # Example: [{ amount: 1000, unit: msats, period: 2592000 }]
+  terms: []
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
@@ -188,10 +216,19 @@ eventStore:
 dvm:
   workers: []
 limits:
+  # Every `period` below is a count of milliseconds, and `rate` is how many hits
+  # one window allows. `period: 60`, written as if it meant 60 seconds, is read
+  # as a 60 ms window - which makes the limit a thousand times LOOSER, not
+  # stricter: twelve hits per minute becomes twelve hits per 60 ms. Nothing
+  # rejects it, because 60 is a valid count of milliseconds. The unit cannot be
+  # inferred from the number, so it is stated here and on RateLimit in
+  # src/@types/settings.ts.
+  #
   # strategy selection configuration for rate limiting:
   rateLimiter:
     strategy: ewma
   invoice:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - period: 60000
         rate: 12
@@ -204,11 +241,13 @@ limits:
   invite:
     # Per-pubkey limit on kind 28935 invite requests. Each mint writes a row to
     # invite_codes, so this is the main defence against a code flood.
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 5 invite requests per hour per pubkey
         period: 3600000
         rate: 5
   admissionCheck:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 30 admission checks/min or 1 check every 2 seconds
         period: 60000
@@ -218,10 +257,12 @@ limits:
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
   admin:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 30 admin requests/min
         period: 60000
         rate: 30
+    # period is milliseconds (60000 = one minute)
     loginRateLimits:
       - description: 10 login attempts per 15 minutes
         period: 900000
@@ -231,6 +272,7 @@ limits:
       - "10.10.10.1"
       - "::ffff:10.10.10.1"
   connection:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - period: 1000
         rate: 12
@@ -295,6 +337,7 @@ limits:
             - 39
           - - 50
             - 9007199254740991
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 6 events/min for event kinds 0, 3, 40 and 41
         kinds:
@@ -358,6 +401,7 @@ limits:
       maxLimit: 5000
       minPrefixLength: 4
   message:
+    # period is milliseconds (60000 = one minute)
     rateLimits:
       - description: 240 raw messages/min
         period: 60000

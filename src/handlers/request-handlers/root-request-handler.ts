@@ -2,11 +2,12 @@ import { NextFunction, Request, Response } from 'express'
 import { path, pathEq } from 'ramda'
 import { createSettings } from '../../factories/settings-factory'
 import { escapeHtml } from '../../utils/html'
-import { FeeSchedule } from '../../@types/settings'
+import { FeeSchedule, PeeringSettings } from '../../@types/settings'
 import { DEFAULT_FILTER_LIMIT } from '../../constants/base'
 import { fromBech32 } from '../../utils/transform'
 import { getTemplate } from '../../utils/template-cache'
 import { getPublicPathPrefix, joinPathPrefix } from '../../utils/http'
+import { areSubscriptionsEnabled, getSubscriptionPlans } from '../../utils/subscription'
 import { isNip77Active } from '../../utils/nip77'
 import { resolveRelaySelfPubkey } from '../../utils/nip43'
 import packageJson from '../../../package.json'
@@ -41,6 +42,35 @@ export const hasExplicitNostrJsonAcceptHeader = (request: Request): boolean => {
   })
 }
 
+export const buildPeeringDocument = (peering: PeeringSettings | undefined) => {
+  // Disabled peering advertises only the fact that no feeds are offered, so a
+  // half-configured section never reads as an offer.
+  if (peering?.enabled !== true) {
+    return { enabled: false }
+  }
+
+  const contact = peering.contact?.trim()
+  const endpoint = peering.endpoint?.trim()
+
+  return {
+    enabled: true,
+    ...(contact ? { contact } : {}),
+    ...(endpoint ? { endpoint } : {}),
+    // NIP-11 convention: snake_case in the document, and 0/absent both mean
+    // no proof-of-work requirement.
+    min_pow_difficulty: peering.minRequestPowDifficulty ?? 0,
+    scopes: (peering.scopes ?? []).map((scope) => ({
+      kinds: scope.kinds,
+      ...(scope.since !== undefined ? { since: scope.since } : {}),
+      ...(scope.until !== undefined ? { until: scope.until } : {}),
+      ...(scope.windowSeconds !== undefined ? { window_seconds: scope.windowSeconds } : {}),
+    })),
+    // An empty list is the settlement-free case: terms are expressed as fee
+    // entries, so "no fee entry" is meaningful rather than a zero amount.
+    terms: (peering.terms ?? []).map(({ amount, unit, period }) => ({ amount, unit, period })),
+  }
+}
+
 export const rootRequestHandler = (request: Request, response: Response, next: NextFunction) => {
   const settings = createSettings()
   const pathPrefix = getPublicPathPrefix(request, settings)
@@ -60,8 +90,11 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
     const hasAdmissionRestriction =
       settings.payments?.enabled === true &&
       Boolean(settings.payments?.feeSchedules?.admission?.some((feeSchedule) => feeSchedule.enabled))
+    const subscriptionsEnabled = areSubscriptionsEnabled(settings)
     const hasWriteRestriction =
       hasAdmissionRestriction ||
+      // With plans a subscription is what lets a pubkey write, whether or not an admission fee is set.
+      subscriptionsEnabled ||
       settings.nip43?.enabled === true ||
       // Publish-only NIP-42 auth is a write condition, not connection-wide auth_required.
       settings.nip42?.authRequired === true ||
@@ -142,22 +175,38 @@ export const rootRequestHandler = (request: Request, response: Response, next: N
         search_supported: settings.nip50?.enabled ?? false,
       },
       payments_url: paymentsUrl.toString(),
-      fees: settings.payments
-        ? Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(
-            (prev, feeName) => {
-              const feeSchedules = settings.payments.feeSchedules[feeName] as FeeSchedule[]
+      fees: {
+        ...(settings.payments
+          ? Object.getOwnPropertyNames(settings.payments.feeSchedules).reduce(
+              (prev, feeName) => {
+                const feeSchedules = settings.payments.feeSchedules[feeName] as FeeSchedule[]
 
-              return {
-                ...prev,
-                [feeName]: feeSchedules.reduce(
-                  (fees, fee) => (fee.enabled ? [...fees, { amount: fee.amount, unit: 'msats' }] : fees),
-                  [],
-                ),
-              }
-            },
-            {} as Record<string, { amount: number | bigint; unit: string }[]>,
-          )
-        : {},
+                return {
+                  ...prev,
+                  [feeName]: feeSchedules.reduce(
+                    (fees, fee) => (fee.enabled ? [...fees, { amount: fee.amount, unit: 'msats' }] : fees),
+                    [],
+                  ),
+                }
+              },
+              {} as Record<string, { amount: number | bigint; unit: string }[]>,
+            )
+          : {}),
+        // NIP-11 `fees.subscription`: one entry per plan, `period` in seconds. `id` is what a client sends as
+        // `planId` to `POST /invoices`; clients that do not know it ignore it.
+        ...(subscriptionsEnabled
+          ? {
+              subscription: getSubscriptionPlans(settings).map((plan) => ({
+                id: plan.id,
+                amount: Number(plan.amount),
+                unit: 'msats',
+                period: plan.intervalSeconds,
+                ...(plan.description ? { description: plan.description } : {}),
+              })),
+            }
+          : {}),
+      },
+      peering: buildPeeringDocument(settings.peering),
     }
 
     response

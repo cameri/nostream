@@ -720,8 +720,16 @@ const validateRateLimitPeriods = (
       issues.push({ path: `${pathPrefix}[${index}]`, message: 'rateLimits entry must be an object' })
       return
     }
-    if (!(entry.period > 0)) {
-      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be greater than 0' })
+    // The window is in milliseconds, and 60 is as valid a number as 60000, so
+    // the unit cannot be inferred here: it is stated on RateLimit and on each
+    // block in resources/default-settings.yaml. What this can refuse is a value
+    // that is not a whole count of milliseconds at all.
+    if (typeof entry.period !== 'number' || !Number.isFinite(entry.period)) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be a number of milliseconds' })
+    } else if (!Number.isInteger(entry.period)) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be a whole number of milliseconds' })
+    } else if (entry.period < 1) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be at least 1 millisecond' })
     }
   })
 }
@@ -813,6 +821,203 @@ const validateSubscriptionPlans = (plans: unknown, issues: ValidationIssue[]): v
   })
 }
 
+const PEERING_KIND_MAX = 65535
+const PEERING_POW_MAX_BITS = 256
+const PEERING_SCOPE_KEYS = new Set(['kinds', 'since', 'until', 'windowSeconds'])
+const PEERING_TERM_KEYS = new Set(['amount', 'unit', 'period'])
+
+const isValidPeeringKindValue = (value: unknown): boolean =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= PEERING_KIND_MAX
+
+const validatePeeringKinds = (kinds: unknown, path: string, issues: ValidationIssue[]): void => {
+  if (!Array.isArray(kinds) || kinds.length === 0) {
+    issues.push({
+      path,
+      message: `must be a non-empty list of event kinds or [min, max] ranges`,
+    })
+    return
+  }
+
+  kinds.forEach((kind, index) => {
+    if (Array.isArray(kind)) {
+      if (kind.length !== 2 || !isValidPeeringKindValue(kind[0]) || !isValidPeeringKindValue(kind[1])) {
+        issues.push({
+          path: `${path}[${index}]`,
+          message: `range must contain two integers between 0 and ${PEERING_KIND_MAX}`,
+        })
+        return
+      }
+
+      if ((kind[0] as number) > (kind[1] as number)) {
+        issues.push({ path: `${path}[${index}]`, message: 'range start must be less than or equal to range end' })
+      }
+      return
+    }
+
+    if (!isValidPeeringKindValue(kind)) {
+      issues.push({ path: `${path}[${index}]`, message: `must be an integer between 0 and ${PEERING_KIND_MAX}` })
+    }
+  })
+}
+
+// Scopes and terms default to empty lists, so the default settings schema has no
+// entry shape to check them against. Validate each entry here instead.
+const validatePeeringScopes = (scopes: unknown, issues: ValidationIssue[]): void => {
+  if (!Array.isArray(scopes)) {
+    return
+  }
+
+  scopes.forEach((scope, index) => {
+    const prefix = `peering.scopes[${index}]`
+
+    if (!isPlainObject(scope)) {
+      issues.push({ path: prefix, message: 'scope must be an object' })
+      return
+    }
+
+    for (const key of Object.keys(scope)) {
+      if (!PEERING_SCOPE_KEYS.has(key)) {
+        issues.push({ path: `${prefix}.${key}`, message: 'Unknown setting key' })
+      }
+    }
+
+    validatePeeringKinds(scope.kinds, `${prefix}.kinds`, issues)
+
+    const { since, until, windowSeconds } = scope
+
+    if (since !== undefined && !(typeof since === 'number' && Number.isSafeInteger(since) && since >= 0)) {
+      issues.push({ path: `${prefix}.since`, message: 'since must be a non-negative integer (unix seconds)' })
+    }
+
+    if (until !== undefined && !(typeof until === 'number' && Number.isSafeInteger(until) && until >= 0)) {
+      issues.push({ path: `${prefix}.until`, message: 'until must be a non-negative integer (unix seconds)' })
+    }
+
+    if (
+      windowSeconds !== undefined &&
+      !(typeof windowSeconds === 'number' && Number.isSafeInteger(windowSeconds) && windowSeconds > 0)
+    ) {
+      issues.push({ path: `${prefix}.windowSeconds`, message: 'windowSeconds must be a positive integer (seconds)' })
+    } else if (windowSeconds !== undefined && (since !== undefined || until !== undefined)) {
+      issues.push({ path: prefix, message: 'windowSeconds cannot be combined with since or until' })
+    }
+
+    if (
+      typeof since === 'number' &&
+      typeof until === 'number' &&
+      Number.isSafeInteger(since) &&
+      Number.isSafeInteger(until) &&
+      since > until
+    ) {
+      issues.push({ path: prefix, message: 'since must be less than or equal to until' })
+    }
+  })
+}
+
+const validatePeeringTerms = (terms: unknown, issues: ValidationIssue[]): void => {
+  if (!Array.isArray(terms)) {
+    return
+  }
+
+  terms.forEach((term, index) => {
+    const prefix = `peering.terms[${index}]`
+
+    if (!isPlainObject(term)) {
+      issues.push({ path: prefix, message: 'term must be an object' })
+      return
+    }
+
+    for (const key of Object.keys(term)) {
+      if (!PEERING_TERM_KEYS.has(key)) {
+        issues.push({ path: `${prefix}.${key}`, message: 'Unknown setting key' })
+      }
+    }
+
+    if (!(typeof term.amount === 'number' && Number.isSafeInteger(term.amount) && term.amount >= 0)) {
+      issues.push({ path: `${prefix}.amount`, message: 'amount must be a non-negative integer' })
+    }
+
+    if (typeof term.unit !== 'string' || !term.unit.trim()) {
+      issues.push({ path: `${prefix}.unit`, message: 'unit must be a non-empty string' })
+    }
+
+    if (!(typeof term.period === 'number' && Number.isSafeInteger(term.period) && term.period > 0)) {
+      issues.push({ path: `${prefix}.period`, message: 'period must be a positive integer (seconds)' })
+    }
+  })
+}
+
+const validatePeering = (settings: Settings, issues: ValidationIssue[]): void => {
+  const peering = settings.peering
+
+  if (peering === undefined || peering === null) {
+    return
+  }
+
+  // A non-object value is already reported against the default settings schema.
+  if (!isPlainObject(peering)) {
+    return
+  }
+
+  const enabled = peering.enabled === true
+
+  if (peering.minRequestPowDifficulty !== undefined) {
+    const bits = peering.minRequestPowDifficulty
+    if (
+      typeof bits !== 'number' ||
+      !Number.isInteger(bits) ||
+      bits < 0 ||
+      bits > PEERING_POW_MAX_BITS
+    ) {
+      issues.push({
+        path: 'peering.minRequestPowDifficulty',
+        message: `must be an integer between 0 and ${PEERING_POW_MAX_BITS}`,
+      })
+    }
+  }
+
+  const endpoint = typeof peering.endpoint === 'string' ? peering.endpoint.trim() : ''
+  if (endpoint) {
+    try {
+      const parsed = new URL(endpoint)
+      if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.host) {
+        issues.push({ path: 'peering.endpoint', message: 'must be a ws:// or wss:// URL' })
+      }
+    } catch {
+      issues.push({ path: 'peering.endpoint', message: 'must be a valid ws:// or wss:// URL' })
+    }
+  }
+
+  // NIP-11 calls `contact` a URI. Reject free text so a relay does not publish
+  // an address other relays cannot use to reach the operator.
+  const contact = typeof peering.contact === 'string' ? peering.contact.trim() : ''
+  if (contact) {
+    try {
+      new URL(contact)
+    } catch {
+      issues.push({
+        path: 'peering.contact',
+        message: 'must be a valid URI (for example mailto: or https:)',
+      })
+    }
+  }
+
+  validatePeeringScopes(peering.scopes, issues)
+  validatePeeringTerms(peering.terms, issues)
+
+  if (!enabled) {
+    return
+  }
+
+  if (!Array.isArray(peering.scopes) || peering.scopes.length === 0) {
+    issues.push({ path: 'peering.scopes', message: 'at least one scope is required when peering is enabled' })
+  }
+
+  if (!contact && !endpoint) {
+    issues.push({ path: 'peering.contact', message: 'contact or endpoint is required when peering is enabled' })
+  }
+}
+
 export const validateSettings = (settings: Settings): ValidationIssue[] => {
   const issues: ValidationIssue[] = []
 
@@ -889,6 +1094,7 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
   }
 
   validateSubscriptionPlans(settings.payments?.subscriptionPlans, issues)
+  validatePeering(settings, issues)
 
   const pow = settings.limits?.event?.pow
   if (pow?.enabled) {

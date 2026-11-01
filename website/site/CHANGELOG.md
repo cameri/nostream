@@ -1,5 +1,61 @@
 # nostream-website
 
+## 1.3.4
+
+### Patch Changes
+
+- [#1000](https://github.com/cameri/nostream/pull/1000) [`dff00ba`](https://github.com/cameri/nostream/commit/dff00baca20dba191858abc1de50b69a743063e7) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Add canonical first-party production relay setup guide at `/docs/setup` and replace outdated third-party guides in `README.md`.
+
+## 1.3.3
+
+### Patch Changes
+
+- [#965](https://github.com/cameri/nostream/pull/965) [`ee65257`](https://github.com/cameri/nostream/commit/ee652577236a2a2da6499f3a58f98e0ed3e581c4) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(ci): publish legal image tags and keep `latest` off prereleases
+
+  A changesets relay release is tagged `nostream@3.7.0`, and `@` is not legal in a
+  Docker tag, so the `type=ref,event=tag` rule handed buildx a tag it refused: the
+  first live run of the Release workflow failed with `invalid tag ...: invalid
+reference format` and published no image for the release ([#964](https://github.com/cameri/nostream/issues/964)).
+
+  The tags are now computed by a shell step, so every tag is a value this
+  repository chose and can check: the bare version, `vX.Y.Z` as well beside it for
+  a legacy tag, and `latest` only when the release is not a prerelease. Each tag is
+  validated against Docker's grammar before the build, so an illegal one fails by
+  name at that step instead of at buildx.
+
+  `docs/CI-MIGRATION.md`, `docs/DEPLOYMENT.md` and `docs/DEPLOY-RUNBOOK.md` no
+  longer promise `nostream@X.Y.Z` as a pinnable image tag, and the runbook now
+  names the receiver change that subscribing to `release` events depends on.
+
+- [#969](https://github.com/cameri/nostream/pull/969) [`8ea15fc`](https://github.com/cameri/nostream/commit/8ea15fce0f65916d6c9c1956eb2a3a77eb121a2b) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(website): add the relay peering launch film and home-page section
+
+- [#967](https://github.com/cameri/nostream/pull/967) [`9c736c8`](https://github.com/cameri/nostream/commit/9c736c83d7ea116cd9492c619c7a2f7a156c20ba) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - ci(release): allow the image build to be dispatched for an existing tag
+
+  A published release is immutable, so when the image build fails while publishing
+  it, the release cannot be re-published to retry: GitHub refuses the round trip
+  with `immutable cannot be changed when release is immutable`. That left [#964](https://github.com/cameri/nostream/issues/964)'s
+  release with no image and no way to build one.
+
+  `release.yml` now accepts `workflow_dispatch` with a `tag` input, and refuses a
+  tag that is not a relay release, since the event carries no tag of its own. With
+  no release flags present the prerelease is read from the version, so a dispatch
+  of `nostream@3.8.0-rc.1` still leaves `latest` where it is.
+
+## 1.3.2
+
+### Patch Changes
+
+- [#894](https://github.com/cameri/nostream/pull/894) [`02b70cf`](https://github.com/cameri/nostream/commit/02b70cf162365ac1c22e9c61f8cfecde2dd54f8a) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Refresh the operator console marketing film with an updated notifications screenshot and re-ship `admin.mp4` / `admin-poster.webp` for the home page.
+
+- [#944](https://github.com/cameri/nostream/pull/944) [`82124b0`](https://github.com/cameri/nostream/commit/82124b02180b3c722e217ed39eb71c324ddec1a9) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(ci): stop building and pushing container images outside a release
+
+  Remove the container publish job from checks.yml so pushes to main no longer publish
+  images to GHCR. Container image builds and pushes are now restricted exclusively to
+  release.yml on published releases. Update deployment documentation and reference compose
+  stacks to target the released image tag (:latest) instead of :main.
+
+- [#916](https://github.com/cameri/nostream/pull/916) [`c40e570`](https://github.com/cameri/nostream/commit/c40e5704f6f63a86515de6bb8d4e243eb68fd830) Thanks [@Ferryx349](https://github.com/Ferryx349)! - Add Abhay Pandey Nostr profile link on the community page.
+
 ## 1.3.1
 
 ### Patch Changes

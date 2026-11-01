@@ -10,7 +10,7 @@ networks:
         - subnet: 172.28.0.0/24
 
 x-nostream-relay: &nostream-relay
-  image: ghcr.io/cameri/nostream:main
+  image: ghcr.io/cameri/nostream:latest
   pull_policy: never
   env_file: .env
   environment:
@@ -125,7 +125,7 @@ services:
       retries: 10
 
   nostream-migrate:
-    image: ghcr.io/cameri/nostream:main
+    image: ghcr.io/cameri/nostream:latest
     pull_policy: never
     container_name: nostream-migrate
     networks:

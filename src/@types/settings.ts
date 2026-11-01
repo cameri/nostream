@@ -24,6 +24,18 @@ export interface Network {
 
 export interface RateLimit {
   description?: string
+  /**
+   * Length of the window in milliseconds.
+   *
+   * Every shipped limit counts this way (`1000`, `60000`, `900000`, `3600000`),
+   * and `rate` is how many hits one window allows. `period: 60`, written as if
+   * it meant 60 seconds, is therefore read as a 60 ms window and makes the
+   * limit a thousand times LOOSER: twelve hits per minute becomes twelve hits
+   * per 60 ms. The relay honours it without complaint, and nothing can tell the
+   * two apart from the number alone, which is why the unit is documented where
+   * the value is set. The validator rejects anything that is not a whole count
+   * of milliseconds, at least one.
+   */
   period: number
   rate: number
 }
@@ -507,6 +519,69 @@ export interface Nip56Settings {
   hideActionableReports: boolean
 }
 
+export interface PeeringScope {
+  /**
+   * Event kinds this feed covers, as kinds or `[min, max]` ranges.
+   */
+  kinds: (EventKinds | EventKindsRange)[]
+  /**
+   * Inclusive lower bound of the feed's time range as a unix timestamp in
+   * seconds. Omit for no lower bound.
+   */
+  since?: number
+  /**
+   * Inclusive upper bound of the feed's time range as a unix timestamp in
+   * seconds. Omit for a feed that stays current.
+   */
+  until?: number
+  /**
+   * Rolling window in seconds: the feed covers events from the last
+   * `windowSeconds` seconds. Mutually exclusive with `since`/`until`.
+   */
+  windowSeconds?: number
+}
+
+export interface PeeringTerm {
+  /** Amount charged for one peering period, denominated in `unit`. */
+  amount: number
+  /** Unit of `amount`, for example `msats`. */
+  unit: string
+  /** Length of the peering period in seconds. */
+  period: number
+}
+
+export interface PeeringSettings {
+  /**
+   * Whether this relay offers peering feeds. Advertised as `peering.enabled`
+   * in the NIP-11 document. Advertising terms does not accept peers.
+   */
+  enabled: boolean
+  /**
+   * Contact URI (for example `mailto:` or `https:`) for peering requests.
+   * At least one of `contact` or `endpoint` is required when enabled.
+   */
+  contact?: string
+  /**
+   * WebSocket endpoint peers should connect to. At least one of `contact` or
+   * `endpoint` is required when enabled.
+   */
+  endpoint?: string
+  /**
+   * NIP-13 proof-of-work bits required on peering requests. Absent or 0 means
+   * none. Advertised as `peering.min_pow_difficulty`.
+   */
+  minRequestPowDifficulty?: number
+  /**
+   * Feeds this relay offers. At least one scope is required when enabled.
+   */
+  scopes?: PeeringScope[]
+  /**
+   * Terms for peering in the NIP-11 fee-object shape (`amount`, `unit`,
+   * `period`). An empty list means settlement-free peering.
+   */
+  terms?: PeeringTerm[]
+}
+
 export interface Settings {
   info: Info
   admin?: AdminSettings
@@ -526,5 +601,6 @@ export interface Settings {
   nip56?: Nip56Settings
   nip66?: Nip66Settings
   nip77?: Nip77Settings
+  peering?: PeeringSettings
   wot?: WoTSettings
 }
