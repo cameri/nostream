@@ -75,6 +75,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
   private readonly session: Nip42SessionManager
+  /** Configured peering peer proven by AUTH on this socket, if any. */
+  private peerPubkey: string | undefined
   // NIP-77
   private readonly negentropySessions: NegentropySessions
 
@@ -243,6 +245,19 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     return this.session.authenticate(pubkey, authEventId)
   }
 
+  public getPeerPubkey(): string | undefined {
+    if (!this.peerPubkey) {
+      return undefined
+    }
+
+    // Peer status lives and dies with its AUTH session.
+    return this.session.getAuthenticatedPubkeys().has(this.peerPubkey) ? this.peerPubkey : undefined
+  }
+
+  public setPeerPubkey(pubkey: string): void {
+    this.peerPubkey = this.session.getAuthenticatedPubkeys().has(pubkey) ? pubkey : undefined
+  }
+
   private async onClientMessage(raw: Buffer) {
     this.alive = true
     let abortable = false
@@ -405,6 +420,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.subscriptions.clear()
     this.negentropySessions.closeAll()
     this.session.clear()
+    this.peerPubkey = undefined
 
     const handlers = abortableMessageHandlers.get(this.client)
     if (Array.isArray(handlers) && handlers.length) {

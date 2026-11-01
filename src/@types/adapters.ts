@@ -20,6 +20,14 @@ export type IWebSocketAdapter = EventEmitter & {
   getAuthenticatedPubkeys(): ReadonlySet<string>
   /** Returns false if this AUTH event id was already accepted on this socket. */
   addAuthenticatedPubkey(pubkey: string, authEventId: string): boolean
+  /**
+   * Configured peering peer proven by NIP-42 AUTH on this socket, or undefined.
+   * Clears with the AUTH session, so an expired/closed session cannot keep peer
+   * treatment.
+   */
+  getPeerPubkey(): string | undefined
+  /** Mark `pubkey` as the peer identity for this socket. Ignored if it is not authenticated. */
+  setPeerPubkey(pubkey: string): void
   drainAndClose(reason?: string): void
   /** NIP-77 sessions of this connection. */
   getNegentropySessions(): INegentropySessions

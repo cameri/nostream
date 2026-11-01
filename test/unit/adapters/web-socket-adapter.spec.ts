@@ -991,6 +991,30 @@ describe('WebSocketAdapter', () => {
       expect(adapter.addAuthenticatedPubkey(pubkey, eventId)).to.equal(false)
     })
 
+    it('exposes a peer pubkey only after it authenticates', () => {
+      const pubkey = 'a'.repeat(64)
+
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+    })
+
+    it('drops peer status when the AUTH session expires', () => {
+      const clock = sandbox.useFakeTimers({ now: 1_700_000_000_000 })
+      settingsFactory.returns({ nip42: { sessionExpirySeconds: 60 } })
+      const pubkey = 'a'.repeat(64)
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+
+      clock.tick(60_000)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
     it('expires authenticated pubkeys after sessionExpirySeconds', () => {
       const clock = sandbox.useFakeTimers({ now: 1_700_000_000_000 })
       settingsFactory.returns({ nip42: { sessionExpirySeconds: 60 } })

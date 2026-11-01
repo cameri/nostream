@@ -550,6 +550,21 @@ export interface PeeringTerm {
   period: number
 }
 
+export interface PeeringPeer {
+  /**
+   * The peer relay's own pubkey (hex or `npub1...`). Peers are identified by
+   * this key, never by URL alone.
+   */
+  pubkey: Pubkey
+  /**
+   * WebSocket URL used when connecting to this peer. Inbound AUTH is matched
+   * by `pubkey`; the URL is where this relay reaches it outbound.
+   */
+  relayUrl: string
+  /** Whether this configured peer is active. Defaults to true. */
+  enabled?: boolean
+}
+
 export interface PeeringSettings {
   /**
    * Whether this relay offers peering feeds. Advertised as `peering.enabled`
@@ -580,6 +595,12 @@ export interface PeeringSettings {
    * `period`). An empty list means settlement-free peering.
    */
   terms?: PeeringTerm[]
+  /**
+   * Configured peering peers, trusted by pubkey. A connection that proves one
+   * of these pubkeys with NIP-42 AUTH is recognized as a peer; any other
+   * pubkey receives no peer recognition, even with a valid signature.
+   */
+  peers?: PeeringPeer[]
 }
 
 export interface Settings {

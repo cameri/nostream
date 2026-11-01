@@ -19,6 +19,7 @@ import {
   withSettingsWriteLock,
 } from '../../../src/utils/settings-config'
 import { getSettingsWriteLockPath } from '../../../src/utils/settings-paths'
+import { toBech32 } from '../../../src/utils/transform'
 import {
   getGuidedSettingCategory,
   getGuidedSettingField,
@@ -247,6 +248,59 @@ describe('settings-config', () => {
       const issues = peeringIssues({ ...settlementFreePeering, minRequestPowDifficulty: 257 })
 
       expect(issues.some((issue) => issue.path === 'peering.minRequestPowDifficulty')).to.equal(true)
+    })
+
+    it('accepts configured peers by hex or npub', () => {
+      expect(
+        peeringIssues({
+          ...settlementFreePeering,
+          peers: [
+            { pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' },
+            { pubkey: toBech32('npub')('b'.repeat(64)), relayUrl: 'wss://peer-two.example.com', enabled: false },
+          ],
+        }),
+      ).to.deep.equal([])
+    })
+
+    it('rejects a peer pubkey that is not a 32-byte key', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        peers: [{ pubkey: 'not-a-pubkey', relayUrl: 'wss://peer.example.com' }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].pubkey')).to.equal(true)
+    })
+
+    it('rejects a peer URL that is not ws or wss', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'https://peer.example.com' }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].relayUrl')).to.equal(true)
+    })
+
+    it('rejects the same peer pubkey in hex and npub form', () => {
+      const pubkey = 'a'.repeat(64)
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        peers: [
+          { pubkey, relayUrl: 'wss://peer.example.com' },
+          { pubkey: toBech32('npub')(pubkey), relayUrl: 'wss://peer.example.com' },
+        ],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.peers[1].pubkey')).to.equal(true)
+    })
+
+    it('rejects unknown peer keys and a non-boolean enabled flag', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com', note: 'x', enabled: 'yes' }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].note')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].enabled')).to.equal(true)
     })
   })
 

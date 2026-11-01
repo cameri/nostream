@@ -8,6 +8,7 @@ import { createLogger } from '../factories/logger-factory'
 import { EVENT_STORE_BACKENDS, isEventStoreBackend } from './event-store'
 import { GRANDFATHERED_PLAN_ID } from '../@types/user-subscription'
 import { Settings } from '../@types/settings'
+import { parsePeeringPeerPubkey } from './peering-identity'
 import {
   getConfigBaseDir,
   getDefaultSettingsFilePath,
@@ -843,6 +844,7 @@ const PEERING_KIND_MAX = 65535
 const PEERING_POW_MAX_BITS = 256
 const PEERING_SCOPE_KEYS = new Set(['kinds', 'since', 'until', 'windowSeconds'])
 const PEERING_TERM_KEYS = new Set(['amount', 'unit', 'period'])
+const PEERING_PEER_KEYS = new Set(['pubkey', 'relayUrl', 'enabled'])
 
 const isValidPeeringKindValue = (value: unknown): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= PEERING_KIND_MAX
@@ -965,6 +967,58 @@ const validatePeeringTerms = (terms: unknown, issues: ValidationIssue[]): void =
   })
 }
 
+const validatePeeringPeers = (peers: unknown, issues: ValidationIssue[]): void => {
+  if (!Array.isArray(peers)) {
+    return
+  }
+
+  const seenPubkeys = new Set<string>()
+
+  peers.forEach((peer, index) => {
+    const prefix = `peering.peers[${index}]`
+
+    if (!isPlainObject(peer)) {
+      issues.push({ path: prefix, message: 'peer must be an object' })
+      return
+    }
+
+    for (const key of Object.keys(peer)) {
+      if (!PEERING_PEER_KEYS.has(key)) {
+        issues.push({ path: `${prefix}.${key}`, message: 'Unknown setting key' })
+      }
+    }
+
+    const pubkey = parsePeeringPeerPubkey(peer.pubkey)
+    if (typeof peer.pubkey !== 'string' || !peer.pubkey.trim()) {
+      issues.push({ path: `${prefix}.pubkey`, message: 'pubkey is required' })
+    } else if (!pubkey) {
+      issues.push({ path: `${prefix}.pubkey`, message: 'must be a 32-byte hex pubkey or npub' })
+    } else if (seenPubkeys.has(pubkey)) {
+      issues.push({ path: `${prefix}.pubkey`, message: 'pubkey must be unique' })
+    } else {
+      seenPubkeys.add(pubkey)
+    }
+
+    const relayUrl = typeof peer.relayUrl === 'string' ? peer.relayUrl.trim() : ''
+    if (!relayUrl) {
+      issues.push({ path: `${prefix}.relayUrl`, message: 'relayUrl is required' })
+    } else {
+      try {
+        const parsed = new URL(relayUrl)
+        if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.host) {
+          issues.push({ path: `${prefix}.relayUrl`, message: 'must be a ws:// or wss:// URL' })
+        }
+      } catch {
+        issues.push({ path: `${prefix}.relayUrl`, message: 'must be a valid ws:// or wss:// URL' })
+      }
+    }
+
+    if (peer.enabled !== undefined && typeof peer.enabled !== 'boolean') {
+      issues.push({ path: `${prefix}.enabled`, message: 'must be a boolean' })
+    }
+  })
+}
+
 const validatePeering = (settings: Settings, issues: ValidationIssue[]): void => {
   const peering = settings.peering
 
@@ -1022,6 +1076,7 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
 
   validatePeeringScopes(peering.scopes, issues)
   validatePeeringTerms(peering.terms, issues)
+  validatePeeringPeers(peering.peers, issues)
 
   if (!enabled) {
     return

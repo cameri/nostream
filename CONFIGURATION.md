@@ -287,6 +287,9 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | peering.enabled                             | Advertise a `peering` section in the NIP-11 document. This only expresses feeds and terms; it does not accept peers. Defaults to false. |
 | peering.endpoint                            | WebSocket endpoint (`ws://` or `wss://`) peers should connect to, advertised to other relays. At least one of `contact` or `endpoint` is required when peering is enabled. |
 | peering.minRequestPowDifficulty             | NIP-13 proof-of-work bits required on peering requests, advertised as `peering.min_pow_difficulty`. `0` (default) means none. Applies to peering requests only, never to operational traffic. |
+| peering.peers[].enabled                     | Whether this configured peer is active. Defaults to true. |
+| peering.peers[].pubkey                      | Peer relay's own pubkey (hex or `npub1...`). Peers are identified by this key: a valid NIP-42 AUTH from any other key gets no peer recognition. |
+| peering.peers[].relayUrl                    | WebSocket URL (`ws://` or `wss://`) used when connecting outbound to this peer. Its host must match the peer's advertised `info.relay_url`, because NIP-42 verifies the `relay` tag host. Inbound recognition uses the pubkey, never the URL. |
 | peering.scopes[].kinds                      | Event kinds this feed covers, as kinds or `[min, max]` ranges. Required for every scope. At least one scope is required when peering is enabled. |
 | peering.scopes[].since                      | Inclusive lower bound of the feed's time range as a unix timestamp in seconds. Omit for no lower bound. Mutually exclusive with `windowSeconds`. |
 | peering.scopes[].until                      | Inclusive upper bound of the feed's time range as a unix timestamp in seconds. Omit for a feed that stays current. Mutually exclusive with `windowSeconds`. |
@@ -331,3 +334,10 @@ signal, not a zero amount. `min_pow_difficulty` is the NIP-13 work a peering
 request must carry; `0` means there is no requirement. When peering is
 disabled, the section is published as `{ "enabled": false }` and no scopes,
 terms, or contact details are exposed.
+
+## Peering identity
+
+`peering.peers` is the inbound trust list. A connection is recognized as a peer
+only when a NIP-42 AUTH event proves one of those pubkeys; matching a URL or
+self-declaring a key is not enough. The relay's own identity, key storage, and
+the AUTH exchange are documented in [docs/PEERING.md](docs/PEERING.md).
