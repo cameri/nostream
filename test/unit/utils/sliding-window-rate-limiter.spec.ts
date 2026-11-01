@@ -53,11 +53,12 @@ describe('SlidingWindowRateLimiter', () => {
   })
 
   it('returns true if rate limited', async () => {
-    evalStub.resolves(1)
+    evalStub.resolves('1')
 
     const actualResult = await rateLimiter.hit('key', 1, { period: 60000, rate: 10 })
 
-    expect(actualResult).to.be.true
+    expect(actualResult.limited).to.be.true
+    expect(actualResult.retryAfterMs).to.equal(60000)
     expect(evalStub).to.have.been.calledOnce
     const args = evalStub.firstCall.args
     expect(args[1]).to.deep.equal(['key'])
@@ -67,11 +68,11 @@ describe('SlidingWindowRateLimiter', () => {
   })
 
   it('returns false if not rate limited', async () => {
-    evalStub.resolves(0)
+    evalStub.resolves('0')
 
     const actualResult = await rateLimiter.hit('key', 1, { period: 60000, rate: 10 })
 
-    expect(actualResult).to.be.false
+    expect(actualResult.limited).to.be.false
   })
 
   it('robustly handles string return types from Redis', async () => {
@@ -79,6 +80,6 @@ describe('SlidingWindowRateLimiter', () => {
 
     const actualResult = await rateLimiter.hit('key', 1, { period: 60000, rate: 10 })
 
-    expect(actualResult).to.be.true
+    expect(actualResult.limited).to.be.true
   })
 })

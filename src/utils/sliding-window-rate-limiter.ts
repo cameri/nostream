@@ -1,4 +1,4 @@
-import { IRateLimiter, IRateLimiterOptions } from '../@types/utils'
+import { IRateLimiter, IRateLimiterOptions, IRateLimiterResult } from '../@types/utils'
 import { createLogger } from '../factories/logger-factory'
 import { ICacheAdapter } from '../@types/adapters'
 
@@ -50,7 +50,7 @@ export class SlidingWindowRateLimiter implements IRateLimiter {
     private readonly cache: ICacheAdapter,
   ) { }
 
-  public async hit(key: string, step: number, options: IRateLimiterOptions): Promise<boolean> {
+  public async hit(key: string, step: number, options: IRateLimiterOptions): Promise<IRateLimiterResult> {
     const timestamp = Date.now()
     const { period, rate } = options
 
@@ -65,6 +65,13 @@ export class SlidingWindowRateLimiter implements IRateLimiter {
 
     logger('hit on %s bucket: is rate limited? %s', key, isRateLimited)
 
-    return isRateLimited
+    if (!isRateLimited) {
+      return { limited: false }
+    }
+
+    // The window is the honest upper bound: the oldest hit ages out at most one
+    // period from now, and reading the sorted set's first score to narrow that
+    // down is a second round trip on the hot path.
+    return { limited: true, retryAfterMs: period }
   }
 }

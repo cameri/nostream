@@ -50,7 +50,7 @@ The project master repository is available on [GitHub](https://github.com/cameri
   - [Importing events from JSON Lines or JSON Arrays](#importing-events-from-json-lines-or-json-arrays)
   - [NIP-43 invite codes](#nip-43-invite-codes)
 - [Quick start (Standalone)](#quick-start-standalone)
-- [Full guide](#full-guide)
+- [Production Setup Guide](#production-setup-guide)
   - [Accepting payments](#accepting-payments)
 - [Running as a Service](#running-as-a-service)
 - [Troubleshooting](#troubleshooting)
@@ -349,15 +349,16 @@ To clean up the build, coverage and test reports run:
 ```
 pnpm clean
 ```
-## Full Guide
+## Production Setup Guide
 
-- [Set up a Paid Nostr relay with Nostream and ZEBEDEE](https://docs.zbdpay.com/payments/nostr/nostr-relay) by [André Neves](https://primal.net/andre) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
-- [Set up a Nostr relay in under 5 minutes](https://andreneves.xyz/p/set-up-a-nostr-relay-server-in-under) by [André Neves](https://twitter.com/andreneves) (CTO & Co-Founder at [ZEBEDEE](https://zebedee.io/))
+For a step-by-step walkthrough covering host preparation, Docker Compose deployment, reverse proxy configuration with TLS, and verification, see the official [Production Setup Guide](https://nostream.dev/docs/setup).
+
+Prefer to explore all reference guides? See the [documentation index](https://nostream.dev/docs).
 
 ### Accepting Payments
 
 1. Before you begin
-   - Complete one of the Quick Start guides in this document
+   - Complete the [Production Setup Guide](https://nostream.dev/docs/setup) or one of the Quick Start guides in this document
    - Create a `.env` file
    - On `.nostr/settings.yaml` file make the following changes:
      - Set `payments.enabled` to `true`

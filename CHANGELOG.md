@@ -1,5 +1,103 @@
 # nostream
 
+## 3.10.1
+
+### Patch Changes
+
+- [#1011](https://github.com/cameri/nostream/pull/1011) [`fd7679b`](https://github.com/cameri/nostream/commit/fd7679bed7ba2b10f5148f50ece415e869814475) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(rate-limit): send the backoff the strategy actually means, name an outage as an error, and bucket messages by type
+
+  Three defects on one wire path, from the spike in [#1004](https://github.com/cameri/nostream/issues/1004).
+
+  **The EWMA backoff was a half-life, sent as a delay.** `RateLimit.period` is the decay half-life under `ewma`, so the time until a limit lifts is `period · log2(R_new / rate)`, not `period`. With `rate: 6, period: 60000`, a client four times over the limit was told to wait 60 s and needed 120 s. The Lua script now returns its score instead of a yes/no, and the limiter returns `period · log2(score / rate)`. It was only accidentally safe before: the hash carried a TTL of exactly `period`, so a quiet client's state expired anyway — an unstated coupling that would break the moment anyone lengthened the TTL to keep state warm.
+
+  **A limiter outage was announced as `rate-limited`.** A failing backend made every connected client back off for a fault on this side. It now answers `error: rate limiter unavailable` and still rejects the event; fail-closed behaviour is unchanged.
+
+  **The message bucket ignored the message type.** One bucket per client meant a `REQ` could be refused because its `EVENT`s had filled it — the wrong message throttled, and the wrong one told to back off. The bucket key now carries the type, read from a bounded prefix of the frame because the limiter runs before validation.
+
+  `IRateLimiter.hit` returns `IRateLimiterResult` (`limited`, plus `retryAfterMs` when the strategy can estimate one) so each strategy answers in its own terms; a caller with no estimate keeps sending the period.
+
+- [#1012](https://github.com/cameri/nostream/pull/1012) [`d8095de`](https://github.com/cameri/nostream/commit/d8095de9bdf8f5174c62cc2f1372472731e286ae) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(startup): print the banner as text, and let `LOG_FORMAT=json` opt out of it
+
+  `docker compose logs nostream` showed the logo as a single log record with the newlines escaped. The banner and its centred facts now go to stdout as text.
+
+  A pipeline that requires every line to parse sets `LOG_FORMAT=json`: the logo is then replaced by one `relay starting` record carrying the same facts as fields (`version`, `supportedNips`, `payments`, `eventStore`, `clientWorkers`, …). Any other value keeps the banner, which is what a person reading the logs wants.
+
+## 3.10.0
+
+### Minor Changes
+
+- [#922](https://github.com/cameri/nostream/pull/922) [`fcb33de`](https://github.com/cameri/nostream/commit/fcb33de228c9d53fd0a2dcae412996563ca1ed99) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(payments): add per-plan event rate limits and retention
+
+### Patch Changes
+
+- [#1009](https://github.com/cameri/nostream/pull/1009) [`ad8c5c4`](https://github.com/cameri/nostream/commit/ad8c5c4b9d2e6df34704741465d2505d811fe7b7) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - build: pin the node base image in every file that names one
+
+  `Dockerfile` pinned `node:24.22.1-alpine` by digest, but `Dockerfile.railwayapp`, `Dockerfile.test`, `docker-compose.yml` and `test/integration/docker-compose.yml` still said `node:24-alpine`. The relay image, the CI image, the Railway image and both migration containers could each start from a different base, and a floating tag moves under a release — so the same commit built twice could run different node code without a change saying so.
+
+  All five now carry the same tag and digest, and a unit test holds them there: it fails if any reference loses its digest, and it fails if two different references appear.
+
+- [#1010](https://github.com/cameri/nostream/pull/1010) [`fa54cb0`](https://github.com/cameri/nostream/commit/fa54cb074beda6af556c93c25a7f77f569dc82dd) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(settings): state that rate-limit periods are milliseconds and reject a period that is not one
+
+  Every shipped limit counts in milliseconds — `1000`, `60000`, `900000`, `3600000` — but nothing said so. `RateLimit.period` is a bare `number`, so an operator writing `period: 60` for a minute got a 60 ms window — and because `rate` is hits per window, that is a limit a thousand times **looser** than intended, honoured without complaint, and caught by nothing.
+
+  The unit is now stated on `RateLimit` and on every `rateLimits` block in `resources/default-settings.yaml`, and `validateRateLimitPeriods` rejects what cannot be a count of milliseconds: a fraction, a string, a non-number, or anything below one millisecond. A whole number is not enough to tell 60 from 60000, which is why the unit is documented where it is set.
+
+## 3.9.0
+
+### Minor Changes
+
+- [#999](https://github.com/cameri/nostream/pull/999) [`469f1b1`](https://github.com/cameri/nostream/commit/469f1b17851c1e8be1836c3e49b0d248ca5df306) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): advertise peering terms and scopes in NIP-11
+
+  The relay information document now carries a `peering` section built from the new
+  `peering` settings block. It advertises whether peering is offered, the feeds
+  available as `kinds` scopes with an absolute `since`/`until` range or a rolling
+  `windowSeconds`, terms in the existing NIP-11 fee-object shape (`amount`, `unit`,
+  `period`) where an empty `terms` list means settlement-free, a peer `contact` or
+  WebSocket `endpoint`, and `min_pow_difficulty` — the NIP-13 work a peering request
+  must carry, `0` meaning none.
+
+  Disabled peering publishes only `{ "enabled": false }`, so half-configured terms are
+  never read as an accepted peer: this is the discovery surface other relays read
+  before connecting, not a peer-acceptance path. Settings validation rejects invalid
+  scopes, terms, time ranges, endpoints and proof-of-work bounds with a clear path, and
+  all `peering.*` fields are documented in `CONFIGURATION.md` with an example document.
+
+  Closes [#932](https://github.com/cameri/nostream/issues/932).
+
+- [#926](https://github.com/cameri/nostream/pull/926) [`2819e30`](https://github.com/cameri/nostream/commit/2819e3044aef89298955c4aef6272a1c7132ff09) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(payments): let clients see their subscription tier
+
+### Patch Changes
+
+- [#972](https://github.com/cameri/nostream/pull/972) [`a46ae06`](https://github.com/cameri/nostream/commit/a46ae06afc508735eac23f7a8eb4b7f7fbfb400e) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(compose): keep dynamic container addresses off the static ones
+
+  `docker-compose.yml` pins `nostream`, `nostream-db` and `nostream-cache` to `10.10.10.2`–`.4`, but dynamic allocation drew from the bottom of the same `/24`. The observability stack has no dependency that orders it after `nostream`, so `otel-collector` could be given `.2` and `nostream` then failed to start with `Address already in use` — most reliably after a host reboot, when the daemon starts containers in arbitrary order.
+
+  Dynamic allocation is now confined to `10.10.10.128/26`. The subnet and gateway are unchanged, so `10.10.10.1` stays the trusted proxy, and the overlay pins (`.5`, `.252`, `.253`) stay outside the pool.
+
+- [#1005](https://github.com/cameri/nostream/pull/1005) [`b185f35`](https://github.com/cameri/nostream/commit/b185f35cd4de4ba20f60ac0b2dc5876e6c710343) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - ci(deploy): retry the website deploy on a transient Cloudflare failure
+
+  Run 40103130697 failed at `Deploy the preview worker` with Cloudflare API error
+  `code: 10013` after a build that had already succeeded, and the next push deployed
+  the same commit successfully — a transient upstream failure, not a defect in the
+  site or the workflow.
+
+  Both website deploys now run through `.github/scripts/deploy-with-retry.sh`, which
+  wraps the deploy step (not the build) in three attempts with a 10 s then 30 s
+  backoff, a per-attempt timeout, and a step-level `timeout-minutes`. It retries only
+  `code: 10013`, an HTTP 5xx, a connection reset and an expired attempt timeout; an
+  authentication failure, a missing environment or a wrangler validation error still
+  fails on the first attempt. Every retry emits a `::warning::` naming the attempt and
+  the reason, so the flake rate stays visible instead of disappearing behind a
+  passing job.
+
+- [#1000](https://github.com/cameri/nostream/pull/1000) [`dff00ba`](https://github.com/cameri/nostream/commit/dff00baca20dba191858abc1de50b69a743063e7) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Add canonical first-party production relay setup guide at `/docs/setup` and replace outdated third-party guides in `README.md`.
+
+- [#1003](https://github.com/cameri/nostream/pull/1003) [`80b0a9e`](https://github.com/cameri/nostream/commit/80b0a9e52412ce4f554065fe5a6c6fac62af99b6) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - test(redis): prove the relay keeps publishing after the cache loses its scripts
+
+  Nothing is shipped in this change — it is coverage for [#1002](https://github.com/cameri/nostream/issues/1002). The relay issues `EVALSHA`, and Lua scripts live in the cache's memory, so a Redis restart leaves every script call answering `NOSCRIPT`. The adapter's retry for that was added in [#920](https://github.com/cameri/nostream/issues/920) and had only a stubbed unit test: `evalSha` was mocked, which cannot catch a retry that stops working through the workers that actually call it.
+
+  The new integration scenario publishes, runs `SCRIPT FLUSH` against the same Redis, then publishes twice more. `SCRIPT FLUSH` is the whole of a restart as far as the relay can tell, and it is deterministic — no container to restart and no reconnect to wait for. The scenario configures a message rate limit on purpose, because both limiters return early on an empty list and a scenario without one would pass whether or not the fallback existed.
+
 ## 3.8.0
 
 ### Minor Changes

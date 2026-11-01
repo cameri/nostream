@@ -99,6 +99,154 @@ describe('settings-config', () => {
     expect(issues.some((issue) => issue.path === 'network')).to.equal(true)
   })
 
+  describe('peering settings', () => {
+    const withPeering = (peering: unknown) =>
+      ({
+        info: {
+          relay_url: 'wss://relay.example.com',
+          name: 'Test Relay',
+          pubkey: 'abcd',
+          contact: 'test@example.com',
+        },
+        network: { maxPayloadSize: 1024 },
+        peering,
+      }) as any
+
+    const peeringIssues = (peering: unknown) =>
+      validateSettings(withPeering(peering)).filter((issue) => issue.path.startsWith('peering'))
+
+    const settlementFreePeering = {
+      enabled: true,
+      contact: 'mailto:peering@relay.example.com',
+      scopes: [{ kinds: [1, 6, [10000, 19999]], windowSeconds: 3600 }],
+      terms: [],
+    }
+
+    it('accepts a settlement-free configuration', () => {
+      expect(peeringIssues(settlementFreePeering)).to.deep.equal([])
+    })
+
+    it('accepts a paid configuration with absolute and rolling scopes', () => {
+      expect(
+        peeringIssues({
+          ...settlementFreePeering,
+          minRequestPowDifficulty: 20,
+          scopes: [
+            { kinds: [1], since: 1700000000, until: 1800000000 },
+            { kinds: [3], windowSeconds: 3600 },
+          ],
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
+        }),
+      ).to.deep.equal([])
+    })
+
+    it('accepts a disabled configuration without scopes or contact details', () => {
+      expect(peeringIssues({ enabled: false })).to.deep.equal([])
+    })
+
+    it('rejects an enabled configuration without scopes', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, scopes: [] })
+
+      expect(issues.some((issue) => issue.path === 'peering.scopes')).to.equal(true)
+      expect(issues[0].message).to.include('at least one scope')
+    })
+
+    it('rejects an enabled configuration without contact or endpoint', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, contact: '', endpoint: '' })
+
+      expect(issues.some((issue) => issue.path === 'peering.contact')).to.equal(true)
+      expect(issues[0].message).to.include('contact or endpoint')
+    })
+
+    it('rejects an unprefixed endpoint', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, endpoint: 'relay.example.com' })
+
+      expect(issues.some((issue) => issue.path === 'peering.endpoint')).to.equal(true)
+    })
+
+    it('rejects a contact that is not a URI', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, contact: 'not-a-uri' })
+
+      expect(issues.some((issue) => issue.path === 'peering.contact')).to.equal(true)
+      expect(issues.find((issue) => issue.path === 'peering.contact')?.message).to.include('valid URI')
+    })
+
+    it('accepts a mailto contact and ignores a whitespace-only endpoint', () => {
+      expect(peeringIssues({ ...settlementFreePeering, endpoint: '   ' })).to.deep.equal([])
+    })
+
+    it('rejects an empty kinds list', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, scopes: [{ kinds: [] }] })
+
+      expect(issues.some((issue) => issue.path === 'peering.scopes[0].kinds')).to.equal(true)
+    })
+
+    it('rejects event kinds outside the NIP-01 range', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, scopes: [{ kinds: [65536] }] })
+
+      expect(issues.some((issue) => issue.path === 'peering.scopes[0].kinds[0]')).to.equal(true)
+    })
+
+    it('rejects an inverted kinds range', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, scopes: [{ kinds: [[100, 1]] }] })
+
+      expect(issues.some((issue) => issue.path === 'peering.scopes[0].kinds[0]')).to.equal(true)
+    })
+
+    it('rejects since later than until', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        scopes: [{ kinds: [1], since: 200, until: 100 }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.scopes[0]')).to.equal(true)
+    })
+
+    it('rejects a rolling window combined with since or until', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        scopes: [{ kinds: [1], windowSeconds: 3600, since: 100 }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.scopes[0]')).to.equal(true)
+    })
+
+    it('rejects unknown scope keys', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        scopes: [{ kinds: [1], sinceSeconds: 3600 }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.scopes[0].sinceSeconds')).to.equal(true)
+    })
+
+    it('rejects malformed terms', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        terms: [{ amount: -1, unit: '', period: 0 }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.terms[0].amount')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.terms[0].unit')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.terms[0].period')).to.equal(true)
+    })
+
+    it('rejects unknown term keys', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        terms: [{ amount: 1, unit: 'msats', period: 1, currency: 'btc' }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.terms[0].currency')).to.equal(true)
+    })
+
+    it('rejects a proof-of-work requirement above the NIP-13 maximum', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, minRequestPowDifficulty: 257 })
+
+      expect(issues.some((issue) => issue.path === 'peering.minRequestPowDifficulty')).to.equal(true)
+    })
+  })
+
   it('rejects invalid nip66 history retention settings', () => {
     const issues = validateSettings({
       info: { relay_url: 'wss://test.relay', name: 'test' },
@@ -237,6 +385,34 @@ describe('settings-config', () => {
 
       const issues = validateSettings(settings)
       expect(issues.some((issue) => issue.path.startsWith('limits.event.rateLimits'))).to.equal(false)
+    })
+
+    // The window is milliseconds everywhere, but 60 is as plausible a number as
+    // 60000, so the unit cannot be inferred. What can be refused is a value that
+    // is not a whole count of milliseconds at all: a fraction (0.5 ms), a string
+    // from a hand-edited YAML, and a value that is not a number.
+    const invalidPeriodCases: { label: string; period: unknown }[] = [
+      { label: 'a fractional period', period: 0.5 },
+      { label: 'a string period', period: '60000' },
+      { label: 'a NaN period', period: Number.NaN },
+    ]
+
+    for (const { label, period } of invalidPeriodCases) {
+      it(`rejects ${label} on limits.event.rateLimits`, () => {
+        const settings = baseSettings()
+        settings.limits = { event: { rateLimits: [{ period, rate: 10 }] } }
+
+        const issues = validateSettings(settings)
+        expect(issues.some((issue) => issue.path === 'limits.event.rateLimits[0].period')).to.equal(true)
+      })
+    }
+
+    it('names milliseconds in the period message, so a rejected value is not read as seconds', () => {
+      const settings = baseSettings()
+      settings.limits = { event: { rateLimits: [{ period: 0.5, rate: 10 }] } }
+
+      const message = validateSettings(settings).find((issue) => issue.path === 'limits.event.rateLimits[0].period')?.message
+      expect(message).to.contain('milliseconds')
     })
 
     it('rejects a null entry in limits.event.rateLimits without throwing', () => {
