@@ -157,7 +157,7 @@ async function explain(db: Knex, query: Knex.QueryBuilder | Knex.Raw): Promise<E
 
   const { rows } = await db.raw<{ rows: { 'QUERY PLAN': ExplainResult[] }[] }>(
     `EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) ${sql}`,
-    bindings as readonly unknown[],
+    bindings,
   )
   return rows[0]['QUERY PLAN'][0]
 }
