@@ -10,6 +10,7 @@
 //! test-only module.
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -28,6 +29,7 @@ use nostream_storage::repositories::{
     NewReport, Nip05Verification, Nip05VerificationRepository, QueryStream, ReconciliationItem,
     Report, ReportRepository, StorageFuture, User, UserPatch, UserRepository,
 };
+use tokio::sync::Notify;
 
 use crate::connection::{Connection, Subscription};
 use crate::error::RelayError;
@@ -857,6 +859,7 @@ pub struct InMemoryInviteCodeRepository {
     /// invite mint's one `await` open long enough for a `CLOSE` to land in it.
     create_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
     creates: AtomicU64,
+    create_signal: Notify,
 }
 
 impl InMemoryInviteCodeRepository {
@@ -879,6 +882,11 @@ impl InMemoryInviteCodeRepository {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::clone(&gate));
 
         gate
+    }
+
+    /// Resolves when a `create` call has started, including one a gate is holding.
+    pub fn create_started(&self) -> impl Future<Output = ()> + '_ {
+        self.create_signal.notified()
     }
 
     /// How many `create` calls have started, including one a gate is holding.
@@ -918,6 +926,7 @@ impl InviteCodeRepository for InMemoryInviteCodeRepository {
     ) -> StorageFuture<'a, InviteCode> {
         Box::pin(async move {
             self.creates.fetch_add(1, Ordering::SeqCst);
+            self.create_signal.notify_one();
 
             let gate = self
                 .create_gate
