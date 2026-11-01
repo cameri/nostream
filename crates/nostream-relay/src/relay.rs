@@ -533,7 +533,7 @@ impl Relay {
             // sits between a write completing and this check.
             match sink.refusal() {
                 Refusal::None => {}
-                refusal => {
+                refusal @ (Refusal::QueueFull | Refusal::BudgetExhausted) => {
                     self.close_refused(&mut transport, peer, refusal).await;
                     break;
                 }
