@@ -1210,7 +1210,9 @@ async fn an_invite_request_mints_one_kind_28935_event_before_eose() {
 async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
     // The `CLOSE` is a direct handler call: `unsubscribe::handle` is synchronous, so in this
     // task the abort is a program-order predecessor of the gate release. A `CLOSE` over a
-    // socket is covered by `a_close_aborts_an_in_flight_read_without_a_frame`.
+    // socket is covered by `a_close_aborts_an_in_flight_read_without_a_frame` and `wire_parity`;
+    // after #978, `CLOSE` is a prefix running on the connection loop, so a wire test's timer
+    // could only say whether 50 ms was long enough, never whether the prefix ran.
     let mut settings = settings();
     settings.nip43 = Some(nip43_settings());
 
@@ -1225,6 +1227,8 @@ async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
         "127.0.0.1".to_owned(),
         nostream_core::nip42::Nip42Session::with_challenge("challenge", 0),
     ));
+    // The invite mint is behind the NIP-42 identity check (`subscribe.rs:167-190`),
+    // so the test authenticates before it subscribes.
     assert!(connection.authenticate(
         nostream_core::crypto::public_key(&CLIENT_SECRET).expect("client public key"),
         nostream_core::EventId::from_byte_array([3; 32]),
@@ -1259,13 +1263,7 @@ async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
     );
 
     // The mint's one `await` is held, which is the window a `CLOSE` lands in.
-    for _ in 0..100 {
-        if fixture.invites.creates_started() == 1 {
-            break;
-        }
-
-        tokio::task::yield_now().await;
-    }
+    fixture.invites.create_started().await;
 
     assert_eq!(
         fixture.invites.creates_started(),
