@@ -420,11 +420,6 @@ mod tests {
     use super::*;
     use nostream_core::messages::NoticeMessage;
 
-    /// The failure message of the pin test below, so the wording has one definition; it states
-    /// what the pin holds and makes no claim about where the word lives (`from_word`'s doc).
-    const PINNED_BYTES_MESSAGE: &str =
-        "the refusal bytes are pinned to 0, 1, 2 — the numbers word() returns and the enum stores";
-
     fn notice(message: &str) -> RelayMessage {
         RelayMessage::Notice(NoticeMessage {
             message: message.to_owned(),
@@ -703,8 +698,7 @@ mod tests {
         assert_eq!(
             (NO_REFUSAL, QUEUE_FULL, BUDGET_EXHAUSTED),
             (0, 1, 2),
-            "{}",
-            PINNED_BYTES_MESSAGE
+            "the refusal bytes are pinned to 0, 1, 2 — the numbers word() returns and the enum stores"
         );
 
         for refusal in [Refusal::None, Refusal::QueueFull, Refusal::BudgetExhausted] {
