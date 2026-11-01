@@ -29,6 +29,7 @@ use nostream_core::{Filter, Kind};
 use crate::connection::InFlightRead;
 use crate::error::RelayError;
 use crate::handlers::{HandlerContext, HandlerFuture};
+use crate::sink::Refusal;
 
 /// `EventKinds.NIP43_INVITE_REQUEST`.
 const INVITE_REQUEST_KIND: Kind = Kind(28_935);
@@ -282,10 +283,13 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
         // every other exit of this function makes, and it is safe beside the loop's own
         // `close` because it removes the entry only while the generation it carries still
         // matches (`connection.rs:290-297`): whichever of the two runs second does nothing.
-        if context.sink.refusal().is_some() {
-            let _ = read.cancellation().changed().await;
-            context.connection.end_read(read);
-            return;
+        match context.sink.refusal() {
+            Refusal::None => {}
+            Refusal::QueueFull | Refusal::BudgetExhausted => {
+                let _ = read.cancellation().changed().await;
+                context.connection.end_read(read);
+                return;
+            }
         }
 
         let record = tokio::select! {
@@ -509,7 +513,7 @@ mod tests {
                 .is_err(),
             "the read parks once its frame is refused instead of draining the stream"
         );
-        assert_eq!(refused.refusal(), Some(Refusal::BudgetExhausted));
+        assert_eq!(refused.refusal(), Refusal::BudgetExhausted);
         assert_eq!(
             gate.available_permits(),
             2,

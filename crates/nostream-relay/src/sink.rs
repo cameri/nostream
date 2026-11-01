@@ -32,6 +32,14 @@
 //! exception, so a frame that does not fit the budget is refused however empty its own
 //! queue. The socket's share of the budget is refunded when its last sink handle drops —
 //! see [`Account`] — because the next socket's admission depends on it.
+//!
+//! **A refusal is stored as one byte**, and [`Refusal`] owns both ends of it: [`Refusal`]'s
+//! `word` encodes a variant exhaustively and `from_word` decodes every byte, so the byte's
+//! meaning cannot drift from the enum. The type names its own "nothing refused" case,
+//! [`Refusal::None`], as byte `0` — the value the first-cause-wins latch compares against —
+//! instead of hiding it in an `Option`. A new cause is then a compile error at the encoder
+//! and at every reader that matches, rather than a word that silently reads as "no refusal";
+//! the rule is on [`Refusal`] itself and the trap beside the decode.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -41,19 +49,62 @@ use tokio::sync::{Notify, mpsc};
 
 use nostream_core::messages::RelayMessage;
 
-/// Why a frame was refused: the bound that could not hold it.
+/// Why a frame was refused: the bound that could not hold it, or [`Refusal::None`] when no
+/// sender has been refused.
+///
+/// The variant is the byte it is stored as, and the whole of the contract is three statements.
+/// First, `0` is no refusal, `1` is a full frame queue and `2` is an exhausted frame memory
+/// budget, and no other byte is ever stored. Second, a cause is added by adding a variant
+/// here and giving it a byte in `word`, which the compiler asks for, then answering it at
+/// every reader that matches — the connection loop, the stored read's refusal guard and
+/// `close_refused`. The decode is not asked: `from_word` ends in a wildcard, so a cause needs
+/// its own arm there by hand, and skipping it traps the first time that cause's byte is read
+/// instead of failing the build. Third, a word outside `{0, 1, 2}` traps: it is neither a
+/// refusal nor no refusal, so no reader can read it as either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Refusal {
+    /// No refusal recorded: this socket's frames are still being queued.
+    None = NO_REFUSAL,
     /// The frame did not fit this socket's `frame_queue_bytes`.
-    QueueFull,
+    QueueFull = QUEUE_FULL,
     /// The frame did not fit the relay's `frame_memory_budget_bytes`.
-    BudgetExhausted,
+    BudgetExhausted = BUDGET_EXHAUSTED,
 }
 
-/// No refusal recorded yet; the two values below are this file's only refusal causes.
+/// The bytes [`Refusal`] is stored as, and the sentinel the first cause wins against: `0` has
+/// to stay "nothing recorded", because that is what `Account::refuse`'s compare-and-exchange
+/// compares.
 const NO_REFUSAL: u8 = 0;
 const QUEUE_FULL: u8 = 1;
 const BUDGET_EXHAUSTED: u8 = 2;
+
+impl Refusal {
+    /// The byte this refusal is stored as.
+    fn word(self) -> u8 {
+        match self {
+            Self::None => NO_REFUSAL,
+            Self::QueueFull => QUEUE_FULL,
+            Self::BudgetExhausted => BUDGET_EXHAUSTED,
+        }
+    }
+
+    /// The refusal a stored word stands for.
+    ///
+    /// Not reachable from the wire; a word outside `{0, 1, 2}` is a bug here. The word is a
+    /// process-local atomic whose only writer is [`Account::refuse`], which stores a variant's
+    /// own byte, so nothing a client sends can reach the arm below. A trap unwinds the task
+    /// that read the word — one connection, not the process: no profile sets `panic = "abort"`,
+    /// and the connection loop observes the task's end through `JoinSet::join_next`.
+    fn from_word(word: u8) -> Self {
+        match word {
+            NO_REFUSAL => Self::None,
+            QUEUE_FULL => Self::QueueFull,
+            BUDGET_EXHAUSTED => Self::BudgetExhausted,
+            other => unreachable!("refusal word {other} is not one of this file's causes"),
+        }
+    }
+}
 
 /// The process-wide bound on queued outbound payload bytes, shared by every socket of one
 /// relay (ADR 0008).
@@ -159,25 +210,21 @@ struct Account {
 }
 
 impl Account {
-    /// The refusal recorded for this socket, if a sender has been refused.
-    fn refusal(&self) -> Option<Refusal> {
-        match self.refusal.load(Ordering::SeqCst) {
-            QUEUE_FULL => Some(Refusal::QueueFull),
-            BUDGET_EXHAUSTED => Some(Refusal::BudgetExhausted),
-            _ => None,
-        }
+    /// The refusal recorded for this socket: `Refusal::None` until a sender is refused.
+    fn refusal(&self) -> Refusal {
+        Refusal::from_word(self.refusal.load(Ordering::SeqCst))
     }
 
     /// Records the first refusal for this socket, reporting whether this sender set it.
     fn refuse(&self, refusal: Refusal) -> bool {
-        let cause = match refusal {
-            Refusal::QueueFull => QUEUE_FULL,
-            Refusal::BudgetExhausted => BUDGET_EXHAUSTED,
-        };
-
         let first = self
             .refusal
-            .compare_exchange(NO_REFUSAL, cause, Ordering::SeqCst, Ordering::SeqCst)
+            .compare_exchange(
+                NO_REFUSAL,
+                refusal.word(),
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
             .is_ok();
 
         if first {
@@ -262,7 +309,7 @@ impl FrameSink {
             return;
         };
 
-        if self.account.refusal() == Some(Refusal::QueueFull) {
+        if self.account.refusal() == Refusal::QueueFull {
             return;
         }
 
@@ -274,7 +321,7 @@ impl FrameSink {
         // in its own task and several readers share this sink, so two sends that interleaved
         // a load and a store would lose one increment and admit more than the bound.
         loop {
-            if self.account.refusal() == Some(Refusal::QueueFull) {
+            if self.account.refusal() == Refusal::QueueFull {
                 return;
             }
 
@@ -348,9 +395,9 @@ impl FrameSink {
         }
     }
 
-    /// Why a frame was refused, if the connection is over its bound. The connection task
-    /// closes the client once this is set.
-    pub fn refusal(&self) -> Option<Refusal> {
+    /// Why a frame was refused, if the connection is over its bound: `Refusal::None` until a
+    /// sender is refused. The connection task closes the client once this is a cause.
+    pub fn refusal(&self) -> Refusal {
         self.account.refusal()
     }
 
@@ -390,7 +437,7 @@ mod tests {
         sink.send(&frame);
         sink.send(&frame);
 
-        assert_eq!(sink.refusal(), None);
+        assert_eq!(sink.refusal(), Refusal::None);
         assert_eq!(sink.queued_bytes(), 2 * len);
         assert!(frames.try_recv().is_ok());
         assert!(frames.try_recv().is_ok());
@@ -398,7 +445,7 @@ mod tests {
 
         sink.send(&frame);
 
-        assert_eq!(sink.refusal(), Some(Refusal::QueueFull));
+        assert_eq!(sink.refusal(), Refusal::QueueFull);
         assert_eq!(
             sink.queued_bytes(),
             2 * len,
@@ -412,7 +459,7 @@ mod tests {
         // Once the flag is set every later send is dropped as well.
         sink.send(&frame);
 
-        assert_eq!(sink.refusal(), Some(Refusal::QueueFull));
+        assert_eq!(sink.refusal(), Refusal::QueueFull);
         assert_eq!(sink.queued_bytes(), 2 * len);
 
         // A frame larger than the bound still goes out while the queue is empty, so one
@@ -421,13 +468,13 @@ mod tests {
 
         sink.send(&frame);
 
-        assert_eq!(sink.refusal(), None);
+        assert_eq!(sink.refusal(), Refusal::None);
         assert_eq!(sink.queued_bytes(), len);
         assert!(frames.try_recv().is_ok());
 
         sink.send(&frame);
 
-        assert_eq!(sink.refusal(), Some(Refusal::QueueFull));
+        assert_eq!(sink.refusal(), Refusal::QueueFull);
         assert_eq!(sink.queued_bytes(), len);
         assert!(frames.try_recv().is_err());
 
@@ -453,7 +500,7 @@ mod tests {
             }
         });
 
-        assert_eq!(sink.refusal(), None, "every frame fits the bound");
+        assert_eq!(sink.refusal(), Refusal::None, "every frame fits the bound");
         assert_eq!(sink.queued_bytes(), SENDERS * len);
 
         for _ in 0..SENDERS {
@@ -471,7 +518,7 @@ mod tests {
         sink.release(2 * len);
 
         assert_eq!(sink.queued_bytes(), 0);
-        assert_eq!(sink.refusal(), None);
+        assert_eq!(sink.refusal(), Refusal::None);
 
         sink.send(&frame);
         sink.send(&frame);
@@ -503,7 +550,7 @@ mod tests {
 
         third.send(&frame);
 
-        assert_eq!(third.refusal(), Some(Refusal::BudgetExhausted));
+        assert_eq!(third.refusal(), Refusal::BudgetExhausted);
         assert_eq!(
             third.queued_bytes(),
             0,
@@ -571,7 +618,7 @@ mod tests {
 
         third.send(&frame);
 
-        assert_eq!(third.refusal(), None);
+        assert_eq!(third.refusal(), Refusal::None);
         assert_eq!(budget.accounted(), len);
         assert!(third_frames.try_recv().is_ok());
     }
@@ -644,5 +691,30 @@ mod tests {
         drop(sinks);
 
         assert_eq!(budget.accounted(), 0);
+    }
+
+    #[test]
+    fn every_refusal_word_is_pinned_to_its_byte() {
+        assert_eq!(
+            (NO_REFUSAL, QUEUE_FULL, BUDGET_EXHAUSTED),
+            (0, 1, 2),
+            "the bytes are the wire contract"
+        );
+
+        for refusal in [Refusal::None, Refusal::QueueFull, Refusal::BudgetExhausted] {
+            assert_eq!(Refusal::from_word(refusal.word()), refusal);
+            assert_eq!(refusal as u8, refusal.word());
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "not one of this file's")]
+    fn a_word_outside_the_three_causes_traps() {
+        // A word `refuse` cannot write: stored directly, as only a bug in this file could.
+        let (sink, _frames) = FrameSink::channel(1024, None);
+
+        sink.account.refusal.store(3, Ordering::SeqCst);
+
+        let _ = sink.refusal();
     }
 }
