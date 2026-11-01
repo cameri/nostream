@@ -60,9 +60,18 @@ const isSettingsWriteLockStale = (metadata: SettingsWriteLockMetadata): boolean 
   try {
     process.kill(metadata.pid, 0)
     return false
-  } catch {
-    return true
+  } catch (error) {
+    // Only ESRCH proves the owner is gone. EPERM means the process exists under
+    // another user, and any other error is treated as alive so a failed check
+    // can never steal a live lock; the age rule above remains the fallback.
+    return (error as NodeJS.ErrnoException).code === 'ESRCH'
   }
+}
+
+const reclaimSettingsWriteLock = (lockPath: string): void => {
+  const reclaimPath = `${lockPath}.reclaim.${process.pid}.${Date.now()}`
+  fs.renameSync(lockPath, reclaimPath)
+  fs.rmSync(reclaimPath, { force: true })
 }
 
 const attemptStealStaleSettingsWriteLock = (
@@ -80,9 +89,25 @@ const attemptStealStaleSettingsWriteLock = (
       return false
     }
 
-    const reclaimPath = `${lockPath}.reclaim.${process.pid}.${Date.now()}`
-    fs.renameSync(lockPath, reclaimPath)
-    fs.rmSync(reclaimPath, { force: true })
+    reclaimSettingsWriteLock(lockPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// A writer holds the lock between openSync and writeFileSync, so a lock with
+// missing or unparseable metadata is only abandoned once it has been untouched
+// for the same grace period as a stale lock. Reclaiming it immediately would
+// race a live writer.
+const attemptStealAbandonedSettingsWriteLock = (lockPath: string): boolean => {
+  try {
+    const stats = fs.statSync(lockPath)
+    if (Date.now() - stats.mtimeMs <= SETTINGS_WRITE_LOCK_STALE_MS) {
+      return false
+    }
+
+    reclaimSettingsWriteLock(lockPath)
     return true
   } catch {
     return false
@@ -97,8 +122,20 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
 
   while (Date.now() < deadline) {
     try {
-      lockFd = fs.openSync(lockPath, 'wx')
-      fs.writeFileSync(lockFd, `${process.pid}\n${Date.now()}\n`)
+      const lockFdLocal = fs.openSync(lockPath, 'wx')
+      try {
+        fs.writeFileSync(lockFdLocal, `${process.pid}\n${Date.now()}\n`)
+      } catch (error) {
+        // The lock exists before it has contents; leaving that empty file
+        // behind would block every later writer until someone removes it.
+        try {
+          fs.closeSync(lockFdLocal)
+        } finally {
+          fs.rmSync(lockPath, { force: true })
+        }
+        throw error
+      }
+      lockFd = lockFdLocal
       break
     } catch (error) {
       const errno = error as NodeJS.ErrnoException
@@ -107,8 +144,12 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
       }
 
       const metadata = readSettingsWriteLockMetadata(lockPath)
-      if (metadata && isSettingsWriteLockStale(metadata)) {
-        attemptStealStaleSettingsWriteLock(lockPath, metadata)
+      if (metadata) {
+        if (isSettingsWriteLockStale(metadata)) {
+          attemptStealStaleSettingsWriteLock(lockPath, metadata)
+        }
+      } else {
+        attemptStealAbandonedSettingsWriteLock(lockPath)
       }
 
       await delay(SETTINGS_WRITE_LOCK_RETRY_MS)

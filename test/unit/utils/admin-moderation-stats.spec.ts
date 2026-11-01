@@ -40,24 +40,37 @@ describe('admin-moderation-stats queries', () => {
   it('maps top publishing pubkeys from the database', async () => {
     const chain = buildQueryChain([{ pubkey: 'e'.repeat(64), eventCount: '7' }])
     const db = Sinon.stub().returns(chain) as any
-    db.raw = Sinon.stub().returns('raw')
+    const raw = Sinon.stub().callsFake((sql: string, bindings: unknown[]) => ({ sql, bindings }))
+    db.raw = raw
 
     const rows = await queryTopPublishingPubkeys(db, 1_700_000_000, 5)
 
     expect(rows).to.deep.equal([{ pubkey: 'e'.repeat(64), eventCount: 7 }])
     expect(chain.limit.callCount).to.equal(1)
-    expect(chain.where.calledWith('first_seen', '>=', new Date(1_700_000_000 * 1000))).to.equal(true)
+    expect(raw.calledWith(`to_timestamp(?) at time zone 'UTC'`, [1_700_000_000])).to.equal(true)
+    expect(
+      chain.where.calledWith('first_seen', '>=', {
+        sql: `to_timestamp(?) at time zone 'UTC'`,
+        bindings: [1_700_000_000],
+      }),
+    ).to.equal(true)
   })
 
   it('maps top client IPs from the database', async () => {
     const chain = buildQueryChain([{ ip: '203.0.113.4', eventCount: 2 }])
     const db = Sinon.stub().returns(chain) as any
-    db.raw = Sinon.stub().returns('raw')
+    const raw = Sinon.stub().callsFake((sql: string, bindings: unknown[]) => ({ sql, bindings }))
+    db.raw = raw
 
     const rows = await queryTopClientIps(db, 1_700_000_000, 10)
 
     expect(rows).to.deep.equal([{ ip: '203.0.113.4', eventCount: 2 }])
     expect(chain.whereNotNull.callCount).to.equal(1)
-    expect(chain.where.calledWith('first_seen', '>=', new Date(1_700_000_000 * 1000))).to.equal(true)
+    expect(
+      chain.where.calledWith('first_seen', '>=', {
+        sql: `to_timestamp(?) at time zone 'UTC'`,
+        bindings: [1_700_000_000],
+      }),
+    ).to.equal(true)
   })
 })

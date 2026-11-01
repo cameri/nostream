@@ -2,6 +2,7 @@ import { expect } from 'chai'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import Sinon from 'sinon'
 
 import {
   ensureSettingsExists,
@@ -15,7 +16,9 @@ import {
   setByPath,
   validatePathAgainstDefaults,
   validateSettings,
+  withSettingsWriteLock,
 } from '../../../src/utils/settings-config'
+import { getSettingsWriteLockPath } from '../../../src/utils/settings-paths'
 import {
   getGuidedSettingCategory,
   getGuidedSettingField,
@@ -879,5 +882,108 @@ describe('settings-guided-schema', () => {
         process.env.NOSTR_CONFIG_DIR = originalConfigDir
       }
     }
+  })
+})
+
+describe('settings write lock', () => {
+  const originalConfigDir = process.env.NOSTR_CONFIG_DIR
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nostream-settings-lock-'))
+    process.env.NOSTR_CONFIG_DIR = tmpDir
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+    if (originalConfigDir === undefined) {
+      delete process.env.NOSTR_CONFIG_DIR
+    } else {
+      process.env.NOSTR_CONFIG_DIR = originalConfigDir
+    }
+    Sinon.restore()
+  })
+
+  it('removes the lock file when writing its metadata fails', async () => {
+    const lockPath = getSettingsWriteLockPath()
+    Sinon.stub(fs, 'writeFileSync').throws(Object.assign(new Error('no space left on device'), { code: 'ENOSPC' }))
+
+    let error: Error | undefined
+    try {
+      await withSettingsWriteLock(() => 'unreachable')
+    } catch (err) {
+      error = err as Error
+    }
+
+    expect(error?.message).to.equal('no space left on device')
+    expect(fs.existsSync(lockPath)).to.equal(false)
+  })
+
+  it('reclaims a lock without metadata once it is older than the grace period', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    fs.writeFileSync(lockPath, '')
+    const old = new Date(Date.now() - 61_000)
+    fs.utimesSync(lockPath, old, old)
+
+    expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
+    expect(fs.existsSync(lockPath)).to.equal(false)
+  })
+
+  it('reclaims a lock whose owner pid is gone (ESRCH)', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n`)
+    Sinon.stub(process, 'kill').throws(Object.assign(new Error('no such process'), { code: 'ESRCH' }))
+
+    expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
+    expect(fs.existsSync(lockPath)).to.equal(false)
+  })
+
+  it('does not steal a live lock when the liveness check fails with EPERM', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    const acquiredAt = Date.now()
+    fs.writeFileSync(lockPath, `${process.pid}\n${acquiredAt}\n`)
+    Sinon.stub(process, 'kill').throws(Object.assign(new Error('not permitted'), { code: 'EPERM' }))
+
+    let now = acquiredAt
+    Sinon.stub(Date, 'now').callsFake(() => now)
+    setTimeout(() => {
+      now = acquiredAt + 31_000
+    }, 10)
+
+    let error: Error | undefined
+    try {
+      await withSettingsWriteLock(() => 'ran')
+    } catch (err) {
+      error = err as Error
+    }
+
+    expect(error?.message).to.equal('Timed out waiting for settings write lock')
+    expect(fs.existsSync(lockPath)).to.equal(true)
+  })
+
+  it('does not reclaim a fresh lock that has no metadata yet', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    fs.writeFileSync(lockPath, '')
+
+    const acquiredAt = Date.now()
+    let now = acquiredAt
+    Sinon.stub(Date, 'now').callsFake(() => now)
+    setTimeout(() => {
+      now = acquiredAt + 31_000
+    }, 10)
+
+    let error: Error | undefined
+    try {
+      await withSettingsWriteLock(() => 'ran')
+    } catch (err) {
+      error = err as Error
+    }
+
+    expect(error?.message).to.equal('Timed out waiting for settings write lock')
+    expect(fs.existsSync(lockPath)).to.equal(true)
   })
 })
