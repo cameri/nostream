@@ -16,7 +16,6 @@ use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
 use futures_util::stream;
-use tokio::sync::Notify;
 use nostream_config::settings::{
     Info, Network, Nip42Settings, Nip43Settings, Nip45Settings, Nip50Settings, Nip56Settings,
     RateLimiterSettings, Settings,
@@ -30,6 +29,7 @@ use nostream_storage::repositories::{
     NewReport, Nip05Verification, Nip05VerificationRepository, QueryStream, ReconciliationItem,
     Report, ReportRepository, StorageFuture, User, UserPatch, UserRepository,
 };
+use tokio::sync::Notify;
 
 use crate::connection::{Connection, Subscription};
 use crate::error::RelayError;

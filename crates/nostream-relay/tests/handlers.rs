@@ -1263,7 +1263,9 @@ async fn a_close_during_the_invite_mint_leaves_the_event_but_not_the_read() {
     );
 
     // The mint's one `await` is held, which is the window a `CLOSE` lands in.
-    fixture.invites.create_started().await;
+    tokio::time::timeout(Duration::from_secs(5), fixture.invites.create_started())
+        .await
+        .expect("the invite mint starts within five seconds");
 
     assert_eq!(
         fixture.invites.creates_started(),
