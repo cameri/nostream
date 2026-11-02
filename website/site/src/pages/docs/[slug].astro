@@ -1,0 +1,171 @@
+---
+import { getCollection, render } from 'astro:content'
+import { DOCS, REPO } from '../../data/site'
+import Base from '../../layouts/Base.astro'
+
+export async function getStaticPaths() {
+  const entries = await getCollection('docs')
+  return entries.map((entry) => ({ params: { slug: entry.id }, props: { entry } }))
+}
+
+const { entry } = Astro.props
+const { Content, headings } = await render(entry)
+const meta = DOCS.find((d) => d.slug === entry.id)!
+const toc = headings.filter((h) => h.depth === 2)
+---
+
+<Base title={meta.title} description={meta.blurb}>
+  <div class="container layout">
+    <aside class="side">
+      <a class="back mono" href="/docs">← All docs</a>
+      <nav aria-label="Documentation">
+        {
+          DOCS.map((doc) => (
+            <a href={`/docs/${doc.slug}`} class:list={['item', { active: doc.slug === entry.id }]} aria-current={doc.slug === entry.id ? 'page' : undefined}>
+              {doc.title}
+            </a>
+          ))
+        }
+      </nav>
+    </aside>
+
+    <article class="prose">
+      <p class="crumb mono"><span class="g3">{meta.group}</span> / {meta.file}</p>
+      <Content />
+      <a class="edit mono" href={`${REPO}/edit/main/${meta.file}`} target="_blank" rel="noopener noreferrer">Edit this page on GitHub →</a>
+    </article>
+
+    {
+      toc.length > 1 && (
+        <aside class="toc">
+          <p class="mono">On this page</p>
+          <nav aria-label="On this page">
+            {toc.map((h) => (
+              <a href={`#${h.slug}`}>{h.text}</a>
+            ))}
+          </nav>
+        </aside>
+      )
+    }
+  </div>
+</Base>
+
+<style>
+  .layout {
+    display: grid;
+    gap: 40px;
+    padding: 48px 0 100px;
+  }
+
+  @media (min-width: 900px) {
+    .layout {
+      grid-template-columns: 220px minmax(0, 1fr);
+    }
+  }
+
+  @media (min-width: 1240px) {
+    .layout {
+      grid-template-columns: 220px minmax(0, 1fr) 220px;
+    }
+  }
+
+  .side,
+  .toc {
+    align-self: start;
+  }
+
+  @media (min-width: 900px) {
+    .side,
+    .toc {
+      position: sticky;
+      top: 96px;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+  }
+
+  .back {
+    display: inline-block;
+    margin-bottom: 18px;
+    color: var(--teal);
+    font-size: 13px;
+  }
+
+  .side nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  @media (min-width: 900px) {
+    .side nav {
+      flex-direction: column;
+    }
+  }
+
+  .item {
+    padding: 8px 12px;
+    border-left: 1px solid var(--line);
+    color: var(--fg-2);
+    font-size: 14px;
+    transition:
+      color 0.2s ease,
+      border-color 0.2s ease;
+  }
+
+  .item:hover {
+    color: var(--fg);
+  }
+
+  .item.active {
+    border-color: var(--pink);
+    color: var(--fg);
+  }
+
+  .crumb {
+    margin: 0 0 20px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .edit {
+    display: inline-block;
+    margin-top: 56px;
+    color: var(--teal) !important;
+    font-size: 13px;
+    text-decoration: none !important;
+  }
+
+  .toc {
+    display: none;
+  }
+
+  @media (min-width: 1240px) {
+    .toc {
+      display: block;
+    }
+  }
+
+  .toc p {
+    margin: 0 0 12px;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .toc nav {
+    display: grid;
+    gap: 8px;
+  }
+
+  .toc a {
+    color: var(--fg-2);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .toc a:hover {
+    color: var(--fg);
+  }
+</style>

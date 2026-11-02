@@ -1,7 +1,7 @@
 {
   "subject": {
     "repo": "cameri/nostream",
-    "commit": "242a3001d77149e4d70151ec03060c4ef44a1547",
+    "commit": "d286d80eb3ea806d6de27bd2813d5d30d90cd2a5",
     "files": [
       "resources/default-settings.yaml",
       "src/@types/settings.ts",
@@ -10,23 +10,18 @@
       "test/unit/utils/settings-config.spec.ts"
     ],
     "node": "v24.22.0",
-    "generated": "2026-10-17",
-    "command": "cd <capture tree> && node -r ts-node/register/transpile-only <branch>/crates/nostream-config/tests/capture/gen-ts-issues.mjs",
+    "generated": "2026-11-02",
+    "command": "cd <capture tree built from the merge commit> && node -r ts-node/register/transpile-only <branch>/crates/nostream-config/tests/capture/gen-ts-issues.mjs",
     "expected_test_counts": {
       "source_it": 34,
       "executed": 41
     }
   },
   "deferred": {
-    "commit": "041fe34e66b9bb433f1ff3383aee7030fdd3bb8f",
-    "files": [
-      "resources/default-settings.yaml",
-      "src/@types/settings.ts",
-      "src/utils/settings-config.ts",
-      "src/utils/settings-guided-schema.ts",
-      "test/unit/utils/settings-config.spec.ts"
-    ],
-    "diff": "+212/-0"
+    "commit": "d286d80eb3ea806d6de27bd2813d5d30d90cd2a5",
+    "files": [],
+    "diff": "0/+0",
+    "note": "Regenerated after main merged into rewrite/main (2026-11-02). The surfaces that were deferred at 242a3001 - nip77, peering, payments.subscriptionPlans, nip66.historyRetention*, and the probe/ssl notification toggles - arrived with the merge and are modelled in the Rust schema, so nothing is deferred any more."
   },
   "cases": [
     {
@@ -38,7 +33,11 @@
     {
       "name": "backend_lmdb",
       "mutations": [
-        { "op": "set", "path": "eventStore.backend", "value": "lmdb" }
+        {
+          "op": "set",
+          "path": "eventStore.backend",
+          "value": "lmdb"
+        }
       ],
       "ts_issues": [
         {
@@ -46,15 +45,29 @@
           "message": "backend must be one of: postgres"
         }
       ],
-      "rust_exempt_paths": ["eventStore.backend"],
+      "rust_exempt_paths": [
+        "eventStore.backend"
+      ],
       "exempt_reason": "D7: the rewrite's target backend is LMDB, so the Rust validator accepts lmdb and rejects only values outside {postgres, lmdb}. Path-scoped, not case-scoped."
     },
     {
       "name": "pow_floor_gt_ceiling",
       "mutations": [
-        { "op": "set", "path": "limits.event.pow.enabled", "value": true },
-        { "op": "set", "path": "limits.event.pow.floorBits", "value": 16 },
-        { "op": "set", "path": "limits.event.pow.ceilingBits", "value": 8 }
+        {
+          "op": "set",
+          "path": "limits.event.pow.enabled",
+          "value": true
+        },
+        {
+          "op": "set",
+          "path": "limits.event.pow.floorBits",
+          "value": 16
+        },
+        {
+          "op": "set",
+          "path": "limits.event.pow.ceilingBits",
+          "value": 8
+        }
       ],
       "ts_issues": [
         {
@@ -67,8 +80,16 @@
     {
       "name": "pow_period_zero",
       "mutations": [
-        { "op": "set", "path": "limits.event.pow.enabled", "value": true },
-        { "op": "set", "path": "limits.event.pow.periodMs", "value": 0 }
+        {
+          "op": "set",
+          "path": "limits.event.pow.enabled",
+          "value": true
+        },
+        {
+          "op": "set",
+          "path": "limits.event.pow.periodMs",
+          "value": 0
+        }
       ],
       "ts_issues": [
         {
@@ -81,8 +102,16 @@
     {
       "name": "pow_target_zero",
       "mutations": [
-        { "op": "set", "path": "limits.event.pow.enabled", "value": true },
-        { "op": "set", "path": "limits.event.pow.targetEventsPerSecond", "value": 0 }
+        {
+          "op": "set",
+          "path": "limits.event.pow.enabled",
+          "value": true
+        },
+        {
+          "op": "set",
+          "path": "limits.event.pow.targetEventsPerSecond",
+          "value": 0
+        }
       ],
       "ts_issues": [
         {
@@ -95,12 +124,16 @@
     {
       "name": "conn_rate_limit_period_zero",
       "mutations": [
-        { "op": "set", "path": "limits.connection.rateLimits[0].period", "value": 0 }
+        {
+          "op": "set",
+          "path": "limits.connection.rateLimits[0].period",
+          "value": 0
+        }
       ],
       "ts_issues": [
         {
           "path": "limits.connection.rateLimits[0].period",
-          "message": "period must be greater than 0"
+          "message": "period must be at least 1 millisecond"
         }
       ],
       "rust_exempt_paths": []
@@ -111,7 +144,13 @@
         {
           "op": "set",
           "path": "admin.notifications.targets",
-          "value": [{ "id": "t1", "type": "telegram", "enabled": true }]
+          "value": [
+            {
+              "id": "t1",
+              "type": "telegram",
+              "enabled": true
+            }
+          ]
         }
       ],
       "ts_issues": [
@@ -227,48 +266,95 @@
     },
     {
       "name": "unknown_top_level",
-      "mutations": [{ "op": "set", "path": "bogusSection", "value": {} }],
+      "mutations": [
+        {
+          "op": "set",
+          "path": "bogusSection",
+          "value": {}
+        }
+      ],
       "ts_issues": [
-        { "path": "bogusSection", "message": "Unknown setting key" }
+        {
+          "path": "bogusSection",
+          "message": "Unknown setting key"
+        }
       ],
       "rust_exempt_paths": []
     },
     {
       "name": "unknown_nested_key",
-      "mutations": [{ "op": "set", "path": "info.unknownKey", "value": 1 }],
+      "mutations": [
+        {
+          "op": "set",
+          "path": "info.unknownKey",
+          "value": 1
+        }
+      ],
       "ts_issues": [
-        { "path": "info.unknownKey", "message": "Unknown setting key" }
+        {
+          "path": "info.unknownKey",
+          "message": "Unknown setting key"
+        }
       ],
       "rust_exempt_paths": []
     },
     {
       "name": "wrong_type_workers_count",
       "mutations": [
-        { "op": "set", "path": "workers.count", "value": "four" }
+        {
+          "op": "set",
+          "path": "workers.count",
+          "value": "four"
+        }
       ],
       "ts_issues": [
-        { "path": "workers.count", "message": "Expected number, got string" }
+        {
+          "path": "workers.count",
+          "message": "Expected number, got string"
+        }
       ],
       "rust_exempt_paths": []
     },
     {
       "name": "missing_name",
-      "mutations": [{ "op": "delete", "path": "info.name" }],
-      "ts_issues": [{ "path": "info.name", "message": "name is required" }],
+      "mutations": [
+        {
+          "op": "delete",
+          "path": "info.name"
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "info.name",
+          "message": "name is required"
+        }
+      ],
       "rust_exempt_paths": []
     },
     {
       "name": "missing_relay_url",
-      "mutations": [{ "op": "delete", "path": "info.relay_url" }],
+      "mutations": [
+        {
+          "op": "delete",
+          "path": "info.relay_url"
+        }
+      ],
       "ts_issues": [
-        { "path": "info.relay_url", "message": "relay_url is required" }
+        {
+          "path": "info.relay_url",
+          "message": "relay_url is required"
+        }
       ],
       "rust_exempt_paths": []
     },
     {
       "name": "bad_strategy",
       "mutations": [
-        { "op": "set", "path": "limits.rateLimiter.strategy", "value": "random" }
+        {
+          "op": "set",
+          "path": "limits.rateLimiter.strategy",
+          "value": "random"
+        }
       ],
       "ts_issues": [
         {
@@ -281,10 +367,128 @@
     {
       "name": "nip77_present",
       "mutations": [
-        { "op": "set", "path": "nip77", "value": { "enabled": true } }
+        {
+          "op": "set",
+          "path": "nip77",
+          "value": {
+            "enabled": true
+          }
+        }
+      ],
+      "ts_issues": [],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "nip77_zero_cap",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "nip77.enabled",
+          "value": true
+        },
+        {
+          "op": "set",
+          "path": "nip77.maxEventsPerSession",
+          "value": 0
+        }
       ],
       "ts_issues": [
-        { "path": "nip77", "message": "Unknown setting key" }
+        {
+          "path": "nip77.maxEventsPerSession",
+          "message": "maxEventsPerSession must be a positive integer"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "plan_negative_amount",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "payments.subscriptionPlans",
+          "value": [
+            {
+              "id": "basic",
+              "amount": -1,
+              "intervalSeconds": 86400,
+              "graceSeconds": 3600
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "payments.subscriptionPlans[0].amount",
+          "message": "amount must be a positive integer (msats)"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "plan_duplicate_amount",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "payments.subscriptionPlans",
+          "value": [
+            {
+              "id": "basic",
+              "amount": 1000000,
+              "intervalSeconds": 86400,
+              "graceSeconds": 3600
+            },
+            {
+              "id": "pro",
+              "amount": 1000000,
+              "intervalSeconds": 86400,
+              "graceSeconds": 3600
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "payments.subscriptionPlans[1].amount",
+          "message": "amount 1000000 is used by more than one plan"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "peering_pow_out_of_range",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "peering.minRequestPowDifficulty",
+          "value": 300
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "peering.minRequestPowDifficulty",
+          "message": "must be an integer between 0 and 256"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "peering_enabled_without_scopes",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "peering.enabled",
+          "value": true
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "peering.scopes",
+          "message": "at least one scope is required when peering is enabled"
+        },
+        {
+          "path": "peering.contact",
+          "message": "contact or endpoint is required when peering is enabled"
+        }
       ],
       "rust_exempt_paths": []
     },
@@ -297,7 +501,12 @@
           "value": "ftp://relay.example.com"
         }
       ],
-      "ts_issues": [],
+      "ts_issues": [
+        {
+          "path": "info.relay_url",
+          "message": "relay_url must use ws, wss, http, or https protocol"
+        }
+      ],
       "rust_exempt_paths": []
     }
   ]

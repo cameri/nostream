@@ -24,6 +24,18 @@ export interface Network {
 
 export interface RateLimit {
   description?: string
+  /**
+   * Length of the window in milliseconds.
+   *
+   * Every shipped limit counts this way (`1000`, `60000`, `900000`, `3600000`),
+   * and `rate` is how many hits one window allows. `period: 60`, written as if
+   * it meant 60 seconds, is therefore read as a 60 ms window and makes the
+   * limit a thousand times LOOSER: twelve hits per minute becomes twelve hits
+   * per 60 ms. The relay honours it without complaint, and nothing can tell the
+   * two apart from the number alone, which is why the unit is documented where
+   * the value is set. The validator rejects anything that is not a whole count
+   * of milliseconds, at least one.
+   */
   period: number
   rate: number
 }
@@ -224,10 +236,31 @@ export interface FeeSchedules {
   publication: FeeSchedule[]
 }
 
+export interface SubscriptionPlanLimits {
+  /** Replaces limits.event.rateLimits for subscribers on this plan. */
+  rateLimits?: EventRateLimit[]
+  /** Replaces limits.event.retention.maxDays for subscribers on this plan. */
+  retentionMaxDays?: number
+}
+
+export interface SubscriptionPlan {
+  /** Unique, and never `grandfathered`, which is reserved. */
+  id: string
+  description?: string
+  /** Price of one period in msats. Unique across plans, since the amount paid selects the plan. */
+  amount: bigint
+  intervalSeconds: number
+  /** How long access lasts after a period ends without a renewal. */
+  graceSeconds: number
+  limits?: SubscriptionPlanLimits
+}
+
 export interface Payments {
   enabled: boolean
   processor: keyof PaymentsProcessors
   feeSchedules: FeeSchedules
+  /** Recurring membership plans. Empty keeps the one-time admission fee. */
+  subscriptionPlans?: SubscriptionPlan[]
   /** Fallback when the processor reports no expiry. A reported one always wins. */
   invoiceExpirySeconds?: number
 }
@@ -279,18 +312,11 @@ export interface Remote {
   secret: Secret
 }
 
-export interface Mirror {
-  address: string
-  filters?: SubscriptionFilter[]
-  secret?: Secret
-  limits?: {
-    event?: EventLimits
-  }
-  skipAdmissionCheck?: boolean
-}
-
+/**
+ * @deprecated The static mirroring worker was removed. Setting `mirroring.static` only logs a warning at start-up.
+ */
 export interface Mirroring {
-  static?: Mirror[]
+  static?: unknown[]
 }
 
 export interface DvmWorker {
@@ -312,6 +338,24 @@ export type Nip05Mode = 'enabled' | 'passive' | 'disabled'
 
 export interface Nip45Settings {
   enabled?: boolean
+}
+
+export interface Nip77Settings {
+  /**
+   * NIP-77 negentropy sync. Defaults to false. Even when true it only answers
+   * if `eventStore.backend` is postgres: other backends (e.g. strfry) bring
+   * their own negentropy implementation.
+   */
+  enabled?: boolean
+  /**
+   * Most events one session may hold in memory; larger queries are rejected
+   * with `NEG-ERR blocked:`. Defaults to 100000.
+   */
+  maxEventsPerSession?: number
+  /** Concurrent negentropy sessions allowed on one connection. Defaults to 3. */
+  maxSessionsPerConnection?: number
+  /** A session with no `NEG-MSG` for this long is closed with `NEG-ERR closed:`. Defaults to 60000. */
+  sessionIdleTimeoutMs?: number
 }
 
 export interface Nip50Settings {
@@ -356,6 +400,8 @@ export interface Nip66Settings {
    * Optional NIP-52 geohash describing this monitor's network vantage for kind 10166 events.
    */
   geohash?: string
+  historyRetentionRuns?: number
+  historyRetentionHours?: number
 }
 
 export interface Nip05Settings {
@@ -473,6 +519,90 @@ export interface Nip56Settings {
   hideActionableReports: boolean
 }
 
+export interface PeeringScope {
+  /**
+   * Event kinds this feed covers, as kinds or `[min, max]` ranges.
+   */
+  kinds: (EventKinds | EventKindsRange)[]
+  /**
+   * Inclusive lower bound of the feed's time range as a unix timestamp in
+   * seconds. Omit for no lower bound.
+   */
+  since?: number
+  /**
+   * Inclusive upper bound of the feed's time range as a unix timestamp in
+   * seconds. Omit for a feed that stays current.
+   */
+  until?: number
+  /**
+   * Rolling window in seconds: the feed covers events from the last
+   * `windowSeconds` seconds. Mutually exclusive with `since`/`until`.
+   */
+  windowSeconds?: number
+}
+
+export interface PeeringTerm {
+  /** Amount charged for one peering period, denominated in `unit`. */
+  amount: number
+  /** Unit of `amount`, for example `msats`. */
+  unit: string
+  /** Length of the peering period in seconds. */
+  period: number
+}
+
+export interface PeeringPeer {
+  /**
+   * The peer relay's own pubkey (hex or `npub1...`). Peers are identified by
+   * this key, never by URL alone.
+   */
+  pubkey: Pubkey
+  /**
+   * WebSocket URL used when connecting to this peer. Inbound AUTH is matched
+   * by `pubkey`; the URL is where this relay reaches it outbound.
+   */
+  relayUrl: string
+  /** Whether this configured peer is active. Defaults to true. */
+  enabled?: boolean
+}
+
+export interface PeeringSettings {
+  /**
+   * Whether this relay offers peering feeds. Advertised as `peering.enabled`
+   * in the NIP-11 document. Advertising terms does not accept peers.
+   */
+  enabled: boolean
+  /**
+   * Contact URI (for example `mailto:` or `https:`) for peering requests.
+   * At least one of `contact` or `endpoint` is required when enabled.
+   */
+  contact?: string
+  /**
+   * WebSocket endpoint peers should connect to. At least one of `contact` or
+   * `endpoint` is required when enabled.
+   */
+  endpoint?: string
+  /**
+   * NIP-13 proof-of-work bits required on peering requests. Absent or 0 means
+   * none. Advertised as `peering.min_pow_difficulty`.
+   */
+  minRequestPowDifficulty?: number
+  /**
+   * Feeds this relay offers. At least one scope is required when enabled.
+   */
+  scopes?: PeeringScope[]
+  /**
+   * Terms for peering in the NIP-11 fee-object shape (`amount`, `unit`,
+   * `period`). An empty list means settlement-free peering.
+   */
+  terms?: PeeringTerm[]
+  /**
+   * Configured peering peers, trusted by pubkey. A connection that proves one
+   * of these pubkeys with NIP-42 AUTH is recognized as a peer; any other
+   * pubkey receives no peer recognition, even with a valid signature.
+   */
+  peers?: PeeringPeer[]
+}
+
 export interface Settings {
   info: Info
   admin?: AdminSettings
@@ -491,5 +621,7 @@ export interface Settings {
   nip50?: Nip50Settings
   nip56?: Nip56Settings
   nip66?: Nip66Settings
+  nip77?: Nip77Settings
+  peering?: PeeringSettings
   wot?: WoTSettings
 }

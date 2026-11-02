@@ -48,13 +48,13 @@ describe('admin-grafana', () => {
     process.env.GRAFANA_DASHBOARD_UID = 'custom-dashboard'
 
     expect(getGrafanaDashboardUrl()).to.equal(
-      'http://127.0.0.1:7777/d/custom-dashboard/nostream-overview?orgId=1&refresh=5s&theme=light',
+      'http://127.0.0.1:7777/d/custom-dashboard/nostream-overview?orgId=1&refresh=5s&theme=dark',
     )
     expect(getGrafanaEmbedUrl()).to.equal(
-      'http://127.0.0.1:7777/d/custom-dashboard/nostream-overview?orgId=1&refresh=5s&theme=light&kiosk',
+      'http://127.0.0.1:7777/d/custom-dashboard/nostream-overview?orgId=1&refresh=5s&theme=dark&kiosk',
     )
     expect(getGrafanaSoloPanelUrl(7, 'dark')).to.equal(
-      'http://127.0.0.1:7777/d-solo/custom-dashboard?orgId=1&panelId=7&refresh=5s&theme=dark',
+      'http://127.0.0.1:7777/d-solo/custom-dashboard/nostream-overview?orgId=1&panelId=7&from=now-15m&to=now&refresh=5s&theme=dark&kiosk=1',
     )
   })
 })

@@ -1,13 +1,12 @@
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Composition, Layer, LayerAnimation, Vignette } from 'framefields'
+import { readSupportedNipCount } from './repo-meta.js'
 import {
   BG,
   BODY,
   DURATION,
   FG,
-  FG_2,
   FONT_MONO,
   FONT_SANS,
   FPS,
@@ -26,9 +25,7 @@ import {
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const asset = (name: string) => path.join(ROOT, 'assets', 'gen', `${name}.png`)
-const NIP_COUNT = String(
-  JSON.parse(readFileSync(path.join(ROOT, '..', '..', 'package.json'), 'utf8')).supportedNips.length,
-)
+const NIP_COUNT = String(readSupportedNipCount())
 
 type Node =
   | ReturnType<typeof Layer.box>
@@ -213,16 +210,17 @@ export async function buildFilm(): Promise<Composition> {
 
   const planetSize = 1700
   const haloSize = planetSize * (2000 / 1600)
+  const planetX = 1210
   const planetY: Key[] = [
-    [0, 1100],
-    [60, 520, 'power3.out'],
-    [HERO.end - 10, 505],
-    [WHAT.start + 25, 700, 'power2.inOut'],
-    [WHAT.end - 20, 710],
-    [FLOW.start + 20, 790, 'power2.inOut'],
-    [FEATURES.end - 20, 820],
-    [DEPLOY.start + 30, 500, 'power3.out'],
-    [LAST, 480],
+    [0, 1210],
+    [60, 640, 'power3.out'],
+    [HERO.end - 10, 625],
+    [WHAT.start + 25, 790, 'power2.inOut'],
+    [WHAT.end - 20, 800],
+    [FLOW.start + 20, 870, 'power2.inOut'],
+    [FEATURES.end - 20, 900],
+    [DEPLOY.start + 30, 580, 'power3.out'],
+    [LAST, 560],
   ]
   const planetOpacity: Key[] = [
     [0, 0],
@@ -237,7 +235,7 @@ export async function buildFilm(): Promise<Composition> {
   add(
     Layer.image(asset('planet'), {
       position: 'absolute',
-      x: 1000,
+      x: planetX,
       y: 1100,
       width: planetSize,
       height: planetSize,
@@ -252,7 +250,7 @@ export async function buildFilm(): Promise<Composition> {
   add(
     Layer.image(asset('sparkles'), {
       position: 'absolute',
-      x: 1000 - haloOffset,
+      x: planetX - haloOffset,
       y: 1100 - haloOffset,
       width: haloSize,
       height: haloSize,
@@ -269,28 +267,9 @@ export async function buildFilm(): Promise<Composition> {
 
   // ── Persistent chrome: nav, footer ──────────────────────────────────────
   const always = { start: 0, inF: 12 }
-  add(rect(120, 45, 16, 16, { background: PINK }), show(45, always))
-  add(mono('nostream', 146, 37, 22, { fill: FG, fontWeight: 700 }), show(37, always))
-
-  const navSize = 14
-  const navSpacing = 2
-  let navX = 1800
-  for (const label of ['GITHUB', 'NIPS', 'DOCS']) {
-    navX -= monoWidth(label, navSize, navSpacing)
-    add(mono(label, navX, 42, navSize, { letterSpacing: navSpacing, fill: BODY }), show(42, always))
-    if (label === 'GITHUB') {
-      add(img('github', navX - 28, 40, 20), show(40, { ...always, peak: 0.75 }))
-      navX -= 28
-    }
-    navX -= 44
-  }
-
-  const footerRight = 'OPEN SOURCE  ·  MIT LICENSE  ·  GITHUB.COM/CAMERI/NOSTREAM'
+  add(img('nostream', 118, 41, 24), show(41, always))
+  add(mono('nostream', 150, 37, 22, { fill: FG, fontWeight: 700 }), show(37, always))
   add(mono('nostream', 120, 1022, 18, { fill: FG, fontWeight: 700 }), show(1022, always))
-  add(
-    mono(footerRight, 1800 - monoWidth(footerRight, 13, 2), 1025, 13, { letterSpacing: 2, fill: BODY }),
-    show(1025, always),
-  )
 
   const hx = 160
   const sceneLabel = (text: string, y: number, start: number, end: number) =>
@@ -386,43 +365,31 @@ export async function buildFilm(): Promise<Composition> {
   light('nostream', 24, heroOut)
   sceneLabel('NOSTREAM  ·  OPEN-SOURCE NOSTR RELAY', 196, 6, heroOut)
   const headline: [string, string][] = [
-    ['Your relay.', FG],
-    ['Your rules.', FG_2],
-    ['Nostr, wired in.', PINK],
+    ['A social network', FG],
+    ['nobody can', PINK],
+    ['switch off.', PINK],
   ]
   headline.forEach(([text, fill], i) => {
-    const y = 228 + i * 112
+    const y = 216 + i * 96
     add(
-      sans(text, hx - 6, y, 108, { fill, letterSpacing: -4, fontWeight: 800 }),
+      sans(text, hx - 6, y, 92, { fill, letterSpacing: -4, fontWeight: 800 }),
       show(y, { start: 12 + i * 9, end: heroOut, dy: 40, inF: 18 }),
     )
   })
 
-  const bodyY1 = 606
-  const bodyY2 = 640
+  const bodyY1 = 540
+  const bodyY2 = 574
   add(
-    mono('A production-ready Nostr relay, written in TypeScript.', hx, bodyY1, 21, { fill: BODY }),
+    mono('Own your posts, your followers and your reach.', hx, bodyY1, 21, { fill: BODY }),
     show(bodyY1, { start: 42, end: heroOut, dy: 14 }),
   )
-  const prefix = 'Your server. Your data. No '
-  const struck = 'middleman'
-  const strikeX = hx + monoWidth(prefix, 21)
-  add(mono(prefix, hx, bodyY2, 21, { fill: BODY }), show(bodyY2, { start: 48, end: heroOut, dy: 14 }))
-  add(mono(struck, strikeX, bodyY2, 21, { fill: MUTED }), show(bodyY2, { start: 48, end: heroOut, dy: 14 }))
   add(
-    mono('.', strikeX + monoWidth(struck, 21), bodyY2, 21, { fill: BODY }),
+    mono('A production-ready Nostr relay, written in TypeScript.', hx, bodyY2, 21, { fill: BODY }),
     show(bodyY2, { start: 48, end: heroOut, dy: 14 }),
   )
-  add(
-    rect(strikeX - 2, bodyY2 + 14, 0, 2, { background: PINK }),
-    show(bodyY2 + 14, { start: 66, end: heroOut }).keys('width', [
-      [66, 0],
-      [80, monoWidth(struck, 21) + 4, 'power2.out'],
-    ]),
-  )
 
-  tabs(708, 62, heroOut)
-  const heroTerm = { y: 744, w: 780 }
+  tabs(628, 62, heroOut)
+  const heroTerm = { y: 664, w: 780 }
   add(
     rect(hx, heroTerm.y, heroTerm.w, 70, {
       background: PANEL,
@@ -459,12 +426,11 @@ export async function buildFilm(): Promise<Composition> {
   copyButton(hx + heroTerm.w - 18, heroTerm.y + 18, 74, heroOut)
 
   const stats: [string, string][] = [
-    [NIP_COUNT, 'NIPS SUPPORTED'],
-    ['6', 'LIGHTNING PROCESSORS'],
-    ['MIT', 'OPEN SOURCE'],
+    ['Nostr + Marmot', 'PROTOCOL SUPPORT'],
+    ['MIT', 'LICENSE'],
   ]
   stats.forEach(([value, label], i) => {
-    const x = hx + i * 270
+    const x = hx + i * 460
     const s = 96 + i * 8
     add(rect(x, 868, 1, 62, { background: LINE }), show(868, { start: s, end: heroOut }))
     add(
@@ -504,7 +470,7 @@ export async function buildFilm(): Promise<Composition> {
       num: '03',
       title: 'nostream',
       body: 'A production-ready relay\nin TypeScript that you\ndeploy and control.',
-      tag: 'self-hosted  ·  open source',
+      tag: 'self-hosted  ·  MIT license',
     },
   ]
   const wc = { y: 430, w: 440, h: 330, gap: 140 }
@@ -533,7 +499,7 @@ export async function buildFilm(): Promise<Composition> {
       add(rect(cx - 6, cy - 6, 12, 12, { background: PINK, borderRadius: 6 }), at(iy))
     }
     if (i === 2) {
-      add(rect(x + 44, iy + 12, 44, 44, { background: PINK, borderRadius: 2 }), at(iy))
+      add(img('nostream', x + 44, iy + 12, 44), at(iy))
     }
     light(i === 0 ? 'nostr' : 'nostream', s, s + 50)
     add(sans(title, x + 36, wc.y + 128, 38, { letterSpacing: -1, fill: accent ? PINK : FG }), at(wc.y + 128, 6))
@@ -570,34 +536,48 @@ export async function buildFilm(): Promise<Composition> {
   )
   const atF = (start: number, y: number) => show(y, { start, end: fEnd, dy: 16 })
 
-  const core = { x: 760, y: 500, w: 400, h: 280 }
+  const checks = [
+    'verify id + schnorr signature',
+    'rate limits · spam rules · PoW',
+    'paid admission · NIP-42 auth',
+    'NIP-11 relay information',
+    `${NIP_COUNT} NIPs supported`,
+  ]
+  const checkTop = 116
+  const checkStep = 28
+  const footerTop = checkTop + checks.length * checkStep + 14
+  const coreH = footerTop + 38
+  const core = { x: 760, y: 500, w: 400, h: coreH }
   const coreStart = f0 + 18
   glow(core.x + core.w / 2, core.y + core.h / 2 - 40, 780, [[coreStart, fEnd]], 0.35)
   card(core.x, core.y, core.w, core.h, coreStart, fEnd, true)
-  add(rect(core.x + 30, core.y + 34, 18, 18, { background: PINK }), atF(coreStart + 4, core.y + 34))
+  add(img('nostream', core.x + 28, core.y + 28, 24), atF(coreStart + 4, core.y + 28))
   add(sans('nostream', core.x + 60, core.y + 20, 36, { letterSpacing: -1 }), atF(coreStart + 4, core.y + 20))
   add(
     mono('RELAY CORE', core.x + 30, core.y + 72, 13, { letterSpacing: 3, fill: TEAL }),
     atF(coreStart + 6, core.y + 72),
   )
   add(rect(core.x + 30, core.y + 100, core.w - 60, 1, { background: LINE }), atF(coreStart + 6, core.y + 100))
-  const checks = [
-    'verify id + schnorr signature',
-    'rate limits · spam rules · PoW',
-    'paid admission · NIP-42 auth',
-    'NIP-11 relay information',
-  ]
   checks.forEach((text, i) => {
-    const y = core.y + 116 + i * 30
+    const y = core.y + checkTop + i * checkStep
     const tick = CYCLES[0] + 24 + i * 6
     add(mono('·', core.x + 30, y, 16, { fill: MUTED }), show(y, { start: coreStart + 8, end: tick + 2, outF: 4 }))
     add(mono(text, core.x + 56, y, 16, { fill: MUTED }), show(y, { start: coreStart + 8, end: tick + 2, outF: 4 }))
     add(check(core.x + 28, y + 4, 13), show(0, { start: tick, end: fEnd, inF: 6 }))
     add(mono(text, core.x + 56, y, 16, { fill: FG }), show(y, { start: tick, end: fEnd, inF: 6 }))
   })
-  add(img('typescript', core.x + 30, core.y + 242, 22), atF(coreStart + 10, core.y + 242))
-  add(img('nodedotjs', core.x + 60, core.y + 242, 22), atF(coreStart + 10, core.y + 242))
-  add(mono('TypeScript · Node.js', core.x + 94, core.y + 245, 14, { fill: MUTED }), atF(coreStart + 10, core.y + 245))
+  add(
+    rect(core.x + 30, core.y + footerTop - 8, core.w - 60, 1, { background: LINE }),
+    atF(coreStart + 10, core.y + footerTop - 8),
+  )
+  const stackIcon = 20
+  const stackY = core.y + footerTop + 4
+  add(img('typescript', core.x + 30, stackY, stackIcon), atF(coreStart + 10, stackY))
+  add(img('nodedotjs', core.x + 30 + stackIcon + 8, stackY, stackIcon), atF(coreStart + 10, stackY))
+  add(
+    mono('TypeScript · Node.js', core.x + 30 + (stackIcon + 8) * 2 + 6, stackY + 5, 14, { fill: MUTED }),
+    atF(coreStart + 10, stackY + 5),
+  )
 
   // Clients
   const clients = [
@@ -816,7 +796,7 @@ export async function buildFilm(): Promise<Composition> {
       ]),
     )
     if (logos.length === 0) {
-      add(rect(x + 34, y + 38, 40, 40, { background: PINK, borderRadius: 2 }), at(y + 38))
+      add(img('nostream', x + 34, y + 38, 40), at(y + 38))
     }
     logos.forEach((name, j) => add(img(name, x + 28 + j * 34, y + 32 + j * 22, j ? 32 : 52), at(y + 32 + j * 22)))
     add(sans(title, x + 108, y + 36, 28, { letterSpacing: -0.6 }), at(y + 36, 6))
@@ -902,13 +882,8 @@ export async function buildFilm(): Promise<Composition> {
     const windows = [...lit[name], allOn]
     const on = () => LayerAnimation.create().keys('opacity', windowKeys(windows, 1, 8, 10))
     add(rect(58, y - 8, 28, 54, { background: BG }), show(y, always))
-    if (name === 'nostream') {
-      add(rect(63, y + 3, 20, 20, { background: '#4a4a4a' }), show(y, always))
-      add(rect(63, y + 3, 20, 20, { background: PINK }), on())
-    } else {
-      add(img(`${name}-gray`, 59, y, 27), show(y, { ...always, peak: 0.7 }))
-      add(img(name, 59, y, 27), on())
-    }
+    add(img(`${name}-gray`, 59, y, 27), show(y, { ...always, peak: 0.7 }))
+    add(img(name, 59, y, 27), on())
     add(mono(String(i + 1).padStart(2, '0'), 64, y + 32, 11, { fill: MUTED }), show(y, always))
     add(rect(46, y, 3, 27, { background: PINK }), on())
   })

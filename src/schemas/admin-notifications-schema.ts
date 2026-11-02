@@ -6,6 +6,7 @@ const targetSchema = z
     type: z.enum(['http', 'discord', 'slack', 'telegram']),
     enabled: z.boolean(),
     url: z.string().optional(),
+    secret: z.string().optional(),
     botToken: z.string().optional(),
     chatId: z.string().optional(),
   })
@@ -22,6 +23,9 @@ export const adminNotificationsPatchBodySchema = z
         'admission.invoice.failed': z.boolean().optional(),
         'settings.changed': z.boolean().optional(),
         'relay.restarted': z.boolean().optional(),
+        'probe.failed': z.boolean().optional(),
+        'probe.recovered': z.boolean().optional(),
+        'ssl.expiring': z.boolean().optional(),
       })
       .strict()
       .optional(),

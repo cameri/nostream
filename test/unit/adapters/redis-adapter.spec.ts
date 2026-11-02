@@ -29,6 +29,8 @@ describe('RedisAdapter', () => {
       get: sandbox.stub(),
       set: sandbox.stub(),
       zRemRangeByScore: sandbox.stub(),
+      zRemRangeByRank: sandbox.stub(),
+      zCard: sandbox.stub(),
       zRange: sandbox.stub(),
       expire: sandbox.stub(),
       zAdd: sandbox.stub(),
@@ -160,6 +162,17 @@ describe('RedisAdapter', () => {
 
       expect(client.zRemRangeByScore).to.have.been.calledOnceWithExactly('sorted-key', 10, 20)
       expect(result).to.equal(3)
+    })
+  })
+
+  describe('removeRangeByRankFromSortedSet', () => {
+    it('calls client.zRemRangeByRank with correct arguments', async () => {
+      client.zRemRangeByRank.resolves(2)
+
+      const result = await adapter.removeRangeByRankFromSortedSet('sorted-key', 0, 5)
+
+      expect(client.zRemRangeByRank).to.have.been.calledOnceWithExactly('sorted-key', 0, 5)
+      expect(result).to.equal(2)
     })
   })
 
@@ -305,6 +318,19 @@ describe('RedisAdapter', () => {
 
       expect(client.scriptLoad).to.have.been.calledOnce
       expect(client.evalSha).to.have.been.calledTwice
+    })
+
+    it('reloads script and retries after NOSCRIPT', async () => {
+      client.scriptLoad.onFirstCall().resolves('stale-sha')
+      client.scriptLoad.onSecondCall().resolves('fresh-sha')
+      client.evalSha.onFirstCall().rejects(Object.assign(new Error('NOSCRIPT No matching script'), { code: 'NOSCRIPT' }))
+      client.evalSha.onSecondCall().resolves('recovered')
+
+      const result = await adapter.eval('local x = 1', ['key1'], ['arg1'])
+
+      expect(client.scriptLoad).to.have.been.calledTwice
+      expect(client.evalSha).to.have.been.calledTwice
+      expect(result).to.equal('recovered')
     })
   })
 })

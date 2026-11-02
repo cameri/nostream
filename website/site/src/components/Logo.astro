@@ -1,0 +1,44 @@
+---
+import { Image } from 'astro:assets'
+import logoSrc from '../assets/logo.png'
+
+interface Props {
+  size?: number
+  /** Show the “nostream” wordmark beside the mark. */
+  word?: boolean
+}
+const { size = 28, word = true } = Astro.props
+---
+
+<span class="logo" style={`--mark:${size}px`}>
+  <Image
+    src={logoSrc}
+    alt=""
+    width={size}
+    height={size}
+    densities={[1, 2]}
+    loading="eager"
+    decoding="async"
+  />
+  {word && <span class="word">nostream</span>}
+</span>
+
+<style>
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .logo :global(img) {
+    display: block;
+    width: var(--mark, 28px);
+    height: var(--mark, 28px);
+    object-fit: contain;
+  }
+</style>

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:stream'
+import { INegentropySessions } from './negentropy'
 import { SubscriptionFilter } from './subscription'
 
 export interface IWebSocketServerAdapter extends EventEmitter, IWebServerAdapter {
@@ -19,7 +20,17 @@ export type IWebSocketAdapter = EventEmitter & {
   getAuthenticatedPubkeys(): ReadonlySet<string>
   /** Returns false if this AUTH event id was already accepted on this socket. */
   addAuthenticatedPubkey(pubkey: string, authEventId: string): boolean
+  /**
+   * Configured peering peer proven by NIP-42 AUTH on this socket, or undefined.
+   * Clears with the AUTH session, so an expired/closed session cannot keep peer
+   * treatment.
+   */
+  getPeerPubkey(): string | undefined
+  /** Mark `pubkey` as the peer identity for this socket. Ignored if it is not authenticated. */
+  setPeerPubkey(pubkey: string): void
   drainAndClose(reason?: string): void
+  /** NIP-77 sessions of this connection. */
+  getNegentropySessions(): INegentropySessions
 }
 
 export interface ICacheAdapter {
@@ -29,6 +40,7 @@ export interface ICacheAdapter {
   setKeyIfNotExists(key: string, value: string, expirySeconds?: number): Promise<boolean>
   addToSortedSet(key: string, set: Record<string, string> | Record<string, string>[]): Promise<number>
   removeRangeByScoreFromSortedSet(key: string, min: number, max: number): Promise<number>
+  removeRangeByRankFromSortedSet(key: string, start: number, stop: number): Promise<number>
   getRangeFromSortedSet(key: string, start: number, stop: number): Promise<string[]>
   setKeyExpiry(key: string, expiry: number): Promise<void>
 

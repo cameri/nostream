@@ -11,6 +11,10 @@ import { Settings } from '../@types/settings'
 
 const logger = createLogger('lnbits-payments-processor')
 
+// LNbits < 1.0 returns unix seconds for details.time/details.expiry,
+// LNbits >= 1.0 returns ISO 8601 strings ("2025-10-11T15:24:27+00:00").
+const toDate = (value: number | string): Date => (typeof value === 'number' ? new Date(value * 1000) : new Date(value))
+
 export class LNbitsInvoice implements Invoice {
   id: string
   pubkey: Pubkey
@@ -62,7 +66,7 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
         invoice.amountPaid = BigInt(Math.floor(data.details.amount / 1000))
       }
       invoice.unit = InvoiceUnit.SATS
-      invoice.expiresAt = new Date(data.details.expiry * 1000)
+      invoice.expiresAt = toDate(data.details.expiry)
       if (data.paid) {
         invoice.status = InvoiceStatus.COMPLETED
       } else if (isExpiredInvoice(invoice)) {
@@ -71,8 +75,8 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
         invoice.status = InvoiceStatus.PENDING
       }
       invoice.description = data.details.memo
-      invoice.confirmedAt = data.paid ? new Date(data.details.time * 1000) : null
-      invoice.createdAt = new Date(data.details.time * 1000)
+      invoice.confirmedAt = data.paid ? toDate(data.details.time) : null
+      invoice.createdAt = toDate(data.details.time)
       invoice.updatedAt = new Date()
       return invoice
     } catch (error) {
@@ -129,8 +133,8 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
       invoice.status = data.paid ? InvoiceStatus.COMPLETED : InvoiceStatus.PENDING
       invoice.description = data.details.memo
       invoice.confirmedAt = null
-      invoice.expiresAt = new Date(data.details.expiry * 1000)
-      invoice.createdAt = new Date(data.details.time * 1000)
+      invoice.expiresAt = toDate(data.details.expiry)
+      invoice.createdAt = toDate(data.details.time)
       invoice.rawResponse = JSON.stringify({
         invoiceResponse: invoiceResponse.data,
         createData: response.data,

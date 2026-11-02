@@ -13,6 +13,7 @@ const { expect } = chai
 
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 import { IWebSocketServerAdapter } from '../../../src/@types/adapters'
+import { Negentropy, NegentropyStorageVector } from '../../../src/utils/negentropy'
 import { WebSocketAdapter } from '../../../src/adapters/web-socket-adapter'
 import { markActionableTarget, resetHiddenContentCache } from '../../../src/utils/hidden-content-cache'
 
@@ -575,7 +576,7 @@ describe('WebSocketAdapter', () => {
         })
 
         slidingWindowRateLimiter.returns({
-          hit: sandbox.stub().resolves(true),
+          hit: sandbox.stub().resolves({ limited: true }),
         })
 
         onMessage = client.on.getCalls().find((call: any) => call.args[0] === 'message').args[1]
@@ -610,8 +611,8 @@ describe('WebSocketAdapter', () => {
         }
 
         const hitStub = sandbox.stub()
-        hitStub.onFirstCall().resolves(false)
-        hitStub.resolves(true)
+        hitStub.onFirstCall().resolves({ limited: false })
+        hitStub.resolves({ limited: true })
         slidingWindowRateLimiter.returns({ hit: hitStub })
         createMessageHandler.returns(inFlightHandler)
 
@@ -640,6 +641,46 @@ describe('WebSocketAdapter', () => {
         expect(sentFrame()).to.deep.equal(['CLOSED', 'q1', 'rate-limited: slow down', '60000'])
       })
 
+      // The strategy's own estimate wins when it has one: a sliding window's
+      // period is the upper bound, an EWMA half-life is not.
+      it('sends the limiter\'s own backoff when it has one', async () => {
+        slidingWindowRateLimiter.returns({
+          hit: sandbox.stub().resolves({ limited: true, retryAfterMs: 120000 }),
+        })
+
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
+
+        expect(sentFrame()).to.deep.equal(['CLOSED', 'sub1', 'rate-limited: slow down', '120000'])
+      })
+
+      it('buckets the limit by message type, so a REQ is not refused for EVENTs', async () => {
+        const hitStub = sandbox.stub()
+        hitStub.withArgs(Sinon.match(/:message:EVENT:/)).resolves({ limited: true })
+        hitStub.withArgs(Sinon.match(/:message:REQ:/)).resolves({ limited: false })
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
+
+        expect(hitStub).to.have.been.calledOnceWithExactly(
+          '127.0.0.1:message:REQ:60000',
+          1,
+          { period: 60000, rate: 1 },
+        )
+      })
+
+      // A closed set of types, or a client could rotate invented ones and keep
+      // every bucket empty.
+      it('buckets an invented message type with everything else unrecognised', async () => {
+        const hitStub = sandbox.stub().resolves({ limited: false })
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+
+        await onMessage(Buffer.from(JSON.stringify(['AAAA'])))
+        await onMessage(Buffer.from(JSON.stringify(['BBBB'])))
+
+        expect(hitStub.firstCall.args[0]).to.equal('127.0.0.1:message:OTHER:60000')
+        expect(hitStub.secondCall.args[0]).to.equal('127.0.0.1:message:OTHER:60000')
+      })
+
       it('falls back to the notice when the frame is not valid JSON', async () => {
         await onMessage(Buffer.from('not-json'))
 
@@ -651,7 +692,7 @@ describe('WebSocketAdapter', () => {
     it('stops hitting subsequent rate limit windows once one is exceeded', async () => {
       client.readyState = WebSocket.OPEN
 
-      const hitStub = sandbox.stub().resolves(true)
+      const hitStub = sandbox.stub().resolves({ limited: true })
 
       settingsFactory.returns({
         network: { remoteIpHeader: '' },
@@ -950,6 +991,55 @@ describe('WebSocketAdapter', () => {
       expect(adapter.addAuthenticatedPubkey(pubkey, eventId)).to.equal(false)
     })
 
+    it('exposes a peer pubkey only after it authenticates', () => {
+      const pubkey = 'a'.repeat(64)
+      settingsFactory.returns({
+        peering: { enabled: true, peers: [{ pubkey, relayUrl: 'wss://peer.example.com' }] },
+      })
+
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+    })
+
+    it('drops peer status when the AUTH session expires', () => {
+      const clock = sandbox.useFakeTimers({ now: 1_700_000_000_000 })
+      const pubkey = 'a'.repeat(64)
+      settingsFactory.returns({
+        nip42: { sessionExpirySeconds: 60 },
+        peering: { enabled: true, peers: [{ pubkey, relayUrl: 'wss://peer.example.com' }] },
+      })
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+
+      clock.tick(60_000)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
+    it('revokes peer status when the peer is disabled or removed from settings', () => {
+      const pubkey = 'a'.repeat(64)
+      const peer = { pubkey, relayUrl: 'wss://peer.example.com' }
+      settingsFactory.returns({ peering: { enabled: true, peers: [peer] } })
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+
+      settingsFactory.returns({ peering: { enabled: true, peers: [{ ...peer, enabled: false }] } })
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+
+      settingsFactory.returns({ peering: { enabled: true, peers: [] } })
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
     it('expires authenticated pubkeys after sessionExpirySeconds', () => {
       const clock = sandbox.useFakeTimers({ now: 1_700_000_000_000 })
       settingsFactory.returns({ nip42: { sessionExpirySeconds: 60 } })
@@ -974,6 +1064,93 @@ describe('WebSocketAdapter', () => {
 
       expect(adapter.getChallenge()).not.to.equal(adapter2.getChallenge())
       adapter2.removeAllListeners()
+    })
+  })
+
+  describe('NIP-77 negentropy sessions', () => {
+    const emptyStorage = () => {
+      const storage = new NegentropyStorageVector()
+      storage.seal()
+
+      return new Negentropy(storage)
+    }
+
+    const openSession = (id: string, idleTimeoutMs = 60000) => {
+      const sessions = adapter.getNegentropySessions()
+      sessions.activate(
+        id,
+        sessions.reserve(id, 3) as symbol,
+        { negentropy: emptyStorage(), filter: {} },
+        idleTimeoutMs,
+      )
+    }
+
+    const sentMessages = () => client.send.getCalls().map((call: any) => JSON.parse(call.args[0]))
+
+    const triggerMessage = async (payload: unknown) => {
+      const call = client.on.getCalls().find((c: any) => c.args[0] === 'message')
+      await call.args[1](Buffer.from(JSON.stringify(payload)))
+    }
+
+    it('hands the same sessions to every caller', () => {
+      expect(adapter.getNegentropySessions()).to.equal(adapter.getNegentropySessions())
+    })
+
+    it('dispatches NEG-OPEN, NEG-MSG and NEG-CLOSE to a message handler', async () => {
+      const handleMessage = sandbox.stub().resolves()
+      createMessageHandler.returns({ handleMessage })
+
+      await triggerMessage(['NEG-OPEN', 'sync1', { kinds: [1] }, '6100000200'])
+      await triggerMessage(['NEG-MSG', 'sync1', '6100'])
+      await triggerMessage(['NEG-CLOSE', 'sync1'])
+
+      expect(handleMessage.getCalls().map((call: any) => call.args[0][0])).to.deep.equal([
+        'NEG-OPEN',
+        'NEG-MSG',
+        'NEG-CLOSE',
+      ])
+    })
+
+    it('replies with a NOTICE to a NEG-OPEN whose initial message is not hex', async () => {
+      await triggerMessage(['NEG-OPEN', 'sync1', {}, 'not hex'])
+
+      expect(createMessageHandler).to.not.have.been.called
+      expect(sentMessages()).to.have.lengthOf(1)
+      expect(sentMessages()[0][0]).to.equal('NOTICE')
+      expect(sentMessages()[0][1]).to.match(/^invalid:/)
+    })
+
+    it('tells the client when a session times out', () => {
+      const clock = sandbox.useFakeTimers()
+      openSession('sync1', 1000)
+
+      clock.tick(1000)
+
+      expect(sentMessages()).to.deep.include(['NEG-ERR', 'sync1', 'closed: negentropy session timed out'])
+      expect(adapter.getNegentropySessions().getSessionIds()).to.deep.equal([])
+    })
+
+    it('drops every session and its timer when the client disconnects', () => {
+      const clock = sandbox.useFakeTimers()
+      openSession('sync1', 1000)
+      const onClose = client.on.getCalls().find((call: any) => call.args[0] === 'close').args[1]
+
+      onClose()
+      clock.tick(5000)
+
+      expect(adapter.getNegentropySessions().getSessionIds()).to.deep.equal([])
+      expect(sentMessages().filter((message: any[]) => message[0] === 'NEG-ERR')).to.deep.equal([])
+    })
+
+    it('tells the client its sessions are closed when the relay drains', () => {
+      openSession('a')
+      openSession('b')
+
+      adapter.drainAndClose('relay shutting down')
+
+      expect(sentMessages()).to.deep.include(['NEG-ERR', 'a', 'closed: relay shutting down'])
+      expect(sentMessages()).to.deep.include(['NEG-ERR', 'b', 'closed: relay shutting down'])
+      expect(adapter.getNegentropySessions().getSessionIds()).to.deep.equal([])
     })
   })
 })

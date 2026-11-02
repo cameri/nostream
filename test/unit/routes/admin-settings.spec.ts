@@ -177,9 +177,14 @@ describe('admin settings API', () => {
     const passwordHash = hashAdminPassword('settings-password')
     saveSettings({
       ...loadDefaults(),
-      admin: { enabled: true, passwordHash, sessionTtlSeconds: 3600 },
-      mirroring: {
-        static: [{ address: 'wss://mirror.example', secret: 'mirror-secret-value' }],
+      admin: {
+        enabled: true,
+        passwordHash,
+        sessionTtlSeconds: 3600,
+        notifications: {
+          ...loadDefaults().admin?.notifications,
+          targets: [{ id: 'ops-telegram', type: 'telegram', enabled: true, botToken: 'telegram-bot-token', chatId: '1' }],
+        },
       },
     })
     const baseUrl = await startServer({
@@ -198,7 +203,7 @@ describe('admin settings API', () => {
 
     expect(settingsResponse.status).to.equal(200)
     expect(settingsResponse.data.settings.admin.passwordHash).to.equal('***')
-    expect(settingsResponse.data.settings.mirroring.static[0].secret).to.equal('***')
+    expect(settingsResponse.data.settings.admin.notifications.targets[0].botToken).to.equal('***')
     expect(settingsResponse.data.settings.info.name).to.be.a('string')
 
     expect(schemaResponse.status).to.equal(200)

@@ -48,6 +48,18 @@ const mergeTargetSecrets = (
     merged.url = existing.url
   }
 
+  if (incoming.secret === '') {
+    delete merged.secret
+  } else if (isRedactedSecret(incoming.secret)) {
+    if (existing?.secret) {
+      merged.secret = existing.secret
+    } else {
+      delete merged.secret
+    }
+  } else if (incoming.secret === undefined && existing?.secret) {
+    merged.secret = existing.secret
+  }
+
   if (isRedactedSecret(incoming.botToken)) {
     if (existing?.botToken) {
       merged.botToken = existing.botToken

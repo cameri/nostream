@@ -28,6 +28,29 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
 
     if !truthy_opt(key_path(candidate, &["info", "relay_url"])) {
         issues.push(Issue::new("info.relay_url", "relay_url is required"));
+    } else if let Some(Value::String(value)) = key_path(candidate, &["info", "relay_url"]) {
+        // Order matters and is the capture's: parse, then host, then scheme. A
+        // string that is not an absolute URL reports once, as unparseable, rather
+        // than three times.
+        match Url::parse(value) {
+            Ok(parsed) => {
+                if parsed.host_str().is_none_or(str::is_empty) {
+                    issues.push(Issue::new(
+                        "info.relay_url",
+                        "relay_url must include a valid host",
+                    ));
+                } else if !matches!(parsed.scheme(), "ws" | "wss" | "http" | "https") {
+                    issues.push(Issue::new(
+                        "info.relay_url",
+                        "relay_url must use ws, wss, http, or https protocol",
+                    ));
+                }
+            }
+            Err(_) => issues.push(Issue::new(
+                "info.relay_url",
+                "relay_url must be a valid absolute URL",
+            )),
+        }
     }
 
     if !truthy_opt(key_path(candidate, &["info", "name"])) {
@@ -196,6 +219,50 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
         );
     }
 
+    // `nip66` retention, `nip77` caps, subscription plans and peering are modelled by the
+    // typed settings above but were not validated: the document is shared with the
+    // TypeScript app, which rejects these documents, so `config validate` blessing them
+    // would leave one file with two verdicts.
+    if let Some(nip66) = key(candidate, "nip66")
+        && let Some(Value::Number(hours)) = key(nip66, "historyRetentionHours")
+    {
+        let whole = hours.as_i64().is_some() || hours.as_f64().is_some_and(|f| f.fract() == 0.0);
+        let value = to_number(&Value::Number(hours.clone())).unwrap_or(-1.0);
+        if !whole || !(value == 0.0 || value >= 1.0) {
+            issues.push(Issue::new(
+                "nip66.historyRetentionHours",
+                "historyRetentionHours must be 0 (disabled) or at least 1",
+            ));
+        }
+    }
+
+    if let Some(nip77) = key(candidate, "nip77")
+        && truthy_opt(key(nip77, "enabled"))
+    {
+        // Wrong types are the shape walk's to report; this rule is about the value.
+        for field in [
+            "maxEventsPerSession",
+            "maxSessionsPerConnection",
+            "sessionIdleTimeoutMs",
+        ] {
+            if let Some(Value::Number(number)) = key(nip77, field) {
+                let value = to_number(&Value::Number(number.clone())).unwrap_or(-1.0);
+                let whole = number.as_i64().is_some()
+                    || number.as_u64().is_some()
+                    || number.as_f64().is_some_and(|f| f.fract() == 0.0);
+                if !whole || value <= 0.0 {
+                    issues.push(Issue::new(
+                        format!("nip77.{field}"),
+                        format!("{field} must be a positive integer"),
+                    ));
+                }
+            }
+        }
+    }
+
+    validate_subscription_plans(candidate, &mut issues);
+    validate_peering(candidate, &mut issues);
+
     validate_shape(defaults, Some(candidate), &[], &mut issues);
     issues.extend(validate_admin_notifications(candidate));
 
@@ -226,16 +293,175 @@ fn validate_rate_limit_periods(
             ));
             continue;
         }
-        if !to_number_is_positive(key(entry, "period")) {
-            issues.push(Issue::new(
-                format!("{path_prefix}[{index}].period"),
-                "period must be greater than 0",
-            ));
+        let period_path = format!("{path_prefix}[{index}].period");
+        match key(entry, "period") {
+            // Three mistakes, three messages, in the capture's order: not a number,
+            // not a whole number, not at least one. A window of 60 ms is a valid
+            // count and stays valid; the unit cannot be inferred from the value.
+            Some(Value::Number(number)) => {
+                let integral = number.as_i64().is_some()
+                    || number.as_u64().is_some()
+                    || number.as_f64().is_some_and(|float| float.fract() == 0.0);
+                if !integral {
+                    issues.push(Issue::new(
+                        period_path,
+                        "period must be a whole number of milliseconds",
+                    ));
+                } else if !to_number_is_positive(Some(&Value::Number(number.clone()))) {
+                    issues.push(Issue::new(
+                        period_path,
+                        "period must be at least 1 millisecond",
+                    ));
+                }
+            }
+            _ => issues.push(Issue::new(
+                period_path,
+                "period must be a number of milliseconds",
+            )),
         }
     }
 }
 
 /// Walks the defaults document as the schema for the candidate.
+/// `payments.subscriptionPlans` — the same rules as `validateSubscriptionPlans`.
+///
+/// A plan is selected by the amount paid, so the amount is both validated and required to be
+/// unique: two plans at one price cannot be told apart by a payment.
+fn validate_subscription_plans(candidate: &Value, issues: &mut Vec<Issue>) {
+    let Some(Value::Sequence(plans)) = key_path(candidate, &["payments", "subscriptionPlans"])
+    else {
+        return;
+    };
+    let mut ids: Vec<String> = Vec::new();
+    let mut amounts: Vec<String> = Vec::new();
+    for (index, plan) in plans.iter().enumerate() {
+        let prefix = format!("payments.subscriptionPlans[{index}]");
+        if !is_plain_object(plan) {
+            issues.push(Issue::new(prefix, "plan must be an object"));
+            continue;
+        }
+        match key(plan, "id") {
+            Some(Value::String(id)) if !id.trim().is_empty() => {
+                if id == "grandfathered" {
+                    issues.push(Issue::new(
+                        format!("{prefix}.id"),
+                        "id \"grandfathered\" is reserved",
+                    ));
+                } else if ids.contains(id) {
+                    issues.push(Issue::new(
+                        format!("{prefix}.id"),
+                        format!("id \"{id}\" is used by more than one plan"),
+                    ));
+                } else {
+                    ids.push(id.clone());
+                }
+            }
+            _ => issues.push(Issue::new(format!("{prefix}.id"), "id is required")),
+        }
+        let amount = key(plan, "amount");
+        if !to_number_is_positive(amount) {
+            issues.push(Issue::new(
+                format!("{prefix}.amount"),
+                "amount must be a positive integer (msats)",
+            ));
+        } else if let Some(value) = amount.and_then(serde_yaml::Value::as_i64) {
+            let text = value.to_string();
+            if amounts.contains(&text) {
+                issues.push(Issue::new(
+                    format!("{prefix}.amount"),
+                    format!("amount {value} is used by more than one plan"),
+                ));
+            } else {
+                amounts.push(text);
+            }
+        }
+        if !to_number_is_positive(key(plan, "intervalSeconds")) {
+            issues.push(Issue::new(
+                format!("{prefix}.intervalSeconds"),
+                "intervalSeconds must be a positive integer",
+            ));
+        }
+        if !to_number_is_positive(key(plan, "graceSeconds")) {
+            issues.push(Issue::new(
+                format!("{prefix}.graceSeconds"),
+                "graceSeconds must be a positive integer",
+            ));
+        }
+    }
+}
+
+/// `peering` — the discovery surface the NIP-11 document publishes.
+///
+/// The scopes, terms and peers graphs are not validated here yet; a configuration that is
+/// accepted here and rejected by the TypeScript app is the state this whole rule set exists to
+/// end, so what is missing is named in the issue that tracks the port.
+fn validate_peering(candidate: &Value, issues: &mut Vec<Issue>) {
+    let Some(peering) = key(candidate, "peering") else {
+        return;
+    };
+    if !is_plain_object(peering) {
+        return;
+    }
+    if let Some(Value::Number(bits)) = key(peering, "minRequestPowDifficulty") {
+        let value = to_number(&Value::Number(bits.clone())).unwrap_or(-1.0);
+        let whole = bits.as_i64().is_some() || bits.as_f64().is_some_and(|f| f.fract() == 0.0);
+        if !whole || !(0.0..=256.0).contains(&value) {
+            issues.push(Issue::new(
+                "peering.minRequestPowDifficulty",
+                "must be an integer between 0 and 256",
+            ));
+        }
+    }
+    if let Some(Value::String(endpoint)) = key(peering, "endpoint")
+        && !endpoint.trim().is_empty()
+    {
+        match Url::parse(endpoint.trim()) {
+            Ok(parsed) => {
+                if !matches!(parsed.scheme(), "ws" | "wss")
+                    || parsed.host_str().is_none_or(str::is_empty)
+                {
+                    issues.push(Issue::new(
+                        "peering.endpoint",
+                        "must be a ws:// or wss:// URL",
+                    ));
+                }
+            }
+            Err(_) => issues.push(Issue::new(
+                "peering.endpoint",
+                "must be a valid ws:// or wss:// URL",
+            )),
+        }
+    }
+    if let Some(Value::String(contact)) = key(peering, "contact")
+        && !contact.trim().is_empty()
+        && Url::parse(contact.trim()).is_err()
+    {
+        issues.push(Issue::new(
+            "peering.contact",
+            "must be a valid URI (for example mailto: or https:)",
+        ));
+    }
+    if truthy_opt(key(peering, "enabled")) {
+        let scopes = key(peering, "scopes");
+        let has_scopes = matches!(scopes, Some(Value::Sequence(entries)) if !entries.is_empty());
+        if !has_scopes {
+            issues.push(Issue::new(
+                "peering.scopes",
+                "at least one scope is required when peering is enabled",
+            ));
+        }
+        let has_contact =
+            matches!(key(peering, "contact"), Some(Value::String(text)) if !text.trim().is_empty());
+        let has_endpoint = matches!(key(peering, "endpoint"), Some(Value::String(text)) if !text.trim().is_empty());
+        if !has_contact && !has_endpoint {
+            issues.push(Issue::new(
+                "peering.contact",
+                "contact or endpoint is required when peering is enabled",
+            ));
+        }
+    }
+}
+
 fn validate_shape(
     schema: &Value,
     candidate: Option<&Value>,

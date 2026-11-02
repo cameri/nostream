@@ -118,6 +118,44 @@ const CASES = [
   { name: 'missing_relay_url', mutations: [{ op: 'delete', path: 'info.relay_url' }] },
   { name: 'bad_strategy', mutations: [{ op: 'set', path: 'limits.rateLimiter.strategy', value: 'random' }] },
   { name: 'nip77_present', mutations: [{ op: 'set', path: 'nip77', value: { enabled: true } }] },
+  {
+    name: 'nip77_zero_cap',
+    mutations: [
+      { op: 'set', path: 'nip77.enabled', value: true },
+      { op: 'set', path: 'nip77.maxEventsPerSession', value: 0 },
+    ],
+  },
+  {
+    name: 'plan_negative_amount',
+    mutations: [
+      {
+        op: 'set',
+        path: 'payments.subscriptionPlans',
+        value: [{ id: 'basic', amount: -1, intervalSeconds: 86400, graceSeconds: 3600 }],
+      },
+    ],
+  },
+  {
+    name: 'plan_duplicate_amount',
+    mutations: [
+      {
+        op: 'set',
+        path: 'payments.subscriptionPlans',
+        value: [
+          { id: 'basic', amount: 1000000, intervalSeconds: 86400, graceSeconds: 3600 },
+          { id: 'pro', amount: 1000000, intervalSeconds: 86400, graceSeconds: 3600 },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'peering_pow_out_of_range',
+    mutations: [{ op: 'set', path: 'peering.minRequestPowDifficulty', value: 300 }],
+  },
+  {
+    name: 'peering_enabled_without_scopes',
+    mutations: [{ op: 'set', path: 'peering.enabled', value: true }],
+  },
   { name: 'relay_url_ftp', mutations: [{ op: 'set', path: 'info.relay_url', value: 'ftp://relay.example.com' }] },
 ]
 

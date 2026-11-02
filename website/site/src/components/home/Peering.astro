@@ -1,0 +1,92 @@
+---
+import FilmFrame from '../FilmFrame.astro'
+
+const media = (file: string) => `${import.meta.env.BASE_URL}media/${file}`.replace(/\/\//, '/')
+---
+
+<section class="section" id="peering">
+  <div class="container">
+    <div class="section-head split">
+      <div>
+        <p class="kicker reveal"><span class="idx">03</span> Relay peering</p>
+        <h2 class="h2 reveal"><span class="g1">One job per relay.</span> <span class="g3">The network assembles the rest.</span></h2>
+      </div>
+      <div class="reveal">
+        <p class="lead">
+          Peering lets operators specialize — community scope, deep archives, hot caches at the edge — without every
+          relay pretending to be the whole network.
+        </p>
+      </div>
+    </div>
+
+    <div class="reveal film-wrap">
+      <FilmFrame
+        src={media('peering.mp4')}
+        lowSrc={media('peering-low.mp4')}
+        poster={media('peering-poster.webp')}
+        title="nostream relay peering"
+      />
+      <button
+        class="film-toggle mono"
+        type="button"
+        data-peering-film-toggle
+        aria-pressed="false"
+        aria-label="Pause the peering film"
+      >
+        Pause
+      </button>
+    </div>
+  </div>
+</section>
+
+<style>
+  .film-wrap {
+    position: relative;
+    margin-top: 8px;
+  }
+
+  .film-wrap :global(.film-frame) {
+    width: 100%;
+  }
+
+  .film-toggle {
+    position: absolute;
+    z-index: 4;
+    right: 18px;
+    bottom: 18px;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    background: rgba(8, 8, 10, 0.82);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+  }
+
+  .film-toggle:hover {
+    border-color: var(--wire);
+    color: var(--fg);
+  }
+</style>
+
+<script>
+  const button = document.querySelector<HTMLButtonElement>('[data-peering-film-toggle]')
+  const video = document.querySelector<HTMLVideoElement>('#peering video')
+  if (button && video) {
+    const sync = () => {
+      const paused = video.paused
+      button.textContent = paused ? 'Play' : 'Pause'
+      button.setAttribute('aria-pressed', String(!paused))
+      button.setAttribute('aria-label', paused ? 'Play the peering film' : 'Pause the peering film')
+    }
+    sync()
+    video.addEventListener('play', sync)
+    video.addEventListener('pause', sync)
+    button.addEventListener('click', () => {
+      if (video.paused) void video.play()
+      else video.pause()
+    })
+  }
+</script>

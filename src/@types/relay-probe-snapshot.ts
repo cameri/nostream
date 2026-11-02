@@ -47,6 +47,11 @@ export interface RelayProbeRunSnapshot {
   probeContext?: RelayProbeRunContext
 }
 
+export interface RelayProbeHistoryRetention {
+  maxRuns: number
+  maxAgeHours?: number
+}
+
 export interface IRelayProbeSnapshotStore {
   saveLatest(snapshot: RelayProbeRunSnapshot, expirySeconds?: number): Promise<void>
   getLatest(): Promise<RelayProbeRunSnapshot | null>

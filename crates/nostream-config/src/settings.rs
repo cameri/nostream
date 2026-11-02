@@ -440,6 +440,8 @@ pub struct Payments {
     pub fee_schedules: FeeSchedules,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invoice_expiry_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscription_plans: Option<Vec<SubscriptionPlan>>,
 }
 
 /// `paymentsProcessors.lnurl` (`src/@types/settings.ts` `LnurlPaymentsProcessor`).
@@ -683,6 +685,12 @@ pub struct Nip66Settings {
     pub dns_cache_ttl_seconds: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geohash: Option<String>,
+    /// How many probe runs are kept. `nip66.historyRetentionRuns`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_retention_runs: Option<u64>,
+    /// Optional max age for probe history; 0 disables age-based trimming.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_retention_hours: Option<u64>,
 }
 
 /// `nip05` (`src/@types/settings.ts` `Nip05Settings`).
@@ -776,7 +784,106 @@ pub struct Nip43Settings {
     pub invite_request_whitelist: Option<Vec<SettingsPubkey>>,
 }
 
-/// `nip56` (`src/@types/settings.ts` `Nip56Settings`).
+/// `nip77` (`src/@types/settings.ts` `Nip77Settings`).
+///
+/// Modelled here so the defaults document round-trips; the Rust relay does not
+/// answer NIP-77 yet, and the guided editor deliberately has no category for it
+/// (`deferred_nip77_surface_is_not_modelled`). An implementation reads these
+/// fields when it lands — the settings exist because the document has them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Nip77Settings {
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_events_per_session: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_sessions_per_connection: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_idle_timeout_ms: Option<u64>,
+}
+
+/// One feed this relay offers peers (`src/@types/settings.ts` `PeeringScope`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeeringScope {
+    /// Event kinds, or `[min, max]` ranges.
+    pub kinds: Vec<KindSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_seconds: Option<i64>,
+}
+
+/// One peering price, in the NIP-11 fee-object shape (`src/@types/settings.ts` `PeeringTerm`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeeringTerm {
+    pub amount: i64,
+    pub unit: String,
+    pub period: i64,
+}
+
+/// A configured peer, trusted by pubkey (`src/@types/settings.ts` `PeeringPeer`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeeringPeer {
+    pub pubkey: String,
+    pub relay_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+/// `peering` (`src/@types/settings.ts` `PeeringSettings`).
+///
+/// A discovery surface for the NIP-11 document and the trust list inbound AUTH
+/// is matched against. Modelled so the defaults document round-trips; the
+/// validator's key list comes from that document, so an unmodelled section here
+/// would make every peering configuration invalid.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeeringSettings {
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_request_pow_difficulty: Option<u16>,
+    #[serde(default)]
+    pub scopes: Vec<PeeringScope>,
+    #[serde(default)]
+    pub terms: Vec<PeeringTerm>,
+    #[serde(default)]
+    pub peers: Vec<PeeringPeer>,
+}
+
+/// A recurring membership plan (`src/@types/settings.ts` `SubscriptionPlan`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionPlan {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Price of one period in msats.
+    pub amount: i64,
+    pub interval_seconds: i64,
+    pub grace_seconds: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limits: Option<SubscriptionPlanLimits>,
+}
+
+/// What a plan replaces for its subscribers (`src/@types/settings.ts` `SubscriptionPlanLimits`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionPlanLimits {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limits: Option<Vec<serde_yaml::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_max_days: Option<i64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Nip56Settings {
@@ -821,6 +928,10 @@ pub struct Settings {
     pub nip56: Option<Nip56Settings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nip66: Option<Nip66Settings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nip77: Option<Nip77Settings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peering: Option<PeeringSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wot: Option<WotSettings>,
 }

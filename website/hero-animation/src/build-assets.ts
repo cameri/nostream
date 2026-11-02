@@ -1,5 +1,17 @@
 import { mkdir, readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import sharp, { type Sharp } from 'sharp'
+
+const SITE_LOGO = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'site',
+  'src',
+  'assets',
+  'logo.png',
+)
 
 const RAW = 'assets/icons-raw'
 const OUT = 'assets/gen'
@@ -66,6 +78,13 @@ async function logos() {
   }
 }
 
+/** Official nostream mark (same file as the Astro site). */
+async function nostreamBrand() {
+  const fit = { fit: 'contain' as const, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+  await sharp(SITE_LOGO).resize(512, 512, fit).png().toFile(`${OUT}/nostream.png`)
+  await sharp(SITE_LOGO).resize(512, 512, fit).grayscale().png().toFile(`${OUT}/nostream-gray.png`)
+}
+
 function rng(seed: number) {
   return () => {
     seed = (seed * 1664525 + 1013904223) % 4294967296
@@ -81,7 +100,7 @@ async function planet() {
   const rand = rng(7)
   const dots: string[] = []
 
-  for (let i = 0; i < 5200; i++) {
+  for (let i = 0; i < 1800; i++) {
     const a = rand() * Math.PI * 2
     const d = Math.sqrt(rand()) ** 0.55 * r
     const x = c + Math.cos(a) * d
@@ -157,7 +176,7 @@ async function sparkles() {
   const c = S / 2
   const rand = rng(11)
   const dots: string[] = []
-  for (let i = 0; i < 1400; i++) {
+  for (let i = 0; i < 380; i++) {
     const a = rand() * Math.PI * 2
     const d = 700 + rand() ** 1.6 * 280
     const x = c + Math.cos(a) * d
@@ -187,5 +206,5 @@ async function grain() {
 }
 
 await mkdir(OUT, { recursive: true })
-await Promise.all([logos(), planet(), glow(), grain(), grid(), sparkles()])
+await Promise.all([logos(), nostreamBrand(), planet(), glow(), grain(), grid(), sparkles()])
 console.log(`assets written to ${OUT}/`)

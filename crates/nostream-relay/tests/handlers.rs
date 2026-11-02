@@ -576,6 +576,7 @@ async fn an_admitted_pubkey_publishes_and_a_low_balance_blocks() {
             publication: None,
         },
         invoice_expiry_seconds: None,
+        subscription_plans: None,
     });
     settings.limits = Some(event_limits(EventLimits {
         pubkey: Some(PubkeyLimits {
