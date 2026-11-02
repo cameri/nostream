@@ -53,8 +53,8 @@ importers:
         specifier: 4.3.2
         version: 4.3.2
       knex:
-        specifier: 2.4.2
-        version: 2.4.2(pg@8.9.0)
+        specifier: 3.2.9
+        version: 3.2.9(pg-query-stream@4.3.0(pg@8.9.0))(pg@8.9.0)
       ora:
         specifier: ^9.3.0
         version: 9.4.0
@@ -2530,10 +2530,6 @@ packages:
     resolution: {integrity: sha512-i0/MaqBtdbnJ4XQs4Pmyb+oFQl+q0lsAmokVUH92SlSw4fkeAcG3bVon+Qt7hmtF+u3Het6o4VgrcY3qAoEB6w==}
     engines: {node: ^12.20.0 || >=14}
 
-  commander@9.5.0:
-    resolution: {integrity: sha512-KRs7WVDKg86PWiuAqhDrAQnTXZKraVcCc6vFdL14qrZ/DcWwuRo7VoiYXalXO7S5GKpqYiVEwCbgFDfxNHKJBQ==}
-    engines: {node: ^12.20.0 || >=14}
-
   common-ancestor-path@1.0.1:
     resolution: {integrity: sha512-L3sHRo1pXXEqX8VU28kfgUY+YGsk09hPqZiZmLacNib6XNTCM8ubYeT7ryXQw8asB1sKgcU5lkB7ONug08aB8w==}
 
@@ -3592,9 +3588,9 @@ packages:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
 
-  knex@2.4.2:
-    resolution: {integrity: sha512-tMI1M7a+xwHhPxjbl/H9K1kHX+VncEYcvCx5K00M16bWvpYPKAZd6QrCu68PtHAdIZNQPWZn0GVhqVBEthGWCg==}
-    engines: {node: '>=12'}
+  knex@3.2.9:
+    resolution: {integrity: sha512-dtAILTjBMaG8YloP5oBxohDIKyIsdQ/TkcVvSjhsksvsjeH63Y0PADyuMDfNZKbVT3Rlx3vEYVBlecbPT/KerA==}
+    engines: {node: '>=16'}
     hasBin: true
     peerDependencies:
       better-sqlite3: '*'
@@ -3602,6 +3598,7 @@ packages:
       mysql2: '*'
       pg: '*'
       pg-native: '*'
+      pg-query-stream: ^4.14.0
       sqlite3: '*'
       tedious: '*'
     peerDependenciesMeta:
@@ -3614,6 +3611,8 @@ packages:
       pg:
         optional: true
       pg-native:
+        optional: true
+      pg-query-stream:
         optional: true
       sqlite3:
         optional: true
@@ -4348,8 +4347,8 @@ packages:
   pg-connection-string@2.12.0:
     resolution: {integrity: sha512-U7qg+bpswf3Cs5xLzRqbXbQl85ng0mfSV/J0nnA31MCLgvEaAo7CIhmeyrmJpOr7o+zm0rXK+hNnT5l9RHkCkQ==}
 
-  pg-connection-string@2.5.0:
-    resolution: {integrity: sha512-r5o/V/ORTA6TmUnyWZR9nCj1klXCO2CEKNRlVuJptZe85QuhFayC7WeMic7ndayT5IRIR0S0xFxFi2ousartlQ==}
+  pg-connection-string@2.6.2:
+    resolution: {integrity: sha512-ch6OwaeaPYcova4kKZ15sbJ2hKb/VP48ZD2gE7i1J+L4MspCtBMAx8nMgz7bksc7IojCIIWuEhHibSMFH8m8oA==}
 
   pg-cursor@2.19.0:
     resolution: {integrity: sha512-J5cF1MUz7LRJ9emOqF/06QjabMHMZy587rSPF0UuA8rCwKeeYl2co8Pp+6k5UU9YrAYHMzWkLxilfZB0hqsWWw==}
@@ -8131,8 +8130,6 @@ snapshots:
 
   commander@9.1.0: {}
 
-  commander@9.5.0: {}
-
   common-ancestor-path@1.0.1: {}
 
   commondir@1.0.1: {}
@@ -9231,10 +9228,10 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  knex@2.4.2(pg@8.9.0):
+  knex@3.2.9(pg-query-stream@4.3.0(pg@8.9.0))(pg@8.9.0):
     dependencies:
       colorette: 2.0.19
-      commander: 9.5.0
+      commander: 10.0.1
       debug: 4.3.4
       escalade: 3.2.0
       esm: 3.2.25
@@ -9242,13 +9239,14 @@ snapshots:
       getopts: 2.3.0
       interpret: 2.2.0
       lodash: 4.18.1
-      pg-connection-string: 2.5.0
+      pg-connection-string: 2.6.2
       rechoir: 0.8.0
       resolve-from: 5.0.0
       tarn: 3.0.2
       tildify: 2.0.0
     optionalDependencies:
       pg: 8.9.0
+      pg-query-stream: 4.3.0(pg@8.9.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -10219,7 +10217,7 @@ snapshots:
 
   pg-connection-string@2.12.0: {}
 
-  pg-connection-string@2.5.0: {}
+  pg-connection-string@2.6.2: {}
 
   pg-cursor@2.19.0(pg@8.9.0):
     dependencies:
