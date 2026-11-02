@@ -223,17 +223,16 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
     // typed settings above but were not validated: the document is shared with the
     // TypeScript app, which rejects these documents, so `config validate` blessing them
     // would leave one file with two verdicts.
-    if let Some(nip66) = key(candidate, "nip66") {
-        if let Some(Value::Number(hours)) = key(nip66, "historyRetentionHours") {
-            let whole =
-                hours.as_i64().is_some() || hours.as_f64().is_some_and(|f| f.fract() == 0.0);
-            let value = to_number(&Value::Number(hours.clone())).unwrap_or(-1.0);
-            if !whole || !(value == 0.0 || value >= 1.0) {
-                issues.push(Issue::new(
-                    "nip66.historyRetentionHours",
-                    "historyRetentionHours must be 0 (disabled) or at least 1",
-                ));
-            }
+    if let Some(nip66) = key(candidate, "nip66")
+        && let Some(Value::Number(hours)) = key(nip66, "historyRetentionHours")
+    {
+        let whole = hours.as_i64().is_some() || hours.as_f64().is_some_and(|f| f.fract() == 0.0);
+        let value = to_number(&Value::Number(hours.clone())).unwrap_or(-1.0);
+        if !whole || !(value == 0.0 || value >= 1.0) {
+            issues.push(Issue::new(
+                "nip66.historyRetentionHours",
+                "historyRetentionHours must be 0 (disabled) or at least 1",
+            ));
         }
     }
 
