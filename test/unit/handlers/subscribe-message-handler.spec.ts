@@ -545,6 +545,21 @@ describe('SubscribeMessageHandler', () => {
       expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
     })
 
+    it('passes an uncapped defaultLimit to the repository for a peer', async () => {
+      isClientSubscribedToEventStub.returns(always(false))
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
+      settingsFactory.returns({ limits: { peer: { subscription: { maxLimit: 0 } } } })
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      stream.write(toDbEvent(event))
+      stream.end()
+
+      await promise
+
+      expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters, { defaultLimit: 0 })
+    })
+
     it('sends event if client is subscribed', async () => {
       isClientSubscribedToEventStub.returns(always(true))
 

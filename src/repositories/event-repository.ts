@@ -25,6 +25,7 @@ import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import {
   EventPurgeCounts,
+  EventQueryOptions,
   EventRetentionOptions,
   IEventRepository,
   IQueryResult,
@@ -61,11 +62,15 @@ export class EventRepository implements IEventRepository {
     private readonly settings?: () => Settings,
   ) {}
 
-  public findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]> {
+  public findByFilters(
+    filters: SubscriptionFilter[],
+    options?: EventQueryOptions,
+  ): IQueryResult<DBEvent[]> {
     logger('querying for %o', filters)
     if (!Array.isArray(filters) || !filters.length) {
       throw new Error('Filters cannot be empty')
     }
+    const defaultLimit = options?.defaultLimit ?? DEFAULT_FILTER_LIMIT
     const isSearchQueries: boolean[] = []
     const queries = filters.map((currentFilter) => {
       const builder = this.readReplicaDbClient<DBEvent>('events')
@@ -85,7 +90,11 @@ export class EventRepository implements IEventRepository {
         builder.select(searchSelection)
       }
 
-      builder.limit(typeof currentFilter.limit === 'number' ? currentFilter.limit : DEFAULT_FILTER_LIMIT)
+      if (typeof currentFilter.limit === 'number') {
+        builder.limit(currentFilter.limit)
+      } else if (defaultLimit > 0) {
+        builder.limit(defaultLimit)
+      }
       this.applyFilterOrder(builder, currentFilter, isSearchQuery)
 
       return builder

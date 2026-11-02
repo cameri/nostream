@@ -12,8 +12,10 @@ full-feed subscription cannot trip the client EWMA limiter or the client
 `max_subscriptions` cap.
 
 Peers are eligible for full feeds by default: `maxLimit` is uncapped and the
-subscription caps are higher. A high but finite peer message rate keeps the
-credential from becoming an unbounded egress path. Unauthenticated or
-unconfigured connections keep the existing client limits exactly as before.
-The new limits are validated with the rest of the settings document and
-documented in `CONFIGURATION.md` and `docs/PEERING.md`.
+subscription caps are higher. An omitted peer REQ `limit` queries the full
+stored feed instead of the client 500-event default, and peer filter counts are
+not rejected by the protocol's former fixed ten-filter cap. A high but finite
+peer message rate keeps the credential from becoming an unbounded egress path.
+Unauthenticated or unconfigured connections keep the existing client limits
+exactly as before. The new limits are validated with the rest of the settings
+document and documented in `CONFIGURATION.md` and `docs/PEERING.md`.

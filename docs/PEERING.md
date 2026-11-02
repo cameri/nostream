@@ -88,8 +88,12 @@ message limits come from `limits.peer`, not `limits.client` or `limits.message`:
 
 - Peer subscription caps (`maxSubscriptions`, `maxFilters`, `maxFilterValues`,
   `maxSubscriptionIdLength`) are separate and larger by default.
-- `limits.peer.subscription.maxLimit: 0` leaves REQ `limit` uncapped, so a peer
-  can request a full feed instead of the client-sized page.
+- `limits.peer.subscription.maxLimit: 0` leaves REQ `limit` uncapped and makes an
+  omitted `limit` query the full stored feed instead of the client-sized
+  500-event default. A positive value becomes the peer's default page size.
+- Peer filter counts are bounded by `limits.peer.subscription.maxFilters`, not
+  the client cap, so a full-feed filter set is not rejected before the handler
+  can apply peer limits.
 - Peer messages are counted in a separate rate-limit bucket, so a feed never
   trips the client EWMA limiter. The default is a high but finite bound, not an
   exemption.

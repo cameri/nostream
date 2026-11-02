@@ -226,7 +226,15 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       () => this.webSocket.getAuthenticatedPubkeys(),
     )
 
-    const findEvents = this.eventRepository.findByFilters(filters).stream()
+    // A peer's omitted `limit` means the full stored feed, not the client-sized
+    // 500-event default. `maxLimit: 0` opts out of a cap; a positive value
+    // becomes the peer's default page size.
+    const isPeer = this.webSocket.getPeerPubkey() !== undefined
+    const peerDefaultLimit = isPeer ? (this.settings().limits?.peer?.subscription?.maxLimit ?? 0) : undefined
+
+    const findEvents = isPeer
+      ? this.eventRepository.findByFilters(filters, { defaultLimit: peerDefaultLimit }).stream()
+      : this.eventRepository.findByFilters(filters).stream()
 
     const abortableFindEvents = addAbortSignal(this.abortController.signal, findEvents)
 

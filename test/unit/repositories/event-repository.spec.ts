@@ -51,6 +51,24 @@ describe('EventRepository', () => {
       expect(() => repository.findByFilters([])).to.throw(Error, 'Filters cannot be empty')
     })
 
+    it('omits LIMIT when defaultLimit is 0 (peer full feed)', () => {
+      const query = repository.findByFilters([{}], { defaultLimit: 0 }).toString()
+
+      expect(query).to.equal('select * from "events" order by "event_created_at" asc, "event_id" asc')
+    })
+
+    it('uses a positive defaultLimit for filters that omit one', () => {
+      const query = repository.findByFilters([{}], { defaultLimit: 1000 }).toString()
+
+      expect(query).to.equal('select * from "events" order by "event_created_at" asc, "event_id" asc limit 1000')
+    })
+
+    it('keeps an explicit filter limit over defaultLimit', () => {
+      const query = repository.findByFilters([{ limit: 25 }], { defaultLimit: 1000 }).toString()
+
+      expect(query).to.equal('select * from "events" order by "event_created_at" DESC, "event_id" asc limit 25')
+    })
+
     describe('1 filter', () => {
       it('selects all events', () => {
         const filters = [{}]

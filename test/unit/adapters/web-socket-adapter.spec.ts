@@ -831,6 +831,40 @@ describe('WebSocketAdapter', () => {
       expect(client.send).not.to.have.been.called
     })
 
+    it('accepts a REQ with more than ten filters so peer limits can apply', async () => {
+      client.readyState = WebSocket.OPEN
+      settingsFactory.returns({ network: { remoteIpHeader: '' }, limits: { message: {} } })
+
+      const handleMessage = sandbox.stub().resolves()
+      createMessageHandler.returns({ handleMessage })
+
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
+      const onMessage = messageCall.args[1]
+      const filters = Array.from({ length: 11 }, (_, index) => ({ kinds: [index + 1] }))
+
+      await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub-1', ...filters])))
+
+      expect(handleMessage).to.have.been.calledOnce
+      expect(client.send).not.to.have.been.called
+    })
+
+    it('accepts a COUNT with more than ten filters so peer limits can apply', async () => {
+      client.readyState = WebSocket.OPEN
+      settingsFactory.returns({ network: { remoteIpHeader: '' }, limits: { message: {} } })
+
+      const handleMessage = sandbox.stub().resolves()
+      createMessageHandler.returns({ handleMessage })
+
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
+      const onMessage = messageCall.args[1]
+      const filters = Array.from({ length: 11 }, (_, index) => ({ kinds: [index + 1] }))
+
+      await onMessage(Buffer.from(JSON.stringify(['COUNT', 'q-1', ...filters])))
+
+      expect(handleMessage).to.have.been.calledOnce
+      expect(client.send).not.to.have.been.called
+    })
+
     it('returns early when no handler is found for message', async () => {
       client.readyState = WebSocket.OPEN
 
