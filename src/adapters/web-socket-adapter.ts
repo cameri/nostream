@@ -196,6 +196,27 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.client.send(JSON.stringify(message))
   }
 
+  public waitForWritable(): Promise<void> {
+    if (this.client.readyState !== WebSocket.OPEN || this.client.bufferedAmount === 0) {
+      return Promise.resolve()
+    }
+
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        this.client.removeListener('drain', done)
+        this.client.removeListener('close', done)
+        this.client.removeListener('error', done)
+        resolve()
+      }
+
+      // A full feed can outrun a slow peer; wait for the socket to drain instead
+      // of letting its outbound buffer grow without bound.
+      this.client.once('drain', done)
+      this.client.once('close', done)
+      this.client.once('error', done)
+    })
+  }
+
   public onHeartbeat(): void {
     if (!this.alive) {
       logger.error(`web-socket-adapter: pong timeout for client ${this.clientId} (${this.getClientAddress()})`)

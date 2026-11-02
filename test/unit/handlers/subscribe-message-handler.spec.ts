@@ -61,6 +61,7 @@ describe('SubscribeMessageHandler', () => {
     webSocketGetSubscriptionsStub = sandbox.stub().returns(subscriptions)
     webSocket.getSubscriptions = webSocketGetSubscriptionsStub
     webSocket.getPeerPubkey = sandbox.stub().returns(undefined)
+    webSocket.waitForWritable = sandbox.stub().resolves()
     settingsFactory = sandbox.stub()
     stream = new PassThrough({
       objectMode: true,
@@ -122,6 +123,20 @@ describe('SubscribeMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(['NOTICE', 'Subscription rejected: reason'])
+    })
+
+    it('bounds raw filters before deduplicating them', async () => {
+      settingsFactory.returns({ limits: { client: { subscription: { maxFilters: 10 } } } })
+      const duplicate = { kinds: [1] }
+      message = [MessageType.REQ, subscriptionId, ...Array.from({ length: 11 }, () => duplicate)] as any
+
+      await handler.handleMessage(message)
+
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        'NOTICE',
+        'Subscription rejected: Too many filters: Number of filters per susbscription must be less then or equal to 10',
+      ])
+      expect(webSocketOnSubscribeStub).not.to.have.been.called
     })
 
     it('emits subscribe event if subscription is accepted', async () => {
@@ -557,7 +572,10 @@ describe('SubscribeMessageHandler', () => {
 
       await promise
 
-      expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters, { defaultLimit: 0 })
+      expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters, {
+        defaultLimit: 0,
+        excludeDeleted: true,
+      })
     })
 
     it('sends event if client is subscribed', async () => {

@@ -14,8 +14,13 @@ full-feed subscription cannot trip the client EWMA limiter or the client
 Peers are eligible for full feeds by default: `maxLimit` is uncapped and the
 subscription caps are higher. An omitted peer REQ `limit` queries the full
 stored feed instead of the client 500-event default, and peer filter counts are
-not rejected by the protocol's former fixed ten-filter cap. A high but finite
-peer message rate keeps the credential from becoming an unbounded egress path.
-Unauthenticated or unconfigured connections keep the existing client limits
-exactly as before. The new limits are validated with the rest of the settings
-document and documented in `CONFIGURATION.md` and `docs/PEERING.md`.
+not rejected by the protocol's former fixed ten-filter cap. Raw filter counts are
+still bounded before deduplication, and stored reads pause on WebSocket
+backpressure so a slow peer cannot grow worker memory. Deleted and expired rows
+are excluded in SQL before the limit, so they cannot consume a page slot.
+
+A high but finite peer message rate keeps the credential from becoming an
+unbounded egress path. Unauthenticated or unconfigured connections keep the
+existing client limits exactly as before. The new limits are validated with the
+rest of the settings document and documented in `CONFIGURATION.md` and
+`docs/PEERING.md`.

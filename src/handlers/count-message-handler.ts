@@ -30,9 +30,24 @@ export class CountMessageHandler implements IMessageHandler {
       return
     }
 
-    // Some clients send the same filter more than once.
-    // We remove duplicates so we do less DB work.
-    const filters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
+    // Some clients send the same filter more than once. Bound the raw list
+    // before deduplicating it, since uniqWith() is O(n^2) and the schema no
+    // longer caps filter counts so peer limits can be larger.
+    const incomingFilters = message.slice(2) as SubscriptionFilter[]
+    const maxFilters =
+      subscriptionLimitsFor(this.settings(), this.webSocket.getPeerPubkey() !== undefined)?.maxFilters ?? 0
+    if (maxFilters > 0 && incomingFilters.length > maxFilters) {
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createClosedMessage(
+          queryId,
+          `Too many filters: Number of filters per count query must be less than or equal to ${maxFilters}`,
+        ),
+      )
+      return
+    }
+
+    const filters = uniqWith(equals, incomingFilters) as SubscriptionFilter[]
 
     const reason = this.canCount(queryId, filters)
     if (reason) {

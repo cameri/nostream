@@ -36,11 +36,14 @@ describe('WebSocketAdapter', () => {
 
     client = {
       on: sandbox.stub().returnsThis(),
+      once: sandbox.stub().returnsThis(),
+      removeListener: sandbox.stub().returnsThis(),
       send: sandbox.stub(),
       close: sandbox.stub(),
       ping: sandbox.stub(),
       pong: sandbox.stub(),
       readyState: WebSocket.OPEN,
+      bufferedAmount: 0,
       removeAllListeners: sandbox.stub(),
     }
 
@@ -1126,6 +1129,40 @@ describe('WebSocketAdapter', () => {
 
       expect(adapter.getChallenge()).not.to.equal(adapter2.getChallenge())
       adapter2.removeAllListeners()
+    })
+  })
+
+  describe('waitForWritable', () => {
+    it('resolves immediately when the socket has nothing buffered', async () => {
+      client.bufferedAmount = 0
+
+      await adapter.waitForWritable()
+
+      expect(client.once).not.to.have.been.called
+    })
+
+    it('waits for drain when the socket is buffered', async () => {
+      client.bufferedAmount = 1024
+      let drain: (() => void) | undefined
+      client.once = (event: string, callback: () => void) => {
+        if (event === 'drain') {
+          drain = callback
+        }
+        return client
+      }
+
+      let resolved = false
+      const pending = adapter.waitForWritable().then(() => {
+        resolved = true
+      })
+      await Promise.resolve()
+      expect(resolved).to.equal(false)
+
+      drain?.()
+      await pending
+
+      expect(resolved).to.equal(true)
+      expect(client.removeListener).to.have.been.calledWith('drain', drain)
     })
   })
 

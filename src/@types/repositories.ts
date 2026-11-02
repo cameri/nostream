@@ -46,6 +46,11 @@ export interface EventQueryOptions {
    * DEFAULT_FILTER_LIMIT. `0` means no limit, used for peer full feeds.
    */
   defaultLimit?: number
+  /**
+   * Exclude soft-deleted and expired rows in SQL, before the limit is applied.
+   * Peer full feeds set this so dead rows cannot consume a page slot.
+   */
+  excludeDeleted?: boolean
 }
 
 export interface IEventRepository {

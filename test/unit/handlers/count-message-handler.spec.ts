@@ -112,6 +112,20 @@ describe('CountMessageHandler', () => {
       expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([MessageType.COUNT, 'q1', { count: 7 }])
     })
 
+    it('bounds raw filters before deduplicating them', async () => {
+      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
+        limits: { client: { subscription: { maxFilters: 10, maxSubscriptionIdLength: 256 } } },
+      }) as Settings)
+      const duplicate = { kinds: [1] }
+      const message = [MessageType.COUNT, 'q1', ...Array.from({ length: 11 }, () => duplicate)] as any
+
+      await handler.handleMessage(message)
+
+      expect(eventRepository.countByFilters).not.to.have.been.called
+      expect(webSocketOnMessageStub).to.have.been.calledOnce
+      expect(webSocketOnMessageStub.firstCall.args[0][0]).to.equal(MessageType.CLOSED)
+    })
+
     it('returns CLOSED when a filter has too many values', async () => {
       handler = new CountMessageHandler(webSocket, eventRepository, () => ({
         limits: {

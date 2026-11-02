@@ -71,12 +71,21 @@ export class EventRepository implements IEventRepository {
       throw new Error('Filters cannot be empty')
     }
     const defaultLimit = options?.defaultLimit ?? DEFAULT_FILTER_LIMIT
+    const now = Math.floor(Date.now() / 1000)
     const isSearchQueries: boolean[] = []
     const queries = filters.map((currentFilter) => {
       const builder = this.readReplicaDbClient<DBEvent>('events')
 
       const { isSearchQuery } = this.applyFilterConditions(builder, currentFilter)
       isSearchQueries.push(isSearchQuery)
+
+      if (options?.excludeDeleted) {
+        // Handler-side filtering is too late once LIMIT has been applied: a
+        // soft-deleted or expired row would otherwise use a page slot.
+        builder.whereNull('events.deleted_at').andWhere((bd) => {
+          bd.whereNull('events.expires_at').orWhere('events.expires_at', '>', now)
+        })
+      }
 
       if (isSearchQuery) {
         const tsConfig = this.getNip50Language()

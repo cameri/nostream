@@ -28,6 +28,11 @@ export type IWebSocketAdapter = EventEmitter & {
   getPeerPubkey(): string | undefined
   /** Mark `pubkey` as the peer identity for this socket. Ignored if it is not authenticated. */
   setPeerPubkey(pubkey: string): void
+  /**
+   * Resolves when the socket can accept more data, or immediately when it is
+   * already writable. Used to pause a full-feed read while `ws` is buffering.
+   */
+  waitForWritable(): Promise<void>
   drainAndClose(reason?: string): void
   /** NIP-77 sessions of this connection. */
   getNegentropySessions(): INegentropySessions
