@@ -15,8 +15,8 @@ Peers are eligible for full feeds by default: `maxLimit` is uncapped and the
 subscription caps are higher. An omitted peer REQ `limit` queries the full
 stored feed instead of the client 500-event default, and peer filter counts are
 not rejected by the protocol's former fixed ten-filter cap. Raw filter counts are
-still bounded before deduplication, and stored reads pause on WebSocket
-backpressure so a slow peer cannot grow worker memory. Deleted and expired rows
+still bounded before deduplication, and stored reads wait for the socket's
+send-flush callback so a slow peer cannot grow worker memory. Deleted and expired rows
 are excluded in SQL before the limit, so they cannot consume a page slot.
 
 A high but finite peer message rate keeps the credential from becoming an

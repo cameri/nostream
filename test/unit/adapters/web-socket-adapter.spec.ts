@@ -36,14 +36,12 @@ describe('WebSocketAdapter', () => {
 
     client = {
       on: sandbox.stub().returnsThis(),
-      once: sandbox.stub().returnsThis(),
-      removeListener: sandbox.stub().returnsThis(),
-      send: sandbox.stub(),
+      // `ws` invokes the send callback once the frame is flushed.
+      send: sandbox.stub().callsFake((_data: string, callback?: () => void) => callback?.()),
       close: sandbox.stub(),
       ping: sandbox.stub(),
       pong: sandbox.stub(),
       readyState: WebSocket.OPEN,
-      bufferedAmount: 0,
       removeAllListeners: sandbox.stub(),
     }
 
@@ -243,7 +241,8 @@ describe('WebSocketAdapter', () => {
 
       adapter.emit(WebSocketAdapterEvent.Message, message)
 
-      expect(client.send).to.have.been.calledOnceWithExactly(JSON.stringify(message))
+      expect(client.send).to.have.been.calledOnce
+      expect(client.send.firstCall.args[0]).to.equal(JSON.stringify(message))
     })
 
     it('does nothing when WebSocket is not OPEN', () => {
@@ -1133,23 +1132,19 @@ describe('WebSocketAdapter', () => {
   })
 
   describe('waitForWritable', () => {
-    it('resolves immediately when the socket has nothing buffered', async () => {
-      client.bufferedAmount = 0
-
+    it('resolves immediately when nothing has been sent', async () => {
       await adapter.waitForWritable()
 
-      expect(client.once).not.to.have.been.called
+      expect(client.send).not.to.have.been.called
     })
 
-    it('waits for drain when the socket is buffered', async () => {
-      client.bufferedAmount = 1024
-      let drain: (() => void) | undefined
-      client.once = (event: string, callback: () => void) => {
-        if (event === 'drain') {
-          drain = callback
-        }
-        return client
-      }
+    it('resolves once the send callback reports the frame as flushed', async () => {
+      let sendCallback: (() => void) | undefined
+      ;(client.send as Sinon.SinonStub).callsFake((_data: string, callback: () => void) => {
+        sendCallback = callback
+      })
+
+      adapter.emit(WebSocketAdapterEvent.Message, ['NOTICE', 'hello'])
 
       let resolved = false
       const pending = adapter.waitForWritable().then(() => {
@@ -1158,11 +1153,18 @@ describe('WebSocketAdapter', () => {
       await Promise.resolve()
       expect(resolved).to.equal(false)
 
-      drain?.()
+      sendCallback?.()
       await pending
 
       expect(resolved).to.equal(true)
-      expect(client.removeListener).to.have.been.calledWith('drain', drain)
+    })
+
+    it('resolves immediately when the socket is not open', async () => {
+      client.readyState = WebSocket.CLOSED
+
+      await adapter.waitForWritable()
+
+      expect(client.send).not.to.have.been.called
     })
   })
 

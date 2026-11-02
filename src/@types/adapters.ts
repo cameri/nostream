@@ -29,8 +29,9 @@ export type IWebSocketAdapter = EventEmitter & {
   /** Mark `pubkey` as the peer identity for this socket. Ignored if it is not authenticated. */
   setPeerPubkey(pubkey: string): void
   /**
-   * Resolves when the socket can accept more data, or immediately when it is
-   * already writable. Used to pause a full-feed read while `ws` is buffering.
+   * Resolves once the previous send has flushed to the underlying socket, or
+   * immediately when there is nothing pending. Used to pause a full-feed read
+   * while the client is slow.
    */
   waitForWritable(): Promise<void>
   drainAndClose(reason?: string): void

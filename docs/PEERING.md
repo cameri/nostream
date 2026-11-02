@@ -95,10 +95,10 @@ message limits come from `limits.peer`, not `limits.client` or `limits.message`:
   the client cap, so a full-feed filter set is not rejected before the handler
   can apply peer limits. The raw count is checked before duplicate removal, so
   a large set of duplicate filters cannot stall the worker in `uniqWith`.
-- Stored reads pause when the WebSocket reports a full buffer and resume on
-  `drain`, so a slow peer cannot grow the worker's outbound memory. Soft-deleted
-  and expired events are excluded in SQL before the limit, so dead rows cannot
-  consume a page slot.
+- Stored reads wait for the WebSocket send callback to report the previous
+  frame as flushed, so a slow peer cannot grow the worker's outbound memory.
+  Soft-deleted and expired events are excluded in SQL before the limit, so dead
+  rows cannot consume a page slot.
 - Peer messages are counted in a separate rate-limit bucket, so a feed never
   trips the client EWMA limiter. The default is a high but finite bound, not an
   exemption.

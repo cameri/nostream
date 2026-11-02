@@ -75,6 +75,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   public clientId: string
   private clientAddress: SocketAddress
   private alive: boolean
+  private pendingSend: Promise<void> | undefined
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
   private readonly session: Nip42SessionManager
   /** Configured peering peer proven by AUTH on this socket, if any. */
@@ -193,28 +194,28 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     if (this.client.readyState !== WebSocket.OPEN) {
       return
     }
-    this.client.send(JSON.stringify(message))
+
+    // `ws` does not emit `drain`; the send callback is its write-completion
+    // signal, fired once the frame has been handed to the underlying socket.
+    const pending = new Promise<void>((resolve) => {
+      this.client.send(JSON.stringify(message), () => resolve())
+    })
+    this.pendingSend = pending
+    void pending.then(() => {
+      if (this.pendingSend === pending) {
+        this.pendingSend = undefined
+      }
+    })
   }
 
   public waitForWritable(): Promise<void> {
-    if (this.client.readyState !== WebSocket.OPEN || this.client.bufferedAmount === 0) {
+    if (this.client.readyState !== WebSocket.OPEN) {
       return Promise.resolve()
     }
 
-    return new Promise<void>((resolve) => {
-      const done = () => {
-        this.client.removeListener('drain', done)
-        this.client.removeListener('close', done)
-        this.client.removeListener('error', done)
-        resolve()
-      }
-
-      // A full feed can outrun a slow peer; wait for the socket to drain instead
-      // of letting its outbound buffer grow without bound.
-      this.client.once('drain', done)
-      this.client.once('close', done)
-      this.client.once('error', done)
-    })
+    // A full feed can outrun a slow peer; wait for the previous frame to flush
+    // instead of letting the outbound buffer grow without bound.
+    return this.pendingSend ?? Promise.resolve()
   }
 
   public onHeartbeat(): void {
