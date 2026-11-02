@@ -255,9 +255,7 @@ fn validate_rate_limit_periods(
             // not a whole number, not at least one. A window of 60 ms is a valid
             // count and stays valid; the unit cannot be inferred from the value.
             Some(Value::Number(number)) => {
-                let integral = number
-                    .as_i64()
-                    .is_some()
+                let integral = number.as_i64().is_some()
                     || number.as_u64().is_some()
                     || number.as_f64().is_some_and(|float| float.fract() == 0.0);
                 if !integral {
@@ -266,7 +264,10 @@ fn validate_rate_limit_periods(
                         "period must be a whole number of milliseconds",
                     ));
                 } else if !to_number_is_positive(Some(&Value::Number(number.clone()))) {
-                    issues.push(Issue::new(period_path, "period must be at least 1 millisecond"));
+                    issues.push(Issue::new(
+                        period_path,
+                        "period must be at least 1 millisecond",
+                    ));
                 }
             }
             _ => issues.push(Issue::new(
