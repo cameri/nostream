@@ -19,14 +19,6 @@ export const reqMessageSchema = z
         inclusive: true,
         message: 'REQ message must contain at least one filter',
       })
-    } else if (val.length > 12) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.too_big,
-        maximum: 12,
-        type: 'array',
-        inclusive: true,
-        message: 'REQ message must contain at most 12 elements',
-      })
     }
   })
 
@@ -41,14 +33,6 @@ export const countMessageSchema = z
         type: 'array',
         inclusive: true,
         message: 'COUNT message must contain at least one filter',
-      })
-    } else if (val.length > 12) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.too_big,
-        maximum: 12,
-        type: 'array',
-        inclusive: true,
-        message: 'COUNT message must contain at most 12 elements',
       })
     }
   })

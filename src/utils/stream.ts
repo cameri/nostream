@@ -17,6 +17,14 @@ export const streamEach = (writeFn: (chunk: any) => void) =>
     },
   })
 
+export const streamEachAsync = (writeFn: (chunk: any) => Promise<void>) =>
+  new Transform({
+    objectMode: true,
+    transform(chunk, _encoding, callback) {
+      writeFn(chunk).then(() => callback(null), callback)
+    },
+  })
+
 export const streamFilter = (predicate: (chunk: any) => boolean) =>
   new Transform({
     objectMode: true,

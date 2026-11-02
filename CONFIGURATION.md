@@ -195,6 +195,13 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
 | limits.message.rateLimits[].period | Rate limiting period in milliseconds. For `sliding_window`: the time window. For `ewma`: the half-life of the decay function. |
 | limits.message.rateLimits[].rate            | Maximum number of messages during period. |
+| limits.peer.message.rateLimits[].period     | Rate limit period in milliseconds for authenticated peering peers. Separate from `limits.message`, so a peer feed never spends client message budget. |
+| limits.peer.message.rateLimits[].rate       | Maximum peer messages during period. Defaults to 6000/min. |
+| limits.peer.subscription.maxFilters         | Maximum number of filters per peer subscription. Defaults to 100. Disabled when set to zero. |
+| limits.peer.subscription.maxFilterValues    | Maximum number of values allowed in each peer filter. Defaults to 10000. Disabled when set to zero. |
+| limits.peer.subscription.maxLimit           | Maximum REQ `limit` for peers. Defaults to 0 (no cap), so a peer can request a full feed. |
+| limits.peer.subscription.maxSubscriptionIdLength | Maximum peer subscription id length. Defaults to 256. |
+| limits.peer.subscription.maxSubscriptions   | Maximum number of subscriptions per authenticated peer. Defaults to 100. Disabled when set to zero. |
 | mirroring.static                            | Removed: the static mirroring worker no longer exists, so this setting is ignored and logs a warning at start-up. To sync events with another relay, use NIP-77 (Negentropy) from a client that speaks it, for example `strfry sync`, against a relay with `nip77.enabled` set. |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |

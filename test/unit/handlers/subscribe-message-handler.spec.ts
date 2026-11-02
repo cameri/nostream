@@ -60,6 +60,8 @@ describe('SubscribeMessageHandler', () => {
     webSocket = new EventEmitter() as any
     webSocketGetSubscriptionsStub = sandbox.stub().returns(subscriptions)
     webSocket.getSubscriptions = webSocketGetSubscriptionsStub
+    webSocket.getPeerPubkey = sandbox.stub().returns(undefined)
+    webSocket.waitForWritable = sandbox.stub().resolves()
     settingsFactory = sandbox.stub()
     stream = new PassThrough({
       objectMode: true,
@@ -121,6 +123,20 @@ describe('SubscribeMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(['NOTICE', 'Subscription rejected: reason'])
+    })
+
+    it('bounds raw filters before deduplicating them', async () => {
+      settingsFactory.returns({ limits: { client: { subscription: { maxFilters: 10 } } } })
+      const duplicate = { kinds: [1] }
+      message = [MessageType.REQ, subscriptionId, ...Array.from({ length: 11 }, () => duplicate)] as any
+
+      await handler.handleMessage(message)
+
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        'NOTICE',
+        'Subscription rejected: Too many filters: Number of filters per susbscription must be less then or equal to 10',
+      ])
+      expect(webSocketOnSubscribeStub).not.to.have.been.called
     })
 
     it('emits subscribe event if subscription is accepted', async () => {
@@ -544,6 +560,24 @@ describe('SubscribeMessageHandler', () => {
       expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
     })
 
+    it('passes an uncapped defaultLimit to the repository for a peer', async () => {
+      isClientSubscribedToEventStub.returns(always(false))
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
+      settingsFactory.returns({ limits: { peer: { subscription: { maxLimit: 0 } } } })
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      stream.write(toDbEvent(event))
+      stream.end()
+
+      await promise
+
+      expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters, {
+        defaultLimit: 0,
+        excludeDeleted: true,
+      })
+    })
+
     it('sends event if client is subscribed', async () => {
       isClientSubscribedToEventStub.returns(always(true))
 
@@ -754,6 +788,34 @@ describe('SubscribeMessageHandler', () => {
       })
 
       expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+    })
+
+    it('uses peer limits instead of client limits for a recognized peer', () => {
+      settingsFactory.returns({
+        limits: {
+          client: { subscription: { maxSubscriptions: 1 } },
+          peer: { subscription: { maxSubscriptions: 5 } },
+        },
+      })
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
+      subscriptions.set('other-1', [])
+      subscriptions.set('other-2', [])
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+    })
+
+    it('still applies the client limit to an unauthenticated connection', () => {
+      settingsFactory.returns({
+        limits: {
+          client: { subscription: { maxSubscriptions: 1 } },
+          peer: { subscription: { maxSubscriptions: 5 } },
+        },
+      })
+      subscriptions.set('other-1', [])
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
+        'Too many subscriptions: Number of subscriptions must be less than or equal to 1',
+      )
     })
 
     it('returns undefined if max subscription limit is disabled', () => {

@@ -81,6 +81,34 @@ authenticated for the caller to use for a feed or negentropy session. This
 proves our identity to the peer; it does not verify the peer's identity in
 return.
 
+## Feed treatment
+
+Once a connection has proven a configured peer pubkey, its subscription and
+message limits come from `limits.peer`, not `limits.client` or `limits.message`:
+
+- Peer subscription caps (`maxSubscriptions`, `maxFilters`, `maxFilterValues`,
+  `maxSubscriptionIdLength`) are separate and larger by default.
+- `limits.peer.subscription.maxLimit: 0` leaves REQ `limit` uncapped and makes an
+  omitted `limit` query the full stored feed instead of the client-sized
+  500-event default. A positive value becomes the peer's default page size.
+- Peer filter counts are bounded by `limits.peer.subscription.maxFilters`, not
+  the client cap, so a full-feed filter set is not rejected before the handler
+  can apply peer limits. The raw count is checked before duplicate removal, so
+  a large set of duplicate filters cannot stall the worker in `uniqWith`.
+- Stored reads wait for the WebSocket send callback to report the previous
+  frame as flushed, so a slow peer cannot grow the worker's outbound memory.
+  Soft-deleted and expired events are excluded in SQL before the limit, so dead
+  rows cannot consume a page slot.
+- Peer messages are counted in a separate rate-limit bucket, so a feed never
+  trips the client EWMA limiter. The default is a high but finite bound, not an
+  exemption.
+- Only a verified AUTH from an enabled `peering.peers` pubkey selects these
+  limits. An unauthenticated or unconfigured connection stays on the client
+  limits exactly as before.
+
+Scope enforcement (only the agreed kinds and time ranges) is part of the sync
+work; this phase grants feed-sized limits to trusted peers.
+
 Only the public half of the keypair is ever visible on the wire. Inbound AUTH is
 verified by `AuthMessageHandler`: event id, signature, timestamp, challenge, and
 relay host. Outbound AUTH proves this relay's identity to the peer; it does not
