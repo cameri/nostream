@@ -44,19 +44,30 @@ const readEnvSecret = (content: string): string | undefined => {
 }
 
 const needsSecretReplacement = (secret: string | undefined): boolean => {
-  return !secret || secret === SECRET_PLACEHOLDER
+  const trimmed = secret?.trim()
+  return !trimmed || trimmed === SECRET_PLACEHOLDER
 }
 
 const resolveSecret = async (assumeYes: boolean): Promise<string> => {
-  if (process.env.SECRET?.trim()) {
-    return process.env.SECRET.trim()
+  const inheritedSecret = process.env.SECRET?.trim()
+  if (inheritedSecret && !needsSecretReplacement(inheritedSecret)) {
+    return inheritedSecret
   }
 
   if (!assumeYes && process.stdin.isTTY) {
     const value = await setupPrompts.text({
       message: 'SECRET env var value (hex recommended)',
       placeholder: 'openssl rand -hex 128',
-      validate: (input) => (input.trim() ? undefined : 'SECRET is required'),
+      validate: (input) => {
+        const trimmed = input.trim()
+        if (!trimmed) {
+          return 'SECRET is required'
+        }
+        if (needsSecretReplacement(trimmed)) {
+          return 'SECRET cannot be the default placeholder'
+        }
+        return undefined
+      },
     })
 
     if (setupPrompts.isCancel(value)) {
@@ -64,7 +75,10 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
       throw new SetupCancelledError()
     }
 
-    return value.trim()
+    const trimmed = value.trim()
+    if (!needsSecretReplacement(trimmed)) {
+      return trimmed
+    }
   }
 
   return randomBytes(64).toString('hex')
@@ -133,6 +147,11 @@ const ensureEnvFile = async (assumeYes: boolean): Promise<boolean> => {
     throw error
   }
 
+  if (needsSecretReplacement(secret)) {
+    secret = randomBytes(64).toString('hex')
+  }
+
+  process.env.SECRET = secret
   fs.writeFileSync(envPath, upsertSecret(current, secret), 'utf-8')
   return true
 }
