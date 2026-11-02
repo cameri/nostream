@@ -41,7 +41,7 @@ export async function isRateLimited(remoteAddress: string, settings: Settings): 
 
   let limited = false
   for (const { rate, period } of rateLimits) {
-    const isRateLimited = await hit(period, rate)
+    const isRateLimited = (await hit(period, rate)).limited
 
     if (isRateLimited) {
       logger('rate limited %s: %d messages / %d ms exceeded', remoteAddress, rate, period)

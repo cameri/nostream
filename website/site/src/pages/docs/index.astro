@@ -1,0 +1,138 @@
+---
+import DeployPaths from '../../components/docs/DeployPaths.astro'
+import PlanetBackdrop from '../../components/PlanetBackdrop.astro'
+import PageHead from '../../components/PageHead.astro'
+import { DOCS } from '../../data/site'
+import Base from '../../layouts/Base.astro'
+
+const groups = [...new Set(DOCS.map((d) => d.group))].map((group) => ({
+  group,
+  docs: DOCS.filter((d) => d.group === group),
+}))
+---
+
+<Base title="Docs" description="Deploy and operate a nostream relay: Docker Compose, production GHCR images, HAProxy blue/green, Tor & I2P, configuration and CLI reference.">
+  <PageHead kicker="Docs" lead="Pick the deploy path that fits how you run infrastructure, then go deep with the reference docs. Every page here is rendered from the repository, so it matches the code.">
+    <span class="g1">Deploy.</span> <span class="g2">Configure.</span> <span class="g3">Operate.</span>
+  </PageHead>
+
+  <section class="section deploy-stage" id="deploy" data-spark-host data-spark-spread="0.62" data-spark-origin="0.88">
+    <PlanetBackdrop variant="stage" density="high" />
+    <div class="container deploy">
+      <div class="intro">
+        <p class="kicker reveal"><span class="idx">01</span> Choose your path</p>
+        <h2 class="h2 reveal"><span class="g1">From</span> <span class="g3">nostream start</span> <span class="g1">to blue/green.</span></h2>
+        <p class="reveal">
+          Start with Docker Compose. Move to the pre-built image when it's a real server, and to HAProxy when you can't afford
+          a restart.
+        </p>
+      </div>
+      <div class="reveal">
+        <DeployPaths />
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="reference">
+    <div class="container">
+      <div class="section-head">
+        <p class="kicker reveal"><span class="idx">02</span> Documentation</p>
+        <h2 class="h2 reveal"><span class="g1">Quick start to</span> <span class="g2">every last setting.</span></h2>
+      </div>
+
+      {
+        groups.map(({ group, docs }) => (
+          <div class="group">
+            <p class="group-title mono reveal">{group}</p>
+            <div class="cards">
+              {docs.map((doc, i) => (
+                <a class="card panel panel-hover reveal" href={`/docs/${doc.slug}`} style={`transition-delay:${i * 60}ms`}>
+                  <span class="file mono">{doc.file}</span>
+                  <h3 class="h3">{doc.title}</h3>
+                  <p>{doc.blurb}</p>
+                  <span class="go mono">Read →</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+</Base>
+
+<style>
+  .deploy-stage {
+    position: relative;
+    overflow: hidden;
+    padding-top: clamp(48px, 6vw, 72px);
+    padding-bottom: clamp(64px, 8vw, 96px);
+  }
+
+  .deploy-stage .deploy,
+  .deploy-stage .intro {
+    position: relative;
+    z-index: 2;
+  }
+
+  .deploy {
+    display: grid;
+    gap: 48px;
+  }
+
+  @media (min-width: 1040px) {
+    .deploy {
+      grid-template-columns: 0.9fr 1.1fr;
+      align-items: start;
+    }
+    .intro {
+      position: sticky;
+      top: 100px;
+    }
+  }
+
+  .intro p:not(.kicker) {
+    margin: 0 0 28px;
+  }
+
+  .group + .group {
+    margin-top: 44px;
+  }
+
+  .group-title {
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    padding: 22px;
+  }
+
+  .file {
+    margin-bottom: 18px;
+    color: var(--pink);
+    font-size: 12px;
+  }
+
+  .card p {
+    flex: 1;
+    margin: 0 0 18px;
+    font-size: 14px;
+  }
+
+  .go {
+    color: var(--teal);
+    font-size: 13px;
+  }
+</style>

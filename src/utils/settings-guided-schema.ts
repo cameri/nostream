@@ -35,6 +35,24 @@ export const requireSafeNonNegativeIntegerSettingValue = (value: string): string
   return result.success ? undefined : result.error.issues[0].message
 }
 
+const positiveSafeIntegerSettingValueSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+$/, 'Value must be a positive integer')
+  .transform(Number)
+  .pipe(
+    z
+      .number()
+      .int()
+      .min(1, 'Value must be a positive integer')
+      .max(Number.MAX_SAFE_INTEGER, 'Value must be a safe integer'),
+  )
+
+export const requireSafePositiveIntegerSettingValue = (value: string): string | undefined => {
+  const result = positiveSafeIntegerSettingValueSchema.safeParse(value)
+  return result.success ? undefined : result.error.issues[0].message
+}
+
 export const guidedSettingCategories: GuidedSettingCategory[] = [
   {
     value: 'relay-info',
@@ -253,6 +271,25 @@ export const guidedSettingCategories: GuidedSettingCategory[] = [
         label: 'Hide content matching actionable NIP-56 reports',
         path: 'nip56.hideActionableReports',
         type: 'boolean',
+      },
+      { label: 'Enable NIP-77 negentropy sync (PostgreSQL backend only)', path: 'nip77.enabled', type: 'boolean' },
+      {
+        label: 'NIP-77 max events per session',
+        path: 'nip77.maxEventsPerSession',
+        type: 'number',
+        validate: requireSafePositiveIntegerSettingValue,
+      },
+      {
+        label: 'NIP-77 max sessions per connection',
+        path: 'nip77.maxSessionsPerConnection',
+        type: 'number',
+        validate: requireSafePositiveIntegerSettingValue,
+      },
+      {
+        label: 'NIP-77 session idle timeout (ms)',
+        path: 'nip77.sessionIdleTimeoutMs',
+        type: 'number',
+        validate: requireSafePositiveIntegerSettingValue,
       },
     ],
   },

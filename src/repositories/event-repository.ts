@@ -101,7 +101,10 @@ export class EventRepository implements IEventRepository {
     return query
   }
 
-  public async countByFilters(filters: SubscriptionFilter[]): Promise<number> {
+  public async countByFilters(
+    filters: SubscriptionFilter[],
+    options?: { timeoutMs?: number },
+  ): Promise<number> {
     logger('counting events for %o', filters)
 
     if (!Array.isArray(filters) || !filters.length) {
@@ -129,7 +132,11 @@ export class EventRepository implements IEventRepository {
     const query = queries.length === 1 ? queries[0] : this.unionFilterQueries(queries)
 
     // Rows are already unique: EXISTS never repeats an event and UNION drops overlaps between filters.
-    const result = await this.readReplicaDbClient.from(query.as('matching_events')).count({ count: '*' }).first()
+    const countQuery = this.readReplicaDbClient.from(query.as('matching_events')).count({ count: '*' })
+    if (typeof options?.timeoutMs === 'number') {
+      countQuery.timeout(options.timeoutMs, { cancel: true })
+    }
+    const result = await countQuery.first()
 
     return Number(result?.count ?? 0)
   }
@@ -138,9 +145,10 @@ export class EventRepository implements IEventRepository {
    * Every live event matching the filter as (created_at, id), oldest first, for NIP-77 set
    * reconciliation. The filter's limit is ignored on purpose: reconciliation compares whole sets, so
    * truncating one side would report the cut-off events as missing. Deleted and expired events are
-   * excluded because they must never be advertised to a peer.
+   * excluded because they must never be advertised to a peer. `limit` is a safety cap for callers
+   * that refuse oversized sets (they ask for one more row than they accept); it is never a window.
    */
-  public findReconciliationItems(filter: SubscriptionFilter): IQueryResult<ReconciliationItem[]> {
+  public findReconciliationItems(filter: SubscriptionFilter, limit?: number): IQueryResult<ReconciliationItem[]> {
     logger('querying reconciliation items for %o', filter)
 
     const now = Math.floor(Date.now() / 1000)
@@ -155,6 +163,10 @@ export class EventRepository implements IEventRepository {
       })
       .orderBy('events.event_created_at', 'asc')
       .orderBy('events.event_id', 'asc')
+
+    if (typeof limit === 'number') {
+      builder.limit(limit)
+    }
 
     return builder as unknown as IQueryResult<ReconciliationItem[]>
   }
@@ -527,6 +539,11 @@ export class EventRepository implements IEventRepository {
     }
 
     const retentionLimit = now - maxDays * SECONDS_PER_DAY
+    // Anything the retention rule purges is older than the latest of the limits, which is what the counts use.
+    const countLimit = Math.max(
+      retentionLimit,
+      ...this.getPlanRetention(options).map((plan) => now - plan.maxDays * SECONDS_PER_DAY),
+    )
 
     logger(
       'deleting expired and retained events (retentionLimit: %d, now: %d, batchSize: %d)',
@@ -541,7 +558,7 @@ export class EventRepository implements IEventRepository {
       .whereIn('event_id', candidates)
       .del(['deleted_at', 'expires_at', 'event_created_at'])
 
-    const getPromise = () => query.then((rows: any) => this.mapToPurgeCounts(rows, now, retentionLimit))
+    const getPromise = () => query.then((rows: any) => this.mapToPurgeCounts(rows, now, countLimit))
 
     return {
       then: <T1, T2>(
@@ -559,10 +576,41 @@ export class EventRepository implements IEventRepository {
     retentionLimit: number,
     options?: EventRetentionOptions,
   ): any {
+    const planRetention = this.getPlanRetention(options)
+    const subscribersOf = (planIds: string[]) =>
+      this.masterDbClient('user_subscriptions')
+        .select('pubkey')
+        .whereIn('plan_id', planIds)
+        .whereNot('status', 'expired')
+        .where((access) =>
+          access
+            .whereRaw('COALESCE(grace_ends_at, current_period_end) IS NULL')
+            .orWhereRaw('COALESCE(grace_ends_at, current_period_end) > ?', [new Date(now * 1000)]),
+        )
+
     return this.masterDbClient('events')
       .select('event_id')
-      .where(function () {
-        this.where('expires_at', '<', now).orWhereNotNull('deleted_at').orWhere('event_created_at', '<', retentionLimit)
+      .where((builder) => {
+        builder.where('expires_at', '<', now).orWhereNotNull('deleted_at')
+
+        if (!planRetention.length) {
+          builder.orWhere('event_created_at', '<', retentionLimit)
+          return
+        }
+
+        // Subscribers on a plan with its own retention are held to it instead of the global one.
+        builder.orWhere((global) =>
+          global
+            .where('event_created_at', '<', retentionLimit)
+            .whereNotIn('event_pubkey', subscribersOf(planRetention.map(({ planId }) => planId))),
+        )
+        for (const { planId, maxDays } of planRetention) {
+          builder.orWhere((plan) =>
+            plan
+              .where('event_created_at', '<', now - maxDays * SECONDS_PER_DAY)
+              .whereIn('event_pubkey', subscribersOf([planId])),
+          )
+        }
       })
       .modify((query) => {
         this.applyRetentionKindWhitelist(query, options?.kindWhitelist)
@@ -572,6 +620,12 @@ export class EventRepository implements IEventRepository {
         }
       })
       .limit(RETENTION_BATCH_SIZE)
+  }
+
+  private getPlanRetention(options?: EventRetentionOptions): { planId: string; maxDays: number }[] {
+    return (options?.planRetention ?? []).filter(
+      ({ maxDays }) => typeof maxDays === 'number' && !isNaN(maxDays) && maxDays > 0,
+    )
   }
 
   private applyRetentionKindWhitelist(query: any, kindWhitelist?: EventRetentionOptions['kindWhitelist']): void {

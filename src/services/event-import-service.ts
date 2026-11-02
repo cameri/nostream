@@ -1,9 +1,10 @@
 import fs from 'fs'
 import readline from 'readline'
 
-const streamArray = require('stream-json/streamers/stream-array.js') as {
-  withParserAsStream: () => NodeJS.ReadWriteStream
+const streamArrayModule = require('stream-json/streamers/stream-array.js') as {
+  default: { withParserAsStream: () => NodeJS.ReadWriteStream }
 }
+const streamArray = streamArrayModule.default
 
 import {
   getEventExpiration,

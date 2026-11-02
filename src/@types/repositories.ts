@@ -16,9 +16,12 @@ import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
 import { User } from './user'
+import { UserSubscription } from './user-subscription'
 
 export interface EventRetentionOptions {
   maxDays?: number
+  /** Retention in days for subscribers on these plans, replacing `maxDays` for them while their access lasts. */
+  planRetention?: { planId: string; maxDays: number }[]
   kindWhitelist?: (EventKinds | EventKindsRange)[]
   pubkeyWhitelist?: Pubkey[]
 }
@@ -43,8 +46,8 @@ export interface IEventRepository {
   upsert(event: Event): Promise<number>
   upsertMany(events: Event[]): Promise<number>
   findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
-  countByFilters(filters: SubscriptionFilter[]): Promise<number>
-  findReconciliationItems(filter: SubscriptionFilter): IQueryResult<ReconciliationItem[]>
+  countByFilters(filters: SubscriptionFilter[], options?: { timeoutMs?: number }): Promise<number>
+  findReconciliationItems(filter: SubscriptionFilter, limit?: number): IQueryResult<ReconciliationItem[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
   deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>
   hasActiveRequestToVanish(pubkey: Pubkey): Promise<boolean>
@@ -59,6 +62,30 @@ export interface IInvoiceRepository {
   findPendingInvoices(offset?: number, limit?: number, client?: DatabaseClient): Promise<Invoice[]>
 }
 
+export interface IUserSubscriptionRepository {
+  findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<UserSubscription | undefined>
+  upsert(subscription: Omit<UserSubscription, 'createdAt' | 'updatedAt'>, client?: DatabaseClient): Promise<number>
+  /**
+   * Applies `changes` only while the stored row still matches `expected` (status, plan, period end
+   * and grace end), so a payment confirmed after the row was read is not overwritten.
+   * Returns false when the row has changed.
+   */
+  updateIfCurrent(
+    expected: UserSubscription,
+    changes: Partial<Pick<UserSubscription, 'status' | 'graceEndsAt'>>,
+    client?: DatabaseClient,
+  ): Promise<boolean>
+  /**
+   * Subscriptions whose period ends by `before` and that need a renewal invoice: active ones, and
+   * renewal-pending ones whose invoice has expired unpaid. `offset` skips rows already tried.
+   */
+  findDueForRenewal(before: Date, limit?: number, offset?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  /** Active or renewal-pending subscriptions whose period has ended by `now`. */
+  findPeriodEnded(now: Date, limit?: number, offset?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+  /** Past-due subscriptions whose grace period has ended by `now`. */
+  findGraceEnded(now: Date, limit?: number, offset?: number, client?: DatabaseClient): Promise<UserSubscription[]>
+}
+
 export interface IUserRepository {
   findByPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<User | undefined>
   upsert(user: Partial<User>, client?: DatabaseClient): Promise<number>
@@ -69,10 +96,21 @@ export interface IUserRepository {
   revokeAdmission(pubkey: Pubkey, client?: DatabaseClient): Promise<number>
 }
 
+export interface Nip05VerificationAdminListQuery {
+  domain?: string
+  verified?: boolean
+  stale?: boolean
+  minFailures?: number
+  verifyExpirationMs: number
+  limit: number
+  offset: number
+}
+
 export interface INip05VerificationRepository {
   findByPubkey(pubkey: Pubkey): Promise<Nip05Verification | undefined>
   upsert(verification: Nip05Verification): Promise<number>
   findPendingVerifications(updateFrequencyMs: number, maxFailures: number, limit: number): Promise<Nip05Verification[]>
+  listForAdmin(query: Nip05VerificationAdminListQuery): Promise<{ rows: Nip05Verification[]; total: number }>
   deleteByPubkey(pubkey: Pubkey): Promise<number>
 }
 

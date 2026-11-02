@@ -4,6 +4,8 @@ import {
   createClosedMessage,
   createCommandResult,
   createEndOfStoredEventsNoticeMessage,
+  createNegErrMessage,
+  createNegMsgMessage,
   createNoticeMessage,
   createOutgoingEventMessage,
   createRelayedEventMessage,
@@ -145,5 +147,34 @@ describe('createRelayedEventMessage', () => {
       event,
       'shared-secret',
     ])
+  })
+})
+
+describe('NIP-77 messages', () => {
+  it('createNegMsgMessage returns a NEG-MSG with the hex payload', () => {
+    expect(createNegMsgMessage('sync1', '6100')).to.deep.equal([MessageType.NEG_MSG, 'sync1', '6100'])
+  })
+
+  it('createNegErrMessage returns a NEG-ERR with the reason', () => {
+    expect(createNegErrMessage('sync1', 'closed: bye')).to.deep.equal([MessageType.NEG_ERR, 'sync1', 'closed: bye'])
+  })
+
+  it('createNegErrMessage appends the record limit when given', () => {
+    expect(createNegErrMessage('sync1', 'blocked: this query is too big', 5000)).to.deep.equal([
+      MessageType.NEG_ERR,
+      'sync1',
+      'blocked: this query is too big',
+      5000,
+    ])
+  })
+
+  it('createNegErrMessage keeps a record limit of 0', () => {
+    expect(createNegErrMessage('sync1', 'blocked: no', 0)).to.have.lengthOf(4)
+  })
+
+  it('serialises to the JSON array NIP-77 describes', () => {
+    expect(JSON.stringify(createNegErrMessage('sync1', 'blocked: no', 3))).to.equal(
+      '["NEG-ERR","sync1","blocked: no",3]',
+    )
   })
 })

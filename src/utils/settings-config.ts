@@ -1,11 +1,14 @@
 import fs from 'fs'
+import { setTimeout as delay } from 'node:timers/promises'
 import { join } from 'path'
 import yaml from 'js-yaml'
 import { isNil, mergeDeepRight } from 'ramda'
 
 import { createLogger } from '../factories/logger-factory'
 import { EVENT_STORE_BACKENDS, isEventStoreBackend } from './event-store'
+import { GRANDFATHERED_PLAN_ID } from '../@types/user-subscription'
 import { Settings } from '../@types/settings'
+import { parsePeeringPeerPubkey } from './peering-auth'
 import {
   getConfigBaseDir,
   getDefaultSettingsFilePath,
@@ -13,6 +16,7 @@ import {
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
+  getSettingsWriteLockPath,
 } from './settings-paths'
 
 export {
@@ -22,7 +26,148 @@ export {
   getSettingsAuditLogPath,
   getSettingsBackupDir,
   getSettingsFilePath,
+  getSettingsWriteLockPath,
 } from './settings-paths'
+
+const SETTINGS_WRITE_LOCK_STALE_MS = 60_000
+const SETTINGS_WRITE_LOCK_RETRY_MS = 25
+const SETTINGS_WRITE_LOCK_MAX_WAIT_MS = 30_000
+
+type SettingsWriteLockMetadata = {
+  pid: number
+  acquiredAt: number
+}
+
+const readSettingsWriteLockMetadata = (lockPath: string): SettingsWriteLockMetadata | undefined => {
+  try {
+    const raw = fs.readFileSync(lockPath, 'utf-8')
+    const [pidLine, acquiredLine] = raw.split('\n')
+    const pid = Number(pidLine)
+    const acquiredAt = Number(acquiredLine)
+    if (!Number.isFinite(pid) || !Number.isFinite(acquiredAt)) {
+      return undefined
+    }
+    return { pid, acquiredAt }
+  } catch {
+    return undefined
+  }
+}
+
+const isSettingsWriteLockStale = (metadata: SettingsWriteLockMetadata): boolean => {
+  if (Date.now() - metadata.acquiredAt > SETTINGS_WRITE_LOCK_STALE_MS) {
+    return true
+  }
+
+  try {
+    process.kill(metadata.pid, 0)
+    return false
+  } catch (error) {
+    // Only ESRCH proves the owner is gone. EPERM means the process exists under
+    // another user, and any other error is treated as alive so a failed check
+    // can never steal a live lock; the age rule above remains the fallback.
+    return (error as NodeJS.ErrnoException).code === 'ESRCH'
+  }
+}
+
+const reclaimSettingsWriteLock = (lockPath: string): void => {
+  const reclaimPath = `${lockPath}.reclaim.${process.pid}.${Date.now()}`
+  fs.renameSync(lockPath, reclaimPath)
+  fs.rmSync(reclaimPath, { force: true })
+}
+
+const attemptStealStaleSettingsWriteLock = (
+  lockPath: string,
+  expected: SettingsWriteLockMetadata,
+): boolean => {
+  try {
+    const current = readSettingsWriteLockMetadata(lockPath)
+    if (
+      !current ||
+      current.pid !== expected.pid ||
+      current.acquiredAt !== expected.acquiredAt ||
+      !isSettingsWriteLockStale(current)
+    ) {
+      return false
+    }
+
+    reclaimSettingsWriteLock(lockPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// A writer holds the lock between openSync and writeFileSync, so a lock with
+// missing or unparseable metadata is only abandoned once it has been untouched
+// for the same grace period as a stale lock. Reclaiming it immediately would
+// race a live writer.
+const attemptStealAbandonedSettingsWriteLock = (lockPath: string): boolean => {
+  try {
+    const stats = fs.statSync(lockPath)
+    if (Date.now() - stats.mtimeMs <= SETTINGS_WRITE_LOCK_STALE_MS) {
+      return false
+    }
+
+    reclaimSettingsWriteLock(lockPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> => {
+  ensureSettingsExists()
+  const lockPath = getSettingsWriteLockPath()
+  const deadline = Date.now() + SETTINGS_WRITE_LOCK_MAX_WAIT_MS
+  let lockFd: number | undefined
+
+  while (Date.now() < deadline) {
+    try {
+      const lockFdLocal = fs.openSync(lockPath, 'wx')
+      try {
+        fs.writeFileSync(lockFdLocal, `${process.pid}\n${Date.now()}\n`)
+      } catch (error) {
+        // The lock exists before it has contents; leaving that empty file
+        // behind would block every later writer until someone removes it.
+        try {
+          fs.closeSync(lockFdLocal)
+        } finally {
+          fs.rmSync(lockPath, { force: true })
+        }
+        throw error
+      }
+      lockFd = lockFdLocal
+      break
+    } catch (error) {
+      const errno = error as NodeJS.ErrnoException
+      if (errno.code !== 'EEXIST') {
+        throw error
+      }
+
+      const metadata = readSettingsWriteLockMetadata(lockPath)
+      if (metadata) {
+        if (isSettingsWriteLockStale(metadata)) {
+          attemptStealStaleSettingsWriteLock(lockPath, metadata)
+        }
+      } else {
+        attemptStealAbandonedSettingsWriteLock(lockPath)
+      }
+
+      await delay(SETTINGS_WRITE_LOCK_RETRY_MS)
+    }
+  }
+
+  if (lockFd === undefined) {
+    throw new Error('Timed out waiting for settings write lock')
+  }
+
+  try {
+    return operation()
+  } finally {
+    fs.closeSync(lockFd)
+    fs.rmSync(lockPath, { force: true })
+  }
+}
 
 const logger = createLogger('settings-config')
 
@@ -60,6 +205,12 @@ const assertSafePathKey = (key: string, segment: string): void => {
     throw new Error(`Invalid path segment: ${segment}`)
   }
 }
+
+/** Settings that no longer do anything because the static mirroring worker was removed. */
+const REMOVED_SETTINGS = [
+  { path: '$', key: 'mirroring' },
+  { path: 'admin.notifications.events', key: 'mirror.disconnected' },
+]
 
 const hasOwn = (object: Record<string, unknown>, key: string): boolean => {
   return Object.prototype.hasOwnProperty.call(object, key)
@@ -231,6 +382,11 @@ const validateShape = (schema: unknown, candidate: unknown, path: PathToken[], i
 
     for (const key of Object.keys(candidate)) {
       if (renderedPath === 'admin' && key === 'passwordHash') {
+        continue
+      }
+
+      // Settings that were removed stay accepted, so a settings file that still has one can be saved.
+      if (REMOVED_SETTINGS.some((removed) => removed.path === renderedPath && removed.key === key)) {
         continue
       }
 
@@ -583,10 +739,356 @@ const validateRateLimitPeriods = (
       issues.push({ path: `${pathPrefix}[${index}]`, message: 'rateLimits entry must be an object' })
       return
     }
-    if (!(entry.period > 0)) {
-      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be greater than 0' })
+    // The window is in milliseconds, and 60 is as valid a number as 60000, so
+    // the unit cannot be inferred here: it is stated on RateLimit and on each
+    // block in resources/default-settings.yaml. What this can refuse is a value
+    // that is not a whole count of milliseconds at all.
+    if (typeof entry.period !== 'number' || !Number.isFinite(entry.period)) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be a number of milliseconds' })
+    } else if (!Number.isInteger(entry.period)) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be a whole number of milliseconds' })
+    } else if (entry.period < 1) {
+      issues.push({ path: `${pathPrefix}[${index}].period`, message: 'period must be at least 1 millisecond' })
     }
   })
+}
+
+const isPositiveInteger = (value: unknown): boolean =>
+  (typeof value === 'number' || typeof value === 'bigint') && Number.isInteger(Number(value)) && Number(value) > 0
+
+// Unlike the global limits, a plan's limits are not covered by the settings schema while the plan list
+// is empty by default, so each entry is checked here.
+const validatePlanRateLimits = (rateLimits: unknown, path: string, issues: ValidationIssue[]): void => {
+  if (rateLimits === undefined || rateLimits === null) {
+    return
+  }
+  if (!Array.isArray(rateLimits)) {
+    issues.push({ path, message: 'rateLimits must be a list' })
+    return
+  }
+
+  rateLimits.forEach((entry, index) => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      issues.push({ path: `${path}[${index}]`, message: 'rateLimits entry must be an object' })
+      return
+    }
+    for (const key of ['period', 'rate']) {
+      if (!isPositiveInteger(entry[key])) {
+        issues.push({ path: `${path}[${index}].${key}`, message: `${key} must be a positive integer` })
+      }
+    }
+  })
+}
+
+const validateSubscriptionPlans = (plans: unknown, issues: ValidationIssue[]): void => {
+  // A value that is not a list is already reported against the default settings schema.
+  if (!Array.isArray(plans)) {
+    return
+  }
+
+  const ids = new Set<string>()
+  const amounts = new Set<string>()
+
+  plans.forEach((plan, index) => {
+    const prefix = `payments.subscriptionPlans[${index}]`
+    if (plan === null || typeof plan !== 'object' || Array.isArray(plan)) {
+      issues.push({ path: prefix, message: 'plan must be an object' })
+      return
+    }
+
+    if (typeof plan.id !== 'string' || !plan.id.trim()) {
+      issues.push({ path: `${prefix}.id`, message: 'id is required' })
+    } else if (plan.id === GRANDFATHERED_PLAN_ID) {
+      issues.push({ path: `${prefix}.id`, message: `id "${GRANDFATHERED_PLAN_ID}" is reserved` })
+    } else if (ids.has(plan.id)) {
+      issues.push({ path: `${prefix}.id`, message: `id "${plan.id}" is used by more than one plan` })
+    } else {
+      ids.add(plan.id)
+    }
+
+    // The amount paid selects the plan, so two plans with one price could not be told apart.
+    if (!isPositiveInteger(plan.amount)) {
+      issues.push({ path: `${prefix}.amount`, message: 'amount must be a positive integer (msats)' })
+    } else if (amounts.has(String(plan.amount))) {
+      issues.push({ path: `${prefix}.amount`, message: `amount ${plan.amount} is used by more than one plan` })
+    } else {
+      amounts.add(String(plan.amount))
+    }
+
+    if (!isPositiveInteger(plan.intervalSeconds)) {
+      issues.push({ path: `${prefix}.intervalSeconds`, message: 'intervalSeconds must be a positive integer' })
+    }
+
+    if (!(Number.isInteger(plan.graceSeconds) && plan.graceSeconds >= 0)) {
+      issues.push({ path: `${prefix}.graceSeconds`, message: 'graceSeconds must be a non-negative integer' })
+    }
+
+    const limits = plan.limits
+    if (limits !== undefined && limits !== null) {
+      if (typeof limits !== 'object' || Array.isArray(limits)) {
+        issues.push({ path: `${prefix}.limits`, message: 'limits must be an object' })
+        return
+      }
+      validatePlanRateLimits(limits.rateLimits, `${prefix}.limits.rateLimits`, issues)
+      if (limits.retentionMaxDays !== undefined && !isPositiveInteger(limits.retentionMaxDays)) {
+        issues.push({
+          path: `${prefix}.limits.retentionMaxDays`,
+          message: 'retentionMaxDays must be a positive integer',
+        })
+      }
+    }
+  })
+}
+
+const PEERING_KIND_MAX = 65535
+const PEERING_POW_MAX_BITS = 256
+const PEERING_SCOPE_KEYS = new Set(['kinds', 'since', 'until', 'windowSeconds'])
+const PEERING_TERM_KEYS = new Set(['amount', 'unit', 'period'])
+const PEERING_PEER_KEYS = new Set(['pubkey', 'relayUrl', 'enabled'])
+
+const isValidPeeringKindValue = (value: unknown): boolean =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= PEERING_KIND_MAX
+
+const validatePeeringKinds = (kinds: unknown, path: string, issues: ValidationIssue[]): void => {
+  if (!Array.isArray(kinds) || kinds.length === 0) {
+    issues.push({
+      path,
+      message: `must be a non-empty list of event kinds or [min, max] ranges`,
+    })
+    return
+  }
+
+  kinds.forEach((kind, index) => {
+    if (Array.isArray(kind)) {
+      if (kind.length !== 2 || !isValidPeeringKindValue(kind[0]) || !isValidPeeringKindValue(kind[1])) {
+        issues.push({
+          path: `${path}[${index}]`,
+          message: `range must contain two integers between 0 and ${PEERING_KIND_MAX}`,
+        })
+        return
+      }
+
+      if ((kind[0] as number) > (kind[1] as number)) {
+        issues.push({ path: `${path}[${index}]`, message: 'range start must be less than or equal to range end' })
+      }
+      return
+    }
+
+    if (!isValidPeeringKindValue(kind)) {
+      issues.push({ path: `${path}[${index}]`, message: `must be an integer between 0 and ${PEERING_KIND_MAX}` })
+    }
+  })
+}
+
+// Scopes and terms default to empty lists, so the default settings schema has no
+// entry shape to check them against. Validate each entry here instead.
+const validatePeeringScopes = (scopes: unknown, issues: ValidationIssue[]): void => {
+  if (!Array.isArray(scopes)) {
+    return
+  }
+
+  scopes.forEach((scope, index) => {
+    const prefix = `peering.scopes[${index}]`
+
+    if (!isPlainObject(scope)) {
+      issues.push({ path: prefix, message: 'scope must be an object' })
+      return
+    }
+
+    for (const key of Object.keys(scope)) {
+      if (!PEERING_SCOPE_KEYS.has(key)) {
+        issues.push({ path: `${prefix}.${key}`, message: 'Unknown setting key' })
+      }
+    }
+
+    validatePeeringKinds(scope.kinds, `${prefix}.kinds`, issues)
+
+    const { since, until, windowSeconds } = scope
+
+    if (since !== undefined && !(typeof since === 'number' && Number.isSafeInteger(since) && since >= 0)) {
+      issues.push({ path: `${prefix}.since`, message: 'since must be a non-negative integer (unix seconds)' })
+    }
+
+    if (until !== undefined && !(typeof until === 'number' && Number.isSafeInteger(until) && until >= 0)) {
+      issues.push({ path: `${prefix}.until`, message: 'until must be a non-negative integer (unix seconds)' })
+    }
+
+    if (
+      windowSeconds !== undefined &&
+      !(typeof windowSeconds === 'number' && Number.isSafeInteger(windowSeconds) && windowSeconds > 0)
+    ) {
+      issues.push({ path: `${prefix}.windowSeconds`, message: 'windowSeconds must be a positive integer (seconds)' })
+    } else if (windowSeconds !== undefined && (since !== undefined || until !== undefined)) {
+      issues.push({ path: prefix, message: 'windowSeconds cannot be combined with since or until' })
+    }
+
+    if (
+      typeof since === 'number' &&
+      typeof until === 'number' &&
+      Number.isSafeInteger(since) &&
+      Number.isSafeInteger(until) &&
+      since > until
+    ) {
+      issues.push({ path: prefix, message: 'since must be less than or equal to until' })
+    }
+  })
+}
+
+const validatePeeringTerms = (terms: unknown, issues: ValidationIssue[]): void => {
+  if (!Array.isArray(terms)) {
+    return
+  }
+
+  terms.forEach((term, index) => {
+    const prefix = `peering.terms[${index}]`
+
+    if (!isPlainObject(term)) {
+      issues.push({ path: prefix, message: 'term must be an object' })
+      return
+    }
+
+    for (const key of Object.keys(term)) {
+      if (!PEERING_TERM_KEYS.has(key)) {
+        issues.push({ path: `${prefix}.${key}`, message: 'Unknown setting key' })
+      }
+    }
+
+    if (!(typeof term.amount === 'number' && Number.isSafeInteger(term.amount) && term.amount >= 0)) {
+      issues.push({ path: `${prefix}.amount`, message: 'amount must be a non-negative integer' })
+    }
+
+    if (typeof term.unit !== 'string' || !term.unit.trim()) {
+      issues.push({ path: `${prefix}.unit`, message: 'unit must be a non-empty string' })
+    }
+
+    if (!(typeof term.period === 'number' && Number.isSafeInteger(term.period) && term.period > 0)) {
+      issues.push({ path: `${prefix}.period`, message: 'period must be a positive integer (seconds)' })
+    }
+  })
+}
+
+const validatePeeringPeers = (peers: unknown, issues: ValidationIssue[]): void => {
+  if (!Array.isArray(peers)) {
+    return
+  }
+
+  const seenPubkeys = new Set<string>()
+
+  peers.forEach((peer, index) => {
+    const prefix = `peering.peers[${index}]`
+
+    if (!isPlainObject(peer)) {
+      issues.push({ path: prefix, message: 'peer must be an object' })
+      return
+    }
+
+    for (const key of Object.keys(peer)) {
+      if (!PEERING_PEER_KEYS.has(key)) {
+        issues.push({ path: `${prefix}.${key}`, message: 'Unknown setting key' })
+      }
+    }
+
+    const pubkey = parsePeeringPeerPubkey(peer.pubkey)
+    if (typeof peer.pubkey !== 'string' || !peer.pubkey.trim()) {
+      issues.push({ path: `${prefix}.pubkey`, message: 'pubkey is required' })
+    } else if (!pubkey) {
+      issues.push({ path: `${prefix}.pubkey`, message: 'must be a 32-byte hex pubkey or npub' })
+    } else if (seenPubkeys.has(pubkey)) {
+      issues.push({ path: `${prefix}.pubkey`, message: 'pubkey must be unique' })
+    } else {
+      seenPubkeys.add(pubkey)
+    }
+
+    const relayUrl = typeof peer.relayUrl === 'string' ? peer.relayUrl.trim() : ''
+    if (!relayUrl) {
+      issues.push({ path: `${prefix}.relayUrl`, message: 'relayUrl is required' })
+    } else {
+      try {
+        const parsed = new URL(relayUrl)
+        if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.host) {
+          issues.push({ path: `${prefix}.relayUrl`, message: 'must be a ws:// or wss:// URL' })
+        }
+      } catch {
+        issues.push({ path: `${prefix}.relayUrl`, message: 'must be a valid ws:// or wss:// URL' })
+      }
+    }
+
+    if (peer.enabled !== undefined && typeof peer.enabled !== 'boolean') {
+      issues.push({ path: `${prefix}.enabled`, message: 'must be a boolean' })
+    }
+  })
+}
+
+const validatePeering = (settings: Settings, issues: ValidationIssue[]): void => {
+  const peering = settings.peering
+
+  if (peering === undefined || peering === null) {
+    return
+  }
+
+  // A non-object value is already reported against the default settings schema.
+  if (!isPlainObject(peering)) {
+    return
+  }
+
+  const enabled = peering.enabled === true
+
+  if (peering.minRequestPowDifficulty !== undefined) {
+    const bits = peering.minRequestPowDifficulty
+    if (
+      typeof bits !== 'number' ||
+      !Number.isInteger(bits) ||
+      bits < 0 ||
+      bits > PEERING_POW_MAX_BITS
+    ) {
+      issues.push({
+        path: 'peering.minRequestPowDifficulty',
+        message: `must be an integer between 0 and ${PEERING_POW_MAX_BITS}`,
+      })
+    }
+  }
+
+  const endpoint = typeof peering.endpoint === 'string' ? peering.endpoint.trim() : ''
+  if (endpoint) {
+    try {
+      const parsed = new URL(endpoint)
+      if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.host) {
+        issues.push({ path: 'peering.endpoint', message: 'must be a ws:// or wss:// URL' })
+      }
+    } catch {
+      issues.push({ path: 'peering.endpoint', message: 'must be a valid ws:// or wss:// URL' })
+    }
+  }
+
+  // NIP-11 calls `contact` a URI. Reject free text so a relay does not publish
+  // an address other relays cannot use to reach the operator.
+  const contact = typeof peering.contact === 'string' ? peering.contact.trim() : ''
+  if (contact) {
+    try {
+      new URL(contact)
+    } catch {
+      issues.push({
+        path: 'peering.contact',
+        message: 'must be a valid URI (for example mailto: or https:)',
+      })
+    }
+  }
+
+  validatePeeringScopes(peering.scopes, issues)
+  validatePeeringTerms(peering.terms, issues)
+  validatePeeringPeers(peering.peers, issues)
+
+  if (!enabled) {
+    return
+  }
+
+  if (!Array.isArray(peering.scopes) || peering.scopes.length === 0) {
+    issues.push({ path: 'peering.scopes', message: 'at least one scope is required when peering is enabled' })
+  }
+
+  if (!contact && !endpoint) {
+    issues.push({ path: 'peering.contact', message: 'contact or endpoint is required when peering is enabled' })
+  }
 }
 
 export const validateSettings = (settings: Settings): ValidationIssue[] => {
@@ -594,6 +1096,21 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
 
   if (!settings.info?.relay_url) {
     issues.push({ path: 'info.relay_url', message: 'relay_url is required' })
+  } else if (typeof settings.info.relay_url === 'string') {
+    try {
+      const parsed = new URL(settings.info.relay_url)
+
+      if (!parsed.host) {
+        issues.push({ path: 'info.relay_url', message: 'relay_url must include a valid host' })
+      } else if (!['ws:', 'wss:', 'http:', 'https:'].includes(parsed.protocol)) {
+        issues.push({
+          path: 'info.relay_url',
+          message: 'relay_url must use ws, wss, http, or https protocol',
+        })
+      }
+    } catch {
+      issues.push({ path: 'info.relay_url', message: 'relay_url must be a valid absolute URL' })
+    }
   }
 
   if (!settings.info?.name) {
@@ -620,6 +1137,37 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
       message: `backend must be one of: ${EVENT_STORE_BACKENDS.join(', ')}`,
     })
   }
+
+  const nip66 = settings.nip66
+  if (nip66?.historyRetentionRuns !== undefined) {
+    const runs = nip66.historyRetentionRuns
+    if (!Number.isFinite(runs) || !(runs >= 1)) {
+      issues.push({ path: 'nip66.historyRetentionRuns', message: 'historyRetentionRuns must be at least 1' })
+    }
+  }
+  if (
+    nip66?.historyRetentionHours !== undefined &&
+    !(nip66.historyRetentionHours === 0 || nip66.historyRetentionHours >= 1)
+  ) {
+    issues.push({
+      path: 'nip66.historyRetentionHours',
+      message: 'historyRetentionHours must be 0 (disabled) or at least 1',
+    })
+  }
+
+  const nip77 = settings.nip77
+  if (nip77?.enabled) {
+    for (const key of ['maxEventsPerSession', 'maxSessionsPerConnection', 'sessionIdleTimeoutMs'] as const) {
+      const value = nip77[key]
+      // Wrong types (e.g. a string) are already reported against the default settings schema.
+      if (typeof value === 'number' && !(Number.isInteger(value) && value > 0)) {
+        issues.push({ path: `nip77.${key}`, message: `${key} must be a positive integer` })
+      }
+    }
+  }
+
+  validateSubscriptionPlans(settings.payments?.subscriptionPlans, issues)
+  validatePeering(settings, issues)
 
   const pow = settings.limits?.event?.pow
   if (pow?.enabled) {

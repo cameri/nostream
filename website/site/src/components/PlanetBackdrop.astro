@@ -1,0 +1,66 @@
+---
+interface Props {
+  /** `cta` = bottom CTA band; `stage` = larger moon for framed film sections */
+  variant?: 'cta' | 'stage'
+  /** More silver dots rising from the moon */
+  density?: 'normal' | 'high'
+}
+const { variant = 'cta', density = 'normal' } = Astro.props
+const maxPool = density === 'high' ? 420 : 260
+const spawnChance = density === 'high' ? 0.94 : 0.85
+---
+
+<div class:list={['backdrop', variant]} aria-hidden="true">
+  <img class="planet" src={`${import.meta.env.BASE_URL}media/planet.webp`.replace(/\/\//, '/')} alt="" width="1200" height="1200" loading="lazy" decoding="async" />
+  <canvas
+    class="spark-canvas"
+    data-spark-canvas
+    data-max-pool={maxPool}
+    data-spawn-chance={spawnChance}></canvas>
+</div>
+
+<style>
+  .backdrop {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .backdrop.cta .planet {
+    left: 50%;
+    bottom: -82%;
+    width: min(1180px, 155vw);
+    transform: translateX(-50%);
+    opacity: 0.38;
+    mask-image: radial-gradient(circle at 50% 50%, #000 36%, transparent 70%);
+  }
+
+  .backdrop.stage .planet {
+    left: 50%;
+    bottom: -92%;
+    width: min(1380px, 175vw);
+    transform: translateX(-50%);
+    opacity: 0.44;
+    mask-image: radial-gradient(circle at 50% 46%, #000 34%, transparent 66%);
+  }
+
+  .planet {
+    position: absolute;
+    height: auto;
+  }
+
+  .spark-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spark-canvas {
+      display: none;
+    }
+  }
+</style>

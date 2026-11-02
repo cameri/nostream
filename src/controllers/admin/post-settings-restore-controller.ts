@@ -4,6 +4,7 @@ import { IController } from '../../@types/controllers'
 import { adminSettingsRestoreBodySchema } from '../../schemas/admin-settings-schema'
 import { appendSettingsAuditLog, restoreSettingsBackup } from '../../utils/settings-config'
 import { validateSchema } from '../../utils/validation'
+import { recordAdminAuditFromRequest } from '../../utils/record-admin-audit'
 
 export class PostAdminSettingsRestoreController implements IController {
   public async handleRequest(request: Request, response: Response): Promise<void> {
@@ -20,6 +21,7 @@ export class PostAdminSettingsRestoreController implements IController {
         filename: validation.value.filename,
         remoteAddress: request.ip,
       })
+      await recordAdminAuditFromRequest('settings.restored', request, { filename: validation.value.filename })
 
       response.status(200).setHeader('content-type', 'application/json').send({ ok: true, filename: validation.value.filename })
     } catch (error) {

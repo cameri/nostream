@@ -9,6 +9,7 @@ import { getPrivacyRequestHandler } from '../handlers/request-handlers/get-priva
 import { getReadyzRequestHandler } from '../handlers/request-handlers/get-readyz-request-handler'
 import { getTermsRequestHandler } from '../handlers/request-handlers/get-terms-request-handler'
 import invoiceRouter from './invoices'
+import subscriptionRouter from './subscriptions'
 import { rateLimiterMiddleware } from '../handlers/request-handlers/rate-limiter-middleware'
 import { hasExplicitNostrJsonAcceptHeader, rootRequestHandler } from '../handlers/request-handlers/root-request-handler'
 
@@ -37,6 +38,7 @@ router.get('/nodeinfo/2.0', nodeinfo21Handler)
 router.use('/admin', adminRouter)
 router.use('/invoices', rateLimiterMiddleware, invoiceRouter)
 router.use('/admissions', rateLimiterMiddleware, admissionRouter)
+router.use('/subscriptions', rateLimiterMiddleware, subscriptionRouter)
 router.use('/callbacks', rateLimiterMiddleware, callbacksRouter)
 
 export default router

@@ -15,8 +15,13 @@ import {
 } from '../utils/admin-session'
 import { validateSchema } from '../utils/validation'
 
+export type AdminAuthAuditHook = (event: 'login' | 'logout', request: Request) => void | Promise<void>
+
 export class PasswordAdminAuthProvider implements IAdminAuthProvider {
-  public constructor(private readonly settings: () => Settings) {}
+  public constructor(
+    private readonly settings: () => Settings,
+    private readonly auditHook?: AdminAuthAuditHook,
+  ) {}
 
   public async handleLogin(request: Request, response: Response): Promise<void> {
     const validation = validateSchema(adminLoginBodySchema)(request.body)
@@ -37,6 +42,8 @@ export class PasswordAdminAuthProvider implements IAdminAuthProvider {
     try {
       const token = createAdminSessionToken(expiresAt)
 
+      void this.auditHook?.('login', request)
+
       response
         .status(200)
         .setHeader('content-type', 'application/json')
@@ -49,6 +56,7 @@ export class PasswordAdminAuthProvider implements IAdminAuthProvider {
 
   public handleLogout(request: Request, response: Response): void {
     const currentSettings = this.settings()
+    void this.auditHook?.('logout', request)
 
     response
       .status(200)

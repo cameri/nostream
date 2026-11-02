@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { HeadlessMediaRenderer, startPreview } from 'framefields'
 import { buildFilm } from './film.js'
+import { readSupportedNipCount } from './repo-meta.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const OUTPUT = path.join(__dirname, '..', 'output')
@@ -41,5 +42,11 @@ const result = await film.renderVideo({
   quality,
 })
 await result.cleanup?.().catch(() => {})
-console.log(`${result.filePath} (${((Date.now() - started) / 1000).toFixed(1)} s)`)
+const meta = {
+  nipCount: readSupportedNipCount(),
+  generatedAt: new Date().toISOString(),
+  output: path.basename(result.filePath),
+}
+await fs.writeFile(path.join(OUTPUT, 'film.meta.json'), `${JSON.stringify(meta, null, 2)}\n`)
+console.log(`${result.filePath} (${((Date.now() - started) / 1000).toFixed(1)} s, ${meta.nipCount} NIPs)`)
 process.exit(0)

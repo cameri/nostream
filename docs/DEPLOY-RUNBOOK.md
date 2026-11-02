@@ -1,7 +1,7 @@
 # Deploy runbook (sandbox / production relay)
 
 Step-by-step procedure for updating a running nostream host after a new
-`ghcr.io/cameri/nostream:main` image is available.
+`ghcr.io/cameri/nostream:latest` (or release tag) image is available.
 
 | Doc | Purpose |
 |-----|---------|
@@ -11,15 +11,45 @@ Step-by-step procedure for updating a running nostream host after a new
 ## Image delivery vs relay recreate
 
 ```text
-GitHub push to main
-  → CI publishes ghcr.io/cameri/nostream:main
-  → (optional) webhook pull stack loads the image on the host
+GitHub Release published (tag v*)
+  → CI publishes ghcr.io/cameri/nostream:latest (and the version tag)
+  → the release webhook pulls :latest onto the host (see below)
   → operator runs this runbook (migrate + recreate relay(s))
   → Cloudflare Tunnel / reverse proxy keeps pointing at 127.0.0.1:8008
 ```
 
+Nothing publishes an image on a push to `main` any more, so a host that still
+pulls `:main` will never see a new image. The on-host pull stack must track the
+release instead:
+
+1. `NOSTREAM_TAG` in `/opt/nostream/webhook/.env` set to `latest`.
+2. The GitHub webhook subscribed to **releases** as well as **push**.
+3. The receiver changed to accept a `release` event. Subscribing alone does
+   nothing: the receiver ignores every event that is not a push to the watched
+   branch, so step 2 delivers a delivery it then discards. It must treat a
+   `release` event whose tag is a relay release as "pull `NOSTREAM_TAG`".
+
+The receiver is not part of this repository, so step 3 is a change to whatever
+deployment owns it. Until all three are done, deployments are manual: pull the
+tag by hand and continue at step 2 below.
+
 The webhook pull stack **loads images only**. It does **not** run migrations or
 recreate relay containers. This runbook closes that gap.
+
+The release event reaches the webhook at the same moment the image build starts,
+so the pull fires before the tag exists. The puller retries on a growing backoff
+and re-queues a message it exhausts, but **there is no signal that says the pull
+landed**. Before you recreate, confirm the image is on the host:
+
+```bash
+docker images --filter=reference='ghcr.io/cameri/nostream' --format '{{.Tag}} {{.ID}}'
+# expect the tag the release carried, and a digest that is not the previous one
+```
+
+A recreate with a stale `latest` starts the previous release from a brand-new
+build: the migrate step runs the old schema, nothing fails, and the deploy looks
+successful. When in doubt, `docker pull ghcr.io/cameri/nostream:latest` and re-run
+the check above.
 
 ## Choose your stack
 
@@ -43,7 +73,7 @@ are documented under
 - New relay image on the host (`docker pull` or `docker load`)
 - Shell access (`cd /opt/nostream`)
 - Before loading a new image or recreating containers, record the **running**
-  relay image (not `docker image inspect :main` after pull — that tag may already
+  relay image (not `docker image inspect :latest` after pull — that tag may already
   point at the new image)
 
 ```bash
@@ -84,7 +114,7 @@ Existing `.env` and `.nostr/settings.yaml` are preserved.
 ### 2. Load the new image (skip if webhook pull already did)
 
 ```bash
-docker pull ghcr.io/cameri/nostream:main
+docker pull ghcr.io/cameri/nostream:latest
 ```
 
 On hosts that cannot reach GHCR over IPv4, use `docker save` / `docker load`. See
@@ -169,10 +199,10 @@ HAProxy stack: stop the relay you just replaced; leave the healthy peer running.
 
 ```bash
 PREVIOUS_IMAGE="$(cat /tmp/nostream-pre-deploy-image-id)"
-docker tag "$PREVIOUS_IMAGE" ghcr.io/cameri/nostream:main
+docker tag "$PREVIOUS_IMAGE" ghcr.io/cameri/nostream:latest
 ```
 
-Or `docker load -i /path/to/nostream-main-backup.tar.gz`.
+Or `docker load -i /path/to/nostream-latest-backup.tar.gz`.
 
 ### 3. Recreate on the old image (skip migrations)
 
@@ -188,7 +218,7 @@ SKIP_MIGRATE=1 /opt/nostream/recreate-relay.sh /opt/nostream
 ```
 
 HAProxy: run migrate only when moving **forward** on a new image. For rollback,
-retag the old image to `:main`, then recreate relays **without** migrations.
+retag the old image to `:latest`, then recreate relays **without** migrations.
 
 `rolling-relay-recreate.sh` will **not** replace a running relay unless its peer
 is up and `/readyz` healthy. If step 1 left one backend stopped, running the

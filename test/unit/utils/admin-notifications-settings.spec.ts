@@ -69,6 +69,41 @@ describe('admin-notifications-settings', () => {
     expect(next.targets[0].botToken).to.equal(undefined)
   })
 
+  it('clears signing secret when patch sends an empty string', () => {
+    const current = getMergedAdminNotifications({
+      admin: {
+        notifications: {
+          enabled: true,
+          targets: [
+            {
+              id: 'http-1',
+              type: 'http',
+              enabled: true,
+              url: 'https://example.com/hook',
+              secret: 'old-secret',
+            },
+          ],
+          events: {},
+          retry: { maxAttempts: 5, baseDelayMs: 1000 },
+        },
+      },
+    } as any)
+
+    const next = mergeAdminNotificationsPatch(current, {
+      targets: [
+        {
+          id: 'http-1',
+          type: 'http',
+          enabled: true,
+          url: 'https://example.com/hook',
+          secret: '',
+        },
+      ],
+    })
+
+    expect(next.targets[0].secret).to.equal(undefined)
+  })
+
   it('does not persist redacted webhook url for new http targets', () => {
     const current = getMergedAdminNotifications({
       admin: {

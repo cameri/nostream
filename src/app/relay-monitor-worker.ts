@@ -1,16 +1,25 @@
+import { ICacheAdapter } from '../@types/adapters'
+import { AdminOpsWorkerHeartbeat } from '../@types/admin-ops'
 import { IRunnable } from '../@types/base'
 import { IRelayProbeSnapshotStore, RelayProbeRunSnapshot } from '../@types/relay-probe-snapshot'
 import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
 import { INip66EventPublisher } from '../services/nip66-event-publisher'
+import { recordProbeRunMetrics } from '../telemetry/ops-metrics'
 import { shutdownMetricsTelemetry } from '../telemetry/metrics'
-import { filterValidProbeTargets, resolveProbeTargets } from '../utils/relay-probe-targets'
-import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
-import { resolvePublicProbeTargetKeys } from '../utils/relay-probe-targets'
-import { getEffectiveProbeIntervalSeconds, getProbeIntervalMs } from '../utils/nip66-schedule'
+import { notifyProbeRunTransition } from '../utils/ops-trust-notifications'
+import { ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS, publishAdminOpsWorkerHeartbeatSafely } from '../utils/admin-ops-store'
 import { getMonitorPrivateKey } from '../utils/monitor-identity'
+import { getEffectiveProbeIntervalSeconds, getNip66HistoryRetention, getProbeIntervalMs } from '../utils/nip66-schedule'
 import { runProbe } from '../utils/relay-probe'
 import { ProbeOptions, ProbeResult } from '../utils/relay-probe/types'
+import { RelayProbeHistoryStore } from '../utils/relay-probe-history'
+import { deriveRelayProbeRunStatus, serializeProbeResults } from '../utils/relay-probe-snapshot'
+import {
+  filterValidProbeTargets,
+  resolveProbeTargets,
+  resolvePublicProbeTargetKeys,
+} from '../utils/relay-probe-targets'
 
 const logger = createLogger('relay-monitor-worker')
 
@@ -29,9 +38,16 @@ export const buildProbeOptions = (settings: Settings): ProbeOptions => {
 
 export { getProbeIntervalMs } from '../utils/nip66-schedule'
 
+type RelayMonitorOpsHeartbeatFields = Pick<
+  AdminOpsWorkerHeartbeat,
+  'lastRunStartedAt' | 'lastRunFinishedAt' | 'lastError'
+>
+
 export class RelayMonitorWorker implements IRunnable {
   private interval: NodeJS.Timeout | undefined
+  private opsKeepaliveInterval: NodeJS.Timeout | undefined
   private isRunning = false
+  private lastOpsWorkerHeartbeat: RelayMonitorOpsHeartbeatFields = {}
 
   public constructor(
     private readonly process: NodeJS.Process,
@@ -39,6 +55,8 @@ export class RelayMonitorWorker implements IRunnable {
     private readonly snapshotStore: IRelayProbeSnapshotStore,
     private readonly probeRunner: RunProbeFn = runProbe,
     private readonly eventPublisher?: INip66EventPublisher,
+    private readonly historyStore?: RelayProbeHistoryStore,
+    private readonly opsCache?: ICacheAdapter,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -64,6 +82,24 @@ export class RelayMonitorWorker implements IRunnable {
     this.interval = setInterval(() => {
       void this.runScheduledProbes()
     }, intervalMs)
+
+    if (this.opsCache) {
+      this.opsKeepaliveInterval = setInterval(() => {
+        this.publishOpsKeepalive()
+      }, ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS)
+    }
+  }
+
+  private publishOpsKeepalive(): void {
+    if (!this.opsCache || this.lastOpsWorkerHeartbeat.lastRunStartedAt === undefined) {
+      return
+    }
+
+    void publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
+      type: 'relay-monitor',
+      updatedAt: new Date().toISOString(),
+      ...this.lastOpsWorkerHeartbeat,
+    })
   }
 
   private async runScheduledProbes(): Promise<void> {
@@ -83,7 +119,31 @@ export class RelayMonitorWorker implements IRunnable {
     }
   }
 
+  private async publishOpsHeartbeat(partial: RelayMonitorOpsHeartbeatFields): Promise<void> {
+    if (!this.opsCache) {
+      return
+    }
+
+    this.lastOpsWorkerHeartbeat = {
+      ...this.lastOpsWorkerHeartbeat,
+      ...partial,
+    }
+    if ('lastError' in partial && partial.lastError === undefined) {
+      delete this.lastOpsWorkerHeartbeat.lastError
+    }
+
+    await publishAdminOpsWorkerHeartbeatSafely(this.opsCache, {
+      type: 'relay-monitor',
+      updatedAt: new Date().toISOString(),
+      ...this.lastOpsWorkerHeartbeat,
+    })
+  }
+
   private async onSchedule(): Promise<void> {
+    const probeRunStartedMs = Date.now()
+    const lastRunStartedAt = new Date().toISOString()
+    await this.publishOpsHeartbeat({ lastRunStartedAt })
+
     const currentSettings = this.settings()
 
     if (!currentSettings.nip66?.enabled) {
@@ -101,6 +161,11 @@ export class RelayMonitorWorker implements IRunnable {
 
     if (valid.length === 0) {
       logger.warn('no valid probe targets configured; skipping probe run')
+      await this.publishOpsHeartbeat({
+        lastRunStartedAt,
+        lastRunFinishedAt: new Date().toISOString(),
+        lastError: 'No valid probe targets configured',
+      })
       return
     }
 
@@ -117,6 +182,11 @@ export class RelayMonitorWorker implements IRunnable {
 
     if (results.length === 0) {
       logger.warn('probe run produced no results')
+      await this.publishOpsHeartbeat({
+        lastRunStartedAt,
+        lastRunFinishedAt: new Date().toISOString(),
+        lastError: 'Probe run produced no results',
+      })
       return
     }
 
@@ -136,6 +206,15 @@ export class RelayMonitorWorker implements IRunnable {
     const expirySeconds = getEffectiveProbeIntervalSeconds(currentSettings) * 2
 
     await this.snapshotStore.saveLatest(snapshot, expirySeconds)
+    recordProbeRunMetrics(snapshot.status, Date.now() - probeRunStartedMs)
+    await notifyProbeRunTransition(this.opsCache, snapshot)
+    if (this.historyStore) {
+      try {
+        await this.historyStore.append(snapshot, getNip66HistoryRetention(currentSettings))
+      } catch (error) {
+        logger.error('failed to save probe history: %o', error)
+      }
+    }
     logger('saved probe snapshot for %d target(s) with status %s', valid.length, snapshot.status)
 
     if (this.eventPublisher) {
@@ -145,6 +224,12 @@ export class RelayMonitorWorker implements IRunnable {
         logger.error('failed to publish NIP-66 events: %o', error)
       }
     }
+
+    await this.publishOpsHeartbeat({
+      lastRunStartedAt,
+      lastRunFinishedAt: new Date().toISOString(),
+      lastError: undefined,
+    })
   }
 
   private onError(error: Error) {
@@ -164,6 +249,7 @@ export class RelayMonitorWorker implements IRunnable {
   public close(callback?: () => void) {
     logger('closing')
     clearInterval(this.interval)
+    clearInterval(this.opsKeepaliveInterval)
     if (typeof callback === 'function') {
       callback()
     }

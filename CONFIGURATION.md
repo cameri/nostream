@@ -10,6 +10,7 @@ The following environment variables can be set:
 | RELAY_PORT                       | Relay's server port            | 8008                   |
 | RELAY_PRIVATE_KEY                | Relay's private key in hex     | (auto-generated)       |
 | WORKER_COUNT                     | Number of workers override     | No. of available CPUs  |
+| LOG_FORMAT                       | Set to `json` to replace the startup banner with one `relay starting` record, so every line the relay writes parses as JSON. | (banner) |
 | DB_URI                           | PostgreSQL URI (overrides DB_HOST, DB_PORT, etc.) | |
 | DB_HOST                          | PostgresSQL Hostname           |                        |
 | DB_PORT                          | PostgreSQL Port                | 5432                   |
@@ -166,7 +167,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.event.content[].maxLength            | Maximum length of `content`. Defaults to 1 MB. Disabled when set to zero. |
 | limits.event.createdAt.maxNegativeDelta     | Maximum number of seconds an event's `created_at` can be in the past. Defaults to zero. Disabled when set to zero. |
 | limits.event.createdAt.maxPositiveDelta     | Maximum number of seconds an event's `created_at` can be in the future. Defaults to 900 (15 minutes). Disabled when set to zero. |
-| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. Ignored on the client path while `limits.event.pow.enabled` is true (mirrored events from `static-mirroring-worker.ts` still enforce this static value). |
+| limits.event.eventId.minLeadingZeroBits     | Leading zero bits required on every incoming event for proof of work. Defaults to zero. Disabled when set to zero. Ignored on the client path while `limits.event.pow.enabled` is true. |
 | limits.event.kind.blacklist                 | List of event kinds to always reject. Leave empty to allow any. |
 | limits.event.kind.whitelist                 | List of event kinds to always allow. Leave empty to allow any. |
 | limits.event.pow.ceilingBits                | Maximum adaptive PoW difficulty, reached at approximately 2x `targetEventsPerSecond` and beyond. |
@@ -228,12 +229,18 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip66.dnsCacheTtlSeconds                    | DNS cache TTL in seconds for repeated probe lookups of the same hostname. Defaults to 300. |
 | nip66.enabled                               | Enable NIP-66 relay monitoring. When true, starts a `relay-monitor` cluster worker that probes targets on an interval and stores the latest snapshot in Redis. Defaults to false. |
 | nip66.probeIntervalSeconds                  | Seconds between scheduled relay probe runs. Defaults to 3600. |
-| nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. Addresses from `mirroring.static[]` are probed for the admin snapshot but are not published as kind `30166` discovery events. |
+| nip66.targets                               | Public WebSocket URLs to probe (for example `wss://relay.example.com`). When empty, defaults to `info.relay_url`. |
 | nip66.geohash                               | Optional NIP-52 geohash describing this monitor's network vantage. Published on kind `10166` monitor announcements when set. |
+| nip66.historyRetentionRuns                  | Maximum probe run snapshots kept for the admin Network Health history API and timeline. Defaults to 168. |
+| nip66.historyRetentionHours                 | Optional maximum age in hours for retained probe history. When unset, history is trimmed by run count only. |
 | nip66.timeouts.dnsMs                        | DNS probe timeout in milliseconds. Defaults to 10000. |
 | nip66.timeouts.nip11Ms                      | NIP-11 fetch timeout in milliseconds. Defaults to 10000. |
 | nip66.timeouts.tlsMs                        | TLS probe timeout in milliseconds. Defaults to 10000. |
 | nip66.timeouts.wsRttMs                      | WebSocket open RTT probe timeout in milliseconds. Defaults to 10000. |
+| nip77.enabled                               | Enable NIP-77 (Negentropy) set-reconciliation sync, so clients and other relays can find which events differ without downloading them all. Defaults to false. Only answers when `eventStore.backend` is `postgres`; other backends bring their own negentropy implementation. While active, the relay lists `77` in the NIP-11 `supported_nips`; it is left out when this is off or another backend is used. All `nip77.*` settings can be edited in the admin console and the CLI settings menu. When `nip42.restrictedReads` is enabled, reconciliation would list the ids of restricted events, so a `NEG-OPEN` filter that could match one (it names a restricted kind or no kinds at all) is only accepted when scoped by `authors` or `#p` to pubkeys the client has authenticated as, and is re-checked on every `NEG-MSG`; otherwise the session is closed with `NEG-ERR auth-required:`. Each open session holds the ids of every event matching its filter in memory, so size the limits below for your hardware. |
+| nip77.maxEventsPerSession                   | Most events one session may cover. A `NEG-OPEN` whose filter matches more is rejected with `NEG-ERR blocked:` (clients should split the sync into `since`/`until` windows). The filter's `limit` is ignored, since reconciliation needs the whole set. Defaults to 100000. |
+| nip77.maxSessionsPerConnection              | Concurrent negentropy sessions one websocket connection may hold; opening an id that is already open replaces it. Further `NEG-OPEN`s are rejected with `NEG-ERR blocked:`. Defaults to 3. |
+| nip77.sessionIdleTimeoutMs                  | A session that receives no `NEG-MSG` for this many milliseconds is closed with `NEG-ERR closed:`. Defaults to 60000. |
 | paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
 | paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
@@ -246,6 +253,14 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`. |
+| payments.subscriptionPlans                  | Recurring membership plans. Leave empty to keep the one-time admission fee. With plans and `payments.enabled`, `POST /invoices` takes a `planId` instead of a fee schedule, a payment of at least the plan price starts or extends a period (from the period end while access is still running, otherwise from now), and writes need an active subscription or grace period. Admitted users with no subscription keep access. About three days before a period ends the relay creates a renewal invoice and sends it to the subscriber in a kind 402 event, replacing it if it expires unpaid; it moves the subscription through grace to expired once the period and grace pass without payment. Users still have to pay renewal invoices themselves, since Lightning cannot be charged automatically. The invoice page lets users pick a plan. Clients see the plans in the NIP-11 document under `fees.subscription` (`id`, `amount` in msats, `unit`, `period` in seconds, and `description` when set), and with plans `limitation.restricted_writes` is true. `GET /subscriptions/status?pubkey=<hex or npub>` returns a pubkey's `planId`, `status`, `active`, `currentPeriodEnd` and `accessEndsAt` (without a subscription `active` is false and the other fields are null), counted against `limits.invoice.rateLimits`; it answers 404 while plans are off. |
+| payments.subscriptionPlans[].id             | Unique plan name, for example `basic`. `grandfathered` is reserved: users admitted before plans existed are moved onto it and keep access without a paid period. |
+| payments.subscriptionPlans[].amount         | Price of one period in msats. Must be unique across plans. A payment below it does not start or extend a period. |
+| payments.subscriptionPlans[].intervalSeconds | Length of one paid period, in seconds. |
+| payments.subscriptionPlans[].graceSeconds   | How long access lasts after a period ends without a renewal, in seconds. `0` ends access straight away. |
+| payments.subscriptionPlans[].description    | Optional text shown to users. |
+| payments.subscriptionPlans[].limits.rateLimits | Optional event rate limits for subscribers on this plan, in the same format as `limits.event.rateLimits`. They replace the global limits for a subscriber while their subscription gives access, grace period included; an empty list means no limit. Everyone else, and subscribers whose subscription ended, keep the global limits. The plan is cached with admission, so a change of plan takes effect within five minutes. |
+| payments.subscriptionPlans[].limits.retentionMaxDays | Optional event retention in days for subscribers on this plan. It replaces `limits.event.retention.maxDays` for a subscriber while their subscription gives access, so it only applies while that is set. Once the subscription ends, the global window purges their events at the next pass. The kind and pubkey whitelists apply as before. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. |
 |                                             | Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | limits.message.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
@@ -253,11 +268,6 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.admissionCheck.rateLimits[].rate            | Maximum number of admission checks during period. |
 | limits.admissionCheck.ipWhitelist                  | List of IPs (IPv4 or IPv6) to ignore rate limits. |
 | limits.rateLimiter.strategy | Rate limiting strategy. Either `ewma` or `sliding_window`. Defaults to `ewma`. When using `ewma`, the `period` field in each rate limit serves as the half-life for the exponential decay function. Note: when switching from `sliding_window` to `ewma`, consider increasing `rate` values slightly as EWMA penalizes bursty behavior more aggressively. |
-| mirroring.static[].address                  | Address of mirrored relay. (e.g. ws://100.100.100.100:8008) |
-| mirroring.static[].filters                  | Subscription filters used to mirror. |
-| mirroring.static[].limits.event             | Event limit overrides for this mirror. See configurations under limits.event. |
-| mirroring.static[].secret                   | Secret to pass to relays. Nostream relays only. Optional. |
-| mirroring.static[].skipAdmissionCheck       | Disable the admission fee check for events coming from this mirror. |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
 | network.trustedProxies                      | Optional allow-list of proxy IPs allowed to set `network.remoteIpHeader`; otherwise socket remote IP is used. |
@@ -279,9 +289,61 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | payments.feeSchedules.admission[].whitelists.event_kinds | List of event kinds to waive admission fee. Use `[min, max]` for ranges. |
 | payments.feeSchedules.admission[].whitelists.pubkeys | List of pubkeys to waive admission fee. |
 | payments.processor                          | Either `zebedee`, `lnbits`, `lnurl`, `nodeless`, `opennode`, `nwc`. |
+| peering.contact                             | Contact URI (e.g. `mailto:peering@your-domain.com`) advertised to other relays for establishing peering. At least one of `contact` or `endpoint` is required when peering is enabled. |
+| peering.enabled                             | Advertise a `peering` section in the NIP-11 document. This only expresses feeds and terms; it does not accept peers. Defaults to false. |
+| peering.endpoint                            | WebSocket endpoint (`ws://` or `wss://`) peers should connect to, advertised to other relays. At least one of `contact` or `endpoint` is required when peering is enabled. |
+| peering.minRequestPowDifficulty             | NIP-13 proof-of-work bits required on peering requests, advertised as `peering.min_pow_difficulty`. `0` (default) means none. Applies to peering requests only, never to operational traffic. |
+| peering.peers[].enabled                     | Whether this configured peer is active. Defaults to true. |
+| peering.peers[].pubkey                      | Peer relay's own pubkey (hex or `npub1...`). Peers are identified by this key: a valid NIP-42 AUTH from any other key gets no peer recognition. |
+| peering.peers[].relayUrl                    | WebSocket URL (`ws://` or `wss://`) used when connecting outbound to this peer. Its host must match the peer's advertised `info.relay_url`, because NIP-42 verifies the `relay` tag host. Inbound recognition uses the pubkey, never the URL. |
+| peering.scopes[].kinds                      | Event kinds this feed covers, as kinds or `[min, max]` ranges. Required for every scope. At least one scope is required when peering is enabled. |
+| peering.scopes[].since                      | Inclusive lower bound of the feed's time range as a unix timestamp in seconds. Omit for no lower bound. Mutually exclusive with `windowSeconds`. |
+| peering.scopes[].until                      | Inclusive upper bound of the feed's time range as a unix timestamp in seconds. Omit for a feed that stays current. Mutually exclusive with `windowSeconds`. |
+| peering.scopes[].windowSeconds              | Rolling window in seconds: the feed covers the most recent `windowSeconds` of events. Mutually exclusive with `since` and `until`. |
+| peering.terms[].amount                      | Fee amount charged per peering period, denominated in `unit`. |
+| peering.terms[].period                      | Peering period in seconds. |
+| peering.terms[].unit                        | Fee unit (for example `msats`). An empty `terms` list means settlement-free peering. |
 | workers.count                               | Number of workers to spin up to handle incoming connections. Spin workers as many CPUs are available when set to zero. Defaults to zero. |
 | wot.enabled                                 | Enables the Web of Trust graph, rooted at `wot.seedPubkey`, built from NIP-02 contact lists. Defaults to false. |
 | wot.maxDepth                                | How many hops out from `wot.seedPubkey` the trust graph extends. Direct follows are distance 1. Defaults to 2. |
 | wot.minimumFollowers                        | Minimum number of already-trusted accounts that must follow a pubkey before it enters the graph at 2+ hops. Direct follows are always trusted. Defaults to 1. |
 | wot.refreshIntervalHours                    | Reserved for a future periodic full rebuild; not yet read by any code (real-time kind-3 ingestion already keeps the graph current). Defaults to 24. |
 | wot.seedPubkey                              | The relay owner's pubkey in hex. Root of the trust graph. Required when `wot.enabled` is true. |
+
+## Peering advertisement (NIP-11)
+
+When `peering.enabled` is true, the relay information document served with
+`Accept: application/nostr+json` includes a `peering` section built from the
+settings above:
+
+```json
+{
+  "peering": {
+    "enabled": true,
+    "contact": "mailto:peering@your-domain.com",
+    "endpoint": "wss://relay.example.com",
+    "min_pow_difficulty": 0,
+    "scopes": [
+      { "kinds": [1, 6], "window_seconds": 3600 },
+      { "kinds": [3, 10002], "since": 1700000000 }
+    ],
+    "terms": [
+      { "amount": 1000, "unit": "msats", "period": 2592000 }
+    ]
+  }
+}
+```
+
+`terms` uses the NIP-11 fee-object shape (`amount`, `unit`, `period`). An empty
+`terms` list is settlement-free peering: the absence of a fee entry is the
+signal, not a zero amount. `min_pow_difficulty` is the NIP-13 work a peering
+request must carry; `0` means there is no requirement. When peering is
+disabled, the section is published as `{ "enabled": false }` and no scopes,
+terms, or contact details are exposed.
+
+## Peering identity
+
+`peering.peers` is the inbound trust list. A connection is recognized as a peer
+only when a NIP-42 AUTH event proves one of those pubkeys; matching a URL or
+self-declaring a key is not enough. The relay's own identity, key storage, and
+the AUTH exchange are documented in [docs/PEERING.md](docs/PEERING.md).

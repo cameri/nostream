@@ -5,3 +5,9 @@ export enum CacheAdmissionState {
 }
 
 export const admissionCacheKey = (pubkey: string): string => `${pubkey}:is-admitted`
+
+/** Holds `plan:<id>` for a pubkey with an active subscription, or `none`. */
+export const subscriptionPlanCacheKey = (pubkey: string): string => `${pubkey}:subscription-plan`
+
+export const NO_SUBSCRIPTION_PLAN = 'none'
+export const SUBSCRIPTION_PLAN_PREFIX = 'plan:'

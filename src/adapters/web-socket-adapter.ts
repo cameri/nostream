@@ -8,11 +8,14 @@ import { ContextMetadata, Factory } from '../@types/base'
 import {
   createAuthChallengeMessage,
   createClosedMessage,
+  createNegErrMessage,
   createNoticeMessage,
   createOutgoingEventMessage,
 } from '../utils/messages'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IncomingMessage, MessageType, OutgoingMessage } from '../@types/messages'
+import { INegentropySessions } from '../@types/negentropy'
+import { NegentropySessions } from '../utils/negentropy-sessions'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
@@ -24,6 +27,7 @@ import { Event } from '../@types/event'
 import { getRemoteAddress } from '../utils/http'
 import { createReadAuthorizationGuard } from '../utils/nip42'
 import { Nip42SessionManager } from '../utils/nip42-session'
+import { isConfiguredPeeringPeer } from '../utils/peering-auth'
 import { IRateLimiter } from '../@types/utils'
 import { isEventMatchingFilter } from '../utils/event'
 import { isHidden } from '../utils/hidden-content-cache'
@@ -32,6 +36,36 @@ import { Settings } from '../@types/settings'
 import { SocketAddress } from 'net'
 
 const logger = createLogger('web-socket-adapter')
+
+/**
+ * The NIP-01 type of a client frame, or `OTHER` when it is not one.
+ *
+ * The message limiter runs before validation — it has to, or a client could
+ * spend the parse budget first — so it reads a bounded prefix instead of
+ * decoding the frame. A frame that does not start with `["WORD"` shares the
+ * `OTHER` bucket; it is refused a moment later anyway.
+ */
+const THROTTLED_MESSAGE_TYPES = new Set<string>([
+  'REQ',
+  'EVENT',
+  'COUNT',
+  'CLOSE',
+  'AUTH',
+  'NEG-OPEN',
+  'NEG-MSG',
+  'NEG-CLOSE',
+])
+
+const messageType = (raw: Buffer): string => {
+  const prefix = raw.toString('utf8', 0, Math.min(raw.length, 32))
+  const match = /^\s*\[\s*"([A-Za-z-]{1,8})"/.exec(prefix)
+  const type = match ? match[1].toUpperCase() : ''
+
+  // A closed set, not whatever the frame claims. Bucketing by an arbitrary word
+  // would let a client rotate invented types (`["AAAA"]`, `["BBBB"]`, …) and
+  // keep every bucket empty; anything unrecognised shares one bucket.
+  return THROTTLED_MESSAGE_TYPES.has(type) ? type : 'OTHER'
+}
 const debugHeartbeat = logger.extend('heartbeat')
 
 const abortableMessageHandlers: WeakMap<WebSocket, IAbortable[]> = new WeakMap()
@@ -42,6 +76,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private alive: boolean
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
   private readonly session: Nip42SessionManager
+  /** Configured peering peer proven by AUTH on this socket, if any. */
+  private peerPubkey: string | undefined
+  // NIP-77
+  private readonly negentropySessions: NegentropySessions
 
   public constructor(
     private readonly client: WebSocket,
@@ -54,6 +92,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     super()
     this.alive = true
     this.subscriptions = new Map()
+    this.negentropySessions = new NegentropySessions((subscriptionId) =>
+      this.sendMessage(createNegErrMessage(subscriptionId, 'closed: negentropy session timed out')),
+    )
 
     this.clientId = Buffer.from(this.request.headers['sec-websocket-key'] as string, 'base64').toString('hex')
 
@@ -175,9 +216,19 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       this.sendMessage(createClosedMessage(subscriptionId, `error: ${reason}`))
     })
 
+    this.negentropySessions.getSessionIds().forEach((subscriptionId) => {
+      this.sendMessage(createNegErrMessage(subscriptionId, `closed: ${reason}`))
+    })
+    this.negentropySessions.closeAll()
+
     if (this.client.readyState === WebSocket.OPEN) {
       this.client.close(1001, reason)
     }
+  }
+
+  // NIP-77
+  public getNegentropySessions(): INegentropySessions {
+    return this.negentropySessions
   }
 
   // NIP-42
@@ -195,12 +246,36 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     return this.session.authenticate(pubkey, authEventId)
   }
 
+  public getPeerPubkey(): string | undefined {
+    if (!this.peerPubkey) {
+      return undefined
+    }
+
+    // Peer status lives and dies with its AUTH session, and with the operator's
+    // current trust list: disabling or removing the peer revokes it on the next
+    // read even if the socket stays authenticated.
+    if (
+      !this.session.getAuthenticatedPubkeys().has(this.peerPubkey) ||
+      !isConfiguredPeeringPeer(this.settings(), this.peerPubkey)
+    ) {
+      this.peerPubkey = undefined
+      return undefined
+    }
+
+    return this.peerPubkey
+  }
+
+  public setPeerPubkey(pubkey: string): void {
+    const authenticated = this.session.getAuthenticatedPubkeys().has(pubkey)
+    this.peerPubkey = authenticated && isConfiguredPeeringPeer(this.settings(), pubkey) ? pubkey : undefined
+  }
+
   private async onClientMessage(raw: Buffer) {
     this.alive = true
     let abortable = false
     let messageHandler: (IMessageHandler & IAbortable) | undefined = undefined
     try {
-      const retryAfterMs = await this.isRateLimited(this.clientAddress.address)
+      const retryAfterMs = await this.isRateLimited(this.clientAddress.address, messageType(raw))
       if (retryAfterMs) {
         this.sendMessage(this.createRateLimitedMessage(raw, retryAfterMs))
         return
@@ -258,10 +333,15 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   /**
-   * Resolves to false when allowed; otherwise to the tripped window's period in ms,
-   * sent as the NIP-01 `rate-limited` backoff.
+   * Resolves to false when allowed; otherwise to the backoff in ms, sent as the
+   * NIP-01 `rate-limited` parameter.
+   *
+   * The bucket carries the message type: a client told to back off should back
+   * off *the message that tripped the limit*. One shared bucket refused a REQ
+   * because its EVENTs had filled it, which is the wrong message to punish and
+   * the wrong one to throttle.
    */
-  private async isRateLimited(client: string): Promise<false | number> {
+  private async isRateLimited(client: string, type: string): Promise<false | number> {
     const { rateLimits, ipWhitelist = [] } = this.settings().limits?.message ?? {}
 
     if (!Array.isArray(rateLimits) || !rateLimits.length || ipWhitelist.includes(client)) {
@@ -270,15 +350,16 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     const rateLimiter = this.rateLimiter()
 
-    const hit = (period: number, rate: number) => rateLimiter.hit(`${client}:message:${period}`, 1, { period, rate })
+    const hit = (period: number, rate: number) =>
+      rateLimiter.hit(`${client}:message:${type}:${period}`, 1, { period, rate })
 
     for (const { rate, period } of rateLimits) {
-      const isRateLimited = await hit(period, rate)
+      const result = await hit(period, rate)
 
-      if (isRateLimited) {
-        logger('rate limited %s: %d messages / %d ms exceeded', client, rate, period)
+      if (result.limited) {
+        logger('rate limited %s (%s): %d messages / %d ms exceeded', client, type, rate, period)
 
-        return Math.max(1, Math.ceil(period))
+        return result.retryAfterMs ?? Math.max(1, Math.ceil(period))
       }
     }
 
@@ -349,7 +430,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     recordWebsocketConnectionClosed()
     this.alive = false
     this.subscriptions.clear()
+    this.negentropySessions.closeAll()
     this.session.clear()
+    this.peerPubkey = undefined
 
     const handlers = abortableMessageHandlers.get(this.client)
     if (Array.isArray(handlers) && handlers.length) {

@@ -1,0 +1,76 @@
+---
+import PlanetBackdrop from '../PlanetBackdrop.astro'
+import { REPO } from '../../data/site'
+---
+
+<section class="cta" data-spark-host data-spark-spread="0.55" data-spark-origin="0.93">
+  <PlanetBackdrop variant="stage" density="high" />
+  <div class="container inner reveal">
+    <p class="kicker">Ship it</p>
+    <h2 class="h2"><span class="g1">Run your own relay</span> <span class="g3">tonight.</span></h2>
+    <p class="lead">Clone, set a secret, start. Docker Compose does the rest.</p>
+    <pre class="term mono"><span class="c"># clone and configure</span>
+<span class="p">$</span> git clone https://github.com/cameri/nostream.git && cd nostream
+<span class="p">$</span> echo "SECRET=$(openssl rand -hex 128)" &gt; .env
+<span class="p">$</span> pnpm add -g . && nostream start</pre>
+    <div class="actions">
+      <a class="btn btn-primary" href="/docs#deploy">Choose a deploy path <span class="arrow">→</span></a>
+      <a class="btn" href={`${REPO}/issues`} target="_blank" rel="noopener noreferrer">Open an issue</a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .cta {
+    position: relative;
+    overflow: hidden;
+    padding: clamp(90px, 12vw, 150px) 0;
+    text-align: center;
+  }
+
+  .inner {
+    position: relative;
+    z-index: 3;
+    display: grid;
+    justify-items: center;
+    gap: 18px;
+  }
+
+  .inner .kicker {
+    margin: 0;
+  }
+
+  .inner .h2 {
+    margin: 0;
+  }
+
+  .term {
+    overflow-x: auto;
+    max-width: 100%;
+    margin: 14px 0 6px;
+    padding: 20px 24px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    background: rgba(14, 14, 17, 0.88);
+    backdrop-filter: blur(6px);
+    color: var(--fg);
+    font-size: 14px;
+    line-height: 1.9;
+    text-align: left;
+  }
+
+  .c {
+    color: var(--muted);
+  }
+
+  .p {
+    color: var(--pink);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+  }
+</style>

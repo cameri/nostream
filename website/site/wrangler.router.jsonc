@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nostream-website",
+  "main": "worker/router.ts",
+  "compatibility_date": "2026-10-01",
+  "vars": {
+    // The one host the site answers on. The worker 301s any other host the
+    // route catches, so www/apex and a stale domain converge on one origin
+    // instead of serving the same HTML twice and splitting search ranking.
+    // Set by the deploy workflow from the site domain; empty disables it.
+    "CANONICAL_HOST": "nostream.dev"
+  },
+  "routes": [
+    // The production site's own domains. The Worker answers http on them only
+    // long enough to 301 to https; Cloudflare's "Always Use HTTPS" is the same
+    // behaviour one layer earlier, and neither depends on the other.
+    {
+      "pattern": "nostream.dev",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.nostream.dev",
+      "custom_domain": true
+    },
+    // Previews live here and front pages already point at it, so the domain
+    // stays bound; the redirect above sends its non-preview paths onward.
+    {
+      "pattern": "ema.tnsor.network",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    // Serving assets first would let a matching page (every built route is one)
+    // answer before this worker runs, so the http->https and non-canonical-host
+    // redirects below would never fire on exactly the requests that matter:
+    // the pages. The worker is the router for a reason - it must see every
+    // request, then hand it to the assets binding itself.
+    "run_worker_first": true
+  },
+  "observability": {
+    "enabled": false
+  }
+}

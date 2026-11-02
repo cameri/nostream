@@ -89,6 +89,32 @@ export const isSubscriptionAuthRequired = (
   return getAuthenticatedPubkeys().size === 0
 }
 
+// NIP-77 reconciliation, like COUNT, can't be filtered per event: it reveals the id of every event the
+// filter matches. REQ hides restricted events per event, so a filter that *could* match one -- one
+// naming a restricted kind or naming no kinds at all -- must be scoped to the client's own pubkeys.
+export const isReconciliationAuthorized = (
+  settings: Settings | undefined,
+  filter: SubscriptionFilter,
+  getAuthenticatedPubkeys: () => ReadonlySet<Pubkey>,
+): boolean => {
+  const restrictedKinds = getRestrictedReadKinds(settings)
+  if (!restrictedKinds.length) {
+    return true
+  }
+
+  const mayMatchRestricted =
+    !Array.isArray(filter.kinds) || filter.kinds.some((kind) => isKindRestricted(restrictedKinds, kind))
+  if (!mayMatchRestricted) {
+    return true
+  }
+
+  const authenticatedPubkeys = getAuthenticatedPubkeys()
+  const isScopedToClient = (values?: Pubkey[]) =>
+    Array.isArray(values) && values.length > 0 && values.every((value) => authenticatedPubkeys.has(value))
+
+  return isScopedToClient(filter.authors) || isScopedToClient(filter['#p'])
+}
+
 // COUNT can't be filtered per event, so a restricted-kind filter must be
 // scoped to the client's own pubkeys via authors/#p.
 export const isCountAuthorized = (

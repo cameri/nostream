@@ -55,7 +55,30 @@ export const countMessageSchema = z
 
 export const closeMessageSchema = z.tuple([z.literal(MessageType.CLOSE), subscriptionSchema])
 
+// NIP-77
+const negentropyHexSchema = z.string().regex(/^(?:[0-9a-fA-F]{2})+$/, 'negentropy message must be hex-encoded bytes')
+
+export const negOpenMessageSchema = z.tuple([
+  z.literal(MessageType.NEG_OPEN),
+  z.string().max(256).min(1),
+  filterSchema,
+  negentropyHexSchema,
+])
+
+export const negMsgMessageSchema = z.tuple([z.literal(MessageType.NEG_MSG), z.string().max(256).min(1), negentropyHexSchema])
+
+export const negCloseMessageSchema = z.tuple([z.literal(MessageType.NEG_CLOSE), z.string().max(256).min(1)])
+
 // NIP-42
 export const authMessageSchema = z.tuple([z.literal(MessageType.AUTH), eventSchema])
 
-export const messageSchema = z.union([eventMessageSchema, reqMessageSchema, closeMessageSchema, countMessageSchema, authMessageSchema])
+export const messageSchema = z.union([
+  eventMessageSchema,
+  reqMessageSchema,
+  closeMessageSchema,
+  countMessageSchema,
+  authMessageSchema,
+  negOpenMessageSchema,
+  negMsgMessageSchema,
+  negCloseMessageSchema,
+])

@@ -81,7 +81,7 @@ describe('SubscribeMessageHandler', () => {
       updatedAt: new Date(),
     }))
     inviteCodeRepository = { create: inviteCodeRepositoryCreateStub } as any
-    rateLimiterHitStub = sandbox.stub().resolves(false)
+    rateLimiterHitStub = sandbox.stub().resolves({ limited: false })
     rateLimiter = { hit: rateLimiterHitStub } as any
     rateLimiterFactory = sandbox.stub().returns(rateLimiter)
     handler = new SubscribeMessageHandler(
@@ -405,7 +405,7 @@ describe('SubscribeMessageHandler', () => {
             limits: { client: { subscription: {} }, invite: { rateLimits: [{ period: 3600000, rate: 5 }] } },
           }),
         )
-        rateLimiterHitStub.resolves(true)
+        rateLimiterHitStub.resolves({ limited: true })
 
         await request([{ kinds: [28935] }])
 
