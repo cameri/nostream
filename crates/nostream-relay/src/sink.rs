@@ -698,7 +698,7 @@ mod tests {
         assert_eq!(
             (NO_REFUSAL, QUEUE_FULL, BUDGET_EXHAUSTED),
             (0, 1, 2),
-            "the bytes are the wire contract"
+            "the refusal bytes are pinned to 0, 1, 2 — the numbers word() returns and the enum stores"
         );
 
         for refusal in [Refusal::None, Refusal::QueueFull, Refusal::BudgetExhausted] {
