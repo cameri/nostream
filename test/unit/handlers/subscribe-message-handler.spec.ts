@@ -60,6 +60,7 @@ describe('SubscribeMessageHandler', () => {
     webSocket = new EventEmitter() as any
     webSocketGetSubscriptionsStub = sandbox.stub().returns(subscriptions)
     webSocket.getSubscriptions = webSocketGetSubscriptionsStub
+    webSocket.getPeerPubkey = sandbox.stub().returns(undefined)
     settingsFactory = sandbox.stub()
     stream = new PassThrough({
       objectMode: true,
@@ -754,6 +755,34 @@ describe('SubscribeMessageHandler', () => {
       })
 
       expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+    })
+
+    it('uses peer limits instead of client limits for a recognized peer', () => {
+      settingsFactory.returns({
+        limits: {
+          client: { subscription: { maxSubscriptions: 1 } },
+          peer: { subscription: { maxSubscriptions: 5 } },
+        },
+      })
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
+      subscriptions.set('other-1', [])
+      subscriptions.set('other-2', [])
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+    })
+
+    it('still applies the client limit to an unauthenticated connection', () => {
+      settingsFactory.returns({
+        limits: {
+          client: { subscription: { maxSubscriptions: 1 } },
+          peer: { subscription: { maxSubscriptions: 5 } },
+        },
+      })
+      subscriptions.set('other-1', [])
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
+        'Too many subscriptions: Number of subscriptions must be less than or equal to 1',
+      )
     })
 
     it('returns undefined if max subscription limit is disabled', () => {
