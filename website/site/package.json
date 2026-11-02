@@ -19,10 +19,11 @@
     "node": ">=20.3"
   },
   "dependencies": {
+    "@astrojs/markdown-remark": "^7.3.5",
     "@fontsource-variable/inter": "^5.2.5",
     "@fontsource/jetbrains-mono": "^5.2.5",
-    "astro": "^5.14.0",
-    "sharp": "^0.34.5"
+    "astro": "^7.4.4",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
