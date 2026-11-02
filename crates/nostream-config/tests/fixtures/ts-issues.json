@@ -379,6 +379,120 @@
       "rust_exempt_paths": []
     },
     {
+      "name": "nip77_zero_cap",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "nip77.enabled",
+          "value": true
+        },
+        {
+          "op": "set",
+          "path": "nip77.maxEventsPerSession",
+          "value": 0
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "nip77.maxEventsPerSession",
+          "message": "maxEventsPerSession must be a positive integer"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "plan_negative_amount",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "payments.subscriptionPlans",
+          "value": [
+            {
+              "id": "basic",
+              "amount": -1,
+              "intervalSeconds": 86400,
+              "graceSeconds": 3600
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "payments.subscriptionPlans[0].amount",
+          "message": "amount must be a positive integer (msats)"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "plan_duplicate_amount",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "payments.subscriptionPlans",
+          "value": [
+            {
+              "id": "basic",
+              "amount": 1000000,
+              "intervalSeconds": 86400,
+              "graceSeconds": 3600
+            },
+            {
+              "id": "pro",
+              "amount": 1000000,
+              "intervalSeconds": 86400,
+              "graceSeconds": 3600
+            }
+          ]
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "payments.subscriptionPlans[1].amount",
+          "message": "amount 1000000 is used by more than one plan"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "peering_pow_out_of_range",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "peering.minRequestPowDifficulty",
+          "value": 300
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "peering.minRequestPowDifficulty",
+          "message": "must be an integer between 0 and 256"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
+      "name": "peering_enabled_without_scopes",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "peering.enabled",
+          "value": true
+        }
+      ],
+      "ts_issues": [
+        {
+          "path": "peering.scopes",
+          "message": "at least one scope is required when peering is enabled"
+        },
+        {
+          "path": "peering.contact",
+          "message": "contact or endpoint is required when peering is enabled"
+        }
+      ],
+      "rust_exempt_paths": []
+    },
+    {
       "name": "relay_url_ftp",
       "mutations": [
         {

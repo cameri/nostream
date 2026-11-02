@@ -850,7 +850,7 @@ pub struct PeeringSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_request_pow_difficulty: Option<u8>,
+    pub min_request_pow_difficulty: Option<u16>,
     #[serde(default)]
     pub scopes: Vec<PeeringScope>,
     #[serde(default)]
