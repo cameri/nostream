@@ -12,6 +12,7 @@ import { WebSocketAdapterEvent } from '../constants/adapter'
 import { countFilterValues } from '../utils/filter'
 import { createLogger } from '../factories/logger-factory'
 import { isReconciliationAuthorized } from '../utils/nip42'
+import { subscriptionLimitsFor } from '../utils/peer-limits'
 
 const logger = createLogger('neg-open-message-handler')
 
@@ -122,7 +123,10 @@ export class NegOpenMessageHandler implements IMessageHandler {
     initialMessage: Buffer,
   ): string | undefined {
     const settings = this.settings()
-    const subscriptionLimits = settings.limits?.client?.subscription
+    const subscriptionLimits = subscriptionLimitsFor(
+      settings,
+      this.webSocket.getPeerPubkey() !== undefined,
+    )
 
     const maxFilterValues = subscriptionLimits?.maxFilterValues ?? 0
     if (maxFilterValues > 0 && countFilterValues(filter) > maxFilterValues) {

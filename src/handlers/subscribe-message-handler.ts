@@ -25,6 +25,7 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import { Settings } from '../@types/settings'
 import { SubscribeMessage } from '../@types/messages'
 import { WebSocketAdapterEvent } from '../constants/adapter'
+import { subscriptionLimitsFor } from '../utils/peer-limits'
 
 const logger = createLogger('subscribe-message-handler')
 
@@ -258,7 +259,10 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private canSubscribe(subscriptionId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
     const subscriptions = this.webSocket.getSubscriptions()
     const existingSubscription = subscriptions.get(subscriptionId)
-    const subscriptionLimits = this.settings().limits?.client?.subscription
+    const subscriptionLimits = subscriptionLimitsFor(
+      this.settings(),
+      this.webSocket.getPeerPubkey() !== undefined,
+    )
 
     if (existingSubscription?.length && equals(filters, existingSubscription)) {
       return `Duplicate subscription ${subscriptionId}: Ignoring`

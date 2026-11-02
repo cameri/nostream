@@ -11,6 +11,7 @@ import { createLogger } from '../factories/logger-factory'
 import { countFilterValues } from '../utils/filter'
 import { createClosedMessage, createCountResultMessage } from '../utils/messages'
 import { isCountAuthorized } from '../utils/nip42'
+import { subscriptionLimitsFor } from '../utils/peer-limits'
 
 const debug = createLogger('count-message-handler')
 
@@ -52,7 +53,10 @@ export class CountMessageHandler implements IMessageHandler {
   }
 
   private canCount(queryId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
-    const subscriptionLimits = this.settings().limits?.client?.subscription
+    const subscriptionLimits = subscriptionLimitsFor(
+      this.settings(),
+      this.webSocket.getPeerPubkey() !== undefined,
+    )
     const maxFilters = subscriptionLimits?.maxFilters ?? 0
 
     if (maxFilters > 0 && filters.length > maxFilters) {

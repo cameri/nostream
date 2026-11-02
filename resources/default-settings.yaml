@@ -409,6 +409,25 @@ limits:
       maxSubscriptionIdLength: 256
       maxLimit: 5000
       minPrefixLength: 4
+  peer:
+    # Configured peering peers get feed treatment, not client treatment. These
+    # caps are separate from limits.client and limits.message, so a full-feed
+    # subscription does not trip the client EWMA bucket or max_subscriptions.
+    # A value of 0 disables that cap.
+    subscription:
+      maxSubscriptions: 100
+      maxFilters: 100
+      maxFilterValues: 10000
+      maxSubscriptionIdLength: 256
+      # 0 = no cap, so a peer can request a full feed.
+      maxLimit: 0
+      minPrefixLength: 4
+    message:
+      # period is milliseconds (60000 = one minute)
+      rateLimits:
+        - description: 6000 peer messages/min
+          period: 60000
+          rate: 6000
   message:
     # period is milliseconds (60000 = one minute)
     rateLimits:

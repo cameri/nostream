@@ -668,6 +668,34 @@ describe('WebSocketAdapter', () => {
         )
       })
 
+      it('uses peer limits and a separate bucket for a recognized peer', async () => {
+        const peerPubkey = 'a'.repeat(64)
+        settingsFactory.returns({
+          network: { remoteIpHeader: '' },
+          peering: {
+            enabled: true,
+            peers: [{ pubkey: peerPubkey, relayUrl: 'wss://peer.example.com' }],
+          },
+          limits: {
+            message: { rateLimits: [{ period: 60000, rate: 1 }], ipWhitelist: [] },
+            peer: { message: { rateLimits: [{ period: 60000, rate: 100 }], ipWhitelist: [] } },
+          },
+        })
+        adapter.addAuthenticatedPubkey(peerPubkey, '1'.repeat(64))
+        adapter.setPeerPubkey(peerPubkey)
+
+        const hitStub = sandbox.stub().resolves({ limited: false })
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
+
+        expect(hitStub).to.have.been.calledOnceWithExactly(
+          '127.0.0.1:peer-message:REQ:60000',
+          1,
+          { period: 60000, rate: 100 },
+        )
+      })
+
       // A closed set of types, or a client could rotate invented ones and keep
       // every bucket empty.
       it('buckets an invented message type with everything else unrecognised', async () => {

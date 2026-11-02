@@ -163,6 +163,15 @@ export interface ClientLimits {
   subscription?: ClientSubscriptionLimits
 }
 
+/**
+ * Limits applied to configured peering peers instead of client limits. Peer
+ * feeds need larger caps than end-user clients, while still being bounded.
+ */
+export interface PeerLimits {
+  subscription?: ClientSubscriptionLimits
+  message?: MessageLimits
+}
+
 export interface MessageRateLimit extends RateLimit {
   type?: MessageType
 }
@@ -206,6 +215,7 @@ export interface Limits {
   admin?: AdminLimits
   connection?: ConnectionLimits
   client?: ClientLimits
+  peer?: PeerLimits
   event?: EventLimits
   message?: MessageLimits
 }

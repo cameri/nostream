@@ -65,6 +65,7 @@ describe('NegOpenMessageHandler', () => {
     webSocket = new EventEmitter() as any
     webSocket.getNegentropySessions = () => sessions
     webSocket.getAuthenticatedPubkeys = () => new Set<string>()
+    webSocket.getPeerPubkey = () => undefined
 
     emitted = sandbox.stub()
     webSocket.on(WebSocketAdapterEvent.Message, emitted)
@@ -213,6 +214,22 @@ describe('NegOpenMessageHandler', () => {
 
       expect(emitted.firstCall.args[0][2]).to.equal('blocked: too many filter values (max 2)')
       expect(findReconciliationItems).to.not.have.been.called
+    })
+
+    it('uses peer limits instead of client limits for a recognized peer', async () => {
+      settings = {
+        nip77: { enabled: true },
+        limits: {
+          client: { subscription: { maxFilterValues: 1 } },
+          peer: { subscription: { maxFilterValues: 10 } },
+        },
+      } as Settings
+      webSocket.getPeerPubkey = () => 'a'.repeat(64)
+
+      await open('sync1', { authors: ['a', 'b'] })
+
+      expect(emitted.firstCall.args[0][0]).to.equal(MessageType.NEG_MSG)
+      expect(findReconciliationItems).to.have.been.called
     })
   })
 

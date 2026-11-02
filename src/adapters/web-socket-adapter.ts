@@ -28,6 +28,7 @@ import { getRemoteAddress } from '../utils/http'
 import { createReadAuthorizationGuard } from '../utils/nip42'
 import { Nip42SessionManager } from '../utils/nip42-session'
 import { isConfiguredPeeringPeer } from '../utils/peering-auth'
+import { messageLimitsFor } from '../utils/peer-limits'
 import { IRateLimiter } from '../@types/utils'
 import { isEventMatchingFilter } from '../utils/event'
 import { isHidden } from '../utils/hidden-content-cache'
@@ -342,7 +343,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
    * the wrong one to throttle.
    */
   private async isRateLimited(client: string, type: string): Promise<false | number> {
-    const { rateLimits, ipWhitelist = [] } = this.settings().limits?.message ?? {}
+    const isPeer = this.getPeerPubkey() !== undefined
+    const { rateLimits, ipWhitelist = [] } = messageLimitsFor(this.settings(), isPeer) ?? {}
 
     if (!Array.isArray(rateLimits) || !rateLimits.length || ipWhitelist.includes(client)) {
       return false
@@ -350,8 +352,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     const rateLimiter = this.rateLimiter()
 
+    // Peer buckets are separate so a connection that spent client budget before
+    // AUTH does not carry that score into feed treatment.
+    const bucket = isPeer ? 'peer-message' : 'message'
     const hit = (period: number, rate: number) =>
-      rateLimiter.hit(`${client}:message:${type}:${period}`, 1, { period, rate })
+      rateLimiter.hit(`${client}:${bucket}:${type}:${period}`, 1, { period, rate })
 
     for (const { rate, period } of rateLimits) {
       const result = await hit(period, rate)
