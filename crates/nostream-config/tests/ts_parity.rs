@@ -74,8 +74,11 @@ struct IssueDto {
     message: String,
 }
 
-const CAPTURE_COMMIT: &str = "242a3001d77149e4d70151ec03060c4ef44a1547";
-const DEFERRED_COMMIT: &str = "041fe34e66b9bb433f1ff3383aee7030fdd3bb8f";
+/// The merge commit that brought `main` into `rewrite/main`; the TS tree it
+/// carries is the oracle the cases below were measured from on 2026-11-02.
+const CAPTURE_COMMIT: &str = "d286d80eb3ea806d6de27bd2813d5d30d90cd2a5";
+/// Nothing is deferred any more: the surfaces below arrived with the merge.
+const DEFERRED_COMMIT: &str = "d286d80eb3ea806d6de27bd2813d5d30d90cd2a5";
 
 fn fixture() -> Fixture {
     let raw = fs::read_to_string(concat!(
@@ -198,8 +201,8 @@ fn fixture_metadata_names_the_capture() {
     assert_eq!(fixture.subject.expected_test_counts.source_it, 34);
     assert_eq!(fixture.subject.expected_test_counts.executed, 41);
     assert_eq!(fixture.deferred.commit, DEFERRED_COMMIT);
-    assert_eq!(fixture.deferred.diff, "+212/-0");
-    assert_eq!(fixture.deferred.files.len(), 5);
+    assert_eq!(fixture.deferred.diff, "0/+0");
+    assert!(fixture.deferred.files.is_empty());
     assert!(!fixture.subject.generated.is_empty());
     assert!(
         fixture
@@ -254,8 +257,12 @@ fn the_capture_probes_are_present() {
     assert!(names.contains("defaults"));
 }
 
+/// The surfaces deferred at `242a3001` arrived with `main` on 2026-11-02 and are modelled now, so
+/// the case that used to pin them as absent pins them as accepted instead: the capture and the
+/// Rust validator must both take `nip77`, or the parity claim below is about a different document
+/// than the one this branch ships.
 #[test]
-fn the_deferred_surfaces_are_pinned_as_absent() {
+fn the_ported_surfaces_are_accepted_by_both() {
     let fixture = fixture();
     let case = |name: &str| {
         fixture
@@ -266,18 +273,24 @@ fn the_deferred_surfaces_are_pinned_as_absent() {
     };
 
     let nip77 = case("nip77_present");
-    assert_eq!(
-        nip77.ts_issues,
-        vec![IssueDto {
-            path: "nip77".to_owned(),
-            message: "Unknown setting key".to_owned()
-        }]
+    assert!(
+        nip77.ts_issues.is_empty(),
+        "the capture accepts nip77 since the merge: {:?}",
+        nip77.ts_issues
     );
     assert_eq!(apply_case(nip77, &defaults()), nip77.ts_issues);
 
+    // `main` added the protocol rule, so the ftp case is no longer clean: it is the
+    // evidence that the Rust validator took the same rule on.
     let ftp = case("relay_url_ftp");
-    assert!(ftp.ts_issues.is_empty());
-    assert!(apply_case(ftp, &defaults()).is_empty());
+    assert_eq!(
+        ftp.ts_issues,
+        vec![IssueDto {
+            path: "info.relay_url".to_owned(),
+            message: "relay_url must use ws, wss, http, or https protocol".to_owned()
+        }]
+    );
+    assert_eq!(apply_case(ftp, &defaults()), ftp.ts_issues);
 }
 
 #[test]

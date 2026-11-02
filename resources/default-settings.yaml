@@ -25,6 +25,14 @@ payments:
             - replace-with-your-pubkey-in-hex
           event_kinds:
             - 9735 # Nip-57 Lightning Zap Receipts
+  # Recurring membership plans. Leave empty to keep the one-time admission fee above.
+  # The amount paid selects the plan, so every plan needs its own amount.
+  # - id: basic
+  #   description: Basic membership, paid every 30 days
+  #   amount: 1000000 # msats per period
+  #   intervalSeconds: 2592000
+  #   graceSeconds: 259200 # access lasts this long after a period ends unrenewed
+  subscriptionPlans: []
   # Applied only when the payments processor does not report an expiry of its own.
   # Without it such invoices can never be retired and stay pending forever.
   # Raise it if your processor issues invoices that stay payable for longer than
@@ -122,6 +130,9 @@ nip66:
   # Public WebSocket URLs to probe. Empty list defaults to info.relay_url.
   targets: []
   dnsCacheTtlSeconds: 300
+  historyRetentionRuns: 168
+  # Optional max age in hours for probe history; 0 disables age-based trimming (run count only).
+  historyRetentionHours: 0
 wot:
   # Web of Trust graph. When enabled, the relay builds a trust graph rooted
   # at seedPubkey from NIP-02 contact lists, updated in real time as kind-3
@@ -148,9 +159,52 @@ nip56:
   # When true, events matching an actionable report are excluded from
   # REQ/COUNT results. Has no effect unless enabled is also true.
   hideActionableReports: false
-# NIP-77 (negentropy sync) and relay peering are modelled on main and not on
-# this branch: `deferred_nip77_surface_is_not_modelled` in the config tests
-# says so. Port the settings with the feature, not before it.
+nip77:
+  # NIP-77 negentropy sync. Only answers when eventStore.backend is postgres.
+  enabled: false
+  # Most events a single session may hold in memory.
+  maxEventsPerSession: 100000
+  # Concurrent negentropy sessions per connection.
+  maxSessionsPerConnection: 3
+  # Close a session with no NEG-MSG for this long.
+  sessionIdleTimeoutMs: 60000
+peering:
+  # Relay peering advertisement, served as the `peering` section of the NIP-11
+  # document. This is a discovery surface: it states the feeds and terms other
+  # relays can read. Enabling it does not accept peers by itself.
+  enabled: false
+  # How to ask for a peering relationship: a contact URI (mailto:, https:) and/or
+  # the WebSocket endpoint peers should connect to. At least one is required when
+  # peering is enabled.
+  contact: ""
+  endpoint: ""
+  # NIP-13 proof-of-work bits a peering request must carry. 0 means none.
+  # Advertised as peering.min_pow_difficulty.
+  minRequestPowDifficulty: 0
+  # Feeds this relay is willing to serve. Each scope lists event kinds and,
+  # optionally, an absolute time range (unix seconds) or a rolling window.
+  # At least one scope is required when peering is enabled.
+  # Example:
+  #   scopes:
+  #     - kinds: [1, 3, 6, 7, 30023]
+  #     - kinds: [[0, 9999]]
+  #       since: 1700000000
+  #     - kinds: [1, 6]
+  #       windowSeconds: 3600
+  scopes: []
+  # Terms for peering, reusing the NIP-11 fee-object shape. `period` is in
+  # seconds. An empty list means settlement-free peering.
+  # Example: [{ amount: 1000, unit: msats, period: 2592000 }]
+  terms: []
+  # Peering peers trusted by their relay pubkey (hex or npub), never by URL
+  # alone. A connection that proves one of these keys with NIP-42 AUTH is
+  # recognized as a peer; any other key gets no peer recognition.
+  # Example:
+  #   peers:
+  #     - pubkey: replace-with-peer-relay-pubkey-in-hex
+  #       relayUrl: wss://peer.example.com
+  #       enabled: true
+  peers: []
 network:
   maxPayloadSize: 524288
   # The queued outbound payload bytes every socket of this relay shares. Unit: bytes; the guided
@@ -396,10 +450,9 @@ admin:
       admission.invoice.failed: true
       settings.changed: true
       relay.restarted: false
-      # probe.* and ssl.expiring arrived on main with the operator-notification
-      # feature; this branch's typed schema (OperatorNotificationEventToggles)
-      # does not implement them, and a toggle nothing emits is a setting that
-      # silently does nothing. Port the events with the toggles.
+      probe.failed: true
+      probe.recovered: true
+      ssl.expiring: true
     retry:
       maxAttempts: 5
       baseDelayMs: 1000

@@ -63,6 +63,14 @@ pub struct OperatorNotificationEventToggles {
     pub settings_changed: Option<bool>,
     #[serde(rename = "relay.restarted", skip_serializing_if = "Option::is_none")]
     pub relay_restarted: Option<bool>,
+    // Added on main with the probe/SSL watchers. Modelled so the defaults
+    // document round-trips and validates; the Rust relay emits the five above.
+    #[serde(rename = "probe.failed", skip_serializing_if = "Option::is_none")]
+    pub probe_failed: Option<bool>,
+    #[serde(rename = "probe.recovered", skip_serializing_if = "Option::is_none")]
+    pub probe_recovered: Option<bool>,
+    #[serde(rename = "ssl.expiring", skip_serializing_if = "Option::is_none")]
+    pub ssl_expiring: Option<bool>,
 }
 
 /// Retry policy (`OperatorNotificationRetrySettings`).
@@ -154,6 +162,9 @@ fn merge_events(
             .or(defaults.admission_invoice_failed),
         settings_changed: configured.settings_changed.or(defaults.settings_changed),
         relay_restarted: configured.relay_restarted.or(defaults.relay_restarted),
+        probe_failed: configured.probe_failed.or(defaults.probe_failed),
+        probe_recovered: configured.probe_recovered.or(defaults.probe_recovered),
+        ssl_expiring: configured.ssl_expiring.or(defaults.ssl_expiring),
     }
 }
 

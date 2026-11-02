@@ -28,6 +28,29 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
 
     if !truthy_opt(key_path(candidate, &["info", "relay_url"])) {
         issues.push(Issue::new("info.relay_url", "relay_url is required"));
+    } else if let Some(Value::String(value)) = key_path(candidate, &["info", "relay_url"]) {
+        // Order matters and is the capture's: parse, then host, then scheme. A
+        // string that is not an absolute URL reports once, as unparseable, rather
+        // than three times.
+        match Url::parse(value) {
+            Ok(parsed) => {
+                if parsed.host_str().is_none_or(str::is_empty) {
+                    issues.push(Issue::new(
+                        "info.relay_url",
+                        "relay_url must include a valid host",
+                    ));
+                } else if !matches!(parsed.scheme(), "ws" | "wss" | "http" | "https") {
+                    issues.push(Issue::new(
+                        "info.relay_url",
+                        "relay_url must use ws, wss, http, or https protocol",
+                    ));
+                }
+            }
+            Err(_) => issues.push(Issue::new(
+                "info.relay_url",
+                "relay_url must be a valid absolute URL",
+            )),
+        }
     }
 
     if !truthy_opt(key_path(candidate, &["info", "name"])) {
@@ -226,11 +249,30 @@ fn validate_rate_limit_periods(
             ));
             continue;
         }
-        if !to_number_is_positive(key(entry, "period")) {
-            issues.push(Issue::new(
-                format!("{path_prefix}[{index}].period"),
-                "period must be greater than 0",
-            ));
+        let period_path = format!("{path_prefix}[{index}].period");
+        match key(entry, "period") {
+            // Three mistakes, three messages, in the capture's order: not a number,
+            // not a whole number, not at least one. A window of 60 ms is a valid
+            // count and stays valid; the unit cannot be inferred from the value.
+            Some(Value::Number(number)) => {
+                let integral = number
+                    .as_i64()
+                    .is_some()
+                    || number.as_u64().is_some()
+                    || number.as_f64().is_some_and(|float| float.fract() == 0.0);
+                if !integral {
+                    issues.push(Issue::new(
+                        period_path,
+                        "period must be a whole number of milliseconds",
+                    ));
+                } else if !to_number_is_positive(Some(&Value::Number(number.clone()))) {
+                    issues.push(Issue::new(period_path, "period must be at least 1 millisecond"));
+                }
+            }
+            _ => issues.push(Issue::new(
+                period_path,
+                "period must be a number of milliseconds",
+            )),
         }
     }
 }

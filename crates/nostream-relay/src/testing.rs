@@ -72,6 +72,8 @@ pub fn settings() -> Settings {
         nip50: None,
         nip56: None,
         nip66: None,
+        nip77: None,
+        peering: None,
         wot: None,
     }
 }
