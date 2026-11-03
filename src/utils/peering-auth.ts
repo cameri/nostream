@@ -65,6 +65,16 @@ export const findConfiguredPeeringPeer = (
 export const isConfiguredPeeringPeer = (settings: Pick<Settings, 'peering'> | undefined, pubkey: string): boolean =>
   typeof findConfiguredPeeringPeer(settings, pubkey) !== 'undefined'
 
+/** Enabled, minimally well-formed peers to sync from. Settings validation rejects the rest. */
+export const listEnabledPeeringPeers = (settings: Pick<Settings, 'peering'> | undefined): PeeringPeer[] =>
+  (settings?.peering?.peers ?? []).filter(
+    (peer) =>
+      peer.enabled !== false &&
+      typeof peer.relayUrl === 'string' &&
+      peer.relayUrl.trim().length > 0 &&
+      parsePeeringPeerPubkey(peer.pubkey) !== undefined,
+  )
+
 /**
  * Builds the NIP-42 AUTH event that proves this relay's own identity to a
  * source relay. Signed with the relay keypair, so the event's pubkey is the

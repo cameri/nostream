@@ -10,6 +10,8 @@
   const elements = {
     workersSync: document.getElementById('ops-workers-sync'),
     workersBody,
+    peeringSync: document.getElementById('peering-sync'),
+    peeringBody: document.getElementById('peering-body'),
     nip05Error: document.getElementById('ops-nip05-error'),
     nip05Domain: document.getElementById('ops-nip05-domain'),
     nip05Verified: document.getElementById('ops-nip05-verified'),
@@ -100,8 +102,60 @@
       .join('')
   }
 
-  const renderNip05 = (rows, pagination) => {
+  const formatLag = (seconds) => {
+    if (seconds === undefined || seconds === null) {
+      return '—'
+    }
+    if (seconds < 60) {
+      return `${Math.max(0, Math.round(seconds))}s`
+    }
+    if (seconds < 3600) {
+      return `${Math.round(seconds / 60)}m`
+    }
+    if (seconds < 86400) {
+      return `${Math.round(seconds / 3600)}h`
+    }
+    return `${Math.round(seconds / 86400)}d`
+  }
+
+  const peeringSignalBadge = (row) => {
+    if (!row.configured || !row.enabled) {
+      return '<span class="status-badge"><span class="status-led" aria-hidden="true"></span>Disabled</span>'
+    }
+    if (row.state?.status === 'error') {
+      return '<span class="status-badge status-degraded"><span class="status-led" aria-hidden="true"></span>Error</span>'
+    }
+    if (row.stale) {
+      return '<span class="status-badge status-degraded"><span class="status-led" aria-hidden="true"></span>Stale</span>'
+    }
+    return signalBadge(false)
+  }
+
+  const renderPeering = (rows) => {
     if (!Array.isArray(rows) || !rows.length) {
+      elements.peeringBody.innerHTML =
+        '<tr><td colspan="6" class="admin-muted small">No peering peers configured.</td></tr>'
+      return
+    }
+
+    elements.peeringBody.innerHTML = rows
+      .map((row) => {
+        const state = row.state
+        const status = state?.status ? String(state.status) : 'no sync yet'
+        const title = [row.relayUrl, row.pubkey, status].filter(Boolean).join(' · ')
+        return `<tr>
+          <td><code class="small" title="${escapeAttr(title)}">${escapeHtml(shortPubkey(row.pubkey))}</code></td>
+          <td class="small">${escapeHtml(row.relayUrl)}</td>
+          <td class="small">${escapeHtml(formatTime(state?.lastReconciledAt))}</td>
+          <td>${escapeHtml(formatLag(state?.lagSeconds))}</td>
+          <td>${escapeHtml(state?.missingEvents ?? '—')}</td>
+          <td>${peeringSignalBadge(row)}</td>
+        </tr>`
+      })
+      .join('')
+  }
+
+  const renderNip05 = (rows, pagination) => {    if (!Array.isArray(rows) || !rows.length) {
       elements.nip05Body.innerHTML = '<tr><td colspan="7" class="admin-muted small">No matching verifications.</td></tr>'
     } else {
       elements.nip05Body.innerHTML = rows
@@ -204,6 +258,18 @@
     }
   }
 
+  const loadPeering = async () => {
+    const response = await adminFetch('/peering')
+    if (!response.ok) {
+      throw new Error('Failed to load peering state')
+    }
+    const payload = await response.json()
+    renderPeering(payload.peers)
+    if (elements.peeringSync) {
+      elements.peeringSync.innerHTML = `<span class="prompt-char">&gt;</span> peers: updated ${formatTime(new Date().toISOString())}`
+    }
+  }
+
   const buildNip05Query = () => {
     const params = new URLSearchParams()
     params.set('limit', String(nip05Limit))
@@ -285,7 +351,7 @@
 
   const refreshAll = async () => {
     try {
-      await Promise.all([loadWorkers(), loadNip05()])
+      await Promise.all([loadWorkers(), loadPeering(), loadNip05()])
     } catch {
       showNip05Error('Unable to refresh operations data.')
     }

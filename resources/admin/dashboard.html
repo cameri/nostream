@@ -226,6 +226,29 @@
             </div>
           </section>
 
+          <section class="dashboard-section">
+            <h2 class="section-title">Peering</h2>
+            <p id="peering-sync" class="sync-line mb-2"><span class="prompt-char">&gt;</span> peers: not loaded</p>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="peering-caption">
+                <caption id="peering-caption" class="visually-hidden">Configured peering peers and their sync state</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Peer</th>
+                    <th scope="col">Relay</th>
+                    <th scope="col">Last reconciliation</th>
+                    <th scope="col">Lag</th>
+                    <th scope="col">Missing</th>
+                    <th scope="col">Signal</th>
+                  </tr>
+                </thead>
+                <tbody id="peering-body">
+                  <tr><td colspan="6" class="admin-muted small">No peering peers configured.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
           <section id="network-health-section" class="dashboard-section">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
               <h2 class="section-title mb-0">Tor / I2P &amp; network probes</h2>

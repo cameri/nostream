@@ -198,7 +198,9 @@ peering:
   terms: []
   # Peering peers trusted by their relay pubkey (hex or npub), never by URL
   # alone. A connection that proves one of these keys with NIP-42 AUTH is
-  # recognized as a peer; any other key gets no peer recognition.
+  # recognized as a peer; any other key gets no peer recognition. Enabled
+  # peers are also synced: the peering-sync worker reads each peer's NIP-11
+  # peering scopes, reconciles them over NIP-77, and keeps a live feed.
   # Example:
   #   peers:
   #     - pubkey: replace-with-peer-relay-pubkey-in-hex
