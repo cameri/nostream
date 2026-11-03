@@ -30,6 +30,14 @@ export const listConfiguredWorkers = (settings: Settings): AdminOpsConfiguredWor
     label: 'Maintenance',
   })
 
+  if ((settings.peering?.peers?.length ?? 0) > 0) {
+    workers.push({
+      type: 'peering-sync',
+      enabled: true,
+      label: 'Peering sync',
+    })
+  }
+
   if (settings.nip66?.enabled) {
     workers.push({
       type: 'relay-monitor',

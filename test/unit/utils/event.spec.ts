@@ -1,5 +1,6 @@
-import { ALL_RELAYS, EventKinds, EventTags } from '../../../src/constants/base'
+import { expect } from 'chai'
 import { CanonicalEvent, Event } from '../../../src/@types/event'
+import { ALL_RELAYS, EventKinds, EventTags } from '../../../src/constants/base'
 import {
   getEventExpiration,
   isContactListEvent,
@@ -22,7 +23,6 @@ import {
   isWelcomeRumorEvent,
   serializeEvent,
 } from '../../../src/utils/event'
-import { expect } from 'chai'
 
 describe('NIP-01', () => {
   describe('serializeEvent', () => {
@@ -659,6 +659,28 @@ describe('NIP-62', () => {
         tags: [],
       } as any
       expect(isRequestToVanishEvent(event, 'relay_url')).to.be.false
+    })
+
+    it('returns true when any of several relay tags targets this relay', () => {
+      const event: Event = {
+        kind: 62,
+        tags: [
+          [EventTags.Relay, 'other_relay_url'],
+          [EventTags.Relay, 'relay_url'],
+        ],
+      } as any
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.true
+    })
+
+    it('returns true when any of several relay tags is ALL_RELAYS', () => {
+      const event: Event = {
+        kind: 62,
+        tags: [
+          [EventTags.Relay, 'other_relay_url'],
+          [EventTags.Relay, ALL_RELAYS],
+        ],
+      } as any
+      expect(isRequestToVanishEvent(event, 'relay_url')).to.be.true
     })
 
     it('returns false when relay URL is provided for non-kind-62 event', () => {

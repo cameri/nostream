@@ -348,3 +348,10 @@ terms, or contact details are exposed.
 only when a NIP-42 AUTH event proves one of those pubkeys; matching a URL or
 self-declaring a key is not enough. The relay's own identity, key storage, and
 the AUTH exchange are documented in [docs/PEERING.md](docs/PEERING.md).
+
+Each enabled `peering.peers` entry is also the outbound sync list: a single
+peering-sync worker reads that peer's NIP-11 `peering.scopes`, authenticates
+with NIP-42, reconciles history over NIP-77, and keeps a live subscription to
+those scopes. No extra feed configuration is required. Per-peer sync state is
+available at `GET /admin/peering` and in the admin console's Operations view.
+The peer must advertise NIP-77 and have it enabled.

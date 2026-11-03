@@ -1,14 +1,12 @@
-import EventEmitter from 'events'
-
 import chai from 'chai'
+import EventEmitter from 'events'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
-
+import { Settings } from '../../../src/@types/settings'
 import { App } from '../../../src/app/app'
 import * as metricsTelemetry from '../../../src/telemetry/metrics'
-import * as operatorNotificationEnqueue from '../../../src/utils/operator-notification-enqueue'
 import * as torClient from '../../../src/tor/client'
-import { Settings } from '../../../src/@types/settings'
+import * as operatorNotificationEnqueue from '../../../src/utils/operator-notification-enqueue'
 import { SettingsStatic } from '../../../src/utils/settings'
 
 chai.use(sinonChai)
@@ -168,7 +166,10 @@ describe('App', () => {
 
     app.run()
 
-    const written = fakeProcess.stdout.write.getCalls().map((call) => call.args[0]).join('')
+    const written = fakeProcess.stdout.write
+      .getCalls()
+      .map((call) => call.args[0])
+      .join('')
 
     expect(written).to.include('███▄    █  ▒█████')
     expect(written).to.match(/v\d+\.\d+\.\d+/)
@@ -196,7 +197,8 @@ describe('App', () => {
 
     app.run()
 
-    const lines = fakeProcess.stdout.write.getCalls()
+    const lines = fakeProcess.stdout.write
+      .getCalls()
       .map((call) => String(call.args[0]).trim())
       .filter(Boolean)
 
@@ -285,5 +287,42 @@ describe('App', () => {
     app.run()
 
     expect(cluster.fork.getCalls().map((call) => call.args[0].WORKER_TYPE)).to.deep.equal(['worker', 'maintenance'])
+  })
+
+  it('starts one peering-sync worker when enabled peers are configured', () => {
+    const env = { ...process.env }
+    delete env.WORKER_COUNT
+    delete env.RELAY_BROADCAST_FANOUT
+    sandbox.stub(process, 'env').value(env)
+    sandbox.useFakeTimers()
+    sandbox.stub(SettingsStatic, 'watchSettings').returns([])
+    sandbox.stub(operatorNotificationEnqueue, 'enqueueOperatorNotification').resolves()
+    sandbox.stub(torClient, 'addOnion').rejects(new Error('tor is not configured'))
+    let pid = 1001
+    cluster.fork.callsFake(() => createWorker(String(pid), pid++))
+    const app = new App(
+      fakeProcess as any,
+      cluster as any,
+      sandbox.stub().returns({
+        payments: { enabled: false },
+        workers: { count: 1 },
+        eventStore: { backend: 'postgres' },
+        peering: {
+          enabled: false,
+          peers: [
+            { pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com', enabled: true },
+            { pubkey: 'b'.repeat(64), relayUrl: 'wss://disabled.example.com', enabled: false },
+          ],
+        },
+      } as unknown as Settings),
+    )
+
+    app.run()
+
+    expect(cluster.fork.getCalls().map((call) => call.args[0].WORKER_TYPE)).to.deep.equal([
+      'worker',
+      'maintenance',
+      'peering-sync',
+    ])
   })
 })

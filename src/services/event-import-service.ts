@@ -6,6 +6,11 @@ const streamArrayModule = require('stream-json/streamers/stream-array.js') as {
 }
 const streamArray = streamArrayModule.default
 
+import { Event } from '../@types/event'
+import { IEventRepository, IUserRepository } from '../@types/repositories'
+
+import { EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey, EventKinds, EventTags } from '../constants/base'
+import { eventSchema } from '../schemas/event-schema'
 import {
   getEventExpiration,
   isDeleteEvent,
@@ -14,13 +19,9 @@ import {
   isEventSignatureValid,
   isParameterizedReplaceableEvent,
   isReplaceableEvent,
+  isRequestToVanishEvent,
 } from '../utils/event'
 import { attemptValidation } from '../utils/validation'
-
-import { EventDeduplicationMetadataKey, EventExpirationTimeMetadataKey, EventTags } from '../constants/base'
-import { Event } from '../@types/event'
-import { eventSchema } from '../schemas/event-schema'
-import { IEventRepository } from '../@types/repositories'
 
 type EventWithImportMetadata = Event & {
   [EventDeduplicationMetadataKey]?: string[]
@@ -88,8 +89,19 @@ const isDestroyableStream = (
   return typeof candidate.destroy === 'function'
 }
 
+export interface EventBatchPersisterOptions {
+  /**
+   * When present, events from vanished authors are skipped and a kind-62
+   * request applies the same deletion and vanish-state rules as the live
+   * event path. Import leaves this out and keeps its historical behavior.
+   */
+  userRepository?: Pick<IUserRepository, 'isVanished' | 'setVanished'>
+  /** This relay's URL, used to honor kind-62 `r` tag targeting. */
+  relayUrl?: string
+}
+
 export const createEventBatchPersister =
-  (eventRepository: IEventRepository) =>
+  (eventRepository: IEventRepository, options: EventBatchPersisterOptions = {}) =>
   async (events: Event[]): Promise<number> => {
     if (!events.length) {
       return 0
@@ -99,16 +111,51 @@ export const createEventBatchPersister =
 
     const regularEvents: Event[] = []
     const replaceableEvents: Event[] = []
+    // A batch often carries many events from the same author. Ask once per
+    // author instead of once per event.
+    const vanishedByAuthor = new Map<string, Promise<boolean>>()
+    const isVanished = (pubkey: string): Promise<boolean> => {
+      if (!options.userRepository) {
+        return Promise.resolve(false)
+      }
+
+      let result = vanishedByAuthor.get(pubkey)
+      if (!result) {
+        result = options.userRepository.isVanished(pubkey)
+        vanishedByAuthor.set(pubkey, result)
+      }
+
+      return result
+    }
+
+    const flush = async () => {
+      inserted += await eventRepository.createMany(regularEvents.splice(0))
+      inserted += await eventRepository.upsertMany(replaceableEvents.splice(0))
+    }
 
     for (const event of events) {
+      if (options.userRepository && isRequestToVanishEvent(event, options.relayUrl)) {
+        // Flush pending writes before deleting, so the vanish applies after
+        // everything accepted ahead of it in this batch.
+        await flush()
+        await eventRepository.deleteByPubkeyExceptKinds(event.pubkey, [EventKinds.REQUEST_TO_VANISH])
+        inserted += await eventRepository.create(enrichEventMetadata(event))
+        await options.userRepository.setVanished(event.pubkey, true)
+        vanishedByAuthor.set(event.pubkey, Promise.resolve(true))
+        continue
+      }
+
+      if (await isVanished(event.pubkey)) {
+        continue
+      }
+
       if (isEphemeralEvent(event)) {
         continue
       }
 
       if (isDeleteEvent(event)) {
         // flush pending batches before applying deletes
-        inserted += await eventRepository.createMany(regularEvents.splice(0))
-        inserted += await eventRepository.upsertMany(replaceableEvents.splice(0))
+        await flush()
 
         const eventIdsToDelete = event.tags.reduce(
           (ids, tag) =>
@@ -135,16 +182,13 @@ export const createEventBatchPersister =
     }
 
     // flush remaining
-    inserted += await eventRepository.createMany(regularEvents)
-    inserted += await eventRepository.upsertMany(replaceableEvents)
+    await flush()
 
     return inserted
   }
 
 export class EventImportService {
-  public constructor(
-    private readonly persistBatch: (events: Event[]) => Promise<number>,
-  ) {}
+  public constructor(private readonly persistBatch: (events: Event[]) => Promise<number>) {}
 
   public async importFromReadable(
     input: NodeJS.ReadableStream,

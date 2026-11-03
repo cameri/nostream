@@ -4,9 +4,10 @@ import { join } from 'path'
 import { Settings } from '../@types/settings'
 import { RedisAdapter } from '../adapters/redis-adapter'
 import { getCacheClient } from '../cache/client'
-import { AdminOpsStore } from './admin-ops-store'
 import { collectAdminHealthSnapshot } from './admin-health'
 import { getRedactedAdminNotifications } from './admin-notifications-settings'
+import { AdminOpsStore } from './admin-ops-store'
+import { PeeringSyncStateStore } from './peering-sync-state'
 import { RelayProbeSnapshotStore } from './relay-probe-snapshot'
 import { loadMergedSettings } from './settings-config'
 import { redactSettingsSecrets } from './settings-redaction'
@@ -22,6 +23,7 @@ export interface AdminDiagnosticsExport {
   }
   operations: {
     workers: Awaited<ReturnType<AdminOpsStore['listWorkerHeartbeats']>>
+    peering: Awaited<ReturnType<PeeringSyncStateStore['list']>>
   }
 }
 
@@ -41,11 +43,13 @@ export const buildAdminDiagnosticsExport = async (
   const cache = new RedisAdapter(getCacheClient())
   const opsStore = new AdminOpsStore(cache)
   const snapshotStore = new RelayProbeSnapshotStore(cache)
+  const peeringStore = new PeeringSyncStateStore(cache)
 
-  const [health, workers, latest] = await Promise.all([
+  const [health, workers, latest, peering] = await Promise.all([
     collectAdminHealthSnapshot(),
     opsStore.listWorkerHeartbeats(),
     snapshotStore.getLatest(),
+    peeringStore.list(),
   ])
 
   const settings = redactSettingsSecrets(getSettings()) as Settings
@@ -57,6 +61,6 @@ export const buildAdminDiagnosticsExport = async (
     settings,
     notifications: getRedactedAdminNotifications(),
     networkHealth: { latest },
-    operations: { workers },
+    operations: { workers, peering },
   }
 }
