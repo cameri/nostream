@@ -2,6 +2,8 @@
 //! the capture commit `242a3001`): 4 acceptances (`:25-67`), 29 generated rejections
 //! (`:69-141`), 6 NIP-50 search cases (`:144-187`) and 8 NIP-12 geohash cases (`:190-232`).
 //!
+//! 47 capture cases, 11 port additions (7 round-2 findings, 4 `created_at` bounds) = 58 tests.
+//!
 //! **Messages.** The mocha suite asserts only that an error exists; the strings in its table
 //! are the case *names*. The capture's zod 3 schema emits its own text, measured against the
 //! capture tree ("Expected array, received null", "String must contain at most 64
@@ -566,4 +568,48 @@ fn limit_at_and_above_the_u64_boundary() {
         Some(18_446_744_073_709_549_568)
     );
     assert!(issue_lines(&json!({"limit": 1e19})).is_empty());
+}
+
+// --- the created_at window: the largest accepted value and the refused bound (4) ---
+//
+// Port additions, not rows of the capture's table (`filter-schema.spec.ts:94-105`): the
+// values come from the capture's own `createdAtSchema` predicate
+// (`src/schemas/base-schema.ts:23-27`), `Math.log10(value) < 10`, measured to accept
+// `9_999_999_999` and refuse `10_000_000_000`. The accepted value is `CREATED_AT_LIMIT - 1`
+// (`crates/nostream-core/src/validation.rs:20`).
+
+#[test]
+fn since_9_999_999_999_is_accepted() {
+    let mut document = base();
+    // `CREATED_AT_LIMIT - 1` (`crates/nostream-core/src/validation.rs:20`): the top of the
+    // half-open window, accepted rather than refused.
+    document["since"] = json!(9_999_999_999_i64);
+
+    assert_matches_input(&document);
+}
+
+#[test]
+fn until_9_999_999_999_is_accepted() {
+    let mut document = base();
+    // `CREATED_AT_LIMIT - 1` (`crates/nostream-core/src/validation.rs:20`): the top of the
+    // half-open window, accepted rather than refused.
+    document["until"] = json!(9_999_999_999_i64);
+
+    assert_matches_input(&document);
+}
+
+#[test]
+fn since_10_000_000_000_is_refused() {
+    let mut document = base();
+    document["since"] = json!(10_000_000_000_i64);
+
+    assert_issues(&document, &["since: Invalid timestamp"]);
+}
+
+#[test]
+fn until_10_000_000_000_is_refused() {
+    let mut document = base();
+    document["until"] = json!(10_000_000_000_i64);
+
+    assert_issues(&document, &["until: Invalid timestamp"]);
 }
