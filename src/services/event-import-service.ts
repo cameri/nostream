@@ -134,13 +134,13 @@ export const createEventBatchPersister =
     }
 
     for (const event of events) {
-      if (isRequestToVanishEvent(event, options.relayUrl)) {
+      if (options.userRepository && isRequestToVanishEvent(event, options.relayUrl)) {
         // Flush pending writes before deleting, so the vanish applies after
         // everything accepted ahead of it in this batch.
         await flush()
         await eventRepository.deleteByPubkeyExceptKinds(event.pubkey, [EventKinds.REQUEST_TO_VANISH])
         inserted += await eventRepository.create(enrichEventMetadata(event))
-        await options.userRepository?.setVanished(event.pubkey, true)
+        await options.userRepository.setVanished(event.pubkey, true)
         vanishedByAuthor.set(event.pubkey, Promise.resolve(true))
         continue
       }

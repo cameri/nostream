@@ -657,9 +657,13 @@ class PeeringPeerSession {
       return
     }
 
+    const nowSeconds = Math.floor(Date.now() / 1000)
     this.state = {
       ...this.state,
       updatedAt: new Date().toISOString(),
+      ...(this.state.latestEventCreatedAt !== undefined
+        ? { lagSeconds: Math.max(0, nowSeconds - this.state.latestEventCreatedAt) }
+        : {}),
     }
     this.stateDirty = true
     void this.flushState()

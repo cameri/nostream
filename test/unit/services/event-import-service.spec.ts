@@ -530,6 +530,33 @@ describe('EventImportService', () => {
     expect(vanished).to.equal(0)
   })
 
+  it('keeps import behavior for kind-62 events when no user repository is supplied', async () => {
+    const vanish: Event = {
+      id: 'a'.repeat(64),
+      pubkey: 'b'.repeat(64),
+      created_at: 1,
+      kind: EventKinds.REQUEST_TO_VANISH,
+      tags: [[EventTags.Relay, 'wss://other.example.com']],
+      content: 'vanish',
+      sig: 'c'.repeat(128),
+    }
+    const eventRepository = {
+      create: async () => 1,
+      createMany: async (events: Event[]) => events.length,
+      upsert: async () => 0,
+      upsertMany: async () => 0,
+      deleteByPubkeyAndIds: async () => 0,
+      deleteByPubkeyExceptKinds: async () => {
+        throw new Error('import must not apply vanish deletions')
+      },
+    } as any
+
+    const persistBatch = createEventBatchPersister(eventRepository)
+    const inserted = await persistBatch([vanish])
+
+    expect(inserted).to.equal(1)
+  })
+
   it('drops ephemeral events without counting them as inserted', async () => {
     const ephemeral: Event = {
       id: 'a'.repeat(64),

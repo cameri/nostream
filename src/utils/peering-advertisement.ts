@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { AdvertisedPeeringScope, PeeringAdvertisement } from '../@types/peering'
 import { EventKindsRange, PeeringTerm } from '../@types/settings'
 import { MAX_PEERING_KIND } from './peering-scope'
-import { isNip11FetchTargetSafe } from './relay-probe/nip11-probe'
+import { isNip11FetchTargetSafe, safeNip11Lookup } from './relay-probe/nip11-probe'
 import { parseProbeTarget } from './relay-probe/target'
 
 const MAX_NIP11_RESPONSE_BYTES = 256 * 1024
@@ -158,6 +158,7 @@ export const fetchPeeringAdvertisement = async (
       maxRedirects: 1,
       maxContentLength: MAX_NIP11_RESPONSE_BYTES,
       maxBodyLength: MAX_NIP11_RESPONSE_BYTES,
+      lookup: safeNip11Lookup,
       beforeRedirect: (redirect: { href?: string; protocol?: string; hostname?: string }) => {
         const href = redirect.href ?? `${redirect.protocol ?? ''}//${redirect.hostname ?? ''}`
         if (!isNip11FetchTargetSafe(href)) {

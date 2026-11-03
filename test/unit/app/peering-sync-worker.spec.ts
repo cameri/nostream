@@ -296,6 +296,14 @@ describe('PeeringSyncWorker', () => {
     releaseReconcile?.()
   })
 
+  it('advances lag on state heartbeats between reconciliations', async () => {
+    const head = await makeEvent('head', Math.floor(Date.now() / 1000))
+    startWorker([head], { stateHeartbeatMs: 20 })
+
+    await waitFor(() => localEvents.length === 1)
+    await waitFor(() => stateStore.published.some((state) => (state.lagSeconds ?? 0) >= 1), 4_000)
+  })
+
   it('retries an overflowing fetch batch in smaller pieces', async () => {
     const first = await makeEvent('first', now - 30)
     const second = await makeEvent('second', now - 20)

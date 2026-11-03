@@ -89,8 +89,8 @@ worker session:
 
 1. Read the peer's NIP-11 document and its `peering.scopes`. The document's
    `self` must match the configured peer pubkey when it is present, and the
-   peer must advertise NIP-77. Redirects to loopback, private, or link-local
-   destinations are refused.
+   peer must advertise NIP-77. URL literals and resolved DNS addresses that are
+   loopback, private, or link-local are refused, including on redirects.
 2. Authenticate with NIP-42 using this relay's keypair.
 3. Open the live `REQ` first, starting from a short overlap so events published
    while history is syncing are not lost. A rolling `windowSeconds` is checked
