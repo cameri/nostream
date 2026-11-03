@@ -12,4 +12,4 @@ Feature: Peering sync planning
     Then the split filters cover 0 to 500 and 501 to 1000
 
   Scenario: NIP-11 private addresses are rejected
-    Then the NIP-11 address 127.0.0.1 is blocked
+    Then the NIP-11 address "127.0.0.1" is blocked
