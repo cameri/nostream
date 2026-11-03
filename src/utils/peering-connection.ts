@@ -10,12 +10,14 @@ import { NEGENTROPY_FRAME_SIZE_LIMIT } from './nip77'
 const logger = createLogger('peering-connection')
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+/** Upper bound for one fetched id batch's EVENT payloads, independent of count. */
+export const PEERING_FETCH_MAX_BYTES = 8 * 1024 * 1024
 
 export interface PeeringSyncConnection {
   /** Reconciles one filter against the peer, returning the ids each side lacks. */
   reconcile(filter: SubscriptionFilter, items: ReconciliationItem[], timeoutMs?: number): Promise<ReconcileResult>
   /** Fetches specific event ids over an ordinary REQ; resolves after EOSE. */
-  fetchEvents(ids: string[], timeoutMs?: number): Promise<Event[]>
+  fetchEvents(ids: string[], timeoutMs?: number, maxBytes?: number): Promise<Event[]>
   /** Opens a long-lived REQ and resolves after its EOSE. Events keep arriving afterwards. */
   subscribe(filters: SubscriptionFilter[], onEvent: (event: Event) => void, timeoutMs?: number): Promise<void>
   /** Resolves when the socket closes, cleanly or not. */
@@ -37,6 +39,10 @@ interface RequestState {
   closed: boolean
   /** A live feed must end the connection on CLOSED so the worker reconnects. */
   persistent?: boolean
+  /** Only ids still in this set are accepted; deletion makes fetches duplicate-safe. */
+  expectedIds?: Set<string>
+  receivedBytes?: number
+  maxBytes?: number
 }
 
 const toHex = (bytes: Uint8Array): string => Buffer.from(bytes).toString('hex')
@@ -132,7 +138,11 @@ export class PeeringConnection implements PeeringSyncConnection {
     return { output: null, haveIds, needIds }
   }
 
-  public async fetchEvents(ids: string[], timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<Event[]> {
+  public async fetchEvents(
+    ids: string[],
+    timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    maxBytes = PEERING_FETCH_MAX_BYTES,
+  ): Promise<Event[]> {
     if (ids.length === 0) {
       return []
     }
@@ -141,7 +151,10 @@ export class PeeringConnection implements PeeringSyncConnection {
     const events: Event[] = []
 
     try {
-      await this.openSubscription(subscriptionId, [{ ids }], (event) => events.push(event), timeoutMs)
+      await this.openSubscription(subscriptionId, [{ ids }], (event) => events.push(event), timeoutMs, false, {
+        expectedIds: new Set(ids),
+        maxBytes,
+      })
 
       return events
     } finally {
@@ -158,7 +171,6 @@ export class PeeringConnection implements PeeringSyncConnection {
 
     return this.openSubscription(subscriptionId, filters, onEvent, timeoutMs, true)
   }
-
   public waitForClose(): Promise<void> {
     return this.closePromise
   }
@@ -183,11 +195,13 @@ export class PeeringConnection implements PeeringSyncConnection {
     onEvent: (event: Event) => void,
     timeoutMs: number,
     persistent = false,
+    bounds: Pick<RequestState, 'expectedIds' | 'maxBytes'> = {},
   ): Promise<void> {
     const state: RequestState = {
       onEvent,
       closed: false,
       persistent,
+      ...bounds,
     }
 
     this.requests.set(subscriptionId, state)
@@ -291,7 +305,23 @@ export class PeeringConnection implements PeeringSyncConnection {
         if (!state || typeof event !== 'object' || event === null) {
           return
         }
-        state.onEvent(event as Event)
+
+        const parsedEvent = event as Event
+        if (state.expectedIds && !state.expectedIds.delete(parsedEvent.id)) {
+          return
+        }
+
+        const size = Buffer.byteLength(JSON.stringify(parsedEvent))
+        state.receivedBytes = (state.receivedBytes ?? 0) + size
+        if (state.maxBytes !== undefined && state.receivedBytes > state.maxBytes) {
+          this.clearRequest(state)
+          this.requests.delete(subscriptionId)
+          state.reject?.(new Error('peer sent more event data than this request allows'))
+          this.close()
+          return
+        }
+
+        state.onEvent(parsedEvent)
         return
       }
       case 'EOSE': {

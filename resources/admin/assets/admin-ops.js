@@ -128,7 +128,18 @@
     if (row.stale) {
       return '<span class="status-badge status-degraded"><span class="status-led" aria-hidden="true"></span>Stale</span>'
     }
-    return signalBadge(false)
+
+    switch (row.state?.status) {
+      case 'live':
+        return signalBadge(false)
+      case 'connecting':
+      case 'reconciling':
+        return '<span class="status-badge"><span class="status-led" aria-hidden="true"></span>Syncing</span>'
+      case 'stopped':
+        return '<span class="status-badge status-degraded"><span class="status-led" aria-hidden="true"></span>Stopped</span>'
+      default:
+        return '<span class="status-badge"><span class="status-led" aria-hidden="true"></span>Pending</span>'
+    }
   }
 
   const renderPeering = (rows) => {
@@ -350,9 +361,16 @@
   }
 
   const refreshAll = async () => {
-    try {
-      await Promise.all([loadWorkers(), loadPeering(), loadNip05()])
-    } catch {
+    const results = await Promise.allSettled([loadWorkers(), loadPeering(), loadNip05()])
+
+    if (results[1]?.status === 'rejected') {
+      if (elements.peeringSync) {
+        elements.peeringSync.innerHTML =
+          '<span class="prompt-char">&gt;</span><span class="text-danger"> peers: unable to refresh sync state</span>'
+      }
+    }
+
+    if (results[0]?.status === 'rejected' || results[2]?.status === 'rejected') {
       showNip05Error('Unable to refresh operations data.')
     }
   }

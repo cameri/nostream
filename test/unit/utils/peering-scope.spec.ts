@@ -1,6 +1,11 @@
 import { expect } from 'chai'
 
-import { expandPeeringKinds, peeringScopesToLiveFilters, peeringScopeToFilter } from '../../../src/utils/peering-scope'
+import {
+  expandPeeringKinds,
+  peeringScopesToLiveFilters,
+  peeringScopeToFilter,
+  splitPeeringScope,
+} from '../../../src/utils/peering-scope'
 
 describe('peering scope filters', () => {
   it('expands kind ranges into the explicit list NIP-01 filters require', () => {
@@ -39,5 +44,23 @@ describe('peering scope filters', () => {
       { kinds: [7], since: 940, until: 1_500 },
       { kinds: [30000], since: 940 },
     ])
+  })
+
+  it('splits an oversized absolute range at its midpoint', () => {
+    expect(splitPeeringScope({ kinds: [1], since: 100, until: 200 }, 1_000)).to.deep.equal([
+      { kinds: [1], since: 100, until: 150 },
+      { kinds: [1], since: 151, until: 200 },
+    ])
+  })
+
+  it('splits an unbounded scope between the beginning of time and now', () => {
+    expect(splitPeeringScope({ kinds: [1] }, 1_000)).to.deep.equal([
+      { kinds: [1], since: 0, until: 500 },
+      { kinds: [1], since: 501, until: 1_000 },
+    ])
+  })
+
+  it('does not split a range that has no room left', () => {
+    expect(splitPeeringScope({ kinds: [1], since: 500, until: 500 }, 1_000)).to.equal(undefined)
   })
 })

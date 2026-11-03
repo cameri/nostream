@@ -24,7 +24,8 @@ export const mergePeeringRows = (
   for (const peer of settings.peering?.peers ?? []) {
     const pubkey = parsePeeringPeerPubkey(peer.pubkey) ?? peer.pubkey
     const normalized = pubkey.toLowerCase()
-    const state = statesByPubkey.get(normalized)
+    const stored = statesByPubkey.get(normalized)
+    const state = stored?.relayUrl === peer.relayUrl ? stored : undefined
     const enabled = peer.enabled !== false
 
     matched.add(normalized)

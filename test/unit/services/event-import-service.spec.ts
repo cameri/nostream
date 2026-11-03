@@ -1,18 +1,17 @@
-import { join } from 'path'
+import { expect } from 'chai'
 
 import fs from 'fs'
 import os from 'os'
+import { join } from 'path'
 import { Readable } from 'stream'
-
+import { Event } from '../../../src/@types/event'
+import { EventDeduplicationMetadataKey, EventKinds, EventTags } from '../../../src/constants/base'
 import {
   createEventBatchPersister,
   EventImportLineError,
   EventImportService,
   EventImportStats,
 } from '../../../src/services/event-import-service'
-import { EventDeduplicationMetadataKey, EventKinds, EventTags } from '../../../src/constants/base'
-import { Event } from '../../../src/@types/event'
-import { expect } from 'chai'
 import { getEvents } from '../data/events'
 
 describe('EventImportService', () => {
@@ -392,5 +391,100 @@ describe('EventImportService', () => {
     expect(inserted).to.equal(1)
     expect(upsertedEvents).to.have.length(1)
     expect((upsertedEvents[0] as any)[EventDeduplicationMetadataKey]).to.deep.equal(['one'])
+  })
+
+  it('skips vanished authors and applies kind-62 vanish rules when a user repository is configured', async () => {
+    const visible: Event = {
+      id: 'a'.repeat(64),
+      pubkey: 'b'.repeat(64),
+      created_at: 1,
+      kind: 1,
+      tags: [],
+      content: 'visible',
+      sig: 'c'.repeat(128),
+    }
+    const vanished: Event = {
+      ...visible,
+      id: 'd'.repeat(64),
+      pubkey: 'e'.repeat(64),
+    }
+    const vanish: Event = {
+      ...visible,
+      id: 'f'.repeat(64),
+      pubkey: '1'.repeat(64),
+      kind: EventKinds.REQUEST_TO_VANISH,
+      content: 'vanish',
+    }
+
+    const created: Event[] = []
+    const deletedExcept: string[][] = []
+    const vanishedPubkeys: string[] = []
+
+    const eventRepository = {
+      create: async (event: Event) => {
+        created.push(event)
+        return 1
+      },
+      createMany: async (events: Event[]) => {
+        created.push(...events)
+        return events.length
+      },
+      upsert: async () => 0,
+      upsertMany: async () => 0,
+      deleteByPubkeyAndIds: async () => 0,
+      deleteByPubkeyExceptKinds: async (pubkey: string, kinds: number[]) => {
+        deletedExcept.push([pubkey, ...kinds.map(String)])
+        return 1
+      },
+    } as any
+
+    const userRepository = {
+      isVanished: async (pubkey: string) => pubkey === vanished.pubkey,
+      setVanished: async (pubkey: string) => {
+        vanishedPubkeys.push(pubkey)
+        return 1
+      },
+    }
+
+    const persistBatch = createEventBatchPersister(eventRepository, { userRepository })
+    const inserted = await persistBatch([visible, vanished, vanish])
+
+    expect(inserted).to.equal(2)
+    expect(created.map((event) => event.id)).to.deep.equal([visible.id, vanish.id])
+    expect(deletedExcept).to.deep.equal([[vanish.pubkey, String(EventKinds.REQUEST_TO_VANISH)]])
+    expect(vanishedPubkeys).to.deep.equal([vanish.pubkey])
+  })
+
+  it('drops ephemeral events without counting them as inserted', async () => {
+    const ephemeral: Event = {
+      id: 'a'.repeat(64),
+      pubkey: 'b'.repeat(64),
+      created_at: 1,
+      kind: EventKinds.EPHEMERAL_FIRST,
+      tags: [],
+      content: 'ephemeral',
+      sig: 'c'.repeat(128),
+    }
+
+    let createdManyCalls = 0
+    const eventRepository = {
+      create: async () => 1,
+      createMany: async (events: Event[]) => {
+        if (!events.length) {
+          return 0
+        }
+        createdManyCalls += 1
+        return events.length
+      },
+      upsert: async () => 0,
+      upsertMany: async (events: Event[]) => events.length,
+      deleteByPubkeyAndIds: async () => 0,
+    } as any
+
+    const persistBatch = createEventBatchPersister(eventRepository)
+    const inserted = await persistBatch([ephemeral])
+
+    expect(inserted).to.equal(0)
+    expect(createdManyCalls).to.equal(0)
   })
 })

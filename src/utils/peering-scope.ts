@@ -89,3 +89,36 @@ export const peeringScopesToLiveFilters = (
 
 export const isCurrentPeeringScope = (scope: PeeringScope, nowSeconds: number): boolean =>
   isCurrentScope(scope, nowSeconds)
+
+const scopeBounds = (scope: PeeringScope, nowSeconds: number): { since: number; until: number } => {
+  if (typeof scope.windowSeconds === 'number') {
+    return { since: Math.max(0, nowSeconds - scope.windowSeconds), until: nowSeconds }
+  }
+
+  return {
+    since: scope.since ?? 0,
+    until: scope.until ?? nowSeconds,
+  }
+}
+
+/**
+ * Splits a scope at its midpoint in time when a peer rejects the whole set as
+ * too large. Returns undefined when the range cannot be split any further, so
+ * the caller reports the original rejection instead of looping forever.
+ */
+export const splitPeeringScope = (
+  scope: PeeringScope,
+  nowSeconds: number,
+): [PeeringScope, PeeringScope] | undefined => {
+  const { since, until } = scopeBounds(scope, nowSeconds)
+  if (until <= since) {
+    return undefined
+  }
+
+  const midpoint = Math.floor((since + until) / 2)
+
+  return [
+    { kinds: scope.kinds, since, until: midpoint },
+    { kinds: scope.kinds, since: midpoint + 1, until },
+  ]
+}

@@ -56,4 +56,20 @@ describe('admin peering rows', () => {
 
     expect(rows[0]).to.include({ configured: false, enabled: false })
   })
+
+  it('does not attach state from an old relay URL to the configured peer', () => {
+    const rows = mergePeeringRows(
+      {
+        peering: {
+          enabled: true,
+          peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://new.example.com' }],
+        },
+      } as Settings,
+      [state({ relayUrl: 'wss://old.example.com' })],
+    )
+
+    expect(rows).to.have.length(1)
+    expect(rows[0].state).to.equal(undefined)
+    expect(rows[0].stale).to.equal(true)
+  })
 })

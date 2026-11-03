@@ -3,7 +3,6 @@ import { cpus } from 'os'
 import { AdminOpsConfiguredWorker, AdminOpsWorkerHeartbeat, AdminOpsWorkerRow } from '../@types/admin-ops'
 import { Settings } from '../@types/settings'
 import { ADMIN_OPS_HEARTBEAT_TTL_SECONDS, isAdminOpsHeartbeatStale } from './admin-ops-store'
-import { listEnabledPeeringPeers } from './peering-auth'
 
 const UNMONITORED_WORKER_TYPES = new Set(['worker', 'dvm-orchestrator'])
 
@@ -31,7 +30,7 @@ export const listConfiguredWorkers = (settings: Settings): AdminOpsConfiguredWor
     label: 'Maintenance',
   })
 
-  if (listEnabledPeeringPeers(settings).length > 0) {
+  if ((settings.peering?.peers?.length ?? 0) > 0) {
     workers.push({
       type: 'peering-sync',
       enabled: true,

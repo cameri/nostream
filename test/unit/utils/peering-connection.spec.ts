@@ -110,6 +110,25 @@ describe('PeeringConnection', () => {
     expect(events).to.deep.equal([event])
   })
 
+  it('ignores unrequested and duplicate fetch replies', async () => {
+    const wanted = {
+      id: 'b'.repeat(64),
+      pubkey: 'f'.repeat(64),
+      created_at: 10,
+      kind: 1,
+      tags: [],
+      content: 'wanted',
+      sig: 'a'.repeat(128),
+    }
+    const extra = { ...wanted, id: 'c'.repeat(64), content: 'extra' }
+    const socket = new FakeSocket([], [wanted, wanted, extra])
+    const connection = new PeeringConnection(socket as any)
+
+    const events = await connection.fetchEvents([wanted.id], 1_000)
+
+    expect(events).to.deep.equal([wanted])
+  })
+
   it('keeps a live subscription open after EOSE', async () => {
     const socket = new FakeSocket([])
     const connection = new PeeringConnection(socket as any)
@@ -120,6 +139,27 @@ describe('PeeringConnection', () => {
     socket.deliver(['EVENT', socket.sent.find((message) => message[0] === 'REQ')?.[1], { id: 'a'.repeat(64), kind: 1 }])
 
     expect(received).to.have.length(1)
+  })
+
+  it('rejects a fetch that exceeds its byte budget', async () => {
+    const event = {
+      id: 'b'.repeat(64),
+      pubkey: 'f'.repeat(64),
+      created_at: 10,
+      kind: 1,
+      tags: [],
+      content: 'x'.repeat(1_000),
+      sig: 'a'.repeat(128),
+    }
+    const socket = new FakeSocket([], [event])
+    const connection = new PeeringConnection(socket as any)
+
+    const error = await connection.fetchEvents([event.id], 1_000, 100).then(
+      () => undefined,
+      (err: Error) => err,
+    )
+
+    expect(error?.message).to.equal('peer sent more event data than this request allows')
   })
 
   it('rejects when the peer returns NEG-ERR', async () => {

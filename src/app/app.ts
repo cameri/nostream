@@ -16,7 +16,6 @@ import { addOnion } from '../tor/client'
 import { BANNER_WIDTH, centre, isStructuredLogFormat, RELAY_BANNER_LINES } from '../utils/banner'
 import { EVENT_STORE_BACKEND_ENV, getConfiguredEventStoreBackend } from '../utils/event-store'
 import { enqueueOperatorNotification } from '../utils/operator-notification-enqueue'
-import { listEnabledPeeringPeers } from '../utils/peering-auth'
 import { RelayBroadcastDeduplicator } from '../utils/relay-broadcast-deduplicator'
 import {
   isRelayBroadcastFanoutEnabled,
@@ -160,12 +159,12 @@ export class App implements IRunnable {
       logCentered('mirroring.static is no longer supported (ignored)')
     }
 
-    const peeringPeers = listEnabledPeeringPeers(settings)
+    const peeringPeers = settings.peering?.peers ?? []
     if (peeringPeers.length > 0) {
       createWorker({
         WORKER_TYPE: 'peering-sync',
       })
-      logCentered(`1 peering-sync worker started (${peeringPeers.length} peer(s))`)
+      logCentered(`1 peering-sync worker started (${peeringPeers.length} peer(s) configured)`)
     }
 
     if (settings.nip66?.enabled) {

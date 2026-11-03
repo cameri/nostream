@@ -5,7 +5,15 @@ import { GetAdminPeeringController } from '../../controllers/admin/get-admin-pee
 import { PeeringSyncStateStore } from '../../utils/peering-sync-state'
 
 export const createGetAdminPeeringController = (): IController => {
-  const stateStore = new PeeringSyncStateStore(new RedisAdapter(getCacheClient()))
+  // The RedisAdapter constructor attaches connection listeners. Reusing one
+  // adapter keeps repeated dashboard polls from stacking listeners on the
+  // shared cache client.
+  if (!sharedController) {
+    const stateStore = new PeeringSyncStateStore(new RedisAdapter(getCacheClient()))
+    sharedController = new GetAdminPeeringController(stateStore)
+  }
 
-  return new GetAdminPeeringController(stateStore)
+  return sharedController
 }
+
+let sharedController: IController | undefined

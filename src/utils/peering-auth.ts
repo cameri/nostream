@@ -8,6 +8,8 @@ import { getPublicKey, identifyEvent, signEvent } from './event'
 import { parseRelayPubkey } from './nip43-invites'
 
 export const PEERING_AUTH_TIMEOUT_MS = 10_000
+/** One inbound frame from a peer relay. Matches the relay's default max payload with headroom. */
+export const PEERING_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
 
 export interface PeeringAuthEventOptions {
   relayUrl: string
@@ -21,6 +23,7 @@ export interface AuthenticatePeerOptions {
   privateKey: string
   timeoutMs?: number
   createdAt?: number
+  maxPayloadBytes?: number
 }
 
 export interface AuthenticatedPeerConnection {
@@ -122,12 +125,18 @@ const closeQuietly = (socket: WebSocket): void => {
  * leaving the socket open for the caller (a live feed, negentropy session, ...).
  */
 export const authenticateToPeeringRelay = (options: AuthenticatePeerOptions): Promise<AuthenticatedPeerConnection> => {
-  const { relayUrl, privateKey, timeoutMs = PEERING_AUTH_TIMEOUT_MS, createdAt } = options
+  const {
+    relayUrl,
+    privateKey,
+    timeoutMs = PEERING_AUTH_TIMEOUT_MS,
+    createdAt,
+    maxPayloadBytes = PEERING_MAX_PAYLOAD_BYTES,
+  } = options
 
   return new Promise<AuthenticatedPeerConnection>((resolve, reject) => {
     let socket: WebSocket
     try {
-      socket = new WebSocket(relayUrl)
+      socket = new WebSocket(relayUrl, { maxPayload: maxPayloadBytes })
     } catch (error) {
       reject(error instanceof Error ? error : new Error('Unable to open the peering socket'))
       return

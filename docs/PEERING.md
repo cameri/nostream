@@ -102,10 +102,20 @@ worker session:
    reconciliation, which closes any gap the live feed missed.
 
 Fetched and live events are accepted only when they match the scope, were
-requested by id, and pass id and signature verification. They are then upserted;
-live events are also broadcast to local subscribers, so a peer feed is
-indistinguishable from a locally published event to this relay's clients.
-Backfilled history is not broadcast, because it predates any live subscription.
+requested by id, and pass id and signature verification. They are then applied
+with the same kind rules as locally published events: addressable events keep
+their `d` tag as the deduplication key, kind-5 deletes hide their targets,
+kind-62 requests delete the author's events and set the vanish flag, and
+ephemeral events are broadcast live but never stored. Authors under an active
+vanish request are skipped. Live events are also broadcast to local subscribers,
+so a peer feed is indistinguishable from a locally published event to this
+relay's clients. Backfilled history is not broadcast, because it predates any
+live subscription.
+
+If the peer rejects a scope as too large, the worker splits it into smaller time
+ranges and retries. Fetched id batches are bounded by both count and bytes, and
+the live queue closes the connection rather than growing without limit when a
+peer sends faster than writes finish.
 
 Each reconciliation writes the peer's state to Redis and exposes it at
 `GET /admin/peering`: status, last reconciliation, latest event age ("lag"),
