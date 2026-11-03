@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'astro/config'
+import { unified } from '@astrojs/markdown-remark'
 
 const SITE_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(SITE_ROOT, '..', '..')
@@ -53,7 +54,9 @@ export default defineConfig({
   // PR previews build under /preview/<n>; empty when unset (production).
   base: process.env.SITE_BASE || undefined,
   markdown: {
-    rehypePlugins: [rehypeRepoLinks],
+    processor: unified({
+      rehypePlugins: [rehypeRepoLinks],
+    }),
     shikiConfig: { theme: 'github-dark-default', wrap: false },
   },
   vite: {
