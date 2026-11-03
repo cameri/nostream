@@ -166,6 +166,9 @@ export const createNodeNip11Fetcher = (): Nip11Fetcher => ({
         maxRedirects: MAX_REDIRECTS,
         maxContentLength: MAX_RESPONSE_BYTES,
         maxBodyLength: MAX_RESPONSE_BYTES,
+        // Direct egress: a proxy would resolve/connect on our behalf and
+        // bypass safeNip11Lookup's private-address rejection.
+        proxy: false,
         lookup: safeNip11Lookup,
         beforeRedirect: (options: { href?: string; protocol?: string; hostname?: string }) => {
           const href = options.href ?? `${options.protocol ?? ''}//${options.hostname ?? ''}`

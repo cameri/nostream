@@ -158,6 +158,9 @@ export const fetchPeeringAdvertisement = async (
       maxRedirects: 1,
       maxContentLength: MAX_NIP11_RESPONSE_BYTES,
       maxBodyLength: MAX_NIP11_RESPONSE_BYTES,
+      // Direct egress so safeNip11Lookup actually sees the peer host. A proxy
+      // would resolve the destination itself and bypass the private-address check.
+      proxy: false,
       lookup: safeNip11Lookup,
       beforeRedirect: (redirect: { href?: string; protocol?: string; hostname?: string }) => {
         const href = redirect.href ?? `${redirect.protocol ?? ''}//${redirect.hostname ?? ''}`

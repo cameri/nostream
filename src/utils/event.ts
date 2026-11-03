@@ -1,16 +1,16 @@
 import * as secp256k1 from '@noble/secp256k1'
-import { ALL_RELAYS, EventKinds, EventTags } from '../constants/base'
-import { applySpec, pipe, prop } from 'ramda'
-import { CanonicalEvent, DBEvent, Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
-import { EventId, Pubkey, Tag } from '../@types/base'
 import cluster from 'cluster'
-import { deriveFromSecret } from './secret'
+import { applySpec, pipe, prop } from 'ramda'
+import { EventId, Pubkey, Tag } from '../@types/base'
+import { CanonicalEvent, DBEvent, Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
 import { EventKindsRange } from '../@types/settings'
-import { fromBuffer } from './transform'
-import { getLeadingZeroBits } from './proof-of-work'
-import { isGenericTagQuery, isGeohashPrefixCriterion, stripGeohashPrefixWildcard } from './filter'
 import { SubscriptionFilter } from '../@types/subscription'
 import { WebSocketServerAdapterEvent } from '../constants/adapter'
+import { ALL_RELAYS, EventKinds, EventTags } from '../constants/base'
+import { isGenericTagQuery, isGeohashPrefixCriterion, stripGeohashPrefixWildcard } from './filter'
+import { getLeadingZeroBits } from './proof-of-work'
+import { deriveFromSecret } from './secret'
+import { fromBuffer } from './transform'
 
 export const serializeEvent = (event: UnidentifiedEvent): CanonicalEvent => [
   0,
@@ -238,7 +238,9 @@ export const isRequestToVanishEvent = (event: Event, relayUrl?: string): boolean
 
   const relayTags = event.tags.filter((tag) => tag.length >= 2 && tag[0] === EventTags.Relay).map((tag) => tag[1])
 
-  return relayTags.length > 0 && relayTags.every((relay) => relay === relayUrl || relay === ALL_RELAYS)
+  // NIP-62: a request may name several relays. It applies here when any target
+  // is this relay or ALL_RELAYS; it does not need every target to match.
+  return relayTags.some((relay) => relay === relayUrl || relay === ALL_RELAYS)
 }
 
 export const isExpiredEvent = (event: Event): boolean => {
