@@ -1,10 +1,11 @@
 import { expect } from 'chai'
 import EventEmitter from 'events'
 import { Negentropy, NegentropyStorageVector } from '../../../src/utils/negentropy'
-import { PeeringConnection } from '../../../src/utils/peering-connection'
+import { PeeringConnection, PeeringFetchOverflowError } from '../../../src/utils/peering-connection'
 
 class FakeSocket extends EventEmitter {
   public readonly sent: unknown[][] = []
+  public closed = false
   private responder?: Negentropy
   private readonly remoteEvents: {
     id: string
@@ -62,6 +63,7 @@ class FakeSocket extends EventEmitter {
   }
 
   public close(): void {
+    this.closed = true
     this.emit('close')
   }
 
@@ -141,7 +143,7 @@ describe('PeeringConnection', () => {
     expect(received).to.have.length(1)
   })
 
-  it('rejects a fetch that exceeds its byte budget', async () => {
+  it('rejects a fetch that exceeds its byte budget without closing the connection', async () => {
     const event = {
       id: 'b'.repeat(64),
       pubkey: 'f'.repeat(64),
@@ -159,7 +161,11 @@ describe('PeeringConnection', () => {
       (err: Error) => err,
     )
 
-    expect(error?.message).to.equal('peer sent more event data than this request allows')
+    expect(error).to.be.instanceOf(PeeringFetchOverflowError)
+    expect(socket.closed).to.equal(false)
+
+    const events = await connection.fetchEvents([event.id], 1_000)
+    expect(events).to.deep.equal([event])
   })
 
   it('rejects when the peer returns NEG-ERR', async () => {

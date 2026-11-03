@@ -4,7 +4,8 @@ import {
   expandPeeringKinds,
   peeringScopesToLiveFilters,
   peeringScopeToFilter,
-  splitPeeringScope,
+  peeringScopeToFilters,
+  splitPeeringFilter,
 } from '../../../src/utils/peering-scope'
 
 describe('peering scope filters', () => {
@@ -46,21 +47,37 @@ describe('peering scope filters', () => {
     ])
   })
 
+  it('splits wide kind ranges into filters that fit a peer limit', () => {
+    const filters = peeringScopeToFilters({ kinds: [0, [1, 7]], since: 100 }, 1_000, 4)
+
+    expect(filters.map((filter) => filter.kinds)).to.deep.equal([
+      [0, 1, 2, 3],
+      [4, 5, 6, 7],
+    ])
+    expect(filters.every((filter) => filter.since === 100)).to.equal(true)
+  })
+
+  it('never starts a short rolling window earlier than its own cutoff', () => {
+    const [filter] = peeringScopesToLiveFilters([{ kinds: [1], windowSeconds: 5 }], 1_000, 60)
+
+    expect(filter).to.deep.equal({ kinds: [1], since: 995 })
+  })
+
   it('splits an oversized absolute range at its midpoint', () => {
-    expect(splitPeeringScope({ kinds: [1], since: 100, until: 200 }, 1_000)).to.deep.equal([
+    expect(splitPeeringFilter({ kinds: [1], since: 100, until: 200 }, 1_000)).to.deep.equal([
       { kinds: [1], since: 100, until: 150 },
       { kinds: [1], since: 151, until: 200 },
     ])
   })
 
-  it('splits an unbounded scope between the beginning of time and now', () => {
-    expect(splitPeeringScope({ kinds: [1] }, 1_000)).to.deep.equal([
+  it('splits an unbounded filter between the beginning of time and now', () => {
+    expect(splitPeeringFilter({ kinds: [1] }, 1_000)).to.deep.equal([
       { kinds: [1], since: 0, until: 500 },
       { kinds: [1], since: 501, until: 1_000 },
     ])
   })
 
   it('does not split a range that has no room left', () => {
-    expect(splitPeeringScope({ kinds: [1], since: 500, until: 500 }, 1_000)).to.equal(undefined)
+    expect(splitPeeringFilter({ kinds: [1], since: 500, until: 500 }, 1_000)).to.equal(undefined)
   })
 })

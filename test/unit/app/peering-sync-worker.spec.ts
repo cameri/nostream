@@ -6,6 +6,7 @@ import { IEventRepository, ReconciliationItem } from '../../../src/@types/reposi
 import { Settings } from '../../../src/@types/settings'
 import { PeeringSyncWorker } from '../../../src/app/peering-sync-worker'
 import { getPublicKey, identifyEvent, isEventMatchingFilter, signEvent } from '../../../src/utils/event'
+import { PeeringFetchOverflowError } from '../../../src/utils/peering-connection'
 import { PeeringSyncStateStore } from '../../../src/utils/peering-sync-state'
 
 const privateKey = 'a'.repeat(64)
@@ -183,6 +184,7 @@ describe('PeeringSyncWorker', () => {
     scopes?: { kinds: number[]; windowSeconds?: number }[]
     reconcileIntervalMs?: number
     peerRefreshMs?: number
+    stateHeartbeatMs?: number
     configureConnection?: (connection: FakeConnection) => void
     userRepository?: {
       isVanished: (pubkey: string) => Promise<boolean>
@@ -208,6 +210,7 @@ describe('PeeringSyncWorker', () => {
       privateKey: () => privateKey,
       reconcileIntervalMs: options.reconcileIntervalMs ?? 60_000,
       peerRefreshMs: options.peerRefreshMs,
+      stateHeartbeatMs: options.stateHeartbeatMs,
       reconnectDelayMs: 10,
       userRepository: options.userRepository,
     })
@@ -244,6 +247,87 @@ describe('PeeringSyncWorker', () => {
     const lag = stateStore.published.at(-1)?.lagSeconds ?? Infinity
     expect(lag).to.be.at.least(0)
     expect(lag).to.be.at.most(5)
+  })
+
+  it('delivers live events while history reconciliation is still running', async () => {
+    let releaseReconcile: (() => void) | undefined
+    const reconcileGate = new Promise<void>((resolve) => {
+      releaseReconcile = resolve
+    })
+
+    startWorker([], {
+      configureConnection: (fake) => {
+        const reconcile = fake.reconcile.bind(fake)
+        fake.reconcile = async (filter, items) => {
+          await reconcileGate
+          return reconcile(filter as any, items)
+        }
+      },
+    })
+
+    await waitFor(() => connection.liveOnEvent !== undefined)
+
+    const live = await makeEvent('during history sync', Math.floor(Date.now() / 1000))
+    connection.liveOnEvent?.(live)
+
+    await waitFor(() => localEvents.length === 1)
+    expect(localEvents[0].id).to.equal(live.id)
+    releaseReconcile?.()
+  })
+
+  it('republishes sync state while a long reconciliation is running', async () => {
+    let releaseReconcile: (() => void) | undefined
+    const reconcileGate = new Promise<void>((resolve) => {
+      releaseReconcile = resolve
+    })
+
+    startWorker([], {
+      stateHeartbeatMs: 20,
+      configureConnection: (fake) => {
+        const reconcile = fake.reconcile.bind(fake)
+        fake.reconcile = async (filter, items) => {
+          await reconcileGate
+          return reconcile(filter as any, items)
+        }
+      },
+    })
+
+    await waitFor(() => stateStore.published.filter((state) => state.status === 'reconciling').length >= 2)
+    releaseReconcile?.()
+  })
+
+  it('retries an overflowing fetch batch in smaller pieces', async () => {
+    const first = await makeEvent('first', now - 30)
+    const second = await makeEvent('second', now - 20)
+    const fetchSizes: number[] = []
+
+    startWorker([first, second], {
+      configureConnection: (fake) => {
+        const fetchEvents = fake.fetchEvents.bind(fake)
+        fake.fetchEvents = async (ids) => {
+          fetchSizes.push(ids.length)
+          if (ids.length > 1) {
+            throw new PeeringFetchOverflowError()
+          }
+          return fetchEvents(ids)
+        }
+      },
+    })
+
+    await waitFor(() => localEvents.length === 2)
+    expect(fetchSizes).to.deep.equal([2, 1, 1])
+  })
+
+  it('re-checks live events against scope bounds, not the subscription overlap', async () => {
+    startWorker([])
+
+    await waitFor(() => connection.liveOnEvent !== undefined)
+
+    const late = await makeEvent('late publish', Math.floor(Date.now() / 1000) - 120)
+    connection.liveOnEvent?.(late)
+
+    await waitFor(() => localEvents.length === 1)
+    expect(localEvents[0].id).to.equal(late.id)
   })
 
   it('splits a scope the peer rejects as too large', async () => {

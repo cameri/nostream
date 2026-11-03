@@ -96,6 +96,8 @@ export interface EventBatchPersisterOptions {
    * event path. Import leaves this out and keeps its historical behavior.
    */
   userRepository?: Pick<IUserRepository, 'isVanished' | 'setVanished'>
+  /** This relay's URL, used to honor kind-62 `r` tag targeting. */
+  relayUrl?: string
 }
 
 export const createEventBatchPersister =
@@ -109,6 +111,22 @@ export const createEventBatchPersister =
 
     const regularEvents: Event[] = []
     const replaceableEvents: Event[] = []
+    // A batch often carries many events from the same author. Ask once per
+    // author instead of once per event.
+    const vanishedByAuthor = new Map<string, Promise<boolean>>()
+    const isVanished = (pubkey: string): Promise<boolean> => {
+      if (!options.userRepository) {
+        return Promise.resolve(false)
+      }
+
+      let result = vanishedByAuthor.get(pubkey)
+      if (!result) {
+        result = options.userRepository.isVanished(pubkey)
+        vanishedByAuthor.set(pubkey, result)
+      }
+
+      return result
+    }
 
     const flush = async () => {
       inserted += await eventRepository.createMany(regularEvents.splice(0))
@@ -116,17 +134,18 @@ export const createEventBatchPersister =
     }
 
     for (const event of events) {
-      if (isRequestToVanishEvent(event)) {
+      if (isRequestToVanishEvent(event, options.relayUrl)) {
         // Flush pending writes before deleting, so the vanish applies after
         // everything accepted ahead of it in this batch.
         await flush()
         await eventRepository.deleteByPubkeyExceptKinds(event.pubkey, [EventKinds.REQUEST_TO_VANISH])
         inserted += await eventRepository.create(enrichEventMetadata(event))
         await options.userRepository?.setVanished(event.pubkey, true)
+        vanishedByAuthor.set(event.pubkey, Promise.resolve(true))
         continue
       }
 
-      if (options.userRepository && (await options.userRepository.isVanished(event.pubkey))) {
+      if (await isVanished(event.pubkey)) {
         continue
       }
 

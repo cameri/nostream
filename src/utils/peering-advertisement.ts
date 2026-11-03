@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { AdvertisedPeeringScope, PeeringAdvertisement } from '../@types/peering'
 import { EventKindsRange, PeeringTerm } from '../@types/settings'
 import { MAX_PEERING_KIND } from './peering-scope'
+import { isNip11FetchTargetSafe } from './relay-probe/nip11-probe'
 import { parseProbeTarget } from './relay-probe/target'
 
 const MAX_NIP11_RESPONSE_BYTES = 256 * 1024
@@ -144,6 +145,10 @@ export const fetchPeeringAdvertisement = async (
   const timeoutMs = options.timeoutMs ?? DEFAULT_NIP11_TIMEOUT_MS
   const url = nip11UrlForRelay(relayUrl)
 
+  if (!isNip11FetchTargetSafe(url)) {
+    throw new Error(`unable to read peering advertisement from ${relayUrl}: refused unsafe NIP-11 fetch target`)
+  }
+
   try {
     const response = await axios.get(url, {
       timeout: timeoutMs,
@@ -153,6 +158,12 @@ export const fetchPeeringAdvertisement = async (
       maxRedirects: 1,
       maxContentLength: MAX_NIP11_RESPONSE_BYTES,
       maxBodyLength: MAX_NIP11_RESPONSE_BYTES,
+      beforeRedirect: (redirect: { href?: string; protocol?: string; hostname?: string }) => {
+        const href = redirect.href ?? `${redirect.protocol ?? ''}//${redirect.hostname ?? ''}`
+        if (!isNip11FetchTargetSafe(href)) {
+          throw new Error(`refused redirect to unsafe NIP-11 target: ${href}`)
+        }
+      },
     })
 
     return parsePeeringAdvertisement(response.data)

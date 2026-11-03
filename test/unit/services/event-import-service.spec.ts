@@ -455,6 +455,81 @@ describe('EventImportService', () => {
     expect(vanishedPubkeys).to.deep.equal([vanish.pubkey])
   })
 
+  it('checks vanish state once per author within a batch', async () => {
+    const first: Event = {
+      id: 'a'.repeat(64),
+      pubkey: 'b'.repeat(64),
+      created_at: 1,
+      kind: 1,
+      tags: [],
+      content: 'one',
+      sig: 'c'.repeat(128),
+    }
+    const second: Event = { ...first, id: 'd'.repeat(64), content: 'two' }
+
+    let checks = 0
+    const eventRepository = {
+      create: async () => 1,
+      createMany: async (events: Event[]) => events.length,
+      upsert: async () => 0,
+      upsertMany: async (events: Event[]) => events.length,
+      deleteByPubkeyAndIds: async () => 0,
+    } as any
+
+    const persistBatch = createEventBatchPersister(eventRepository, {
+      userRepository: {
+        isVanished: async () => {
+          checks += 1
+          return false
+        },
+        setVanished: async () => 1,
+      },
+    })
+
+    const inserted = await persistBatch([first, second])
+
+    expect(inserted).to.equal(2)
+    expect(checks).to.equal(1)
+  })
+
+  it('does not apply a kind-62 request aimed at another relay', async () => {
+    const vanish: Event = {
+      id: 'a'.repeat(64),
+      pubkey: 'b'.repeat(64),
+      created_at: 1,
+      kind: EventKinds.REQUEST_TO_VANISH,
+      tags: [[EventTags.Relay, 'wss://other.example.com']],
+      content: 'vanish',
+      sig: 'c'.repeat(128),
+    }
+    const eventRepository = {
+      create: async () => 1,
+      createMany: async (events: Event[]) => events.length,
+      upsert: async () => 0,
+      upsertMany: async () => 0,
+      deleteByPubkeyAndIds: async () => 0,
+      deleteByPubkeyExceptKinds: async () => {
+        throw new Error('must not delete for another relay')
+      },
+    } as any
+    let vanished = 0
+    const persistBatch = createEventBatchPersister(eventRepository, {
+      relayUrl: 'wss://relay.example.com',
+      userRepository: {
+        isVanished: async () => false,
+        setVanished: async () => {
+          vanished += 1
+          return 1
+        },
+      },
+    })
+
+    const inserted = await persistBatch([vanish])
+
+    expect(inserted).to.equal(1)
+    expect(vanished).to.equal(0)
+  })
+
   it('drops ephemeral events without counting them as inserted', async () => {
     const ephemeral: Event = {
       id: 'a'.repeat(64),

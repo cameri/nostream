@@ -13,6 +13,14 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 /** Upper bound for one fetched id batch's EVENT payloads, independent of count. */
 export const PEERING_FETCH_MAX_BYTES = 8 * 1024 * 1024
 
+/** A fetch reply exceeded its byte budget. The worker retries with smaller batches. */
+export class PeeringFetchOverflowError extends Error {
+  public constructor() {
+    super('peer sent more event data than this request allows')
+    this.name = 'PeeringFetchOverflowError'
+  }
+}
+
 export interface PeeringSyncConnection {
   /** Reconciles one filter against the peer, returning the ids each side lacks. */
   reconcile(filter: SubscriptionFilter, items: ReconciliationItem[], timeoutMs?: number): Promise<ReconcileResult>
@@ -316,8 +324,7 @@ export class PeeringConnection implements PeeringSyncConnection {
         if (state.maxBytes !== undefined && state.receivedBytes > state.maxBytes) {
           this.clearRequest(state)
           this.requests.delete(subscriptionId)
-          state.reject?.(new Error('peer sent more event data than this request allows'))
-          this.close()
+          state.reject?.(new PeeringFetchOverflowError())
           return
         }
 

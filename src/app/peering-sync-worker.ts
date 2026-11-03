@@ -29,12 +29,12 @@ import {
   listEnabledPeeringPeers,
   parsePeeringPeerPubkey,
 } from '../utils/peering-auth'
-import { PeeringConnection, PeeringSyncConnection } from '../utils/peering-connection'
+import { PeeringConnection, PeeringFetchOverflowError, PeeringSyncConnection } from '../utils/peering-connection'
 import {
   isCurrentPeeringScope,
   peeringScopesToLiveFilters,
-  peeringScopeToFilter,
-  splitPeeringScope,
+  peeringScopeToFilters,
+  splitPeeringFilter,
 } from '../utils/peering-scope'
 import { PeeringSyncStateStore } from '../utils/peering-sync-state'
 import { SettingsStatic } from '../utils/settings'
@@ -45,6 +45,7 @@ export const PEERING_SYNC_RECONCILE_INTERVAL_MS = 15 * 60_000
 export const PEERING_SYNC_RECONNECT_DELAY_MS = 5_000
 export const PEERING_SYNC_EVENT_BATCH_SIZE = 500
 export const PEERING_SYNC_PEER_REFRESH_MS = 30_000
+export const PEERING_SYNC_STATE_HEARTBEAT_MS = 60_000
 export const PEERING_SYNC_MAX_PENDING_EVENTS = 500
 export const PEERING_SYNC_MAX_PENDING_EVENT_BYTES = 8 * 1024 * 1024
 export const PEERING_SYNC_MAX_SCOPE_SPLIT_DEPTH = 20
@@ -83,6 +84,7 @@ export interface PeeringSyncWorkerOptions {
   reconnectDelayMs?: number
   reconcileIntervalMs?: number
   peerRefreshMs?: number
+  stateHeartbeatMs?: number
   eventBatchSize?: number
 }
 
@@ -122,6 +124,7 @@ class PeeringPeerSession {
   private pendingEventBytes = 0
   private drainingEvents = false
   private readonly persistEvents: (events: Event[]) => Promise<number>
+  private stateHeartbeatTimer: NodeJS.Timeout | undefined
 
   public constructor(
     private readonly peer: PeeringPeer,
@@ -132,7 +135,12 @@ class PeeringPeerSession {
     > &
       Pick<
         PeeringSyncWorkerOptions,
-        'stateStore' | 'reconnectDelayMs' | 'reconcileIntervalMs' | 'eventBatchSize' | 'userRepository'
+        | 'stateStore'
+        | 'reconnectDelayMs'
+        | 'reconcileIntervalMs'
+        | 'eventBatchSize'
+        | 'userRepository'
+        | 'stateHeartbeatMs'
       >,
     private readonly callbacks: SessionCallbacks,
   ) {
@@ -145,10 +153,16 @@ class PeeringPeerSession {
     }
     this.persistEvents = createEventBatchPersister(eventRepository, {
       userRepository: options.userRepository,
+      relayUrl: settings().info?.relay_url,
     })
   }
 
   public start(): void {
+    this.stateHeartbeatTimer = setInterval(
+      () => this.publishStateHeartbeat(),
+      this.options.stateHeartbeatMs ?? PEERING_SYNC_STATE_HEARTBEAT_MS,
+    )
+    this.stateHeartbeatTimer.unref()
     void this.runLoop()
   }
 
@@ -163,6 +177,8 @@ class PeeringPeerSession {
 
     this.stopped = true
     clearInterval(this.reconcileTimer)
+    clearInterval(this.stateHeartbeatTimer)
+    this.stateHeartbeatTimer = undefined
     if (this.stateTimer) {
       clearTimeout(this.stateTimer)
       this.stateTimer = undefined
@@ -248,16 +264,19 @@ class PeeringPeerSession {
     this.connection = connection
     this.scopes = advertisement.scopes
 
-    await this.reconcile(connection, advertisement.scopes)
+    // Start the live feed first: a long history reconciliation can outlast the
+    // overlap window, and events published after its snapshot must still be
+    // delivered. Reconciliation and live writes are both duplicate-safe.
+    this.liveFilters = peeringScopesToLiveFilters(advertisement.scopes, Math.floor(Date.now() / 1000))
+    if (this.liveFilters.length) {
+      await connection.subscribe(this.liveFilters, (event) => this.queueEvent(event))
+    }
 
     if (this.stopped) {
       return
     }
 
-    this.liveFilters = peeringScopesToLiveFilters(advertisement.scopes, Math.floor(Date.now() / 1000))
-    if (this.liveFilters.length) {
-      await connection.subscribe(this.liveFilters, (event) => this.queueEvent(event))
-    }
+    await this.reconcile(connection, advertisement.scopes)
 
     if (this.stopped) {
       return
@@ -311,11 +330,22 @@ class PeeringPeerSession {
           return
         }
 
-        if (isCurrentPeeringScope(scope, startedAtSeconds)) {
-          currentFilters.push(peeringScopeToFilter(scope, startedAtSeconds))
+        const filters = peeringScopeToFilters(scope, startedAtSeconds)
+        const countCurrent = isCurrentPeeringScope(scope, startedAtSeconds)
+        if (countCurrent) {
+          currentFilters.push(...filters)
         }
 
-        newestCurrent = await this.reconcileScope(connection, scope, startedAtSeconds, needed, newestCurrent)
+        for (const filter of filters) {
+          newestCurrent = await this.reconcileFilter(
+            connection,
+            filter,
+            startedAtSeconds,
+            needed,
+            newestCurrent,
+            countCurrent,
+          )
+        }
       }
 
       const ids = [...needed.keys()]
@@ -328,11 +358,10 @@ class PeeringPeerSession {
         }
 
         const batch = ids.slice(offset, offset + batchSize)
-        const events = await connection.fetchEvents(batch)
-        const accepted = await this.acceptEvents(events, needed)
+        const result = await this.fetchAndStoreBatch(connection, batch, needed)
 
-        received += accepted.stored
-        for (const event of accepted.events) {
+        received += result.stored
+        for (const event of result.events) {
           if (currentFilters.some((filter) => isEventMatchingFilter(filter)(event))) {
             newestCurrent = newestCurrent === undefined ? event.created_at : Math.max(newestCurrent, event.created_at)
           }
@@ -364,23 +393,23 @@ class PeeringPeerSession {
     }
   }
 
-  private async reconcileScope(
+  private async reconcileFilter(
     connection: PeeringSyncConnection,
-    scope: PeeringScope,
+    filter: SubscriptionFilter,
     nowSeconds: number,
     needed: Map<string, SubscriptionFilter>,
     newestCurrent: number | undefined,
+    countCurrent: boolean,
     depth = 0,
   ): Promise<number | undefined> {
     if (this.stopped) {
       return newestCurrent
     }
 
-    const filter = peeringScopeToFilter(scope, nowSeconds)
     const items = await this.eventRepository.findReconciliationItems(filter)
     const newest = newestCreatedAt(items)
 
-    if (isCurrentPeeringScope(scope, nowSeconds) && newest !== undefined) {
+    if (countCurrent && newest !== undefined) {
       newestCurrent = newestCurrent === undefined ? newest : Math.max(newestCurrent, newest)
     }
 
@@ -398,20 +427,20 @@ class PeeringPeerSession {
         throw error
       }
 
-      const split = splitPeeringScope(scope, nowSeconds)
+      const split = splitPeeringFilter(filter, nowSeconds)
       if (!split) {
         throw error
       }
 
       logger.warn(
-        'peer %s rejected a scope as too large; splitting it in time (depth %d)',
+        'peer %s rejected a filter as too large; splitting it in time (depth %d)',
         this.peer.relayUrl,
         depth + 1,
       )
 
       let current = newestCurrent
       for (const child of split) {
-        current = await this.reconcileScope(connection, child, nowSeconds, needed, current, depth + 1)
+        current = await this.reconcileFilter(connection, child, nowSeconds, needed, current, countCurrent, depth + 1)
       }
 
       return current
@@ -444,7 +473,14 @@ class PeeringPeerSession {
       while (this.pendingEvents.length > 0 && !this.stopped) {
         const event = this.pendingEvents.shift() as Event
         this.pendingEventBytes = Math.max(0, this.pendingEventBytes - Buffer.byteLength(JSON.stringify(event)))
-        await this.applyLiveEvent(event)
+
+        try {
+          await this.applyLiveEvent(event)
+        } catch (error) {
+          // One bad event must not poison the queue or become an unhandled
+          // rejection; the next reconciliation can retry it.
+          logger.error('failed to apply live event from %s: %o', this.peer.relayUrl, error)
+        }
       }
     } finally {
       this.drainingEvents = false
@@ -452,15 +488,19 @@ class PeeringPeerSession {
   }
 
   private async applyLiveEvent(event: Event): Promise<void> {
-    // The live REQ carries a one-minute overlap, so re-check the rolling-window
-    // rule against the current time instead of trusting the connect-time filter.
-    const currentFilters = peeringScopesToLiveFilters(this.scopes, Math.floor(Date.now() / 1000))
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    // Persistence uses the scope's own bounds, not the subscription overlap:
+    // a late publish older than 60s is still valid for a scope without a
+    // rolling window.
+    const currentFilters = this.scopes
+      .filter((scope) => isCurrentPeeringScope(scope, nowSeconds))
+      .flatMap((scope) => peeringScopeToFilters(scope, nowSeconds))
+
     if (!currentFilters.some((filter) => isEventMatchingFilter(filter)(event))) {
       return
     }
 
     await this.acceptEvents([event], undefined, true)
-    const nowSeconds = Math.floor(Date.now() / 1000)
     const latestCreatedAt = Math.max(this.state.latestEventCreatedAt ?? 0, event.created_at)
 
     this.queueState({
@@ -468,6 +508,41 @@ class PeeringPeerSession {
       latestEventCreatedAt: latestCreatedAt,
       lagSeconds: Math.max(0, nowSeconds - latestCreatedAt),
     })
+  }
+
+  private async fetchAndStoreBatch(
+    connection: PeeringSyncConnection,
+    ids: string[],
+    needed: Map<string, SubscriptionFilter>,
+  ): Promise<{ stored: number; events: Event[] }> {
+    try {
+      const events = await connection.fetchEvents(ids)
+      const accepted = await this.acceptEvents(events, needed)
+
+      return { stored: accepted.stored, events: accepted.events }
+    } catch (error) {
+      if (!(error instanceof PeeringFetchOverflowError)) {
+        throw error
+      }
+
+      if (ids.length <= 1) {
+        logger.warn(
+          'peer %s sent an oversized event for %s; leaving it for the next reconciliation',
+          this.peer.relayUrl,
+          ids[0],
+        )
+        return { stored: 0, events: [] }
+      }
+
+      const midpoint = Math.ceil(ids.length / 2)
+      const left = await this.fetchAndStoreBatch(connection, ids.slice(0, midpoint), needed)
+      const right = await this.fetchAndStoreBatch(connection, ids.slice(midpoint), needed)
+
+      return {
+        stored: left.stored + right.stored,
+        events: [...left.events, ...right.events],
+      }
+    }
   }
 
   /**
@@ -575,6 +650,20 @@ class PeeringPeerSession {
       logger.warn('failed to record sync state for %s: %o', this.peer.relayUrl, error)
     }
   }
+
+  /** Keeps a long reconciliation from looking stale in the admin console. */
+  private publishStateHeartbeat(): void {
+    if (this.stopped || !this.options.stateStore) {
+      return
+    }
+
+    this.state = {
+      ...this.state,
+      updatedAt: new Date().toISOString(),
+    }
+    this.stateDirty = true
+    void this.flushState()
+  }
 }
 
 export class PeeringSyncWorker implements IRunnable {
@@ -646,6 +735,7 @@ export class PeeringSyncWorker implements IRunnable {
       reconnectDelayMs: this.options.reconnectDelayMs,
       reconcileIntervalMs: this.options.reconcileIntervalMs,
       eventBatchSize: this.options.eventBatchSize,
+      stateHeartbeatMs: this.options.stateHeartbeatMs,
     }
 
     for (const [id, peer] of desired) {

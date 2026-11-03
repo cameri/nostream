@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 
-import { parsePeeringAdvertisement } from '../../../src/utils/peering-advertisement'
+import { fetchPeeringAdvertisement, parsePeeringAdvertisement } from '../../../src/utils/peering-advertisement'
 
 describe('peering advertisement', () => {
   it('reads scopes and terms from the NIP-11 peering section', () => {
@@ -49,5 +49,14 @@ describe('peering advertisement', () => {
         },
       }),
     ).to.throw('window_seconds cannot be combined')
+  })
+
+  it('refuses to fetch an internal NIP-11 target', async () => {
+    const error = await fetchPeeringAdvertisement('ws://127.0.0.1:8008').then(
+      () => undefined,
+      (err: Error) => err,
+    )
+
+    expect(error?.message).to.include('refused unsafe NIP-11 fetch target')
   })
 })
