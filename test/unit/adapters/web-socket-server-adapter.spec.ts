@@ -1,17 +1,17 @@
-import * as rateLimiterMiddleware from '../../../src/handlers/request-handlers/rate-limiter-middleware'
-
 import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
+import EventEmitter from 'events'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
+import * as rateLimiterMiddleware from '../../../src/handlers/request-handlers/rate-limiter-middleware'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
 
 const { expect } = chai
 
-import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 import { WebSocketServerAdapter } from '../../../src/adapters/web-socket-server-adapter'
+import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 import * as shutdownState from '../../../src/utils/shutdown-state'
 
 describe('WebSocketServerAdapter', () => {
@@ -30,6 +30,16 @@ describe('WebSocketServerAdapter', () => {
     adapter.close(callback)
     await sandbox.clock.runAllAsync()
   }
+
+  const createMockClient = (overrides: Record<string, unknown> = {}) =>
+    Object.assign(new EventEmitter(), {
+      readyState: 1,
+      pause: sandbox.stub(),
+      resume: sandbox.stub(),
+      terminate: sandbox.stub(),
+      close: sandbox.stub(),
+      ...overrides,
+    })
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
@@ -133,8 +143,8 @@ describe('WebSocketServerAdapter', () => {
     it('drains connected WebSocket clients before closing the server', async () => {
       const drainAndCloseStub1 = sandbox.stub()
       const drainAndCloseStub2 = sandbox.stub()
-      const client1 = { readyState: 1, once: sandbox.stub().callsFake((_event: string, cb: () => void) => cb()) }
-      const client2 = { readyState: 1, once: sandbox.stub().callsFake((_event: string, cb: () => void) => cb()) }
+      const client1 = createMockClient()
+      const client2 = createMockClient()
 
       const mockAdapter1 = {
         drainAndClose: drainAndCloseStub1,
@@ -230,10 +240,9 @@ describe('WebSocketServerAdapter', () => {
 
   describe('onBroadcast', () => {
     it('emits event to adapters of all OPEN clients', async () => {
-      const OPEN = 1
       const emitStub = sandbox.stub()
 
-      const mockClient = { readyState: OPEN }
+      const mockClient = createMockClient()
       webSocketServer.clients = new Set([mockClient] as any)
 
       const mockAdapter = {
@@ -276,9 +285,8 @@ describe('WebSocketServerAdapter', () => {
   describe('onHeartbeat', () => {
     it('emits heartbeat to connected adapters on the heartbeat interval', async () => {
       const emitStub = sandbox.stub()
-      const OPEN = 1
 
-      const mockClient = { readyState: OPEN }
+      const mockClient = createMockClient()
       webSocketServer.clients = new Set([mockClient] as any)
 
       const mockWsAdapter = {
@@ -316,7 +324,7 @@ describe('WebSocketServerAdapter', () => {
         .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
       const onConnection = connectionCall.args[1]
 
-      const mockClient = {}
+      const mockClient = createMockClient()
       const mockReq = {
         headers: {},
         socket: { remoteAddress: '127.0.0.1' },
@@ -325,10 +333,120 @@ describe('WebSocketServerAdapter', () => {
       await onConnection(mockClient, mockReq)
 
       expect(createWebSocketAdapter).to.have.been.calledOnce
+      expect(mockClient.pause).to.have.been.calledOnce
+      expect(mockClient.resume).to.have.been.calledOnce
+    })
+
+    it('buffers and replays messages that arrive during the admission check', async () => {
+      let releaseRateLimit: ((limited: boolean) => void) | undefined
+      isRateLimitedStub.returns(
+        new Promise<boolean>((resolve) => {
+          releaseRateLimit = resolve
+        }),
+      )
+
+      const received: Buffer[] = []
+      createWebSocketAdapter.callsFake(([client]: [any]) => {
+        client.on('message', (data: Buffer) => received.push(data))
+        return { getClientId: () => 'test-id', getClientAddress: () => '127.0.0.1' }
+      })
+
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
+      const onConnection = connectionCall.args[1]
+      const mockClient = createMockClient()
+      const mockReq = { headers: {}, socket: { remoteAddress: '127.0.0.1' } }
+
+      const connection = onConnection(mockClient, mockReq)
+      const first = Buffer.from('["REQ","r1",{"kinds":[1]}]')
+      const second = Buffer.from('["EVENT",{}]')
+      mockClient.emit('message', first, false)
+      mockClient.emit('message', second, false)
+      releaseRateLimit?.(false)
+      await connection
+
+      expect(received).to.deep.equal([first, second])
+      expect(mockClient.resume).to.have.been.calledOnce
+      expect(createWebSocketAdapter).to.have.been.calledOnce
+    })
+
+    it('terminates rate-limited connections without replaying buffered messages', async () => {
+      let releaseRateLimit: ((limited: boolean) => void) | undefined
+      isRateLimitedStub.returns(
+        new Promise<boolean>((resolve) => {
+          releaseRateLimit = resolve
+        }),
+      )
+
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
+      const onConnection = connectionCall.args[1]
+      const mockClient = createMockClient()
+      const mockReq = { headers: {}, socket: { remoteAddress: '127.0.0.1' } }
+
+      const connection = onConnection(mockClient, mockReq)
+      mockClient.emit('message', Buffer.from('["REQ","r1",{}]'), false)
+      releaseRateLimit?.(true)
+      await connection
+
+      expect(mockClient.terminate).to.have.been.calledOnce
+      expect(createWebSocketAdapter).not.to.have.been.called
+      expect(mockClient.resume).not.to.have.been.called
+    })
+
+    it('closes connections that overflow the early-message buffer', async () => {
+      let releaseRateLimit: ((limited: boolean) => void) | undefined
+      isRateLimitedStub.returns(
+        new Promise<boolean>((resolve) => {
+          releaseRateLimit = resolve
+        }),
+      )
+
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
+      const onConnection = connectionCall.args[1]
+      const mockClient = createMockClient()
+      const mockReq = { headers: {}, socket: { remoteAddress: '127.0.0.1' } }
+
+      const connection = onConnection(mockClient, mockReq)
+      for (let index = 0; index < 65; index++) {
+        mockClient.emit('message', Buffer.from('[]'), false)
+      }
+      releaseRateLimit?.(false)
+      await connection
+
+      expect(mockClient.close).to.have.been.calledWith(1009, 'message backlog before admission')
+      expect(mockClient.resume).to.have.been.calledOnce
+      expect(createWebSocketAdapter).not.to.have.been.called
+    })
+
+    it('resumes the socket when admission finishes after the client started closing', async () => {
+      let releaseRateLimit: ((limited: boolean) => void) | undefined
+      isRateLimitedStub.returns(
+        new Promise<boolean>((resolve) => {
+          releaseRateLimit = resolve
+        }),
+      )
+
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
+      const onConnection = connectionCall.args[1]
+      const mockClient = createMockClient({ readyState: 2 })
+      const mockReq = { headers: {}, socket: { remoteAddress: '127.0.0.1' } }
+
+      const connection = onConnection(mockClient, mockReq)
+      releaseRateLimit?.(false)
+      await connection
+
+      expect(mockClient.resume).to.have.been.calledOnce
+      expect(createWebSocketAdapter).not.to.have.been.called
     })
 
     it('terminates rate-limited connections', async () => {
-      const terminateStub = sandbox.stub()
       isRateLimitedStub.resolves(true)
 
       const connectionCall = webSocketServer.on
@@ -336,7 +454,7 @@ describe('WebSocketServerAdapter', () => {
         .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
       const onConnection = connectionCall.args[1]
 
-      const mockClient = { terminate: terminateStub }
+      const mockClient = createMockClient()
       const mockReq = {
         headers: {},
         socket: { remoteAddress: '127.0.0.1' },
@@ -344,8 +462,9 @@ describe('WebSocketServerAdapter', () => {
 
       await onConnection(mockClient, mockReq)
 
-      expect(terminateStub).to.have.been.calledOnce
+      expect(mockClient.terminate).to.have.been.calledOnce
       expect(createWebSocketAdapter).not.to.have.been.called
+      expect(mockClient.resume).not.to.have.been.called
     })
 
     it('rejects new connections while draining', async () => {
