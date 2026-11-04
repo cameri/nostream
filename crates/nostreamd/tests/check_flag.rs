@@ -296,9 +296,9 @@ fn check_reports_a_ceiling_and_a_schema_fault_together() {
 
 #[test]
 fn check_reports_nothing_for_the_shipped_defaults() {
-    // With no user document, `settings` is the shipped defaults with `used_defaults` false, so a
-    // report that walked them would describe the document's own values as violations on a fresh
-    // install. The guard is what prevents it; without the guard this test sees two lines.
+    // With no user document, `settings` is the shipped defaults and the issue list is empty: the
+    // gate prints one line per issue, so it prints none. A report that walked the served values
+    // would describe the document's own values as violations on a fresh install.
     let directory = tempfile::tempdir().expect("tempdir");
 
     let config_dir = directory.path().to_string_lossy().into_owned();
