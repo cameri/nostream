@@ -86,26 +86,33 @@ budget ceiling, cap zero, cap ceiling, then the adaptive-pow rules.
 
 ## Why the two ceilings are two numbers
 
-**The budget's ceiling is 1 TiB, and it exists for the arithmetic.** `FrameBudget::admit` guards
-with `saturating_sub` —
+**The budget's ceiling is 1 TiB, and its reason is not the arithmetic.** `FrameBudget::admit`
+bounds its own counter at whatever the limit is: the guard —
 "            if bytes > self.limit_bytes.saturating_sub(accounted) {"
-(`crates/nostream-relay/src/sink.rs:158`) — and then adds unchecked —
-"                accounted + bytes," (`crates/nostream-relay/src/sink.rs:164`) — so a budget at
-`usize::MAX` makes the guard untrippable and the add overflow. 1 099 511 627 776 is 0.000006 % of
-`usize::MAX` (18 446 744 073 709 551 615), 16 777 215× of headroom:
+(`crates/nostream-relay/src/sink.rs:158`) — refuses the frame before the add that follows it —
+"                accounted + bytes," (`crates/nostream-relay/src/sink.rs:164`) — runs, so the
+stored total never exceeds the limit and the add has room at every limit, `usize::MAX` included.
+What a limit near `usize::MAX` costs is the bound itself: no frame is ever refused, the outbound
+queue grows without a refusing point, and the process dies of memory exhaustion instead of closing
+a socket. **A budget so large it can never refuse is not a budget, it is an absence of one.** The
+ceiling exists so a typo cannot produce that absence:
 "pub const MAX_FRAME_MEMORY_BUDGET_BYTES: u64 = 1024 * 1024 * 1024 * 1024;"
 (`crates/nostream-config/src/validate.rs:34`).
 
-**1 TiB is the published valve, not a tight bound, and this record says so.** Any value below about
-18.4 EB satisfies the overflow argument, so the number is not derived from the arithmetic: it is
-chosen to be obviously outside any deployment while leaving the add room. What it buys is that a
-stray digit cannot reach the arithmetic; what it does not claim is that 1 TiB of queued frames is a
-figure a host should aim at.
+**1 TiB is an absolute maximum, and the number behind it is scale, not arithmetic.** It is exactly
+2^40 bytes and 4096× the compiled default of 268 435 456 (256 MiB), so every figure a deployment
+could want is accepted with room to spare, while a value that would silently disable the bound —
+`10^15`, an exponent typed by mistake, a repeated digit — is refused at both doors. What the
+ceiling claims is that a document states a budget the relay can act on. What it does not claim is a
+memory figure a host should carry, and it is not read off the width of `usize`: it is a published
+valve, and this record says so rather than deriving it from the platform.
 
 **The cap's ceiling is computed, not chosen.** 131 072 = 1 099 511 627 776 ÷ 8 388 608, and in
 exponents **2^40 / 2^23 = 2^17 = 131 072 exactly**: the sockets whose full per-socket queues exhaust
-the budget's own ceiling. That is an absolute maximum the budget's ceiling implies, not a
-preference someone argued for, so the constant is that division rather than the product:
+the budget's own ceiling. The derivation is worth exactly what the budget's ceiling is worth —
+given 1 TiB as a bound the relay acts on, this is the socket count that exhausts it — and it is an
+absolute maximum the budget's ceiling implies, not a preference someone argued for, so the constant
+is that division rather than the product:
 "pub const MAX_CONNECTIONS_PER_IP: u64 = MAX_FRAME_MEMORY_BUDGET_BYTES / FRAME_QUEUE_BYTES;"
 (`crates/nostream-config/src/validate.rs:42`), with the divisor repeated beside it
 (`crates/nostream-config/src/validate.rs:27`) because `nostream-config` cannot depend on
@@ -126,7 +133,7 @@ resident-memory figure: the accounting it lands in is outbound payload, not RSS
 ## Where the arithmetic runs out
 
 No per-socket cost and no descriptor limit exists in this tree —
-`grep -rn "rlimit\|NOFILE\|file descriptor" crates docs/rewrite` prints nothing — so the cap's
+`grep -rn "rlimit\|NOFILE\|file descriptor" crates` prints nothing — so the cap's
 ceiling cannot be argued from a host's descriptor table, and this record does not pretend it was.
 The number is what the relay's own units produce: the sockets whose queues exhaust the budget's
 ceiling. A host whose `RLIMIT_NOFILE` is below 131 072 will bind first; that is a deployment fact
@@ -138,11 +145,12 @@ Each of these was measured on this branch after the change:
 
 - A document with an over-ceiling value is **discarded whole** by `load`
   (`crates/nostream-config/src/load.rs:419-425`); the relay serves the shipped defaults, including
-  the operator's other keys. One class of document therefore ends up strictly worse than it did
-  before this job: a cap anywhere in `131 073..=2^40` was inside the shipped `MAX_SETTING_BOUND`
-  and ran with the number the file stated, and now it loses every key in the file. That is the
-  accepted cost of giving the cap its own ceiling rather than the budget's, stated here because
-  it is the only outcome this change makes worse.
+  the operator's other keys. **Two things are now worse.** Any value above either key's new
+  ceiling discards the whole document, where base defaulted that key alone and kept every other key
+  the operator wrote at exit 0 — the budget above `2^40` and the cap above `2^40` included, both of
+  which base kept. And a cap in `131 073..=2^40` additionally loses a value base ran as written,
+  because it was inside the shipped `MAX_SETTING_BOUND`. Both are the accepted cost of giving the
+  cap its own ceiling rather than the budget's.
 - At start-up stderr carries one `{path}: {message}` line per issue
   (`crates/nostreamd/src/settings_gate.rs:32`) and then
   `nostreamd: continuing on the shipped defaults (N issue(s) in the user settings)`
@@ -191,7 +199,7 @@ beside them: `SafeNonNegativeIntegerAtMost(MAX_FRAME_MEMORY_BUDGET_BYTES)`
 also why `validate` returns `Option<String>` (`crates/nostream-config/src/guided.rs:34`). The two
 entries serialize as `{"safe_non_negative_integer_at_most": <ceiling>}`; the other fourteen keep the
 plain string. **The `0` gap stays open**: the editor still accepts a `0` the document validator
-refuses, which is the gap `docs/rewrite/decisions/0008-frame-memory-budget.md:602-623` records, and this job adds the
+refuses, which is the gap `docs/rewrite/decisions/0008-frame-memory-budget.md:605-626` records, and this job adds the
 ceiling only.
 
 ## What this does not decide
@@ -214,6 +222,6 @@ ceiling only.
 The two bounds now have both ends in one place: `validate_document` refuses a stated zero and a
 stated value above the key's own ceiling, by name, with the value and the ceiling in the sentence.
 The relay runs whatever the validator accepted, both doors report the same issues with the same exit
-code, and the two ceilings are two numbers because the two keys mean two things — 1 TiB of queued
-payload against the unchecked add, and 2^40 / 2^23 = 2^17 = 131 072 sockets against the budget's own
-ceiling.
+code, and the two ceilings are two numbers because the two keys mean two things — 1 TiB as the
+largest budget the relay can act on, and 2^40 / 2^23 = 2^17 = 131 072 sockets as the count that
+exhausts it.
