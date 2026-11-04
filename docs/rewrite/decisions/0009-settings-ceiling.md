@@ -35,7 +35,7 @@ unit.
 **Why one bad number takes the whole file.** `load` validates the merged document and, on any issue
 at all, substitutes the shipped defaults for the whole document and sets `used_defaults`:
 "    if !issues.is_empty() {"
-(`crates/nostream-config/src/load.rs:418`) returns the substitution at
+(`crates/nostream-config/src/load.rs:419`) returns the substitution at
 `crates/nostream-config/src/load.rs:419-425`. An `Issue` therefore does not drop one key; it
 discards the operator's file. That is the cost every rule in this validator already pays, and it is
 the reason each message has to be self-sufficient.
@@ -51,16 +51,16 @@ The four lines, verbatim from this branch's tree, each quoted above its citation
 `docs/rewrite/decisions/0008-frame-memory-budget.md:392-399` quotes the two zero rules:
 
 "            \"frameMemoryBudgetBytes must be greater than 0\","
-(`crates/nostream-config/src/validate.rs:129`)
+(`crates/nostream-config/src/validate.rs:131`)
 
 "                \"the file states {number}; frameMemoryBudgetBytes must be at most 1099511627776\""
-(`crates/nostream-config/src/validate.rs:142`)
+(`crates/nostream-config/src/validate.rs:144`)
 
 "            \"maxConnectionsPerIp must be greater than 0\","
-(`crates/nostream-config/src/validate.rs:153`)
+(`crates/nostream-config/src/validate.rs:155`)
 
 "            format!(\"the file states {number}; maxConnectionsPerIp must be at most 131072\"),"
-(`crates/nostream-config/src/validate.rs:164`)
+(`crates/nostream-config/src/validate.rs:166`)
 
 **The ceiling message carries three facts, because the substitution leaves nothing else.** `Issue`
 renders as `{path}: {message}` (`crates/nostream-config/src/issue.rs:27-30`), so the path is the
@@ -79,8 +79,8 @@ value is interpolated because it is the operator's, and the whole-issue-vector t
 `crates/nostream-config/tests/validator.rs` keep the literal and the constant in step.
 
 **Only a JSON number takes either rule**, so a wrong type stays the shape walk's single finding —
-"    if let Some(budget @ Value::Number(number)) =" (`crates/nostream-config/src/validate.rs:135`)
-and the same guard over the cap (`crates/nostream-config/src/validate.rs:158`) — which is the
+"    if let Some(budget @ Value::Number(number)) =" (`crates/nostream-config/src/validate.rs:137`)
+and the same guard over the cap (`crates/nostream-config/src/validate.rs:160`) — which is the
 guarantee #996 wrote for the floor. The rules run in the validator's fixed order: budget zero,
 budget ceiling, cap zero, cap ceiling, then the adaptive-pow rules.
 
@@ -94,7 +94,7 @@ with `saturating_sub` —
 `usize::MAX` makes the guard untrippable and the add overflow. 1 099 511 627 776 is 0.000006 % of
 `usize::MAX` (18 446 744 073 709 551 615), 16 777 215× of headroom:
 "pub const MAX_FRAME_MEMORY_BUDGET_BYTES: u64 = 1024 * 1024 * 1024 * 1024;"
-(`crates/nostream-config/src/validate.rs:32`).
+(`crates/nostream-config/src/validate.rs:34`).
 
 **1 TiB is the published valve, not a tight bound, and this record says so.** Any value below about
 18.4 EB satisfies the overflow argument, so the number is not derived from the arithmetic: it is
@@ -107,16 +107,19 @@ exponents **2^40 / 2^23 = 2^17 = 131 072 exactly**: the sockets whose full per-s
 the budget's own ceiling. That is an absolute maximum the budget's ceiling implies, not a
 preference someone argued for, so the constant is that division rather than the product:
 "pub const MAX_CONNECTIONS_PER_IP: u64 = MAX_FRAME_MEMORY_BUDGET_BYTES / FRAME_QUEUE_BYTES;"
-(`crates/nostream-config/src/validate.rs:40`), with the divisor repeated beside it
-(`crates/nostream-config/src/validate.rs:25`) because `nostream-config` cannot depend on
+(`crates/nostream-config/src/validate.rs:42`), with the divisor repeated beside it
+(`crates/nostream-config/src/validate.rs:27`) because `nostream-config` cannot depend on
 `nostream-relay`, where the same 8 MiB is a default:
 "            frame_queue_bytes: 8 * 1024 * 1024," (`crates/nostream-relay/src/relay.rs:85`).
 
 **The cap is reachable, and it bounds queued bytes rather than resident memory.** The shipped
 attempt windows admit 12 connections a second and 48 a minute from one address
-(`resources/default-settings.yaml:300-304`), so 131 072 sockets is about three hours of a single
-address's full allowance — unusual, and not impossible. What the ceiling bounds is the queued
-payload one address may hold at the budget's ceiling, 131 072 × 8 MiB = 1 TiB. It is not a
+(`resources/default-settings.yaml:300-304`), and `connection_limited` counts every window and
+refuses on any trip (`crates/nostream-relay/src/limits.rs:485-504`), so the minute window is the
+binding one: 48 ÷ 60 s = 0.8 sockets a second, and 131 072 ÷ 0.8 = 163 840 s ≈ 45.5 hours of a
+single address's full allowance — unusual, and not impossible. The 12-a-second window alone would
+admit them in 131 072 ÷ 12 ≈ 10 923 s ≈ 3 hours, and it never binds. What the ceiling bounds is the
+queued payload one address may hold at the budget's ceiling, 131 072 × 8 MiB = 1 TiB. It is not a
 resident-memory figure: the accounting it lands in is outbound payload, not RSS
 (`docs/rewrite/decisions/0008-frame-memory-budget.md:54-66`).
 
@@ -135,7 +138,11 @@ Each of these was measured on this branch after the change:
 
 - A document with an over-ceiling value is **discarded whole** by `load`
   (`crates/nostream-config/src/load.rs:419-425`); the relay serves the shipped defaults, including
-  the operator's other keys.
+  the operator's other keys. One class of document therefore ends up strictly worse than it did
+  before this job: a cap anywhere in `131 073..=2^40` was inside the shipped `MAX_SETTING_BOUND`
+  and ran with the number the file stated, and now it loses every key in the file. That is the
+  accepted cost of giving the cap its own ceiling rather than the budget's, stated here because
+  it is the only outcome this change makes worse.
 - At start-up stderr carries one `{path}: {message}` line per issue
   (`crates/nostreamd/src/settings_gate.rs:32`) and then
   `nostreamd: continuing on the shipped defaults (N issue(s) in the user settings)`
@@ -192,7 +199,7 @@ ceiling only.
 - **What a socket costs.** No measurement and no descriptor limit exists in the tree, so the cap's
   reachability rests on the attempt limiter rather than on a host's capacity.
 - **The 8 MiB divisor.** `FRAME_QUEUE_BYTES` is repeated in `nostream-config`
-  (`crates/nostream-config/src/validate.rs:25`) rather than shared, because the alternative is a
+  (`crates/nostream-config/src/validate.rs:27`) rather than shared, because the alternative is a
   relay default with a second home or a dependency edge this job deletes. No test asserts 8 388 608
   as a default, so nothing catches the two drifting; the constant's doc says where it comes from.
 - **The TypeScript application.** `src/` knows neither key, so no parity case can encode either

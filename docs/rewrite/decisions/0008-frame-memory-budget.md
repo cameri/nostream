@@ -485,7 +485,7 @@ anything: the fit guard subtracts with
 debug build and wraps in a release one, and a wrapped counter refills the budget it was meant to
 exhaust. The ceiling is what keeps an operator's number out of that arithmetic:
 "pub const MAX_FRAME_MEMORY_BUDGET_BYTES: u64 = 1024 * 1024 * 1024 * 1024;"
-(`crates/nostream-config/src/validate.rs:32`). ~~One number serves both keys because one predicate reads
+(`crates/nostream-config/src/validate.rs:34`). ~~One number serves both keys because one predicate reads
 them, and each reads it in its own unit: 1 099 511 627 776 **bytes** is 1 TiB of queued frames for
 `network.frameMemoryBudgetBytes`, and 1 099 511 627 776 **sockets** for
 `limits.connection.maxConnectionsPerIp` — a count no deployment reaches, and the reason the cap's
