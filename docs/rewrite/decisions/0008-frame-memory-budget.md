@@ -101,7 +101,7 @@ read: "let mut relay_config = RelayConfig::from_settings(&settings);"
 Now the validator is the only reader of either setting's *range*, and this constructor takes every
 present leaf as written (`0009-settings-ceiling.md`).
 ~~The two cannot disagree because `bound_refusal` **asks `in_range` first** rather than comparing the
-ceiling a second time — "    if in_range(value) {" (`crates/nostream-relay/src/relay.rs:155`) *(deleted by job 022)* — so a
+ceiling a second time — "    if in_range(value) {" (`crates/nostream-relay/src/relay.rs:154`) *(deleted by job 022)* — so a
 value the constructor accepts is never reported as refused, and a typed edit that retyped the
 comparison would fail `the_refusal_verdict_and_the_range_agree_at_every_boundary`
 (`crates/nostream-relay/tests/config_defaults.rs`), which asserts the verdict at zero, one, the
