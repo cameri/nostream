@@ -147,10 +147,11 @@ Each of these was measured on this branch after the change:
   (`crates/nostream-config/src/load.rs:419-425`); the relay serves the shipped defaults, including
   the operator's other keys. **Two things are now worse.** Any value above either key's new
   ceiling discards the whole document, where base defaulted that key alone and kept every other key
-  the operator wrote at exit 0 — the budget above `2^40` and the cap above `2^40` included, both of
-  which base kept. And a cap in `131 073..=2^40` additionally loses a value base ran as written,
-  because it was inside the shipped `MAX_SETTING_BOUND`. Both are the accepted cost of giving the
-  cap its own ceiling rather than the budget's.
+  the operator wrote at exit 0 — the budget above `2^40` and the cap above `2^40` included, where base
+  kept the document and defaulted only that key. And a cap in `131 073..=2^40` additionally loses a
+  value base ran as written, because it was inside the shipped `MAX_SETTING_BOUND`. Both are the
+  accepted cost of a ceiling that refuses rather than defaults; the second is additionally the cost of
+  giving the cap its own ceiling.
 - At start-up stderr carries one `{path}: {message}` line per issue
   (`crates/nostreamd/src/settings_gate.rs:32`) and then
   `nostreamd: continuing on the shipped defaults (N issue(s) in the user settings)`
