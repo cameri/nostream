@@ -3,10 +3,10 @@
 - **Status:** accepted (job 016, Phase 2)
 - **Deciders:** the rewrite team, on the operator's policy comment on #959 and the evidence in job 016's recon and spec
 - **Date:** 2026-10-24
-- **Reading the strikethrough:** a `path:line` inside `~~…~~` names code a later job deleted, and
-  is resolved with `git show <rev>:<path>` at the revision that passage was written for, not in
-  this tree; the live sentence beside each strike says what replaced it. Every citation outside
-  `~~…~~` was read against this tree by job 022.
+- **Reading the strikethrough:** `~~…~~` marks a claim a later job superseded, replaced by the live
+  sentence beside it or by `0009-settings-ceiling.md`; a `path:line` inside a strike is at its line
+  here, or marked *(deleted by job 022)*. Citations outside `~~…~~` were read against this tree,
+  except the five base-numbered self-references in *Why rejection, and not a fallback*.
 
 ## Context
 
@@ -39,7 +39,7 @@ reason and its own counter.
 
 The capture has neither bound. Its connection limits are `ConnectionLimits` — `rateLimits`,
 `ipWhitelist`, `ipBlacklist` and no count, in the capture's settings types — and its outbound
-queue is unbounded (`src/adapters/web-socket-adapter.ts:150-155`). Both numbers below are therefore
+queue is unbounded (`src/adapters/web-socket-adapter.ts:191-196`). Both numbers below are therefore
 deviations from the capture, and both are correct because the operator's comment names them, not
 because a captured transcript shows them. There is no parity oracle for either: `wire_parity` cannot
 see a bound the capture does not have.
@@ -96,12 +96,12 @@ read: "let mut relay_config = RelayConfig::from_settings(&settings);"
 (`crates/nostreamd/src/main.rs:110`). ~~One other function walks the same two leaves —
 `refused_bounds`, so the gate and the CLI can report a value the constructor will not take:
 "pub fn refused_bounds(settings: &Settings) -> Vec<(&'static str, BoundRefusal)> {"
-(`crates/nostream-relay/src/relay.rs:130`). It never produces a config;
+(`crates/nostream-relay/src/relay.rs:130`) *(deleted by job 022)*. It never produces a config;
 `from_settings` is the only reader whose answer the relay runs with.~~
 Now the validator is the only reader of either setting's *range*, and this constructor takes every
 present leaf as written (`0009-settings-ceiling.md`).
 ~~The two cannot disagree because `bound_refusal` **asks `in_range` first** rather than comparing the
-ceiling a second time — "    if in_range(value) {" (`crates/nostream-relay/src/relay.rs:155`) — so a
+ceiling a second time — "    if in_range(value) {" (`crates/nostream-relay/src/relay.rs:155`) *(deleted by job 022)* — so a
 value the constructor accepts is never reported as refused, and a typed edit that retyped the
 comparison would fail `the_refusal_verdict_and_the_range_agree_at_every_boundary`
 (`crates/nostream-relay/tests/config_defaults.rs`), which asserts the verdict at zero, one, the
@@ -465,7 +465,7 @@ constructor.
 
 **The constructor takes a present leaf as written.** The validator has already answered the range
 question, so this constructor has none — ~~`in_range` answers the ceiling question and nothing else,
-"    value <= MAX_SETTING_BOUND as u64" (`crates/nostream-relay/src/relay.rs:115`)~~ — and it reads
+"    value <= MAX_SETTING_BOUND as u64" (`crates/nostream-relay/src/relay.rs:115`) *(deleted by job 022)*~~ — and it reads
 the budget leaf at
 "        if let Some(bytes) = settings.network.frame_memory_budget_bytes {"
 (`crates/nostream-relay/src/relay.rs:119`) and the cap through the two optional levels the
@@ -510,12 +510,12 @@ second. A value-level fallback is this repository's policy for an **over-range**
 ceiling keeps the fallback and only the zero becomes an issue. The three places an operator looks
 report it: `in_range` stays the one range question, and `bound_refusal` says why —
 "pub fn bound_refusal(value: u64) -> Option<BoundRefusal> {"
-(`crates/nostream-relay/src/relay.rs:153`).~~ #998 ended the fallback: the ceiling is an issue at
+(`crates/nostream-relay/src/relay.rs:153`) *(deleted by job 022)*.~~ #998 ended the fallback: the ceiling is an issue at
 both doors, and the relay serves the shipped defaults (`0009-settings-ceiling.md`).
 
 ~~At start-up the constructor warns, once per leaf —
 "            \"a bound above its ceiling runs with its default\""
-(`crates/nostream-relay/src/relay.rs:180`) — naming the setting, the value, the ceiling and the
+(`crates/nostream-relay/src/relay.rs:180`) *(deleted by job 022)* — naming the setting, the value, the ceiling and the
 default. There is no zero arm, because a zero never reaches the constructor from a loaded
 document: it is an issue, and the daemon continues on the shipped defaults.
 `warn!` rather than `debug!` because the start-up line is a one-off statement about a
@@ -524,13 +524,13 @@ configuration that is wrong, not a per-request event, so it is not log-amplifiab
 ~~**One place produces the words.** `refusal_message` sits beside the decision, so neither door can
 phrase the over-ceiling sentence differently:
 "pub fn refusal_message(setting: &str, reason: BoundRefusal) -> String {"
-(`crates/nostream-relay/src/relay.rs:163`).~~
+(`crates/nostream-relay/src/relay.rs:163`) *(deleted by job 022)*.~~
 
 ~~`--check` prints it through the gate —
 "            eprintln!(\"{}\", refusal_message(setting, reason));"
-(`crates/nostreamd/src/settings_gate.rs:34`) — and `nostream-cli config validate`, the other
+(`crates/nostreamd/src/settings_gate.rs:34`) *(deleted by job 022)* — and `nostream-cli config validate`, the other
 read-only door, appends the same strings to its verdict
-(`crates/nostream-cli/src/config.rs:84-98`), from the same `refused_bounds` walk. The gate is not a
+(`crates/nostream-cli/src/config.rs:84-98`) *(deleted by job 022)*, from the same `refused_bounds` walk. The gate is not a
 `tracing` line because `--check` returns before the subscriber exists: the gate writes outside the
 filter by design (`crates/nostreamd/src/settings_gate.rs:8-17`), so the report is reached at the
 shipped level.~~
@@ -607,10 +607,10 @@ cap alone cannot be read as a memory ceiling, and the shipped `64 × 8 MiB` is o
 not the process's.
 
 ~~**The guided catalogue still does not bound these two.** The catalogue has two validators —
-"    SafeNonNegativeInteger," (`crates/nostream-config/src/guided.rs:25`) and `NonEmpty` — and
+"    SafeNonNegativeInteger," (`crates/nostream-config/src/guided.rs:27`) and `NonEmpty` — and
 `SafeNonNegativeInteger`'s ceiling is the capture's maximum safe integer:
 "        Ok(number) if number <= 9_007_199_254_740_991 => None,"
-(`crates/nostream-config/src/guided.rs:77`). That is the capture's only number validator
+(`crates/nostream-config/src/guided.rs:86`). That is the capture's only number validator
 (`src/utils/settings-guided-schema.ts` has one), so both entries carry it as its precedent
 `network.maxPayloadSize` does, and an editor accepts about 9 exabytes of budget and about 9
 quadrillion sockets — values the constructor then treats as the shipped default, at the operator's
@@ -623,8 +623,8 @@ two jobs. **The consequence is stated rather than hidden:** the editor's validat
 that the document validator refuses, so a `0` typed in the guided editor is saved and then reported
 by both doors. That is the same gap, from the other side, and it closes when the bounded validator
 lands. Both entries now state only the unit — "Frame memory budget (bytes)"
-(`crates/nostream-config/src/guided.rs:210`) and "Max connections per IP (sockets)"
-(`crates/nostream-config/src/guided.rs:273`) — because the `0 meaning the default` label #989 gave
+(`crates/nostream-config/src/guided.rs:235`) and "Max connections per IP (sockets)"
+(`crates/nostream-config/src/guided.rs:298`) — because the `0 meaning the default` label #989 gave
 them would now teach the opposite of what the file accepts.~~ #998 gives both entries
 `SafeNonNegativeIntegerAtMost` with the validator's own ceiling, and leaves the `0` gap open
 (`0009-settings-ceiling.md`).
