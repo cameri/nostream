@@ -4,9 +4,9 @@
 - **Deciders:** the rewrite team, on the operator's policy comment on #959 and the evidence in job 016's recon and spec
 - **Date:** 2026-10-24
 - **Reading the strikethrough:** `~~…~~` marks a claim a later job superseded, replaced by the live
-  sentence beside it or by `0009-settings-ceiling.md`; a `path:line` inside a strike is at its line
-  here, or marked *(deleted by job 022)*. Citations outside `~~…~~` were read against this tree,
-  except the five base-numbered self-references in *Why rejection, and not a fallback*.
+  sentence beside it or by `0009-settings-ceiling.md`. A `path:line` in a strike is at its line here,
+  or is marked *(deleted by job 022)* and resolves with `git show <rev>:<path>`. Live citations were
+  read in this tree, except the five base-numbered self-references in *Why rejection, and not a fallback*.
 
 ## Context
 
