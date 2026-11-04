@@ -27,10 +27,10 @@ use crate::value::{
 const FRAME_QUEUE_BYTES: u64 = 8 * 1024 * 1024;
 
 /// The largest `network.frameMemoryBudgetBytes` the validator accepts: 1 TiB.
-/// `FrameBudget::admit` guards with `saturating_sub` and then adds unchecked
-/// (`crates/nostream-relay/src/sink.rs:164`), so a budget near `usize::MAX` makes the guard
-/// untrippable and the add overflow. 1 TiB is 0.000006 % of `usize::MAX` (a factor of
-/// 16 777 215): a safety valve against a stray digit, not a deployment figure (ADR 0009).
+/// `FrameBudget::admit` bounds its counter at this value for any value — the guard
+/// (`crates/nostream-relay/src/sink.rs:158`) refuses before the add at `:164` runs — so the
+/// ceiling is not an overflow bound: a limit near `usize::MAX` never refuses a frame, which is
+/// no budget at all. 1 TiB is 4096× the default: a valve against a stray digit, not a deployment.
 pub const MAX_FRAME_MEMORY_BUDGET_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 
 /// The largest `limits.connection.maxConnectionsPerIp` the validator accepts: 131 072, the
