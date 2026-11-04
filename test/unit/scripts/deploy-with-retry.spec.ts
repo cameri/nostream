@@ -140,9 +140,7 @@ const resolveOnPath = (command: string): string | undefined => {
 // or they would fail on a laptop and pass in CI.
 const RETRY_WARNING = /::warning::wrangler deploy attempt/g
 
-describe('deploy-with-retry.sh', function () {
-  this.timeout(10_000)
-
+describe('deploy-with-retry.sh', () => {
   let dir: string
 
   beforeEach(() => {
@@ -221,13 +219,7 @@ describe('deploy-with-retry.sh', function () {
 
     expect(result.status, result.stderr).to.equal(0)
     expect(result.attempts).to.equal(1)
-    expect(result.args).to.deep.equal([
-      'deploy',
-      '--config',
-      'wrangler.router.jsonc',
-      '--var',
-      'CANONICAL_HOST:nostream.dev',
-    ])
+    expect(result.args).to.deep.equal(['deploy', '--config', 'wrangler.router.jsonc', '--var', 'CANONICAL_HOST:nostream.dev'])
   })
 
   it('keeps an argument that contains spaces as one argument', () => {
