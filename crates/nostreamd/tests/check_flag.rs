@@ -152,13 +152,14 @@ fn check_accepts_an_operator_file_that_sets_both_bounds() {
 }
 
 #[test]
-fn check_reports_a_bound_it_would_replace_with_the_default() {
-    // The key and the number are both valid, so this is not an issue and not fatal — but a value
-    // discarded at start-up used to be silent, and `--check` is where an operator looks first.
+fn check_accepts_both_bounds_at_their_ceilings() {
+    // The ceilings are the largest values the validator accepts, so the document is the
+    // operator's and the relay runs with both numbers as written: one `settings valid` line,
+    // nothing on stderr (#998, ADR 0009).
     let directory = tempfile::tempdir().expect("tempdir");
     std::fs::write(
         directory.path().join("settings.yaml"),
-        "network:\n  frameMemoryBudgetBytes: 1099511627777\nlimits:\n  connection:\n    maxConnectionsPerIp: 1099511627777\n",
+        "network:\n  frameMemoryBudgetBytes: 1099511627776\nlimits:\n  connection:\n    maxConnectionsPerIp: 131072\n",
     )
     .expect("write");
 
@@ -167,20 +168,51 @@ fn check_reports_a_bound_it_would_replace_with_the_default() {
         Duration::from_secs(30),
         &["--check", "--config-dir", &config_dir],
     );
-    assert_eq!(code, Some(0), "exit code");
+    assert_eq!(code, Some(0), "exit code; stderr: {stderr}");
     assert_eq!(stdout.trim(), "settings valid: 0 issues");
-    // Whole lines, not prefixes: dropping the second clause must fail here.
+    assert_eq!(stderr, "");
+}
+
+#[test]
+fn check_refuses_bounds_above_their_ceilings() {
+    // A value above its ceiling is the operator's literal and the key is a valid key, but the
+    // validator refuses it like a zero: `load` discards the whole document, so the verdict, the
+    // exit code and the door all say so, and each line names the value the file states beside
+    // the ceiling it crossed (#998, ADR 0009).
+    let directory = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        directory.path().join("settings.yaml"),
+        "network:\n  frameMemoryBudgetBytes: 1099511627777\nlimits:\n  connection:\n    maxConnectionsPerIp: 131073\n",
+    )
+    .expect("write");
+
+    let config_dir = directory.path().to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run_check(
+        Duration::from_secs(30),
+        &["--check", "--config-dir", &config_dir],
+    );
+    assert_eq!(code, Some(2), "exit code; stderr: {stderr}");
+    assert!(!stdout.contains("settings valid"), "stdout: {stdout}");
+    // Whole lines, not prefixes: the key, the stated value and the ceiling all have to be there.
     assert!(
         stderr.contains(
-            "network.frameMemoryBudgetBytes: above the 1099511627776 a bound accepts; the key's value is ignored"
+            "network.frameMemoryBudgetBytes: the file states 1099511627777; frameMemoryBudgetBytes must be at most 1099511627776"
         ),
         "stderr: {stderr}"
     );
     assert!(
         stderr.contains(
-            "limits.connection.maxConnectionsPerIp: above the 1099511627776 a bound accepts; the key's value is ignored"
+            "limits.connection.maxConnectionsPerIp: the file states 131073; maxConnectionsPerIp must be at most 131072"
         ),
         "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("settings invalid: 2 issues"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("above the"),
+        "the ceiling is an issue, not a report: {stderr}"
     );
 }
 
@@ -227,10 +259,11 @@ fn check_refuses_a_zero_bound() {
 }
 
 #[test]
-fn check_reports_the_schema_fault_and_not_a_bound_it_cannot_read() {
-    // On a rejected document `load` substitutes the shipped defaults, so there is no operator
-    // number left to describe: the gate is unconditional but has nothing to walk. This pins that
-    // it does not invent a range line, and that the exit code stays the schema verdict (2).
+fn check_reports_a_ceiling_and_a_schema_fault_together() {
+    // A rejected document is still the operator's document: the issue list is what `load`
+    // collected before it substituted the shipped defaults, so the schema fault and the ceiling
+    // both reach the door, in that order, and the exit code is the shared invalid verdict
+    // (#998, ADR 0009).
     let directory = tempfile::tempdir().expect("tempdir");
     std::fs::write(
         directory.path().join("settings.yaml"),
@@ -249,14 +282,23 @@ fn check_reports_the_schema_fault_and_not_a_bound_it_cannot_read() {
         stderr.contains("strategy must be ewma or sliding_window"),
         "stderr: {stderr}"
     );
-    assert!(!stderr.contains("above the"), "no range line: {stderr}");
+    assert!(
+        stderr.contains(
+            "network.frameMemoryBudgetBytes: the file states 1099511627777; frameMemoryBudgetBytes must be at most 1099511627776"
+        ),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("settings invalid: 2 issues"),
+        "stderr: {stderr}"
+    );
 }
 
 #[test]
 fn check_reports_nothing_for_the_shipped_defaults() {
-    // With no user document, `settings` is the shipped defaults with `used_defaults` false, so a
-    // report that walked them would describe the document's own values as violations on a fresh
-    // install. The guard is what prevents it; without the guard this test sees two lines.
+    // With no user document, `settings` is the shipped defaults and the issue list is empty: the
+    // gate prints one line per issue, so it prints none. A report that walked the served values
+    // would describe the document's own values as violations on a fresh install.
     let directory = tempfile::tempdir().expect("tempdir");
 
     let config_dir = directory.path().to_string_lossy().into_owned();

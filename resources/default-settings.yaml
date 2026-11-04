@@ -208,9 +208,9 @@ peering:
 network:
   maxPayloadSize: 524288
   # The queued outbound payload bytes every socket of this relay shares. Unit: bytes; the guided
-  # editor calls it "Frame memory budget (bytes)". Defaults to 268435456 (256 MiB); a stated 0 is
-  # refused by the validator, and a value above 1099511627776 (1 TiB) keeps the default
-  # (ADR 0008).
+  # editor calls it "Frame memory budget (bytes)". Defaults to 268435456 (256 MiB). A stated 0 is
+  # invalid, and so is a value above 1099511627776 (1 TiB); either is an issue, which discards this
+  # file and serves the shipped defaults (ADR 0009).
   frameMemoryBudgetBytes: 268435456
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
   # remoteIpHeader: x-forwarded-for
@@ -292,9 +292,9 @@ limits:
       - "::ffff:10.10.10.1"
   connection:
     # The live sockets one source address may hold at once. Unit: sockets; the guided editor calls
-    # it "Max connections per IP (sockets)". Defaults to 64; a stated 0 is refused by the
-    # validator, and a value above 1099511627776 (about a million times any deployment) keeps the
-    # default (ADR 0008).
+    # it "Max connections per IP (sockets)". Defaults to 64. A stated 0 is invalid, and so is a
+    # value above 131072 - the fully-queued sockets the budget's 1 TiB ceiling can buffer - either
+    # is an issue (ADR 0009).
     maxConnectionsPerIp: 64
     # period is milliseconds (60000 = one minute)
     rateLimits:

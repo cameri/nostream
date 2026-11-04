@@ -3,8 +3,9 @@
 //! on when the key is absent. A divergence is silent in both directions, so it is asserted here
 //! rather than left to whichever of the two a reader happens to open (ADR 0008, #989).
 //!
-//! A *present* leaf is taken as written, zero included; a stated zero is refused by the validator
-//! before a relay is built, so it never reaches this constructor from a loaded document (#996).
+//! A *present* leaf is taken as written, zero included; a stated zero, and a stated value above
+//! the validator's ceiling for that key, are refused there before a relay is built, so neither
+//! reaches this constructor from a loaded document (#996, #998, ADRs 0008 and 0009).
 
 // This integration-test target may unwrap and panic: a failed assertion here is a failed test,
 // which is the point. The allowance names this file rather than exempting test targets
@@ -14,7 +15,7 @@
 use std::path::PathBuf;
 
 use nostream_config::settings::Settings;
-use nostream_relay::relay::{BoundRefusal, RelayConfig, bound_refusal, refusal_message};
+use nostream_relay::relay::RelayConfig;
 
 fn defaults_settings() -> Settings {
     let path =
@@ -93,43 +94,6 @@ fn a_non_default_setting_is_the_value_the_relay_runs_with() {
 }
 
 #[test]
-fn a_setting_above_the_ceiling_falls_back_to_the_compiled_default() {
-    // `usize::MAX` is a `usize`, so a bare `> 0` check would pass it to `FrameBudget::admit`,
-    // whose guard cannot trip and whose accounting adds unchecked.
-    let config = RelayConfig::from_settings(&settings_with_bounds(Some(u64::MAX), Some(u64::MAX)));
-    let defaults = RelayConfig::default();
-
-    assert_eq!(
-        config.frame_memory_budget_bytes,
-        defaults.frame_memory_budget_bytes
-    );
-    assert_eq!(
-        config.max_connections_per_ip,
-        defaults.max_connections_per_ip
-    );
-
-    // The documented ceiling is accepted; one byte over it is not. Spelled out here rather than
-    // imported, so lowering the constant cannot quietly lower this test with it.
-    let ceiling = 1024 * 1024 * 1024 * 1024_usize;
-    let at_ceiling = RelayConfig::from_settings(&settings_with_bounds(
-        Some(ceiling as u64),
-        Some(ceiling as u64),
-    ));
-    assert_eq!(at_ceiling.frame_memory_budget_bytes, ceiling);
-    assert_eq!(at_ceiling.max_connections_per_ip, ceiling);
-
-    let over = RelayConfig::from_settings(&settings_with_bounds(
-        Some(ceiling as u64 + 1),
-        Some(ceiling as u64 + 1),
-    ));
-    assert_eq!(
-        over.frame_memory_budget_bytes,
-        defaults.frame_memory_budget_bytes
-    );
-    assert_eq!(over.max_connections_per_ip, defaults.max_connections_per_ip);
-}
-
-#[test]
 fn absent_sections_fall_back_to_the_compiled_default() {
     // Not just absent leaves: an operator file may omit `limits` entirely, or `limits` without
     // `connection`, and the two-level `and_then` chain must survive both.
@@ -178,64 +142,5 @@ fn an_absent_setting_falls_back_to_the_compiled_default() {
     assert_eq!(
         config.max_connections_per_ip,
         defaults.max_connections_per_ip
-    );
-}
-
-#[test]
-fn the_refusal_verdict_and_the_range_agree_at_every_boundary() {
-    // `bound_refusal` must derive its answer from `in_range`, not compare the ceiling again: with
-    // the comparison retyped as `>=`, the documented at-ceiling value would be reported as above
-    // the ceiling while the relay runs with it, and every other test here would still pass. Zero
-    // is the other end of the same predicate: it is in range here, and the validator is what
-    // refuses it (#996).
-    const CEILING: u64 = 1024 * 1024 * 1024 * 1024;
-
-    assert_eq!(
-        bound_refusal(0),
-        None,
-        "a zero is in range; the validator refuses it"
-    );
-    assert_eq!(bound_refusal(1), None);
-    assert_eq!(bound_refusal(CEILING - 1), None);
-    assert_eq!(
-        bound_refusal(CEILING),
-        None,
-        "the ceiling itself is accepted"
-    );
-    assert_eq!(
-        bound_refusal(CEILING + 1),
-        Some(BoundRefusal::AboveCeiling(CEILING))
-    );
-
-    // And the same cases through the constructor, by value.
-    let at_ceiling =
-        RelayConfig::from_settings(&settings_with_bounds(Some(CEILING), Some(CEILING)));
-    assert_eq!(at_ceiling.frame_memory_budget_bytes, CEILING as usize);
-    assert_eq!(at_ceiling.max_connections_per_ip, CEILING as usize);
-
-    let over =
-        RelayConfig::from_settings(&settings_with_bounds(Some(CEILING + 1), Some(CEILING + 1)));
-    assert_eq!(
-        over.frame_memory_budget_bytes,
-        RelayConfig::default().frame_memory_budget_bytes
-    );
-    assert_eq!(
-        over.max_connections_per_ip,
-        RelayConfig::default().max_connections_per_ip
-    );
-
-    let zero = RelayConfig::from_settings(&settings_with_bounds(Some(0), Some(0)));
-    assert_eq!(zero.frame_memory_budget_bytes, 0);
-    assert_eq!(zero.max_connections_per_ip, 0);
-}
-
-#[test]
-fn a_refusal_is_reported_in_one_place_for_both_doors() {
-    assert_eq!(
-        refusal_message(
-            "limits.connection.maxConnectionsPerIp",
-            BoundRefusal::AboveCeiling(1024)
-        ),
-        "limits.connection.maxConnectionsPerIp: above the 1024 a bound accepts; the key's value is ignored"
     );
 }

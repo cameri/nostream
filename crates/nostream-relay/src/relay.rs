@@ -99,90 +99,6 @@ impl Default for RelayConfig {
     }
 }
 
-/// The ceiling a setting's bound may carry, in that bound's own unit: 1 TiB (1 099 511 627 776)
-/// of queued frames for `network.frameMemoryBudgetBytes`, and 1.09 million sockets for
-/// `limits.connection.maxConnectionsPerIp`. One number because one check reads both; it is far
-/// above any deployment each way, and far below `usize::MAX`, so a stray digit cannot reach
-/// [`FrameBudget::admit`]'s arithmetic. A value above it keeps the compiled default (ADR 0008).
-pub const MAX_SETTING_BOUND: usize = 1024 * 1024 * 1024 * 1024;
-
-/// Whether an operator's value for a bound is one the relay can run with: at most
-/// [`MAX_SETTING_BOUND`]. Public because the daemon's settings gate reports the same verdict
-/// before a relay exists, and one predicate is what keeps `--check` and the relay from
-/// disagreeing (ADR 0008). Zero is in range: the validator refuses it, so a value that reaches
-/// here is one the relay runs with as written.
-pub fn in_range(value: u64) -> bool {
-    value <= MAX_SETTING_BOUND as u64
-}
-
-/// Why a value was not taken from a bound's setting: the question [`in_range`] answers, said out
-/// loud, so the report can name the ceiling the value crossed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoundRefusal {
-    /// The value is above [`MAX_SETTING_BOUND`].
-    AboveCeiling(u64),
-}
-
-/// The two settings whose value is a bound, each with the value the operator wrote when that value
-/// is not taken. This is the only walk of the two leaves outside [`RelayConfig::from_settings`]:
-/// the daemon's gate and the CLI's `config validate` both report from it, so a key added to one
-/// surface cannot be reported by one door and ignored by another (ADR 0008).
-pub fn refused_bounds(settings: &Settings) -> Vec<(&'static str, BoundRefusal)> {
-    let mut refused = Vec::new();
-    if let Some(bytes) = settings.network.frame_memory_budget_bytes
-        && let Some(reason) = bound_refusal(bytes)
-    {
-        refused.push(("network.frameMemoryBudgetBytes", reason));
-    }
-    if let Some(cap) = settings
-        .limits
-        .as_ref()
-        .and_then(|limits| limits.connection.as_ref())
-        .and_then(|connection| connection.max_connections_per_ip)
-        && let Some(reason) = bound_refusal(cap)
-    {
-        refused.push(("limits.connection.maxConnectionsPerIp", reason));
-    }
-    refused
-}
-
-/// Whether a bound's setting is not taken, or `None` when it is.
-///
-/// It asks [`in_range`] first, so the constructor and every report agree by construction rather
-/// than by two comparisons that happen to match: a value `in_range` accepts is never refused here.
-pub fn bound_refusal(value: u64) -> Option<BoundRefusal> {
-    if in_range(value) {
-        None
-    } else {
-        Some(BoundRefusal::AboveCeiling(MAX_SETTING_BOUND as u64))
-    }
-}
-
-/// The sentence one refused bound is reported with, for both doors; the words live beside the
-/// decision so the daemon's gate and the CLI cannot phrase it differently.
-pub fn refusal_message(setting: &str, reason: BoundRefusal) -> String {
-    match reason {
-        BoundRefusal::AboveCeiling(ceiling) => {
-            format!("{setting}: above the {ceiling} a bound accepts; the key's value is ignored")
-        }
-    }
-}
-
-/// Reports one bound's setting that the relay will not run with, as one structured line saying
-/// the ceiling it crossed.
-fn warn_refused_bound(setting: &'static str, value: u64, default: usize) {
-    match bound_refusal(value) {
-        Some(BoundRefusal::AboveCeiling(ceiling)) => tracing::warn!(
-            setting,
-            value,
-            ceiling,
-            default,
-            "a bound above its ceiling runs with its default"
-        ),
-        None => {}
-    }
-}
-
 impl RelayConfig {
     /// The configuration a relay built from `settings` runs with: [`RelayConfig::default`] for
     /// every knob the capture fixes in code, with the two bounds an operator sets read from
@@ -193,29 +109,15 @@ impl RelayConfig {
     /// disagree about it. `drain_timeout` stays the composition root's to resolve: it is an
     /// environment read (ADR 0004), not a setting.
     ///
-    /// A leaf is taken as written whenever it is at most [`MAX_SETTING_BOUND`]; an absent leaf
-    /// keeps the default, and so does a value above the ceiling. The ceiling is not cosmetic:
-    /// `usize::MAX` fits a `usize`, so it would pass a bare range check and reach
-    /// [`FrameBudget::admit`], whose fit guard uses `saturating_sub` while its accounting adds
-    /// unchecked — a budget that cannot be exhausted, and an add that overflows. A zero never
-    /// reaches this constructor from a loaded document: the validator refuses it by name
-    /// (ADR 0008).
+    /// The constructor has no range rule of its own. An absent leaf keeps the compiled default,
+    /// and every present one is taken as written, because the settings validator has already
+    /// refused a zero and anything above its ceiling by name
+    /// (`crates/nostream-config/src/validate.rs`; ADRs 0008 and 0009).
     pub fn from_settings(settings: &Settings) -> Self {
         let mut config = Self::default();
 
         if let Some(bytes) = settings.network.frame_memory_budget_bytes {
-            if in_range(bytes) {
-                config.frame_memory_budget_bytes = bytes as usize;
-            } else {
-                // `warn!`, not `debug!`: the value passes `--check` and is then quietly
-                // replaced, so this line and the gate's report are the only places an operator
-                // learns that the number they wrote is not the number the relay runs with.
-                warn_refused_bound(
-                    "network.frameMemoryBudgetBytes",
-                    bytes,
-                    config.frame_memory_budget_bytes,
-                );
-            }
+            config.frame_memory_budget_bytes = bytes as usize;
         }
 
         if let Some(cap) = settings
@@ -224,15 +126,7 @@ impl RelayConfig {
             .and_then(|limits| limits.connection.as_ref())
             .and_then(|connection| connection.max_connections_per_ip)
         {
-            if in_range(cap) {
-                config.max_connections_per_ip = cap as usize;
-            } else {
-                warn_refused_bound(
-                    "limits.connection.maxConnectionsPerIp",
-                    cap,
-                    config.max_connections_per_ip,
-                );
-            }
+            config.max_connections_per_ip = cap as usize;
         }
 
         config

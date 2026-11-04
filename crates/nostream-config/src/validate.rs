@@ -19,6 +19,28 @@ use crate::value::{
     number_le, number_lt, to_number, truthy_opt,
 };
 
+/// `frame_queue_bytes`, the per-socket outbound queue `RelayConfig::default` sets
+/// (`crates/nostream-relay/src/relay.rs:85`): 8 MiB. Repeated here because `nostream-config`
+/// cannot depend on `nostream-relay`, and the cap's ceiling is derived from it.
+// shortcut: the 8 MiB is repeated rather than shared with `nostream-relay`; upgrade when the
+// relay's default can be named from this crate, or a test pins `frame_queue_bytes` (ADR 0009).
+const FRAME_QUEUE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// The largest `network.frameMemoryBudgetBytes` the validator accepts: 1 TiB.
+/// `FrameBudget::admit` bounds its counter at this value for any value — the guard
+/// (`crates/nostream-relay/src/sink.rs:158`) refuses before the add at `:164` runs — so the
+/// ceiling is not an overflow bound: a limit near `usize::MAX` never refuses a frame, which is
+/// no budget at all. 1 TiB is 4096× the default: a valve against a stray digit, not a deployment.
+pub const MAX_FRAME_MEMORY_BUDGET_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
+
+/// The largest `limits.connection.maxConnectionsPerIp` the validator accepts: 131 072, the
+/// sockets whose full `FRAME_QUEUE_BYTES` queues exactly exhaust
+/// [`MAX_FRAME_MEMORY_BUDGET_BYTES`] — 2^40 / 2^23 = 2^17 = 131 072 exactly, an absolute
+/// maximum the budget's ceiling implies rather than a figure argued for. The cap is compared,
+/// never added (`crates/nostream-relay/src/connection_cap.rs:76`), so it needs no `usize`
+/// headroom of its own.
+pub const MAX_CONNECTIONS_PER_IP: u64 = MAX_FRAME_MEMORY_BUDGET_BYTES / FRAME_QUEUE_BYTES;
+
 /// Validates a settings document against a defaults document.
 ///
 /// `candidate` is the merged settings (defaults deep-merged with the user's overrides);
@@ -94,11 +116,12 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
     }
 
     // The two bounds the relay reads at run time are numerical settings before they are anything
-    // else, so a zero written for one is refused here, by name, exactly as the adaptive-pow
-    // numbers below are: absent still means the compiled default, and a stated zero is a literal
-    // the operator wrote (ADR 0008). Only a JSON number takes this rule: `to_number` reads a null,
-    // a boolean and a numeric string as numbers too, and a wrong type is the shape walk's one
-    // finding to make — two issues for one key would leave the operator to guess which to fix.
+    // else, so a stated value outside `1..=ceiling` is refused here, by name, exactly as the
+    // adaptive-pow numbers below are: absent still means the compiled default, and a stated value
+    // is a literal the operator wrote (ADRs 0008 and 0009). Only a JSON number takes these rules:
+    // `to_number` reads a null, a boolean and a numeric string as numbers too, and a wrong type is
+    // the shape walk's one finding to make — two issues for one key would leave the operator to
+    // guess which to fix. A NaN is the exception: it fails both comparisons and is reported twice.
     if let Some(budget @ Value::Number(_)) =
         key_path(candidate, &["network", "frameMemoryBudgetBytes"])
         && !to_number_is_positive(Some(budget))
@@ -109,6 +132,20 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
         ));
     }
 
+    // The ceiling, in the zero rule's shape: the literal number below is the constant's value,
+    // and the whole-issue-vector test is what keeps the two in step (ADR 0009).
+    if let Some(budget @ Value::Number(number)) =
+        key_path(candidate, &["network", "frameMemoryBudgetBytes"])
+        && !number_le(Some(budget), MAX_FRAME_MEMORY_BUDGET_BYTES as f64)
+    {
+        issues.push(Issue::new(
+            "network.frameMemoryBudgetBytes",
+            format!(
+                "the file states {number}; frameMemoryBudgetBytes must be at most 1099511627776"
+            ),
+        ));
+    }
+
     if let Some(cap @ Value::Number(_)) =
         key_path(candidate, &["limits", "connection", "maxConnectionsPerIp"])
         && !to_number_is_positive(Some(cap))
@@ -116,6 +153,17 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
         issues.push(Issue::new(
             "limits.connection.maxConnectionsPerIp",
             "maxConnectionsPerIp must be greater than 0",
+        ));
+    }
+
+    // The same word at the other end, and the same literal.
+    if let Some(cap @ Value::Number(number)) =
+        key_path(candidate, &["limits", "connection", "maxConnectionsPerIp"])
+        && !number_le(Some(cap), MAX_CONNECTIONS_PER_IP as f64)
+    {
+        issues.push(Issue::new(
+            "limits.connection.maxConnectionsPerIp",
+            format!("the file states {number}; maxConnectionsPerIp must be at most 131072"),
         ));
     }
 
