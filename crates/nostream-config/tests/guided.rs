@@ -101,6 +101,16 @@ fn validates_the_two_bounded_integer_fields() {
         budget.validate("1099511627777").as_deref(),
         Some("Value must be at most 1099511627776")
     );
+    // The digit/empty early return is the other helper's message, unchanged: a non-digit and an
+    // empty string are the first step, not the ceiling (requirement 6).
+    assert_eq!(
+        budget.validate("abc").as_deref(),
+        Some("Value must be a non-negative integer")
+    );
+    assert_eq!(
+        budget.validate("  ").as_deref(),
+        Some("Value must be a non-negative integer")
+    );
 
     let cap = get_guided_setting_field("client", "limits.connection.maxConnectionsPerIp")
         .expect("maxConnectionsPerIp field")
