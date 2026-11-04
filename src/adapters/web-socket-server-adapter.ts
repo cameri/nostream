@@ -195,6 +195,9 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       }
 
       if (client.readyState !== OPEN) {
+        // Admission can finish after the peer started closing. Resume before
+        // leaving so the close handshake is not stuck behind the paused socket.
+        client.resume()
         return
       }
 

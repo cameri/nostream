@@ -423,6 +423,29 @@ describe('WebSocketServerAdapter', () => {
       expect(createWebSocketAdapter).not.to.have.been.called
     })
 
+    it('resumes the socket when admission finishes after the client started closing', async () => {
+      let releaseRateLimit: ((limited: boolean) => void) | undefined
+      isRateLimitedStub.returns(
+        new Promise<boolean>((resolve) => {
+          releaseRateLimit = resolve
+        }),
+      )
+
+      const connectionCall = webSocketServer.on
+        .getCalls()
+        .find((call: any) => call.args[0] === WebSocketServerAdapterEvent.Connection)
+      const onConnection = connectionCall.args[1]
+      const mockClient = createMockClient({ readyState: 2 })
+      const mockReq = { headers: {}, socket: { remoteAddress: '127.0.0.1' } }
+
+      const connection = onConnection(mockClient, mockReq)
+      releaseRateLimit?.(false)
+      await connection
+
+      expect(mockClient.resume).to.have.been.calledOnce
+      expect(createWebSocketAdapter).not.to.have.been.called
+    })
+
     it('terminates rate-limited connections', async () => {
       isRateLimitedStub.resolves(true)
 
