@@ -1151,7 +1151,6 @@ dependencies = [
  "clap",
  "nostream-config",
  "nostream-core",
- "nostream-relay",
  "serde_json",
  "serde_yaml",
  "tempfile",

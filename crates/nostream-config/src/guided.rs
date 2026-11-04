@@ -5,6 +5,8 @@
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
+use crate::validate::{MAX_CONNECTIONS_PER_IP, MAX_FRAME_MEMORY_BUDGET_BYTES};
+
 /// The editor control a field uses (`GuidedSettingFieldType`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,14 +25,21 @@ pub enum GuidedSettingFieldType {
 pub enum GuidedSettingValidator {
     NonEmpty,
     SafeNonNegativeInteger,
+    /// Digits, then at most the ceiling the document validator accepts for that key.
+    SafeNonNegativeIntegerAtMost(u64),
 }
 
 impl GuidedSettingValidator {
     /// Applies the validator, returning the capture's message on failure.
-    pub fn validate(self, value: &str) -> Option<&'static str> {
+    pub fn validate(self, value: &str) -> Option<String> {
         match self {
-            Self::NonEmpty => require_non_empty_setting_value(value),
-            Self::SafeNonNegativeInteger => require_safe_non_negative_integer_setting_value(value),
+            Self::NonEmpty => require_non_empty_setting_value(value).map(str::to_owned),
+            Self::SafeNonNegativeInteger => {
+                require_safe_non_negative_integer_setting_value(value).map(str::to_owned)
+            }
+            Self::SafeNonNegativeIntegerAtMost(ceiling) => {
+                require_safe_non_negative_integer_at_most_setting_value(value, ceiling)
+            }
         }
     }
 }
@@ -77,6 +86,22 @@ pub fn require_safe_non_negative_integer_setting_value(value: &str) -> Option<&'
         Ok(number) if number <= 9_007_199_254_740_991 => None,
         Ok(_) => Some("Value must be a safe integer"),
         Err(_) => Some("Value must be a safe integer"),
+    }
+}
+
+/// `^[0-9]+$`, then within `ceiling` — the validator's own ceiling for that key, so the editor
+/// cannot offer a number the document validator refuses (ADR 0009).
+fn require_safe_non_negative_integer_at_most_setting_value(
+    value: &str,
+    ceiling: u64,
+) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || !trimmed.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Some("Value must be a non-negative integer".to_owned());
+    }
+    match trimmed.parse::<u64>() {
+        Ok(number) if number <= ceiling => None,
+        Ok(_) | Err(_) => Some(format!("Value must be at most {ceiling}")),
     }
 }
 
@@ -146,7 +171,7 @@ fn category(value: &str, label: &str, settings: Vec<GuidedSettingField>) -> Guid
 
 fn build_categories() -> Vec<GuidedSettingCategory> {
     use GuidedSettingFieldType::{Boolean, Number};
-    use GuidedSettingValidator::{NonEmpty, SafeNonNegativeInteger};
+    use GuidedSettingValidator::{NonEmpty, SafeNonNegativeInteger, SafeNonNegativeIntegerAtMost};
 
     vec![
         category(
@@ -210,7 +235,7 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                     "Frame memory budget (bytes)",
                     "network.frameMemoryBudgetBytes",
                     Number,
-                    SafeNonNegativeInteger,
+                    SafeNonNegativeIntegerAtMost(MAX_FRAME_MEMORY_BUDGET_BYTES),
                 ),
                 validated(
                     "Worker count",
@@ -273,7 +298,7 @@ fn build_categories() -> Vec<GuidedSettingCategory> {
                     "Max connections per IP (sockets)",
                     "limits.connection.maxConnectionsPerIp",
                     Number,
-                    SafeNonNegativeInteger,
+                    SafeNonNegativeIntegerAtMost(MAX_CONNECTIONS_PER_IP),
                 ),
                 validated(
                     "Max filters per subscription",

@@ -229,6 +229,64 @@ fn rejects_a_zero_max_connections_per_ip() {
     );
 }
 
+#[test]
+fn rejects_an_over_ceiling_frame_memory_budget() {
+    // One byte over the ceiling is the operator's literal, refused by name like a zero — the
+    // document is discarded whole, so the issue names the key, the value the file states and the
+    // ceiling in one line (ADR 0009).
+    let document = set_by_path(
+        &defaults(),
+        "network.frameMemoryBudgetBytes",
+        number(1_099_511_627_777),
+    )
+    .expect("frameMemoryBudgetBytes is writable");
+    assert_eq!(
+        issues(&document),
+        vec![
+            "network.frameMemoryBudgetBytes: the file states 1099511627777; \
+             frameMemoryBudgetBytes must be at most 1099511627776"
+                .to_owned()
+        ]
+    );
+}
+
+#[test]
+fn rejects_an_over_ceiling_max_connections_per_ip() {
+    let document = set_by_path(
+        &defaults(),
+        "limits.connection.maxConnectionsPerIp",
+        number(131_073),
+    )
+    .expect("maxConnectionsPerIp is writable");
+    assert_eq!(
+        issues(&document),
+        vec![
+            "limits.connection.maxConnectionsPerIp: the file states 131073; maxConnectionsPerIp \
+             must be at most 131072"
+                .to_owned()
+        ]
+    );
+}
+
+#[test]
+fn accepts_both_bounds_at_their_ceilings() {
+    // The two ceilings are two numbers: 1 TiB of queued payload and 131 072 sockets. A shared
+    // constant would fail here for whichever key is not the byte one (ADR 0009).
+    let document = set_by_path(
+        &defaults(),
+        "network.frameMemoryBudgetBytes",
+        number(1_099_511_627_776),
+    )
+    .expect("frameMemoryBudgetBytes is writable");
+    let document = set_by_path(
+        &document,
+        "limits.connection.maxConnectionsPerIp",
+        number(131_072),
+    )
+    .expect("maxConnectionsPerIp is writable");
+    assert_eq!(issues(&document), Vec::<String>::new());
+}
+
 /// The shape walk's one finding for a wrong type, which is all such a document gets.
 fn shape_only(path: &str, got: &str) -> Vec<String> {
     vec![format!("{path}: Expected number, got {got}")]
@@ -245,6 +303,7 @@ fn a_non_number_frame_memory_budget_is_only_a_shape_fault() {
         (Value::Null, "null"),
         (Value::String("abc".to_owned()), "string"),
         (Value::Bool(true), "boolean"),
+        (Value::String("1099511627777".to_owned()), "string"),
     ] {
         let document = set_by_path(&defaults(), "network.frameMemoryBudgetBytes", value.clone())
             .expect("frameMemoryBudgetBytes is writable");
@@ -263,6 +322,7 @@ fn a_non_number_max_connections_per_ip_is_only_a_shape_fault() {
         (Value::Null, "null"),
         (Value::String("abc".to_owned()), "string"),
         (Value::Bool(false), "boolean"),
+        (Value::String("131073".to_owned()), "string"),
     ] {
         let document = set_by_path(
             &defaults(),

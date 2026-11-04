@@ -78,13 +78,38 @@ fn validators_are_reachable_from_the_field() {
         .expect("maxPayloadSize field");
     let validator = field.validate.expect("the field validates");
     assert_eq!(
-        validator.validate("-1"),
+        validator.validate("-1").as_deref(),
         Some("Value must be a non-negative integer")
     );
     assert_eq!(validator.validate("524288"), None);
     assert_eq!(
-        GuidedSettingValidator::NonEmpty.validate("  "),
+        GuidedSettingValidator::NonEmpty.validate("  ").as_deref(),
         Some("Value is required")
+    );
+}
+
+#[test]
+fn validates_the_two_bounded_integer_fields() {
+    // The editor's ceiling is the validator's, so it cannot offer a number the document validator
+    // refuses (#998, ADR 0009).
+    let budget = get_guided_setting_field("network", "network.frameMemoryBudgetBytes")
+        .expect("frameMemoryBudgetBytes field")
+        .validate
+        .expect("the field validates");
+    assert_eq!(budget.validate("1099511627776"), None);
+    assert_eq!(
+        budget.validate("1099511627777").as_deref(),
+        Some("Value must be at most 1099511627776")
+    );
+
+    let cap = get_guided_setting_field("client", "limits.connection.maxConnectionsPerIp")
+        .expect("maxConnectionsPerIp field")
+        .validate
+        .expect("the field validates");
+    assert_eq!(cap.validate("131072"), None);
+    assert_eq!(
+        cap.validate("131073").as_deref(),
+        Some("Value must be at most 131072")
     );
 }
 

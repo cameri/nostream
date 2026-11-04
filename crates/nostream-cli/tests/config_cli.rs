@@ -93,9 +93,52 @@ fn config_validate_refuses_a_zero_bound() {
 }
 
 #[test]
-fn config_validate_reports_the_schema_fault_and_not_a_bound_it_cannot_read() {
-    // The same mixed document through the other door: the bound is not described, because a
-    // rejected document has no typed value to walk, and the exit code is the schema verdict.
+fn config_validate_refuses_an_over_ceiling_bound() {
+    // Both keys one step over their own ceiling: two issues, one line each, and the invalid
+    // verdict with no bound report spliced into it (#998, ADR 0009).
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("settings.yaml");
+    fs::write(
+        &path,
+        "network:\n  frameMemoryBudgetBytes: 1099511627777\nlimits:\n  connection:\n    maxConnectionsPerIp: 131073\n",
+    )
+    .expect("write");
+
+    let output =
+        config::validate(&workspace_root(), Some(directory.path()), Some(&path)).expect("validate");
+    assert_eq!(output.exit_code, 2);
+    assert_eq!(
+        output.lines,
+        [
+            "network.frameMemoryBudgetBytes: the file states 1099511627777; frameMemoryBudgetBytes must be at most 1099511627776",
+            "limits.connection.maxConnectionsPerIp: the file states 131073; maxConnectionsPerIp must be at most 131072",
+            "settings invalid: 2 issues",
+        ]
+    );
+}
+
+#[test]
+fn config_validate_accepts_both_bounds_at_their_ceilings() {
+    // The valid verdict is one line with no suffix: the ceiling is not a report any more, and an
+    // at-ceiling document is the operator's, run as written (#998, ADR 0009).
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("settings.yaml");
+    fs::write(
+        &path,
+        "network:\n  frameMemoryBudgetBytes: 1099511627776\nlimits:\n  connection:\n    maxConnectionsPerIp: 131072\n",
+    )
+    .expect("write");
+
+    let output =
+        config::validate(&workspace_root(), Some(directory.path()), Some(&path)).expect("validate");
+    assert_eq!(output.exit_code, 0);
+    assert_eq!(output.lines, ["settings valid: 0 issues"]);
+}
+
+#[test]
+fn config_validate_reports_a_ceiling_and_a_schema_fault_together() {
+    // A rejected document is still the operator's: `load`'s issue list is what this door prints,
+    // so the schema fault and the ceiling both appear, in the validator's order (#998, ADR 0009).
     let directory = tempfile::tempdir().expect("tempdir");
     let path = directory.path().join("settings.yaml");
     fs::write(
@@ -107,14 +150,12 @@ fn config_validate_reports_the_schema_fault_and_not_a_bound_it_cannot_read() {
     let output =
         config::validate(&workspace_root(), Some(directory.path()), Some(&path)).expect("validate");
     assert_eq!(output.exit_code, 2);
-    let text = output.lines.join("\n");
-    assert!(
-        text.contains("strategy must be ewma or sliding_window"),
-        "{text}"
-    );
-    assert!(!text.contains("above the"), "no range line: {text}");
     assert_eq!(
-        output.lines.last().map(String::as_str),
-        Some("settings invalid: 1 issues")
+        output.lines,
+        [
+            "limits.rateLimiter.strategy: strategy must be ewma or sliding_window",
+            "network.frameMemoryBudgetBytes: the file states 1099511627777; frameMemoryBudgetBytes must be at most 1099511627776",
+            "settings invalid: 2 issues",
+        ]
     );
 }
