@@ -48,7 +48,7 @@ the same word — *not used* — and both are an `Issue`, because after this job
 only reporter that exists.
 
 The four lines, verbatim from this branch's tree, each quoted above its citation as
-`docs/rewrite/decisions/0008-frame-memory-budget.md:392-399` quotes the two zero rules:
+`docs/rewrite/decisions/0008-frame-memory-budget.md:396-403` quotes the two zero rules:
 
 "            \"frameMemoryBudgetBytes must be greater than 0\","
 (`crates/nostream-config/src/validate.rs:131`)
@@ -128,7 +128,7 @@ single address's full allowance — unusual, and not impossible. The 12-a-second
 admit them in 131 072 ÷ 12 ≈ 10 923 s ≈ 3 hours, and it never binds. What the ceiling bounds is the
 queued payload one address may hold at the budget's ceiling, 131 072 × 8 MiB = 1 TiB. It is not a
 resident-memory figure: the accounting it lands in is outbound payload, not RSS
-(`docs/rewrite/decisions/0008-frame-memory-budget.md:54-66`).
+(`docs/rewrite/decisions/0008-frame-memory-budget.md:58-70`).
 
 ## Where the arithmetic runs out
 
@@ -199,7 +199,7 @@ beside them: `SafeNonNegativeIntegerAtMost(MAX_FRAME_MEMORY_BUDGET_BYTES)`
 also why `validate` returns `Option<String>` (`crates/nostream-config/src/guided.rs:34`). The two
 entries serialize as `{"safe_non_negative_integer_at_most": <ceiling>}`; the other fourteen keep the
 plain string. **The `0` gap stays open**: the editor still accepts a `0` the document validator
-refuses, which is the gap `docs/rewrite/decisions/0008-frame-memory-budget.md:605-626` records, and this job adds the
+refuses, which is the gap `docs/rewrite/decisions/0008-frame-memory-budget.md:609-630` records, and this job adds the
 ceiling only.
 
 ## What this does not decide

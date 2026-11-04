@@ -3,6 +3,10 @@
 - **Status:** accepted (job 016, Phase 2)
 - **Deciders:** the rewrite team, on the operator's policy comment on #959 and the evidence in job 016's recon and spec
 - **Date:** 2026-10-24
+- **Reading the strikethrough:** a `path:line` inside `~~…~~` names code a later job deleted, and
+  is resolved with `git show <rev>:<path>` at the revision that passage was written for, not in
+  this tree; the live sentence beside each strike says what replaced it. Every citation outside
+  `~~…~~` was read against this tree by job 022.
 
 ## Context
 
