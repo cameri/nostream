@@ -34,7 +34,7 @@ const FRAME_QUEUE_BYTES: u64 = 8 * 1024 * 1024;
 pub const MAX_FRAME_MEMORY_BUDGET_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 
 /// The largest `limits.connection.maxConnectionsPerIp` the validator accepts: 131 072, the
-/// sockets whose full [`FRAME_QUEUE_BYTES`] queues exactly exhaust
+/// sockets whose full `FRAME_QUEUE_BYTES` queues exactly exhaust
 /// [`MAX_FRAME_MEMORY_BUDGET_BYTES`] — 2^40 / 2^23 = 2^17 = 131 072 exactly, an absolute
 /// maximum the budget's ceiling implies rather than a figure argued for. The cap is compared,
 /// never added (`crates/nostream-relay/src/connection_cap.rs:76`), so it needs no `usize`
@@ -121,7 +121,7 @@ pub fn validate_document(candidate: &Value, defaults: &Value) -> Vec<Issue> {
     // is a literal the operator wrote (ADRs 0008 and 0009). Only a JSON number takes these rules:
     // `to_number` reads a null, a boolean and a numeric string as numbers too, and a wrong type is
     // the shape walk's one finding to make — two issues for one key would leave the operator to
-    // guess which to fix.
+    // guess which to fix. A NaN is the exception: it fails both comparisons and is reported twice.
     if let Some(budget @ Value::Number(_)) =
         key_path(candidate, &["network", "frameMemoryBudgetBytes"])
         && !to_number_is_positive(Some(budget))
