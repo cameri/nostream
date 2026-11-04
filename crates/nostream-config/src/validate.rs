@@ -22,6 +22,8 @@ use crate::value::{
 /// `frame_queue_bytes`, the per-socket outbound queue `RelayConfig::default` sets
 /// (`crates/nostream-relay/src/relay.rs:85`): 8 MiB. Repeated here because `nostream-config`
 /// cannot depend on `nostream-relay`, and the cap's ceiling is derived from it.
+// shortcut: the 8 MiB is repeated rather than shared with `nostream-relay`; upgrade when the
+// relay's default can be named from this crate, or a test pins `frame_queue_bytes` (ADR 0009).
 const FRAME_QUEUE_BYTES: u64 = 8 * 1024 * 1024;
 
 /// The largest `network.frameMemoryBudgetBytes` the validator accepts: 1 TiB.
