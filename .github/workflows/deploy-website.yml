@@ -1,22 +1,46 @@
 name: Deploy Website
 
-# The marketing site deploys when a nostream-website release is published:
-# the changesets release PR bumps the site package, and merging that PR makes
-# the changesets workflow tag + publish nostream-website@X.Y.Z and create the
-# GitHub release — this workflow deploys that tagged build. Merges to main do
-# not deploy; version the site with a changeset and merge the release PR.
+# The marketing site deploys on two events, for two different reasons.
+#
+# A nostream-website release: the changesets release PR bumps the site package,
+# and merging that PR makes the changesets workflow tag + publish
+# nostream-website@X.Y.Z and create the GitHub release — this workflow deploys
+# that tagged build.
+#
+# A relay release, through the Release workflow: the site's version badge and
+# its changelog page are read from the repo at build time (`website/site`'s
+# VERSION is the root package.json, and changelog.astro renders the root
+# CHANGELOG.md), so both go stale on every relay release while the site itself
+# is unchanged. Measured 2026-11-05: the last site release was 2026-10-31, and
+# nostream.dev served v3.9.0 through six relay releases to 3.12.1.
+#
+# The relay path cannot be a `release: published` trigger with a wider `if`.
+# The `website` environment admits `main` and `nostream-website@*` only, and a
+# deployment is checked against the run's own ref — for a release event that is
+# the tag, so `nostream@3.12.1` is refused whatever the job does. `workflow_run`
+# is the way in: it runs on the default branch, which the policy admits, and it
+# starts only after the image for the release was built and pushed.
+#
+# Merges to main still do not deploy on their own.
 
 on:
   release:
     types:
       - published
+  # Only a completed Release run is a release that produced an image. Its
+  # head_branch is the tag the release named, so this selects relay releases
+  # (`nostream@X.Y.Z`) and leaves the website ones, which the Release workflow
+  # skips as `skipped`, alone.
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 jobs:
   deploy:
     # Concurrency lives on the job, not the workflow: a relay release
-    # (v* tag) fails the if below and must not enter this deploy queue,
-    # where it could replace a queued website deploy. Measured: the
+    # (v* tag) that the if below did not select must not enter this deploy
+    # queue, where it could replace a queued website deploy. Measured: the
     # nostream@3.5.1 release run (38845857055) was cancelled with zero
     # jobs at the workflow-level group, before the job if could skip it.
     concurrency:
@@ -24,8 +48,20 @@ jobs:
       cancel-in-progress: false
     # workflow_dispatch ignores every on: filter — a manual run must not
     # publish a non-main branch to production, so dispatch stays main-only.
+    #
+    # The relay path has two shapes. A release event gives the tag as the run's
+    # head_branch. A retried image build — `Release` dispatched from main with the
+    # tag as an input — gives `main` instead, because a dispatch runs on a branch
+    # and `workflow_run` cannot see the input, so the branch is the only signal
+    # available to this job. Both end with a published image, which is what makes
+    # the site's build-time version and changelog worth redeploying.
     if: >-
       ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      (startsWith(github.event.workflow_run.head_branch || '', 'nostream@') ||
+      (github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main'))) ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
     name: Build and deploy to Cloudflare Workers
     runs-on: ubuntu-latest

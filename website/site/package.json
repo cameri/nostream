@@ -16,7 +16,7 @@
     "social": "node scripts/build-social-card.mjs"
   },
   "engines": {
-    "node": ">=20.3"
+    "node": ">=24.14.1"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "^7.3.5",
