@@ -987,7 +987,10 @@ impl NotificationOutboxRepository for InMemoryOutboxRepository {
                 .claim
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .clone();
+                .iter()
+                .take(limit as usize)
+                .cloned()
+                .collect();
 
             Ok(messages)
         })

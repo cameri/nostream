@@ -39,7 +39,7 @@ fn target(
 async fn the_outbox_walk_claims_twenty_and_marks_each_message() {
     let outbox = testing::InMemoryOutboxRepository::new();
     let dispatcher = testing::RecordingDispatcher::new();
-    let messages = (0..20)
+    let messages = (0..25)
         .map(|index| testing::outbox_message(&format!("outbox-{index}"), 1))
         .collect();
     outbox.set_claim(messages);
@@ -54,6 +54,11 @@ async fn the_outbox_walk_claims_twenty_and_marks_each_message() {
     assert_eq!(delivered, 18);
     assert_eq!(outbox.delivered().len(), 18);
     assert_eq!(outbox.failed().len(), 2);
+    assert_eq!(
+        outbox.delivered().len() + outbox.failed().len(),
+        20,
+        "only the claimed page is walked"
+    );
     for (id, reason, attempt, max_attempts, base_delay) in outbox.failed() {
         assert!(id == "outbox-3" || id == "outbox-7");
         assert!(reason.contains("failed for"));
