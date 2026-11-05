@@ -10,6 +10,7 @@ import {
 } from '../@types/repositories'
 import { RedisAdapter } from '../adapters/redis-adapter'
 import { getCacheClient } from '../cache/client'
+import { getMasterDbClient } from '../database/client'
 import { AuthMessageHandler } from '../handlers/auth-message-handler'
 import { CountMessageHandler } from '../handlers/count-message-handler'
 import { EventMessageHandler } from '../handlers/event-message-handler'
@@ -18,9 +19,8 @@ import { NegMsgMessageHandler } from '../handlers/neg-msg-message-handler'
 import { NegOpenMessageHandler } from '../handlers/neg-open-message-handler'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
-import { eventStrategyFactory } from './event-strategy-factory'
-import { getMasterDbClient } from '../database/client'
 import { UserSubscriptionRepository } from '../repositories/user-subscription-repository'
+import { eventStrategyFactory } from './event-strategy-factory'
 import { rateLimiterFactory } from './rate-limiter-factory'
 import { createSettings } from './settings-factory'
 import { wotGraphServiceFactory } from './wot-graph-service-factory'
@@ -85,11 +85,11 @@ export const messageHandlerFactory =
       case MessageType.CLOSE:
         return new UnsubscribeMessageHandler(adapter)
       case MessageType.COUNT:
-        return new CountMessageHandler(adapter, eventRepository, createSettings)
+        return new CountMessageHandler(adapter, eventRepository, createSettings, rateLimiterFactory)
       case MessageType.AUTH:
         return new AuthMessageHandler(adapter, createSettings)
       case MessageType.NEG_OPEN:
-        return new NegOpenMessageHandler(adapter, eventRepository, createSettings)
+        return new NegOpenMessageHandler(adapter, eventRepository, createSettings, rateLimiterFactory)
       case MessageType.NEG_MSG:
         return new NegMsgMessageHandler(adapter, createSettings)
       case MessageType.NEG_CLOSE:

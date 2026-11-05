@@ -51,6 +51,8 @@ describe('NegOpenMessageHandler', () => {
   let settings: Settings
   let emitted: Sinon.SinonStub
   let handler: NegOpenMessageHandler
+  let rateLimiterHitStub: Sinon.SinonStub
+  let rateLimiterFactory: Sinon.SinonStub
 
   const open = (id = 'sync1', filter: any = { kinds: [1] }, hex = emptyClientMessageHex) =>
     handler.handleMessage([MessageType.NEG_OPEN, id, filter, hex] as any)
@@ -70,7 +72,10 @@ describe('NegOpenMessageHandler', () => {
     emitted = sandbox.stub()
     webSocket.on(WebSocketAdapterEvent.Message, emitted)
 
-    handler = new NegOpenMessageHandler(webSocket, eventRepository, () => settings)
+    rateLimiterHitStub = sandbox.stub().resolves({ limited: false })
+    rateLimiterFactory = sandbox.stub().returns({ hit: rateLimiterHitStub })
+
+    handler = new NegOpenMessageHandler(webSocket, eventRepository, () => settings, rateLimiterFactory)
   })
 
   afterEach(() => {
@@ -230,6 +235,29 @@ describe('NegOpenMessageHandler', () => {
 
       expect(emitted.firstCall.args[0][0]).to.equal(MessageType.NEG_MSG)
       expect(findReconciliationItems).to.have.been.called
+    })
+
+    it('replies NEG-ERR when the peer on-demand request limit is exceeded', async () => {
+      const peer = 'a'.repeat(64)
+      settings = {
+        nip77: { enabled: true },
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      } as Settings
+      webSocket.getPeerPubkey = () => peer
+      rateLimiterHitStub.resolves({ limited: true, retryAfterMs: 456 })
+
+      await open()
+
+      expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${peer}:peer-request:60000`, 1, {
+        period: 60_000,
+        rate: 1,
+      })
+      expect(findReconciliationItems).not.to.have.been.called
+      expect(emitted).to.have.been.calledOnceWithExactly([
+        MessageType.NEG_ERR,
+        'sync1',
+        'rate-limited: retry after 456 ms',
+      ])
     })
   })
 

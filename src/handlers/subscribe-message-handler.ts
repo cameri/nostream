@@ -26,6 +26,7 @@ import { Settings } from '../@types/settings'
 import { SubscribeMessage } from '../@types/messages'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
+import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
 
 const logger = createLogger('subscribe-message-handler')
 
@@ -53,11 +54,22 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     const subscriptionId = message[1]
     this.activeSubscriptionId = subscriptionId
     const incomingFilters = message.slice(2) as SubscriptionFilter[]
+    const peerPubkey = this.webSocket.getPeerPubkey()
+
+    if (peerPubkey) {
+      const retryAfterMs = await getPeerRequestRetryAfterMs(this.rateLimiter, this.settings(), peerPubkey, 'REQ')
+      if (retryAfterMs !== undefined) {
+        this.webSocket.emit(
+          WebSocketAdapterEvent.Message,
+          createClosedMessage(subscriptionId, 'rate-limited: peer request limit exceeded', String(retryAfterMs)),
+        )
+        return
+      }
+    }
 
     // Bound before uniqWith(): deduplicating an unbounded list is O(n^2). The
     // schema no longer caps filter counts so peer limits can be larger.
-    const maxFilters =
-      subscriptionLimitsFor(this.settings(), this.webSocket.getPeerPubkey() !== undefined)?.maxFilters ?? 0
+    const maxFilters = subscriptionLimitsFor(this.settings(), peerPubkey !== undefined)?.maxFilters ?? 0
     if (maxFilters > 0 && incomingFilters.length > maxFilters) {
       const reason = `Too many filters: Number of filters per susbscription must be less then or equal to ${maxFilters}`
       logger('subscription %s with %o rejected: %s', subscriptionId, incomingFilters, reason)

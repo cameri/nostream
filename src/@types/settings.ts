@@ -170,6 +170,7 @@ export interface ClientLimits {
 export interface PeerLimits {
   subscription?: ClientSubscriptionLimits
   message?: MessageLimits
+  request?: PeerRequestLimits
 }
 
 export interface MessageRateLimit extends RateLimit {
@@ -179,6 +180,11 @@ export interface MessageRateLimit extends RateLimit {
 export interface MessageLimits {
   rateLimits?: MessageRateLimit[]
   ipWhitelist?: string[]
+}
+
+/** Bounds on on-demand peer requests (REQ, COUNT, NEG-OPEN). */
+export interface PeerRequestLimits {
+  rateLimits?: RateLimit[]
 }
 
 export interface ConnectionLimits {

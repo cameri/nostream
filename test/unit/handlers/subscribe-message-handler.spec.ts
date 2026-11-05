@@ -139,6 +139,41 @@ describe('SubscribeMessageHandler', () => {
       expect(webSocketOnSubscribeStub).not.to.have.been.called
     })
 
+    it('closes a peer subscription when the on-demand request limit is exceeded', async () => {
+      const peer = 'a'.repeat(64)
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      })
+      rateLimiterHitStub.resolves({ limited: true, retryAfterMs: 123 })
+      message = [MessageType.REQ, subscriptionId, ...filters] as any
+
+      await handler.handleMessage(message)
+
+      expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${peer}:peer-request:60000`, 1, {
+        period: 60_000,
+        rate: 1,
+      })
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        'CLOSED',
+        subscriptionId,
+        'rate-limited: peer request limit exceeded',
+        '123',
+      ])
+      expect(fetchAndSendStub).not.to.have.been.called
+    })
+
+    it('does not apply peer request limits to ordinary clients', async () => {
+      settingsFactory.returns({
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      })
+      message = [MessageType.REQ, subscriptionId, ...filters] as any
+
+      await handler.handleMessage(message)
+
+      expect(rateLimiterHitStub).not.to.have.been.called
+    })
+
     it('emits subscribe event if subscription is accepted', async () => {
       canSubscribeStub.returns(undefined)
       message = [MessageType.REQ, subscriptionId, ...filters] as any
@@ -576,6 +611,25 @@ describe('SubscribeMessageHandler', () => {
         defaultLimit: 0,
         excludeDeleted: true,
       })
+    })
+
+    it('serves an out-of-scope event to a peer by id', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
+      settingsFactory.returns({
+        peering: { enabled: true, scopes: [{ kinds: [7] }] },
+        limits: { peer: { subscription: { maxLimit: 0 } } },
+      })
+      const idFilter = [{ ids: [event.id] }]
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, idFilter)
+
+      stream.write(toDbEvent(event))
+      stream.end()
+
+      await promise
+
+      expect(webSocketOnMessageStub).to.have.been.calledWith([MessageType.EVENT, subscriptionId, event])
     })
 
     it('sends event if client is subscribed', async () => {

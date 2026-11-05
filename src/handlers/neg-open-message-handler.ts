@@ -1,18 +1,21 @@
 import { IWebSocketAdapter } from '../@types/adapters'
-import { createNegErrMessage, createNegMsgMessage } from '../utils/messages'
-import { getNip77Limits, isNip77Active, NEGENTROPY_FRAME_SIZE_LIMIT } from '../utils/nip77'
-import { INegentropySessions } from '../@types/negentropy'
-import { Negentropy, NegentropyStorageVector } from '../utils/negentropy'
-import { IEventRepository, ReconciliationItem } from '../@types/repositories'
+import { Factory } from '../@types/base'
 import { IMessageHandler } from '../@types/message-handlers'
 import { NegOpenMessage, OutgoingMessage } from '../@types/messages'
+import { INegentropySessions } from '../@types/negentropy'
+import { IEventRepository, ReconciliationItem } from '../@types/repositories'
 import { Settings } from '../@types/settings'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
+import { IRateLimiter } from '../@types/utils'
 import { WebSocketAdapterEvent } from '../constants/adapter'
-import { countFilterValues } from '../utils/filter'
 import { createLogger } from '../factories/logger-factory'
+import { countFilterValues } from '../utils/filter'
+import { createNegErrMessage, createNegMsgMessage } from '../utils/messages'
+import { Negentropy, NegentropyStorageVector } from '../utils/negentropy'
 import { isReconciliationAuthorized } from '../utils/nip42'
+import { getNip77Limits, isNip77Active, NEGENTROPY_FRAME_SIZE_LIMIT } from '../utils/nip77'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
+import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
 
 const logger = createLogger('neg-open-message-handler')
 
@@ -25,6 +28,7 @@ export class NegOpenMessageHandler implements IMessageHandler {
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
+    private readonly rateLimiter?: Factory<IRateLimiter>,
   ) {}
 
   public async handleMessage(message: NegOpenMessage): Promise<void> {
@@ -38,6 +42,15 @@ export class NegOpenMessageHandler implements IMessageHandler {
     if (!isNip77Active(settings)) {
       this.reject(sessions, subscriptionId, 'blocked: NIP-77 is disabled by relay configuration')
       return
+    }
+
+    const peerPubkey = this.webSocket.getPeerPubkey()
+    if (peerPubkey && this.rateLimiter) {
+      const retryAfterMs = await getPeerRequestRetryAfterMs(this.rateLimiter, settings, peerPubkey, 'NEG-OPEN')
+      if (retryAfterMs !== undefined) {
+        this.reject(sessions, subscriptionId, `rate-limited: retry after ${retryAfterMs} ms`)
+        return
+      }
     }
 
     const rejection = this.getRejection(subscriptionId, filter, initialMessage)
@@ -123,10 +136,7 @@ export class NegOpenMessageHandler implements IMessageHandler {
     initialMessage: Buffer,
   ): string | undefined {
     const settings = this.settings()
-    const subscriptionLimits = subscriptionLimitsFor(
-      settings,
-      this.webSocket.getPeerPubkey() !== undefined,
-    )
+    const subscriptionLimits = subscriptionLimitsFor(settings, this.webSocket.getPeerPubkey() !== undefined)
 
     const maxFilterValues = subscriptionLimits?.maxFilterValues ?? 0
     if (maxFilterValues > 0 && countFilterValues(filter) > maxFilterValues) {
