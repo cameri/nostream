@@ -50,8 +50,10 @@ pub struct ReqwestClient {
     client: reqwest::Client,
 }
 
-/// The capture's `maxRedirects: 1` on every processor's axios instance
-/// (`src/factories/payments-processors/*.ts`).
+/// The capture's `maxRedirects: 1` on the processors' axios instances
+/// (`src/factories/payments-processors/*.ts`). This one client serves every caller, so the
+/// notification channels follow at most one redirect, where their bare `axios.post` follows
+/// up to five (`src/services/notification-channels.ts:42`).
 const MAX_REDIRECTS: usize = 1;
 
 impl ReqwestClient {
