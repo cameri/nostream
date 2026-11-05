@@ -13,8 +13,7 @@ use nostream_storage::repositories::{Invoice, InvoiceStatus, InvoiceUnit};
 
 use crate::error::ServicesError;
 use crate::payments::{
-    Env, InvoiceUpdate, PaymentProcessor, ProcessorFuture, ProcessorInvoice, from_unix_seconds,
-    now,
+    Env, InvoiceUpdate, PaymentProcessor, ProcessorFuture, ProcessorInvoice, from_unix_seconds, now,
 };
 
 /// The largest amount NIP-47's JSON number can carry exactly
@@ -76,14 +75,13 @@ pub struct NwcProcessor {
 }
 
 impl NwcProcessor {
-    pub(crate) fn new(
+    pub(crate) fn create(
         configured: Option<&PaymentsProcessors>,
         _http: Arc<dyn crate::http::HttpClient>,
         env: &Env<'_>,
     ) -> Result<Box<dyn PaymentProcessor>, ServicesError> {
-        let nwc_url = env("NWC_URL").ok_or_else(|| {
-            ServicesError::Configuration("NWC_URL must be set.".to_owned())
-        })?;
+        let nwc_url = env("NWC_URL")
+            .ok_or_else(|| ServicesError::Configuration("NWC_URL must be set.".to_owned()))?;
 
         if !nwc_url.starts_with("nostr+walletconnect://")
             && !nwc_url.starts_with("nostrwalletconnect://")

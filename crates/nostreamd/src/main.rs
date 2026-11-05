@@ -106,7 +106,11 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
     // R4: `WORKER_COUNT`, then `workers.count`, then the CPU count.
     let worker_threads = nostream_services::scheduler::resolve_worker_count(
         std::env::var("WORKER_COUNT").ok().as_deref(),
-        settings.workers.as_ref().map(|workers| workers.count).unwrap_or(0),
+        settings
+            .workers
+            .as_ref()
+            .map(|workers| workers.count)
+            .unwrap_or(0),
     );
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -126,10 +130,10 @@ fn payments_enabled(settings: &nostream_config::Settings) -> bool {
 }
 
 fn secret_missing() -> bool {
-    match std::env::var("SECRET") {
-        Ok(secret) if !secret.is_empty() && secret != "changeme" => false,
-        _ => true,
-    }
+    !matches!(
+        std::env::var("SECRET"),
+        Ok(secret) if !secret.is_empty() && secret != "changeme"
+    )
 }
 
 async fn serve(
@@ -213,7 +217,8 @@ async fn serve(
     });
 
     let tor_context = context.clone();
-    let tor_task = tokio::spawn(async move { nostreamd::workers::spawn_tor(tor_context, port).await });
+    let tor_task =
+        tokio::spawn(async move { nostreamd::workers::spawn_tor(tor_context, port).await });
 
     wait_for_signal().await;
     tracing::info!("signal received; draining");

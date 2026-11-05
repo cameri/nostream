@@ -103,19 +103,27 @@ pub fn resolve_with_env(
     http: Arc<dyn HttpClient>,
     env: &Env<'_>,
 ) -> Result<Box<dyn PaymentProcessor>, ServicesError> {
-    let Some(payments) = settings.payments.as_ref().filter(|payments| payments.enabled) else {
+    let Some(payments) = settings
+        .payments
+        .as_ref()
+        .filter(|payments| payments.enabled)
+    else {
         return Ok(Box::new(processors::null::NullProcessor::new()));
     };
 
     let configured = settings.payments_processors.as_ref();
 
     match payments.processor {
-        Processor::Lnurl => processors::lnurl::LnurlProcessor::new(configured, http),
-        Processor::Zebedee => processors::zebedee::ZebedeeProcessor::new(configured, http, env),
-        Processor::Lnbits => processors::lnbits::LnbitsProcessor::new(configured, http, env),
-        Processor::Nodeless => processors::nodeless::NodelessProcessor::new(configured, http, env),
-        Processor::Opennode => processors::opennode::OpennodeProcessor::new(configured, http, env),
-        Processor::Nwc => processors::nwc::NwcProcessor::new(configured, http, env),
+        Processor::Lnurl => processors::lnurl::LnurlProcessor::create(configured, http),
+        Processor::Zebedee => processors::zebedee::ZebedeeProcessor::create(configured, http, env),
+        Processor::Lnbits => processors::lnbits::LnbitsProcessor::create(configured, http, env),
+        Processor::Nodeless => {
+            processors::nodeless::NodelessProcessor::create(configured, http, env)
+        }
+        Processor::Opennode => {
+            processors::opennode::OpennodeProcessor::create(configured, http, env)
+        }
+        Processor::Nwc => processors::nwc::NwcProcessor::create(configured, http, env),
     }
 }
 
@@ -181,7 +189,9 @@ pub(crate) fn integer_field(value: &serde_json::Value, key: &str) -> Option<i64>
 }
 
 /// A server-minted version-4 UUID (`randomUUID()`).
-pub(crate) fn uuid_v4(random: &dyn nostream_core::random::RandomSource) -> Result<String, ServicesError> {
+pub(crate) fn uuid_v4(
+    random: &dyn nostream_core::random::RandomSource,
+) -> Result<String, ServicesError> {
     let mut bytes = random
         .bytes(16)
         .map_err(|error| ServicesError::Payment(error.to_string()))?;

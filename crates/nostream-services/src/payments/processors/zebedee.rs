@@ -24,7 +24,7 @@ pub struct ZebedeeProcessor {
 }
 
 impl ZebedeeProcessor {
-    pub(crate) fn new(
+    pub(crate) fn create(
         configured: Option<&PaymentsProcessors>,
         http: Arc<dyn HttpClient>,
         env: &Env<'_>,
@@ -35,7 +35,10 @@ impl ZebedeeProcessor {
             ));
         };
 
-        if zebedee.callback_base_url.contains("nostream.your-domain.com") {
+        if zebedee
+            .callback_base_url
+            .contains("nostream.your-domain.com")
+        {
             return Err(ServicesError::Configuration(
                 "Setting paymentsProcessor.zebedee.callbackBaseURL is not configured.".to_owned(),
             ));

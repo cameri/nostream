@@ -30,7 +30,7 @@ pub struct NodelessProcessor {
 }
 
 impl NodelessProcessor {
-    pub(crate) fn new(
+    pub(crate) fn create(
         configured: Option<&PaymentsProcessors>,
         http: Arc<dyn HttpClient>,
         env: &Env<'_>,
@@ -58,9 +58,7 @@ impl NodelessProcessor {
 }
 
 /// `fromNodelessInvoice` (`src/utils/transform.ts:208-238`).
-fn from_nodeless_invoice(
-    document: &serde_json::Value,
-) -> Result<ProcessorInvoice, ServicesError> {
+fn from_nodeless_invoice(document: &serde_json::Value) -> Result<ProcessorInvoice, ServicesError> {
     let metadata = document.get("metadata").cloned().unwrap_or_default();
     let status = match text_field(document, "status").as_deref() {
         Some("new" | "pending_confirmation" | "underpaid" | "in_flight") => InvoiceStatus::Pending,

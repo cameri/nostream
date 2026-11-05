@@ -24,7 +24,7 @@ pub struct LnurlProcessor {
 }
 
 impl LnurlProcessor {
-    pub(crate) fn new(
+    pub(crate) fn create(
         configured: Option<&PaymentsProcessors>,
         http: Arc<dyn HttpClient>,
     ) -> Result<Box<dyn PaymentProcessor>, ServicesError> {

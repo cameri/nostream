@@ -25,7 +25,7 @@ pub struct OpennodeProcessor {
 }
 
 impl OpennodeProcessor {
-    pub(crate) fn new(
+    pub(crate) fn create(
         configured: Option<&PaymentsProcessors>,
         http: Arc<dyn HttpClient>,
         env: &Env<'_>,
@@ -36,7 +36,10 @@ impl OpennodeProcessor {
             ));
         };
 
-        if opennode.callback_base_url.contains("nostream.your-domain.com") {
+        if opennode
+            .callback_base_url
+            .contains("nostream.your-domain.com")
+        {
             return Err(ServicesError::Configuration(
                 "Setting paymentsProcessor.opennode.callbackBaseURL is not configured.".to_owned(),
             ));
@@ -95,9 +98,11 @@ fn from_opennode_invoice(document: &serde_json::Value) -> Result<ProcessorInvoic
     });
 
     let created_at = match document.get("created_at") {
-        Some(serde_json::Value::Number(_)) => {
-            from_unix_seconds(document.get("created_at").and_then(serde_json::Value::as_i64))
-        }
+        Some(serde_json::Value::Number(_)) => from_unix_seconds(
+            document
+                .get("created_at")
+                .and_then(serde_json::Value::as_i64),
+        ),
         Some(_) => from_iso(document.get("created_at")),
         None => None,
     };

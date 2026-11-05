@@ -98,8 +98,14 @@ pub struct HttpCall {
 
 #[derive(Debug, Clone)]
 enum HttpScript {
-    Response { status: u16, body: String },
-    Failure { status: Option<u16>, message: String },
+    Response {
+        status: u16,
+        body: String,
+    },
+    Failure {
+        status: Option<u16>,
+        message: String,
+    },
 }
 
 /// An HTTP client that records every call and answers from a script.
@@ -328,7 +334,11 @@ impl InMemoryEventRepository {
             .records
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .extend(events.into_iter().map(|event| EventRecord::from_event(&event)));
+            .extend(
+                events
+                    .into_iter()
+                    .map(|event| EventRecord::from_event(&event)),
+            );
 
         Arc::new(store)
     }
@@ -418,7 +428,9 @@ fn matches_filter(record: &EventRecord, filter: &Filter) -> bool {
     }
 
     if let Some(authors) = &filter.authors
-        && !authors.iter().any(|author| *author == record.event.pubkey.to_string())
+        && !authors
+            .iter()
+            .any(|author| *author == record.event.pubkey.to_string())
     {
         return false;
     }
@@ -488,10 +500,9 @@ impl EventRepository for InMemoryEventRepository {
                 .clone();
 
             if let Some(gate) = gate {
-                let _permit = gate
-                    .acquire()
-                    .await
-                    .map_err(|_| nostream_storage::StorageError::NotImplemented { module: "testing" })?;
+                let _permit = gate.acquire().await.map_err(|_| {
+                    nostream_storage::StorageError::NotImplemented { module: "testing" }
+                })?;
             }
 
             *self
@@ -849,6 +860,9 @@ impl UserRepository for InMemoryUserRepository {
     }
 }
 
+/// One `mark_failed` call: `(outbox id, error, attempt count, max attempts, base delay ms)`.
+pub type FailedOutboxCall = (String, String, i32, i32, i64);
+
 /// An outbox repository recording the walk.
 #[derive(Debug, Default)]
 pub struct InMemoryOutboxRepository {
@@ -856,7 +870,7 @@ pub struct InMemoryOutboxRepository {
     claim: Mutex<Vec<OutboxMessage>>,
     claim_limits: Mutex<Vec<u64>>,
     delivered: Mutex<Vec<String>>,
-    failed: Mutex<Vec<(String, String, i32, i32, i64)>>,
+    failed: Mutex<Vec<FailedOutboxCall>>,
     terminal_cutoffs: Mutex<Vec<DateTime<Utc>>>,
     trace: Mutex<Option<Trace>>,
 }
@@ -900,7 +914,7 @@ impl InMemoryOutboxRepository {
     }
 
     /// Every `mark_failed` call.
-    pub fn failed(&self) -> Vec<(String, String, i32, i32, i64)> {
+    pub fn failed(&self) -> Vec<FailedOutboxCall> {
         self.failed
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -1203,11 +1217,7 @@ impl DvmJobRepository for InMemoryDvmJobRepository {
         })
     }
 
-    fn assign_worker<'a>(
-        &'a self,
-        id: &'a EventId,
-        worker_index: i32,
-    ) -> StorageFuture<'a, bool> {
+    fn assign_worker<'a>(&'a self, id: &'a EventId, worker_index: i32) -> StorageFuture<'a, bool> {
         Box::pin(async move {
             let mut jobs = self
                 .jobs
@@ -1279,14 +1289,9 @@ impl DvmJobRepository for InMemoryDvmJobRepository {
             Ok(jobs
                 .iter()
                 .filter(|job| {
-                    matches!(
-                        job.status,
-                        DvmJobStatus::Submitted | DvmJobStatus::PickedUp
-                    )
+                    matches!(job.status, DvmJobStatus::Submitted | DvmJobStatus::PickedUp)
                 })
-                .filter(|job| {
-                    kinds.is_none_or(|kinds| kinds.contains(&job.kind))
-                })
+                .filter(|job| kinds.is_none_or(|kinds| kinds.contains(&job.kind)))
                 .take(limit as usize)
                 .cloned()
                 .collect())
@@ -1528,7 +1533,9 @@ impl crate::payments::PaymentProcessor for RecordingProcessor {
             self.calls
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .push(format!("create_invoice({amount_msats}, {description}, {request_id})"));
+                .push(format!(
+                    "create_invoice({amount_msats}, {description}, {request_id})"
+                ));
 
             if let Some(error) = self
                 .create_error
@@ -1587,7 +1594,13 @@ impl crate::payments::PaymentProcessor for RecordingProcessor {
 /// A notification dispatcher recording every call.
 #[derive(Debug, Default)]
 pub struct RecordingDispatcher {
-    calls: Mutex<Vec<(String, OutboxPayload, crate::services::operator_notification_service::DispatchContext)>>,
+    calls: Mutex<
+        Vec<(
+            String,
+            OutboxPayload,
+            crate::services::operator_notification_service::DispatchContext,
+        )>,
+    >,
     failing_outbox_ids: Mutex<HashSet<String>>,
 }
 
@@ -1606,7 +1619,13 @@ impl RecordingDispatcher {
     }
 
     /// Every call, in order.
-    pub fn calls(&self) -> Vec<(String, OutboxPayload, crate::services::operator_notification_service::DispatchContext)> {
+    pub fn calls(
+        &self,
+    ) -> Vec<(
+        String,
+        OutboxPayload,
+        crate::services::operator_notification_service::DispatchContext,
+    )> {
         self.calls
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -1726,7 +1745,9 @@ pub fn context(settings: nostream_config::Settings) -> crate::context::ServiceCo
         settings: Arc::new(settings),
         clock: clock(1_700_000_000_000),
         random: Arc::new(nostream_core::random::SeededRandom::new(7)),
-        keys: Arc::new(nostream_relay::relay_key::RelayKeySource::from_values(None, None)),
+        keys: Arc::new(nostream_relay::relay_key::RelayKeySource::from_values(
+            None, None,
+        )),
         stores: Arc::new(crate::unavailable::ServiceStores {
             events: InMemoryEventRepository::new(),
             users: InMemoryUserRepository::new(),
@@ -1744,7 +1765,12 @@ pub fn context(settings: nostream_config::Settings) -> crate::context::ServiceCo
 }
 
 /// A minimal event with a valid signature, for a fixture.
-pub fn signed_event(secret_key: &[u8; 32], kind: Kind, tags: Vec<Vec<String>>, content: &str) -> Event {
+pub fn signed_event(
+    secret_key: &[u8; 32],
+    kind: Kind,
+    tags: Vec<Vec<String>>,
+    content: &str,
+) -> Event {
     let mut event = Event {
         id: EventId::from_byte_array([0; 32]),
         pubkey: Pubkey::from_byte_array([0; 32]),

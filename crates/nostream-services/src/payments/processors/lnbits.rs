@@ -28,7 +28,7 @@ pub struct LnbitsProcessor {
 }
 
 impl LnbitsProcessor {
-    pub(crate) fn new(
+    pub(crate) fn create(
         configured: Option<&PaymentsProcessors>,
         http: Arc<dyn HttpClient>,
         env: &Env<'_>,
@@ -39,7 +39,10 @@ impl LnbitsProcessor {
             ));
         };
 
-        if lnbits.callback_base_url.contains("nostream.your-domain.com") {
+        if lnbits
+            .callback_base_url
+            .contains("nostream.your-domain.com")
+        {
             return Err(ServicesError::Configuration(
                 "Setting paymentsProcessor.lnbits.callbackBaseURL is not configured.".to_owned(),
             ));
@@ -62,10 +65,9 @@ impl LnbitsProcessor {
     /// The `webhook` query parameter: the expiry in milliseconds and the HMAC over it
     /// (`src/payments-processors/lnbits-payment-processor.ts:94-98`).
     fn webhook(&self, expires_ms: i64) -> Result<String, ServicesError> {
-        let secret = self
-            .secret
-            .as_deref()
-            .ok_or_else(|| ServicesError::Payment("SECRET environment variable not set".to_owned()))?;
+        let secret = self.secret.as_deref().ok_or_else(|| {
+            ServicesError::Payment("SECRET environment variable not set".to_owned())
+        })?;
         let derived = derive_from_secret(secret, "lnbits-callback-hmac-key")?;
         let hmac = hex::encode(hmac_sha256(&derived, expires_ms.to_string().as_bytes())?);
         let separator = if self.callback_base_url.contains('?') {
@@ -148,10 +150,7 @@ impl PaymentProcessor for LnbitsProcessor {
             let payment_hash = text_field(&created, "payment_hash")
                 .ok_or_else(|| ServicesError::Payment("response has no payment_hash".to_owned()))?;
 
-            let url = join_url(
-                &self.base_url,
-                &format!("/api/v1/payments/{payment_hash}"),
-            );
+            let url = join_url(&self.base_url, &format!("/api/v1/payments/{payment_hash}"));
             let response = self.http.get(&url, REQUEST_TIMEOUT).await?;
             let document = parse_json(&response)?;
             let details = document

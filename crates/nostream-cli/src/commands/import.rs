@@ -12,8 +12,8 @@ use std::time::Instant;
 
 use clap::CommandFactory;
 use nostream_services::services::event_import_service::{
-    EventBatchPersister, EventImportLineError, EventImportService, EventImportStats,
-    LineErrorSink, RepositoryEventPersister,
+    EventBatchPersister, EventImportLineError, EventImportService, EventImportStats, LineErrorSink,
+    RepositoryEventPersister,
 };
 use tokio::io::BufReader;
 
@@ -77,7 +77,9 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, CliError> {
 
         if arg == "--batch-size" {
             let Some(value) = args.get(index + 1) else {
-                return Err(CliError::Import("Missing value for --batch-size".to_owned()));
+                return Err(CliError::Import(
+                    "Missing value for --batch-size".to_owned(),
+                ));
             };
             batch_size = parse_batch_size(value)?;
             index += 2;
@@ -95,7 +97,9 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, CliError> {
         }
 
         if file.is_some() {
-            return Err(CliError::Import(format!("Unexpected extra argument: {arg}")));
+            return Err(CliError::Import(format!(
+                "Unexpected extra argument: {arg}"
+            )));
         }
 
         file = Some(PathBuf::from(arg));
@@ -199,10 +203,9 @@ pub async fn import_with(
 
     let on_line_error = |error: &EventImportLineError| {
         if sink.borrow_mut().record(error) {
-            lines.borrow_mut().push(format!(
-                "[line {}] {}",
-                error.line_number, error.reason
-            ));
+            lines
+                .borrow_mut()
+                .push(format!("[line {}] {}", error.line_number, error.reason));
         }
     };
     let on_progress = |stats: &EventImportStats| {
@@ -221,11 +224,7 @@ pub async fn import_with(
         .map_err(|error| CliError::Import(error.to_string()))?;
 
     let stats = match format {
-        ImportFormat::Jsonl => {
-            service
-                .import_jsonl(BufReader::new(reader), &options)
-                .await
-        }
+        ImportFormat::Jsonl => service.import_jsonl(BufReader::new(reader), &options).await,
         ImportFormat::Json => service.import_json_array(reader, &options).await,
     }
     .map_err(|error| CliError::Import(error.to_string()))?;
@@ -247,7 +246,10 @@ pub async fn import_with(
 
     let lines = lines.into_inner();
 
-    Ok(CommandOutput { lines, exit_code: 0 })
+    Ok(CommandOutput {
+        lines,
+        exit_code: 0,
+    })
 }
 
 /// `[Processed: N | Inserted: N | Skipped: N | Errors: N]` with `en-US` separators.
@@ -267,7 +269,7 @@ fn format_number(value: u64) -> String {
     let mut formatted = String::with_capacity(digits.len() + digits.len() / 3);
 
     for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
             formatted.push(',');
         }
 
