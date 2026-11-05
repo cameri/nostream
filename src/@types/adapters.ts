@@ -37,6 +37,8 @@ export type IWebSocketAdapter = EventEmitter & {
   drainAndClose(reason?: string): void
   /** NIP-77 sessions of this connection. */
   getNegentropySessions(): INegentropySessions
+  /** Removes a subscription and aborts any in-flight read still serving it. */
+  endSubscription(subscriptionId: string): void
 }
 
 export interface ICacheAdapter {

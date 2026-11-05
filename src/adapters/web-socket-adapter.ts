@@ -417,7 +417,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     return createNoticeMessage('rate limited')
   }
 
-  private endSubscription(subscriptionId: SubscriptionId): void {
+  public endSubscription(subscriptionId: SubscriptionId): void {
     this.abortInFlightSubscriptionReads(subscriptionId)
     if (this.subscriptions.has(subscriptionId)) {
       this.onUnsubscribed(subscriptionId)

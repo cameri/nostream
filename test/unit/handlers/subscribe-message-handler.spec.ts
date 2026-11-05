@@ -1,22 +1,21 @@
-import { always } from 'ramda'
 import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
 import EventEmitter from 'events'
+import { always } from 'ramda'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
-
+import { PassThrough } from 'stream'
+import { IWebSocketAdapter } from '../../../src/@types/adapters'
+import { Event } from '../../../src/@types/event'
 import { IAbortable, IMessageHandler } from '../../../src/@types/message-handlers'
 import { MessageType, SubscribeMessage } from '../../../src/@types/messages'
-import { SubscriptionFilter, SubscriptionId } from '../../../src/@types/subscription'
-import * as eventUtils from '../../../src/utils/event'
-import { Event } from '../../../src/@types/event'
-import { EventTags } from '../../../src/constants/base'
 import { IEventRepository, IInviteCodeRepository } from '../../../src/@types/repositories'
+import { SubscriptionFilter, SubscriptionId } from '../../../src/@types/subscription'
 import { IRateLimiter } from '../../../src/@types/utils'
-import { IWebSocketAdapter } from '../../../src/@types/adapters'
-import { PassThrough } from 'stream'
-import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
+import { EventTags } from '../../../src/constants/base'
+import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
+import * as eventUtils from '../../../src/utils/event'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
@@ -50,6 +49,7 @@ describe('SubscribeMessageHandler', () => {
   let rateLimiter: IRateLimiter
   let rateLimiterHitStub: Sinon.SinonStub
   let rateLimiterFactory: Sinon.SinonStub
+  let endSubscriptionStub: Sinon.SinonStub
 
   let sandbox: Sinon.SinonSandbox
 
@@ -62,6 +62,8 @@ describe('SubscribeMessageHandler', () => {
     webSocket.getSubscriptions = webSocketGetSubscriptionsStub
     webSocket.getPeerPubkey = sandbox.stub().returns(undefined)
     webSocket.waitForWritable = sandbox.stub().resolves()
+    endSubscriptionStub = sandbox.stub()
+    webSocket.endSubscription = endSubscriptionStub
     settingsFactory = sandbox.stub()
     stream = new PassThrough({
       objectMode: true,
@@ -160,6 +162,30 @@ describe('SubscribeMessageHandler', () => {
         'rate-limited: peer request limit exceeded',
         '123',
       ])
+      expect(fetchAndSendStub).not.to.have.been.called
+      expect(endSubscriptionStub).to.have.been.calledOnceWithExactly(subscriptionId)
+    })
+
+    it('does not register a subscription closed while the limiter is pending', async () => {
+      const peer = 'a'.repeat(64)
+      let releaseLimit: ((result: { limited: boolean }) => void) | undefined
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      })
+      rateLimiterHitStub.returns(
+        new Promise((resolve) => {
+          releaseLimit = resolve
+        }),
+      )
+      message = [MessageType.REQ, subscriptionId, ...filters] as any
+
+      const pending = handler.handleMessage(message)
+      ;(handler as any).abort()
+      releaseLimit?.({ limited: false })
+      await pending
+
+      expect(webSocketOnSubscribeStub).not.to.have.been.called
       expect(fetchAndSendStub).not.to.have.been.called
     })
 

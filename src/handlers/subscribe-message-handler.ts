@@ -59,10 +59,19 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     if (peerPubkey) {
       const retryAfterMs = await getPeerRequestRetryAfterMs(this.rateLimiter, this.settings(), peerPubkey, 'REQ')
       if (retryAfterMs !== undefined) {
+        // A reused subscription id must not keep its old filters/read alive
+        // after we tell the peer this request was refused.
+        this.webSocket.endSubscription(subscriptionId)
         this.webSocket.emit(
           WebSocketAdapterEvent.Message,
           createClosedMessage(subscriptionId, 'rate-limited: peer request limit exceeded', String(retryAfterMs)),
         )
+        return
+      }
+
+      // CLOSE may have arrived while the limiter was pending. endSubscription
+      // aborted this handler's read; do not register the subscription again.
+      if (this.abortController.signal.aborted) {
         return
       }
     }

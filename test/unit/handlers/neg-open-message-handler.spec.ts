@@ -259,6 +259,30 @@ describe('NegOpenMessageHandler', () => {
         'rate-limited: retry after 456 ms',
       ])
     })
+
+    it('does not open a session closed while the limiter is pending', async () => {
+      const peer = 'a'.repeat(64)
+      let releaseLimit: ((result: { limited: boolean }) => void) | undefined
+      settings = {
+        nip77: { enabled: true },
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      } as Settings
+      webSocket.getPeerPubkey = () => peer
+      rateLimiterHitStub.returns(
+        new Promise((resolve) => {
+          releaseLimit = resolve
+        }),
+      )
+
+      const pending = open()
+      sessions.close('sync1')
+      releaseLimit?.({ limited: false })
+      await pending
+
+      expect(findReconciliationItems).not.to.have.been.called
+      expect(emitted).not.to.have.been.called
+      expect(sessions.getSessionIds()).to.deep.equal([])
+    })
   })
 
   describe('NIP-42', () => {

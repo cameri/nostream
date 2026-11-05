@@ -44,15 +44,6 @@ export class NegOpenMessageHandler implements IMessageHandler {
       return
     }
 
-    const peerPubkey = this.webSocket.getPeerPubkey()
-    if (peerPubkey && this.rateLimiter) {
-      const retryAfterMs = await getPeerRequestRetryAfterMs(this.rateLimiter, settings, peerPubkey, 'NEG-OPEN')
-      if (retryAfterMs !== undefined) {
-        this.reject(sessions, subscriptionId, `rate-limited: retry after ${retryAfterMs} ms`)
-        return
-      }
-    }
-
     const rejection = this.getRejection(subscriptionId, filter, initialMessage)
     if (rejection) {
       logger('NEG-OPEN %s with %o rejected: %s', subscriptionId, filter, rejection)
@@ -62,6 +53,9 @@ export class NegOpenMessageHandler implements IMessageHandler {
 
     const { maxEventsPerSession, maxSessionsPerConnection, sessionIdleTimeoutMs } = getNip77Limits(settings)
 
+    // Claim the id before the first await. A NEG-CLOSE (or a replacement
+    // NEG-OPEN) that arrives while the limiter is pending then owns the id,
+    // and this handler must not open a session after it.
     const token = sessions.reserve(subscriptionId, maxSessionsPerConnection)
     if (!token) {
       this.reject(
@@ -69,6 +63,23 @@ export class NegOpenMessageHandler implements IMessageHandler {
         subscriptionId,
         `blocked: too many negentropy sessions or reads in progress on this connection (max ${maxSessionsPerConnection})`,
       )
+      return
+    }
+
+    const peerPubkey = this.webSocket.getPeerPubkey()
+    if (peerPubkey && this.rateLimiter) {
+      const retryAfterMs = await getPeerRequestRetryAfterMs(this.rateLimiter, settings, peerPubkey, 'NEG-OPEN')
+      if (retryAfterMs !== undefined) {
+        sessions.endRead(token)
+        if (sessions.isCurrent(subscriptionId, token)) {
+          this.reject(sessions, subscriptionId, `rate-limited: retry after ${retryAfterMs} ms`)
+        }
+        return
+      }
+    }
+
+    if (!sessions.isCurrent(subscriptionId, token)) {
+      sessions.endRead(token)
       return
     }
 
