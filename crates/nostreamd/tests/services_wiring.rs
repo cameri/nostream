@@ -159,7 +159,9 @@ fn workspace_root() -> PathBuf {
         .expect("the workspace root exists")
 }
 
-/// Runs the daemon for `settle`, sends SIGINT, and returns its exit code and streams.
+/// Runs the daemon for two seconds, sends SIGINT, and returns its exit code and streams.
+// shortcut: a fixed settle instead of reading the bound port back from the log; upgrade when
+// daemon startup grows a step slower than the settle.
 fn run_daemon(config_dir: &Path) -> (Option<i32>, String, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_nostreamd"))
         .args([

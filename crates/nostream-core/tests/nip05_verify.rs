@@ -152,6 +152,9 @@ async fn a_body_over_the_cap_is_an_error_outcome() {
     }
 }
 
+// shortcut: the redirect budget and the timeout are asserted as the transport's arguments,
+// and its two failures are scripted rather than produced by a loopback server; upgrade when a
+// local HTTP fixture is worth carrying for the transport itself.
 #[tokio::test]
 async fn a_redirect_chain_beyond_the_budget_is_an_error_outcome() {
     let fetch = FakeFetch::with(Err(CoreError::Fetch(

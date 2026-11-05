@@ -239,6 +239,8 @@ async fn the_counters_use_en_us_separators() {
     );
 }
 
+// shortcut: the refused port costs the pool's 60 s acquire timeout before the failure is
+// reported; upgrade when `PoolBounds` becomes injectable for the CLI.
 #[test]
 fn an_unreachable_database_fails_and_claims_no_success() {
     let directory = tempfile::tempdir().expect("tempdir");
