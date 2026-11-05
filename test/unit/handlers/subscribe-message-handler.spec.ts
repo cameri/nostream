@@ -189,6 +189,30 @@ describe('SubscribeMessageHandler', () => {
       expect(fetchAndSendStub).not.to.have.been.called
     })
 
+    it('does not end a newer request when an aborted handler is refused', async () => {
+      const peer = 'a'.repeat(64)
+      let releaseLimit: ((result: { limited: boolean; retryAfterMs?: number }) => void) | undefined
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      })
+      rateLimiterHitStub.returns(
+        new Promise((resolve) => {
+          releaseLimit = resolve
+        }),
+      )
+      message = [MessageType.REQ, subscriptionId, ...filters] as any
+
+      const pending = handler.handleMessage(message)
+      ;(handler as any).abort()
+      releaseLimit?.({ limited: true, retryAfterMs: 123 })
+      await pending
+
+      expect(endSubscriptionStub).not.to.have.been.called
+      expect(webSocketOnMessageStub).not.to.have.been.called
+      expect(webSocketOnSubscribeStub).not.to.have.been.called
+    })
+
     it('does not apply peer request limits to ordinary clients', async () => {
       settingsFactory.returns({
         limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
