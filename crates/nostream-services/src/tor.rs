@@ -17,6 +17,14 @@ pub const DEFAULT_HIDDEN_SERVICE_PORT: u16 = 80;
 /// The key file under the configuration directory (`src/tor/client.ts:12`).
 pub const ONION_KEY_FILE: &str = "v3_onion_private_key";
 
+/// Where a new key is staged before it replaces the key file. A write that is cancelled leaves
+/// this file behind, never a truncated key at [`ONION_KEY_FILE`].
+const ONION_KEY_TEMP_FILE: &str = "v3_onion_private_key.tmp";
+
+/// How long the shutdown waits for `QUIT`'s reply: the control port may be gone, and the
+/// daemon must not be held open by it.
+pub const QUIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// The bootstrap's configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TorConfig {
@@ -74,6 +82,31 @@ pub struct OnionService {
 pub enum HiddenServiceOutcome {
     Enabled { service_id: String, port: u16 },
     Disabled,
+}
+
+/// The bootstrap's result and the control connection that keeps the onion alive.
+///
+/// Tor removes a service created without `Flags=Detach` when its control connection closes,
+/// so the connection is part of the result: while this value is alive the service is up, and
+/// [`HiddenServiceBootstrap::shutdown`] is what ends it.
+pub struct HiddenServiceBootstrap {
+    outcome: HiddenServiceOutcome,
+    client: Option<TorClient>,
+}
+
+impl HiddenServiceBootstrap {
+    /// What the bootstrap settled.
+    pub fn outcome(&self) -> &HiddenServiceOutcome {
+        &self.outcome
+    }
+
+    /// `QUIT`s the control connection, best effort and bounded: Tor drops the service when the
+    /// connection closes, and a control port that stops answering must not hold the drain open.
+    pub async fn shutdown(mut self) {
+        if let Some(client) = self.client.as_mut() {
+            let _ = tokio::time::timeout(QUIT_TIMEOUT, client.quit()).await;
+        }
+    }
 }
 
 /// A connection to the control port, with the reply buffer between commands.
@@ -270,13 +303,17 @@ fn reply_line(line: &str) -> Option<(&str, char)> {
 /// The startup's one bootstrap attempt. A missing host, an unreachable control port and a
 /// refused `ADD_ONION` all answer [`HiddenServiceOutcome::Disabled`]; the capture never fails
 /// startup on Tor (`src/app/app.ts:204-212`).
-pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceOutcome {
+///
+/// The returned [`HiddenServiceBootstrap`] owns the control connection. `ADD_ONION` carries no
+/// `Flags=Detach`, so Tor removes the service as soon as that connection closes: an
+/// `Enabled` outcome whose value has been dropped is an onion nobody can reach.
+pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceBootstrap {
     let Some(host) = config.host.as_deref() else {
-        return HiddenServiceOutcome::Disabled;
+        return HiddenServiceBootstrap::disabled();
     };
 
     if host.is_empty() {
-        return HiddenServiceOutcome::Disabled;
+        return HiddenServiceBootstrap::disabled();
     }
 
     let key_file = config.key_file();
@@ -289,7 +326,7 @@ pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceOutcome {
         Ok(client) => client,
         Err(error) => {
             tracing::debug!(error = %error, "Tor hidden service disabled");
-            return HiddenServiceOutcome::Disabled;
+            return HiddenServiceBootstrap::disabled();
         }
     };
 
@@ -301,7 +338,7 @@ pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceOutcome {
         Err(error) => {
             tracing::debug!(error = %error, "Tor hidden service disabled");
             client.quit().await;
-            return HiddenServiceOutcome::Disabled;
+            return HiddenServiceBootstrap::disabled();
         }
     };
 
@@ -313,7 +350,7 @@ pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceOutcome {
             "Tor replied without a private key; the hidden service is disabled"
         );
         client.quit().await;
-        return HiddenServiceOutcome::Disabled;
+        return HiddenServiceBootstrap::disabled();
     };
 
     if stored_key.is_none()
@@ -322,25 +359,113 @@ pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceOutcome {
         tracing::warn!(path = %key_file.display(), error = %error, "unable to save the onion key");
     }
 
-    let service_id = onion.service_id;
-    client.quit().await;
+    HiddenServiceBootstrap {
+        outcome: HiddenServiceOutcome::Enabled {
+            service_id: onion.service_id,
+            port: config.hidden_port,
+        },
+        client: Some(client),
+    }
+}
 
-    HiddenServiceOutcome::Enabled {
-        service_id,
-        port: config.hidden_port,
+impl HiddenServiceBootstrap {
+    /// A bootstrap that holds no service.
+    fn disabled() -> Self {
+        Self {
+            outcome: HiddenServiceOutcome::Disabled,
+            client: None,
+        }
     }
 }
 
 /// Writes the onion key with owner-only permissions: it is the one long-lived secret the
 /// daemon writes to disk, and the process umask would otherwise leave it world-readable.
+///
+/// The key is staged next to its destination and renamed into place, so a write cancelled
+/// between the two steps leaves the temp file behind rather than a truncated key file that
+/// the next boot would read as a stored key. The mode is applied to the open handle as well
+/// as at creation: a key written by the TypeScript daemon at the same path keeps its 0644
+/// unless the permission is set again.
 async fn write_private_key(path: &Path, key: &str) -> std::io::Result<()> {
+    let temporary = path.with_file_name(ONION_KEY_TEMP_FILE);
     let mut options = tokio::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
 
     #[cfg(unix)]
     options.mode(0o600);
 
-    let mut file = options.open(path).await?;
+    let mut file = options.open(&temporary).await?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .await?;
+    }
+
     file.write_all(key.as_bytes()).await?;
-    file.flush().await
+    file.flush().await?;
+    file.sync_all().await?;
+    drop(file);
+
+    tokio::fs::rename(&temporary, path).await
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::{ONION_KEY_FILE, ONION_KEY_TEMP_FILE, write_private_key};
+
+    #[tokio::test]
+    async fn the_key_is_staged_and_renamed_without_leaving_the_temp_file() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join(ONION_KEY_FILE);
+
+        write_private_key(&path, "ED25519-V3:secret")
+            .await
+            .expect("write");
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("the key file"),
+            "ED25519-V3:secret"
+        );
+        assert!(
+            !directory.path().join(ONION_KEY_TEMP_FILE).exists(),
+            "the staged copy is renamed into place"
+        );
+    }
+
+    /// A key the TypeScript daemon wrote at this path keeps its 0644 through the rename unless
+    /// the permission is set on the open handle, which `mode` alone does not do.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_existing_world_readable_key_is_narrowed_to_its_owner() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join(ONION_KEY_FILE);
+        std::fs::write(&path, "ED25519-V3:old").expect("write");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+
+        write_private_key(&path, "ED25519-V3:new")
+            .await
+            .expect("write");
+
+        let mode = std::fs::metadata(&path)
+            .expect("the key file's metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "the key is readable only by its owner");
+    }
+
+    /// A write that fails must never leave a partial key at the path the next boot reads.
+    #[tokio::test]
+    async fn a_failed_write_leaves_no_key_file() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("absent").join(ONION_KEY_FILE);
+
+        assert!(write_private_key(&path, "ED25519-V3:secret").await.is_err());
+        assert!(!path.exists());
+    }
 }

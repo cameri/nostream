@@ -398,3 +398,172 @@ async fn validation_rejects_the_id_the_signature_and_an_unknown_key() {
         reasons[2]
     );
 }
+
+/// An event of `secret`'s with a chosen `created_at`.
+fn at(
+    secret: &[u8; 32],
+    created_at: i64,
+    kind: Kind,
+    tags: Vec<Vec<String>>,
+    content: &str,
+) -> Event {
+    let mut event = testing::signed_event(secret, kind, tags, content);
+    event.created_at = created_at;
+    nostream_core::crypto::sign_event(secret, &mut event).expect("sign");
+
+    event
+}
+
+/// Postgres refuses to update the same row twice in one `INSERT ... ON CONFLICT DO UPDATE`
+/// ("cannot affect row a second time"), so a file carrying two versions of one address must
+/// resolve to one winner before the batch write.
+#[tokio::test]
+async fn two_versions_of_one_address_keep_the_newest_and_import() {
+    let repository = InMemoryEventRepository::new();
+    let persister = repository_persister(&repository);
+    let service = EventImportService::new(Arc::new(persister));
+
+    let address = vec![tagged(&["d", "profile"])];
+    let older = at(
+        &[6; 32],
+        1_700_000_000,
+        Kind(30_001),
+        address.clone(),
+        "older",
+    );
+    let newer = at(
+        &[6; 32],
+        1_700_000_100,
+        Kind(30_001),
+        address.clone(),
+        "newer",
+    );
+    let sibling = at(
+        &[6; 32],
+        1_700_000_050,
+        Kind(30_001),
+        vec![tagged(&["d", "other"])],
+        "other",
+    );
+
+    let input = [line(&older), line(&newer), line(&sibling)].join("\n");
+    let stats = service
+        .import_jsonl(BufReader::new(input.as_bytes()), &ImportOptions::default())
+        .await
+        .expect("one row per address is a valid batch");
+
+    assert_eq!(stats.processed, 3);
+    assert_eq!(stats.inserted, 2, "one row per conflict key");
+    assert_eq!(stats.skipped, 1);
+
+    let mut upserted: Vec<Event> = repository
+        .upsert_many_calls()
+        .into_iter()
+        .flatten()
+        .map(|record| record.event)
+        .collect();
+    upserted.sort_by_key(|event| event.content.clone());
+
+    assert_eq!(upserted.len(), 2, "the two addresses are two rows");
+    assert!(
+        upserted.iter().any(|event| event.id == newer.id),
+        "the newer version of one address wins"
+    );
+    assert!(
+        !upserted.iter().any(|event| event.id == older.id),
+        "the older version is dropped"
+    );
+}
+
+/// An equal `created_at` is won by the smaller id, as the merge predicate decides.
+#[tokio::test]
+async fn an_equal_created_at_is_won_by_the_smaller_id() {
+    let repository = InMemoryEventRepository::new();
+    let persister = repository_persister(&repository);
+
+    let address = vec![tagged(&["d", "profile"])];
+    let first = at(
+        &[7; 32],
+        1_700_000_000,
+        Kind(30_001),
+        address.clone(),
+        "first",
+    );
+    let second = at(&[7; 32], 1_700_000_000, Kind(30_001), address, "second");
+    let (smaller, larger) = if first.id < second.id {
+        (first, second)
+    } else {
+        (second, first)
+    };
+
+    persist(&persister, &[larger.clone(), smaller.clone()]).await;
+
+    let upserted: Vec<Event> = repository
+        .upsert_many_calls()
+        .into_iter()
+        .flatten()
+        .map(|record| record.event)
+        .collect();
+    assert_eq!(upserted.len(), 1);
+    assert_eq!(upserted[0].id, smaller.id);
+}
+
+#[tokio::test]
+async fn the_array_reader_refuses_a_trailing_comma_and_trailing_content() {
+    let serialized = line(&valid_event());
+
+    for (input, expected) in [
+        (format!("[{}]", serialized), None),
+        (
+            format!("[{} , ]", serialized),
+            Some("Invalid JSON array input: expected an element after `,`"),
+        ),
+        (
+            format!("[{},,{}]", serialized, serialized),
+            Some("Invalid JSON array input: expected an element, found `,`"),
+        ),
+        (
+            format!("[,{}]", serialized),
+            Some("Invalid JSON array input: expected value"),
+        ),
+        (
+            format!("[{}]garbage", serialized),
+            Some("Invalid JSON array input: unexpected `g` after the closing `]`"),
+        ),
+    ] {
+        let persister = RecordingPersister::new();
+        let service = service(&persister);
+
+        match expected {
+            None => {
+                let stats = service
+                    .import_json_array(input.as_bytes(), &ImportOptions::default())
+                    .await
+                    .unwrap_or_else(|error| panic!("{input} should import: {error}"));
+                assert_eq!(stats.processed, 1, "{input}");
+            }
+            Some(expected) => {
+                let error = service
+                    .import_json_array(input.as_bytes(), &ImportOptions::default())
+                    .await
+                    .expect_err("a malformed document is not an import");
+
+                assert!(error.to_string().starts_with(expected), "{input}: {error}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_empty_array_imports_nothing() {
+    let persister = RecordingPersister::new();
+    let service = service(&persister);
+
+    let stats = service
+        .import_json_array(&b"  [ ]  \n"[..], &ImportOptions::default())
+        .await
+        .expect("an empty array is a valid document");
+
+    assert_eq!(stats, EventImportStats::default());
+    assert!(persister.batches().is_empty());
+}

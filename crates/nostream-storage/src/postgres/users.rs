@@ -32,13 +32,27 @@ where
     row.as_ref().map(super::rows::user).transpose()
 }
 
-/// `upsert`: inserts the row or updates admission, the vanished flag and `updated_at`, and
-/// `tos_accepted_at` only when the patch carries it. `balance` and `created_at` are never
-/// touched.
+/// `upsert`: inserts the row or updates the fields the patch carries. `balance` and
+/// `created_at` are never touched.
 pub(crate) async fn upsert<'e, E>(executor: E, patch: &UserPatch) -> Result<u64, StorageError>
 where
     E: Executor<'e, Database = Postgres>,
 {
+    let (sql, args) = upsert_statement(patch);
+
+    Ok(EventQuery { sql, args }
+        .into_query()
+        .execute(executor)
+        .await?
+        .rows_affected())
+}
+
+/// The statement [`upsert`] runs.
+///
+/// A flag the patch leaves `Absent` is written `false` on the insert and left out of the
+/// merge: a caller that only needs the row to exist must not clear an admission or a vanish
+/// flag that is already there.
+fn upsert_statement(patch: &UserPatch) -> (String, Args) {
     let now = Utc::now();
     let mut args = Args::default();
     let mut columns = vec![
@@ -50,15 +64,25 @@ where
     ];
     let mut values = vec![
         args.push(Arg::Bytes(patch.pubkey.as_bytes().to_vec())),
-        args.push(Arg::Bool(patch.is_admitted)),
-        args.push(Arg::Bool(patch.is_vanished)),
+        args.push(Arg::Bool(
+            patch.is_admitted.value().copied().unwrap_or(false),
+        )),
+        args.push(Arg::Bool(
+            patch.is_vanished.value().copied().unwrap_or(false),
+        )),
         args.push(Arg::Timestamp(now)),
         args.push(Arg::Timestamp(now)),
     ];
-    let mut merge = String::from(
-        "is_admitted = excluded.is_admitted, is_vanished = excluded.is_vanished, \
-         updated_at = excluded.updated_at",
-    );
+    let mut merge = vec!["updated_at = excluded.updated_at".to_owned()];
+
+    if patch.is_admitted.value().is_some() {
+        merge.push("is_admitted = excluded.is_admitted".to_owned());
+    }
+
+    if patch.is_vanished.value().is_some() {
+        merge.push("is_vanished = excluded.is_vanished".to_owned());
+    }
+
     match patch.tos_accepted_at {
         // Absent leaves the column alone (knex skips `undefined`).
         FieldUpdate::Absent => {}
@@ -66,26 +90,23 @@ where
         FieldUpdate::Clear => {
             columns.push("tos_accepted_at");
             values.push(args.push(Arg::NullNaiveTimestamp));
-            merge.push_str(", tos_accepted_at = excluded.tos_accepted_at");
+            merge.push("tos_accepted_at = excluded.tos_accepted_at".to_owned());
         }
         FieldUpdate::Set(tos_accepted_at) => {
             columns.push("tos_accepted_at");
             values.push(args.push(Arg::NaiveTimestamp(tos_accepted_at.naive_utc())));
-            merge.push_str(", tos_accepted_at = excluded.tos_accepted_at");
+            merge.push("tos_accepted_at = excluded.tos_accepted_at".to_owned());
         }
     }
 
     let sql = format!(
-        "INSERT INTO users ({}) VALUES ({}) ON CONFLICT (pubkey) DO UPDATE SET {merge}",
+        "INSERT INTO users ({}) VALUES ({}) ON CONFLICT (pubkey) DO UPDATE SET {}",
         columns.join(", "),
-        values.join(", ")
+        values.join(", "),
+        merge.join(", ")
     );
 
-    Ok(EventQuery { sql, args }
-        .into_query()
-        .execute(executor)
-        .await?
-        .rows_affected())
+    (sql, args)
 }
 
 /// `getBalanceByPubkey`: the stored balance, `0` when no row exists.
@@ -180,4 +201,48 @@ where
         .execute(executor)
         .await?
         .rows_affected())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+    use nostream_core::Pubkey;
+
+    fn patch(is_admitted: FieldUpdate<bool>, is_vanished: FieldUpdate<bool>) -> UserPatch {
+        UserPatch {
+            pubkey: Pubkey::from_byte_array([1; 32]),
+            is_admitted,
+            is_vanished,
+            tos_accepted_at: FieldUpdate::Absent,
+        }
+    }
+
+    /// An upsert that only needs the row to exist must not clear admission or a vanish flag.
+    #[test]
+    fn absent_flags_are_not_merged() {
+        let (sql, _args) = upsert_statement(&patch(FieldUpdate::Absent, FieldUpdate::Absent));
+
+        assert!(!sql.contains("is_admitted = excluded.is_admitted"), "{sql}");
+        assert!(!sql.contains("is_vanished = excluded.is_vanished"), "{sql}");
+        assert!(
+            sql.contains("updated_at = excluded.updated_at"),
+            "the row is still touched: {sql}"
+        );
+        assert!(
+            sql.contains("(pubkey, is_admitted, is_vanished, updated_at, created_at)"),
+            "a new row is written with the flags' defaults: {sql}"
+        );
+    }
+
+    /// A patch that carries a flag still writes it, which is what admission and vanish writes
+    /// need.
+    #[test]
+    fn carried_flags_are_merged() {
+        let (sql, _args) = upsert_statement(&patch(FieldUpdate::Set(true), FieldUpdate::Set(true)));
+
+        assert!(sql.contains("is_admitted = excluded.is_admitted"), "{sql}");
+        assert!(sql.contains("is_vanished = excluded.is_vanished"), "{sql}");
+    }
 }

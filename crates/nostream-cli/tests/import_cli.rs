@@ -213,29 +213,33 @@ async fn a_successful_import_prints_progress_then_the_summary() {
     fs::write(&path, format!("{line}\n{line}\n")).expect("write");
     let persister = RecordingPersister::new();
 
-    let output = import::import_with(&path, ImportFormat::Jsonl, 1, persister)
+    let mut out: Vec<u8> = Vec::new();
+    let output = import::import_with(&path, ImportFormat::Jsonl, 1, persister, &mut out)
         .await
         .expect("import");
 
     assert_eq!(output.exit_code, 0);
+    let printed = String::from_utf8(out).expect("utf-8");
+    let lines: Vec<&str> = printed.lines().collect();
     assert_eq!(
-        output.lines[0],
+        lines[0],
         "[Processed: 1 | Inserted: 1 | Skipped: 0 | Errors: 0]"
     );
     assert_eq!(
-        output.lines[1],
+        lines[1],
         "[Processed: 2 | Inserted: 2 | Skipped: 0 | Errors: 0]"
     );
     assert!(
-        output.lines[2].starts_with("Import completed in ") && output.lines[2].ends_with('s'),
+        lines[2].starts_with("Import completed in ") && lines[2].ends_with('s'),
         "{}",
-        output.lines[2]
+        lines[2]
     );
     assert_eq!(
-        output.lines[3],
+        lines[3],
         "[Processed: 2 | Inserted: 2 | Skipped: 0 | Errors: 0]"
     );
-    assert_eq!(output.lines.len(), 4);
+    assert_eq!(lines.len(), 4);
+    assert!(output.lines.is_empty(), "the writer carries the output");
 }
 
 #[tokio::test]
@@ -246,13 +250,14 @@ async fn the_counters_use_en_us_separators() {
     fs::write(&path, vec![line.as_str(); 1_000].join("\n")).expect("write");
     let persister = RecordingPersister::new();
 
-    let output = import::import_with(&path, ImportFormat::Jsonl, 1_000, persister)
+    let mut out: Vec<u8> = Vec::new();
+    import::import_with(&path, ImportFormat::Jsonl, 1_000, persister, &mut out)
         .await
         .expect("import");
 
     assert_eq!(
-        output.lines[0],
-        "[Processed: 1,000 | Inserted: 1,000 | Skipped: 0 | Errors: 0]"
+        String::from_utf8(out).expect("utf-8").lines().next(),
+        Some("[Processed: 1,000 | Inserted: 1,000 | Skipped: 0 | Errors: 0]")
     );
 }
 

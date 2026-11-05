@@ -627,20 +627,29 @@ impl UserRepository for InMemoryUserRepository {
     fn upsert<'a>(&'a self, patch: &'a UserPatch) -> StorageFuture<'a, u64> {
         Box::pin(async move {
             let now = chrono::Utc::now();
-            self.users
+            let mut users = self
+                .users
                 .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .insert(
-                    patch.pubkey,
-                    User {
-                        pubkey: patch.pubkey,
-                        is_admitted: patch.is_admitted,
-                        is_vanished: patch.is_vanished,
-                        balance: 0,
-                        created_at: now,
-                        updated_at: now,
-                    },
-                );
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let user = users.entry(patch.pubkey).or_insert(User {
+                pubkey: patch.pubkey,
+                is_admitted: false,
+                is_vanished: false,
+                balance: 0,
+                created_at: now,
+                updated_at: now,
+            });
+
+            // An absent flag leaves the stored one alone, as the Postgres merge does.
+            if let FieldUpdate::Set(is_admitted) = patch.is_admitted {
+                user.is_admitted = is_admitted;
+            }
+
+            if let FieldUpdate::Set(is_vanished) = patch.is_vanished {
+                user.is_vanished = is_vanished;
+            }
+
+            user.updated_at = now;
 
             Ok(1)
         })

@@ -2,10 +2,14 @@
 //!
 //! The capture's parser is hand-written (it rejects `--file` even though `CLI.md` shows it),
 //! so this module parses the same way, renders clap's help for `--help`, and streams the
-//! file through [`EventImportService`]. Every stdout line goes through the CLI's
-//! [`CommandOutput`] so `main` stays the only stream writer.
+//! file through [`EventImportService`].
+//!
+//! Progress and line errors go to a writer as they happen, as the capture's `console.log`
+//! does: an import of a large file that shows nothing until it finishes looks hung, and any
+//! later failure would discard the lines it had already collected.
 
 use std::cell::RefCell;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -186,31 +190,39 @@ pub fn run(args: &[String], cwd: &Path) -> Result<CommandOutput, CliError> {
         let persister: Arc<dyn EventBatchPersister> =
             Arc::new(RepositoryEventPersister::new(Arc::new(backend)));
 
-        import_with(&path, format, batch_size, persister).await
+        let mut stdout = std::io::stdout().lock();
+
+        import_with(&path, format, batch_size, persister, &mut stdout).await
     })
 }
 
-/// The import over an injected persister, which is how the output contract is tested.
+/// The import over an injected persister and writer, which is how the output contract is
+/// tested.
+///
+/// Every line is written as it happens, and nothing is returned in [`CommandOutput`]: the
+/// summary is written here too, after the last batch, so an import that fails part-way leaves
+/// the progress it did reach on the stream.
 pub async fn import_with(
     path: &Path,
     format: ImportFormat,
     batch_size: u64,
     persister: Arc<dyn EventBatchPersister>,
+    out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
     let service = EventImportService::new(persister);
-    let lines: RefCell<Vec<String>> = RefCell::new(Vec::new());
+    let out = RefCell::new(out);
     let sink: RefCell<LineErrorSink> = RefCell::new(LineErrorSink::default());
+    let write = |line: String| {
+        // A closed stdout is not an import failure: the work still has to complete.
+        let _ = writeln!(&mut *out.borrow_mut(), "{line}");
+    };
 
     let on_line_error = |error: &EventImportLineError| {
         if sink.borrow_mut().record(error) {
-            lines
-                .borrow_mut()
-                .push(format!("[line {}] {}", error.line_number, error.reason));
+            write(format!("[line {}] {}", error.line_number, error.reason));
         }
     };
-    let on_progress = |stats: &EventImportStats| {
-        lines.borrow_mut().push(format_progress(stats));
-    };
+    let on_progress = |stats: &EventImportStats| write(format_progress(stats));
 
     let options = nostream_services::services::event_import_service::ImportOptions {
         batch_size,
@@ -232,24 +244,17 @@ pub async fn import_with(
     let suppressed = sink.borrow().suppressed;
 
     if suppressed > 0 {
-        lines.borrow_mut().push(format!(
+        write(format!(
             "Suppressed {} additional line errors",
             format_number(suppressed)
         ));
     }
 
     let elapsed = started.elapsed().as_secs_f64();
-    lines
-        .borrow_mut()
-        .push(format!("Import completed in {elapsed:.2}s"));
-    lines.borrow_mut().push(format_progress(&stats));
+    write(format!("Import completed in {elapsed:.2}s"));
+    write(format_progress(&stats));
 
-    let lines = lines.into_inner();
-
-    Ok(CommandOutput {
-        lines,
-        exit_code: 0,
-    })
+    Ok(CommandOutput::default())
 }
 
 /// `[Processed: N | Inserted: N | Skipped: N | Errors: N]` with `en-US` separators.

@@ -100,28 +100,32 @@ impl WotGraphService {
             return;
         }
 
-        if self.inner.building.swap(true, Ordering::SeqCst) {
+        if !self.inner.building.swap(true, Ordering::SeqCst) {
+            // The build is not owned by this caller. `get_distance` runs on a relay handler's
+            // future, which is dropped when the client disconnects; a build abandoned with it
+            // would leave `building` set and every later caller waiting on `finished`.
+            let service = self.clone();
+            tokio::spawn(async move { service.run_builds().await });
+        } else {
             // A build is in flight; it will fold this trigger into one extra pass, and the
             // caller waits for the whole run rather than starting a second one.
             self.inner.queued.store(true, Ordering::SeqCst);
-
-            loop {
-                // Register before reading the flag: `notify_waiters` wakes only waiters
-                // already registered and stores no permit, so a build that finishes between
-                // the load and the first poll would otherwise lose its wakeup.
-                let notified = self.inner.finished.notified();
-                tokio::pin!(notified);
-                notified.as_mut().enable();
-
-                if !self.inner.building.load(Ordering::SeqCst) {
-                    return;
-                }
-
-                notified.await;
-            }
         }
 
-        self.run_builds().await;
+        loop {
+            // Register before reading the flag: `notify_waiters` wakes only waiters already
+            // registered and stores no permit, so a build that finishes between the load and
+            // the first poll would otherwise lose its wakeup.
+            let notified = self.inner.finished.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
+            if !self.inner.building.load(Ordering::SeqCst) {
+                return;
+            }
+
+            notified.await;
+        }
     }
 
     async fn run_builds(&self) {
@@ -244,6 +248,9 @@ impl WotGraphService {
 
     /// The follows of one pubkey: the cached set when it is non-empty, else the newest
     /// kind-3 event's `p` tags (`getFollows`, `:187-211`).
+    ///
+    /// One member counts once: a contact list that repeats a `p` tag must not satisfy
+    /// `minimum_followers` on its own.
     async fn get_follows(&self, pubkey: &str) -> Result<Vec<String>, ServicesError> {
         {
             let follows = self
@@ -271,16 +278,17 @@ impl WotGraphService {
         };
         let record = record?;
 
-        let follows: Vec<String> = record
-            .event
-            .tags
-            .iter()
-            .filter(|tag| {
-                tag.first().map(String::as_str) == Some("p")
-                    && tag.get(1).is_some_and(|value| !value.is_empty())
-            })
-            .filter_map(|tag| tag.get(1).cloned())
-            .collect();
+        let follows = deduplicated(
+            record
+                .event
+                .tags
+                .iter()
+                .filter(|tag| {
+                    tag.first().map(String::as_str) == Some("p")
+                        && tag.get(1).is_some_and(|value| !value.is_empty())
+                })
+                .filter_map(|tag| tag.get(1).cloned()),
+        );
 
         if !follows.is_empty() {
             self.inner
@@ -314,8 +322,10 @@ impl WotGraph for WotGraphService {
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 cached.remove(&key);
 
+                let follows = deduplicated(follows.iter().cloned());
+
                 if !follows.is_empty() {
-                    cached.insert(key.clone(), follows.to_vec());
+                    cached.insert(key.clone(), follows);
                 }
             }
 
@@ -370,4 +380,17 @@ impl WotGraph for WotGraphService {
 /// `SEED_PUBKEY_PATTERN`: 64 hex characters, either case.
 fn is_seed_pubkey(value: &str) -> bool {
     value.len() == SEED_LENGTH && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// The follows in first-seen order with every repeated pubkey dropped.
+///
+/// A rebuild counts one follower per entry, so a contact list that lists the same key twice
+/// would let a single member satisfy `minimum_followers` on their own.
+fn deduplicated(follows: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+
+    follows
+        .into_iter()
+        .filter(|pubkey| seen.insert(pubkey.clone()))
+        .collect()
 }

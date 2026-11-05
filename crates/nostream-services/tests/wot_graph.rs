@@ -418,6 +418,68 @@ async fn the_newest_contact_list_for_an_author_wins() {
     );
 }
 
+/// `minimum_followers` counts members, not entries: one trusted account repeating a `p` tag
+/// must not admit the target on its own.
+#[tokio::test]
+async fn a_repeated_follow_tag_counts_once() {
+    let b_probe = contact_list(&[3; 32], &[]);
+    let b = b_probe.pubkey;
+    let c_probe = contact_list(&[4; 32], &[]);
+    let c = c_probe.pubkey;
+    let a_probe = contact_list(&[2; 32], &[]);
+    let a = a_probe.pubkey;
+
+    // The seed follows A and B; A lists C twice and B follows nobody.
+    let seed_event = contact_list(&[1; 32], &[&a, &b]);
+    let seed = seed_event.pubkey;
+    let mut a_event = contact_list(&[2; 32], &[]);
+    a_event.tags.push(vec!["p".to_owned(), c.to_string()]);
+    a_event.tags.push(vec!["p".to_owned(), c.to_string()]);
+
+    let repository = InMemoryEventRepository::with_events([seed_event, a_event]);
+    let settings = wot_settings(true, &seed.to_string(), 2, 2);
+    let service = WotGraphService::new(Arc::new(settings), events(&repository));
+
+    assert_eq!(
+        service.get_distance(&c).await.unwrap(),
+        None,
+        "one member's repeated tag is one follower"
+    );
+    assert_eq!(service.get_distance(&a).await.unwrap(), Some(1));
+}
+
+/// A relay handler's future is dropped when its client disconnects. A build abandoned with the
+/// caller would leave `building` set, and every later lookup would wait on a wakeup that never
+/// comes.
+#[tokio::test]
+async fn a_cancelled_caller_leaves_the_graph_buildable() {
+    let a_probe = contact_list(&[2; 32], &[]);
+    let a = a_probe.pubkey;
+    let seed_event = contact_list(&[1; 32], &[&a]);
+    let seed = seed_event.pubkey;
+    let repository =
+        InMemoryEventRepository::with_events([seed_event, contact_list(&[2; 32], &[])]);
+    let settings = wot_settings(true, &seed.to_string(), 2, 1);
+    let service = WotGraphService::new(Arc::new(settings), events(&repository));
+    let gate = repository.gate_reads();
+
+    // The first caller starts the build and blocks on its first repository read.
+    let first = service.clone();
+    let cancelled = tokio::spawn(async move { first.get_distance(&a).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    cancelled.abort();
+    let _ = cancelled.await;
+
+    gate.add_permits(16);
+
+    let distance = tokio::time::timeout(Duration::from_secs(2), service.get_distance(&a))
+        .await
+        .expect("the next lookup returns instead of waiting for a dead build")
+        .expect("the distance");
+
+    assert_eq!(distance, Some(1));
+}
+
 /// `contact_list` with the instant a newest-first read discriminates on.
 fn contact_list_at(secret: &[u8; 32], follows: &[&Pubkey], created_at: i64) -> Event {
     let mut event = contact_list(secret, follows);

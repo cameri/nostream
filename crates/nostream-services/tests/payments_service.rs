@@ -246,6 +246,34 @@ async fn create_invoice_writes_in_the_capture_order_and_returns_the_row() {
     assert_eq!(fixture.outbox.enqueued().len(), 1, "no second outbox row");
 }
 
+/// `createInvoice` upserts the user row so the row exists. It must not carry flags: an
+/// admitted user stays admitted and a vanished user stays vanished. The Postgres merge only
+/// writes a flag the patch carries, and the in-memory repository applies the same rule.
+#[tokio::test]
+async fn creating_an_invoice_leaves_the_users_flags_alone() {
+    let fixture = build(payments_settings(Vec::new()), false);
+    fixture.processor.set_invoice(created_invoice());
+
+    fixture
+        .service
+        .create_invoice(&testing::pubkey(1), 1_500, "admission")
+        .await
+        .expect("created");
+
+    let patches = fixture.users.upserts();
+    assert_eq!(patches.len(), 1);
+    assert_eq!(
+        patches[0].is_admitted,
+        nostream_storage::repositories::FieldUpdate::Absent,
+        "admitting is `set_admitted`'s job, not an invoice's"
+    );
+    assert_eq!(
+        patches[0].is_vanished,
+        nostream_storage::repositories::FieldUpdate::Absent,
+        "a vanished user is not cleared by creating an invoice"
+    );
+}
+
 #[tokio::test]
 async fn confirm_invoice_guards_and_admits_at_the_enabled_fee_sum() {
     let payer = testing::pubkey(1);
@@ -409,7 +437,48 @@ async fn the_update_notifications_carry_the_capture_content_and_expiration() {
     assert!(without_key.events.creates().is_empty());
 }
 
+/// 31 January has no 31st the month after it. The capture's `new Date(y, m + 1, 31)` rolls into
+/// March, and the notification must not carry `now` as its expiration — that expires it on
+/// arrival.
+#[tokio::test]
+async fn a_month_end_notification_expires_in_the_month_after_the_next_one() {
+    let fixture = build(payments_settings(Vec::new()), true);
+    let january = Local
+        .with_ymd_and_hms(2024, 1, 31, 12, 0, 0)
+        .earliest()
+        .expect("31 January is a local date")
+        .timestamp_millis();
+    fixture.clock.set(january as u64);
+
+    fixture
+        .service
+        .send_invoice_update_notification(&invoice(InvoiceUnit::Sats, Some(1_500)))
+        .await
+        .expect("published");
+
+    let event = fixture.events.creates().remove(0).event;
+    let expiration: i64 = event.tags[2][1].parse().expect("seconds");
+    let march_second = Local
+        .with_ymd_and_hms(2024, 3, 2, 0, 0, 0)
+        .earliest()
+        .expect("2 March is a local date")
+        .timestamp();
+
+    assert_eq!(
+        expiration, march_second,
+        "31 January rolls into 2 March of a leap year"
+    );
+    assert!(
+        expiration > fixture.clock.now_secs(),
+        "the expiration is in the future"
+    );
+}
+
+/// `new Date(y, m + 1, d)`: the same day next month, with an overflow rolling into the month
+/// after it (31 January is 2 March in a leap year).
 fn local_next_month_midnight(now_secs: i64) -> i64 {
+    use chrono::{Days, NaiveDate};
+
     let local = DateTime::from_timestamp(now_secs, 0)
         .expect("a date")
         .with_timezone(&Local);
@@ -418,9 +487,13 @@ fn local_next_month_midnight(now_secs: i64) -> i64 {
     } else {
         (local.year(), local.month() + 1)
     };
+    let date = NaiveDate::from_ymd_opt(year, month, 1)
+        .expect("the first of the next month")
+        .checked_add_days(Days::new(u64::from(local.day() - 1)))
+        .expect("a date");
 
     Local
-        .with_ymd_and_hms(year, month, local.day(), 0, 0, 0)
+        .from_local_datetime(&date.and_hms_opt(0, 0, 0).expect("midnight"))
         .earliest()
         .expect("a local midnight")
         .timestamp()

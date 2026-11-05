@@ -221,6 +221,51 @@ async fn a_non_250_auth_reply_is_an_error() {
 }
 
 #[tokio::test]
+async fn the_control_connection_outlives_the_bootstrap_and_quits_at_shutdown() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let (port, received) = control_server(vec![vec![
+        Reply::Whole("250 OK\r\n"),
+        Reply::Whole("250-ServiceID=abc\r\n250-PrivateKey=ED25519-V3:secret\r\n250 OK\r\n"),
+        Reply::Whole("250 closing connection\r\n"),
+    ]])
+    .await;
+
+    let config = config(port, directory.path().to_path_buf());
+    let bootstrap = ensure_hidden_service(&config).await;
+
+    assert_eq!(
+        bootstrap.outcome(),
+        &HiddenServiceOutcome::Enabled {
+            service_id: "abc.onion".to_owned(),
+            port: 80,
+        }
+    );
+
+    // Tor drops a service created without `Flags=Detach` when the control connection closes,
+    // so no `QUIT` may be sent while the daemon runs.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        commands(&received).len(),
+        2,
+        "the bootstrap sends `AUTHENTICATE` and `ADD_ONION` and keeps the connection"
+    );
+
+    bootstrap.shutdown().await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while commands(&received).len() < 3 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the shutdown sends `QUIT`: {:?}",
+            commands(&received)
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    assert_eq!(commands(&received)[2], "QUIT\r\n");
+}
+
+#[tokio::test]
 async fn the_private_key_file_is_written_once_and_reused() {
     let directory = tempfile::tempdir().expect("tempdir");
     let (port, received) = control_server(vec![
@@ -243,9 +288,10 @@ async fn the_private_key_file_is_written_once_and_reused() {
 
     let config = config(port, directory.path().to_path_buf());
 
+    let first = ensure_hidden_service(&config).await;
     assert_eq!(
-        ensure_hidden_service(&config).await,
-        HiddenServiceOutcome::Enabled {
+        first.outcome(),
+        &HiddenServiceOutcome::Enabled {
             service_id: "abc.onion".to_owned(),
             port: 80,
         }
@@ -272,13 +318,19 @@ async fn the_private_key_file_is_written_once_and_reused() {
         );
     }
 
+    // The control connection is held until the shutdown, and the fake control port accepts
+    // one connection at a time, so the first bootstrap must be quit before the second opens.
+    first.shutdown().await;
+
+    let second = ensure_hidden_service(&config).await;
     assert_eq!(
-        ensure_hidden_service(&config).await,
-        HiddenServiceOutcome::Enabled {
+        second.outcome(),
+        &HiddenServiceOutcome::Enabled {
             service_id: "abc.onion".to_owned(),
             port: 80,
         }
     );
+    second.shutdown().await;
 
     let commands = commands(&received);
     assert_eq!(commands[1], "ADD_ONION NEW:BEST Port=80,127.0.0.1:8008\r\n");
@@ -306,10 +358,13 @@ async fn an_empty_key_file_counts_as_absent() {
     .await;
 
     let config = config(port, directory.path().to_path_buf());
-    assert!(matches!(
-        ensure_hidden_service(&config).await,
-        HiddenServiceOutcome::Enabled { .. }
-    ));
+    assert_eq!(
+        ensure_hidden_service(&config).await.outcome(),
+        &HiddenServiceOutcome::Enabled {
+            service_id: "abc.onion".to_owned(),
+            port: 80,
+        }
+    );
 
     assert_eq!(
         commands(&received)[1],
@@ -334,8 +389,8 @@ async fn a_reply_without_a_private_key_disables_the_service_and_writes_no_file()
     let config = config(port, directory.path().to_path_buf());
 
     assert_eq!(
-        ensure_hidden_service(&config).await,
-        HiddenServiceOutcome::Disabled,
+        ensure_hidden_service(&config).await.outcome(),
+        &HiddenServiceOutcome::Disabled,
         "`addOnion` throws when no key arrived, so the onion is unpinnable"
     );
     assert!(
@@ -355,8 +410,8 @@ async fn a_missing_or_unreachable_host_is_disabled() {
     let mut missing = config(DEFAULT_CONTROL_PORT, directory.path().to_path_buf());
     missing.host = None;
     assert_eq!(
-        ensure_hidden_service(&missing).await,
-        HiddenServiceOutcome::Disabled
+        ensure_hidden_service(&missing).await.outcome(),
+        &HiddenServiceOutcome::Disabled
     );
 
     // A port with nothing listening: bind to learn a free one, then release it.
@@ -366,8 +421,8 @@ async fn a_missing_or_unreachable_host_is_disabled() {
     };
     let unreachable = config(port, directory.path().to_path_buf());
     assert_eq!(
-        ensure_hidden_service(&unreachable).await,
-        HiddenServiceOutcome::Disabled
+        ensure_hidden_service(&unreachable).await.outcome(),
+        &HiddenServiceOutcome::Disabled
     );
 
     assert!(

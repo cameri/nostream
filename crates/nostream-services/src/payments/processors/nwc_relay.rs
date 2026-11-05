@@ -100,7 +100,7 @@ impl Nip47Transport for NwcRelayTransport {
                     ServicesError::Payment(format!("NWC relay connect failed: {error}"))
                 })?;
 
-            let request_id = uuid_v4(self.random.as_ref())?;
+            let subscription_id = uuid_v4(self.random.as_ref())?;
             let payload = serde_json::json!({
                 "method": request.method,
                 "params": request.params,
@@ -126,12 +126,15 @@ impl Nip47Transport for NwcRelayTransport {
             sign_event(&self.secret, &mut event)
                 .map_err(|error| ServicesError::Payment(error.to_string()))?;
 
-            let subscription = format!("nwc-{request_id}");
+            // The reply's link back to this request: NIP-47 answers with an `e` tag, and the
+            // decrypted payload carries no id of its own.
+            let request_id = event.id.to_string();
+            let subscription = format!("nwc-{subscription_id}");
             let event_frame = serde_json::json!(["EVENT", event]);
             let subscription_filter = serde_json::json!({
                 "kinds": [23_195],
                 "authors": [self.wallet.to_string()],
-                "#e": [event.id.to_string()],
+                "#e": [request_id.as_str()],
                 "limit": 1,
             });
             let request_frame = serde_json::json!(["REQ", subscription, subscription_filter]);
@@ -183,16 +186,22 @@ impl Nip47Transport for NwcRelayTransport {
                             continue;
                         }
 
+                        // NIP-47 correlates the reply by the request's `e` tag: the decrypted
+                        // payload carries `result_type`, `result` and `error`, never an `id`.
+                        // `@getalby/sdk` matches the same tag.
+                        let correlated = reply.tags.iter().any(|tag| {
+                            tag.first().map(String::as_str) == Some("e")
+                                && tag.get(1).is_some_and(|value| *value == request_id)
+                        });
+
+                        if !correlated {
+                            continue;
+                        }
+
                         let decrypted = nip04::decrypt(&self.secret, &self.wallet, &reply.content)
                             .map_err(|error| ServicesError::Payment(error.to_string()))?;
                         let document: serde_json::Value = serde_json::from_str(&decrypted)
                             .map_err(|error| ServicesError::Payment(error.to_string()))?;
-
-                        if document.get("id").and_then(serde_json::Value::as_str)
-                            != Some(event.id.to_string().as_str())
-                        {
-                            continue;
-                        }
 
                         if let Some(error) = document.get("error").filter(|error| !error.is_null())
                         {

@@ -42,6 +42,12 @@ pub const DEFAULT_JOB_TIMEOUT_MS: u64 = 60_000;
 /// The dispatch batch (`DISPATCH_BATCH_SIZE`, `:25`).
 pub const DISPATCH_BATCH_SIZE: u64 = 10;
 
+/// How long one write to the child's stdin may take. A child that stays alive but stops
+/// reading fills the pipe and parks the write forever; the orchestrator's loop is what reads
+/// timeouts and the drain, so the write is bounded and the child is killed when it overruns
+/// (its stdin now holds a partial line).
+pub const DEFAULT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// One configured worker, resolved from `dvm.workers[index]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DvmWorkerConfig {
@@ -99,6 +105,7 @@ pub struct DvmOrchestrator {
     hub: broadcast::Sender<Arc<Event>>,
     config: DvmWorkerConfig,
     poll_interval: Duration,
+    write_timeout: Duration,
     pending: Mutex<HashMap<EventId, PendingJob>>,
     child: tokio::sync::Mutex<Option<WorkerHandle>>,
     events: mpsc::UnboundedSender<WorkerEvent>,
@@ -128,6 +135,7 @@ impl DvmOrchestrator {
             hub,
             config,
             poll_interval,
+            write_timeout: DEFAULT_WRITE_TIMEOUT,
             pending: Mutex::new(HashMap::new()),
             child: tokio::sync::Mutex::new(None),
             events,
@@ -140,6 +148,12 @@ impl DvmOrchestrator {
     /// The process's command line, for a log line.
     pub fn command(&self) -> &str {
         &self.config.command
+    }
+
+    /// Overrides the write bound (tests inject a short one).
+    pub fn with_write_timeout(mut self, write_timeout: Duration) -> Self {
+        self.write_timeout = write_timeout;
+        self
     }
 
     async fn ensure_worker(self: &Arc<Self>) {
@@ -197,20 +211,42 @@ impl DvmOrchestrator {
         }
     }
 
-    async fn send_line(&self, line: &str) -> bool {
-        let mut slot = self.child.lock().await;
-
-        let Some(handle) = slot.as_mut() else {
-            return false;
-        };
-
+    /// Writes one line to the child, bounded by [`DvmOrchestrator::write_timeout`].
+    ///
+    /// The orchestrator's loop is the one reader of timeouts and the drain, so a child that
+    /// stops reading must not park it: a write that overruns leaves a partial line on the
+    /// child's stdin, so the child is killed rather than trusted with the next one.
+    async fn send_line(self: &Arc<Self>, line: &str) -> bool {
         let mut payload = line.to_owned();
         payload.push('\n');
 
-        match handle.stdin.write_all(payload.as_bytes()).await {
-            Ok(()) => handle.stdin.flush().await.is_ok(),
-            Err(error) => {
+        let written = {
+            let mut slot = self.child.lock().await;
+
+            let Some(handle) = slot.as_mut() else {
+                return false;
+            };
+
+            let write = async {
+                handle.stdin.write_all(payload.as_bytes()).await?;
+                handle.stdin.flush().await
+            };
+
+            tokio::time::timeout(self.write_timeout, write).await
+        };
+
+        match written {
+            Ok(Ok(())) => true,
+            Ok(Err(error)) => {
                 tracing::error!(error = %error, "unable to send a job to the dvm worker process");
+                false
+            }
+            Err(_) => {
+                tracing::error!(
+                    timeout_ms = self.write_timeout.as_millis(),
+                    "the dvm worker process stopped reading; killing it"
+                );
+                self.kill_worker().await;
                 false
             }
         }

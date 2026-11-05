@@ -2,15 +2,16 @@
 //! (`src/app/app.ts:140-315`, `src/index.ts:11-27`).
 //!
 //! One [`Supervisor`] runs every registered worker as its own tokio task, restarts a worker
-//! that returns an error after [`DEFAULT_RESTART_DELAY`] (unless a drain has begun), leaves a
-//! worker that returns `Ok` finished, and on drain waits at most its deadline before aborting
-//! what is left. A worker's error never fails the process.
+//! that returns an error or panics after [`DEFAULT_RESTART_DELAY`] (unless a drain has begun),
+//! leaves a worker that returns `Ok` finished, and on drain waits at most its deadline before
+//! aborting what is left. A worker's error never fails the process.
 
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Duration;
 
 use nostream_core::lifecycle::ShutdownState;
-use tokio::task::JoinSet;
+use tokio::task::{Id, JoinSet};
 
 use crate::error::ServicesError;
 
@@ -104,45 +105,50 @@ impl Supervisor {
     pub async fn run(self) -> Result<(), ServicesError> {
         let mut tasks: JoinSet<TaskEvent> = JoinSet::new();
         let mut attempts = vec![0u32; self.specs.len()];
+        // A panic surfaces as `Err(JoinError)` with no `TaskEvent`, so the task id is the only
+        // way back to the worker it belonged to.
+        let mut worker_ids: HashMap<Id, usize> = HashMap::new();
 
         for index in 0..self.specs.len() {
-            spawn_worker(&self.specs, index, &self.shutdown, &mut tasks);
+            spawn_worker(
+                &self.specs,
+                index,
+                &self.shutdown,
+                &mut tasks,
+                &mut worker_ids,
+            );
         }
 
         loop {
             tokio::select! {
                 _ = self.shutdown.wait_for_drain() => break,
-                joined = tasks.join_next() => {
+                joined = tasks.join_next_with_id() => {
                     let Some(joined) = joined else { break };
 
                     match joined {
-                        Ok(TaskEvent::Exited { index, result }) => {
-                            if let Err(error) = result {
-                                if self.shutdown.is_draining() {
-                                    continue;
-                                }
+                        Ok((id, TaskEvent::Exited { index, result })) => {
+                            worker_ids.remove(&id);
 
-                                attempts[index] += 1;
-                                tracing::warn!(
-                                    worker = self.specs[index].name,
-                                    attempt = attempts[index],
-                                    error = %error,
-                                    "worker failed; restarting after the restart delay"
-                                );
-                                let delay = self.restart_delay;
-                                tasks.spawn(async move {
-                                    tokio::time::sleep(delay).await;
-                                    TaskEvent::Restart { index }
-                                });
+                            if let Err(error) = result {
+                                self.schedule_restart(index, &error.to_string(), false, &mut attempts, &mut tasks);
                             }
                         }
-                        Ok(TaskEvent::Restart { index }) => {
+                        Ok((_, TaskEvent::Restart { index })) => {
                             if !self.shutdown.is_draining() {
-                                spawn_worker(&self.specs, index, &self.shutdown, &mut tasks);
+                                spawn_worker(&self.specs, index, &self.shutdown, &mut tasks, &mut worker_ids);
                             }
                         }
                         Err(error) => {
-                            tracing::warn!(error = %error, "a worker task ended abnormally");
+                            let Some(index) = worker_ids.remove(&error.id()) else {
+                                tracing::warn!(error = %error, "a supervisor task ended abnormally");
+                                continue;
+                            };
+
+                            if self.shutdown.is_draining() {
+                                continue;
+                            }
+
+                            self.schedule_restart(index, &error.to_string(), true, &mut attempts, &mut tasks);
                         }
                     }
                 }
@@ -168,6 +174,47 @@ impl Supervisor {
 
         Ok(())
     }
+
+    /// Counts one failure and queues the restart. A drain suppresses it: the process is
+    /// leaving, and a restarted worker would only have to be aborted again.
+    fn schedule_restart(
+        &self,
+        index: usize,
+        error: &str,
+        panicked: bool,
+        attempts: &mut [u32],
+        tasks: &mut JoinSet<TaskEvent>,
+    ) {
+        if self.shutdown.is_draining() {
+            return;
+        }
+
+        attempts[index] += 1;
+        let attempt = attempts[index];
+        let worker = self.specs[index].name;
+
+        if panicked {
+            tracing::warn!(
+                worker,
+                attempt,
+                error,
+                "worker panicked; restarting after the restart delay"
+            );
+        } else {
+            tracing::warn!(
+                worker,
+                attempt,
+                error,
+                "worker failed; restarting after the restart delay"
+            );
+        }
+
+        let delay = self.restart_delay;
+        tasks.spawn(async move {
+            tokio::time::sleep(delay).await;
+            TaskEvent::Restart { index }
+        });
+    }
 }
 
 fn spawn_worker(
@@ -175,13 +222,16 @@ fn spawn_worker(
     index: usize,
     shutdown: &ShutdownState,
     tasks: &mut JoinSet<TaskEvent>,
+    worker_ids: &mut HashMap<Id, usize>,
 ) {
     let future = (specs[index].run)(shutdown.clone());
 
-    tasks.spawn(async move {
+    let handle = tasks.spawn(async move {
         let result = future.await;
         TaskEvent::Exited { index, result }
     });
+
+    worker_ids.insert(handle.id(), index);
 }
 
 /// The runtime's thread count (`R4`): `WORKER_COUNT` when it parses to a positive integer,

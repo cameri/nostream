@@ -75,6 +75,17 @@ fn build_with(
     config: DvmWorkerConfig,
     with_key: bool,
 ) -> Fixture {
+    build_all(requests, seeded, config, with_key, None)
+}
+
+/// [`build_with`] with the orchestrator's write bound overridden.
+fn build_all(
+    requests: Vec<nostream_core::Event>,
+    seeded: Vec<DvmJob>,
+    config: DvmWorkerConfig,
+    with_key: bool,
+    write_timeout: Option<Duration>,
+) -> Fixture {
     let events = testing::InMemoryEventRepository::with_events(requests);
     let jobs = testing::InMemoryDvmJobRepository::new();
     jobs.set_jobs(seeded);
@@ -103,7 +114,7 @@ fn build_with(
     } else {
         RelayKeySource::from_values(None, None)
     };
-    let orchestrator = Arc::new(DvmOrchestrator::new(
+    let mut orchestrator = DvmOrchestrator::new(
         Arc::clone(&settings),
         stores,
         Arc::new(keys),
@@ -111,7 +122,13 @@ fn build_with(
         hub.clone(),
         config,
         Duration::from_millis(25),
-    ));
+    );
+
+    if let Some(write_timeout) = write_timeout {
+        orchestrator = orchestrator.with_write_timeout(write_timeout);
+    }
+
+    let orchestrator = Arc::new(orchestrator);
 
     Fixture {
         orchestrator,
@@ -239,6 +256,39 @@ async fn a_result_that_cannot_be_signed_fails_the_job() {
                 "{message}"
             );
         }
+        other => panic!("expected an error, got {other:?}"),
+    }
+
+    shutdown.begin_draining();
+    let _ = tokio::time::timeout(Duration::from_secs(5), running).await;
+}
+
+/// A child that stays alive and stops reading fills its pipe. The write must be bounded, or the
+/// loop that reads timeouts and the drain is parked and no job ever reaches a terminal state.
+#[tokio::test]
+async fn a_child_that_stops_reading_cannot_park_the_dispatch_loop() {
+    // Larger than a pipe buffer, so `write_all` cannot complete against a child that never
+    // reads stdin.
+    let request = testing::signed_event(&SECRET, Kind(5100), Vec::new(), &"x".repeat(512 * 1024));
+    let job = job_for(&request);
+    let fixture = build_all(
+        vec![request],
+        vec![job],
+        worker(vec!["-c", "sleep 60"], 60_000),
+        true,
+        Some(Duration::from_millis(200)),
+    );
+    let shutdown = ShutdownState::new();
+    let running = tokio::spawn(Arc::clone(&fixture.orchestrator).run(shutdown.clone()));
+
+    let updates = await_updates(&fixture, 1).await;
+
+    assert_eq!(updates[0].status, DvmJobStatus::Failed);
+    match &updates[0].error {
+        FieldUpdate::Set(message) => assert!(
+            message.contains("unable to send job to worker process"),
+            "{message}"
+        ),
         other => panic!("expected an error, got {other:?}"),
     }
 

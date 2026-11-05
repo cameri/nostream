@@ -31,9 +31,11 @@
 //! DVM orchestrator per `dvm.workers[i]`; the supervisor owns the capture's lifecycle
 //! guarantees (restart after 10 s on an error, no restart on a clean return, drain to
 //! `WS_DRAIN_TIMEOUT_MS` + 5 s and then abort) and returns `Ok(())` after a drain.
-//! `workers::spawn_tor` is a one-shot startup task, not a supervised worker: one bootstrap
-//! attempt logs `Tor hidden service: <id>:<port>` or `Tor hidden service: disabled` and
-//! never fails startup. The relay-monitor worker belongs to #865 and is not registered here.
+//! `workers::spawn_tor` is not a supervised worker: one bootstrap attempt logs
+//! `Tor hidden service: <id>:<port>` or `Tor hidden service: disabled`, and never fails
+//! startup. The task then holds the control connection until the drain, because Tor drops a
+//! service the moment the connection that created it closes. The relay-monitor worker
+//! belongs to #865 and is not registered here.
 //!
 //! The MCP server named in the issue is Phase 5 and has no TS counterpart at the capture; it
 //! has no module here either.

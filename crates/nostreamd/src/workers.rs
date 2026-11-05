@@ -1,7 +1,7 @@
 //! The background workers. Mirrors the capture's cluster primary and its worker types
 //! (`src/app/app.ts:140-186`, `src/index.ts:11-27`): the maintenance pass and one DVM
-//! orchestrator per configured worker run under [`Supervisor`]; Tor is a one-shot startup
-//! task.
+//! orchestrator per configured worker run under [`Supervisor`], and the Tor task holds the
+//! control connection that keeps the hidden service up until the drain.
 
 use nostream_core::lifecycle::ShutdownState;
 use nostream_services::ServiceContext;
@@ -50,13 +50,19 @@ fn worker_setup(role: &str, error: nostream_services::ServicesError) -> DaemonEr
     error
 }
 
-/// One Tor bootstrap attempt. A missing `TOR_HOST`, an unreachable control port and a refused
-/// `ADD_ONION` all log `Tor hidden service: disabled`; the capture never fails startup on Tor
+/// One Tor bootstrap attempt, holding the control connection until the drain.
+///
+/// A missing `TOR_HOST`, an unreachable control port and a refused `ADD_ONION` all log
+/// `Tor hidden service: disabled`; the capture never fails startup on Tor
 /// (`src/app/app.ts:204-212`).
 ///
-/// The attempt is abandoned when the drain begins: the control-port read has no timeout of its
-/// own, and `serve` joins this task after the drain, so a port that accepts and never answers
-/// would otherwise hold the process open past SIGINT.
+/// The task does not return after the bootstrap: `ADD_ONION` is sent without `Flags=Detach`,
+/// so Tor removes the service the moment the control connection closes. The connection is
+/// held until the drain begins and `QUIT`ed then, best effort and bounded.
+///
+/// The attempt itself is abandoned when the drain begins: the control-port read has no
+/// timeout of its own, and `serve` joins this task after the drain, so a port that accepts
+/// and never answers would otherwise hold the process open past SIGINT.
 pub async fn spawn_tor(
     context: ServiceContext,
     shutdown: ShutdownState,
@@ -64,15 +70,16 @@ pub async fn spawn_tor(
 ) -> Result<(), DaemonError> {
     let config = TorConfig::from_env(&context.config_dir, relay_port);
 
-    let outcome = tokio::select! {
-        outcome = ensure_hidden_service(&config) => outcome,
+    let bootstrap = tokio::select! {
+        bootstrap = ensure_hidden_service(&config) => bootstrap,
         _ = shutdown.wait_for_drain() => {
             tracing::debug!("Tor bootstrap abandoned; the drain began");
-            HiddenServiceOutcome::Disabled
+            tracing::info!("Tor hidden service: disabled");
+            return Ok(());
         }
     };
 
-    match outcome {
+    match bootstrap.outcome() {
         HiddenServiceOutcome::Enabled { service_id, port } => {
             tracing::info!("Tor hidden service: {service_id}:{port}");
         }
@@ -80,6 +87,9 @@ pub async fn spawn_tor(
             tracing::info!("Tor hidden service: disabled");
         }
     }
+
+    shutdown.wait_for_drain().await;
+    bootstrap.shutdown().await;
 
     Ok(())
 }

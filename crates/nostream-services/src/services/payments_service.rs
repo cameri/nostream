@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Datelike, Local, TimeDelta, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Days, Local, NaiveDate, TimeDelta, TimeZone, Utc};
 use tokio::sync::broadcast;
 
 use nostream_config::Settings;
@@ -82,12 +82,14 @@ impl PaymentsService {
         amount_msats: i64,
         description: &str,
     ) -> Result<Invoice, ServicesError> {
+        // The row is created when absent; an existing admission or vanish flag is left alone.
+        // Writing `false` here would clear an admitted user's admission on every new invoice.
         self.stores
             .users
             .upsert(&UserPatch {
                 pubkey: *pubkey,
-                is_admitted: false,
-                is_vanished: false,
+                is_admitted: FieldUpdate::Absent,
+                is_vanished: FieldUpdate::Absent,
                 tos_accepted_at: FieldUpdate::Absent,
             })
             .await?;
@@ -412,19 +414,30 @@ fn display_amount(amount: i64, unit: InvoiceUnit) -> (i64, &'static str) {
 }
 
 /// `new Date(y, m + 1, d)`: local midnight of the same day in the next month (V14).
+///
+/// The constructor rolls an overflow into the month after it (31 January becomes 2 March in a
+/// leap year), so the day offset is applied to the first of the target month instead of asking
+/// for a date that does not exist. The old fallback returned `now`, which published a
+/// notification that had already expired.
 fn next_month_midnight(now: DateTime<Utc>) -> DateTime<Utc> {
     let local = now.with_timezone(&Local);
-    let (year, month) = if local.month() == 12 {
-        (local.year() + 1, 1)
-    } else {
-        (local.year(), local.month() + 1)
-    };
 
-    Local
-        .with_ymd_and_hms(year, month, local.day(), 0, 0, 0)
-        .earliest()
+    next_month_date(local.date_naive())
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .and_then(|midnight| Local.from_local_datetime(&midnight).earliest())
         .map(|midnight| midnight.with_timezone(&Utc))
         .unwrap_or(now)
+}
+
+/// The date part of `new Date(y, m + 1, d)`.
+fn next_month_date(date: NaiveDate) -> Option<NaiveDate> {
+    let (year, month) = if date.month() == 12 {
+        (date.year() + 1, 1)
+    } else {
+        (date.year(), date.month() + 1)
+    };
+
+    NaiveDate::from_ymd_opt(year, month, 1)?.checked_add_days(Days::new(u64::from(date.day() - 1)))
 }
 
 /// The capture's `mergeDeepLeft(updatedInvoice)` over `mergeDeepLeft({amountPaid})`.
@@ -473,4 +486,35 @@ fn merge_update(invoice: &Invoice, update: &InvoiceUpdate) -> Invoice {
     // provider reported (`src/app/maintenance-worker.ts:225-232`).
     updated.amount_paid = Some(invoice.amount_requested);
     updated
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use chrono::NaiveDate;
+
+    use super::next_month_date;
+
+    fn date(year: i32, month: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(year, month, day).expect("a date")
+    }
+
+    #[test]
+    fn the_next_month_is_the_same_day_when_it_exists() {
+        assert_eq!(next_month_date(date(2024, 1, 15)), Some(date(2024, 2, 15)));
+        assert_eq!(next_month_date(date(2024, 12, 15)), Some(date(2025, 1, 15)));
+    }
+
+    /// `new Date(2024, 1, 31)` is 2 March, not 31 February and not `now`: a notification
+    /// carrying `now` as its expiration has already expired.
+    #[test]
+    fn a_month_end_rolls_into_the_month_after_it() {
+        assert_eq!(next_month_date(date(2024, 1, 31)), Some(date(2024, 3, 2)));
+        assert_eq!(next_month_date(date(2023, 1, 31)), Some(date(2023, 3, 3)));
+        assert_eq!(next_month_date(date(2024, 2, 29)), Some(date(2024, 3, 29)));
+        assert_eq!(next_month_date(date(2024, 12, 31)), Some(date(2025, 1, 31)));
+        // April has 30 days: `new Date(2023, 3, 31)` is 1 May.
+        assert_eq!(next_month_date(date(2023, 3, 31)), Some(date(2023, 5, 1)));
+    }
 }

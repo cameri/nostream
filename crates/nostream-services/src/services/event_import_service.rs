@@ -3,12 +3,14 @@
 //! Both readers stream — a JSONL line at a time, and a JSON array element at a time through
 //! `serde_json`'s streaming deserializer — so the file is never materialised as one value.
 
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 
 use nostream_core::Event;
+use nostream_core::Pubkey;
 use nostream_core::crypto::{compute_event_id, verify_event_signature};
 use nostream_core::event::EventId;
 use nostream_storage::repositories::{EventRecord, EventRepository};
@@ -270,6 +272,8 @@ struct ArrayStream<R> {
     position: usize,
     opened: bool,
     done: bool,
+    /// Set once a comma was consumed: a comma must be followed by an element.
+    expect_element: bool,
 }
 
 impl<R: AsyncRead + Unpin> ArrayStream<R> {
@@ -280,6 +284,7 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
             position: 0,
             opened: false,
             done: false,
+            expect_element: false,
         }
     }
 
@@ -344,6 +349,10 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
     }
 
     /// The next element, or `None` at the closing bracket.
+    ///
+    /// The grammar is the array's own, not `serde_json`'s per-element parse: a comma must be
+    /// followed by an element (`[e,]` is not `[e]`), and nothing but whitespace may follow the
+    /// closing bracket (`[e]garbage` is not an import).
     async fn next_value(&mut self) -> Result<Option<serde_json::Value>, ServicesError> {
         if !self.opened || self.done {
             return Ok(None);
@@ -354,8 +363,16 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
             self.compact();
 
             if self.buffer.get(self.position) == Some(&b']') {
+                if self.expect_element {
+                    return Err(ServicesError::Import(
+                        "Invalid JSON array input: expected an element after `,`".to_owned(),
+                    ));
+                }
+
                 self.position += 1;
                 self.done = true;
+                self.expect_trailing_whitespace().await?;
+
                 return Ok(None);
             }
 
@@ -367,6 +384,12 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
                 }
 
                 continue;
+            }
+
+            if self.expect_element && self.buffer[self.position] == b',' {
+                return Err(ServicesError::Import(
+                    "Invalid JSON array input: expected an element, found `,`".to_owned(),
+                ));
             }
 
             let rest = &self.buffer[self.position..];
@@ -384,9 +407,13 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
                         match self.buffer.get(self.position) {
                             Some(&b',') => {
                                 self.position += 1;
+                                self.expect_element = true;
                                 return Ok(Some(value));
                             }
-                            Some(&b']') => return Ok(Some(value)),
+                            Some(&b']') => {
+                                self.expect_element = false;
+                                return Ok(Some(value));
+                            }
                             Some(other) => {
                                 return Err(ServicesError::Import(format!(
                                     "Invalid JSON array input: expected `,` or `]`, found `{}`",
@@ -423,6 +450,24 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
                         ));
                     }
                 }
+            }
+        }
+    }
+
+    /// Refuses anything but whitespace between the closing bracket and the end of input.
+    async fn expect_trailing_whitespace(&mut self) -> Result<(), ServicesError> {
+        loop {
+            self.skip_whitespace();
+
+            if let Some(byte) = self.buffer.get(self.position) {
+                return Err(ServicesError::Import(format!(
+                    "Invalid JSON array input: unexpected `{}` after the closing `]`",
+                    char::from(*byte)
+                )));
+            }
+
+            if !self.read_more().await? {
+                return Ok(());
             }
         }
     }
@@ -477,6 +522,11 @@ impl EventBatchPersister for RepositoryEventPersister {
             let mut inserted = 0u64;
             let mut regular: Vec<EventRecord> = Vec::new();
             let mut replaceable: Vec<EventRecord> = Vec::new();
+            // One batch may hold several versions of one replaceable address, and Postgres
+            // refuses to update the same row twice in one statement
+            // (`ON CONFLICT DO UPDATE command cannot affect row a second time`). The winner is
+            // chosen here, with the same rule the merge predicate applies.
+            let mut slots: HashMap<(Pubkey, u64, String), usize> = HashMap::new();
 
             for event in events {
                 if event.kind.is_ephemeral() {
@@ -488,6 +538,7 @@ impl EventBatchPersister for RepositoryEventPersister {
                     regular.clear();
                     inserted += self.events.upsert_many(&replaceable).await?;
                     replaceable.clear();
+                    slots.clear();
 
                     let ids: Vec<EventId> = event
                         .tags
@@ -509,7 +560,16 @@ impl EventBatchPersister for RepositoryEventPersister {
                 let enriched = enrich(event);
 
                 if event.kind.is_replaceable() || event.kind.is_parameterized_replaceable() {
-                    replaceable.push(enriched);
+                    let key = replacement_key(&enriched);
+
+                    match slots.get(&key) {
+                        Some(index) if !replaces(&enriched, &replaceable[*index]) => {}
+                        Some(index) => replaceable[*index] = enriched,
+                        None => {
+                            slots.insert(key, replaceable.len());
+                            replaceable.push(enriched);
+                        }
+                    }
                 } else {
                     regular.push(enriched);
                 }
@@ -521,4 +581,21 @@ impl EventBatchPersister for RepositoryEventPersister {
             Ok(inserted as f64)
         })
     }
+}
+
+/// The row `events_replaceable_unique` keys on: the author, the kind and the deduplication
+/// value (the `d` tag for a parameterized replaceable event).
+fn replacement_key(record: &EventRecord) -> (Pubkey, u64, String) {
+    (
+        record.event.pubkey,
+        record.event.kind.0,
+        serde_json::to_string(&record.deduplication()).unwrap_or_default(),
+    )
+}
+
+/// The merge predicate: the incoming row wins when it is newer, or equal and smaller.
+fn replaces(candidate: &EventRecord, current: &EventRecord) -> bool {
+    candidate.event.created_at > current.event.created_at
+        || (candidate.event.created_at == current.event.created_at
+            && candidate.event.id < current.event.id)
 }

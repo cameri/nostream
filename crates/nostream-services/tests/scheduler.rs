@@ -147,6 +147,82 @@ async fn respawn_restarts_a_failed_worker_and_not_a_clean_one() {
     );
 }
 
+/// A panic is not an `Err` from the worker: it surfaces as `JoinError`, which carries only the
+/// task id. Without the id-to-worker mapping the worker stays dead while the daemon serves.
+#[tokio::test]
+async fn a_panicked_worker_is_restarted() {
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(buffer.clone())
+        .with_max_level(tracing::Level::WARN)
+        .with_ansi(false)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let shutdown = ShutdownState::new();
+    let runs = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&runs);
+
+    let mut supervisor = Supervisor::new(shutdown.clone())
+        .with_restart_delay(Duration::from_millis(20))
+        .with_drain_deadline(Duration::from_secs(2));
+
+    supervisor.register(WorkerSpec::new(
+        "panicking",
+        Box::new(move |shutdown| {
+            let runs = Arc::clone(&counter);
+            Box::pin(async move {
+                let attempt = runs.fetch_add(1, Ordering::SeqCst) + 1;
+
+                if attempt == 1 {
+                    panic!("synthetic panic");
+                }
+
+                shutdown.wait_for_drain().await;
+                Ok(())
+            })
+        }),
+    ));
+
+    let task = tokio::spawn(supervisor.run());
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while runs.load(Ordering::SeqCst) < 2 && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    assert!(
+        runs.load(Ordering::SeqCst) >= 2,
+        "the panicked worker ran again, got {}",
+        runs.load(Ordering::SeqCst)
+    );
+
+    shutdown.begin_draining();
+
+    tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .expect("the supervisor stops")
+        .expect("join")
+        .expect("the supervisor returns Ok");
+
+    let logs = String::from_utf8(
+        buffer
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone(),
+    )
+    .unwrap_or_default();
+    assert!(
+        logs.contains("worker panicked; restarting after the restart delay"),
+        "the panic is reported as a restart, got: {logs}"
+    );
+    assert!(
+        logs.contains("worker=\"panicking\"") && logs.contains("attempt=1"),
+        "the log names the worker and the attempt, got: {logs}"
+    );
+}
+
 #[derive(Clone, Default)]
 struct Buffer(Arc<std::sync::Mutex<Vec<u8>>>);
 
