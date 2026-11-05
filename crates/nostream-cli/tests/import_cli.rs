@@ -188,6 +188,23 @@ fn help_exits_zero_and_names_the_file_and_the_batch_flag() {
     );
 }
 
+/// `import` parses its own arguments, so clap cannot render a correct page for it through a
+/// `help` subcommand; the route is gone and `import --help` is the only one.
+#[test]
+fn the_help_route_does_not_print_a_second_import_page() {
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["help", "import"])
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("unrecognized subcommand"),
+        "{}",
+        stderr(&output)
+    );
+}
+
 #[tokio::test]
 async fn a_successful_import_prints_progress_then_the_summary() {
     let directory = tempfile::tempdir().expect("tempdir");

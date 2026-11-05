@@ -10,8 +10,14 @@ use clap::{Parser, Subcommand};
 use nostream_cli::config::CommandOutput;
 use nostream_cli::{CliError, commands};
 
+// `import` parses its own arguments, so clap's `help` subcommand would render a second,
+// contradictory page for it; `--help` is the single help surface.
 #[derive(Debug, Parser)]
-#[command(name = "nostream-cli", about = "Operate a nostream relay")]
+#[command(
+    name = "nostream-cli",
+    about = "Operate a nostream relay",
+    disable_help_subcommand = true
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
