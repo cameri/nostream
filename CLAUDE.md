@@ -81,12 +81,12 @@ resolver 3:
 |---|---|
 | `nostream-core` | domain vocabulary: events, filters, kinds, wire messages, NIP type surfaces, `ShutdownState` |
 | `nostream-config` | typed settings, loader, deep merge, validator, dot-path editor, redaction, guided catalogue |
-| `nostream-storage` | event-store backends (LMDB via heed, Postgres), cache |
+| `nostream-storage` | event-store backends (LMDB via heed, Postgres); no cache adapter — the embedded decision is ADR 0010 |
 | `nostream-relay` | connections, wire protocol, handlers, rate limiters, live dispatch, NIP-77 engine (the acceptor lives in `nostreamd`) |
-| `nostream-services` | NIP-66 monitors, Tor, schedulers, outbound work |
+| `nostream-services` | payment processors and the invoice lifecycle, operator notifications, the web-of-trust graph, Tor, the scheduler and its workers, event import, NIP-66 monitors (#865) |
 | `nostream-admin` | admin API and auth |
-| `nostream-cli` | operator command line (`nostream-cli config validate`) |
-| `nostreamd` | the daemon binary: runtime, telemetry, signals |
+| `nostream-cli` | operator command line (`nostream-cli config validate`, `nostream-cli import`) |
+| `nostreamd` | the daemon binary: runtime, telemetry, signals, the services composition root and the worker supervisor |
 
 - Every crate manifest repeats `version.workspace = true`, `edition.workspace = true`,
   `rust-version.workspace = true`, `license.workspace = true`,
@@ -95,6 +95,10 @@ resolver 3:
 - **Dependencies go in `[workspace.dependencies]` and are referenced as
   `name.workspace = true`.** A version literal in a crate manifest is a second place to
   bump; do not add one.
+- `nostream-services` is the only crate that opens sockets and child processes:
+  `reqwest` (the one third-party addition, `default-features = false` with `rustls-tls`,
+  so no new TLS stack) behind the `HttpClient` seam, and tokio's `process`/`fs` for the
+  DVM worker pipes and the onion key file. Nothing else may take those features.
 - Each crate's `lib.rs` doc comment names the TypeScript paths it owns at the capture
   commit, and separately names what it deliberately does **not** own. Preserve both: a
   reader must be able to tell an omission from a gap.

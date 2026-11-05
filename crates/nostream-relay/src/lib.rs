@@ -23,7 +23,9 @@
 //! five handlers, the strategy trait with its ordered registry and all fifteen strategies,
 //! the web-of-trust seam those strategies reach for (`wot.rs`), the NIP-42 session and read
 //! guards' wiring, the two rate limiters over an in-process store, and the NIP-56
-//! hidden-content mirror. The positional codec, `validation::validate_event`
+//! hidden-content mirror. `Relay::hub` exposes the live broadcast sender, so a
+//! service-published event reaches subscriptions exactly as a handler's own broadcast does.
+//! The positional codec, `validation::validate_event`
 //! and `nip42::{authenticate, generate_challenge}` are `nostream-core`'s.
 //!
 //! **Still stubbed:** `NegentropySession`/`open_negentropy_session` (a NIP-77 job cut against

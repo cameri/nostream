@@ -23,6 +23,18 @@
 //! against. The daemon binds, hands the listener to `nostream_relay::Relay`, and drains on
 //! SIGINT/SIGTERM through `nostream_core::lifecycle::ShutdownState`.
 //!
+//! **The worker model** (job 023): `serve` builds one `nostream_services::ServiceContext`
+//! over the loaded settings, one resolved event-store bundle, the relay's own broadcast
+//! sender (`Relay::hub`) and the HTTP/Tor seams, then hands it to
+//! `workers::spawn_workers`. That function builds one
+//! `nostream_services::scheduler::Supervisor` and registers one maintenance worker plus one
+//! DVM orchestrator per `dvm.workers[i]`; the supervisor owns the capture's lifecycle
+//! guarantees (restart after 10 s on an error, no restart on a clean return, drain to
+//! `WS_DRAIN_TIMEOUT_MS` + 5 s and then abort) and returns `Ok(())` after a drain.
+//! `workers::spawn_tor` is a one-shot startup task, not a supervised worker: one bootstrap
+//! attempt logs `Tor hidden service: <id>:<port>` or `Tor hidden service: disabled` and
+//! never fails startup. The relay-monitor worker belongs to #865 and is not registered here.
+//!
 //! The MCP server named in the issue is Phase 5 and has no TS counterpart at the capture; it
 //! has no module here either.
 
