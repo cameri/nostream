@@ -317,7 +317,7 @@ pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceOutcome {
     };
 
     if stored_key.is_none()
-        && let Err(error) = tokio::fs::write(&key_file, private_key).await
+        && let Err(error) = write_private_key(&key_file, private_key).await
     {
         tracing::warn!(path = %key_file.display(), error = %error, "unable to save the onion key");
     }
@@ -329,4 +329,18 @@ pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceOutcome {
         service_id,
         port: config.hidden_port,
     }
+}
+
+/// Writes the onion key with owner-only permissions: it is the one long-lived secret the
+/// daemon writes to disk, and the process umask would otherwise leave it world-readable.
+async fn write_private_key(path: &Path, key: &str) -> std::io::Result<()> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+
+    #[cfg(unix)]
+    options.mode(0o600);
+
+    let mut file = options.open(path).await?;
+    file.write_all(key.as_bytes()).await?;
+    file.flush().await
 }

@@ -257,6 +257,21 @@ async fn the_private_key_file_is_written_once_and_reused() {
         "ED25519-V3:first-secret"
     );
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = std::fs::metadata(&key_file)
+            .expect("the key file's metadata")
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "the onion key is readable only by its owner"
+        );
+    }
+
     assert_eq!(
         ensure_hidden_service(&config).await,
         HiddenServiceOutcome::Enabled {
