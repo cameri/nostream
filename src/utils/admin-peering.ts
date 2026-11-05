@@ -1,6 +1,7 @@
 import { PeeringPeerSyncState } from '../@types/peering'
 import { Settings } from '../@types/settings'
 import { parsePeeringPeerPubkey } from './peering-auth'
+import { PeeringRequestStats } from './peering-request-stats'
 import { isPeeringSyncStateStale, PEERING_SYNC_STATE_STALE_AFTER_SECONDS } from './peering-sync-state'
 
 export interface AdminPeeringRow {
@@ -10,14 +11,17 @@ export interface AdminPeeringRow {
   enabled: boolean
   stale: boolean
   state?: PeeringPeerSyncState
+  requests?: PeeringRequestStats
 }
 
 export const mergePeeringRows = (
   settings: Settings,
   states: PeeringPeerSyncState[],
   staleAfterSeconds = PEERING_SYNC_STATE_STALE_AFTER_SECONDS,
+  requestStats: PeeringRequestStats[] = [],
 ): AdminPeeringRow[] => {
   const statesByPubkey = new Map(states.map((state) => [state.pubkey.toLowerCase(), state]))
+  const requestsByPubkey = new Map(requestStats.map((stats) => [stats.pubkey.toLowerCase(), stats]))
   const rows: AdminPeeringRow[] = []
   const matched = new Set<string>()
 
@@ -36,6 +40,7 @@ export const mergePeeringRows = (
       enabled,
       stale: enabled && (!state || isPeeringSyncStateStale(state.updatedAt, staleAfterSeconds)),
       state,
+      requests: requestsByPubkey.get(normalized),
     })
   }
 
@@ -53,6 +58,7 @@ export const mergePeeringRows = (
       enabled: false,
       stale: isPeeringSyncStateStale(state.updatedAt, staleAfterSeconds),
       state,
+      requests: requestsByPubkey.get(state.pubkey.toLowerCase()),
     })
   }
 

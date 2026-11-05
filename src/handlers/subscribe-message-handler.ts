@@ -1,7 +1,18 @@
 import { anyPass, equals, isNil, map, omit, propSatisfies, uniqWith } from 'ramda'
 import { addAbortSignal } from 'stream'
 import { pipeline } from 'stream/promises'
-
+import { IWebSocketAdapter } from '../@types/adapters'
+import { Factory, Pubkey } from '../@types/base'
+import { Event } from '../@types/event'
+import { IAbortable, IMessageHandler } from '../@types/message-handlers'
+import { SubscribeMessage } from '../@types/messages'
+import { IEventRepository, IInviteCodeRepository } from '../@types/repositories'
+import { Settings } from '../@types/settings'
+import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
+import { IRateLimiter } from '../@types/utils'
+import { WebSocketAdapterEvent } from '../constants/adapter'
+import { createLogger } from '../factories/logger-factory'
+import { getPublicKey, getRelayPrivateKey, isEventMatchingFilter, isExpiredEvent, toNostrEvent } from '../utils/event'
 import { countFilterValues } from '../utils/filter'
 import {
   createClosedMessage,
@@ -10,23 +21,12 @@ import {
   createOutgoingEventMessage,
 } from '../utils/messages'
 import { createReadAuthorizationGuard, isSubscriptionAuthRequired } from '../utils/nip42'
-import { getPublicKey, getRelayPrivateKey, isEventMatchingFilter, isExpiredEvent, toNostrEvent } from '../utils/event'
-import { IAbortable, IMessageHandler } from '../@types/message-handlers'
-import { IEventRepository, IInviteCodeRepository } from '../@types/repositories'
 import { isNip43InviteRequestFilter, isRelaySelfConsistent } from '../utils/nip43'
 import { buildInviteCodeEvent, issueInviteCode } from '../utils/nip43-invites'
-import { streamEachAsync, streamEnd, streamFilter, streamMap } from '../utils/stream'
-import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
-import { createLogger } from '../factories/logger-factory'
-import { Event } from '../@types/event'
-import { Factory, Pubkey } from '../@types/base'
-import { IRateLimiter } from '../@types/utils'
-import { IWebSocketAdapter } from '../@types/adapters'
-import { Settings } from '../@types/settings'
-import { SubscribeMessage } from '../@types/messages'
-import { WebSocketAdapterEvent } from '../constants/adapter'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
 import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
+import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
+import { streamEachAsync, streamEnd, streamFilter, streamMap } from '../utils/stream'
 
 const logger = createLogger('subscribe-message-handler')
 
@@ -42,6 +42,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     private readonly settings: () => Settings,
     private readonly inviteCodeRepository: IInviteCodeRepository,
     private readonly rateLimiter: Factory<IRateLimiter>,
+    private readonly requestStats?: PeeringRequestStatsStore,
   ) {
     this.abortController = new AbortController()
   }
@@ -75,6 +76,8 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
         )
         return
       }
+
+      void this.requestStats?.recordRequest(peerPubkey, 'REQ')
     }
 
     // Bound before uniqWith(): deduplicating an unbounded list is O(n^2). The
@@ -91,7 +94,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
     // NIP-50: strip search from filters when disabled so isEventMatchingFilter ignores it
     const nip50Enabled = this.settings()?.nip50?.enabled ?? false
-    const filters = nip50Enabled ? rawFilters : rawFilters.map(omit(['search'])) as SubscriptionFilter[]
+    const filters = nip50Enabled ? rawFilters : (rawFilters.map(omit(['search'])) as SubscriptionFilter[])
 
     const reason = this.canSubscribe(subscriptionId, filters)
     if (reason) {
@@ -243,7 +246,10 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   private async fetchAndSend(subscriptionId: string, filters: SubscriptionFilter[]): Promise<void> {
     logger('fetching events for subscription %s with filters %o', subscriptionId, filters)
+    const peerPubkey = this.webSocket.getPeerPubkey()
+    let served = 0
     const sendEvent = async (event: Event) => {
+      served += 1
       this.webSocket.emit(WebSocketAdapterEvent.Message, createOutgoingEventMessage(subscriptionId, event))
       await this.webSocket.waitForWritable()
     }
@@ -258,9 +264,8 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     }
 
     // NIP-42: drop restricted-kind events the client isn't authorized to read.
-    const isReadAuthorized = createReadAuthorizationGuard(
-      this.settings(),
-      () => this.webSocket.getAuthenticatedPubkeys(),
+    const isReadAuthorized = createReadAuthorizationGuard(this.settings(), () =>
+      this.webSocket.getAuthenticatedPubkeys(),
     )
 
     // A peer's omitted `limit` means the full stored feed, not the client-sized
@@ -294,6 +299,10 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
         logger('error streaming events: %o', error)
       }
       throw error
+    } finally {
+      if (peerPubkey && served > 0) {
+        void this.requestStats?.addEventsServed(peerPubkey, served)
+      }
     }
   }
 
@@ -304,10 +313,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private canSubscribe(subscriptionId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
     const subscriptions = this.webSocket.getSubscriptions()
     const existingSubscription = subscriptions.get(subscriptionId)
-    const subscriptionLimits = subscriptionLimitsFor(
-      this.settings(),
-      this.webSocket.getPeerPubkey() !== undefined,
-    )
+    const subscriptionLimits = subscriptionLimitsFor(this.settings(), this.webSocket.getPeerPubkey() !== undefined)
 
     if (existingSubscription?.length && equals(filters, existingSubscription)) {
       return `Duplicate subscription ${subscriptionId}: Ignoring`

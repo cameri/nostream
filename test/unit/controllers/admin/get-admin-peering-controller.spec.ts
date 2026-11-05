@@ -22,13 +22,24 @@ describe('GetAdminPeeringController', () => {
       lagSeconds: 3,
     }
     const stateStore = { list: Sinon.stub().resolves([state]) }
+    const requestStatsStore = {
+      list: Sinon.stub().resolves([
+        {
+          pubkey: state.pubkey,
+          requests: 12,
+          eventsServed: 34,
+          lastRequestAt: '2026-01-01T00:00:00.000Z',
+          lastRequestType: 'REQ',
+        },
+      ]),
+    }
     const settings = {
       peering: {
         enabled: true,
         peers: [{ pubkey: state.pubkey, relayUrl: state.relayUrl }],
       },
     } as Settings
-    const controller = new GetAdminPeeringController(stateStore as any, () => settings)
+    const controller = new GetAdminPeeringController(stateStore as any, () => settings, requestStatsStore as any)
     const response = {
       status: Sinon.stub().returnsThis(),
       setHeader: Sinon.stub().returnsThis(),
@@ -46,5 +57,12 @@ describe('GetAdminPeeringController', () => {
       stale: false,
     })
     expect(payload.peers[0].state.lagSeconds).to.equal(3)
+    expect(payload.peers[0].requests).to.deep.equal({
+      pubkey: state.pubkey,
+      requests: 12,
+      eventsServed: 34,
+      lastRequestAt: '2026-01-01T00:00:00.000Z',
+      lastRequestType: 'REQ',
+    })
   })
 })

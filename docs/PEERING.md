@@ -179,6 +179,11 @@ unavailable.
 The same request pattern from a non-peer connection is handled as ordinary
 client traffic and is not given the peer budget.
 
+Request counts and the number of events served are recorded per peer pubkey in
+Redis and shown in the admin console's Peering table alongside sync state. The
+same counters are included in diagnostics exports. Accounting is best-effort
+and never fails the request it describes.
+
 Only the public half of the keypair is ever visible on the wire. Inbound AUTH is
 verified by `AuthMessageHandler`: event id, signature, timestamp, challenge, and
 relay host. Outbound AUTH proves this relay's identity to the peer; it does not

@@ -15,6 +15,7 @@ import { createClosedMessage, createCountResultMessage } from '../utils/messages
 import { isCountAuthorized } from '../utils/nip42'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
 import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
+import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 
 const debug = createLogger('count-message-handler')
 
@@ -24,6 +25,7 @@ export class CountMessageHandler implements IMessageHandler {
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
     private readonly rateLimiter?: Factory<IRateLimiter>,
+    private readonly requestStats?: PeeringRequestStatsStore,
   ) {}
 
   public async handleMessage(message: CountMessage): Promise<void> {
@@ -47,6 +49,8 @@ export class CountMessageHandler implements IMessageHandler {
         )
         return
       }
+
+      void this.requestStats?.recordRequest(peerPubkey, 'COUNT')
     }
 
     // Some clients send the same filter more than once. Bound the raw list

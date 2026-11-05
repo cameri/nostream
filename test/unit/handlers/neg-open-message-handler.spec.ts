@@ -53,6 +53,7 @@ describe('NegOpenMessageHandler', () => {
   let handler: NegOpenMessageHandler
   let rateLimiterHitStub: Sinon.SinonStub
   let rateLimiterFactory: Sinon.SinonStub
+  let requestStats: { recordRequest: Sinon.SinonStub }
 
   const open = (id = 'sync1', filter: any = { kinds: [1] }, hex = emptyClientMessageHex) =>
     handler.handleMessage([MessageType.NEG_OPEN, id, filter, hex] as any)
@@ -74,8 +75,15 @@ describe('NegOpenMessageHandler', () => {
 
     rateLimiterHitStub = sandbox.stub().resolves({ limited: false })
     rateLimiterFactory = sandbox.stub().returns({ hit: rateLimiterHitStub })
+    requestStats = { recordRequest: sandbox.stub().resolves() }
 
-    handler = new NegOpenMessageHandler(webSocket, eventRepository, () => settings, rateLimiterFactory)
+    handler = new NegOpenMessageHandler(
+      webSocket,
+      eventRepository,
+      () => settings,
+      rateLimiterFactory,
+      requestStats as any,
+    )
   })
 
   afterEach(() => {
@@ -235,6 +243,7 @@ describe('NegOpenMessageHandler', () => {
 
       expect(emitted.firstCall.args[0][0]).to.equal(MessageType.NEG_MSG)
       expect(findReconciliationItems).to.have.been.called
+      expect(requestStats.recordRequest).to.have.been.calledOnceWithExactly('a'.repeat(64), 'NEG-OPEN')
     })
 
     it('replies NEG-ERR when the peer on-demand request limit is exceeded', async () => {
