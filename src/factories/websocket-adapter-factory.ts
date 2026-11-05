@@ -1,6 +1,6 @@
 import { IncomingMessage } from 'http'
 import { WebSocket } from 'ws'
-
+import { IWebSocketServerAdapter } from '../@types/adapters'
 import {
   IDvmJobRepository,
   IEventRepository,
@@ -9,11 +9,10 @@ import {
   IReportRepository,
   IUserRepository,
 } from '../@types/repositories'
-import { createSettings } from './settings-factory'
-import { IWebSocketServerAdapter } from '../@types/adapters'
-import { messageHandlerFactory } from './message-handler-factory'
-import { rateLimiterFactory } from './rate-limiter-factory'
 import { WebSocketAdapter } from '../adapters/web-socket-adapter'
+import { getPeerRequestStatsStore, messageHandlerFactory } from './message-handler-factory'
+import { rateLimiterFactory } from './rate-limiter-factory'
+import { createSettings } from './settings-factory'
 
 export const webSocketAdapterFactory =
   (
@@ -39,4 +38,5 @@ export const webSocketAdapterFactory =
       ),
       rateLimiterFactory,
       createSettings,
+      getPeerRequestStatsStore(),
     )

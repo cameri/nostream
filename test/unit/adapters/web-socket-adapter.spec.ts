@@ -1,21 +1,20 @@
-import EventEmitter from 'events'
-import { WebSocket } from 'ws'
-
 import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
+import EventEmitter from 'events'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
+import { WebSocket } from 'ws'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
 
 const { expect } = chai
 
-import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 import { IWebSocketServerAdapter } from '../../../src/@types/adapters'
-import { Negentropy, NegentropyStorageVector } from '../../../src/utils/negentropy'
 import { WebSocketAdapter } from '../../../src/adapters/web-socket-adapter'
+import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 import { markActionableTarget, resetHiddenContentCache } from '../../../src/utils/hidden-content-cache'
+import { Negentropy, NegentropyStorageVector } from '../../../src/utils/negentropy'
 
 describe('WebSocketAdapter', () => {
   let sandbox: Sinon.SinonSandbox
@@ -25,6 +24,7 @@ describe('WebSocketAdapter', () => {
   let createMessageHandler: Sinon.SinonStub
   let slidingWindowRateLimiter: Sinon.SinonStub
   let settingsFactory: Sinon.SinonStub
+  let requestStats: { addEventsServed: Sinon.SinonStub }
   let adapter: WebSocketAdapter
 
   let originalConsoleError: typeof console.error
@@ -71,6 +71,7 @@ describe('WebSocketAdapter', () => {
         },
       },
     })
+    requestStats = { addEventsServed: sandbox.stub().resolves() }
 
     adapter = new WebSocketAdapter(
       client,
@@ -79,6 +80,7 @@ describe('WebSocketAdapter', () => {
       createMessageHandler,
       slidingWindowRateLimiter,
       settingsFactory,
+      requestStats as any,
     )
 
     // Reset send history so existing tests see a clean slate
@@ -277,6 +279,28 @@ describe('WebSocketAdapter', () => {
       expect(sent[0]).to.equal('EVENT')
       expect(sent[1]).to.equal('sub-1')
       expect(sent[2]).to.deep.equal(event)
+    })
+
+    it('counts each EVENT frame delivered to a peer', () => {
+      const peer = 'd'.repeat(64)
+      sandbox.stub(adapter, 'getPeerPubkey').returns(peer)
+      client.readyState = WebSocket.OPEN
+      adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+
+      const event = {
+        id: 'a'.repeat(64),
+        pubkey: 'b'.repeat(64),
+        kind: 1,
+        content: 'hello',
+        created_at: 1000000,
+        sig: 'c'.repeat(128),
+        tags: [],
+      }
+
+      adapter.emit(WebSocketAdapterEvent.Event, event)
+
+      expect(client.send).to.have.been.calledOnce
+      expect(requestStats.addEventsServed).to.have.been.calledOnceWithExactly(peer, 1)
     })
 
     it('does not send event not matching any filter', () => {
@@ -645,7 +669,7 @@ describe('WebSocketAdapter', () => {
 
       // The strategy's own estimate wins when it has one: a sliding window's
       // period is the upper bound, an EWMA half-life is not.
-      it('sends the limiter\'s own backoff when it has one', async () => {
+      it("sends the limiter's own backoff when it has one", async () => {
         slidingWindowRateLimiter.returns({
           hit: sandbox.stub().resolves({ limited: true, retryAfterMs: 120000 }),
         })
@@ -663,11 +687,7 @@ describe('WebSocketAdapter', () => {
 
         await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
 
-        expect(hitStub).to.have.been.calledOnceWithExactly(
-          '127.0.0.1:message:REQ:60000',
-          1,
-          { period: 60000, rate: 1 },
-        )
+        expect(hitStub).to.have.been.calledOnceWithExactly('127.0.0.1:message:REQ:60000', 1, { period: 60000, rate: 1 })
       })
 
       it('uses peer limits and a separate bucket for a recognized peer', async () => {
@@ -691,11 +711,10 @@ describe('WebSocketAdapter', () => {
 
         await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
 
-        expect(hitStub).to.have.been.calledOnceWithExactly(
-          '127.0.0.1:peer-message:REQ:60000',
-          1,
-          { period: 60000, rate: 100 },
-        )
+        expect(hitStub).to.have.been.calledOnceWithExactly('127.0.0.1:peer-message:REQ:60000', 1, {
+          period: 60000,
+          rate: 100,
+        })
       })
 
       // A closed set of types, or a client could rotate invented ones and keep

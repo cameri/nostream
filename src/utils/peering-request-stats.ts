@@ -32,6 +32,7 @@ return 1
 `
 
 const READ_SCRIPT = `return redis.call('HGETALL', KEYS[1])`
+const REMOVE_INDEX_MEMBER_SCRIPT = `return redis.call('SREM', KEYS[1], ARGV[1])`
 
 const parseStats = (raw: unknown): PeeringRequestStats | undefined => {
   if (!Array.isArray(raw)) {
@@ -84,6 +85,10 @@ export class PeeringRequestStatsStore {
         const parsed = parseStats(await this.cache.eval(READ_SCRIPT, [statsKey(pubkey)], []))
         if (parsed) {
           stats.push(parsed)
+        } else {
+          // The member's hash expired while another active peer kept the
+          // shared index alive. Drop it instead of rereading it on every poll.
+          await this.cache.eval(REMOVE_INDEX_MEMBER_SCRIPT, [PEERING_REQUEST_STATS_INDEX_KEY], [pubkey])
         }
       } catch (error) {
         logger.warn('failed to read peering request stats for %s: %o', pubkey, error)

@@ -246,10 +246,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   private async fetchAndSend(subscriptionId: string, filters: SubscriptionFilter[]): Promise<void> {
     logger('fetching events for subscription %s with filters %o', subscriptionId, filters)
-    const peerPubkey = this.webSocket.getPeerPubkey()
-    let served = 0
     const sendEvent = async (event: Event) => {
-      served += 1
       this.webSocket.emit(WebSocketAdapterEvent.Message, createOutgoingEventMessage(subscriptionId, event))
       await this.webSocket.waitForWritable()
     }
@@ -299,10 +296,6 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
         logger('error streaming events: %o', error)
       }
       throw error
-    } finally {
-      if (peerPubkey && served > 0) {
-        void this.requestStats?.addEventsServed(peerPubkey, served)
-      }
     }
   }
 

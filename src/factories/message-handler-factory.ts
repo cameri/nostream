@@ -43,7 +43,7 @@ const getUserSubscriptionRepository = (): UserSubscriptionRepository => {
 }
 
 let peerRequestStatsStore: PeeringRequestStatsStore | undefined = undefined
-const getPeerRequestStatsStore = (): PeeringRequestStatsStore => {
+export const getPeerRequestStatsStore = (): PeeringRequestStatsStore => {
   if (!peerRequestStatsStore) {
     peerRequestStatsStore = new PeeringRequestStatsStore(getCache())
   }

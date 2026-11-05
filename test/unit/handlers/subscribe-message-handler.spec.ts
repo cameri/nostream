@@ -50,7 +50,7 @@ describe('SubscribeMessageHandler', () => {
   let rateLimiterHitStub: Sinon.SinonStub
   let rateLimiterFactory: Sinon.SinonStub
   let endSubscriptionStub: Sinon.SinonStub
-  let requestStats: { recordRequest: Sinon.SinonStub; addEventsServed: Sinon.SinonStub }
+  let requestStats: { recordRequest: Sinon.SinonStub }
 
   let sandbox: Sinon.SinonSandbox
 
@@ -67,7 +67,6 @@ describe('SubscribeMessageHandler', () => {
     webSocket.endSubscription = endSubscriptionStub
     requestStats = {
       recordRequest: sandbox.stub().resolves(),
-      addEventsServed: sandbox.stub().resolves(),
     }
     settingsFactory = sandbox.stub()
     stream = new PassThrough({
@@ -699,22 +698,6 @@ describe('SubscribeMessageHandler', () => {
       await promise
 
       expect(webSocketOnMessageStub).to.have.been.calledWith([MessageType.EVENT, subscriptionId, event])
-    })
-
-    it('records events served to a peer', async () => {
-      const peer = 'a'.repeat(64)
-      isClientSubscribedToEventStub.returns(always(true))
-      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
-      settingsFactory.returns({ limits: { peer: { subscription: { maxLimit: 0 } } } })
-
-      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
-
-      stream.write(toDbEvent(event))
-      stream.end()
-
-      await promise
-
-      expect(requestStats.addEventsServed).to.have.been.calledOnceWithExactly(peer, 1)
     })
 
     it('sends event if client is subscribed', async () => {
