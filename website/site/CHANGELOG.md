@@ -1,5 +1,38 @@
 # nostream-website
 
+## 1.3.5
+
+### Patch Changes
+
+- [#1062](https://github.com/cameri/nostream/pull/1062) [`5d5b5b1`](https://github.com/cameri/nostream/commit/5d5b5b1c0a439523b70a08f448fdc8cec9873864) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - perf(website): size the hero poster to the box it paints in
+
+  `hero-poster.webp` was encoded at 1920×1080 for a box `Hero.astro` caps at
+  1180×664 CSS px (`min(1180px, 80vw, film-h * 16/9)`), which Lighthouse's
+  `image-delivery-insight` reported as 36.9 KiB of waste on
+  `ema.tnsor.network` ([#876](https://github.com/cameri/nostream/issues/876)).
+  The poster now encodes at 1440×810 — 1.22× that box, enough for a 1.25×
+  display, so it needs no `devicePixelRatio` branch — and drops from 42,926 B
+  to 30,878 B, a 28% reduction. SSIM against the old file at the display size
+  is 0.9968 at 1180×664 and 0.9964 at the larger 1359×764 layout [#876](https://github.com/cameri/nostream/issues/876) measured.
+
+  The social preview is unaffected: `og:image` defaults to the generated
+  `social-card.png` at 1200×630 in `build-social-card.mjs`, and the hero poster
+  has no second consumer. `scripts/build-media.mjs` resizes to 1440 so the next
+  `pnpm run media` keeps the size instead of restoring 1920.
+
+- [#1063](https://github.com/cameri/nostream/pull/1063) [`771f53e`](https://github.com/cameri/nostream/commit/771f53e0d1caa0ac4b140f489ffb6d021705472a) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - docs(website): lead with what the relay gives you, not its language
+
+  The default meta description and the footer still introduced nostream as "a
+  Nostr relay written in TypeScript", which describes the implementation and not
+  the thing a reader gets. The `<title>`, the `og:image:alt` and the repository
+  description already lead with owning a relay in a social network nobody can
+  switch off; the two stragglers now match them.
+
+  The description feeds `meta[name=description]`, `og:description` and
+  `twitter:description`, so the link preview changes with it. The technical
+  substance — PostgreSQL + Redis, Lightning admission, Tor and I2P, admin
+  console — is unchanged.
+
 ## 1.3.4
 
 ### Patch Changes
