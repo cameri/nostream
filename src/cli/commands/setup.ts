@@ -29,6 +29,46 @@ class SetupCancelledError extends Error {
   }
 }
 
+const stripQuotes = (value: string): string => {
+  const trimmed = value.trim()
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1).trim()
+  }
+  return trimmed
+}
+
+const parseEnvValue = (rawValue: string): string => {
+  const trimmed = rawValue.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (trimmed.startsWith('"')) {
+    let closingIndex = -1
+    for (let i = 1; i < trimmed.length; i += 1) {
+      if (trimmed[i] === '"' && trimmed[i - 1] !== '\\') {
+        closingIndex = i
+        break
+      }
+    }
+    if (closingIndex !== -1) {
+      return trimmed.slice(1, closingIndex).replace(/\\"/g, '"')
+    }
+    return trimmed.slice(1)
+  }
+
+  if (trimmed.startsWith("'")) {
+    const closingIndex = trimmed.indexOf("'", 1)
+    if (closingIndex !== -1) {
+      return trimmed.slice(1, closingIndex)
+    }
+    return trimmed.slice(1)
+  }
+
+  const [unquoted] = trimmed.split('#', 1)
+  return unquoted.trim()
+}
+
 const readEnvSecret = (content: string): string | undefined => {
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim()
@@ -36,27 +76,44 @@ const readEnvSecret = (content: string): string | undefined => {
       continue
     }
 
-    const [rawValue] = trimmed.slice('SECRET='.length).split('#', 1)
-    return rawValue.trim()
+    const raw = trimmed.slice('SECRET='.length)
+    return parseEnvValue(raw)
   }
 
   return undefined
 }
 
 const needsSecretReplacement = (secret: string | undefined): boolean => {
-  return !secret || secret === SECRET_PLACEHOLDER
+  const unquoted = secret ? stripQuotes(secret) : undefined
+  return !unquoted || unquoted === SECRET_PLACEHOLDER
 }
 
 const resolveSecret = async (assumeYes: boolean): Promise<string> => {
-  if (process.env.SECRET?.trim()) {
-    return process.env.SECRET.trim()
+  const inheritedSecret = process.env.SECRET?.trim()
+  if (inheritedSecret && !needsSecretReplacement(inheritedSecret)) {
+    return stripQuotes(inheritedSecret)
   }
 
   if (!assumeYes && process.stdin.isTTY) {
     const value = await setupPrompts.text({
       message: 'SECRET env var value (hex recommended)',
       placeholder: 'openssl rand -hex 128',
-      validate: (input) => (input.trim() ? undefined : 'SECRET is required'),
+      validate: (input) => {
+        const trimmed = stripQuotes(input)
+        if (!trimmed) {
+          return 'SECRET is required'
+        }
+        if (needsSecretReplacement(trimmed)) {
+          return 'SECRET cannot be the default placeholder'
+        }
+        if (input.includes('#')) {
+          return 'SECRET cannot contain "#"'
+        }
+        if (/[\r\n]/.test(input)) {
+          return 'SECRET cannot contain newlines'
+        }
+        return undefined
+      },
     })
 
     if (setupPrompts.isCancel(value)) {
@@ -64,7 +121,10 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
       throw new SetupCancelledError()
     }
 
-    return value.trim()
+    const trimmed = value.trim()
+    if (!needsSecretReplacement(trimmed)) {
+      return trimmed
+    }
   }
 
   return randomBytes(64).toString('hex')
@@ -119,7 +179,11 @@ const ensureEnvFile = async (assumeYes: boolean): Promise<boolean> => {
 
   const current = fs.readFileSync(envPath, 'utf-8')
 
-  if (!needsSecretReplacement(readEnvSecret(current))) {
+  const envFileSecret = readEnvSecret(current)
+  if (!needsSecretReplacement(envFileSecret)) {
+    if (needsSecretReplacement(process.env.SECRET) && envFileSecret) {
+      process.env.SECRET = envFileSecret
+    }
     return true
   }
 
@@ -133,6 +197,11 @@ const ensureEnvFile = async (assumeYes: boolean): Promise<boolean> => {
     throw error
   }
 
+  if (needsSecretReplacement(secret)) {
+    secret = randomBytes(64).toString('hex')
+  }
+
+  process.env.SECRET = secret
   fs.writeFileSync(envPath, upsertSecret(current, secret), 'utf-8')
   return true
 }

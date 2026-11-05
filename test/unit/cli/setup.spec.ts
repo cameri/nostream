@@ -114,4 +114,118 @@ describe('runSetup', () => {
     expect(outroStub.notCalled).to.equal(true)
     expect(readEnv()).to.equal('SECRET=change_me_to_something_long_and_random\n')
   })
+
+  it('rejects an inherited placeholder secret from process.env.SECRET and generates a fresh secret', async () => {
+    fs.writeFileSync(path.join(tempDir, '.env.example'), 'SECRET=change_me_to_something_long_and_random\n', 'utf-8')
+    process.env.SECRET = 'change_me_to_something_long_and_random'
+
+    const code = await setupCommand.runSetup({ yes: true })
+
+    expect(code).to.equal(0)
+    const generatedSecret = readEnv().match(/^SECRET=([a-f0-9]+)$/m)?.[1]
+    expect(generatedSecret).to.not.equal(undefined)
+    expect(generatedSecret).to.not.equal('change_me_to_something_long_and_random')
+    expect(generatedSecret).to.have.length(128)
+    expect(process.env.SECRET).to.equal(generatedSecret)
+  })
+
+  it('validates secret input in interactive mode and rejects empty or placeholder values', async () => {
+    process.stdin.isTTY = true
+    fs.writeFileSync(path.join(tempDir, '.env.example'), 'SECRET=change_me_to_something_long_and_random\n', 'utf-8')
+
+    let validateFn: ((input: string) => string | undefined) | undefined
+    sinon.stub(setupCommand.setupPrompts, 'text').callsFake((opts: any) => {
+      validateFn = opts.validate
+      return Promise.resolve('my-strong-interactive-secret')
+    })
+    sinon.stub(setupCommand.setupPrompts, 'confirm').resolves(false as any)
+
+    const code = await setupCommand.runSetup({ yes: false })
+
+    expect(code).to.equal(0)
+    expect(validateFn).to.be.a('function')
+    expect(validateFn!('')).to.equal('SECRET is required')
+    expect(validateFn!('   ')).to.equal('SECRET is required')
+    expect(validateFn!('change_me_to_something_long_and_random')).to.equal('SECRET cannot be the default placeholder')
+    expect(validateFn!('  change_me_to_something_long_and_random  ')).to.equal(
+      'SECRET cannot be the default placeholder',
+    )
+    expect(validateFn!('my-strong-interactive-secret')).to.equal(undefined)
+    expect(validateFn!('secret#comment')).to.equal('SECRET cannot contain "#"')
+    expect(validateFn!('secret\nnewline')).to.equal('SECRET cannot contain newlines')
+
+    expect(readEnv()).to.include('SECRET=my-strong-interactive-secret')
+    expect(process.env.SECRET).to.equal('my-strong-interactive-secret')
+  })
+
+  it('replaces placeholder with generated secret if interactive input somehow resolves to placeholder', async () => {
+    process.stdin.isTTY = true
+    fs.writeFileSync(path.join(tempDir, '.env.example'), 'SECRET=change_me_to_something_long_and_random\n', 'utf-8')
+
+    sinon.stub(setupCommand.setupPrompts, 'text').resolves('change_me_to_something_long_and_random')
+    sinon.stub(setupCommand.setupPrompts, 'confirm').resolves(false as any)
+
+    const code = await setupCommand.runSetup({ yes: false })
+
+    expect(code).to.equal(0)
+    const generatedSecret = readEnv().match(/^SECRET=([a-f0-9]+)$/m)?.[1]
+    expect(generatedSecret).to.not.equal(undefined)
+    expect(generatedSecret).to.not.equal('change_me_to_something_long_and_random')
+    expect(generatedSecret).to.have.length(128)
+    expect(process.env.SECRET).to.equal(generatedSecret)
+  })
+
+  it('replaces a quoted placeholder secret in .env', async () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'SECRET="change_me_to_something_long_and_random"\nFOO=bar\n', 'utf-8')
+
+    const code = await setupCommand.runSetup({ yes: true })
+
+    expect(code).to.equal(0)
+    const generatedSecret = readEnv().match(/^SECRET=([a-f0-9]+)$/m)?.[1]
+    expect(generatedSecret).to.not.equal(undefined)
+    expect(generatedSecret).to.not.equal('change_me_to_something_long_and_random')
+    expect(generatedSecret).to.have.length(128)
+    expect(process.env.SECRET).to.equal(generatedSecret)
+  })
+
+  it('syncs process.env.SECRET from an existing valid .env secret when process.env.SECRET held a placeholder', async () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'SECRET="persisted-real-secret"\n', 'utf-8')
+    process.env.SECRET = 'change_me_to_something_long_and_random'
+
+    const code = await setupCommand.runSetup({ yes: true })
+
+    expect(code).to.equal(0)
+    expect(process.env.SECRET).to.equal('persisted-real-secret')
+  })
+
+  it('preserves full quoted secret containing # from .env and does not truncate at #', async () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'SECRET="abc#def" # trailing comment\n', 'utf-8')
+
+    const code = await setupCommand.runSetup({ yes: true })
+
+    expect(code).to.equal(0)
+    expect(process.env.SECRET).to.equal('abc#def')
+    expect(readEnv()).to.equal('SECRET="abc#def" # trailing comment\n')
+  })
+
+  it('preserves explicitly supplied valid process.env.SECRET when .env contains a different valid secret', async () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'SECRET="file-secret"\n', 'utf-8')
+    process.env.SECRET = 'operator-supplied-secret'
+
+    const code = await setupCommand.runSetup({ yes: true })
+
+    expect(code).to.equal(0)
+    expect(process.env.SECRET).to.equal('operator-supplied-secret')
+    expect(readEnv()).to.equal('SECRET="file-secret"\n')
+  })
+
+  it('correctly handles escaped quotes inside double-quoted secrets', async () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'SECRET="sec\\"ret#with#hashes" # comment\n', 'utf-8')
+
+    const code = await setupCommand.runSetup({ yes: true })
+
+    expect(code).to.equal(0)
+    expect(process.env.SECRET).to.equal('sec"ret#with#hashes')
+    expect(readEnv()).to.equal('SECRET="sec\\"ret#with#hashes" # comment\n')
+  })
 })
