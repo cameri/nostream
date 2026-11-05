@@ -78,7 +78,9 @@ async fn send(
         .await
         .map_err(|error| ServicesError::Http {
             status: error.status().map(|status| status.as_u16()),
-            message: error.to_string(),
+            // The URL is the credential for the Telegram and webhook channels, and this
+            // message reaches the daemon log and both notification tables.
+            message: error.without_url().to_string(),
         })?;
 
     let status = response.status().as_u16();
@@ -87,7 +89,7 @@ async fn send(
         .await
         .map_err(|error| ServicesError::Http {
             status: Some(status),
-            message: error.to_string(),
+            message: error.without_url().to_string(),
         })?;
     let body = String::from_utf8_lossy(&bytes).into_owned();
 
@@ -267,7 +269,11 @@ pub fn join_url(base: &str, path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::is_redirect_target_safe;
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use std::time::Duration;
+
+    use super::{HttpClient, ReqwestClient, is_redirect_target_safe};
 
     /// `Some` when `url` parses, so a typo fails the comparison instead of the test helper.
     fn safe(url: &str) -> Option<bool> {
@@ -297,5 +303,25 @@ mod tests {
         assert_eq!(safe("https://169.254.169.254/nostr.json"), Some(false));
         assert_eq!(safe("https://224.0.0.1/nostr.json"), Some(false));
         assert_eq!(safe("https://[::1]/nostr.json"), Some(false));
+    }
+
+    /// The Telegram and webhook URLs carry their credential in the path, and this text reaches
+    /// the daemon log, the delivery log and the outbox row.
+    #[tokio::test]
+    async fn a_transport_failure_does_not_carry_the_request_url() {
+        let error = ReqwestClient::new()
+            .expect("client")
+            .get(
+                "https://127.0.0.1:1/bot123456:SECRETTOKEN/sendMessage",
+                &[],
+                Duration::from_secs(1),
+            )
+            .await
+            .expect_err("nothing listens on port 1");
+
+        assert!(
+            !error.to_string().contains("SECRETTOKEN"),
+            "the URL is the credential: {error}"
+        );
     }
 }
