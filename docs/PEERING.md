@@ -160,6 +160,25 @@ outbound sync path: the sync worker reconciles only the peer's advertised
 scopes and drops fetched events that fall outside them. Inbound feed scope
 enforcement remains part of the sync work that is still in progress.
 
+## On-demand requests
+
+Beyond the standing feed and periodic reconciliation, an authenticated peer may
+ask for specific events with an ordinary `REQ`, `COUNT`, or an ad-hoc `NEG-OPEN`
+session. This covers an event outside the advertised scope — for example the
+root of a thread, or a deeper backfill — without changing either relay's feed
+configuration.
+
+These requests are served under the peer's normal subscription and NIP-77
+limits, not client limits, and are additionally throttled per peer pubkey by
+`limits.peer.request.rateLimits`. The default budget is 300 requests per minute
+across `REQ`, `COUNT`, and `NEG-OPEN`; a refused `REQ`/`COUNT` receives
+`CLOSED` with a `rate-limited:` reason and a retry hint, and a refused
+`NEG-OPEN` receives `NEG-ERR`. The limiter fails closed if its store is
+unavailable.
+
+The same request pattern from a non-peer connection is handled as ordinary
+client traffic and is not given the peer budget.
+
 Only the public half of the keypair is ever visible on the wire. Inbound AUTH is
 verified by `AuthMessageHandler`: event id, signature, timestamp, challenge, and
 relay host. Outbound AUTH proves this relay's identity to the peer; it does not

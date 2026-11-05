@@ -430,6 +430,14 @@ limits:
         - description: 6000 peer messages/min
           period: 60000
           rate: 6000
+    request:
+      # On-demand REQ/COUNT/NEG-OPEN requests, counted per peer pubkey rather
+      # than per IP. Separate from the generic message bucket so a feed's raw
+      # traffic does not consume the on-demand budget.
+      rateLimits:
+        - description: 300 peer on-demand requests/min
+          period: 60000
+          rate: 300
   message:
     # period is milliseconds (60000 = one minute)
     rateLimits:

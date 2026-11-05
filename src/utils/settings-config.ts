@@ -1215,6 +1215,7 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
   if (limits) {
     validateRateLimitPeriods(limits.event?.rateLimits, 'limits.event.rateLimits', issues)
     validateRateLimitPeriods(limits.peer?.message?.rateLimits, 'limits.peer.message.rateLimits', issues)
+    validateRateLimitPeriods(limits.peer?.request?.rateLimits, 'limits.peer.request.rateLimits', issues)
     validateRateLimitPeriods(limits.message?.rateLimits, 'limits.message.rateLimits', issues)
     validateRateLimitPeriods(limits.connection?.rateLimits, 'limits.connection.rateLimits', issues)
     validateRateLimitPeriods(limits.invoice?.rateLimits, 'limits.invoice.rateLimits', issues)

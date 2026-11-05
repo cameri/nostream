@@ -1,18 +1,21 @@
 import { IWebSocketAdapter } from '../@types/adapters'
-import { createNegErrMessage, createNegMsgMessage } from '../utils/messages'
-import { getNip77Limits, isNip77Active, NEGENTROPY_FRAME_SIZE_LIMIT } from '../utils/nip77'
-import { INegentropySessions } from '../@types/negentropy'
-import { Negentropy, NegentropyStorageVector } from '../utils/negentropy'
-import { IEventRepository, ReconciliationItem } from '../@types/repositories'
+import { Factory } from '../@types/base'
 import { IMessageHandler } from '../@types/message-handlers'
 import { NegOpenMessage, OutgoingMessage } from '../@types/messages'
+import { INegentropySessions } from '../@types/negentropy'
+import { IEventRepository, ReconciliationItem } from '../@types/repositories'
 import { Settings } from '../@types/settings'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
+import { IRateLimiter } from '../@types/utils'
 import { WebSocketAdapterEvent } from '../constants/adapter'
-import { countFilterValues } from '../utils/filter'
 import { createLogger } from '../factories/logger-factory'
+import { countFilterValues } from '../utils/filter'
+import { createNegErrMessage, createNegMsgMessage } from '../utils/messages'
+import { Negentropy, NegentropyStorageVector } from '../utils/negentropy'
 import { isReconciliationAuthorized } from '../utils/nip42'
+import { getNip77Limits, isNip77Active, NEGENTROPY_FRAME_SIZE_LIMIT } from '../utils/nip77'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
+import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
 
 const logger = createLogger('neg-open-message-handler')
 
@@ -25,6 +28,7 @@ export class NegOpenMessageHandler implements IMessageHandler {
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
+    private readonly rateLimiter?: Factory<IRateLimiter>,
   ) {}
 
   public async handleMessage(message: NegOpenMessage): Promise<void> {
@@ -49,6 +53,9 @@ export class NegOpenMessageHandler implements IMessageHandler {
 
     const { maxEventsPerSession, maxSessionsPerConnection, sessionIdleTimeoutMs } = getNip77Limits(settings)
 
+    // Claim the id before the first await. A NEG-CLOSE (or a replacement
+    // NEG-OPEN) that arrives while the limiter is pending then owns the id,
+    // and this handler must not open a session after it.
     const token = sessions.reserve(subscriptionId, maxSessionsPerConnection)
     if (!token) {
       this.reject(
@@ -56,6 +63,23 @@ export class NegOpenMessageHandler implements IMessageHandler {
         subscriptionId,
         `blocked: too many negentropy sessions or reads in progress on this connection (max ${maxSessionsPerConnection})`,
       )
+      return
+    }
+
+    const peerPubkey = this.webSocket.getPeerPubkey()
+    if (peerPubkey && this.rateLimiter) {
+      const retryAfterMs = await getPeerRequestRetryAfterMs(this.rateLimiter, settings, peerPubkey, 'NEG-OPEN')
+      if (retryAfterMs !== undefined) {
+        sessions.endRead(token)
+        if (sessions.isCurrent(subscriptionId, token)) {
+          this.reject(sessions, subscriptionId, `rate-limited: retry after ${retryAfterMs} ms`)
+        }
+        return
+      }
+    }
+
+    if (!sessions.isCurrent(subscriptionId, token)) {
+      sessions.endRead(token)
       return
     }
 
@@ -123,10 +147,7 @@ export class NegOpenMessageHandler implements IMessageHandler {
     initialMessage: Buffer,
   ): string | undefined {
     const settings = this.settings()
-    const subscriptionLimits = subscriptionLimitsFor(
-      settings,
-      this.webSocket.getPeerPubkey() !== undefined,
-    )
+    const subscriptionLimits = subscriptionLimitsFor(settings, this.webSocket.getPeerPubkey() !== undefined)
 
     const maxFilterValues = subscriptionLimits?.maxFilterValues ?? 0
     if (maxFilterValues > 0 && countFilterValues(filter) > maxFilterValues) {
