@@ -35,10 +35,12 @@ if (existsSync(planet)) {
   console.warn('skip planet: run `pnpm run assets` in website/hero-animation first')
 }
 
-// Page-sized, not film-sized: the poster paints in a 1359x764 box at the
-// widest desktop layout, so 1440x810 is 1.06x that and no devicePixelRatio
-// branch is needed. The social preview is `social-card.png`, generated at
-// 1200x630 by build-social-card.mjs, and never this file.
+// Page-sized, not film-sized: Hero.astro caps the film at `min(1180px, 80vw,
+// film-h * 16/9)`, so the poster paints in at most 1180x664 CSS px and 1440x810
+// is 1.22x that box - enough for a 1.25x display, and no devicePixelRatio
+// branch. (#876 measured 1359x764, the layout before that cap landed in #899.)
+// The social preview is `social-card.png`, generated at 1200x630 by
+// build-social-card.mjs, and never this file.
 const landingPoster = path.join(LANDING, 'frames', LANDING_POSTER)
 if (existsSync(landingPoster)) {
   await sharp(landingPoster).resize(1440).webp({ quality: 90 }).toFile(path.join(MEDIA, 'hero-poster.webp'))
