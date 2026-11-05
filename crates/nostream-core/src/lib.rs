@@ -32,13 +32,14 @@
 //! refinements), the wire codec ([`messages::decode`] and the one encoder
 //! `RelayMessage::to_text`), NIP-42 ([`nip42::authenticate`], [`nip42::generate_challenge`]
 //! and [`nip42::Nip42Session`]), the NIP-43 invite code and its event, the NIP-05 identifier
-//! helpers, the adaptive-difficulty signal and its WoT policy, [`clock::Clock`] and
+//! helpers and [`nip05::verify`] over its [`nip05::Nip05Fetch`] seam, the
+//! adaptive-difficulty signal and its WoT policy, [`clock::Clock`] and
 //! [`random::RandomSource`], and the NIP-77 reconciliation engine (over the `negentropy`
 //! crate; see `negentropy.rs` for the seam and its divergences).
 //!
 //! What is still a stub is marked as such on the item and returns
-//! `CoreError::NotImplemented`: the NIP frames' own codec layer, NIP-05 verification
-//! (`nip05::verify`), and the NIP-77 session state machine.
+//! `CoreError::NotImplemented`: the NIP frames' own codec layer and the NIP-77 session
+//! state machine.
 //!
 //! Phase 2+ areas this crate deliberately does not own: the NIP-77 wire state machine and
 //! its `NEG-OPEN`/`NEG-MSG`/`NEG-CLOSE` frame encoder belong to `nostream-relay` once a real
@@ -65,6 +66,7 @@ pub mod lifecycle;
 pub mod messages;
 pub mod negentropy;
 pub mod nip03;
+pub mod nip04;
 pub mod nip05;
 pub mod nip25;
 pub mod nip42;

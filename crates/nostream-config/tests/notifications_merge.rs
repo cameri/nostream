@@ -140,3 +140,84 @@ fn configured_values_win_and_defaults_fill_the_gaps() {
     assert_eq!(merged.events.relay_restarted, Some(true));
     assert_eq!(merged.delivery_log_retention_days, Some(30));
 }
+
+fn target_with_http_secret() -> AdminNotificationsSettings {
+    settings(
+        "enabled: true\ntargets:\n  - id: http-1\n    type: http\n    enabled: true\n    url: https://a.example/hook\n    secret: super-secret\nevents: {}\nretry:\n  maxAttempts: 5\n  baseDelayMs: 1000\n",
+    )
+}
+
+#[test]
+fn a_target_signing_secret_parses_and_re_serializes() {
+    let current = target_with_http_secret();
+
+    assert_eq!(
+        current.targets[0]
+            .secret
+            .as_ref()
+            .map(|secret| secret.expose()),
+        Some("super-secret")
+    );
+
+    let serialized = serde_yaml::to_string(&current).expect("serialize");
+    assert!(
+        serialized.contains("secret: super-secret"),
+        "the typed settings must re-serialize the signing secret: {serialized}"
+    );
+}
+
+#[test]
+fn a_redacted_secret_keeps_the_stored_signing_key() {
+    let current = target_with_http_secret();
+    let next = merge_admin_notifications_patch(
+        &current,
+        &patch(
+            "targets:\n  - id: http-1\n    type: http\n    enabled: true\n    url: '***'\n    secret: '***'\n",
+        ),
+    );
+
+    assert_eq!(
+        next.targets[0]
+            .secret
+            .as_ref()
+            .map(|secret| secret.expose()),
+        Some("super-secret")
+    );
+}
+
+#[test]
+fn a_patch_omitting_the_secret_keeps_the_stored_signing_key() {
+    let current = target_with_http_secret();
+    let next = merge_admin_notifications_patch(
+        &current,
+        &patch("targets:\n  - id: http-1\n    type: http\n    enabled: false\n"),
+    );
+
+    assert_eq!(next.targets[0].enabled, Some(false));
+    assert_eq!(
+        next.targets[0]
+            .secret
+            .as_ref()
+            .map(|secret| secret.expose()),
+        Some("super-secret")
+    );
+}
+
+#[test]
+fn does_not_persist_a_redacted_secret_for_a_new_target() {
+    let current = settings(
+        "enabled: true\ntargets: []\nevents: {}\nretry:\n  maxAttempts: 5\n  baseDelayMs: 1000\n",
+    );
+    let next = merge_admin_notifications_patch(
+        &current,
+        &patch(
+            "targets:\n  - id: http-new\n    type: http\n    enabled: true\n    url: https://b.example/hook\n    secret: '***'\n",
+        ),
+    );
+
+    assert_eq!(next.targets[0].secret, None);
+    assert_eq!(
+        next.targets[0].url.as_ref().map(|secret| secret.expose()),
+        Some("https://b.example/hook")
+    );
+}

@@ -130,6 +130,7 @@ fn the_subtree_root_still_redacts_webhook_urls() {
             )),
             bot_token: Some(nostream_core::Secret("bot-token-value".to_owned())),
             chat_id: None,
+            secret: Some(nostream_core::Secret("hmac-key-value".to_owned())),
         }],
         events: OperatorNotificationEventToggles::default(),
         retry: OperatorNotificationRetrySettings::default(),
@@ -147,5 +148,32 @@ fn the_subtree_root_still_redacts_webhook_urls() {
         .map(|secret| secret.expose());
     assert_eq!(url, Some("***"), "the webhook url must redact");
     assert_eq!(bot, Some("***"));
+    assert_eq!(
+        redacted.targets[0]
+            .secret
+            .as_ref()
+            .map(|secret| secret.expose()),
+        Some("***"),
+        "the HMAC signing key must redact"
+    );
     assert!(!format!("{redacted:?}").contains("token-value"));
+    assert!(!format!("{redacted:?}").contains("hmac-key-value"));
+}
+
+#[test]
+fn the_typed_signing_secret_redacts_in_the_document_walk() {
+    let input = document(
+        "admin:\n  notifications:\n    targets:\n      - id: http-ops\n        type: http\n        enabled: true\n        url: https://a.example/hook\n        secret: super-secret\n",
+    );
+    let redacted = redact_settings_secrets(&input);
+
+    assert_eq!(
+        get_by_path(&redacted, "admin.notifications.targets[0].secret")
+            .expect("path")
+            .cloned(),
+        Some(Value::String("***".to_owned()))
+    );
+    assert!(is_sensitive_settings_path(
+        "admin.notifications.targets[0].secret"
+    ));
 }

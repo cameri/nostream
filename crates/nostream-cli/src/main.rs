@@ -10,8 +10,14 @@ use clap::{Parser, Subcommand};
 use nostream_cli::config::CommandOutput;
 use nostream_cli::{CliError, commands};
 
+// `import` parses its own arguments, so clap's `help` subcommand would render a second,
+// contradictory page for it; `--help` is the single help surface.
 #[derive(Debug, Parser)]
-#[command(name = "nostream-cli", about = "Operate a nostream relay")]
+#[command(
+    name = "nostream-cli",
+    about = "Operate a nostream relay",
+    disable_help_subcommand = true
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -28,8 +34,17 @@ enum Command {
     Dev,
     /// Export events to a file.
     Export,
-    /// Import events from a file.
-    Import,
+    /// Import events from a .jsonl or .json file.
+    #[command(disable_help_flag = true)]
+    Import {
+        /// The command's own arguments, parsed by the command (see its help).
+        #[arg(
+            value_name = "ARGS",
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
+        args: Vec<String>,
+    },
     /// Print the relay's NIP-11 info.
     Info,
     /// Mint and manage invite codes.
@@ -88,7 +103,10 @@ fn main() -> ExitCode {
         },
         Command::Dev => commands::dev::run().map(|_| CommandOutput::default()),
         Command::Export => commands::export::run().map(|_| CommandOutput::default()),
-        Command::Import => commands::import::run().map(|_| CommandOutput::default()),
+        Command::Import { args } => {
+            let mut stdout = std::io::stdout().lock();
+            commands::import::run(&args, &cwd, &mut stdout)
+        }
         Command::Info => commands::info::run().map(|_| CommandOutput::default()),
         Command::Invite => commands::invite::run().map(|_| CommandOutput::default()),
         Command::Seed => commands::seed::run().map(|_| CommandOutput::default()),
@@ -112,6 +130,10 @@ fn main() -> ExitCode {
         }
         Err(CliError::Config(message)) => {
             eprintln!("{message}");
+            ExitCode::from(1)
+        }
+        Err(CliError::Import(message)) => {
+            eprintln!("Import failed: {message}");
             ExitCode::from(1)
         }
     }

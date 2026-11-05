@@ -93,13 +93,17 @@ pub struct User {
 }
 
 /// The user fields a write carries (`src/repositories/user-repository.ts` `upsert`).
+///
+/// Each flag follows [`FieldUpdate`]: `Absent` leaves the column alone, which is what an
+/// upsert that only needs the row to exist sends. Writing `false` unconditionally would clear
+/// an admitted user's admission every time they created an invoice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserPatch {
     pub pubkey: Pubkey,
-    /// TS default `false`.
-    pub is_admitted: bool,
-    /// TS default `false`.
-    pub is_vanished: bool,
+    /// `Absent` leaves the column alone; a new row is written `false`.
+    pub is_admitted: FieldUpdate<bool>,
+    /// `Absent` leaves the column alone; a new row is written `false`.
+    pub is_vanished: FieldUpdate<bool>,
     /// Absent = leave the column alone (knex skips `undefined`); `Clear` = NULL;
     /// `Set(t)` = t (the capture passes `null` explicitly to clear).
     pub tos_accepted_at: FieldUpdate<DateTime<Utc>>,
@@ -207,6 +211,16 @@ pub enum FieldUpdate<T> {
     Absent,
     Clear,
     Set(T),
+}
+
+impl<T> FieldUpdate<T> {
+    /// The value the update writes, when it writes one.
+    pub fn value(&self) -> Option<&T> {
+        match self {
+            Self::Set(value) => Some(value),
+            Self::Absent | Self::Clear => None,
+        }
+    }
 }
 
 /// One DVM status update (`src/repositories/dvm-job-repository.ts` `updateStatus`).
@@ -366,7 +380,12 @@ pub trait EventRepository: Send + Sync {
 
     /// Inserts or replaces every event, returning the affected row count.
     ///
-    /// The same backend-defined atomicity as [`EventRepository::create_many`].
+    /// The same backend-defined atomicity as [`EventRepository::create_many`]. `records` may
+    /// hold several versions of one replaceable address: the implementation keeps one row per
+    /// [`replacement_key`](crate::records::replacement_key) using
+    /// [`replaces`](crate::records::replaces), so a caller does not have to, and the affected
+    /// count is the number of rows written, not of records passed. A record of any other kind
+    /// has no key and is written as it comes.
     fn upsert_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64>;
 
     /// Streams the events matching the filters, in the query's order.

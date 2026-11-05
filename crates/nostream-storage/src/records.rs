@@ -2,12 +2,13 @@
 //! the enum spellings their columns hold, and the conversions the Postgres backend uses.
 //! `repositories.rs` declares, this module implements.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use nostream_core::{Event, Kind};
+use nostream_core::{Event, Kind, Pubkey};
 
 use crate::error::StorageError;
 use crate::repositories::{
@@ -64,6 +65,77 @@ impl EventRecord {
             .clone()
             .unwrap_or_else(|| default_deduplication(&self.event))
     }
+}
+
+/// The conflict key `events_replaceable_unique` uses, as far as the caller can express it.
+///
+/// `Default` is the row the database falls back to when no deduplication value is stored
+/// (`jsonb_build_array(pubkey, kind)`); `Deduplicated` is a stored `d` tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReplacementKey<'a> {
+    Default,
+    Deduplicated(&'a str),
+}
+
+/// The key a replaceable row conflicts on: the author, the kind and the deduplication value.
+///
+/// `None` for a kind the conflict target does not cover: `REPLACEABLE_CONFLICT` in
+/// `postgres/events.rs` is `WHERE event_kind = 0 OR 3 OR 41 OR 10000–19999 OR 30000–39999`,
+/// which is [`Kind::is_replaceable`] or [`Kind::is_parameterized_replaceable`], so a regular
+/// event has no key and is never collapsed.
+///
+/// `None` also for a deduplication value this key cannot express (not a single string, which
+/// only [`EventRecord::with_deduplication`] can produce); such a record keeps its own row.
+pub fn replacement_key(record: &EventRecord) -> Option<(Pubkey, u64, ReplacementKey<'_>)> {
+    let kind = record.event.kind;
+    if !kind.is_replaceable() && !kind.is_parameterized_replaceable() {
+        return None;
+    }
+
+    let key = match record.event_deduplication.as_deref() {
+        None => ReplacementKey::Default,
+        Some([serde_json::Value::String(value)]) => ReplacementKey::Deduplicated(value.as_str()),
+        Some(_) => return None,
+    };
+
+    Some((record.event.pubkey, kind.0, key))
+}
+
+/// The merge predicate the replaceable upsert applies: the incoming row wins when it is newer,
+/// or equal and the smaller id.
+pub fn replaces(candidate: &EventRecord, current: &EventRecord) -> bool {
+    candidate.event.created_at > current.event.created_at
+        || (candidate.event.created_at == current.event.created_at
+            && candidate.event.id < current.event.id)
+}
+
+/// `records` with at most one row per conflict key, in first-seen order.
+///
+/// A batch may carry several versions of one replaceable address, and Postgres refuses to
+/// update the same row twice in one statement (`ON CONFLICT DO UPDATE command cannot affect row
+/// a second time`). This is where the winner is chosen, so every backend answers the same way.
+pub fn distinct_replacements(records: &[EventRecord]) -> Vec<&EventRecord> {
+    let mut slots: HashMap<(Pubkey, u64, ReplacementKey<'_>), usize> = HashMap::new();
+    let mut kept: Vec<&EventRecord> = Vec::with_capacity(records.len());
+
+    for record in records {
+        let Some(key) = replacement_key(record) else {
+            kept.push(record);
+
+            continue;
+        };
+
+        match slots.get(&key) {
+            Some(index) if !replaces(record, kept[*index]) => {}
+            Some(index) => kept[*index] = record,
+            None => {
+                slots.insert(key, kept.len());
+                kept.push(record);
+            }
+        }
+    }
+
+    kept
 }
 
 /// `jsonb_build_array(pubkey, kind)` as `src/repositories/event-repository.ts:390-396`
@@ -229,6 +301,140 @@ mod tests {
             "sig": "ab".repeat(64)
         }))
         .expect("the fixture event is a wire event")
+    }
+
+    /// A version of the fixture: a chosen `created_at`, content and kind, with its own id.
+    fn version(kind: u64, created_at: i64, content: &str) -> EventRecord {
+        let mut event = event();
+        event.kind = Kind(kind);
+        event.created_at = created_at;
+        event.content = content.to_owned();
+        event.content.push_str(content);
+        event.id = nostream_core::crypto::compute_event_id(&event).expect("the id hashes");
+
+        EventRecord::from_event(&event)
+    }
+
+    fn deduplicated(kind: u64, created_at: i64, content: &str, d: &str) -> EventRecord {
+        version(kind, created_at, content)
+            .with_deduplication(vec![serde_json::Value::String(d.to_owned())])
+    }
+
+    #[test]
+    fn one_replaceable_address_keeps_its_newest_version() {
+        let older = version(30_001, 1_700_000_000, "older");
+        let newer = version(30_001, 1_700_000_100, "newer");
+        let sibling = deduplicated(30_001, 1_700_000_050, "sibling", "other");
+
+        let records = [older, newer.clone(), sibling.clone()];
+        let kept = distinct_replacements(&records);
+
+        assert_eq!(kept.len(), 2, "one row per conflict key");
+        assert_eq!(kept[0].event.id, newer.event.id, "the newer version wins");
+        assert_eq!(
+            kept[1].event.id, sibling.event.id,
+            "a `d` tag is a key of its own"
+        );
+    }
+
+    #[test]
+    fn an_equal_created_at_is_won_by_the_smaller_id() {
+        let first = version(30_001, 1_700_000_000, "first");
+        let second = version(30_001, 1_700_000_000, "second");
+        let (smaller, larger) = if first.event.id < second.event.id {
+            (first, second)
+        } else {
+            (second, first)
+        };
+
+        let records = [larger, smaller.clone()];
+        let kept = distinct_replacements(&records);
+
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].event.id, smaller.event.id);
+    }
+
+    /// A deduplication value the key cannot express is never collapsed, so the row it names is
+    /// still written.
+    #[test]
+    fn an_inexpressible_deduplication_is_kept() {
+        let odd = vec![
+            serde_json::Value::String("a".to_owned()),
+            serde_json::Value::String("b".to_owned()),
+        ];
+        let mut first = version(30_001, 1_700_000_000, "first");
+        first.event_deduplication = Some(odd.clone());
+        let mut second = version(30_001, 1_700_000_000, "second");
+        second.event_deduplication = Some(odd);
+        let records = [first, second];
+
+        assert!(replacement_key(&records[0]).is_none());
+        assert_eq!(
+            distinct_replacements(&records).len(),
+            2,
+            "a key this type cannot express is never collapsed"
+        );
+    }
+
+    #[test]
+    fn the_default_key_ignores_a_different_kind() {
+        let metadata = version(0, 1_700_000_000, "metadata");
+        let contact = version(3, 1_700_000_000, "contact");
+
+        assert_eq!(distinct_replacements(&[metadata, contact]).len(), 2);
+    }
+
+    /// Two regular events from one author are two rows: the conflict target is kind-partial, so
+    /// neither record has a replacement key.
+    #[test]
+    fn two_regular_events_from_one_author_are_both_kept() {
+        let first = version(1, 1_700_000_000, "first");
+        let second = version(1, 1_700_000_100, "second");
+        assert_eq!(first.event.pubkey, second.event.pubkey);
+
+        let records = [first.clone(), second.clone()];
+        let kept = distinct_replacements(&records);
+
+        assert_eq!(kept.len(), 2, "a regular event has no conflict target");
+        assert_eq!(
+            kept.iter()
+                .map(|record| record.event.id)
+                .collect::<Vec<_>>(),
+            vec![first.event.id, second.event.id]
+        );
+    }
+
+    /// The key covers exactly the kinds `REPLACEABLE_CONFLICT` names, no more and no less.
+    #[test]
+    fn the_replacement_key_covers_exactly_the_replaceable_kinds() {
+        for kind in [0, 3, 41, 10_000, 19_999, 30_000, 39_999] {
+            assert!(
+                replacement_key(&version(kind, 1_700_000_000, "replaceable")).is_some(),
+                "kind {kind} is in the conflict target"
+            );
+        }
+
+        for kind in [1, 7, 9_999, 20_000, 29_999, 40_000] {
+            assert!(
+                replacement_key(&version(kind, 1_700_000_000, "regular")).is_none(),
+                "kind {kind} is not in the conflict target"
+            );
+        }
+    }
+
+    /// The narrowing leaves the replaceable collapse alone: one address still keeps one row.
+    #[test]
+    fn a_replaceable_pair_still_collapses() {
+        let older = version(0, 1_700_000_000, "older");
+        let newer = version(0, 1_700_000_100, "newer");
+        assert_eq!(older.event.pubkey, newer.event.pubkey);
+        assert!(replacement_key(&older).is_some());
+
+        let records = [older, newer.clone()];
+        let kept = distinct_replacements(&records);
+
+        assert_eq!(kept.len(), 1, "one row per replaceable address");
+        assert_eq!(kept[0].event.id, newer.event.id, "the newer version wins");
     }
 
     #[test]

@@ -1,9 +1,9 @@
 //! NIP-05: DNS-based identifiers. Mirrors `src/utils/nip05.ts` and `src/@types/nip05.ts`.
 //!
 //! The pure half is implemented — identifier parsing, extraction from a kind-0 metadata
-//! event, and the domain allow/deny rule. [`verify`] is the network fetch and stays a
-//! labelled stub: no handler in this job may block on it, and the background refresh that
-//! would call it is `nostream-services`' work.
+//! event, and the domain allow/deny rule. [`verify`] performs the fetch through
+//! [`Nip05Fetch`], which this crate owns and `nostream-services` implements; the background
+//! refresh that calls it is `nostream-services`' maintenance pass.
 
 use crate::error::CoreError;
 use crate::event::{Event, Kind, Pubkey};
@@ -122,11 +122,166 @@ pub struct Nip05Verification {
     pub failed_checks: u32,
 }
 
-/// Fetches and verifies `https://<domain>/.well-known/nostr.json?name=<local>`.
+/// The verification timeout (`VERIFICATION_TIMEOUT_MS`, `src/utils/nip05.ts:11`).
+pub const VERIFICATION_TIMEOUT_MS: u64 = 10_000;
+
+/// The response-size cap (`MAX_RESPONSE_BYTES`, `src/utils/nip05.ts:13`).
+pub const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+
+/// The redirect budget (`MAX_REDIRECTS`, `src/utils/nip05.ts:16`).
+pub const MAX_REDIRECTS: usize = 1;
+
+/// One fetched document: the status and the body bytes, capped by the transport.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchOutcome {
+    pub status: u16,
+    pub body: Vec<u8>,
+}
+
+/// The transport seam `verify` calls.
 ///
-/// Phase 1 stub — job 005; will fetch and check the identifier's pubkey binding; see `src/utils/nip05.ts`.
-pub fn verify(_identifier: &str) -> Result<Nip05Verification, CoreError> {
-    Err(CoreError::NotImplemented {
-        module: "core::nip05::verify",
-    })
+/// Core owns it because core must not depend on `nostream-services`: `nostream-services`
+/// implements it once with the HTTP client its processors use (`src/utils/nip05.ts`'s
+/// `axios.get`).
+pub trait Nip05Fetch: Send + Sync {
+    /// GETs `url`, following at most `max_redirects` redirects, within `timeout_ms`, and
+    /// failing when the body exceeds `max_bytes`.
+    fn get<'a>(
+        &'a self,
+        url: &'a str,
+        timeout_ms: u64,
+        max_bytes: usize,
+        max_redirects: usize,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<FetchOutcome, CoreError>> + Send + 'a>>;
+}
+
+/// What one verification attempt settled (`Nip05VerificationOutcome`,
+/// `src/utils/nip05.ts:31-36`).
+///
+/// `verified`, `mismatch` and `invalid` are definitive; `error` is transient, so a caller
+/// keeps a previous verification and only bumps its failure count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerificationOutcome {
+    Verified,
+    Mismatch,
+    Invalid { reason: String },
+    Error { reason: String },
+}
+
+/// Fetches and checks `https://<domain>/.well-known/nostr.json?name=<local>`.
+///
+/// A malformed identifier, a non-200 status, an oversized or unparseable document and a
+/// transport failure are reported as outcomes rather than errors, exactly as the capture's
+/// `verifyNip05Identifier` does.
+pub async fn verify(
+    fetch: &dyn Nip05Fetch,
+    identifier: &str,
+    expected_pubkey: &str,
+) -> VerificationOutcome {
+    let Some(parsed) = parse_identifier(identifier) else {
+        return VerificationOutcome::Invalid {
+            reason: "unparseable NIP-05 identifier".to_owned(),
+        };
+    };
+
+    let url = format!(
+        "https://{}/.well-known/nostr.json?name={}",
+        parsed.domain,
+        encode_component(&parsed.local_part)
+    );
+
+    let outcome = match fetch
+        .get(
+            &url,
+            VERIFICATION_TIMEOUT_MS,
+            MAX_RESPONSE_BYTES,
+            MAX_REDIRECTS,
+        )
+        .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return VerificationOutcome::Error {
+                reason: error.to_string(),
+            };
+        }
+    };
+
+    if outcome.status != 200 {
+        return VerificationOutcome::Error {
+            reason: format!("HTTP status {}", outcome.status),
+        };
+    }
+
+    if outcome.body.len() > MAX_RESPONSE_BYTES {
+        return VerificationOutcome::Error {
+            reason: format!(
+                "response body exceeds {MAX_RESPONSE_BYTES} bytes: {}",
+                outcome.body.len()
+            ),
+        };
+    }
+
+    let document: serde_json::Value = match serde_json::from_slice(&outcome.body) {
+        Ok(document) => document,
+        Err(error) => {
+            return VerificationOutcome::Error {
+                reason: error.to_string(),
+            };
+        }
+    };
+
+    let Some(names) = document.get("names").and_then(serde_json::Value::as_object) else {
+        return VerificationOutcome::Invalid {
+            reason: "malformed response: names is missing or not an object".to_owned(),
+        };
+    };
+
+    for (name, pubkey) in names {
+        if !is_pubkey(pubkey.as_str().unwrap_or_default()) {
+            return VerificationOutcome::Invalid {
+                reason: format!(
+                    "malformed response: names.{name} is not a 64-character hex pubkey"
+                ),
+            };
+        }
+    }
+
+    match names
+        .get(&parsed.local_part)
+        .and_then(serde_json::Value::as_str)
+    {
+        Some(registered) if registered.eq_ignore_ascii_case(expected_pubkey) => {
+            VerificationOutcome::Verified
+        }
+        _ => VerificationOutcome::Mismatch,
+    }
+}
+
+/// `encodeURIComponent` for the local part: everything but the unreserved set is escaped.
+fn encode_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric()
+            || matches!(
+                byte,
+                b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')'
+            )
+        {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+
+    encoded
+}
+
+/// The capture's `pubkeySchema`: exactly 64 lowercase hex characters.
+fn is_pubkey(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }

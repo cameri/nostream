@@ -39,6 +39,10 @@ pub struct OperatorNotificationTarget {
     pub bot_token: Option<nostream_core::Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_id: Option<String>,
+    /// The HMAC key an HTTP webhook's `x-nostream-signature` is computed with
+    /// (`src/@types/operator-notifications.ts:14-23`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret: Option<nostream_core::Secret>,
 }
 
 /// The per-event toggles (`OperatorNotificationEventToggles`).
@@ -114,6 +118,9 @@ pub struct NotificationTargetPatch {
     pub bot_token: Option<nostream_core::Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_id: Option<String>,
+    /// The HMAC key an HTTP webhook's `x-nostream-signature` is computed with.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret: Option<nostream_core::Secret>,
 }
 
 /// Retry fields in an incoming patch.
@@ -253,6 +260,7 @@ fn merge_target_secrets(
             .chat_id
             .clone()
             .or_else(|| existing.and_then(|target| target.chat_id.clone())),
+        secret: incoming.secret.clone(),
     };
 
     if is_redacted_secret(incoming.url.as_ref().map(|secret| secret.expose())) {
@@ -269,6 +277,14 @@ fn merge_target_secrets(
             .is_some()
     {
         merged.bot_token = existing.and_then(|target| target.bot_token.clone());
+    }
+
+    if is_redacted_secret(incoming.secret.as_ref().map(|secret| secret.expose())) {
+        merged.secret = existing.and_then(|target| target.secret.clone());
+    } else if incoming.secret.is_none()
+        && existing.and_then(|target| target.secret.clone()).is_some()
+    {
+        merged.secret = existing.and_then(|target| target.secret.clone());
     }
 
     merged

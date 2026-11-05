@@ -16,9 +16,12 @@ clap.workspace = true
 anyhow = { workspace = true }
 nostream-config.workspace = true
 nostream-core.workspace = true
+nostream-services.workspace = true
+nostream-storage.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

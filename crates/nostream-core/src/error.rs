@@ -9,6 +9,10 @@ pub enum CoreError {
     #[error("not implemented in Phase 1 (job 005): {module}")]
     NotImplemented { module: &'static str },
 
+    /// A network fetch a service seam performs failed (NIP-05 verification's document).
+    #[error("{0}")]
+    Fetch(String),
+
     /// The event violates the base schema (id/sig length, kind range, tag shape).
     #[error("invalid event: {0}")]
     InvalidEvent(String),

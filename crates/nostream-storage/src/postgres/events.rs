@@ -13,6 +13,7 @@ use super::rows::int_column;
 use super::sql::{self, hex_bytes};
 use super::{Arg, Args, EventQuery, Gates, RETENTION_BATCH_SIZE};
 use crate::error::StorageError;
+use crate::records::distinct_replacements;
 use crate::repositories::{
     EventPurgeCounts, EventRecord, EventRetentionOptions, QueryStream, ReconciliationItem,
 };
@@ -140,7 +141,11 @@ where
         return Ok(0);
     }
 
+    // A batch may hold several versions of one replaceable address, and this statement would
+    // update that row twice. The conflict key's owner discharges that precondition here.
+    let records = distinct_replacements(records);
     let mut affected = 0;
+
     for batch in records.chunks(UPSERT_BATCH_ROWS) {
         let mut args = Args::default();
         let values = batch

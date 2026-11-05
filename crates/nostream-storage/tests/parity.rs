@@ -468,8 +468,8 @@ async fn run_op(
             };
             let user = UserPatch {
                 pubkey: parse_pubkey(&patch["pubkey"]),
-                is_admitted: patch["is_admitted"].as_bool().expect("is_admitted"),
-                is_vanished: patch["is_vanished"].as_bool().expect("is_vanished"),
+                is_admitted: FieldUpdate::Set(patch["is_admitted"].as_bool().expect("is_admitted")),
+                is_vanished: FieldUpdate::Set(patch["is_vanished"].as_bool().expect("is_vanished")),
                 tos_accepted_at,
             };
             Ok(json!({ "count": client.users().upsert(&user).await? }))
