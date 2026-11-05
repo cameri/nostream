@@ -1,5 +1,29 @@
 # nostream
 
+## 3.13.0
+
+### Minor Changes
+
+- [#1053](https://github.com/cameri/nostream/pull/1053) [`e37b284`](https://github.com/cameri/nostream/commit/e37b284b9174968134e5fe3d7290e398b6781715) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): rate-limit on-demand requests from authenticated peers
+
+  Authenticated peers can request events outside their standing feed with a
+  normal `REQ`, `COUNT`, or ad-hoc `NEG-OPEN` session. Those requests continue to
+  use peer subscription and NIP-77 limits instead of client limits, and are now
+  bounded per peer pubkey by `limits.peer.request.rateLimits` (default 300
+  requests/minute across `REQ`, `COUNT`, and `NEG-OPEN`).
+
+  Refused `REQ`/`COUNT` calls receive `CLOSED` with a `rate-limited:` reason and
+  retry hint; refused `NEG-OPEN` sessions receive `NEG-ERR`. The limiter fails
+  closed when its store is unavailable, and unidentified clients are unaffected.
+  Per-peer request/event accounting and admin-console visibility are left to the
+  dedicated admin-console follow-up.
+
+### Patch Changes
+
+- [#1058](https://github.com/cameri/nostream/pull/1058) [`ba8691a`](https://github.com/cameri/nostream/commit/ba8691ac9232303ff7938406b6a48da989cc0504) Thanks [@avantikonde](https://github.com/avantikonde)! - fix(cli): reject placeholder secret inherited from env or prompt in setup ([#1018](https://github.com/cameri/nostream/issues/1018))
+
+  Setup now rejects the default placeholder secret (`change_me_to_something_long_and_random`) when read from inherited environment variables or interactive prompt input, and validates the resolved secret before persisting to `.env`. If a placeholder is detected, setup automatically generates a fresh cryptographically secure 64-byte random hex secret.
+
 ## 3.12.1
 
 ### Patch Changes
