@@ -448,7 +448,9 @@ mod tests {
     use nostream_core::nip05::Nip05Fetch;
     use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
-    use super::{HttpClient, ReqwestClient, is_public_address, is_redirect_target_safe};
+    use super::{
+        GuardedResolver, HttpClient, ReqwestClient, is_public_address, is_redirect_target_safe,
+    };
 
     /// A resolver that answers from a table, so no test needs DNS.
     #[derive(Debug, Default)]
@@ -580,31 +582,31 @@ mod tests {
     }
 
     /// A mixed answer keeps only the public address, so a host that publishes both is still
-    /// reachable and never dials the private one.
+    /// reachable and never dials the private one. The guard is driven directly, so no test
+    /// connects to anything.
     #[tokio::test]
     async fn a_public_address_still_passes_the_guard() {
         let resolver = FakeResolver::new(&[("relay.example.com", &["127.0.0.1", "93.184.216.34"])]);
-        let client = ReqwestClient::with_nip05_resolver(Arc::clone(&resolver) as Arc<dyn Resolve>)
-            .expect("client");
+        let guard = GuardedResolver::new(Arc::clone(&resolver) as Arc<dyn Resolve>);
 
-        let error = Nip05Fetch::get(
-            &client,
-            "https://relay.example.com/.well-known/nostr.json?name=alice",
-            100,
-            4_096,
-            1,
-        )
-        .await
-        .expect_err("nothing public answers on this sandbox");
+        let addresses: Vec<SocketAddr> = guard
+            .resolve("relay.example.com".parse().expect("a dns name"))
+            .await
+            .expect("a public address survives")
+            .collect();
 
+        assert_eq!(
+            addresses,
+            vec![SocketAddr::new(
+                "93.184.216.34".parse().expect("an ip address"),
+                0
+            )],
+            "the private half is dropped and the public one kept"
+        );
         assert_eq!(
             resolver.asked(),
             vec!["relay.example.com".to_owned()],
             "the guard resolved the name rather than refusing it"
-        );
-        assert!(
-            !error.to_string().contains("refusing to resolve"),
-            "a public answer is not refused: {error}"
         );
     }
 

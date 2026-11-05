@@ -448,6 +448,29 @@ async fn a_repeated_follow_tag_counts_once() {
     assert_eq!(service.get_distance(&a).await.unwrap(), Some(1));
 }
 
+/// The guard on `building` is what decides that *this* caller starts the build. Inverted, the
+/// first caller takes the waiting branch against a flag it has just set itself, and no build
+/// ever starts.
+#[tokio::test]
+async fn a_single_lookup_starts_the_build_itself() {
+    let a_probe = contact_list(&[2; 32], &[]);
+    let a = a_probe.pubkey;
+    let seed_event = contact_list(&[1; 32], &[&a]);
+    let seed = seed_event.pubkey;
+    let repository =
+        InMemoryEventRepository::with_events([seed_event, contact_list(&[2; 32], &[])]);
+    let settings = wot_settings(true, &seed.to_string(), 2, 1);
+    let service = WotGraphService::new(Arc::new(settings), events(&repository));
+
+    let distance = tokio::time::timeout(Duration::from_secs(2), service.get_distance(&a))
+        .await
+        .expect("one caller starts the build rather than waiting for one")
+        .expect("the distance");
+
+    assert_eq!(distance, Some(1));
+    assert_eq!(service.rebuilds(), 1);
+}
+
 /// A relay handler's future is dropped when its client disconnects. A build abandoned with the
 /// caller would leave `building` set, and every later lookup would wait on a wakeup that never
 /// comes.

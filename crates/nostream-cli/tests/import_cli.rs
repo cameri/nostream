@@ -239,7 +239,7 @@ async fn a_successful_import_prints_progress_then_the_summary() {
         "[Processed: 2 | Inserted: 2 | Skipped: 0 | Errors: 0]"
     );
     assert_eq!(lines.len(), 4);
-    assert!(output.lines.is_empty(), "the writer carries the output");
+    assert!(output.lines.is_empty(), "main's stream carries the output");
 }
 
 #[tokio::test]
@@ -258,6 +258,53 @@ async fn the_counters_use_en_us_separators() {
     assert_eq!(
         String::from_utf8(out).expect("utf-8").lines().next(),
         Some("[Processed: 1,000 | Inserted: 1,000 | Skipped: 0 | Errors: 0]")
+    );
+}
+
+/// `import big.jsonl | head` closes the pipe. Reporting success with nothing delivered hides a
+/// failed import behind a clean exit code.
+#[tokio::test]
+async fn a_broken_output_stream_is_a_failure() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let path = directory.path().join("events.jsonl");
+    fs::write(&path, an_event_line()).expect("write");
+
+    struct Head(Vec<u8>);
+
+    impl std::io::Write for Head {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if self.0.is_empty() {
+                self.0.extend_from_slice(bytes);
+
+                return Ok(bytes.len());
+            }
+
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "the reader went away",
+            ))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let error = import::import_with(
+        &path,
+        ImportFormat::Jsonl,
+        1,
+        RecordingPersister::new(),
+        &mut Head(Vec::new()),
+    )
+    .await
+    .expect_err("a closed stream is an error");
+
+    assert!(
+        error
+            .to_string()
+            .contains("unable to write the import's output"),
+        "{error}"
     );
 }
 

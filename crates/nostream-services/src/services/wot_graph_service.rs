@@ -287,7 +287,7 @@ impl WotGraphService {
                     tag.first().map(String::as_str) == Some("p")
                         && tag.get(1).is_some_and(|value| !value.is_empty())
                 })
-                .filter_map(|tag| tag.get(1).cloned()),
+                .filter_map(|tag| tag.get(1).map(String::as_str)),
         );
 
         if !follows.is_empty() {
@@ -322,7 +322,7 @@ impl WotGraph for WotGraphService {
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 cached.remove(&key);
 
-                let follows = deduplicated(follows.iter().cloned());
+                let follows = deduplicated(follows.iter().map(String::as_str));
 
                 if !follows.is_empty() {
                     cached.insert(key.clone(), follows);
@@ -385,12 +385,14 @@ fn is_seed_pubkey(value: &str) -> bool {
 /// The follows in first-seen order with every repeated pubkey dropped.
 ///
 /// A rebuild counts one follower per entry, so a contact list that lists the same key twice
-/// would let a single member satisfy `minimum_followers` on their own.
-fn deduplicated(follows: impl IntoIterator<Item = String>) -> Vec<String> {
-    let mut seen = HashSet::new();
+/// would let a single member satisfy `minimum_followers` on their own. The set borrows, so each
+/// kept key is cloned once.
+fn deduplicated<'a>(follows: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut seen: HashSet<&'a str> = HashSet::new();
 
     follows
         .into_iter()
-        .filter(|pubkey| seen.insert(pubkey.clone()))
+        .filter(|pubkey| seen.insert(pubkey))
+        .map(str::to_owned)
         .collect()
 }

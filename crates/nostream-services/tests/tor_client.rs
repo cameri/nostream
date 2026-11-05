@@ -358,13 +358,15 @@ async fn an_empty_key_file_counts_as_absent() {
     .await;
 
     let config = config(port, directory.path().to_path_buf());
+    let bootstrap = ensure_hidden_service(&config).await;
     assert_eq!(
-        ensure_hidden_service(&config).await.outcome(),
+        bootstrap.outcome(),
         &HiddenServiceOutcome::Enabled {
             service_id: "abc.onion".to_owned(),
             port: 80,
         }
     );
+    bootstrap.shutdown().await;
 
     assert_eq!(
         commands(&received)[1],
@@ -374,6 +376,55 @@ async fn an_empty_key_file_counts_as_absent() {
         std::fs::read_to_string(directory.path().join(ONION_KEY_FILE)).expect("the key file"),
         "ED25519-V3:new-secret"
     );
+}
+
+/// An adopted key was written by whoever installed first, and the capture leaves it 0644
+/// under the usual umask. The daemon reads it and never rewrites it, so the narrowing has to
+/// happen on the read path.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_adopted_world_readable_key_is_narrowed_at_bootstrap() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().expect("tempdir");
+    let key_file = directory.path().join(ONION_KEY_FILE);
+    std::fs::write(&key_file, "ED25519-V3:adopted-secret").expect("write");
+    std::fs::set_permissions(&key_file, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+
+    let (port, received) = control_server(vec![vec![
+        Reply::Whole("250 OK\r\n"),
+        Reply::Whole("250-ServiceID=abc\r\n250 OK\r\n"),
+        Reply::Whole("250 closing connection\r\n"),
+    ]])
+    .await;
+
+    let config = config(port, directory.path().to_path_buf());
+    let bootstrap = ensure_hidden_service(&config).await;
+
+    assert_eq!(
+        bootstrap.outcome(),
+        &HiddenServiceOutcome::Enabled {
+            service_id: "abc.onion".to_owned(),
+            port: 80,
+        }
+    );
+    assert_eq!(
+        commands(&received)[1],
+        "ADD_ONION ED25519-V3:adopted-secret Port=80,127.0.0.1:8008\r\n",
+        "the adopted key is the one used"
+    );
+
+    let mode = std::fs::metadata(&key_file)
+        .expect("the key file's metadata")
+        .permissions()
+        .mode();
+    assert_eq!(
+        mode & 0o777,
+        0o600,
+        "an adopted key is narrowed to its owner"
+    );
+
+    bootstrap.shutdown().await;
 }
 
 #[tokio::test]

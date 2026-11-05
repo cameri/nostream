@@ -400,7 +400,9 @@ impl EventRepository for InMemoryEventRepository {
     }
 
     fn upsert_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64> {
-        Box::pin(async move { Ok(records.len() as u64) })
+        Box::pin(async move {
+            Ok(nostream_storage::records::distinct_replacements(records).len() as u64)
+        })
     }
 
     fn find_by_filters<'a>(

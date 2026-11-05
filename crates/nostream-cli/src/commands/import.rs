@@ -4,9 +4,11 @@
 //! so this module parses the same way, renders clap's help for `--help`, and streams the
 //! file through [`EventImportService`].
 //!
-//! Progress and line errors go to a writer as they happen, as the capture's `console.log`
-//! does: an import of a large file that shows nothing until it finishes looks hung, and any
-//! later failure would discard the lines it had already collected.
+//! Progress and line errors are written as they happen, as the capture's `console.log` does:
+//! an import of a large file that shows nothing until it finishes looks hung, and any later
+//! failure would discard the lines it had already collected. The stream is the one `main`
+//! hands in, so `main` stays the only place that opens a process stream; a write failure is an
+//! error, not a success with nothing delivered.
 
 use std::cell::RefCell;
 use std::io::Write;
@@ -166,7 +168,11 @@ pub fn validate_input(cwd: &Path, file: &Path) -> Result<(PathBuf, ImportFormat)
 }
 
 /// `runImportEvents` over the process's Postgres backend.
-pub fn run(args: &[String], cwd: &Path) -> Result<CommandOutput, CliError> {
+///
+/// `out` is the stream `main` owns and hands down. Help lines still come back through
+/// [`CommandOutput`], because they exist before the import starts and `main` prints them like
+/// every other command's.
+pub fn run(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
     let parsed = parse_args(args)?;
 
     let ParsedArgs::Run { file, batch_size } = parsed else {
@@ -190,9 +196,7 @@ pub fn run(args: &[String], cwd: &Path) -> Result<CommandOutput, CliError> {
         let persister: Arc<dyn EventBatchPersister> =
             Arc::new(RepositoryEventPersister::new(Arc::new(backend)));
 
-        let mut stdout = std::io::stdout().lock();
-
-        import_with(&path, format, batch_size, persister, &mut stdout).await
+        import_with(&path, format, batch_size, persister, out).await
     })
 }
 
@@ -212,9 +216,17 @@ pub async fn import_with(
     let service = EventImportService::new(persister);
     let out = RefCell::new(out);
     let sink: RefCell<LineErrorSink> = RefCell::new(LineErrorSink::default());
+    // The first write failure is kept: `import big.jsonl | head` must not report success with
+    // nothing delivered. Later lines are dropped once the stream is known bad.
+    let failure: RefCell<Option<std::io::Error>> = RefCell::new(None);
     let write = |line: String| {
-        // A closed stdout is not an import failure: the work still has to complete.
-        let _ = writeln!(&mut *out.borrow_mut(), "{line}");
+        if failure.borrow().is_some() {
+            return;
+        }
+
+        if let Err(error) = writeln!(&mut *out.borrow_mut(), "{line}") {
+            *failure.borrow_mut() = Some(error);
+        }
     };
 
     let on_line_error = |error: &EventImportLineError| {
@@ -253,6 +265,12 @@ pub async fn import_with(
     let elapsed = started.elapsed().as_secs_f64();
     write(format!("Import completed in {elapsed:.2}s"));
     write(format_progress(&stats));
+
+    if let Some(error) = failure.into_inner() {
+        return Err(CliError::Import(format!(
+            "unable to write the import's output: {error}"
+        )));
+    }
 
     Ok(CommandOutput::default())
 }

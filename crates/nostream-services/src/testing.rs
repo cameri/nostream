@@ -484,12 +484,13 @@ impl EventRepository for InMemoryEventRepository {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(records.to_vec());
+            let kept = nostream_storage::records::distinct_replacements(records);
             self.records
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .extend(records.iter().cloned());
+                .extend(kept.iter().map(|record| (*record).clone()));
 
-            Ok(records.len() as u64)
+            Ok(kept.len() as u64)
         })
     }
 

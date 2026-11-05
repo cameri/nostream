@@ -380,7 +380,11 @@ pub trait EventRepository: Send + Sync {
 
     /// Inserts or replaces every event, returning the affected row count.
     ///
-    /// The same backend-defined atomicity as [`EventRepository::create_many`].
+    /// The same backend-defined atomicity as [`EventRepository::create_many`]. `records` may
+    /// hold several versions of one replaceable address: the implementation keeps one row per
+    /// [`replacement_key`](crate::records::replacement_key) using
+    /// [`replaces`](crate::records::replaces), so a caller does not have to, and the affected
+    /// count is the number of rows written, not of records passed.
     fn upsert_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64>;
 
     /// Streams the events matching the filters, in the query's order.

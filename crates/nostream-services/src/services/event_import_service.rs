@@ -3,14 +3,12 @@
 //! Both readers stream — a JSONL line at a time, and a JSON array element at a time through
 //! `serde_json`'s streaming deserializer — so the file is never materialised as one value.
 
-use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 
 use nostream_core::Event;
-use nostream_core::Pubkey;
 use nostream_core::crypto::{compute_event_id, verify_event_signature};
 use nostream_core::event::EventId;
 use nostream_storage::repositories::{EventRecord, EventRepository};
@@ -521,12 +519,9 @@ impl EventBatchPersister for RepositoryEventPersister {
 
             let mut inserted = 0u64;
             let mut regular: Vec<EventRecord> = Vec::new();
+            // Several versions of one replaceable address may land in one batch; the store
+            // keeps one row per conflict key, so the counters below report rows written.
             let mut replaceable: Vec<EventRecord> = Vec::new();
-            // One batch may hold several versions of one replaceable address, and Postgres
-            // refuses to update the same row twice in one statement
-            // (`ON CONFLICT DO UPDATE command cannot affect row a second time`). The winner is
-            // chosen here, with the same rule the merge predicate applies.
-            let mut slots: HashMap<(Pubkey, u64, String), usize> = HashMap::new();
 
             for event in events {
                 if event.kind.is_ephemeral() {
@@ -538,7 +533,6 @@ impl EventBatchPersister for RepositoryEventPersister {
                     regular.clear();
                     inserted += self.events.upsert_many(&replaceable).await?;
                     replaceable.clear();
-                    slots.clear();
 
                     let ids: Vec<EventId> = event
                         .tags
@@ -560,16 +554,7 @@ impl EventBatchPersister for RepositoryEventPersister {
                 let enriched = enrich(event);
 
                 if event.kind.is_replaceable() || event.kind.is_parameterized_replaceable() {
-                    let key = replacement_key(&enriched);
-
-                    match slots.get(&key) {
-                        Some(index) if !replaces(&enriched, &replaceable[*index]) => {}
-                        Some(index) => replaceable[*index] = enriched,
-                        None => {
-                            slots.insert(key, replaceable.len());
-                            replaceable.push(enriched);
-                        }
-                    }
+                    replaceable.push(enriched);
                 } else {
                     regular.push(enriched);
                 }
@@ -581,21 +566,4 @@ impl EventBatchPersister for RepositoryEventPersister {
             Ok(inserted as f64)
         })
     }
-}
-
-/// The row `events_replaceable_unique` keys on: the author, the kind and the deduplication
-/// value (the `d` tag for a parameterized replaceable event).
-fn replacement_key(record: &EventRecord) -> (Pubkey, u64, String) {
-    (
-        record.event.pubkey,
-        record.event.kind.0,
-        serde_json::to_string(&record.deduplication()).unwrap_or_default(),
-    )
-}
-
-/// The merge predicate: the incoming row wins when it is newer, or equal and smaller.
-fn replaces(candidate: &EventRecord, current: &EventRecord) -> bool {
-    candidate.event.created_at > current.event.created_at
-        || (candidate.event.created_at == current.event.created_at
-            && candidate.event.id < current.event.id)
 }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
-use nostream_core::crypto::sign_event;
+use nostream_core::crypto::{compute_event_id, sign_event, verify_event_signature};
 use nostream_core::event::{Event, EventId, Kind, Pubkey, Signature};
 use nostream_core::nip04;
 use nostream_core::random::{RandomSource, SystemRandom};
@@ -86,6 +86,12 @@ impl NwcRelayTransport {
             random: Arc::new(SystemRandom),
         })
     }
+}
+
+/// Whether the reply's id is the one its own fields hash to and the wallet's signature is over
+/// it. A relay can restate `pubkey`; only the signature binds the event to the wallet.
+fn is_authentic(event: &Event) -> bool {
+    compute_event_id(event).is_ok_and(|id| id == event.id) && verify_event_signature(event).is_ok()
 }
 
 impl Nip47Transport for NwcRelayTransport {
@@ -182,7 +188,11 @@ impl Nip47Transport for NwcRelayTransport {
                         let Ok(reply) = serde_json::from_value::<Event>(reply.clone()) else {
                             continue;
                         };
-                        if reply.pubkey != self.wallet {
+                        // `pubkey` is a field the relay writes, and `Event` deserializes
+                        // unchecked: without this, a relay can restate the wallet and replay
+                        // an earlier ciphertext under the current request's `e` tag. A genuine
+                        // reply is signed by the wallet, and its id covers its own tags.
+                        if reply.pubkey != self.wallet || !is_authentic(&reply) {
                             continue;
                         }
 
@@ -238,5 +248,64 @@ impl Nip47Transport for NwcRelayTransport {
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    const WALLET_SECRET: [u8; 32] = [7; 32];
+    const OTHER_SECRET: [u8; 32] = [8; 32];
+
+    fn reply() -> Event {
+        let mut event = Event {
+            id: EventId::from_byte_array([0; 32]),
+            pubkey: Pubkey::from_byte_array([0; 32]),
+            created_at: 1_700_000_000,
+            kind: Kind(23_195),
+            tags: vec![vec!["e".to_owned(), "00".repeat(32)]],
+            content: "ciphertext".to_owned(),
+            sig: Signature::from_byte_array([0; 64]),
+        };
+        sign_event(&WALLET_SECRET, &mut event).expect("the wallet signs");
+
+        event
+    }
+
+    #[test]
+    fn an_authentic_reply_is_accepted() {
+        assert!(is_authentic(&reply()));
+    }
+
+    /// The relay writes the `pubkey` field; only the signature binds the event to the wallet.
+    #[test]
+    fn a_reply_that_only_claims_the_wallet_is_refused() {
+        let mut restated = reply();
+        restated.pubkey = nostream_core::crypto::public_key(&OTHER_SECRET).expect("a pubkey");
+
+        assert!(!is_authentic(&restated));
+    }
+
+    /// The id can be right while the signature is somebody else's, so the signature check has
+    /// to run on its own: this is the replay a hostile relay would build.
+    #[test]
+    fn a_reply_with_the_right_id_and_a_foreign_signature_is_refused() {
+        let authentic = reply();
+        let mut foreign = authentic.clone();
+        foreign.tags = Vec::new();
+        sign_event(&OTHER_SECRET, &mut foreign).expect("another key signs");
+
+        let mut forged = authentic.clone();
+        forged.sig = foreign.sig;
+
+        assert_eq!(
+            compute_event_id(&forged).expect("the id hashes"),
+            forged.id,
+            "the id is this event's own, so only the signature can reject it"
+        );
+        assert!(!is_authentic(&forged));
     }
 }

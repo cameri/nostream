@@ -423,10 +423,24 @@ fn next_month_midnight(now: DateTime<Utc>) -> DateTime<Utc> {
     let local = now.with_timezone(&Local);
 
     next_month_date(local.date_naive())
-        .and_then(|date| date.and_hms_opt(0, 0, 0))
-        .and_then(|midnight| Local.from_local_datetime(&midnight).earliest())
+        .and_then(|date| local_midnight(date, &Local))
         .map(|midnight| midnight.with_timezone(&Utc))
         .unwrap_or(now)
+}
+
+/// The first instant of `date` in `zone`.
+///
+/// Midnight itself does not exist in a zone whose spring-forward lands on 00:00, and falling
+/// back to `now` there would publish a notification that has already expired. The first hour
+/// that does exist is the day's beginning for every purpose this value has.
+fn local_midnight<Tz: TimeZone>(date: NaiveDate, zone: &Tz) -> Option<DateTime<Tz>> {
+    (0..4).find_map(|hour| {
+        let naive = date.and_hms_opt(hour, 0, 0)?;
+
+        zone.from_local_datetime(&naive)
+            .earliest()
+            .or_else(|| zone.from_local_datetime(&naive).latest())
+    })
 }
 
 /// The date part of `new Date(y, m + 1, d)`.
@@ -492,9 +506,52 @@ fn merge_update(invoice: &Invoice, update: &InvoiceUpdate) -> Invoice {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-    use chrono::NaiveDate;
+    use chrono::{LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone};
 
-    use super::next_month_date;
+    use super::{local_midnight, next_month_date};
+
+    /// A zone that skips 00:00 on one date, as a spring-forward at midnight does.
+    #[derive(Clone, Copy)]
+    struct MidnightSkipped(NaiveDate);
+
+    #[derive(Clone, Debug)]
+    struct Utc;
+
+    impl Offset for Utc {
+        fn fix(&self) -> chrono::FixedOffset {
+            chrono::FixedOffset::east_opt(0).expect("UTC")
+        }
+    }
+
+    impl TimeZone for MidnightSkipped {
+        type Offset = Utc;
+
+        fn from_offset(_offset: &Self::Offset) -> Self {
+            MidnightSkipped(NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date"))
+        }
+
+        fn offset_from_local_date(&self, _local: &NaiveDate) -> LocalResult<Self::Offset> {
+            LocalResult::Single(Utc)
+        }
+
+        fn offset_from_local_datetime(&self, local: &NaiveDateTime) -> LocalResult<Self::Offset> {
+            if local.date() == self.0
+                && local.time() < chrono::NaiveTime::from_hms_opt(1, 0, 0).expect("01:00")
+            {
+                return LocalResult::None;
+            }
+
+            LocalResult::Single(Utc)
+        }
+
+        fn offset_from_utc_date(&self, _utc: &NaiveDate) -> Self::Offset {
+            Utc
+        }
+
+        fn offset_from_utc_datetime(&self, _utc: &NaiveDateTime) -> Self::Offset {
+            Utc
+        }
+    }
 
     fn date(year: i32, month: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(year, month, day).expect("a date")
@@ -504,6 +561,32 @@ mod tests {
     fn the_next_month_is_the_same_day_when_it_exists() {
         assert_eq!(next_month_date(date(2024, 1, 15)), Some(date(2024, 2, 15)));
         assert_eq!(next_month_date(date(2024, 12, 15)), Some(date(2025, 1, 15)));
+    }
+
+    /// A zone that skips midnight still gets the day's first existing instant, not `now`.
+    #[test]
+    fn a_local_midnight_that_does_not_exist_falls_to_the_first_hour_that_does() {
+        let date = date(2024, 3, 31);
+        let zone = MidnightSkipped(date);
+
+        let midnight = local_midnight(date, &zone).expect("the day has an instant");
+
+        assert_eq!(
+            midnight.naive_local(),
+            date.and_hms_opt(1, 0, 0).expect("01:00")
+        );
+    }
+
+    #[test]
+    fn an_ordinary_day_starts_at_midnight() {
+        let day = date(2024, 3, 30);
+        let midnight = local_midnight(day, &MidnightSkipped(date(2024, 3, 31)))
+            .expect("the day has an instant");
+
+        assert_eq!(
+            midnight.naive_local(),
+            day.and_hms_opt(0, 0, 0).expect("00:00")
+        );
     }
 
     /// `new Date(2024, 1, 31)` is 2 March, not 31 February and not `now`: a notification

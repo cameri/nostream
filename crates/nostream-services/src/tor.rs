@@ -88,7 +88,10 @@ pub enum HiddenServiceOutcome {
 ///
 /// Tor removes a service created without `Flags=Detach` when its control connection closes,
 /// so the connection is part of the result: while this value is alive the service is up, and
-/// [`HiddenServiceBootstrap::shutdown`] is what ends it.
+/// [`HiddenServiceBootstrap::shutdown`] is what ends it. Dropping the value without shutting it
+/// down ends the service too, which is never what a caller means, so the type is `#[must_use]`
+/// and the drop is logged.
+#[must_use = "the control connection keeps the onion up; hold it and call `shutdown` at exit"]
 pub struct HiddenServiceBootstrap {
     outcome: HiddenServiceOutcome,
     client: Option<TorClient>,
@@ -102,9 +105,23 @@ impl HiddenServiceBootstrap {
 
     /// `QUIT`s the control connection, best effort and bounded: Tor drops the service when the
     /// connection closes, and a control port that stops answering must not hold the drain open.
+    ///
+    /// The client is taken out of the field first, so the [`Drop`] below stays silent for an
+    /// orderly exit.
     pub async fn shutdown(mut self) {
-        if let Some(client) = self.client.as_mut() {
+        if let Some(mut client) = self.client.take() {
             let _ = tokio::time::timeout(QUIT_TIMEOUT, client.quit()).await;
+        }
+    }
+}
+
+impl Drop for HiddenServiceBootstrap {
+    fn drop(&mut self) {
+        if self.client.is_some() {
+            tracing::warn!(
+                "the Tor control connection was dropped without `shutdown`; the hidden service \
+                 went down with it"
+            );
         }
     }
 }
@@ -322,6 +339,20 @@ pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceBootstrap
         .ok()
         .filter(|key| !key.is_empty());
 
+    // An adopted key was written by whoever installed first: the capture leaves it 0644 under
+    // the usual umask, and this daemon would otherwise keep that mode for the life of the
+    // installation. Narrowing happens on the read path because an existing key is never
+    // rewritten.
+    if stored_key.is_some()
+        && let Err(error) = narrow_key_permissions(&key_file).await
+    {
+        tracing::warn!(
+            path = %key_file.display(),
+            error = %error,
+            "unable to narrow the onion key's permissions"
+        );
+    }
+
     let mut client = match TorClient::connect(host, config.port, &config.password).await {
         Ok(client) => client,
         Err(error) => {
@@ -378,14 +409,27 @@ impl HiddenServiceBootstrap {
     }
 }
 
+/// Sets the owner-only mode on an onion key that already exists. A key this daemon writes is
+/// governed by [`write_private_key`]; an adopted one is not, and is only ever read.
+#[cfg(unix)]
+async fn narrow_key_permissions(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).await
+}
+
+#[cfg(not(unix))]
+async fn narrow_key_permissions(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
 /// Writes the onion key with owner-only permissions: it is the one long-lived secret the
 /// daemon writes to disk, and the process umask would otherwise leave it world-readable.
 ///
 /// The key is staged next to its destination and renamed into place, so a write cancelled
 /// between the two steps leaves the temp file behind rather than a truncated key file that
-/// the next boot would read as a stored key. The mode is applied to the open handle as well
-/// as at creation: a key written by the TypeScript daemon at the same path keeps its 0644
-/// unless the permission is set again.
+/// the next boot would read as a stored key. The staging file is created 0600 and its mode is
+/// set on the handle as well, because `mode` applies only at creation.
 async fn write_private_key(path: &Path, key: &str) -> std::io::Result<()> {
     let temporary = path.with_file_name(ONION_KEY_TEMP_FILE);
     let mut options = tokio::fs::OpenOptions::new();
@@ -459,9 +503,35 @@ mod tests {
         assert_eq!(mode & 0o777, 0o600, "the key is readable only by its owner");
     }
 
-    /// A write that fails must never leave a partial key at the path the next boot reads.
+    /// A write that fails after staging must never land a short key at the path the next boot
+    /// reads. The destination is a directory here, so the rename is what fails: the staged key
+    /// stays where it is and the key path still holds no key.
     #[tokio::test]
-    async fn a_failed_write_leaves_no_key_file() {
+    async fn a_failed_rename_leaves_no_key_at_the_key_path() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join(ONION_KEY_FILE);
+        std::fs::create_dir(&path).expect("the key path is a directory");
+
+        let error = write_private_key(&path, "ED25519-V3:secret")
+            .await
+            .expect_err("renaming a file over a directory fails");
+        assert_eq!(error.kind(), std::io::ErrorKind::IsADirectory);
+
+        assert!(
+            std::fs::read_to_string(&path).is_err(),
+            "no key was written at the key path"
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join(ONION_KEY_TEMP_FILE))
+                .expect("the staged copy survives"),
+            "ED25519-V3:secret",
+            "the staged copy is complete; a later write replaces it"
+        );
+    }
+
+    /// A directory that does not exist fails before anything is staged.
+    #[tokio::test]
+    async fn a_write_into_a_missing_directory_fails() {
         let directory = tempfile::tempdir().expect("tempdir");
         let path = directory.path().join("absent").join(ONION_KEY_FILE);
 

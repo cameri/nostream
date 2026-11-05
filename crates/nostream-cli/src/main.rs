@@ -103,7 +103,10 @@ fn main() -> ExitCode {
         },
         Command::Dev => commands::dev::run().map(|_| CommandOutput::default()),
         Command::Export => commands::export::run().map(|_| CommandOutput::default()),
-        Command::Import { args } => commands::import::run(&args, &cwd),
+        Command::Import { args } => {
+            let mut stdout = std::io::stdout().lock();
+            commands::import::run(&args, &cwd, &mut stdout)
+        }
         Command::Info => commands::info::run().map(|_| CommandOutput::default()),
         Command::Invite => commands::invite::run().map(|_| CommandOutput::default()),
         Command::Seed => commands::seed::run().map(|_| CommandOutput::default()),

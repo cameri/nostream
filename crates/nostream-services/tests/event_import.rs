@@ -456,12 +456,14 @@ async fn two_versions_of_one_address_keep_the_newest_and_import() {
     assert_eq!(stats.inserted, 2, "one row per conflict key");
     assert_eq!(stats.skipped, 1);
 
-    let mut upserted: Vec<Event> = repository
-        .upsert_many_calls()
-        .into_iter()
-        .flatten()
-        .map(|record| record.event)
-        .collect();
+    // The batch carries every accepted record; the store keeps one row per conflict key.
+    assert_eq!(
+        repository.upsert_many_calls()[0].len(),
+        3,
+        "the caller no longer collapses; the store does"
+    );
+
+    let mut upserted: Vec<Event> = repository.events();
     upserted.sort_by_key(|event| event.content.clone());
 
     assert_eq!(upserted.len(), 2, "the two addresses are two rows");
@@ -496,14 +498,13 @@ async fn an_equal_created_at_is_won_by_the_smaller_id() {
         (second, first)
     };
 
-    persist(&persister, &[larger.clone(), smaller.clone()]).await;
+    assert_eq!(
+        persist(&persister, &[larger.clone(), smaller.clone()]).await,
+        1.0,
+        "one row is written"
+    );
 
-    let upserted: Vec<Event> = repository
-        .upsert_many_calls()
-        .into_iter()
-        .flatten()
-        .map(|record| record.event)
-        .collect();
+    let upserted: Vec<Event> = repository.events();
     assert_eq!(upserted.len(), 1);
     assert_eq!(upserted[0].id, smaller.id);
 }

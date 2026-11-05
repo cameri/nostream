@@ -142,6 +142,94 @@ async fn a_reply_is_correlated_by_its_e_tag_not_by_a_payload_id() {
     );
 }
 
+/// A relay can restate the wallet's pubkey; only the wallet's signature makes a reply the
+/// wallet's. This reply carries a decryptable payload, the right `e` tag and `pubkey = wallet`,
+/// and is signed by another key.
+#[tokio::test]
+async fn a_forged_reply_is_ignored() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let port = listener.local_addr().expect("local addr").port();
+
+    tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept");
+        let mut socket = tokio_tungstenite::accept_async(socket)
+            .await
+            .expect("the handshake");
+        let mut published: Option<Published> = None;
+        let mut subscription = String::new();
+
+        while published.is_none() || subscription.is_empty() {
+            let Some(Ok(Message::Text(frame))) = socket.next().await else {
+                break;
+            };
+            let frame: serde_json::Value = serde_json::from_str(&frame).expect("a frame");
+            let parts = frame.as_array().expect("a frame array");
+
+            match parts.first().and_then(serde_json::Value::as_str) {
+                Some("EVENT") => {
+                    let event: Event =
+                        serde_json::from_value(parts[1].clone()).expect("the request event");
+                    published = Some(Published {
+                        id: event.id,
+                        pubkey: event.pubkey,
+                    });
+                }
+                Some("REQ") => {
+                    subscription = parts[1].as_str().expect("the subscription").to_owned();
+                }
+                _ => {}
+            }
+        }
+
+        let published = published.expect("the client publishes its request");
+        let wallet = nostream_core::crypto::public_key(&WALLET_SECRET).expect("the wallet");
+        let payload = json!({
+            "result_type": "make_invoice",
+            "result": { "invoice": "lnbc1" },
+            "error": null,
+        });
+        let content = nip04::encrypt(
+            &WALLET_SECRET,
+            &published.pubkey,
+            &payload.to_string(),
+            &[3u8; 16],
+        )
+        .expect("the genuine wallet ciphertext");
+
+        // Signed by another key, then relabelled as the wallet's.
+        let mut forged = Event {
+            id: EventId::from_byte_array([0; 32]),
+            pubkey: wallet,
+            created_at: chrono::Utc::now().timestamp(),
+            kind: Kind(23_195),
+            tags: vec![vec!["e".to_owned(), published.id.to_string()]],
+            content,
+            sig: Signature::from_byte_array([0; 64]),
+        };
+        nostream_core::crypto::sign_event(&[8u8; 32], &mut forged).expect("another key signs");
+        forged.pubkey = wallet;
+
+        let _ = socket
+            .send(Message::Text(
+                json!(["EVENT", subscription, forged]).to_string().into(),
+            ))
+            .await;
+        let _ = socket.close(None).await;
+    });
+
+    let transport =
+        NwcRelayTransport::new(&nwc_url(&format!("ws://127.0.0.1:{port}"))).expect("the url");
+    let error = transport
+        .request(&make_invoice())
+        .await
+        .expect_err("a reply not signed by the wallet is not the wallet's answer");
+
+    assert_eq!(
+        error.to_string(),
+        "payment processor error: NWC relay closed before a reply"
+    );
+}
+
 #[tokio::test]
 async fn a_reply_for_another_request_is_ignored() {
     let relay = relay(|_published| {
