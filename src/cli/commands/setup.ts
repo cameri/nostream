@@ -44,9 +44,15 @@ const parseEnvValue = (rawValue: string): string => {
   }
 
   if (trimmed.startsWith('"')) {
-    const closingIndex = trimmed.indexOf('"', 1)
+    let closingIndex = -1
+    for (let i = 1; i < trimmed.length; i += 1) {
+      if (trimmed[i] === '"' && trimmed[i - 1] !== '\\') {
+        closingIndex = i
+        break
+      }
+    }
     if (closingIndex !== -1) {
-      return trimmed.slice(1, closingIndex)
+      return trimmed.slice(1, closingIndex).replace(/\\"/g, '"')
     }
     return trimmed.slice(1)
   }

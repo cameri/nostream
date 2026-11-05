@@ -218,4 +218,14 @@ describe('runSetup', () => {
     expect(process.env.SECRET).to.equal('operator-supplied-secret')
     expect(readEnv()).to.equal('SECRET="file-secret"\n')
   })
+
+  it('correctly handles escaped quotes inside double-quoted secrets', async () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'SECRET="sec\\"ret#with#hashes" # comment\n', 'utf-8')
+
+    const code = await setupCommand.runSetup({ yes: true })
+
+    expect(code).to.equal(0)
+    expect(process.env.SECRET).to.equal('sec"ret#with#hashes')
+    expect(readEnv()).to.equal('SECRET="sec\\"ret#with#hashes" # comment\n')
+  })
 })
