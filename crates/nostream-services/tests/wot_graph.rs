@@ -355,3 +355,74 @@ async fn two_triggers_during_a_build_queue_one_rebuild() {
 
     assert_eq!(service.get_distance(&b).await.unwrap(), None);
 }
+
+#[tokio::test]
+async fn a_caller_that_arrives_during_a_build_waits_for_it_and_reads_its_result() {
+    let a_probe = contact_list(&[2; 32], &[]);
+    let a = a_probe.pubkey;
+    let seed_event = contact_list(&[1; 32], &[&a]);
+    let seed = seed_event.pubkey;
+    let repository =
+        InMemoryEventRepository::with_events([seed_event, contact_list(&[2; 32], &[])]);
+    let settings = wot_settings(true, &seed.to_string(), 2, 1);
+    let service = WotGraphService::new(Arc::new(settings), events(&repository));
+    let gate = repository.gate_reads();
+
+    // The build starts and blocks on its first repository read.
+    let builder = service.clone();
+    let running = tokio::spawn(async move { builder.get_distance(&a).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // A second caller finds the build in flight and waits for it rather than building again.
+    let waiter = service.clone();
+    let waiting = tokio::spawn(async move { waiter.get_distance(&a).await });
+
+    gate.add_permits(16);
+
+    let distance = tokio::time::timeout(Duration::from_secs(2), waiting)
+        .await
+        .expect("the waiter returns once the build finishes")
+        .expect("the waiting task")
+        .expect("the distance");
+    assert_eq!(distance, Some(1));
+    assert_eq!(
+        running.await.expect("the building task").unwrap(),
+        Some(1),
+        "both callers see the built graph"
+    );
+}
+
+#[tokio::test]
+async fn the_newest_contact_list_for_an_author_wins() {
+    let b_probe = contact_list(&[4; 32], &[]);
+    let c_probe = contact_list(&[5; 32], &[]);
+    let (b, c) = (b_probe.pubkey, c_probe.pubkey);
+    let a_probe = contact_list(&[2; 32], &[]);
+    let a = a_probe.pubkey;
+    let seed_event = contact_list(&[1; 32], &[&a]);
+    let seed = seed_event.pubkey;
+
+    // A's newer kind-3 event follows C; its older one follows B.
+    let older = contact_list_at(&[2; 32], &[&b], 1_700_000_000);
+    let newer = contact_list_at(&[2; 32], &[&c], 1_700_000_100);
+
+    let repository = InMemoryEventRepository::with_events([seed_event, older, newer]);
+    let settings = wot_settings(true, &seed.to_string(), 2, 1);
+    let service = WotGraphService::new(Arc::new(settings), events(&repository));
+
+    assert_eq!(service.get_distance(&c).await.unwrap(), Some(2));
+    assert_eq!(
+        service.get_distance(&b).await.unwrap(),
+        None,
+        "the newest contact list is the one read"
+    );
+}
+
+/// `contact_list` with the instant a newest-first read discriminates on.
+fn contact_list_at(secret: &[u8; 32], follows: &[&Pubkey], created_at: i64) -> Event {
+    let mut event = contact_list(secret, follows);
+    event.created_at = created_at;
+    nostream_core::crypto::sign_event(secret, &mut event).expect("the event signs");
+
+    event
+}

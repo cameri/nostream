@@ -105,11 +105,20 @@ impl WotGraphService {
             // caller waits for the whole run rather than starting a second one.
             self.inner.queued.store(true, Ordering::SeqCst);
 
-            while self.inner.building.load(Ordering::SeqCst) {
-                self.inner.finished.notified().await;
-            }
+            loop {
+                // Register before reading the flag: `notify_waiters` wakes only waiters
+                // already registered and stores no permit, so a build that finishes between
+                // the load and the first poll would otherwise lose its wakeup.
+                let notified = self.inner.finished.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
 
-            return;
+                if !self.inner.building.load(Ordering::SeqCst) {
+                    return;
+                }
+
+                notified.await;
+            }
         }
 
         self.run_builds().await;
