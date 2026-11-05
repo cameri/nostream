@@ -384,7 +384,8 @@ pub trait EventRepository: Send + Sync {
     /// hold several versions of one replaceable address: the implementation keeps one row per
     /// [`replacement_key`](crate::records::replacement_key) using
     /// [`replaces`](crate::records::replaces), so a caller does not have to, and the affected
-    /// count is the number of rows written, not of records passed.
+    /// count is the number of rows written, not of records passed. A record of any other kind
+    /// has no key and is written as it comes.
     fn upsert_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64>;
 
     /// Streams the events matching the filters, in the query's order.

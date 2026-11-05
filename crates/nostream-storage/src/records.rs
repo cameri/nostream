@@ -79,17 +79,26 @@ pub enum ReplacementKey<'a> {
 
 /// The key a replaceable row conflicts on: the author, the kind and the deduplication value.
 ///
-/// `None` means the record's deduplication value is one this key cannot express (not a single
-/// string, which only [`EventRecord::with_deduplication`] can produce); such a record is never
-/// collapsed, so it keeps its own row.
+/// `None` for a kind the conflict target does not cover: `REPLACEABLE_CONFLICT` in
+/// `postgres/events.rs` is `WHERE event_kind = 0 OR 3 OR 41 OR 10000–19999 OR 30000–39999`,
+/// which is [`Kind::is_replaceable`] or [`Kind::is_parameterized_replaceable`], so a regular
+/// event has no key and is never collapsed.
+///
+/// `None` also for a deduplication value this key cannot express (not a single string, which
+/// only [`EventRecord::with_deduplication`] can produce); such a record keeps its own row.
 pub fn replacement_key(record: &EventRecord) -> Option<(Pubkey, u64, ReplacementKey<'_>)> {
+    let kind = record.event.kind;
+    if !kind.is_replaceable() && !kind.is_parameterized_replaceable() {
+        return None;
+    }
+
     let key = match record.event_deduplication.as_deref() {
         None => ReplacementKey::Default,
         Some([serde_json::Value::String(value)]) => ReplacementKey::Deduplicated(value.as_str()),
         Some(_) => return None,
     };
 
-    Some((record.event.pubkey, record.event.kind.0, key))
+    Some((record.event.pubkey, kind.0, key))
 }
 
 /// The merge predicate the replaceable upsert applies: the incoming row wins when it is newer,
@@ -373,6 +382,59 @@ mod tests {
         let contact = version(3, 1_700_000_000, "contact");
 
         assert_eq!(distinct_replacements(&[metadata, contact]).len(), 2);
+    }
+
+    /// Two regular events from one author are two rows: the conflict target is kind-partial, so
+    /// neither record has a replacement key.
+    #[test]
+    fn two_regular_events_from_one_author_are_both_kept() {
+        let first = version(1, 1_700_000_000, "first");
+        let second = version(1, 1_700_000_100, "second");
+        assert_eq!(first.event.pubkey, second.event.pubkey);
+
+        let records = [first.clone(), second.clone()];
+        let kept = distinct_replacements(&records);
+
+        assert_eq!(kept.len(), 2, "a regular event has no conflict target");
+        assert_eq!(
+            kept.iter()
+                .map(|record| record.event.id)
+                .collect::<Vec<_>>(),
+            vec![first.event.id, second.event.id]
+        );
+    }
+
+    /// The key covers exactly the kinds `REPLACEABLE_CONFLICT` names, no more and no less.
+    #[test]
+    fn the_replacement_key_covers_exactly_the_replaceable_kinds() {
+        for kind in [0, 3, 41, 10_000, 19_999, 30_000, 39_999] {
+            assert!(
+                replacement_key(&version(kind, 1_700_000_000, "replaceable")).is_some(),
+                "kind {kind} is in the conflict target"
+            );
+        }
+
+        for kind in [1, 7, 9_999, 20_000, 29_999, 40_000] {
+            assert!(
+                replacement_key(&version(kind, 1_700_000_000, "regular")).is_none(),
+                "kind {kind} is not in the conflict target"
+            );
+        }
+    }
+
+    /// The narrowing leaves the replaceable collapse alone: one address still keeps one row.
+    #[test]
+    fn a_replaceable_pair_still_collapses() {
+        let older = version(0, 1_700_000_000, "older");
+        let newer = version(0, 1_700_000_100, "newer");
+        assert_eq!(older.event.pubkey, newer.event.pubkey);
+        assert!(replacement_key(&older).is_some());
+
+        let records = [older, newer.clone()];
+        let kept = distinct_replacements(&records);
+
+        assert_eq!(kept.len(), 1, "one row per replaceable address");
+        assert_eq!(kept[0].event.id, newer.event.id, "the newer version wins");
     }
 
     #[test]
