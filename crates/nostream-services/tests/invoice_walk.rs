@@ -253,4 +253,33 @@ async fn only_a_status_change_to_completed_confirms_and_notifies() {
         fixture.events.creates()[0].event.kind,
         nostream_core::Kind(402)
     );
+
+    // A provider-reported amount never displaces the stored `amountRequested`
+    // (`mergeDeepLeft({ amountPaid: invoice.amountRequested })`).
+    let fixture = build(true);
+    fixture.processor.set_update(InvoiceUpdate {
+        id: Some("pending-2".to_owned()),
+        status: Some(InvoiceStatus::Completed),
+        amount_paid: Some(999),
+        confirmed_at: Some(confirmed_at),
+        ..InvoiceUpdate::default()
+    });
+    fixture.invoices.set_invoices(vec![invoice(
+        "pending-2",
+        InvoiceStatus::Pending,
+        Some(now_seconds() + 86_400),
+    )]);
+
+    fixture
+        .service
+        .walk_pending_invoices(&mut 0)
+        .await
+        .expect("the walk");
+
+    let confirmations = fixture.invoices.confirmations();
+    assert_eq!(confirmations.len(), 1);
+    assert_eq!(
+        confirmations[0].1, 1_500,
+        "the stored amountRequested wins over the provider's 999"
+    );
 }

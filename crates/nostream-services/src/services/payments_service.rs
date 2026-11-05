@@ -303,11 +303,7 @@ impl PaymentsService {
     /// The maintenance pass's invoice walk: one page, the processor lookup, the 404 rule and
     /// the confirm-on-change step (`src/app/maintenance-worker.ts:190-258`).
     pub async fn walk_pending_invoices(&self, offset: &mut u64) -> Result<(), ServicesError> {
-        let invoices = self
-            .stores
-            .invoices
-            .find_pending_invoices(*offset, PENDING_INVOICE_PAGE_SIZE)
-            .await?;
+        let invoices = self.get_pending_invoices(*offset).await?;
 
         *offset = if (invoices.len() as u64) < PENDING_INVOICE_PAGE_SIZE {
             0
@@ -322,7 +318,7 @@ impl PaymentsService {
                         continue;
                     };
 
-                    self.stores.invoices.update_status(&id, status).await?;
+                    self.update_invoice_status(&id, status).await?;
 
                     if invoice.status != status
                         && status == InvoiceStatus::Completed
@@ -352,9 +348,7 @@ impl PaymentsService {
                             invoice_id = invoice.id,
                             "marking expired invoice after the processor returned 404"
                         );
-                        self.stores
-                            .invoices
-                            .update_status(&invoice.id, InvoiceStatus::Expired)
+                        self.update_invoice_status(&invoice.id, InvoiceStatus::Expired)
                             .await?;
 
                         if let Err(error) = self
@@ -475,6 +469,8 @@ fn merge_update(invoice: &Invoice, update: &InvoiceUpdate) -> Invoice {
         updated.verify_url = Some(verify_url.clone());
     }
 
-    updated.amount_paid = update.amount_paid.or(Some(invoice.amount_requested));
+    // R26: `mergeDeepLeft({ amountPaid: invoice.amountRequested })` wins over whatever the
+    // provider reported (`src/app/maintenance-worker.ts:225-232`).
+    updated.amount_paid = Some(invoice.amount_requested);
     updated
 }
