@@ -11,6 +11,7 @@ use nostream_config::notifications::{
     AdminNotificationsSettings, OperatorNotificationEventToggles, get_merged_admin_notifications,
 };
 use nostream_core::clock::Clock;
+use nostream_storage::StorageError;
 use nostream_storage::repositories::{
     NewDeliveryLogEntry, NotificationDeliveryLogRepository, NotificationDeliveryStatus,
     NotificationTargetType,
@@ -22,6 +23,7 @@ use crate::http::HttpClient;
 use crate::services::notification_channels::{
     NotificationEnvelope, deliver_to_target, mask_target_for_log,
 };
+use crate::unavailable::ServiceStores;
 
 /// What one dispatch knows about the outbox row it serves (`OperatorNotificationDispatchContext`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -143,7 +145,7 @@ pub fn is_event_enabled(events: &OperatorNotificationEventToggles, event_type: &
         "admission.invoice.paid" => events.admission_invoice_paid,
         "admission.invoice.failed" => events.admission_invoice_failed,
         "settings.changed" => events.settings_changed,
-        "relay.restarted" => events.relay_restarted,
+        RELAY_RESTARTED => events.relay_restarted,
         "probe.failed" => events.probe_failed,
         "probe.recovered" => events.probe_recovered,
         "ssl.expiring" => events.ssl_expiring,
@@ -151,6 +153,27 @@ pub fn is_event_enabled(events: &OperatorNotificationEventToggles, event_type: &
     };
 
     toggle != Some(false)
+}
+
+/// `relay.restarted`, the startup notification's event type (`src/@types/operator-notifications.ts`).
+pub const RELAY_RESTARTED: &str = "relay.restarted";
+
+/// R8: the one `relay.restarted` row a process enqueues
+/// (`src/utils/operator-notification-enqueue.ts:21-33`, `src/app/app.ts:198-202`).
+pub async fn enqueue_relay_restarted(
+    stores: &ServiceStores,
+    version: &str,
+    relay_port: u16,
+) -> Result<(), StorageError> {
+    stores
+        .notification_outbox
+        .enqueue(
+            RELAY_RESTARTED,
+            &serde_json::json!({ "version": version, "relayPort": relay_port }),
+        )
+        .await?;
+
+    Ok(())
 }
 
 impl NotificationDispatcher for OperatorNotificationService {
@@ -182,11 +205,11 @@ impl NotificationDispatcher for OperatorNotificationService {
             }
 
             let already_delivered = match context.outbox_id.as_deref() {
-                Some(outbox_id) => self
-                    .delivery_log
-                    .find_successful_target_ids(outbox_id)
-                    .await
-                    .unwrap_or_default(),
+                Some(outbox_id) => {
+                    self.delivery_log
+                        .find_successful_target_ids(outbox_id)
+                        .await?
+                }
                 None => Vec::new(),
             };
 

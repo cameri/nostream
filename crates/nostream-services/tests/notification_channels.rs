@@ -265,4 +265,22 @@ async fn each_channel_names_the_field_it_is_missing() {
     }
 
     assert!(http.calls().is_empty(), "a refused target sends nothing");
+
+    // An empty token is absent, as `!target.botToken` in the capture.
+    let mut empty_token = testing::target(
+        "ops",
+        nostream_config::notifications::OperatorNotificationChannelType::Telegram,
+        None,
+    );
+    empty_token.bot_token = Some(nostream_core::Secret(String::new()));
+    empty_token.chat_id = Some("123".to_owned());
+
+    let error = deliver_to_target(&empty_token, &envelope(), &*http)
+        .await
+        .expect_err("an empty token is refused");
+    assert_eq!(
+        error.to_string(),
+        "Telegram notification target requires botToken and chatId"
+    );
+    assert!(http.calls().is_empty());
 }

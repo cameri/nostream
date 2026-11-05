@@ -154,8 +154,18 @@ async fn deliver_telegram(
     envelope: &NotificationEnvelope,
     http: &dyn HttpClient,
 ) -> Result<(), ServicesError> {
-    let (Some(bot_token), Some(chat_id)) = (target.bot_token.as_ref(), target.chat_id.as_ref())
-    else {
+    // `!target.botToken || !target.chatId` (`src/services/notification-channels.ts:106`): an
+    // empty string is absent, so the empty case cannot reach the Telegram URL.
+    let (Some(bot_token), Some(chat_id)) = (
+        target
+            .bot_token
+            .as_ref()
+            .filter(|token| !token.expose().is_empty()),
+        target
+            .chat_id
+            .as_ref()
+            .filter(|chat_id| !chat_id.is_empty()),
+    ) else {
         return Err(ServicesError::Notification(
             "Telegram notification target requires botToken and chatId".to_owned(),
         ));
@@ -180,7 +190,7 @@ async fn deliver_telegram(
 }
 
 async fn post_json(http: &dyn HttpClient, url: &str, body: &Value) -> Result<(), ServicesError> {
-    crate::http::post_json(http, url, body, REQUEST_TIMEOUT)
+    crate::http::post_json(http, url, &[], body, REQUEST_TIMEOUT)
         .await
         .map(|_| ())
 }

@@ -176,7 +176,10 @@ async fn serve(
         relay_config,
     );
 
-    let client = Arc::new(ReqwestClient::new());
+    let client = Arc::new(
+        ReqwestClient::new()
+            .map_err(|error| DaemonError::Setup(format!("http client: {error}")))?,
+    );
     let http: Arc<dyn HttpClient> = client.clone();
     let fetch: Arc<dyn Nip05Fetch> = client;
     let context = ServiceContext {
@@ -192,17 +195,23 @@ async fn serve(
     };
 
     // R8: one `relay.restarted` row per process. A failure is logged, never fatal.
-    let payload = serde_json::json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "relayPort": port,
-    });
-    if let Err(error) = context
-        .stores
-        .notification_outbox
-        .enqueue("relay.restarted", &payload)
+    if let Err(error) =
+        nostream_services::services::operator_notification_service::enqueue_relay_restarted(
+            &service_stores,
+            env!("CARGO_PKG_VERSION"),
+            port,
+        )
         .await
     {
-        tracing::warn!(error = %error, "unable to enqueue the relay.restarted notification");
+        match error {
+            nostream_storage::StorageError::NotImplemented { module } => tracing::warn!(
+                module,
+                "the notification outbox is not wired; the relay.restarted notification was not enqueued"
+            ),
+            error => {
+                tracing::warn!(error = %error, "unable to enqueue the relay.restarted notification");
+            }
+        }
     }
 
     tracing::info!(at = %acceptor.local_addr(), "the acceptor is listening");

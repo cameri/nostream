@@ -21,7 +21,7 @@ use nostream_services::error::ServicesError;
 use nostream_services::services::maintenance_service::MaintenanceService;
 use nostream_services::services::notification_outbox_service::NotificationOutboxService;
 use nostream_services::services::operator_notification_service::{
-    DispatchContext, NotificationDispatcher, OperatorNotificationService,
+    DispatchContext, NotificationDispatcher, OperatorNotificationService, enqueue_relay_restarted,
 };
 use nostream_services::services::payments_service::PaymentsService;
 use nostream_services::testing;
@@ -284,6 +284,30 @@ async fn the_pass_order_is_the_captures() {
 async fn the_relay_restarted_notification_is_one_enqueue_and_obeys_its_toggle() {
     let outbox = testing::InMemoryOutboxRepository::new();
     let delivery_log = testing::InMemoryDeliveryLogRepository::new();
+    let stores = ServiceStores {
+        events: testing::InMemoryEventRepository::new(),
+        users: testing::InMemoryUserRepository::new(),
+        invoices: testing::InMemoryInvoiceRepository::new(),
+        nip05: testing::InMemoryNip05Repository::new(),
+        dvm_jobs: testing::InMemoryDvmJobRepository::new(),
+        notification_outbox: Arc::clone(&outbox) as Arc<dyn NotificationOutboxRepository>,
+        notification_delivery_log: Arc::clone(&delivery_log)
+            as Arc<dyn NotificationDeliveryLogRepository>,
+    };
+
+    // R8: the process's one row, through the same function `serve` calls.
+    enqueue_relay_restarted(&stores, "0.1.0", 8008)
+        .await
+        .expect("the startup enqueue");
+
+    let enqueued = outbox.enqueued();
+    assert_eq!(enqueued.len(), 1, "one row per process");
+    assert_eq!(enqueued[0].0, "relay.restarted");
+    assert_eq!(
+        enqueued[0].1,
+        serde_json::json!({ "version": "0.1.0", "relayPort": 8008 })
+    );
+
     let delivery_store: Arc<dyn NotificationDeliveryLogRepository> =
         Arc::clone(&delivery_log) as Arc<dyn NotificationDeliveryLogRepository>;
     let http = testing::RecordingHttpClient::new();
@@ -313,12 +337,7 @@ async fn the_relay_restarted_notification_is_one_enqueue_and_obeys_its_toggle() 
         http.clone(),
         testing::clock(1_700_000_000_000),
     );
-    let payload = serde_json::json!({ "version": "0.1.0", "relayPort": 8008 });
-
-    outbox
-        .enqueue("relay.restarted", &payload)
-        .await
-        .expect("enqueue");
+    let payload = enqueued[0].1.clone();
 
     let context = DispatchContext::new();
     dispatcher
