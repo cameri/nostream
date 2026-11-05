@@ -197,4 +197,25 @@ describe('runSetup', () => {
     expect(code).to.equal(0)
     expect(process.env.SECRET).to.equal('persisted-real-secret')
   })
+
+  it('preserves full quoted secret containing # from .env and does not truncate at #', async () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'SECRET="abc#def" # trailing comment\n', 'utf-8')
+
+    const code = await setupCommand.runSetup({ yes: true })
+
+    expect(code).to.equal(0)
+    expect(process.env.SECRET).to.equal('abc#def')
+    expect(readEnv()).to.equal('SECRET="abc#def" # trailing comment\n')
+  })
+
+  it('preserves explicitly supplied valid process.env.SECRET when .env contains a different valid secret', async () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'SECRET="file-secret"\n', 'utf-8')
+    process.env.SECRET = 'operator-supplied-secret'
+
+    const code = await setupCommand.runSetup({ yes: true })
+
+    expect(code).to.equal(0)
+    expect(process.env.SECRET).to.equal('operator-supplied-secret')
+    expect(readEnv()).to.equal('SECRET="file-secret"\n')
+  })
 })

@@ -37,6 +37,32 @@ const stripQuotes = (value: string): string => {
   return trimmed
 }
 
+const parseEnvValue = (rawValue: string): string => {
+  const trimmed = rawValue.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (trimmed.startsWith('"')) {
+    const closingIndex = trimmed.indexOf('"', 1)
+    if (closingIndex !== -1) {
+      return trimmed.slice(1, closingIndex)
+    }
+    return trimmed.slice(1)
+  }
+
+  if (trimmed.startsWith("'")) {
+    const closingIndex = trimmed.indexOf("'", 1)
+    if (closingIndex !== -1) {
+      return trimmed.slice(1, closingIndex)
+    }
+    return trimmed.slice(1)
+  }
+
+  const [unquoted] = trimmed.split('#', 1)
+  return unquoted.trim()
+}
+
 const readEnvSecret = (content: string): string | undefined => {
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim()
@@ -44,8 +70,8 @@ const readEnvSecret = (content: string): string | undefined => {
       continue
     }
 
-    const [rawValue] = trimmed.slice('SECRET='.length).split('#', 1)
-    return stripQuotes(rawValue)
+    const raw = trimmed.slice('SECRET='.length)
+    return parseEnvValue(raw)
   }
 
   return undefined
@@ -149,7 +175,7 @@ const ensureEnvFile = async (assumeYes: boolean): Promise<boolean> => {
 
   const envFileSecret = readEnvSecret(current)
   if (!needsSecretReplacement(envFileSecret)) {
-    if (envFileSecret) {
+    if (needsSecretReplacement(process.env.SECRET) && envFileSecret) {
       process.env.SECRET = envFileSecret
     }
     return true
