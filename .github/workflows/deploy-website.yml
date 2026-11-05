@@ -48,11 +48,20 @@ jobs:
       cancel-in-progress: false
     # workflow_dispatch ignores every on: filter — a manual run must not
     # publish a non-main branch to production, so dispatch stays main-only.
+    #
+    # The relay path has two shapes. A release event gives the tag as the run's
+    # head_branch. A retried image build — `Release` dispatched from main with the
+    # tag as an input — gives `main` instead, because a dispatch runs on a branch
+    # and `workflow_run` cannot see the input, so the branch is the only signal
+    # available to this job. Both end with a published image, which is what makes
+    # the site's build-time version and changelog worth redeploying.
     if: >-
       ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
       (github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
-      startsWith(github.event.workflow_run.head_branch || '', 'nostream@')) ||
+      (startsWith(github.event.workflow_run.head_branch || '', 'nostream@') ||
+      (github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main'))) ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
     name: Build and deploy to Cloudflare Workers
     runs-on: ubuntu-latest
