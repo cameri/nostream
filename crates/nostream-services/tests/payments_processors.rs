@@ -209,6 +209,26 @@ async fn resolve_answers_the_null_processor_and_the_captures_failures() {
         "Unable to create payments processor: Setting paymentsProcessor.lnurl.invoiceURL is not configured."
     );
 
+    // `!process.env.X` is true for the empty string, so an empty key is absent
+    // (`src/factories/payments-processors/*.ts:13`).
+    for (processor, configured, name) in [
+        (Processor::Zebedee, zebedee_settings(), "ZEBEDEE_API_KEY"),
+        (Processor::Lnbits, lnbits_settings(), "LNBITS_API_KEY"),
+        (Processor::Nodeless, nodeless_settings(), "NODELESS_API_KEY"),
+        (Processor::Opennode, opennode_settings(), "OPENNODE_API_KEY"),
+        (Processor::Nwc, PaymentsProcessors::default(), "NWC_URL"),
+    ] {
+        let message = configuration_message(resolve(
+            &settings(processor, configured),
+            &http,
+            &env(&[(name, "")]),
+        ));
+        assert!(
+            message.starts_with(&format!("{name} must be set")),
+            "an empty {name} is absent, got: {message}"
+        );
+    }
+
     let placeholder = PaymentsProcessors {
         zebedee: Some(ZebedeePaymentsProcessor {
             base_url: "https://api.zebedee.io".to_owned(),

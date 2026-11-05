@@ -82,7 +82,8 @@ pub trait PaymentProcessor: Send + Sync + 'static {
 }
 
 /// The environment the processor factories read, so a test can supply the keys it needs
-/// without mutating the process environment (which Rust 2024 makes `unsafe`).
+/// without mutating the process environment (which Rust 2024 makes `unsafe`). An empty value
+/// reads as absent, as each factory's `!process.env.X` does.
 pub type Env<'a> = dyn Fn(&str) -> Option<String> + Send + Sync + 'a;
 
 /// Resolves the configured processor, reading the process environment for its keys.
@@ -113,17 +114,22 @@ pub fn resolve_with_env(
 
     let configured = settings.payments_processors.as_ref();
 
+    // Every factory tests `!process.env.X`, which an empty value satisfies
+    // (`src/factories/payments-processors/zebedee-payments-processor-factory.ts:13` and its
+    // siblings), so an empty key or URL is absent rather than sent as an empty header.
+    let env = |name: &str| env(name).filter(|value| !value.is_empty());
+
     match payments.processor {
         Processor::Lnurl => processors::lnurl::LnurlProcessor::create(configured, http),
-        Processor::Zebedee => processors::zebedee::ZebedeeProcessor::create(configured, http, env),
-        Processor::Lnbits => processors::lnbits::LnbitsProcessor::create(configured, http, env),
+        Processor::Zebedee => processors::zebedee::ZebedeeProcessor::create(configured, http, &env),
+        Processor::Lnbits => processors::lnbits::LnbitsProcessor::create(configured, http, &env),
         Processor::Nodeless => {
-            processors::nodeless::NodelessProcessor::create(configured, http, env)
+            processors::nodeless::NodelessProcessor::create(configured, http, &env)
         }
         Processor::Opennode => {
-            processors::opennode::OpennodeProcessor::create(configured, http, env)
+            processors::opennode::OpennodeProcessor::create(configured, http, &env)
         }
-        Processor::Nwc => processors::nwc::NwcProcessor::create(configured, http, env),
+        Processor::Nwc => processors::nwc::NwcProcessor::create(configured, http, &env),
     }
 }
 
