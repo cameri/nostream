@@ -80,16 +80,29 @@ describe('PeeringRequestStatsStore', () => {
     ])
   })
 
-  it('prunes index members whose hash expired', async () => {
+  it('prunes index members whose hash expired in the same read', async () => {
     const pubkey = 'a'.repeat(64)
     getSetMembersStub.resolves([pubkey])
-    evalStub.onFirstCall().resolves([])
+    evalStub.resolves([])
 
     const result = await store.list()
 
     expect(result).to.deep.equal([])
-    expect(evalStub.secondCall.args[1]).to.deep.equal([PEERING_REQUEST_STATS_INDEX_KEY])
-    expect(evalStub.secondCall.args[2]).to.deep.equal([pubkey])
+    expect(evalStub).to.have.been.calledOnce
+    expect(evalStub.firstCall.args[1]).to.deep.equal([
+      `admin:peering:requests:${pubkey}`,
+      PEERING_REQUEST_STATS_INDEX_KEY,
+    ])
+    expect(evalStub.firstCall.args[2]).to.deep.equal([pubkey])
+  })
+
+  it('returns an empty list when the stats index cannot be read', async () => {
+    getSetMembersStub.rejects(new Error('redis down'))
+
+    const result = await store.list()
+
+    expect(result).to.deep.equal([])
+    expect(evalStub).not.to.have.been.called
   })
 
   it('does not fail the request path when accounting storage is unavailable', async () => {

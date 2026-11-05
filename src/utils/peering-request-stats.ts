@@ -31,8 +31,13 @@ redis.call('EXPIRE', index, tonumber(ARGV[6]))
 return 1
 `
 
-const READ_SCRIPT = `return redis.call('HGETALL', KEYS[1])`
-const REMOVE_INDEX_MEMBER_SCRIPT = `return redis.call('SREM', KEYS[1], ARGV[1])`
+const READ_SCRIPT = `
+local raw = redis.call('HGETALL', KEYS[1])
+if #raw == 0 then
+  redis.call('SREM', KEYS[2], ARGV[1])
+end
+return raw
+`
 
 const parseStats = (raw: unknown): PeeringRequestStats | undefined => {
   if (!Array.isArray(raw)) {
@@ -77,18 +82,27 @@ export class PeeringRequestStatsStore {
   }
 
   public async list(): Promise<PeeringRequestStats[]> {
-    const pubkeys = await this.cache.getSetMembers(PEERING_REQUEST_STATS_INDEX_KEY)
+    let pubkeys: string[]
+    try {
+      pubkeys = await this.cache.getSetMembers(PEERING_REQUEST_STATS_INDEX_KEY)
+    } catch (error) {
+      // A stats-index read failure must not hide the Peering table's sync rows.
+      logger.warn('failed to read peering request stats index: %o', error)
+      return []
+    }
+
     const stats: PeeringRequestStats[] = []
 
     for (const pubkey of pubkeys) {
       try {
-        const parsed = parseStats(await this.cache.eval(READ_SCRIPT, [statsKey(pubkey)], []))
+        // Reading and pruning are one script: a request may recreate the hash
+        // between an empty HGETALL and a separate SREM, which would otherwise
+        // drop fresh counters from the index.
+        const parsed = parseStats(
+          await this.cache.eval(READ_SCRIPT, [statsKey(pubkey), PEERING_REQUEST_STATS_INDEX_KEY], [pubkey]),
+        )
         if (parsed) {
           stats.push(parsed)
-        } else {
-          // The member's hash expired while another active peer kept the
-          // shared index alive. Drop it instead of rereading it on every poll.
-          await this.cache.eval(REMOVE_INDEX_MEMBER_SCRIPT, [PEERING_REQUEST_STATS_INDEX_KEY], [pubkey])
         }
       } catch (error) {
         logger.warn('failed to read peering request stats for %s: %o', pubkey, error)
