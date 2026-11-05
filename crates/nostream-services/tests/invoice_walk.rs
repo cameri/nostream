@@ -102,7 +102,7 @@ fn now_seconds() -> i64 {
 }
 
 #[tokio::test]
-async fn a_404_expires_an_expired_invoice_and_leaves_a_live_or_failing_one_alone() {
+async fn a_not_found_response_expires_an_expired_invoice_and_leaves_a_live_or_failing_one_alone() {
     let fixture = build(false);
     fixture.processor.fail_get(Some(404), "HTTP status 404");
     fixture.invoices.set_invoices(vec![
@@ -157,7 +157,7 @@ async fn a_404_expires_an_expired_invoice_and_leaves_a_live_or_failing_one_alone
 }
 
 #[tokio::test]
-async fn the_page_offset_advances_by_ten_and_resets_on_a_short_page() {
+async fn paging_advances_the_offset_by_ten_and_resets_on_a_short_page() {
     for (rows, expected) in [(10usize, 10u64), (9, 0), (0, 0)] {
         let fixture = build(false);
         fixture.processor.set_update(InvoiceUpdate {

@@ -304,7 +304,7 @@ async fn an_empty_key_file_counts_as_absent() {
 }
 
 #[tokio::test]
-async fn a_missing_or_unreachable_host_disables_the_service() {
+async fn a_missing_or_unreachable_host_is_disabled() {
     let directory = tempfile::tempdir().expect("tempdir");
 
     let mut missing = config(DEFAULT_CONTROL_PORT, directory.path().to_path_buf());

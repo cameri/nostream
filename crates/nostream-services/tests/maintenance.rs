@@ -139,7 +139,7 @@ fn payments_settings() -> nostream_config::Settings {
 }
 
 #[tokio::test]
-async fn a_tick_during_a_pass_is_skipped() {
+async fn an_overlapping_tick_during_a_pass_is_skipped() {
     let gate = Arc::new(Semaphore::new(0));
     let tasks = ScriptedTasks::new(Arc::clone(&gate), None);
     let shutdown = ShutdownState::new();
@@ -234,7 +234,7 @@ fn retention_limits(max_days: Option<i64>) -> Limits {
 }
 
 #[tokio::test]
-async fn a_purge_that_outlives_the_timeout_does_not_fail_the_pass() {
+async fn a_slow_purge_that_outlives_the_timeout_does_not_fail_the_pass() {
     let tasks = ScriptedTasks::new(
         Arc::new(Semaphore::new(0)),
         Some(Duration::from_millis(200)),
@@ -256,7 +256,7 @@ async fn a_purge_that_outlives_the_timeout_does_not_fail_the_pass() {
 }
 
 #[tokio::test]
-async fn the_pass_runs_in_the_capture_order() {
+async fn the_pass_order_is_the_captures() {
     let tasks = ScriptedTasks::new(Arc::new(Semaphore::new(0)), Some(Duration::from_millis(30)));
     let worker = MaintenanceWorker::new(
         Arc::new(payments_settings()),
@@ -281,7 +281,7 @@ async fn the_pass_runs_in_the_capture_order() {
 }
 
 #[tokio::test]
-async fn the_startup_notification_is_one_enqueue_and_obeys_its_toggle() {
+async fn the_relay_restarted_notification_is_one_enqueue_and_obeys_its_toggle() {
     let outbox = testing::InMemoryOutboxRepository::new();
     let delivery_log = testing::InMemoryDeliveryLogRepository::new();
     let delivery_store: Arc<dyn NotificationDeliveryLogRepository> =

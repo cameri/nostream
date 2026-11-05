@@ -55,7 +55,15 @@ fn worker_count_follows_the_environment_then_the_settings_then_the_cpus() {
 }
 
 #[tokio::test]
-async fn a_failed_worker_is_restarted_and_a_clean_one_is_not() {
+async fn respawn_restarts_a_failed_worker_and_not_a_clean_one() {
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(buffer.clone())
+        .with_max_level(tracing::Level::WARN)
+        .with_ansi(false)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+
     let shutdown = ShutdownState::new();
     let runs = Arc::new(AtomicUsize::new(0));
     let clean_runs = Arc::new(AtomicUsize::new(0));
@@ -119,6 +127,23 @@ async fn a_failed_worker_is_restarted_and_a_clean_one_is_not() {
         clean_runs.load(Ordering::SeqCst),
         1,
         "a worker that returned Ok is not restarted"
+    );
+
+    let logs = String::from_utf8(
+        buffer
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone(),
+    )
+    .unwrap_or_default();
+    assert!(
+        logs.contains("worker failed; restarting after the restart delay"),
+        "the restart is logged, got: {logs}"
+    );
+    assert!(
+        logs.contains("worker=\"failing\"") && logs.contains("attempt=1"),
+        "the log names the worker and the attempt, got: {logs}"
     );
 }
 
@@ -207,7 +232,7 @@ async fn the_drain_deadline_aborts_a_worker_that_ignores_it() {
 }
 
 #[tokio::test]
-async fn a_cooperating_worker_returns_before_the_deadline() {
+async fn the_drain_returns_as_soon_as_a_cooperating_worker_ends() {
     let shutdown = ShutdownState::new();
     let mut supervisor =
         Supervisor::new(shutdown.clone()).with_drain_deadline(Duration::from_secs(5));
@@ -254,7 +279,7 @@ fn the_drain_deadline_is_the_websocket_timeout_plus_five_seconds() {
 }
 
 #[test]
-fn dvm_workers_register_one_spec_each() {
+fn register_one_spec_per_dvm_worker() {
     let mut settings = testing::settings();
 
     settings.dvm = Some(Dvm {

@@ -94,7 +94,7 @@ fn report_event() -> Event {
 }
 
 #[tokio::test]
-async fn a_report_lookup_answers_like_the_unavailable_graph_and_logs_one_rebuild_error() {
+async fn a_wot_report_lookup_answers_like_the_unavailable_graph_and_logs_one_rebuild_error() {
     let buffer = Buffer::default();
     let subscriber = tracing_subscriber::fmt()
         .with_writer(buffer.clone())
@@ -210,7 +210,7 @@ fn run_daemon(config_dir: &Path) -> (Option<i32>, String, String) {
 }
 
 #[test]
-fn the_daemon_serves_with_the_graph_enabled() {
+fn the_daemon_serves_with_the_wot_graph_enabled() {
     let directory = tempfile::tempdir().expect("tempdir");
     fs::write(
         directory.path().join("settings.yaml"),

@@ -351,7 +351,7 @@ fn fixture_with_only_whitelisted(payer: &nostream_core::Pubkey) -> Fixture {
 }
 
 #[tokio::test]
-async fn the_update_notification_carries_the_capture_content_and_expiration() {
+async fn the_update_notifications_carry_the_capture_content_and_expiration() {
     let fixture = build(payments_settings(Vec::new()), true);
     let mut receiver = fixture.hub.subscribe();
 
@@ -427,7 +427,7 @@ fn local_next_month_midnight(now_secs: i64) -> i64 {
 }
 
 #[tokio::test]
-async fn the_renewal_notification_uses_amount_requested_and_the_invoice_expiry() {
+async fn the_renewal_notifications_use_amount_requested_and_the_invoice_expiry() {
     let fixture = build(payments_settings(Vec::new()), true);
     let mut stale = invoice(InvoiceUnit::Sats, None);
     stale.amount_requested = 21;

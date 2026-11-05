@@ -30,7 +30,7 @@ fn envelope() -> NotificationEnvelope {
 }
 
 #[tokio::test]
-async fn the_http_channel_sends_the_envelope_and_signs_it_with_the_secret() {
+async fn the_http_channel_sends_the_envelope_and_its_signature_is_the_hmac_of_the_body() {
     let http = testing::RecordingHttpClient::new();
     let mut target = testing::target(
         "ops",
@@ -232,4 +232,37 @@ fn target_config_validation_mirrors_the_admin_api_and_masks_the_log() {
         "Slack:ops"
     );
     assert_eq!(DISCORD_DATA_LIMIT, 1_800);
+}
+
+#[tokio::test]
+async fn each_channel_names_the_field_it_is_missing() {
+    let http = testing::RecordingHttpClient::new();
+
+    for (target_type, expected) in [
+        (
+            OperatorNotificationChannelType::Http,
+            "HTTP notification target requires url",
+        ),
+        (
+            OperatorNotificationChannelType::Discord,
+            "Discord notification target requires webhook url",
+        ),
+        (
+            OperatorNotificationChannelType::Slack,
+            "Slack notification target requires webhook url",
+        ),
+        (
+            OperatorNotificationChannelType::Telegram,
+            "Telegram notification target requires botToken and chatId",
+        ),
+    ] {
+        let target = testing::target("ops", target_type, None);
+        let error = deliver_to_target(&target, &envelope(), &*http)
+            .await
+            .expect_err("a missing field is refused before any request");
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    assert!(http.calls().is_empty(), "a refused target sends nothing");
 }
