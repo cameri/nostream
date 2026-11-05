@@ -29,6 +29,14 @@ class SetupCancelledError extends Error {
   }
 }
 
+const stripQuotes = (value: string): string => {
+  const trimmed = value.trim()
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1).trim()
+  }
+  return trimmed
+}
+
 const readEnvSecret = (content: string): string | undefined => {
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim()
@@ -37,21 +45,21 @@ const readEnvSecret = (content: string): string | undefined => {
     }
 
     const [rawValue] = trimmed.slice('SECRET='.length).split('#', 1)
-    return rawValue.trim()
+    return stripQuotes(rawValue)
   }
 
   return undefined
 }
 
 const needsSecretReplacement = (secret: string | undefined): boolean => {
-  const trimmed = secret?.trim()
-  return !trimmed || trimmed === SECRET_PLACEHOLDER
+  const unquoted = secret ? stripQuotes(secret) : undefined
+  return !unquoted || unquoted === SECRET_PLACEHOLDER
 }
 
 const resolveSecret = async (assumeYes: boolean): Promise<string> => {
   const inheritedSecret = process.env.SECRET?.trim()
   if (inheritedSecret && !needsSecretReplacement(inheritedSecret)) {
-    return inheritedSecret
+    return stripQuotes(inheritedSecret)
   }
 
   if (!assumeYes && process.stdin.isTTY) {
@@ -59,12 +67,18 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
       message: 'SECRET env var value (hex recommended)',
       placeholder: 'openssl rand -hex 128',
       validate: (input) => {
-        const trimmed = input.trim()
+        const trimmed = stripQuotes(input)
         if (!trimmed) {
           return 'SECRET is required'
         }
         if (needsSecretReplacement(trimmed)) {
           return 'SECRET cannot be the default placeholder'
+        }
+        if (input.includes('#')) {
+          return 'SECRET cannot contain "#"'
+        }
+        if (/[\r\n]/.test(input)) {
+          return 'SECRET cannot contain newlines'
         }
         return undefined
       },
@@ -133,7 +147,11 @@ const ensureEnvFile = async (assumeYes: boolean): Promise<boolean> => {
 
   const current = fs.readFileSync(envPath, 'utf-8')
 
-  if (!needsSecretReplacement(readEnvSecret(current))) {
+  const envFileSecret = readEnvSecret(current)
+  if (!needsSecretReplacement(envFileSecret)) {
+    if (envFileSecret) {
+      process.env.SECRET = envFileSecret
+    }
     return true
   }
 
