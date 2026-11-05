@@ -200,6 +200,13 @@ impl Relay {
         })
     }
 
+    /// The process-wide event fan-out. A service that publishes an event (an invoice
+    /// notification, a DVM result) sends it here so live subscriptions receive it exactly as
+    /// they receive a handler's own broadcast.
+    pub fn hub(&self) -> broadcast::Sender<Arc<Event>> {
+        self.hub.clone()
+    }
+
     /// The hidden-content mirror. The parity harness reads it to wait for the boot refresh
     /// that seeds it; nothing else in the workspace calls this.
     pub fn hidden_content(&self) -> &Arc<HiddenContentCache> {

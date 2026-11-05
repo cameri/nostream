@@ -12,4 +12,8 @@ pub enum CliError {
     /// A config file or path could not be read.
     #[error("{0}")]
     Config(String),
+
+    /// The import could not run: a bad argument, a missing file or a storage failure.
+    #[error("{0}")]
+    Import(String),
 }

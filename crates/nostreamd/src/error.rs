@@ -16,4 +16,9 @@ pub enum DaemonError {
     /// Settings failed validation; the daemon refuses to start.
     #[error("settings invalid: {count} issues")]
     InvalidSettings { count: usize },
+
+    /// Payments are enabled and `SECRET` is unset, empty or the shipped placeholder
+    /// (`src/app/app.ts:86-94`). The message is the capture's.
+    #[error("Please configure the secret using the SECRET environment variable.")]
+    MissingSecret,
 }

@@ -28,8 +28,13 @@ enum Command {
     Dev,
     /// Export events to a file.
     Export,
-    /// Import events from a file.
-    Import,
+    /// Import events from a .jsonl or .json file.
+    #[command(disable_help_flag = true)]
+    Import {
+        /// The command's own arguments, parsed by the command (see its help).
+        #[arg(value_name = "ARGS", trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Print the relay's NIP-11 info.
     Info,
     /// Mint and manage invite codes.
@@ -88,7 +93,7 @@ fn main() -> ExitCode {
         },
         Command::Dev => commands::dev::run().map(|_| CommandOutput::default()),
         Command::Export => commands::export::run().map(|_| CommandOutput::default()),
-        Command::Import => commands::import::run().map(|_| CommandOutput::default()),
+        Command::Import { args } => commands::import::run(&args, &cwd),
         Command::Info => commands::info::run().map(|_| CommandOutput::default()),
         Command::Invite => commands::invite::run().map(|_| CommandOutput::default()),
         Command::Seed => commands::seed::run().map(|_| CommandOutput::default()),
@@ -112,6 +117,10 @@ fn main() -> ExitCode {
         }
         Err(CliError::Config(message)) => {
             eprintln!("{message}");
+            ExitCode::from(1)
+        }
+        Err(CliError::Import(message)) => {
+            eprintln!("Import failed: {message}");
             ExitCode::from(1)
         }
     }

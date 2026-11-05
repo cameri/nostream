@@ -6,12 +6,17 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use clap::Parser;
 use nostream_config::SettingsPaths;
 use nostream_core::clock::SystemClock;
 use nostream_core::lifecycle::ShutdownState;
-use nostream_relay::{Relay, relay::RelayConfig, relay_key::RelayKeySource, unavailable};
+use nostream_core::nip05::Nip05Fetch;
+use nostream_core::random::SystemRandom;
+use nostream_relay::{Relay, relay::RelayConfig, relay_key::RelayKeySource};
+use nostream_services::services::wot_graph_service::WotGraphService;
+use nostream_services::{HttpClient, ReqwestClient, ServiceContext};
 use nostreamd::{DaemonError, settings_gate, telemetry};
 
 #[derive(Debug, Parser)]
@@ -68,8 +73,16 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
         return Ok(ExitCode::SUCCESS);
     }
 
+    let settings = outcome.settings;
+
+    // R9: payments cannot be enabled without a usable SECRET. This is the capture's one
+    // startup refusal (`src/app/app.ts:86-94`) and it exits 1, not `InvalidSettings`' 2.
+    if payments_enabled(&settings) && secret_missing() {
+        return Err(DaemonError::MissingSecret);
+    }
+
     telemetry::init(
-        &outcome.settings,
+        &settings,
         telemetry::resolve_filter(cli.log_level.as_deref()),
     )
     .map_err(|error| DaemonError::Setup(error.to_string()))?;
@@ -88,23 +101,52 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
         })
         .unwrap_or(8008u16);
     let listen = SocketAddr::from((Ipv4Addr::UNSPECIFIED, port));
+    let config_dir = paths.config_base_dir;
+
+    // R4: `WORKER_COUNT`, then `workers.count`, then the CPU count.
+    let worker_threads = nostream_services::scheduler::resolve_worker_count(
+        std::env::var("WORKER_COUNT").ok().as_deref(),
+        settings.workers.as_ref().map(|workers| workers.count).unwrap_or(0),
+    );
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
         .enable_all()
         .build()
         .map_err(|error| DaemonError::Setup(format!("tokio runtime: {error}")))?;
 
-    let settings = outcome.settings;
+    runtime.block_on(async move { serve(listen, settings, config_dir, port).await })
+}
 
-    runtime.block_on(async move { serve(listen, settings).await })
+fn payments_enabled(settings: &nostream_config::Settings) -> bool {
+    settings
+        .payments
+        .as_ref()
+        .is_some_and(|payments| payments.enabled)
+}
+
+fn secret_missing() -> bool {
+    match std::env::var("SECRET") {
+        Ok(secret) if !secret.is_empty() && secret != "changeme" => false,
+        _ => true,
+    }
 }
 
 async fn serve(
     listen: SocketAddr,
     settings: nostream_config::Settings,
+    config_dir: PathBuf,
+    port: u16,
 ) -> Result<ExitCode, DaemonError> {
     let acceptor = nostreamd::Acceptor::bind(listen).await?;
     let shutdown = ShutdownState::new();
+
+    let settings = Arc::new(settings);
+
+    // R3: the backend is resolved once, logged, and shared by every worker.
+    let backend = nostream_storage::event_store::resolved_backend(&settings, false)
+        .map_err(|error| DaemonError::Setup(format!("event store backend: {error}")))?;
+    tracing::info!(backend = ?backend, "event store backend resolved");
 
     // The two bounds are the operator's; `from_settings` is where they are read.
     let mut relay_config = RelayConfig::from_settings(&settings);
@@ -113,23 +155,65 @@ async fn serve(
 
     // The storage backend is not wired yet (the LMDB environment is a stub), so the relay
     // runs over seams that report `NotImplemented`; the wire itself is served in full.
+    let service_stores = Arc::new(nostream_services::unavailable::stores());
+    let wot: Arc<dyn nostream_relay::wot::WotGraph> = Arc::new(WotGraphService::new(
+        Arc::clone(&settings),
+        Arc::clone(&service_stores.events),
+    ));
+    let relay_keys = RelayKeySource::from_env();
+
     let relay = Relay::new(
-        settings,
-        std::sync::Arc::new(unavailable::stores()),
-        // No web-of-trust graph is wired yet (#866): the capture's disabled-graph branch.
-        std::sync::Arc::new(unavailable::UnavailableWotGraph),
-        std::sync::Arc::new(SystemClock),
-        RelayKeySource::from_env(),
-        std::sync::Arc::new(nostream_core::random::SystemRandom),
+        (*settings).clone(),
+        Arc::new(nostream_relay::unavailable::stores()),
+        wot,
+        Arc::new(SystemClock),
+        relay_keys.clone(),
+        Arc::new(SystemRandom),
         relay_config,
     );
+
+    let client = Arc::new(ReqwestClient::new());
+    let http: Arc<dyn HttpClient> = client.clone();
+    let fetch: Arc<dyn Nip05Fetch> = client;
+    let context = ServiceContext {
+        settings: Arc::clone(&settings),
+        clock: Arc::new(SystemClock),
+        random: Arc::new(SystemRandom),
+        keys: Arc::new(relay_keys),
+        stores: Arc::clone(&service_stores),
+        hub: relay.hub(),
+        http,
+        fetch,
+        config_dir,
+    };
+
+    // R8: one `relay.restarted` row per process. A failure is logged, never fatal.
+    let payload = serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "relayPort": port,
+    });
+    if let Err(error) = context
+        .stores
+        .notification_outbox
+        .enqueue("relay.restarted", &payload)
+        .await
+    {
+        tracing::warn!(error = %error, "unable to enqueue the relay.restarted notification");
+    }
 
     tracing::info!(at = %acceptor.local_addr(), "the acceptor is listening");
 
     let connection_shutdown = shutdown.clone();
     let accept_task = tokio::spawn(acceptor.run(relay, connection_shutdown));
-    let workers_task = tokio::spawn(async { nostreamd::workers::spawn_workers().await });
-    let tor_task = tokio::spawn(async { nostreamd::workers::spawn_tor().await });
+
+    let workers_context = context.clone();
+    let workers_shutdown = shutdown.clone();
+    let workers_task = tokio::spawn(async move {
+        nostreamd::workers::spawn_workers(workers_context, workers_shutdown).await
+    });
+
+    let tor_context = context.clone();
+    let tor_task = tokio::spawn(async move { nostreamd::workers::spawn_tor(tor_context, port).await });
 
     wait_for_signal().await;
     tracing::info!("signal received; draining");
