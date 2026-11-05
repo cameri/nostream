@@ -21,6 +21,7 @@ pub struct ZebedeeProcessor {
     http: Arc<dyn HttpClient>,
     base_url: String,
     callback_base_url: String,
+    headers: Vec<(String, String)>,
 }
 
 impl ZebedeeProcessor {
@@ -50,16 +51,17 @@ impl ZebedeeProcessor {
             ));
         }
 
-        if env("ZEBEDEE_API_KEY").is_none() {
+        let Some(api_key) = env("ZEBEDEE_API_KEY") else {
             return Err(ServicesError::Configuration(
                 "ZEBEDEE_API_KEY must be set.".to_owned(),
             ));
-        }
+        };
 
         Ok(Box::new(Self {
             http,
             base_url: zebedee.base_url.clone(),
             callback_base_url: zebedee.callback_base_url.clone(),
+            headers: vec![("apikey".to_owned(), api_key)],
         }))
     }
 }
@@ -104,7 +106,14 @@ impl PaymentProcessor for ZebedeeProcessor {
                 "internalId": request_id,
                 "callbackUrl": self.callback_base_url,
             });
-            let response = post_json(self.http.as_ref(), &url, &body, REQUEST_TIMEOUT).await?;
+            let response = post_json(
+                self.http.as_ref(),
+                &url,
+                &self.headers,
+                &body,
+                REQUEST_TIMEOUT,
+            )
+            .await?;
             let document = parse_json(&response)?;
 
             from_zebedee_invoice(
@@ -118,7 +127,7 @@ impl PaymentProcessor for ZebedeeProcessor {
     fn get_invoice<'a>(&'a self, invoice: &'a Invoice) -> ProcessorFuture<'a, InvoiceUpdate> {
         Box::pin(async move {
             let url = join_url(&self.base_url, &format!("/v0/charges/{}", invoice.id));
-            let response = self.http.get(&url, REQUEST_TIMEOUT).await?;
+            let response = self.http.get(&url, &self.headers, REQUEST_TIMEOUT).await?;
             let document = parse_json(&response)?;
             let decoded = from_zebedee_invoice(
                 document

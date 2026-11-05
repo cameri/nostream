@@ -62,7 +62,7 @@ impl PaymentProcessor for LnurlProcessor {
                 "{}/callback?amount={amount_msats}&comment={description}",
                 self.invoice_url.trim_end_matches('/')
             );
-            let response = self.http.get(&url, REQUEST_TIMEOUT).await?;
+            let response = self.http.get(&url, &[], REQUEST_TIMEOUT).await?;
             let document = parse_json(&response)?;
 
             Ok(ProcessorInvoice {
@@ -86,7 +86,7 @@ impl PaymentProcessor for LnurlProcessor {
             let url = invoice.verify_url.as_deref().ok_or_else(|| {
                 ServicesError::Payment(format!("invoice {} has no verify url", invoice.id))
             })?;
-            let response = self.http.get(url, REQUEST_TIMEOUT).await?;
+            let response = self.http.get(url, &[], REQUEST_TIMEOUT).await?;
             let document = parse_json(&response)?;
             let settled = document
                 .get("settled")

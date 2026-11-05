@@ -22,6 +22,7 @@ pub struct OpennodeProcessor {
     http: Arc<dyn HttpClient>,
     base_url: String,
     callback_base_url: String,
+    headers: Vec<(String, String)>,
 }
 
 impl OpennodeProcessor {
@@ -45,16 +46,17 @@ impl OpennodeProcessor {
             ));
         }
 
-        if env("OPENNODE_API_KEY").is_none() {
+        let Some(api_key) = env("OPENNODE_API_KEY") else {
             return Err(ServicesError::Configuration(
                 "OPENNODE_API_KEY must be set.".to_owned(),
             ));
-        }
+        };
 
         Ok(Box::new(Self {
             http,
             base_url: opennode.base_url.clone(),
             callback_base_url: opennode.callback_base_url.clone(),
+            headers: vec![("authorization".to_owned(), api_key)],
         }))
     }
 }
@@ -144,7 +146,14 @@ impl PaymentProcessor for OpennodeProcessor {
                 "callback_url": self.callback_base_url,
                 "ttl": 10,
             });
-            let response = post_json(self.http.as_ref(), &url, &body, REQUEST_TIMEOUT).await?;
+            let response = post_json(
+                self.http.as_ref(),
+                &url,
+                &self.headers,
+                &body,
+                REQUEST_TIMEOUT,
+            )
+            .await?;
             let document = parse_json(&response)?;
 
             from_opennode_invoice(
@@ -158,7 +167,7 @@ impl PaymentProcessor for OpennodeProcessor {
     fn get_invoice<'a>(&'a self, invoice: &'a Invoice) -> ProcessorFuture<'a, InvoiceUpdate> {
         Box::pin(async move {
             let url = join_url(&self.base_url, &format!("/v2/charge/{}", invoice.id));
-            let response = self.http.get(&url, REQUEST_TIMEOUT).await?;
+            let response = self.http.get(&url, &self.headers, REQUEST_TIMEOUT).await?;
             let document = parse_json(&response)?;
             let decoded = from_opennode_invoice(
                 document

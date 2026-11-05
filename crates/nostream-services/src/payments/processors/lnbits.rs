@@ -25,6 +25,7 @@ pub struct LnbitsProcessor {
     base_url: String,
     callback_base_url: String,
     secret: Option<String>,
+    headers: Vec<(String, String)>,
 }
 
 impl LnbitsProcessor {
@@ -48,17 +49,18 @@ impl LnbitsProcessor {
             ));
         }
 
-        if env("LNBITS_API_KEY").is_none() {
+        let Some(api_key) = env("LNBITS_API_KEY") else {
             return Err(ServicesError::Configuration(
                 "LNBITS_API_KEY must be set to an invoice or admin key.".to_owned(),
             ));
-        }
+        };
 
         Ok(Box::new(Self {
             http,
             base_url: lnbits.base_url.clone(),
             callback_base_url: lnbits.callback_base_url.clone(),
             secret: env("SECRET"),
+            headers: vec![("x-api-key".to_owned(), api_key)],
         }))
     }
 
@@ -145,13 +147,20 @@ impl PaymentProcessor for LnbitsProcessor {
                 "webhook": webhook,
             });
 
-            let response = post_json(self.http.as_ref(), &url, &body, REQUEST_TIMEOUT).await?;
+            let response = post_json(
+                self.http.as_ref(),
+                &url,
+                &self.headers,
+                &body,
+                REQUEST_TIMEOUT,
+            )
+            .await?;
             let created = parse_json(&response)?;
             let payment_hash = text_field(&created, "payment_hash")
                 .ok_or_else(|| ServicesError::Payment("response has no payment_hash".to_owned()))?;
 
             let url = join_url(&self.base_url, &format!("/api/v1/payments/{payment_hash}"));
-            let response = self.http.get(&url, REQUEST_TIMEOUT).await?;
+            let response = self.http.get(&url, &self.headers, REQUEST_TIMEOUT).await?;
             let document = parse_json(&response)?;
             let details = document
                 .get("details")
@@ -171,7 +180,7 @@ impl PaymentProcessor for LnbitsProcessor {
     fn get_invoice<'a>(&'a self, invoice: &'a Invoice) -> ProcessorFuture<'a, InvoiceUpdate> {
         Box::pin(async move {
             let url = join_url(&self.base_url, &format!("/api/v1/payments/{}", invoice.id));
-            let response = self.http.get(&url, REQUEST_TIMEOUT).await?;
+            let response = self.http.get(&url, &self.headers, REQUEST_TIMEOUT).await?;
             let document = parse_json(&response)?;
             let details = document
                 .get("details")

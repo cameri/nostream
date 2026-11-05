@@ -63,6 +63,14 @@ fn env(pairs: &[(&str, &str)]) -> HashMap<String, String> {
         .collect()
 }
 
+/// The value a recorded call sent for `name`, when it sent one.
+fn header<'a>(call: &'a testing::HttpCall, name: &str) -> Option<&'a str> {
+    call.headers
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.as_str())
+}
+
 fn zebedee_settings() -> PaymentsProcessors {
     PaymentsProcessors {
         zebedee: Some(ZebedeePaymentsProcessor {
@@ -282,6 +290,11 @@ async fn zebedee_creates_and_decodes_its_invoice() {
         body["callbackUrl"],
         serde_json::json!("https://relay.example.com/callbacks/zebedee")
     );
+    assert_eq!(
+        header(&call, "apikey"),
+        Some("key"),
+        "the create is authenticated"
+    );
     assert_eq!(created.id, "charge-1");
     assert_eq!(created.pubkey.as_deref(), Some("requester"));
     assert_eq!(created.bolt11, "lnbc1");
@@ -298,6 +311,12 @@ async fn zebedee_creates_and_decodes_its_invoice() {
         .get_invoice(&invoice("charge-1"))
         .await
         .expect("lookup");
+    let lookup = http.last_call().expect("a call");
+    assert_eq!(
+        header(&lookup, "apikey"),
+        Some("key"),
+        "the lookup is authenticated"
+    );
     assert_eq!(update.id.as_deref(), Some("charge-1"));
     assert_eq!(update.amount_requested, Some(2_000));
     assert_eq!(update.status, Some(InvoiceStatus::Completed));
@@ -388,10 +407,20 @@ async fn lnbits_sends_sats_and_an_hmac_then_decodes_both_timestamp_shapes() {
         .expect("created");
     let call = http.last_call().expect("a call");
     assert_eq!(call.url, "https://lnbits.example.com/api/v1/payments/ph1");
+    assert_eq!(
+        header(&call, "x-api-key"),
+        Some("key"),
+        "the lookup is authenticated"
+    );
     let _ = call;
 
     let first = http.calls().into_iter().next().expect("the POST");
     assert_eq!(first.url, "https://lnbits.example.com/api/v1/payments");
+    assert_eq!(
+        header(&first, "x-api-key"),
+        Some("key"),
+        "the create is authenticated"
+    );
     let body: serde_json::Value =
         serde_json::from_str(first.body.as_deref().expect("body")).expect("json");
     assert_eq!(body["amount"], serde_json::json!(1), "1500 msats is 1 sat");
@@ -468,6 +497,8 @@ async fn nodeless_maps_every_status_and_defaults_its_expiry() {
         first.url,
         "https://api.nodeless.io/api/v1/store/store-1/invoice"
     );
+    assert_eq!(header(&first, "authorization"), Some("Bearer key"));
+    assert_eq!(header(&first, "accept"), Some("application/json"));
     let body: serde_json::Value =
         serde_json::from_str(first.body.as_deref().expect("body")).expect("json");
     assert_eq!(body["currency"], serde_json::json!("SATS"));
@@ -502,6 +533,9 @@ async fn nodeless_maps_every_status_and_defaults_its_expiry() {
             .expect("lookup");
         assert_eq!(update.status, Some(expected), "provider status {provider}");
     }
+
+    let lookup = http.last_call().expect("a call");
+    assert_eq!(header(&lookup, "authorization"), Some("Bearer key"));
 }
 
 #[tokio::test]
@@ -524,6 +558,11 @@ async fn opennode_maps_every_status_and_both_payreq_shapes() {
         .expect("created");
     let first = http.calls().into_iter().next().expect("the POST");
     assert_eq!(first.url, "https://api.opennode.com/v1/charges");
+    assert_eq!(
+        header(&first, "authorization"),
+        Some("key"),
+        "the create is authenticated"
+    );
     let body: serde_json::Value =
         serde_json::from_str(first.body.as_deref().expect("body")).expect("json");
     assert_eq!(body["ttl"], serde_json::json!(10));
@@ -566,6 +605,12 @@ async fn opennode_maps_every_status_and_both_payreq_shapes() {
         update.amount_requested,
         Some(3),
         "the amount falls back to price"
+    );
+    let lookup = http.last_call().expect("a call");
+    assert_eq!(
+        header(&lookup, "authorization"),
+        Some("key"),
+        "the lookup is authenticated"
     );
 }
 

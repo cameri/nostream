@@ -27,6 +27,7 @@ pub struct NodelessProcessor {
     http: Arc<dyn HttpClient>,
     base_url: String,
     store_id: String,
+    headers: Vec<(String, String)>,
 }
 
 impl NodelessProcessor {
@@ -35,11 +36,11 @@ impl NodelessProcessor {
         http: Arc<dyn HttpClient>,
         env: &Env<'_>,
     ) -> Result<Box<dyn PaymentProcessor>, ServicesError> {
-        if env("NODELESS_API_KEY").is_none() {
+        let Some(api_key) = env("NODELESS_API_KEY") else {
             return Err(ServicesError::Configuration(
                 "NODELESS_API_KEY must be set.".to_owned(),
             ));
-        }
+        };
 
         let nodeless = configured
             .and_then(|configured| configured.nodeless.as_ref())
@@ -53,6 +54,10 @@ impl NodelessProcessor {
             http,
             base_url: nodeless.base_url.clone(),
             store_id: nodeless.store_id.clone(),
+            headers: vec![
+                ("authorization".to_owned(), format!("Bearer {api_key}")),
+                ("accept".to_owned(), "application/json".to_owned()),
+            ],
         }))
     }
 }
@@ -123,7 +128,14 @@ impl PaymentProcessor for NodelessProcessor {
                     "createdAt": now().to_rfc3339(),
                 },
             });
-            let response = post_json(self.http.as_ref(), &url, &body, REQUEST_TIMEOUT).await?;
+            let response = post_json(
+                self.http.as_ref(),
+                &url,
+                &self.headers,
+                &body,
+                REQUEST_TIMEOUT,
+            )
+            .await?;
             let document = parse_json(&response)?;
 
             from_nodeless_invoice(
@@ -140,7 +152,7 @@ impl PaymentProcessor for NodelessProcessor {
                 &self.base_url,
                 &format!("/api/v1/store/{}/invoice/{}", self.store_id, invoice.id),
             );
-            let response = self.http.get(&url, REQUEST_TIMEOUT).await?;
+            let response = self.http.get(&url, &self.headers, REQUEST_TIMEOUT).await?;
             let document = parse_json(&response)?;
             let decoded = from_nodeless_invoice(
                 document

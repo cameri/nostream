@@ -191,12 +191,17 @@ impl RecordingHttpClient {
 }
 
 impl HttpClient for RecordingHttpClient {
-    fn get<'a>(&'a self, url: &'a str, timeout: Duration) -> HttpFuture<'a> {
+    fn get<'a>(
+        &'a self,
+        url: &'a str,
+        headers: &'a [(String, String)],
+        timeout: Duration,
+    ) -> HttpFuture<'a> {
         Box::pin(async move {
             self.next(HttpCall {
                 method: "GET",
                 url: url.to_owned(),
-                headers: Vec::new(),
+                headers: headers.to_vec(),
                 body: None,
                 timeout,
             })
@@ -516,10 +521,18 @@ impl EventRepository for InMemoryEventRepository {
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
 
-            let selected: Vec<EventRecord> = records
+            let mut selected: Vec<EventRecord> = records
                 .into_iter()
                 .filter(|record| filters.iter().any(|filter| matches_filter(record, filter)))
                 .collect();
+
+            // The repository orders newest first and honours the filter's limit; the wot
+            // graph reads exactly one kind-3 event per author and takes the newest.
+            selected.sort_by_key(|record| std::cmp::Reverse(record.event.created_at));
+
+            if let Some(limit) = filters.iter().filter_map(|filter| filter.limit).max() {
+                selected.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+            }
 
             let stream: QueryStream<'a, EventRecord> =
                 Box::pin(stream::iter(selected.into_iter().map(Ok)));
