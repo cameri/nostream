@@ -195,6 +195,15 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | limits.client.subscription.maxFilters       | Maximum number of filters per subscription. Defaults to 10. Disabled when set to zero. |
 | limits.message.rateLimits[].period | Rate limiting period in milliseconds. For `sliding_window`: the time window. For `ewma`: the half-life of the decay function. |
 | limits.message.rateLimits[].rate            | Maximum number of messages during period. |
+| limits.peer.message.rateLimits[].period     | Rate limit period in milliseconds for authenticated peering peers. Separate from `limits.message`, so a peer feed never spends client message budget. |
+| limits.peer.message.rateLimits[].rate       | Maximum peer messages during period. Defaults to 6000/min. |
+| limits.peer.request.rateLimits[].period     | Rate limit period in milliseconds for on-demand peer `REQ`, `COUNT`, and `NEG-OPEN` requests. Counted per peer pubkey. |
+| limits.peer.request.rateLimits[].rate       | Maximum on-demand peer requests during period. Defaults to 300/min. |
+| limits.peer.subscription.maxFilters         | Maximum number of filters per peer subscription. Defaults to 100. Disabled when set to zero. |
+| limits.peer.subscription.maxFilterValues    | Maximum number of values allowed in each peer filter. Defaults to 10000. Disabled when set to zero. |
+| limits.peer.subscription.maxLimit           | Maximum REQ `limit` for peers. Defaults to 0 (no cap), so a peer can request a full feed. |
+| limits.peer.subscription.maxSubscriptionIdLength | Maximum peer subscription id length. Defaults to 256. |
+| limits.peer.subscription.maxSubscriptions   | Maximum number of subscriptions per authenticated peer. Defaults to 100. Disabled when set to zero. |
 | mirroring.static                            | Removed: the static mirroring worker no longer exists, so this setting is ignored and logs a warning at start-up. To sync events with another relay, use NIP-77 (Negentropy) from a client that speaks it, for example `strfry sync`, against a relay with `nip77.enabled` set. |
 | network.maxPayloadSize                      | Maximum number of bytes accepted per WebSocket frame |
 | network.remoteIpHeader                      | HTTP header from proxy containing IP address from client. |
@@ -341,3 +350,10 @@ terms, or contact details are exposed.
 only when a NIP-42 AUTH event proves one of those pubkeys; matching a URL or
 self-declaring a key is not enough. The relay's own identity, key storage, and
 the AUTH exchange are documented in [docs/PEERING.md](docs/PEERING.md).
+
+Each enabled `peering.peers` entry is also the outbound sync list: a single
+peering-sync worker reads that peer's NIP-11 `peering.scopes`, authenticates
+with NIP-42, reconciles history over NIP-77, and keeps a live subscription to
+those scopes. No extra feed configuration is required. Per-peer sync state is
+available at `GET /admin/peering` and in the admin console's Operations view.
+The peer must advertise NIP-77 and have it enabled.

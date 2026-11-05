@@ -28,6 +28,7 @@ import { getRemoteAddress } from '../utils/http'
 import { createReadAuthorizationGuard } from '../utils/nip42'
 import { Nip42SessionManager } from '../utils/nip42-session'
 import { isConfiguredPeeringPeer } from '../utils/peering-auth'
+import { messageLimitsFor } from '../utils/peer-limits'
 import { IRateLimiter } from '../@types/utils'
 import { isEventMatchingFilter } from '../utils/event'
 import { isHidden } from '../utils/hidden-content-cache'
@@ -74,6 +75,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   public clientId: string
   private clientAddress: SocketAddress
   private alive: boolean
+  private pendingSend: Promise<void> | undefined
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
   private readonly session: Nip42SessionManager
   /** Configured peering peer proven by AUTH on this socket, if any. */
@@ -192,7 +194,28 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     if (this.client.readyState !== WebSocket.OPEN) {
       return
     }
-    this.client.send(JSON.stringify(message))
+
+    // `ws` does not emit `drain`; the send callback is its write-completion
+    // signal, fired once the frame has been handed to the underlying socket.
+    const pending = new Promise<void>((resolve) => {
+      this.client.send(JSON.stringify(message), () => resolve())
+    })
+    this.pendingSend = pending
+    void pending.then(() => {
+      if (this.pendingSend === pending) {
+        this.pendingSend = undefined
+      }
+    })
+  }
+
+  public waitForWritable(): Promise<void> {
+    if (this.client.readyState !== WebSocket.OPEN) {
+      return Promise.resolve()
+    }
+
+    // A full feed can outrun a slow peer; wait for the previous frame to flush
+    // instead of letting the outbound buffer grow without bound.
+    return this.pendingSend ?? Promise.resolve()
   }
 
   public onHeartbeat(): void {
@@ -342,7 +365,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
    * the wrong one to throttle.
    */
   private async isRateLimited(client: string, type: string): Promise<false | number> {
-    const { rateLimits, ipWhitelist = [] } = this.settings().limits?.message ?? {}
+    const isPeer = this.getPeerPubkey() !== undefined
+    const { rateLimits, ipWhitelist = [] } = messageLimitsFor(this.settings(), isPeer) ?? {}
 
     if (!Array.isArray(rateLimits) || !rateLimits.length || ipWhitelist.includes(client)) {
       return false
@@ -350,8 +374,11 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     const rateLimiter = this.rateLimiter()
 
+    // Peer buckets are separate so a connection that spent client budget before
+    // AUTH does not carry that score into feed treatment.
+    const bucket = isPeer ? 'peer-message' : 'message'
     const hit = (period: number, rate: number) =>
-      rateLimiter.hit(`${client}:message:${type}:${period}`, 1, { period, rate })
+      rateLimiter.hit(`${client}:${bucket}:${type}:${period}`, 1, { period, rate })
 
     for (const { rate, period } of rateLimits) {
       const result = await hit(period, rate)
@@ -390,7 +417,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     return createNoticeMessage('rate limited')
   }
 
-  private endSubscription(subscriptionId: SubscriptionId): void {
+  public endSubscription(subscriptionId: SubscriptionId): void {
     this.abortInFlightSubscriptionReads(subscriptionId)
     if (this.subscriptions.has(subscriptionId)) {
       this.onUnsubscribed(subscriptionId)

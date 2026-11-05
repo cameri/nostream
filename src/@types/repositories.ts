@@ -40,12 +40,25 @@ export interface IQueryResult<T> extends Pick<Promise<T>, keyof Promise<T> & Exp
   stream(options?: Record<string, any>): PassThrough & AsyncIterable<T>
 }
 
+export interface EventQueryOptions {
+  /**
+   * Limit applied to filters that omit `limit`. Defaults to
+   * DEFAULT_FILTER_LIMIT. `0` means no limit, used for peer full feeds.
+   */
+  defaultLimit?: number
+  /**
+   * Exclude soft-deleted and expired rows in SQL, before the limit is applied.
+   * Peer full feeds set this so dead rows cannot consume a page slot.
+   */
+  excludeDeleted?: boolean
+}
+
 export interface IEventRepository {
   create(event: Event): Promise<number>
   createMany(events: Event[]): Promise<number>
   upsert(event: Event): Promise<number>
   upsertMany(events: Event[]): Promise<number>
-  findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]>
+  findByFilters(filters: SubscriptionFilter[], options?: EventQueryOptions): IQueryResult<DBEvent[]>
   countByFilters(filters: SubscriptionFilter[], options?: { timeoutMs?: number }): Promise<number>
   findReconciliationItems(filter: SubscriptionFilter, limit?: number): IQueryResult<ReconciliationItem[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>

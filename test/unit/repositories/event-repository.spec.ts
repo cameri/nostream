@@ -51,6 +51,37 @@ describe('EventRepository', () => {
       expect(() => repository.findByFilters([])).to.throw(Error, 'Filters cannot be empty')
     })
 
+    it('omits LIMIT when defaultLimit is 0 (peer full feed)', () => {
+      const query = repository.findByFilters([{}], { defaultLimit: 0 }).toString()
+
+      expect(query).to.equal('select * from "events" order by "event_created_at" asc, "event_id" asc')
+    })
+
+    it('uses a positive defaultLimit for filters that omit one', () => {
+      const query = repository.findByFilters([{}], { defaultLimit: 1000 }).toString()
+
+      expect(query).to.equal('select * from "events" order by "event_created_at" asc, "event_id" asc limit 1000')
+    })
+
+    it('keeps an explicit filter limit over defaultLimit', () => {
+      const query = repository.findByFilters([{ limit: 25 }], { defaultLimit: 1000 }).toString()
+
+      expect(query).to.equal('select * from "events" order by "event_created_at" DESC, "event_id" asc limit 25')
+    })
+
+    it('excludes deleted and expired rows before applying the peer limit', () => {
+      sandbox.stub(Date, 'now').returns(1_700_000_000_000)
+
+      const query = repository
+        .findByFilters([{}], { defaultLimit: 100, excludeDeleted: true })
+        .toString()
+
+      expect(query).to.include('"deleted_at" is null')
+      expect(query).to.include('"expires_at" is null')
+      expect(query).to.include('"expires_at" > 1700000000')
+      expect(query).to.include('limit 100')
+    })
+
     describe('1 filter', () => {
       it('selects all events', () => {
         const filters = [{}]

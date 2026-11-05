@@ -1,16 +1,20 @@
 import { equals, uniqWith } from 'ramda'
 
 import { IWebSocketAdapter } from '../@types/adapters'
+import { Factory } from '../@types/base'
 import { IMessageHandler } from '../@types/message-handlers'
 import { CountMessage } from '../@types/messages'
 import { IEventRepository } from '../@types/repositories'
 import { Settings } from '../@types/settings'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
+import { IRateLimiter } from '../@types/utils'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 import { createLogger } from '../factories/logger-factory'
 import { countFilterValues } from '../utils/filter'
 import { createClosedMessage, createCountResultMessage } from '../utils/messages'
 import { isCountAuthorized } from '../utils/nip42'
+import { subscriptionLimitsFor } from '../utils/peer-limits'
+import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
 
 const debug = createLogger('count-message-handler')
 
@@ -19,19 +23,49 @@ export class CountMessageHandler implements IMessageHandler {
     private readonly webSocket: IWebSocketAdapter,
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
+    private readonly rateLimiter?: Factory<IRateLimiter>,
   ) {}
 
   public async handleMessage(message: CountMessage): Promise<void> {
     const queryId = message[1]
     const countEnabled = this.settings().nip45?.enabled ?? true
     if (!countEnabled) {
-      this.webSocket.emit(WebSocketAdapterEvent.Message, createClosedMessage(queryId, 'COUNT is disabled by relay configuration'))
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createClosedMessage(queryId, 'COUNT is disabled by relay configuration'),
+      )
       return
     }
 
-    // Some clients send the same filter more than once.
-    // We remove duplicates so we do less DB work.
-    const filters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
+    const peerPubkey = this.webSocket.getPeerPubkey()
+    if (peerPubkey && this.rateLimiter) {
+      const retryAfterMs = await getPeerRequestRetryAfterMs(this.rateLimiter, this.settings(), peerPubkey, 'COUNT')
+      if (retryAfterMs !== undefined) {
+        this.webSocket.emit(
+          WebSocketAdapterEvent.Message,
+          createClosedMessage(queryId, 'rate-limited: peer request limit exceeded', String(retryAfterMs)),
+        )
+        return
+      }
+    }
+
+    // Some clients send the same filter more than once. Bound the raw list
+    // before deduplicating it, since uniqWith() is O(n^2) and the schema no
+    // longer caps filter counts so peer limits can be larger.
+    const incomingFilters = message.slice(2) as SubscriptionFilter[]
+    const maxFilters = subscriptionLimitsFor(this.settings(), peerPubkey !== undefined)?.maxFilters ?? 0
+    if (maxFilters > 0 && incomingFilters.length > maxFilters) {
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createClosedMessage(
+          queryId,
+          `Too many filters: Number of filters per count query must be less than or equal to ${maxFilters}`,
+        ),
+      )
+      return
+    }
+
+    const filters = uniqWith(equals, incomingFilters) as SubscriptionFilter[]
 
     const reason = this.canCount(queryId, filters)
     if (reason) {
@@ -52,7 +86,7 @@ export class CountMessageHandler implements IMessageHandler {
   }
 
   private canCount(queryId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
-    const subscriptionLimits = this.settings().limits?.client?.subscription
+    const subscriptionLimits = subscriptionLimitsFor(this.settings(), this.webSocket.getPeerPubkey() !== undefined)
     const maxFilters = subscriptionLimits?.maxFilters ?? 0
 
     if (maxFilters > 0 && filters.length > maxFilters) {

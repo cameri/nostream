@@ -25,6 +25,7 @@ import { DatabaseClient, EventId } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import {
   EventPurgeCounts,
+  EventQueryOptions,
   EventRetentionOptions,
   IEventRepository,
   IQueryResult,
@@ -61,17 +62,30 @@ export class EventRepository implements IEventRepository {
     private readonly settings?: () => Settings,
   ) {}
 
-  public findByFilters(filters: SubscriptionFilter[]): IQueryResult<DBEvent[]> {
+  public findByFilters(
+    filters: SubscriptionFilter[],
+    options?: EventQueryOptions,
+  ): IQueryResult<DBEvent[]> {
     logger('querying for %o', filters)
     if (!Array.isArray(filters) || !filters.length) {
       throw new Error('Filters cannot be empty')
     }
+    const defaultLimit = options?.defaultLimit ?? DEFAULT_FILTER_LIMIT
+    const now = Math.floor(Date.now() / 1000)
     const isSearchQueries: boolean[] = []
     const queries = filters.map((currentFilter) => {
       const builder = this.readReplicaDbClient<DBEvent>('events')
 
       const { isSearchQuery } = this.applyFilterConditions(builder, currentFilter)
       isSearchQueries.push(isSearchQuery)
+
+      if (options?.excludeDeleted) {
+        // Handler-side filtering is too late once LIMIT has been applied: a
+        // soft-deleted or expired row would otherwise use a page slot.
+        builder.whereNull('events.deleted_at').andWhere((bd) => {
+          bd.whereNull('events.expires_at').orWhere('events.expires_at', '>', now)
+        })
+      }
 
       if (isSearchQuery) {
         const tsConfig = this.getNip50Language()
@@ -85,7 +99,11 @@ export class EventRepository implements IEventRepository {
         builder.select(searchSelection)
       }
 
-      builder.limit(typeof currentFilter.limit === 'number' ? currentFilter.limit : DEFAULT_FILTER_LIMIT)
+      if (typeof currentFilter.limit === 'number') {
+        builder.limit(currentFilter.limit)
+      } else if (defaultLimit > 0) {
+        builder.limit(defaultLimit)
+      }
       this.applyFilterOrder(builder, currentFilter, isSearchQuery)
 
       return builder

@@ -1,23 +1,21 @@
+import { Serializable } from 'child_process'
 import { Cluster, Worker } from 'cluster'
+import { FSWatcher } from 'fs'
 import { cpus, hostname } from 'os'
 import { levels } from 'pino'
 import { path, pathEq } from 'ramda'
-import { FSWatcher } from 'fs'
-
-import { addOnion } from '../tor/client'
-import { createLogger } from '../factories/logger-factory'
-import { EventStoreBackend } from '../constants/base'
-import { IRunnable } from '../@types/base'
 import packageJson from '../../package.json'
-import { Serializable } from 'child_process'
-import { Settings } from '../@types/settings'
-import { SettingsStatic } from '../utils/settings'
-import { BANNER_WIDTH, centre, isStructuredLogFormat, RELAY_BANNER_LINES } from '../utils/banner'
-import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { IRunnable } from '../@types/base'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
+import { Settings } from '../@types/settings'
+import { EventStoreBackend } from '../constants/base'
+import { createLogger } from '../factories/logger-factory'
 import { RedisRelayBroadcastFanout } from '../relay-broadcast/redis-relay-broadcast-fanout'
-import { enqueueOperatorNotification } from '../utils/operator-notification-enqueue'
+import { shutdownMetricsTelemetry } from '../telemetry/metrics'
+import { addOnion } from '../tor/client'
+import { BANNER_WIDTH, centre, isStructuredLogFormat, RELAY_BANNER_LINES } from '../utils/banner'
 import { EVENT_STORE_BACKEND_ENV, getConfiguredEventStoreBackend } from '../utils/event-store'
+import { enqueueOperatorNotification } from '../utils/operator-notification-enqueue'
 import { RelayBroadcastDeduplicator } from '../utils/relay-broadcast-deduplicator'
 import {
   isRelayBroadcastFanoutEnabled,
@@ -25,6 +23,7 @@ import {
   RelayBroadcastMessage,
 } from '../utils/relay-broadcast-message'
 import { setRelayBroadcastFanoutReady } from '../utils/relay-broadcast-state'
+import { SettingsStatic } from '../utils/settings'
 import { getPrimaryShutdownDeadlineMs } from '../utils/shutdown-state'
 
 const logger = createLogger('app-primary')
@@ -113,22 +112,24 @@ export class App implements IRunnable {
     // own so a pipeline reads this line like every other one.
     if (structuredLogs) {
       const dvmWorkerCount = Array.isArray(settings?.dvm?.workers) ? settings.dvm.workers.length : 0
-      this.process.stdout.write(`${JSON.stringify({
-        level: levels.values.info,
-        time: Date.now(),
-        pid: process.pid,
-        hostname: hostname(),
-        msg: 'relay starting',
-        version: packageJson.version,
-        supportedNips: packageJson.supportedNips,
-        payments: paymentsEnabled ? 'enabled' : 'disabled',
-        paymentsProvider: paymentsEnabled ? path(['payments', 'processor'], settings) : undefined,
-        eventStore: eventStoreBackend,
-        clientWorkers: workerCount,
-        maintenanceWorkers: 1,
-        relayMonitor: settings.nip66?.enabled === true,
-        dvmWorkers: dvmWorkerCount,
-      })}\n`)
+      this.process.stdout.write(
+        `${JSON.stringify({
+          level: levels.values.info,
+          time: Date.now(),
+          pid: process.pid,
+          hostname: hostname(),
+          msg: 'relay starting',
+          version: packageJson.version,
+          supportedNips: packageJson.supportedNips,
+          payments: paymentsEnabled ? 'enabled' : 'disabled',
+          paymentsProvider: paymentsEnabled ? path(['payments', 'processor'], settings) : undefined,
+          eventStore: eventStoreBackend,
+          clientWorkers: workerCount,
+          maintenanceWorkers: 1,
+          relayMonitor: settings.nip66?.enabled === true,
+          dvmWorkers: dvmWorkerCount,
+        })}\n`,
+      )
     }
 
     const createWorker = (env: Record<string, string>) => {
@@ -156,6 +157,14 @@ export class App implements IRunnable {
         'mirroring.static is no longer supported and is ignored; sync with another relay over NIP-77 (negentropy) instead',
       )
       logCentered('mirroring.static is no longer supported (ignored)')
+    }
+
+    const peeringPeers = settings.peering?.peers ?? []
+    if (peeringPeers.length > 0) {
+      createWorker({
+        WORKER_TYPE: 'peering-sync',
+      })
+      logCentered(`1 peering-sync worker started (${peeringPeers.length} peer(s) configured)`)
     }
 
     if (settings.nip66?.enabled) {

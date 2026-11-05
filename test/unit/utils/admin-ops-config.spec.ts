@@ -1,15 +1,11 @@
 import { expect } from 'chai'
-
-import { listConfiguredWorkers, mergeWorkerRows } from '../../../src/utils/admin-ops-config'
 import { Settings } from '../../../src/@types/settings'
+import { listConfiguredWorkers, mergeWorkerRows } from '../../../src/utils/admin-ops-config'
 import { ADMIN_OPS_HEARTBEAT_TTL_SECONDS, isAdminOpsHeartbeatStale } from '../../../src/utils/admin-ops-store'
 
 describe('admin-ops-config', () => {
   it('marks unmonitored workers as not stale without a heartbeat', () => {
-    const rows = mergeWorkerRows(
-      [{ type: 'worker', index: '0', enabled: true, label: 'Client worker 0' }],
-      [],
-    )
+    const rows = mergeWorkerRows([{ type: 'worker', index: '0', enabled: true, label: 'Client worker 0' }], [])
 
     expect(rows[0].monitored).to.equal(false)
     expect(rows[0].stale).to.equal(false)
@@ -39,5 +35,17 @@ describe('admin-ops-config', () => {
     } as unknown as Settings)
 
     expect(workers.map((worker) => worker.type)).to.deep.equal(['worker', 'maintenance'])
+  })
+
+  it('lists the peering-sync worker when enabled peers are configured', () => {
+    const workers = listConfiguredWorkers({
+      workers: { count: 1 },
+      peering: {
+        enabled: false,
+        peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
+      },
+    } as unknown as Settings)
+
+    expect(workers.map((worker) => worker.type)).to.deep.equal(['worker', 'maintenance', 'peering-sync'])
   })
 })

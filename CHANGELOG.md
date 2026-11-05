@@ -1,5 +1,69 @@
 # nostream
 
+## 3.12.1
+
+### Patch Changes
+
+- [#1045](https://github.com/cameri/nostream/pull/1045) [`ccb1c40`](https://github.com/cameri/nostream/commit/ccb1c40c0b2e370d248518d6de505bef2bf57191) Thanks [@Ferryx349](https://github.com/Ferryx349)! - fix(relay): handle messages sent immediately after a WebSocket opens
+
+  Attaches a temporary message listener before the awaited connection
+  rate-limit check, pauses the socket during admission, and buffers early
+  frames with bounded limits (64 messages / 1 MiB). Once admission succeeds the
+  adapter is created, buffered frames are replayed in arrival order, and the
+  socket resumes. Rate-limited connections are still terminated before any
+  message is processed, and buffer overflow closes with code 1009 instead of
+  silently dropping frames. Adds regression tests for early-message replay,
+  rate-limited rejection, and overflow handling.
+
+## 3.12.0
+
+### Minor Changes
+
+- [#1034](https://github.com/cameri/nostream/pull/1034) [`e410a75`](https://github.com/cameri/nostream/commit/e410a759cc126e01ce0b198c670d828807762448) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): treat authenticated peers as feeds, not clients
+
+  Adds `limits.peer`, a separate limit set for connections that have proven a
+  configured `peering.peers` pubkey with NIP-42 AUTH. Peer subscriptions use
+  `limits.peer.subscription` instead of `limits.client.subscription`, and peer
+  messages use `limits.peer.message` in a separate rate-limit bucket, so a
+  full-feed subscription cannot trip the client EWMA limiter or the client
+  `max_subscriptions` cap.
+
+  Peers are eligible for full feeds by default: `maxLimit` is uncapped and the
+  subscription caps are higher. An omitted peer REQ `limit` queries the full
+  stored feed instead of the client 500-event default, and peer filter counts are
+  not rejected by the protocol's former fixed ten-filter cap. Raw filter counts are
+  still bounded before deduplication, and stored reads wait for the socket's
+  send-flush callback so a slow peer cannot grow worker memory. Deleted and expired rows
+  are excluded in SQL before the limit, so they cannot consume a page slot.
+
+  A high but finite peer message rate keeps the credential from becoming an
+  unbounded egress path. Unauthenticated or unconfigured connections keep the
+  existing client limits exactly as before. The new limits are validated with the
+  rest of the settings document and documented in `CONFIGURATION.md` and
+  `docs/PEERING.md`.
+
+- [#1043](https://github.com/cameri/nostream/pull/1043) [`7090cbb`](https://github.com/cameri/nostream/commit/7090cbb853d48361492448a8757cfae0ab7592ab) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): sync configured peers over NIP-77 and a live feed
+
+  Adds an outbound peering-sync worker. For every enabled `peering.peers`
+  entry it reads the peer's NIP-11 `peering.scopes`, authenticates with NIP-42
+  using the relay's own keypair, reconciles each scope over NIP-77 negentropy,
+  fetches only the missing ids, and keeps a live subscription for the same
+  scopes. Periodic reconciliation and reconnect-and-resync close gaps the live
+  feed can miss, and a new or restarted peer converges without a full dump.
+
+  Fetched and live events are accepted only when they match the agreed scope,
+  were requested by id, and pass id/signature verification. They are applied with
+  the same kind rules as local writes (addressable `d`-tag keys, kind-5 deletes,
+  kind-62 vanishes, ephemeral broadcast-only), and authors under an active vanish
+  request are skipped. Live events are broadcast to local subscribers; backfill is
+  not, so a full sync does not fan out a dump. Wide scopes are split by kind and
+  time, overflowed fetch batches are retried in smaller pieces, live re-checks use
+  the scope bounds rather than the subscription overlap, and fetch/live buffers are
+  bounded by count and bytes. Per-peer sync state (status, last reconciliation,
+  lag, missing count) is heartbeat-refreshed during long reconciliations, recorded
+  in Redis, exposed at `GET /admin/peering`, shown in the admin console's
+  Operations view, and included in diagnostics exports.
+
 ## 3.11.0
 
 ### Minor Changes

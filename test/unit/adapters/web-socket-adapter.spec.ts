@@ -36,7 +36,8 @@ describe('WebSocketAdapter', () => {
 
     client = {
       on: sandbox.stub().returnsThis(),
-      send: sandbox.stub(),
+      // `ws` invokes the send callback once the frame is flushed.
+      send: sandbox.stub().callsFake((_data: string, callback?: () => void) => callback?.()),
       close: sandbox.stub(),
       ping: sandbox.stub(),
       pong: sandbox.stub(),
@@ -240,7 +241,8 @@ describe('WebSocketAdapter', () => {
 
       adapter.emit(WebSocketAdapterEvent.Message, message)
 
-      expect(client.send).to.have.been.calledOnceWithExactly(JSON.stringify(message))
+      expect(client.send).to.have.been.calledOnce
+      expect(client.send.firstCall.args[0]).to.equal(JSON.stringify(message))
     })
 
     it('does nothing when WebSocket is not OPEN', () => {
@@ -668,6 +670,34 @@ describe('WebSocketAdapter', () => {
         )
       })
 
+      it('uses peer limits and a separate bucket for a recognized peer', async () => {
+        const peerPubkey = 'a'.repeat(64)
+        settingsFactory.returns({
+          network: { remoteIpHeader: '' },
+          peering: {
+            enabled: true,
+            peers: [{ pubkey: peerPubkey, relayUrl: 'wss://peer.example.com' }],
+          },
+          limits: {
+            message: { rateLimits: [{ period: 60000, rate: 1 }], ipWhitelist: [] },
+            peer: { message: { rateLimits: [{ period: 60000, rate: 100 }], ipWhitelist: [] } },
+          },
+        })
+        adapter.addAuthenticatedPubkey(peerPubkey, '1'.repeat(64))
+        adapter.setPeerPubkey(peerPubkey)
+
+        const hitStub = sandbox.stub().resolves({ limited: false })
+        slidingWindowRateLimiter.returns({ hit: hitStub })
+
+        await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub1', { kinds: [1] }])))
+
+        expect(hitStub).to.have.been.calledOnceWithExactly(
+          '127.0.0.1:peer-message:REQ:60000',
+          1,
+          { period: 60000, rate: 100 },
+        )
+      })
+
       // A closed set of types, or a client could rotate invented ones and keep
       // every bucket empty.
       it('buckets an invented message type with everything else unrecognised', async () => {
@@ -800,6 +830,40 @@ describe('WebSocketAdapter', () => {
       await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub-1', {}])))
 
       // AbortError should NOT send a NOTICE to client
+      expect(client.send).not.to.have.been.called
+    })
+
+    it('accepts a REQ with more than ten filters so peer limits can apply', async () => {
+      client.readyState = WebSocket.OPEN
+      settingsFactory.returns({ network: { remoteIpHeader: '' }, limits: { message: {} } })
+
+      const handleMessage = sandbox.stub().resolves()
+      createMessageHandler.returns({ handleMessage })
+
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
+      const onMessage = messageCall.args[1]
+      const filters = Array.from({ length: 11 }, (_, index) => ({ kinds: [index + 1] }))
+
+      await onMessage(Buffer.from(JSON.stringify(['REQ', 'sub-1', ...filters])))
+
+      expect(handleMessage).to.have.been.calledOnce
+      expect(client.send).not.to.have.been.called
+    })
+
+    it('accepts a COUNT with more than ten filters so peer limits can apply', async () => {
+      client.readyState = WebSocket.OPEN
+      settingsFactory.returns({ network: { remoteIpHeader: '' }, limits: { message: {} } })
+
+      const handleMessage = sandbox.stub().resolves()
+      createMessageHandler.returns({ handleMessage })
+
+      const messageCall = client.on.getCalls().find((call: any) => call.args[0] === 'message')
+      const onMessage = messageCall.args[1]
+      const filters = Array.from({ length: 11 }, (_, index) => ({ kinds: [index + 1] }))
+
+      await onMessage(Buffer.from(JSON.stringify(['COUNT', 'q-1', ...filters])))
+
+      expect(handleMessage).to.have.been.calledOnce
       expect(client.send).not.to.have.been.called
     })
 
@@ -1064,6 +1128,43 @@ describe('WebSocketAdapter', () => {
 
       expect(adapter.getChallenge()).not.to.equal(adapter2.getChallenge())
       adapter2.removeAllListeners()
+    })
+  })
+
+  describe('waitForWritable', () => {
+    it('resolves immediately when nothing has been sent', async () => {
+      await adapter.waitForWritable()
+
+      expect(client.send).not.to.have.been.called
+    })
+
+    it('resolves once the send callback reports the frame as flushed', async () => {
+      let sendCallback: (() => void) | undefined
+      ;(client.send as Sinon.SinonStub).callsFake((_data: string, callback: () => void) => {
+        sendCallback = callback
+      })
+
+      adapter.emit(WebSocketAdapterEvent.Message, ['NOTICE', 'hello'])
+
+      let resolved = false
+      const pending = adapter.waitForWritable().then(() => {
+        resolved = true
+      })
+      await Promise.resolve()
+      expect(resolved).to.equal(false)
+
+      sendCallback?.()
+      await pending
+
+      expect(resolved).to.equal(true)
+    })
+
+    it('resolves immediately when the socket is not open', async () => {
+      client.readyState = WebSocket.CLOSED
+
+      await adapter.waitForWritable()
+
+      expect(client.send).not.to.have.been.called
     })
   })
 

@@ -1,22 +1,21 @@
-import { always } from 'ramda'
 import chai from 'chai'
 import chaiAsPromised from 'chai-as-promised'
 import EventEmitter from 'events'
+import { always } from 'ramda'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
-
+import { PassThrough } from 'stream'
+import { IWebSocketAdapter } from '../../../src/@types/adapters'
+import { Event } from '../../../src/@types/event'
 import { IAbortable, IMessageHandler } from '../../../src/@types/message-handlers'
 import { MessageType, SubscribeMessage } from '../../../src/@types/messages'
-import { SubscriptionFilter, SubscriptionId } from '../../../src/@types/subscription'
-import * as eventUtils from '../../../src/utils/event'
-import { Event } from '../../../src/@types/event'
-import { EventTags } from '../../../src/constants/base'
 import { IEventRepository, IInviteCodeRepository } from '../../../src/@types/repositories'
+import { SubscriptionFilter, SubscriptionId } from '../../../src/@types/subscription'
 import { IRateLimiter } from '../../../src/@types/utils'
-import { IWebSocketAdapter } from '../../../src/@types/adapters'
-import { PassThrough } from 'stream'
-import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
+import { EventTags } from '../../../src/constants/base'
+import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message-handler'
+import * as eventUtils from '../../../src/utils/event'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
@@ -50,6 +49,7 @@ describe('SubscribeMessageHandler', () => {
   let rateLimiter: IRateLimiter
   let rateLimiterHitStub: Sinon.SinonStub
   let rateLimiterFactory: Sinon.SinonStub
+  let endSubscriptionStub: Sinon.SinonStub
 
   let sandbox: Sinon.SinonSandbox
 
@@ -60,6 +60,10 @@ describe('SubscribeMessageHandler', () => {
     webSocket = new EventEmitter() as any
     webSocketGetSubscriptionsStub = sandbox.stub().returns(subscriptions)
     webSocket.getSubscriptions = webSocketGetSubscriptionsStub
+    webSocket.getPeerPubkey = sandbox.stub().returns(undefined)
+    webSocket.waitForWritable = sandbox.stub().resolves()
+    endSubscriptionStub = sandbox.stub()
+    webSocket.endSubscription = endSubscriptionStub
     settingsFactory = sandbox.stub()
     stream = new PassThrough({
       objectMode: true,
@@ -121,6 +125,103 @@ describe('SubscribeMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(['NOTICE', 'Subscription rejected: reason'])
+    })
+
+    it('bounds raw filters before deduplicating them', async () => {
+      settingsFactory.returns({ limits: { client: { subscription: { maxFilters: 10 } } } })
+      const duplicate = { kinds: [1] }
+      message = [MessageType.REQ, subscriptionId, ...Array.from({ length: 11 }, () => duplicate)] as any
+
+      await handler.handleMessage(message)
+
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        'NOTICE',
+        'Subscription rejected: Too many filters: Number of filters per susbscription must be less then or equal to 10',
+      ])
+      expect(webSocketOnSubscribeStub).not.to.have.been.called
+    })
+
+    it('closes a peer subscription when the on-demand request limit is exceeded', async () => {
+      const peer = 'a'.repeat(64)
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      })
+      rateLimiterHitStub.resolves({ limited: true, retryAfterMs: 123 })
+      message = [MessageType.REQ, subscriptionId, ...filters] as any
+
+      await handler.handleMessage(message)
+
+      expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${peer}:peer-request:60000`, 1, {
+        period: 60_000,
+        rate: 1,
+      })
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        'CLOSED',
+        subscriptionId,
+        'rate-limited: peer request limit exceeded',
+        '123',
+      ])
+      expect(fetchAndSendStub).not.to.have.been.called
+      expect(endSubscriptionStub).to.have.been.calledOnceWithExactly(subscriptionId)
+    })
+
+    it('does not register a subscription closed while the limiter is pending', async () => {
+      const peer = 'a'.repeat(64)
+      let releaseLimit: ((result: { limited: boolean }) => void) | undefined
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      })
+      rateLimiterHitStub.returns(
+        new Promise((resolve) => {
+          releaseLimit = resolve
+        }),
+      )
+      message = [MessageType.REQ, subscriptionId, ...filters] as any
+
+      const pending = handler.handleMessage(message)
+      ;(handler as any).abort()
+      releaseLimit?.({ limited: false })
+      await pending
+
+      expect(webSocketOnSubscribeStub).not.to.have.been.called
+      expect(fetchAndSendStub).not.to.have.been.called
+    })
+
+    it('does not end a newer request when an aborted handler is refused', async () => {
+      const peer = 'a'.repeat(64)
+      let releaseLimit: ((result: { limited: boolean; retryAfterMs?: number }) => void) | undefined
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      })
+      rateLimiterHitStub.returns(
+        new Promise((resolve) => {
+          releaseLimit = resolve
+        }),
+      )
+      message = [MessageType.REQ, subscriptionId, ...filters] as any
+
+      const pending = handler.handleMessage(message)
+      ;(handler as any).abort()
+      releaseLimit?.({ limited: true, retryAfterMs: 123 })
+      await pending
+
+      expect(endSubscriptionStub).not.to.have.been.called
+      expect(webSocketOnMessageStub).not.to.have.been.called
+      expect(webSocketOnSubscribeStub).not.to.have.been.called
+    })
+
+    it('does not apply peer request limits to ordinary clients', async () => {
+      settingsFactory.returns({
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      })
+      message = [MessageType.REQ, subscriptionId, ...filters] as any
+
+      await handler.handleMessage(message)
+
+      expect(rateLimiterHitStub).not.to.have.been.called
     })
 
     it('emits subscribe event if subscription is accepted', async () => {
@@ -544,6 +645,43 @@ describe('SubscribeMessageHandler', () => {
       expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters)
     })
 
+    it('passes an uncapped defaultLimit to the repository for a peer', async () => {
+      isClientSubscribedToEventStub.returns(always(false))
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
+      settingsFactory.returns({ limits: { peer: { subscription: { maxLimit: 0 } } } })
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, filters)
+
+      stream.write(toDbEvent(event))
+      stream.end()
+
+      await promise
+
+      expect(eventRepositoryFindByFiltersStub).to.have.been.calledOnceWithExactly(filters, {
+        defaultLimit: 0,
+        excludeDeleted: true,
+      })
+    })
+
+    it('serves an out-of-scope event to a peer by id', async () => {
+      isClientSubscribedToEventStub.returns(always(true))
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
+      settingsFactory.returns({
+        peering: { enabled: true, scopes: [{ kinds: [7] }] },
+        limits: { peer: { subscription: { maxLimit: 0 } } },
+      })
+      const idFilter = [{ ids: [event.id] }]
+
+      const promise = (handler as any).fetchAndSend(subscriptionId, idFilter)
+
+      stream.write(toDbEvent(event))
+      stream.end()
+
+      await promise
+
+      expect(webSocketOnMessageStub).to.have.been.calledWith([MessageType.EVENT, subscriptionId, event])
+    })
+
     it('sends event if client is subscribed', async () => {
       isClientSubscribedToEventStub.returns(always(true))
 
@@ -754,6 +892,34 @@ describe('SubscribeMessageHandler', () => {
       })
 
       expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+    })
+
+    it('uses peer limits instead of client limits for a recognized peer', () => {
+      settingsFactory.returns({
+        limits: {
+          client: { subscription: { maxSubscriptions: 1 } },
+          peer: { subscription: { maxSubscriptions: 5 } },
+        },
+      })
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
+      subscriptions.set('other-1', [])
+      subscriptions.set('other-2', [])
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+    })
+
+    it('still applies the client limit to an unauthenticated connection', () => {
+      settingsFactory.returns({
+        limits: {
+          client: { subscription: { maxSubscriptions: 1 } },
+          peer: { subscription: { maxSubscriptions: 5 } },
+        },
+      })
+      subscriptions.set('other-1', [])
+
+      expect((handler as any).canSubscribe(subscriptionId, filters)).to.equal(
+        'Too many subscriptions: Number of subscriptions must be less than or equal to 1',
+      )
     })
 
     it('returns undefined if max subscription limit is disabled', () => {

@@ -104,12 +104,13 @@ describe('NIP-01', () => {
         expect(result).to.have.property('error').that.is.not.undefined
       })
 
-      it('returns error if there are too many filters', () => {
+      it('accepts more filters than the client cap so per-connection limits decide', () => {
         ;(message as any[]).splice(2, 2)
         ;(message as any[]).push(...range(0, 11).map(() => ({})))
 
         const result = validateSchema(messageSchema)(message)
-        expect(result).to.have.property('error').that.is.not.undefined
+        expect(result.error).to.be.undefined
+        expect(result).to.have.deep.property('value', message)
       })
     })
 
@@ -159,12 +160,13 @@ describe('NIP-01', () => {
         expect(result).to.have.property('error').that.is.not.undefined
       })
 
-      it('returns error if there are too many filters', () => {
+      it('accepts more filters than the client cap so per-connection limits decide', () => {
         ;(message as any[]).splice(2, 1)
         ;(message as any[]).push(...range(0, 11).map(() => ({})))
 
         const result = validateSchema(messageSchema)(message)
-        expect(result).to.have.property('error').that.is.not.undefined
+        expect(result.error).to.be.undefined
+        expect(result).to.have.deep.property('value', message)
       })
     })
 

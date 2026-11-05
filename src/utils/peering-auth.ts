@@ -8,6 +8,8 @@ import { getPublicKey, identifyEvent, signEvent } from './event'
 import { parseRelayPubkey } from './nip43-invites'
 
 export const PEERING_AUTH_TIMEOUT_MS = 10_000
+/** One inbound frame from a peer relay. Matches the relay's default max payload with headroom. */
+export const PEERING_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
 
 export interface PeeringAuthEventOptions {
   relayUrl: string
@@ -21,6 +23,7 @@ export interface AuthenticatePeerOptions {
   privateKey: string
   timeoutMs?: number
   createdAt?: number
+  maxPayloadBytes?: number
 }
 
 export interface AuthenticatedPeerConnection {
@@ -64,6 +67,16 @@ export const findConfiguredPeeringPeer = (
 /** True only when `pubkey` is an enabled entry in the configured peer list. */
 export const isConfiguredPeeringPeer = (settings: Pick<Settings, 'peering'> | undefined, pubkey: string): boolean =>
   typeof findConfiguredPeeringPeer(settings, pubkey) !== 'undefined'
+
+/** Enabled, minimally well-formed peers to sync from. Settings validation rejects the rest. */
+export const listEnabledPeeringPeers = (settings: Pick<Settings, 'peering'> | undefined): PeeringPeer[] =>
+  (settings?.peering?.peers ?? []).filter(
+    (peer) =>
+      peer.enabled !== false &&
+      typeof peer.relayUrl === 'string' &&
+      peer.relayUrl.trim().length > 0 &&
+      parsePeeringPeerPubkey(peer.pubkey) !== undefined,
+  )
 
 /**
  * Builds the NIP-42 AUTH event that proves this relay's own identity to a
@@ -112,12 +125,18 @@ const closeQuietly = (socket: WebSocket): void => {
  * leaving the socket open for the caller (a live feed, negentropy session, ...).
  */
 export const authenticateToPeeringRelay = (options: AuthenticatePeerOptions): Promise<AuthenticatedPeerConnection> => {
-  const { relayUrl, privateKey, timeoutMs = PEERING_AUTH_TIMEOUT_MS, createdAt } = options
+  const {
+    relayUrl,
+    privateKey,
+    timeoutMs = PEERING_AUTH_TIMEOUT_MS,
+    createdAt,
+    maxPayloadBytes = PEERING_MAX_PAYLOAD_BYTES,
+  } = options
 
   return new Promise<AuthenticatedPeerConnection>((resolve, reject) => {
     let socket: WebSocket
     try {
-      socket = new WebSocket(relayUrl)
+      socket = new WebSocket(relayUrl, { maxPayload: maxPayloadBytes })
     } catch (error) {
       reject(error instanceof Error ? error : new Error('Unable to open the peering socket'))
       return

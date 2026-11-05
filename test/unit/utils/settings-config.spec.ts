@@ -401,6 +401,14 @@ describe('settings-config', () => {
         limits: { message: { rateLimits: [{ period: 0, rate: 1 }] } },
       },
       {
+        issuePath: 'limits.peer.message.rateLimits[0].period',
+        limits: { peer: { message: { rateLimits: [{ period: 0, rate: 1 }] } } },
+      },
+      {
+        issuePath: 'limits.peer.request.rateLimits[0].period',
+        limits: { peer: { request: { rateLimits: [{ period: 0, rate: 1 }] } } },
+      },
+      {
         issuePath: 'limits.connection.rateLimits[0].period',
         limits: { connection: { rateLimits: [{ period: -1, rate: 1 }] } },
       },

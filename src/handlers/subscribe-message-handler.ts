@@ -15,7 +15,7 @@ import { IAbortable, IMessageHandler } from '../@types/message-handlers'
 import { IEventRepository, IInviteCodeRepository } from '../@types/repositories'
 import { isNip43InviteRequestFilter, isRelaySelfConsistent } from '../utils/nip43'
 import { buildInviteCodeEvent, issueInviteCode } from '../utils/nip43-invites'
-import { streamEach, streamEnd, streamFilter, streamMap } from '../utils/stream'
+import { streamEachAsync, streamEnd, streamFilter, streamMap } from '../utils/stream'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { createLogger } from '../factories/logger-factory'
 import { Event } from '../@types/event'
@@ -25,6 +25,8 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import { Settings } from '../@types/settings'
 import { SubscribeMessage } from '../@types/messages'
 import { WebSocketAdapterEvent } from '../constants/adapter'
+import { subscriptionLimitsFor } from '../utils/peer-limits'
+import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
 
 const logger = createLogger('subscribe-message-handler')
 
@@ -51,7 +53,41 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   public async handleMessage(message: SubscribeMessage): Promise<void> {
     const subscriptionId = message[1]
     this.activeSubscriptionId = subscriptionId
-    const rawFilters = uniqWith(equals, message.slice(2)) as SubscriptionFilter[]
+    const incomingFilters = message.slice(2) as SubscriptionFilter[]
+    const peerPubkey = this.webSocket.getPeerPubkey()
+
+    if (peerPubkey) {
+      const retryAfterMs = await getPeerRequestRetryAfterMs(this.rateLimiter, this.settings(), peerPubkey, 'REQ')
+
+      // CLOSE aborted this handler while the limiter was pending. A newer REQ
+      // may already own the id; this stale result must not touch it.
+      if (this.abortController.signal.aborted) {
+        return
+      }
+
+      if (retryAfterMs !== undefined) {
+        // A reused subscription id must not keep its old filters/read alive
+        // after we tell the peer this request was refused.
+        this.webSocket.endSubscription(subscriptionId)
+        this.webSocket.emit(
+          WebSocketAdapterEvent.Message,
+          createClosedMessage(subscriptionId, 'rate-limited: peer request limit exceeded', String(retryAfterMs)),
+        )
+        return
+      }
+    }
+
+    // Bound before uniqWith(): deduplicating an unbounded list is O(n^2). The
+    // schema no longer caps filter counts so peer limits can be larger.
+    const maxFilters = subscriptionLimitsFor(this.settings(), peerPubkey !== undefined)?.maxFilters ?? 0
+    if (maxFilters > 0 && incomingFilters.length > maxFilters) {
+      const reason = `Too many filters: Number of filters per susbscription must be less then or equal to ${maxFilters}`
+      logger('subscription %s with %o rejected: %s', subscriptionId, incomingFilters, reason)
+      this.webSocket.emit(WebSocketAdapterEvent.Message, createNoticeMessage(`Subscription rejected: ${reason}`))
+      return
+    }
+
+    const rawFilters = uniqWith(equals, incomingFilters) as SubscriptionFilter[]
 
     // NIP-50: strip search from filters when disabled so isEventMatchingFilter ignores it
     const nip50Enabled = this.settings()?.nip50?.enabled ?? false
@@ -207,8 +243,10 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
   private async fetchAndSend(subscriptionId: string, filters: SubscriptionFilter[]): Promise<void> {
     logger('fetching events for subscription %s with filters %o', subscriptionId, filters)
-    const sendEvent = (event: Event) =>
+    const sendEvent = async (event: Event) => {
       this.webSocket.emit(WebSocketAdapterEvent.Message, createOutgoingEventMessage(subscriptionId, event))
+      await this.webSocket.waitForWritable()
+    }
     const sendEOSE = () =>
       this.webSocket.emit(WebSocketAdapterEvent.Message, createEndOfStoredEventsNoticeMessage(subscriptionId))
     const isSubscribedToEvent = SubscribeMessageHandler.isClientSubscribedToEvent(filters)
@@ -225,7 +263,15 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       () => this.webSocket.getAuthenticatedPubkeys(),
     )
 
-    const findEvents = this.eventRepository.findByFilters(filters).stream()
+    // A peer's omitted `limit` means the full stored feed, not the client-sized
+    // 500-event default. `maxLimit: 0` opts out of a cap; a positive value
+    // becomes the peer's default page size.
+    const isPeer = this.webSocket.getPeerPubkey() !== undefined
+    const peerDefaultLimit = isPeer ? (this.settings().limits?.peer?.subscription?.maxLimit ?? 0) : undefined
+
+    const findEvents = isPeer
+      ? this.eventRepository.findByFilters(filters, { defaultLimit: peerDefaultLimit, excludeDeleted: true }).stream()
+      : this.eventRepository.findByFilters(filters).stream()
 
     const abortableFindEvents = addAbortSignal(this.abortController.signal, findEvents)
 
@@ -237,7 +283,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
         streamFilter(isTagUnexpired),
         streamFilter(isReadAuthorized),
         streamFilter(isSubscribedToEvent),
-        streamEach(sendEvent),
+        streamEachAsync(sendEvent),
         streamEnd(sendEOSE),
       )
     } catch (error) {
@@ -258,7 +304,10 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private canSubscribe(subscriptionId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
     const subscriptions = this.webSocket.getSubscriptions()
     const existingSubscription = subscriptions.get(subscriptionId)
-    const subscriptionLimits = this.settings().limits?.client?.subscription
+    const subscriptionLimits = subscriptionLimitsFor(
+      this.settings(),
+      this.webSocket.getPeerPubkey() !== undefined,
+    )
 
     if (existingSubscription?.length && equals(filters, existingSubscription)) {
       return `Duplicate subscription ${subscriptionId}: Ignoring`

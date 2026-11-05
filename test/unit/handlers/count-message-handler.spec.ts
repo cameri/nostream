@@ -18,6 +18,8 @@ describe('CountMessageHandler', () => {
   let handler: CountMessageHandler
   let eventRepository: IEventRepository
   let sandbox: Sinon.SinonSandbox
+  let rateLimiterHitStub: Sinon.SinonStub
+  let rateLimiterFactory: Sinon.SinonStub
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
@@ -26,7 +28,11 @@ describe('CountMessageHandler', () => {
       countByFilters: sandbox.stub().resolves(7),
     } as any
 
+    rateLimiterHitStub = sandbox.stub().resolves({ limited: false })
+    rateLimiterFactory = sandbox.stub().returns({ hit: rateLimiterHitStub })
+
     webSocket = new EventEmitter() as any
+    webSocket.getPeerPubkey = sandbox.stub().returns(undefined)
 
     handler = new CountMessageHandler(webSocket, eventRepository, () => ({
       limits: {
@@ -37,7 +43,7 @@ describe('CountMessageHandler', () => {
           },
         },
       },
-    }) as Settings)
+    }) as Settings, rateLimiterFactory)
   })
 
   afterEach(() => {
@@ -92,6 +98,60 @@ describe('CountMessageHandler', () => {
       expect(webSocketOnMessageStub).to.have.been.calledOnce
       expect(webSocketOnMessageStub.firstCall.args[0][0]).to.equal(MessageType.CLOSED)
       expect(webSocketOnMessageStub.firstCall.args[0][1]).to.equal('q1')
+    })
+
+    it('uses peer limits instead of client limits for a recognized peer', async () => {
+      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
+        limits: {
+          client: { subscription: { maxFilters: 1, maxSubscriptionIdLength: 256 } },
+          peer: { subscription: { maxFilters: 5, maxSubscriptionIdLength: 256 } },
+        },
+      }) as Settings, rateLimiterFactory)
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
+
+      const message = [MessageType.COUNT, 'q1', { kinds: [1] }, { kinds: [2] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(eventRepository.countByFilters).to.have.been.calledOnceWithExactly([{ kinds: [1] }, { kinds: [2] }])
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([MessageType.COUNT, 'q1', { count: 7 }])
+    })
+
+    it('closes a peer count when the on-demand request limit is exceeded', async () => {
+      const peer = 'a'.repeat(64)
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      rateLimiterHitStub.resolves({ limited: true, retryAfterMs: 321 })
+      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
+        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+      }) as Settings, rateLimiterFactory)
+
+      await handler.handleMessage([MessageType.COUNT, 'q1', { kinds: [1] }] as any)
+
+      expect(rateLimiterHitStub).to.have.been.calledOnceWithExactly(`${peer}:peer-request:60000`, 1, {
+        period: 60_000,
+        rate: 1,
+      })
+      expect(eventRepository.countByFilters).not.to.have.been.called
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        MessageType.CLOSED,
+        'q1',
+        'rate-limited: peer request limit exceeded',
+        '321',
+      ])
+    })
+
+    it('bounds raw filters before deduplicating them', async () => {
+      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
+        limits: { client: { subscription: { maxFilters: 10, maxSubscriptionIdLength: 256 } } },
+      }) as Settings)
+      const duplicate = { kinds: [1] }
+      const message = [MessageType.COUNT, 'q1', ...Array.from({ length: 11 }, () => duplicate)] as any
+
+      await handler.handleMessage(message)
+
+      expect(eventRepository.countByFilters).not.to.have.been.called
+      expect(webSocketOnMessageStub).to.have.been.calledOnce
+      expect(webSocketOnMessageStub.firstCall.args[0][0]).to.equal(MessageType.CLOSED)
     })
 
     it('returns CLOSED when a filter has too many values', async () => {

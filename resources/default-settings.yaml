@@ -198,7 +198,9 @@ peering:
   terms: []
   # Peering peers trusted by their relay pubkey (hex or npub), never by URL
   # alone. A connection that proves one of these keys with NIP-42 AUTH is
-  # recognized as a peer; any other key gets no peer recognition.
+  # recognized as a peer; any other key gets no peer recognition. Enabled
+  # peers are also synced: the peering-sync worker reads each peer's NIP-11
+  # peering scopes, reconciles them over NIP-77, and keeps a live feed.
   # Example:
   #   peers:
   #     - pubkey: replace-with-peer-relay-pubkey-in-hex
@@ -409,6 +411,33 @@ limits:
       maxSubscriptionIdLength: 256
       maxLimit: 5000
       minPrefixLength: 4
+  peer:
+    # Configured peering peers get feed treatment, not client treatment. These
+    # caps are separate from limits.client and limits.message, so a full-feed
+    # subscription does not trip the client EWMA bucket or max_subscriptions.
+    # A value of 0 disables that cap.
+    subscription:
+      maxSubscriptions: 100
+      maxFilters: 100
+      maxFilterValues: 10000
+      maxSubscriptionIdLength: 256
+      # 0 = no cap, so a peer can request a full feed.
+      maxLimit: 0
+      minPrefixLength: 4
+    message:
+      # period is milliseconds (60000 = one minute)
+      rateLimits:
+        - description: 6000 peer messages/min
+          period: 60000
+          rate: 6000
+    request:
+      # On-demand REQ/COUNT/NEG-OPEN requests, counted per peer pubkey rather
+      # than per IP. Separate from the generic message bucket so a feed's raw
+      # traffic does not consume the on-demand budget.
+      rateLimits:
+        - description: 300 peer on-demand requests/min
+          period: 60000
+          rate: 300
   message:
     # period is milliseconds (60000 = one minute)
     rateLimits:
