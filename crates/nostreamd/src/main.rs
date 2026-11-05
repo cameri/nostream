@@ -176,10 +176,8 @@ async fn serve(
         relay_config,
     );
 
-    let client = Arc::new(
-        ReqwestClient::new()
-            .map_err(|error| DaemonError::Setup(format!("http client: {error}")))?,
-    );
+    let client =
+        Arc::new(ReqwestClient::new().map_err(|error| DaemonError::Setup(error.to_string()))?);
     let http: Arc<dyn HttpClient> = client.clone();
     let fetch: Arc<dyn Nip05Fetch> = client;
     let context = ServiceContext {
