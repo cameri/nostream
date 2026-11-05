@@ -8,10 +8,10 @@ use tokio::sync::broadcast;
 
 use nostream_config::Settings;
 use nostream_config::settings::FeeSchedule;
+use nostream_core::Pubkey;
 use nostream_core::clock::Clock;
 use nostream_core::crypto::sign_event;
 use nostream_core::event::{Event, EventId, Signature};
-use nostream_core::Pubkey;
 use nostream_relay::relay_key::RelayKeySource;
 use nostream_storage::repositories::{
     EventRecord, FieldUpdate, Invoice, InvoiceStatus, InvoiceUnit, UserPatch,
@@ -440,7 +440,11 @@ fn merge_update(invoice: &Invoice, update: &InvoiceUpdate) -> Invoice {
     if let Some(id) = &update.id {
         updated.id.clone_from(id);
     }
-    if let Some(pubkey) = update.pubkey.as_deref().and_then(|pubkey| pubkey.parse().ok()) {
+    if let Some(pubkey) = update
+        .pubkey
+        .as_deref()
+        .and_then(|pubkey| pubkey.parse().ok())
+    {
         updated.pubkey = pubkey;
     }
     if let Some(bolt11) = &update.bolt11 {

@@ -88,8 +88,7 @@ impl EventRepository for UnavailableEventRepository {
     fn find_reconciliation_items<'a>(
         &'a self,
         _filter: &'a nostream_core::Filter,
-    ) -> StoreFuture<'a, QueryStream<'a, nostream_storage::repositories::ReconciliationItem>>
-    {
+    ) -> StoreFuture<'a, QueryStream<'a, nostream_storage::repositories::ReconciliationItem>> {
         Box::pin(async { Err(unavailable()) })
     }
 
@@ -167,10 +166,7 @@ impl UserRepository for UnavailableUserRepository {
         Box::pin(async { Err(unavailable()) })
     }
 
-    fn revoke_admission<'a>(
-        &'a self,
-        _pubkey: &'a nostream_core::Pubkey,
-    ) -> StoreFuture<'a, u64> {
+    fn revoke_admission<'a>(&'a self, _pubkey: &'a nostream_core::Pubkey) -> StoreFuture<'a, u64> {
         Box::pin(async { Err(unavailable()) })
     }
 }
@@ -239,10 +235,7 @@ impl Nip05VerificationRepository for UnavailableNip05Repository {
         Box::pin(async { Err(unavailable()) })
     }
 
-    fn delete_by_pubkey<'a>(
-        &'a self,
-        _pubkey: &'a nostream_core::Pubkey,
-    ) -> StoreFuture<'a, u64> {
+    fn delete_by_pubkey<'a>(&'a self, _pubkey: &'a nostream_core::Pubkey) -> StoreFuture<'a, u64> {
         Box::pin(async { Err(unavailable()) })
     }
 }
@@ -265,11 +258,7 @@ impl DvmJobRepository for UnavailableDvmJobRepository {
         Box::pin(async { Err(unavailable()) })
     }
 
-    fn assign_worker<'a>(
-        &'a self,
-        _id: &'a EventId,
-        _worker_index: i32,
-    ) -> StoreFuture<'a, bool> {
+    fn assign_worker<'a>(&'a self, _id: &'a EventId, _worker_index: i32) -> StoreFuture<'a, bool> {
         Box::pin(async { Err(unavailable()) })
     }
 

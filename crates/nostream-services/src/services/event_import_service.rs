@@ -204,7 +204,10 @@ impl<'a> ImportRun<'a> {
                 self.stats.errors += 1;
 
                 if let Some(on_line_error) = self.options.on_line_error {
-                    on_line_error(&EventImportLineError { line_number, reason });
+                    on_line_error(&EventImportLineError {
+                        line_number,
+                        reason,
+                    });
                 }
             }
         }
@@ -282,11 +285,10 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
 
     async fn read_more(&mut self) -> Result<bool, ServicesError> {
         let mut chunk = [0u8; 8 * 1024];
-        let read = self
-            .reader
-            .read(&mut chunk)
-            .await
-            .map_err(|error| ServicesError::Import(format!("Invalid JSON array input: {error}")))?;
+        let read =
+            self.reader.read(&mut chunk).await.map_err(|error| {
+                ServicesError::Import(format!("Invalid JSON array input: {error}"))
+            })?;
 
         if read == 0 {
             return Ok(false);
@@ -368,7 +370,8 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
             }
 
             let rest = &self.buffer[self.position..];
-            let mut values = serde_json::Deserializer::from_slice(rest).into_iter::<serde_json::Value>();
+            let mut values =
+                serde_json::Deserializer::from_slice(rest).into_iter::<serde_json::Value>();
 
             match values.next() {
                 Some(Ok(value)) => {

@@ -11,6 +11,7 @@ use nostream_config::notifications::{
     AdminNotificationsSettings, OperatorNotificationChannelType, OperatorNotificationEventToggles,
 };
 use nostream_config::settings::AdminSettings;
+use nostream_relay::relay_key::RelayKeySource;
 use nostream_services::services::notification_outbox_service::{
     NOTIFICATION_OUTBOX_BATCH_SIZE, NotificationOutboxService,
 };
@@ -21,7 +22,6 @@ use nostream_services::services::payments_service::PaymentsService;
 use nostream_services::testing;
 use nostream_services::unavailable::ServiceStores;
 use nostream_services::workers::maintenance::{MaintenanceRunner, MaintenanceTasks};
-use nostream_relay::relay_key::RelayKeySource;
 use nostream_storage::repositories::NotificationDeliveryStatus;
 use tokio::sync::broadcast;
 
@@ -155,7 +155,10 @@ async fn the_dispatcher_skips_and_builds_the_capture_envelope() {
     );
     disabled_target.enabled = Some(false);
     let dispatcher = OperatorNotificationService::new(
-        Arc::new(settings_with(notifications_with(true, vec![disabled_target]))),
+        Arc::new(settings_with(notifications_with(
+            true,
+            vec![disabled_target],
+        ))),
         None,
         delivery_log.clone(),
         http.clone(),
@@ -221,7 +224,11 @@ async fn the_dispatcher_skips_and_builds_the_capture_envelope() {
     );
 
     let error = dispatcher
-        .dispatch("admission.invoice.created", &payload, &DispatchContext::new())
+        .dispatch(
+            "admission.invoice.created",
+            &payload,
+            &DispatchContext::new(),
+        )
         .await
         .expect_err("the failing target errors");
     assert!(error.to_string().contains("bad:"));
@@ -234,7 +241,10 @@ async fn the_dispatcher_skips_and_builds_the_capture_envelope() {
     assert_eq!(calls.len(), 2);
     let body: serde_json::Value =
         serde_json::from_str(calls[0].body.as_deref().expect("a body")).expect("json");
-    assert_eq!(body["event"], serde_json::json!("admission.invoice.created"));
+    assert_eq!(
+        body["event"],
+        serde_json::json!("admission.invoice.created")
+    );
     assert_eq!(body["relay"], serde_json::json!("wss://relay.example.com"));
     assert_eq!(body["data"], payload);
     assert!(
@@ -252,7 +262,13 @@ async fn the_dispatcher_skips_and_builds_the_capture_envelope() {
     assert_eq!(appended[1].status, NotificationDeliveryStatus::Failed);
 }
 
-fn runner(settings: nostream_config::Settings) -> (MaintenanceRunner, Arc<testing::InMemoryDeliveryLogRepository>, Arc<testing::InMemoryOutboxRepository>) {
+fn runner(
+    settings: nostream_config::Settings,
+) -> (
+    MaintenanceRunner,
+    Arc<testing::InMemoryDeliveryLogRepository>,
+    Arc<testing::InMemoryOutboxRepository>,
+) {
     let delivery_log = testing::InMemoryDeliveryLogRepository::new();
     let outbox = testing::InMemoryOutboxRepository::new();
     let stores = ServiceStores {

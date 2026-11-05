@@ -41,7 +41,9 @@ fn context(settings: nostream_config::Settings) -> ServiceContext {
 
 #[test]
 fn worker_count_follows_the_environment_then_the_settings_then_the_cpus() {
-    let cpus = std::thread::available_parallelism().map(|count| count.get()).unwrap_or(1);
+    let cpus = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1);
 
     assert_eq!(resolve_worker_count(Some("2"), 0), 2);
     assert_eq!(resolve_worker_count(None, 2), 2);
@@ -207,8 +209,8 @@ async fn the_drain_deadline_aborts_a_worker_that_ignores_it() {
 #[tokio::test]
 async fn a_cooperating_worker_returns_before_the_deadline() {
     let shutdown = ShutdownState::new();
-    let mut supervisor = Supervisor::new(shutdown.clone())
-        .with_drain_deadline(Duration::from_secs(5));
+    let mut supervisor =
+        Supervisor::new(shutdown.clone()).with_drain_deadline(Duration::from_secs(5));
 
     supervisor.register(WorkerSpec::new(
         "cooperative",
@@ -255,7 +257,9 @@ fn the_drain_deadline_is_the_websocket_timeout_plus_five_seconds() {
 fn dvm_workers_register_one_spec_each() {
     let mut settings = testing::settings();
 
-    settings.dvm = Some(Dvm { workers: Some(Vec::new()) });
+    settings.dvm = Some(Dvm {
+        workers: Some(Vec::new()),
+    });
     assert_eq!(
         nostream_services::workers::dvm_orchestrator::dvm_specs(&context(settings.clone()))
             .expect("specs")

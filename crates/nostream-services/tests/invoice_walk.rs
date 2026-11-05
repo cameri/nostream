@@ -36,7 +36,8 @@ fn build(with_key: bool) -> Fixture {
     let stores = Arc::new(ServiceStores {
         events: Arc::clone(&events) as Arc<dyn nostream_storage::repositories::EventRepository>,
         users,
-        invoices: Arc::clone(&invoices) as Arc<dyn nostream_storage::repositories::InvoiceRepository>,
+        invoices: Arc::clone(&invoices)
+            as Arc<dyn nostream_storage::repositories::InvoiceRepository>,
         nip05: testing::InMemoryNip05Repository::new(),
         dvm_jobs: testing::InMemoryDvmJobRepository::new(),
         notification_outbox: Arc::clone(&outbox)
@@ -110,7 +111,11 @@ async fn a_404_expires_an_expired_invoice_and_leaves_a_live_or_failing_one_alone
             InvoiceStatus::Pending,
             Some(now_seconds() - 86_400),
         ),
-        invoice("live-1", InvoiceStatus::Pending, Some(now_seconds() + 86_400)),
+        invoice(
+            "live-1",
+            InvoiceStatus::Pending,
+            Some(now_seconds() + 86_400),
+        ),
     ]);
 
     let mut offset = 0;
@@ -136,9 +141,11 @@ async fn a_404_expires_an_expired_invoice_and_leaves_a_live_or_failing_one_alone
 
     let fixture = build(false);
     fixture.processor.fail_get(Some(500), "HTTP status 500");
-    fixture
-        .invoices
-        .set_invoices(vec![invoice("live-1", InvoiceStatus::Pending, Some(now_seconds() + 86_400))]);
+    fixture.invoices.set_invoices(vec![invoice(
+        "live-1",
+        InvoiceStatus::Pending,
+        Some(now_seconds() + 86_400),
+    )]);
     let mut offset = 0;
     fixture
         .service
@@ -210,7 +217,10 @@ async fn only_a_status_change_to_completed_confirms_and_notifies() {
         fixture.invoices.confirmations().is_empty(),
         "a completed invoice is not confirmed again"
     );
-    assert!(fixture.events.creates().is_empty(), "and not notified again");
+    assert!(
+        fixture.events.creates().is_empty(),
+        "and not notified again"
+    );
 
     let fixture = build(true);
     fixture.processor.set_update(InvoiceUpdate {
@@ -239,5 +249,8 @@ async fn only_a_status_change_to_completed_confirms_and_notifies() {
         "the update omits amountPaid, so the stored amountRequested is used"
     );
     assert_eq!(fixture.events.creates().len(), 1, "the update notification");
-    assert_eq!(fixture.events.creates()[0].event.kind, nostream_core::Kind(402));
+    assert_eq!(
+        fixture.events.creates()[0].event.kind,
+        nostream_core::Kind(402)
+    );
 }

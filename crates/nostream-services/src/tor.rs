@@ -32,7 +32,9 @@ impl TorConfig {
     /// The configuration the process environment describes.
     pub fn from_env(config_dir: &Path, relay_port: u16) -> Self {
         Self {
-            host: std::env::var("TOR_HOST").ok().filter(|host| !host.is_empty()),
+            host: std::env::var("TOR_HOST")
+                .ok()
+                .filter(|host| !host.is_empty()),
             port: std::env::var("TOR_CONTROL_PORT")
                 .ok()
                 .and_then(|port| port.parse().ok())
@@ -84,9 +86,9 @@ impl TorClient {
     /// Connects and authenticates (`createTorClient` + `connect`,
     /// `src/tor/client.ts:33-56`).
     pub async fn connect(host: &str, port: u16, password: &str) -> Result<Self, ServicesError> {
-        let stream = TcpStream::connect((host, port))
-            .await
-            .map_err(|error| ServicesError::Tor(format!("Tor control port connect failed: {error}")))?;
+        let stream = TcpStream::connect((host, port)).await.map_err(|error| {
+            ServicesError::Tor(format!("Tor control port connect failed: {error}"))
+        })?;
         let mut client = Self {
             stream,
             buffer: String::new(),
@@ -118,7 +120,9 @@ impl TorClient {
             .await?;
 
         if !reply.starts_with("250") {
-            return Err(ServicesError::Tor(reply.trim_end_matches("\r\n").to_owned()));
+            return Err(ServicesError::Tor(
+                reply.trim_end_matches("\r\n").to_owned(),
+            ));
         }
 
         let mut service_id = None;
@@ -174,11 +178,10 @@ impl TorClient {
             }
 
             let mut chunk = [0u8; 4 * 1024];
-            let read = self
-                .stream
-                .read(&mut chunk)
-                .await
-                .map_err(|error| ServicesError::Tor(format!("Tor control read failed: {error}")))?;
+            let read =
+                self.stream.read(&mut chunk).await.map_err(|error| {
+                    ServicesError::Tor(format!("Tor control read failed: {error}"))
+                })?;
 
             if read == 0 {
                 return Err(ServicesError::Tor(format!(
@@ -187,7 +190,8 @@ impl TorClient {
                 )));
             }
 
-            self.buffer.push_str(&String::from_utf8_lossy(&chunk[..read]));
+            self.buffer
+                .push_str(&String::from_utf8_lossy(&chunk[..read]));
         }
     }
 }

@@ -144,18 +144,11 @@ async fn resolve_answers_the_null_processor_and_the_captures_failures() {
         None
     );
 
-    let configured = settings(
-        Processor::Zebedee,
-        zebedee_settings(),
-    );
+    let configured = settings(Processor::Zebedee, zebedee_settings());
     assert_eq!(
-        resolve(
-            &configured,
-            &http,
-            &env(&[("ZEBEDEE_API_KEY", "key")])
-        )
-        .expect("the zebedee processor")
-        .processor(),
+        resolve(&configured, &http, &env(&[("ZEBEDEE_API_KEY", "key")]))
+            .expect("the zebedee processor")
+            .processor(),
         Some(Processor::Zebedee)
     );
 
@@ -280,11 +273,15 @@ async fn zebedee_creates_and_decodes_its_invoice() {
         .expect("created");
     let call = http.last_call().expect("a call");
     assert_eq!(call.url, "https://api.zebedee.io/v0/charges");
-    let body: serde_json::Value = serde_json::from_str(call.body.as_deref().expect("body")).expect("json");
+    let body: serde_json::Value =
+        serde_json::from_str(call.body.as_deref().expect("body")).expect("json");
     assert_eq!(body["amount"], serde_json::json!("1500"));
     assert_eq!(body["internalId"], serde_json::json!("requester"));
     assert_eq!(body["description"], serde_json::json!("admission"));
-    assert_eq!(body["callbackUrl"], serde_json::json!("https://relay.example.com/callbacks/zebedee"));
+    assert_eq!(
+        body["callbackUrl"],
+        serde_json::json!("https://relay.example.com/callbacks/zebedee")
+    );
     assert_eq!(created.id, "charge-1");
     assert_eq!(created.pubkey.as_deref(), Some("requester"));
     assert_eq!(created.bolt11, "lnbc1");
@@ -305,7 +302,10 @@ async fn zebedee_creates_and_decodes_its_invoice() {
     assert_eq!(update.amount_requested, Some(2_000));
     assert_eq!(update.status, Some(InvoiceStatus::Completed));
     assert!(update.confirmed_at.is_some());
-    assert_eq!(update.expires_at, None, "an absent expiresAt decodes to None");
+    assert_eq!(
+        update.expires_at, None,
+        "an absent expiresAt decodes to None"
+    );
 }
 
 fn invoice(id: &str) -> Invoice {
@@ -361,10 +361,7 @@ async fn lnurl_creates_a_uuid_invoice_and_reads_back_settlement() {
     assert_eq!(&created.id[14..15], "4", "a version-4 UUID");
 
     http.respond(200, r#"{"settled":true}"#);
-    let update = processor
-        .get_invoice(&invoice("id"))
-        .await
-        .expect("lookup");
+    let update = processor.get_invoice(&invoice("id")).await.expect("lookup");
     assert_eq!(update.status, Some(InvoiceStatus::Completed));
     assert!(update.confirmed_at.is_some());
 }
@@ -477,7 +474,12 @@ async fn nodeless_maps_every_status_and_defaults_its_expiry() {
     assert_eq!(body["metadata"]["unit"], serde_json::json!("sats"));
     assert_eq!(body["amount"], serde_json::json!(1));
     assert_eq!(created.amount_requested, 2);
-    assert_eq!(created.expires_at, created.created_at.map(|created| created + chrono::TimeDelta::minutes(15)));
+    assert_eq!(
+        created.expires_at,
+        created
+            .created_at
+            .map(|created| created + chrono::TimeDelta::minutes(15))
+    );
 
     for (provider, expected) in [
         ("new", InvoiceStatus::Pending),
@@ -560,7 +562,11 @@ async fn opennode_maps_every_status_and_both_payreq_shapes() {
         .get_invoice(&invoice("ch1"))
         .await
         .expect("lookup");
-    assert_eq!(update.amount_requested, Some(3), "the amount falls back to price");
+    assert_eq!(
+        update.amount_requested,
+        Some(3),
+        "the amount falls back to price"
+    );
 }
 
 #[derive(Debug, Default)]
@@ -618,7 +624,8 @@ impl Nip47Transport for FakeTransport {
 #[tokio::test]
 async fn nwc_sends_the_captures_requests_maps_states_and_times_out() {
     let transport = Arc::new(FakeTransport::default());
-    let transport_trait: Arc<dyn Nip47Transport> = Arc::clone(&transport) as Arc<dyn Nip47Transport>;
+    let transport_trait: Arc<dyn Nip47Transport> =
+        Arc::clone(&transport) as Arc<dyn Nip47Transport>;
     let processor = NwcProcessor::with_transport(transport_trait, Duration::from_millis(40), 3_600);
 
     transport.reply(serde_json::json!({
@@ -673,7 +680,10 @@ async fn nwc_sends_the_captures_requests_maps_states_and_times_out() {
         .get_invoice(&invoice("hash-1"))
         .await
         .expect_err("the reply is late");
-    assert_eq!(failure.to_string(), "payment processor error: reply timeout after 40ms");
+    assert_eq!(
+        failure.to_string(),
+        "payment processor error: reply timeout after 40ms"
+    );
 
     let too_large = processor
         .create_invoice(i64::MAX, "admission", "requester")

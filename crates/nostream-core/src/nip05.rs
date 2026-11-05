@@ -152,9 +152,7 @@ pub trait Nip05Fetch: Send + Sync {
         timeout_ms: u64,
         max_bytes: usize,
         max_redirects: usize,
-    ) -> std::pin::Pin<
-        Box<dyn Future<Output = Result<FetchOutcome, CoreError>> + Send + 'a>,
-    >;
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<FetchOutcome, CoreError>> + Send + 'a>>;
 }
 
 /// What one verification attempt settled (`Nip05VerificationOutcome`,
@@ -242,12 +240,17 @@ pub async fn verify(
     for (name, pubkey) in names {
         if !is_pubkey(pubkey.as_str().unwrap_or_default()) {
             return VerificationOutcome::Invalid {
-                reason: format!("malformed response: names.{name} is not a 64-character hex pubkey"),
+                reason: format!(
+                    "malformed response: names.{name} is not a 64-character hex pubkey"
+                ),
             };
         }
     }
 
-    match names.get(&parsed.local_part).and_then(serde_json::Value::as_str) {
+    match names
+        .get(&parsed.local_part)
+        .and_then(serde_json::Value::as_str)
+    {
         Some(registered) if registered.eq_ignore_ascii_case(expected_pubkey) => {
             VerificationOutcome::Verified
         }
@@ -260,7 +263,12 @@ fn encode_component(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
 
     for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')') {
+        if byte.is_ascii_alphanumeric()
+            || matches!(
+                byte,
+                b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')'
+            )
+        {
             encoded.push(char::from(byte));
         } else {
             encoded.push_str(&format!("%{byte:02X}"));

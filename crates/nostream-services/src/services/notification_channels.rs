@@ -93,7 +93,10 @@ async fn deliver_http(
 
     if let Some(secret) = target.secret.as_ref() {
         let digest = hex::encode(hmac_sha256(secret.expose().as_bytes(), body.as_bytes())?);
-        headers.push(("x-nostream-signature".to_owned(), format!("sha256={digest}")));
+        headers.push((
+            "x-nostream-signature".to_owned(),
+            format!("sha256={digest}"),
+        ));
     }
 
     http.post(url.expose(), &headers, &body, REQUEST_TIMEOUT)
@@ -151,7 +154,8 @@ async fn deliver_telegram(
     envelope: &NotificationEnvelope,
     http: &dyn HttpClient,
 ) -> Result<(), ServicesError> {
-    let (Some(bot_token), Some(chat_id)) = (target.bot_token.as_ref(), target.chat_id.as_ref()) else {
+    let (Some(bot_token), Some(chat_id)) = (target.bot_token.as_ref(), target.chat_id.as_ref())
+    else {
         return Err(ServicesError::Notification(
             "Telegram notification target requires botToken and chatId".to_owned(),
         ));
@@ -175,11 +179,7 @@ async fn deliver_telegram(
     post_json(http, &url, &body).await
 }
 
-async fn post_json(
-    http: &dyn HttpClient,
-    url: &str,
-    body: &Value,
-) -> Result<(), ServicesError> {
+async fn post_json(http: &dyn HttpClient, url: &str, body: &Value) -> Result<(), ServicesError> {
     crate::http::post_json(http, url, body, REQUEST_TIMEOUT)
         .await
         .map(|_| ())

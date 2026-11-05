@@ -29,7 +29,11 @@ pub fn encrypt(
     let ciphertext = Encryptor::new(&key.into(), &(*iv).into())
         .encrypt_padded_vec_mut::<Pkcs7>(plaintext.as_bytes());
 
-    Ok(format!("{}?iv={}", STANDARD.encode(ciphertext), STANDARD.encode(iv)))
+    Ok(format!(
+        "{}?iv={}",
+        STANDARD.encode(ciphertext),
+        STANDARD.encode(iv)
+    ))
 }
 
 /// Decrypts a NIP-04 payload from `peer` (`nip04.decrypt`).
@@ -44,9 +48,9 @@ pub fn decrypt(secret_key: &[u8; 32], peer: &Pubkey, payload: &str) -> Result<St
     let iv = STANDARD
         .decode(iv)
         .map_err(|error| CoreError::InvalidNip44(format!("nip04 iv: {error}")))?;
-    let iv: [u8; 16] = iv
-        .try_into()
-        .map_err(|iv: Vec<u8>| CoreError::InvalidNip44(format!("nip04 iv is {} bytes", iv.len())))?;
+    let iv: [u8; 16] = iv.try_into().map_err(|iv: Vec<u8>| {
+        CoreError::InvalidNip44(format!("nip04 iv is {} bytes", iv.len()))
+    })?;
 
     let key = shared_secret_x(secret_key, peer)?;
     let plaintext = Decryptor::new(&key.into(), &iv.into())

@@ -282,9 +282,7 @@ fn merge_target_secrets(
     if is_redacted_secret(incoming.secret.as_ref().map(|secret| secret.expose())) {
         merged.secret = existing.and_then(|target| target.secret.clone());
     } else if incoming.secret.is_none()
-        && existing
-            .and_then(|target| target.secret.clone())
-            .is_some()
+        && existing.and_then(|target| target.secret.clone()).is_some()
     {
         merged.secret = existing.and_then(|target| target.secret.clone());
     }

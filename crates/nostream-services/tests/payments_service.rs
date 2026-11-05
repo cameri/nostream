@@ -172,7 +172,12 @@ fn invoice_expiry_prefers_the_processor_and_caps_the_configured_fallback() {
         created_at + chrono::TimeDelta::seconds(DEFAULT_INVOICE_EXPIRY_SECONDS as i64)
     );
     assert_eq!(
-        resolve_invoice_expiry(None, Some(created_at), Some(MAX_INVOICE_EXPIRY_SECONDS + 1), now),
+        resolve_invoice_expiry(
+            None,
+            Some(created_at),
+            Some(MAX_INVOICE_EXPIRY_SECONDS + 1),
+            now
+        ),
         created_at + chrono::TimeDelta::seconds(MAX_INVOICE_EXPIRY_SECONDS as i64)
     );
     assert_eq!(
@@ -181,7 +186,10 @@ fn invoice_expiry_prefers_the_processor_and_caps_the_configured_fallback() {
     );
 
     assert!(is_expired_invoice(Some(now), now));
-    assert!(!is_expired_invoice(Some(now + chrono::TimeDelta::seconds(1)), now));
+    assert!(!is_expired_invoice(
+        Some(now + chrono::TimeDelta::seconds(1)),
+        now
+    ));
     assert!(!is_expired_invoice(None, now));
 }
 
@@ -315,7 +323,11 @@ async fn confirm_invoice_guards_and_admits_at_the_enabled_fee_sum() {
         .confirm_invoice(&invoice(InvoiceUnit::Sats, Some(1)))
         .await
         .expect("confirmed");
-    assert_eq!(fixture.users.admitted().len(), 1, "no admission below the sum");
+    assert_eq!(
+        fixture.users.admitted().len(),
+        1,
+        "no admission below the sum"
+    );
 
     // A payer named in every enabled schedule's whitelist owes nothing.
     let whitelisted = fixture_with_only_whitelisted(&payer);
@@ -329,25 +341,26 @@ async fn confirm_invoice_guards_and_admits_at_the_enabled_fee_sum() {
 
 fn fixture_with_only_whitelisted(payer: &nostream_core::Pubkey) -> Fixture {
     build(
-        payments_settings(vec![fee(1_000, true, vec![SettingsPubkey(payer.to_string())])]),
+        payments_settings(vec![fee(
+            1_000,
+            true,
+            vec![SettingsPubkey(payer.to_string())],
+        )]),
         false,
     )
 }
 
 #[tokio::test]
 async fn the_update_notification_carries_the_capture_content_and_expiration() {
-    let fixture = build(
-        payments_settings(Vec::new()),
-        true,
-    );
+    let fixture = build(payments_settings(Vec::new()), true);
     let mut receiver = fixture.hub.subscribe();
 
     // A December reading: the expiration rolls into January of the next year.
-    fixture
-        .clock
-        .set(chrono::DateTime::from_timestamp(1_798_000_000, 0)
+    fixture.clock.set(
+        chrono::DateTime::from_timestamp(1_798_000_000, 0)
             .expect("a date")
-            .timestamp_millis() as u64);
+            .timestamp_millis() as u64,
+    );
 
     fixture
         .service
@@ -365,7 +378,10 @@ async fn the_update_notification_carries_the_capture_content_and_expiration() {
 
     let expiration: i64 = event.tags[2][1].parse().expect("seconds");
     let expected = local_next_month_midnight(fixture.clock.now_secs());
-    assert_eq!(expiration, expected, "local midnight of the same day next month");
+    assert_eq!(
+        expiration, expected,
+        "local midnight of the same day next month"
+    );
 
     let broadcast = tokio::time::timeout(std::time::Duration::from_millis(100), receiver.recv())
         .await
@@ -425,8 +441,7 @@ async fn the_renewal_notification_uses_amount_requested_and_the_invoice_expiry()
     let event = fixture.events.creates().remove(0).event;
     assert_eq!(event.content, "Subscription renewal due: 21 sats");
     assert_eq!(
-        event.tags[2][1],
-        "1700100000",
+        event.tags[2][1], "1700100000",
         "the invoice's own expiry is the expiration tag"
     );
 }

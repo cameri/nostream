@@ -132,7 +132,10 @@ async fn a_job_is_dispatched_to_the_child_and_its_reply_is_published() {
     let result = await_result(&mut receiver, Kind(6100)).await;
 
     assert_eq!(fixture.orchestrator.command(), "sh");
-    assert_eq!(result.content, "request", "cat echoes the request's content");
+    assert_eq!(
+        result.content, "request",
+        "cat echoes the request's content"
+    );
     assert_eq!(result.tags[0][0], "e");
     assert_eq!(result.tags[1][0], "p");
     let expected_pubkey = RelayKeySource::from_values(Some("01".repeat(32)), None)
@@ -215,7 +218,10 @@ async fn a_result_that_cannot_be_signed_fails_the_job() {
     assert_eq!(updates[0].status, DvmJobStatus::Failed);
     match &updates[0].error {
         nostream_storage::repositories::FieldUpdate::Set(message) => {
-            assert!(message.starts_with("unable to publish result:"), "{message}");
+            assert!(
+                message.starts_with("unable to publish result:"),
+                "{message}"
+            );
         }
         other => panic!("expected an error, got {other:?}"),
     }
@@ -254,12 +260,15 @@ fn one_spec_per_configured_worker_and_none_without_configuration() {
     let context = nostream_services::testing::context(settings);
     assert_eq!(dvm_specs(&context).expect("two workers").len(), 2);
     assert_eq!(
-        DvmWorkerConfig::from_settings(1, &DvmWorker {
-            command: "sh".to_owned(),
-            args: None,
-            kinds: None,
-            timeout_ms: None,
-        })
+        DvmWorkerConfig::from_settings(
+            1,
+            &DvmWorker {
+                command: "sh".to_owned(),
+                args: None,
+                kinds: None,
+                timeout_ms: None,
+            }
+        )
         .timeout,
         Duration::from_millis(60_000)
     );

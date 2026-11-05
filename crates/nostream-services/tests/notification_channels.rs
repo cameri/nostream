@@ -56,17 +56,26 @@ async fn the_http_channel_sends_the_envelope_and_signs_it_with_the_secret() {
                 "x-nostream-signature".to_owned(),
                 format!(
                     "sha256={}",
-                    sign(b"super-secret", call.body.as_deref().unwrap_or_default().as_bytes())
+                    sign(
+                        b"super-secret",
+                        call.body.as_deref().unwrap_or_default().as_bytes()
+                    )
                 ),
             ),
         ]
     );
     let body: serde_json::Value =
         serde_json::from_str(call.body.as_deref().expect("a body")).expect("json");
-    assert_eq!(body["event"], serde_json::json!("admission.invoice.created"));
+    assert_eq!(
+        body["event"],
+        serde_json::json!("admission.invoice.created")
+    );
     assert_eq!(body["relay"], serde_json::json!("wss://relay.example.com"));
     assert_eq!(body["timestamp"], serde_json::json!("2026-01-02T03:04:05Z"));
-    assert_eq!(body["data"], serde_json::json!({ "invoiceId": "invoice-1" }));
+    assert_eq!(
+        body["data"],
+        serde_json::json!({ "invoiceId": "invoice-1" })
+    );
 
     // Without a secret the signature header is absent.
     http.respond(204, "");
@@ -149,11 +158,7 @@ async fn discord_slack_and_telegram_wrap_the_envelope_and_truncate_the_data() {
 
     let http = testing::RecordingHttpClient::new();
     http.respond(204, "");
-    let mut telegram = testing::target(
-        "telegram",
-        OperatorNotificationChannelType::Telegram,
-        None,
-    );
+    let mut telegram = testing::target("telegram", OperatorNotificationChannelType::Telegram, None);
     telegram.bot_token = Some(Secret("123:abc".to_owned()));
     telegram.chat_id = Some("7175022".to_owned());
     deliver_to_target(&telegram, &envelope, &*http)
@@ -187,7 +192,11 @@ async fn only_a_two_hundred_class_status_succeeds() {
 
         let result = deliver_to_target(&target, &envelope(), &*http).await;
         assert_eq!(result.is_ok(), expected_ok, "status {status}");
-        if let Err(ServicesError::Http { status: Some(reported), .. }) = result {
+        if let Err(ServicesError::Http {
+            status: Some(reported),
+            ..
+        }) = result
+        {
             assert_eq!(reported, status);
         }
     }

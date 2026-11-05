@@ -32,7 +32,8 @@ pub fn resolve_invoice_expiry(
     }
 
     let base = created_at.unwrap_or(now);
-    let seconds = i64::try_from(resolve_invoice_expiry_seconds(configured_seconds)).unwrap_or(i64::MAX);
+    let seconds =
+        i64::try_from(resolve_invoice_expiry_seconds(configured_seconds)).unwrap_or(i64::MAX);
 
     base + TimeDelta::try_seconds(seconds).unwrap_or(TimeDelta::MAX)
 }

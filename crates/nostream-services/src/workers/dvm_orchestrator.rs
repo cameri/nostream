@@ -16,13 +16,13 @@ use tokio::process::{Child, ChildStdin};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::AbortHandle;
 
-use nostream_config::settings::DvmWorker;
 use nostream_config::Settings;
+use nostream_config::settings::DvmWorker;
+use nostream_core::Filter;
 use nostream_core::clock::Clock;
 use nostream_core::crypto::sign_event;
 use nostream_core::event::{Event, EventId, Kind, Signature};
 use nostream_core::lifecycle::ShutdownState;
-use nostream_core::Filter;
 use nostream_relay::relay_key::RelayKeySource;
 use nostream_storage::repositories::{
     DvmJob, DvmJobStatus, DvmJobUpdate, EventRecord, FieldUpdate,
@@ -81,7 +81,9 @@ struct WorkerHandle {
 
 enum WorkerEvent {
     Line(String),
-    Timeout { id: EventId },
+    Timeout {
+        id: EventId,
+    },
     Exit {
         code: Option<i32>,
         signal: Option<i32>,
@@ -277,7 +279,8 @@ impl DvmOrchestrator {
         let job_id = job.id;
 
         let Some(record) = record else {
-            self.fail_job(&job_id, "source event not found", false).await;
+            self.fail_job(&job_id, "source event not found", false)
+                .await;
             return;
         };
 

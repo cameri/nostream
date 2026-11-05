@@ -111,13 +111,8 @@ impl Nip47Transport for NwcRelayTransport {
                 .map_err(|error| ServicesError::Payment(error.to_string()))?
                 .try_into()
                 .map_err(|_| ServicesError::Payment("NWC iv".to_owned()))?;
-            let content = nip04::encrypt(
-                &self.secret,
-                &self.wallet,
-                &payload.to_string(),
-                &iv,
-            )
-            .map_err(|error| ServicesError::Payment(error.to_string()))?;
+            let content = nip04::encrypt(&self.secret, &self.wallet, &payload.to_string(), &iv)
+                .map_err(|error| ServicesError::Payment(error.to_string()))?;
 
             let mut event = Event {
                 id: EventId::from_byte_array([0; 32]),
@@ -188,9 +183,8 @@ impl Nip47Transport for NwcRelayTransport {
                             continue;
                         }
 
-                        let decrypted =
-                            nip04::decrypt(&self.secret, &self.wallet, &reply.content)
-                                .map_err(|error| ServicesError::Payment(error.to_string()))?;
+                        let decrypted = nip04::decrypt(&self.secret, &self.wallet, &reply.content)
+                            .map_err(|error| ServicesError::Payment(error.to_string()))?;
                         let document: serde_json::Value = serde_json::from_str(&decrypted)
                             .map_err(|error| ServicesError::Payment(error.to_string()))?;
 
@@ -200,9 +194,7 @@ impl Nip47Transport for NwcRelayTransport {
                             continue;
                         }
 
-                        if let Some(error) = document
-                            .get("error")
-                            .filter(|error| !error.is_null())
+                        if let Some(error) = document.get("error").filter(|error| !error.is_null())
                         {
                             let message = error
                                 .get("message")
@@ -215,12 +207,9 @@ impl Nip47Transport for NwcRelayTransport {
                             return Err(ServicesError::Payment(format!("{code}: {message}")));
                         }
 
-                        let result = document
-                            .get("result")
-                            .cloned()
-                            .ok_or_else(|| {
-                                ServicesError::Payment("NWC reply has no result".to_owned())
-                            })?;
+                        let result = document.get("result").cloned().ok_or_else(|| {
+                            ServicesError::Payment("NWC reply has no result".to_owned())
+                        })?;
 
                         return Ok(Nip47Response { result });
                     }

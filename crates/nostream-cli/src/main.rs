@@ -32,7 +32,11 @@ enum Command {
     #[command(disable_help_flag = true)]
     Import {
         /// The command's own arguments, parsed by the command (see its help).
-        #[arg(value_name = "ARGS", trailing_var_arg = true, allow_hyphen_values = true)]
+        #[arg(
+            value_name = "ARGS",
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
         args: Vec<String>,
     },
     /// Print the relay's NIP-11 info.

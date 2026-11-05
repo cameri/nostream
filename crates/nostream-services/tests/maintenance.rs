@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use nostream_config::settings::{
-    EventLimits, EventRetentionKindLimits, EventRetentionLimits, EventRetentionPubkeyLimits, Limits,
-    Nip05Mode, Nip05Settings,
+    EventLimits, EventRetentionKindLimits, EventRetentionLimits, EventRetentionPubkeyLimits,
+    Limits, Nip05Mode, Nip05Settings,
 };
 use nostream_core::lifecycle::ShutdownState;
 use nostream_core::{Kind, KindSelector, SettingsPubkey};
@@ -26,9 +26,11 @@ use nostream_services::services::operator_notification_service::{
 use nostream_services::services::payments_service::PaymentsService;
 use nostream_services::testing;
 use nostream_services::unavailable::ServiceStores;
-use nostream_storage::repositories::{EventRepository, NotificationDeliveryLogRepository, NotificationOutboxRepository};
 use nostream_services::workers::maintenance::{
     MaintenanceRunner, MaintenanceTasks, MaintenanceWorker, NIP05_REVERIFICATION_BATCH_SIZE,
+};
+use nostream_storage::repositories::{
+    EventRepository, NotificationDeliveryLogRepository, NotificationOutboxRepository,
 };
 use tokio::sync::{Semaphore, broadcast};
 
@@ -65,16 +67,20 @@ impl ScriptedTasks {
 }
 
 impl MaintenanceTasks for ScriptedTasks {
-    fn clear_old_events(&self) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
+    fn clear_old_events(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
         Box::pin(async move {
             self.record("purge started");
 
             if let Some(delay) = self.purge_delay {
                 tokio::time::sleep(delay).await;
             } else {
-                let permit = self.gate.acquire().await.map_err(|_| {
-                    ServicesError::Configuration("the gate closed".to_owned())
-                })?;
+                let permit = self
+                    .gate
+                    .acquire()
+                    .await
+                    .map_err(|_| ServicesError::Configuration("the gate closed".to_owned()))?;
                 permit.forget();
             }
 
@@ -84,7 +90,9 @@ impl MaintenanceTasks for ScriptedTasks {
         })
     }
 
-    fn reverify_nip05(&self) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
+    fn reverify_nip05(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
         Box::pin(async move {
             self.passes.fetch_add(1, Ordering::SeqCst);
             self.record("nip05");
@@ -103,7 +111,9 @@ impl MaintenanceTasks for ScriptedTasks {
         })
     }
 
-    fn walk_invoices(&self) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
+    fn walk_invoices(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
         Box::pin(async move {
             self.record("invoices");
 
@@ -225,7 +235,10 @@ fn retention_limits(max_days: Option<i64>) -> Limits {
 
 #[tokio::test]
 async fn a_purge_that_outlives_the_timeout_does_not_fail_the_pass() {
-    let tasks = ScriptedTasks::new(Arc::new(Semaphore::new(0)), Some(Duration::from_millis(200)));
+    let tasks = ScriptedTasks::new(
+        Arc::new(Semaphore::new(0)),
+        Some(Duration::from_millis(200)),
+    );
     let worker = MaintenanceWorker::new(
         Arc::new(payments_settings()),
         Arc::clone(&tasks) as Arc<dyn MaintenanceTasks>,
@@ -236,7 +249,10 @@ async fn a_purge_that_outlives_the_timeout_does_not_fail_the_pass() {
     let outcome = worker.run_pass().await;
 
     assert!(outcome.purge_timed_out);
-    assert_eq!(tasks.entries(), vec!["purge started", "nip05", "outbox", "invoices"]);
+    assert_eq!(
+        tasks.entries(),
+        vec!["purge started", "nip05", "outbox", "invoices"]
+    );
 }
 
 #[tokio::test]
@@ -254,7 +270,13 @@ async fn the_pass_runs_in_the_capture_order() {
     assert!(!outcome.purge_timed_out);
     assert_eq!(
         tasks.entries(),
-        vec!["purge started", "nip05", "outbox", "invoices", "purge finished"]
+        vec![
+            "purge started",
+            "nip05",
+            "outbox",
+            "invoices",
+            "purge finished"
+        ]
     );
 }
 
@@ -352,7 +374,8 @@ fn runner(
         events: testing::InMemoryEventRepository::new(),
         users: testing::InMemoryUserRepository::new(),
         invoices: testing::InMemoryInvoiceRepository::new(),
-        nip05: Arc::clone(&nip05) as Arc<dyn nostream_storage::repositories::Nip05VerificationRepository>,
+        nip05: Arc::clone(&nip05)
+            as Arc<dyn nostream_storage::repositories::Nip05VerificationRepository>,
         dvm_jobs: testing::InMemoryDvmJobRepository::new(),
         notification_outbox: testing::InMemoryOutboxRepository::new(),
         notification_delivery_log: testing::InMemoryDeliveryLogRepository::new(),
@@ -475,7 +498,10 @@ async fn the_nip05_batch_is_skipped_when_disabled_and_read_with_the_captures_def
     assert_eq!(upserts[0].last_verified_at, last_verified_at);
 }
 
-fn verification(nip05: &str, failure_count: i32) -> nostream_storage::repositories::Nip05Verification {
+fn verification(
+    nip05: &str,
+    failure_count: i32,
+) -> nostream_storage::repositories::Nip05Verification {
     use nostream_storage::repositories::Nip05Verification;
 
     let now = chrono::Utc::now();

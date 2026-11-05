@@ -6,10 +6,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use chrono::{SecondsFormat, TimeZone, Utc};
+use nostream_config::Settings;
 use nostream_config::notifications::{
     AdminNotificationsSettings, OperatorNotificationEventToggles, get_merged_admin_notifications,
 };
-use nostream_config::Settings;
 use nostream_core::clock::Clock;
 use nostream_storage::repositories::{
     NewDeliveryLogEntry, NotificationDeliveryLogRepository, NotificationDeliveryStatus,
@@ -82,19 +82,30 @@ impl OperatorNotificationService {
     /// The effective notification block.
     pub fn merged(&self) -> AdminNotificationsSettings {
         get_merged_admin_notifications(
-            self.settings.admin.as_ref().and_then(|admin| admin.notifications.as_ref()),
+            self.settings
+                .admin
+                .as_ref()
+                .and_then(|admin| admin.notifications.as_ref()),
             self.defaults.as_deref(),
         )
     }
 
     /// `getMaxAttempts`.
     pub fn max_attempts(&self) -> i32 {
-        self.merged().retry.max_attempts.unwrap_or(5).min(i32::MAX as u32) as i32
+        self.merged()
+            .retry
+            .max_attempts
+            .unwrap_or(5)
+            .min(i32::MAX as u32) as i32
     }
 
     /// `getBaseDelayMs`.
     pub fn base_delay_ms(&self) -> i64 {
-        self.merged().retry.base_delay_ms.unwrap_or(1_000).min(i64::MAX as u64) as i64
+        self.merged()
+            .retry
+            .base_delay_ms
+            .unwrap_or(1_000)
+            .min(i64::MAX as u64) as i64
     }
 
     fn envelope(&self, event_type: &str, payload: &Value) -> NotificationEnvelope {
@@ -126,10 +137,7 @@ impl OperatorNotificationService {
 }
 
 /// `isEventEnabled`: an event is enabled unless its toggle is exactly `false`.
-pub fn is_event_enabled(
-    events: &OperatorNotificationEventToggles,
-    event_type: &str,
-) -> bool {
+pub fn is_event_enabled(events: &OperatorNotificationEventToggles, event_type: &str) -> bool {
     let toggle = match event_type {
         "admission.invoice.created" => events.admission_invoice_created,
         "admission.invoice.paid" => events.admission_invoice_paid,

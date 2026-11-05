@@ -22,6 +22,7 @@ use nostream_storage::repositories::Nip05Verification;
 
 use crate::context::ServiceContext;
 use crate::error::ServicesError;
+use crate::payments::{PaymentProcessor, resolve};
 use crate::scheduler::WorkerSpec;
 use crate::services::maintenance_service::MaintenanceService;
 use crate::services::notification_outbox_service::{
@@ -29,7 +30,6 @@ use crate::services::notification_outbox_service::{
 };
 use crate::services::operator_notification_service::OperatorNotificationService;
 use crate::services::payments_service::PaymentsService;
-use crate::payments::{PaymentProcessor, resolve};
 use crate::unavailable::ServiceStores;
 
 /// The pass interval (`UPDATE_INVOICE_INTERVAL`, `src/app/maintenance-worker.ts:35`).
@@ -60,12 +60,17 @@ pub struct PassOutcome {
 
 /// The four steps, so a test can instrument their order without a store or a network.
 pub trait MaintenanceTasks: Send + Sync {
-    fn clear_old_events(&self) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>>;
-    fn reverify_nip05(&self) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>>;
+    fn clear_old_events(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>>;
+    fn reverify_nip05(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>>;
     fn process_notification_outbox(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>>;
-    fn walk_invoices(&self) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>>;
+    fn walk_invoices(&self)
+    -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>>;
 }
 
 /// The pass loop.
@@ -148,10 +153,8 @@ impl MaintenanceWorker {
 
     /// The loop: one tick at a time, skipping a tick while a pass is running.
     pub async fn run(self: Arc<Self>, shutdown: ShutdownState) -> Result<(), ServicesError> {
-        let mut ticker = tokio::time::interval_at(
-            tokio::time::Instant::now() + self.interval,
-            self.interval,
-        );
+        let mut ticker =
+            tokio::time::interval_at(tokio::time::Instant::now() + self.interval, self.interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {
@@ -212,7 +215,9 @@ impl MaintenanceRunner {
 }
 
 impl MaintenanceTasks for MaintenanceRunner {
-    fn clear_old_events(&self) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
+    fn clear_old_events(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
         Box::pin(async move {
             MaintenanceService::new(Arc::clone(&self.stores.events), Arc::clone(&self.settings))
                 .clear_old_events()
@@ -220,7 +225,9 @@ impl MaintenanceTasks for MaintenanceRunner {
         })
     }
 
-    fn reverify_nip05(&self) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
+    fn reverify_nip05(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
         Box::pin(async move {
             let Some(nip05) = self.settings.nip05.as_ref() else {
                 return Ok(());
@@ -325,7 +332,9 @@ impl MaintenanceTasks for MaintenanceRunner {
         })
     }
 
-    fn walk_invoices(&self) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
+    fn walk_invoices(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
         Box::pin(async move {
             let mut offset = self.invoice_offset.load(Ordering::SeqCst);
             let outcome = self.payments.walk_pending_invoices(&mut offset).await;

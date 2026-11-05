@@ -205,8 +205,9 @@ pub fn resolve_worker_count(worker_count: Option<&str>, settings_count: u32) -> 
 /// The supervisor's drain deadline: `WS_DRAIN_TIMEOUT_MS` (default 30 000) plus five
 /// seconds (`R5`, `V4`).
 pub fn supervisor_drain_deadline(drain_timeout: Option<&str>) -> Duration {
-    Duration::from_millis(nostream_relay::transport::resolve_drain_timeout(drain_timeout))
-        + SUPERVISOR_DRAIN_MARGIN
+    Duration::from_millis(nostream_relay::transport::resolve_drain_timeout(
+        drain_timeout,
+    )) + SUPERVISOR_DRAIN_MARGIN
 }
 
 /// [`supervisor_drain_deadline`] over the process environment.
