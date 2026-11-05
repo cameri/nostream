@@ -224,8 +224,10 @@ async fn serve(
     });
 
     let tor_context = context.clone();
-    let tor_task =
-        tokio::spawn(async move { nostreamd::workers::spawn_tor(tor_context, port).await });
+    let tor_shutdown = shutdown.clone();
+    let tor_task = tokio::spawn(async move {
+        nostreamd::workers::spawn_tor(tor_context, tor_shutdown, port).await
+    });
 
     wait_for_signal().await;
     tracing::info!("signal received; draining");

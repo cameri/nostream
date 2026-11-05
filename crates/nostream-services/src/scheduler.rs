@@ -60,11 +60,15 @@ enum TaskEvent {
 
 impl Supervisor {
     /// A supervisor over `shutdown` with the capture's delays.
+    ///
+    /// The drain deadline is [`supervisor_drain_deadline`]'s default; the composition root
+    /// applies `WS_DRAIN_TIMEOUT_MS` at the same place the relay's own deadline is resolved
+    /// (ADR 0004), so a test or embed cannot inherit the operator's value by accident.
     pub fn new(shutdown: ShutdownState) -> Self {
         Self {
             shutdown,
             restart_delay: DEFAULT_RESTART_DELAY,
-            drain_deadline: supervisor_drain_deadline_from_env(),
+            drain_deadline: supervisor_drain_deadline(None),
             specs: Vec::new(),
         }
     }
