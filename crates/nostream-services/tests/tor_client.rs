@@ -118,6 +118,10 @@ async fn the_control_dialogue_authenticates_and_adds_an_onion() {
 
     assert_eq!(onion.service_id, "abc.onion");
     assert_eq!(
+        onion.private_key, None,
+        "no key was given and the reply carried none, so none is reported"
+    );
+    assert_eq!(
         commands(&received),
         [
             "AUTHENTICATE \"pw\"\r\n".to_owned(),
@@ -173,9 +177,8 @@ async fn multi_line_and_data_block_replies_parse() {
 
     assert_eq!(onion.service_id, "def.onion");
     assert_eq!(
-        onion.private_key.as_deref(),
-        Some("NEW:BEST"),
-        "a data-block PrivateKey line is not a name/value reply, so the request's key stands"
+        onion.private_key, None,
+        "a data-block PrivateKey line is not a name/value reply, and `NEW:BEST` is not a given key"
     );
 }
 
@@ -300,6 +303,33 @@ async fn an_empty_key_file_counts_as_absent() {
     assert_eq!(
         std::fs::read_to_string(directory.path().join(ONION_KEY_FILE)).expect("the key file"),
         "ED25519-V3:new-secret"
+    );
+}
+
+#[tokio::test]
+async fn a_reply_without_a_private_key_disables_the_service_and_writes_no_file() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let (port, received) = control_server(vec![vec![
+        Reply::Whole("250 OK\r\n"),
+        Reply::Whole("250-ServiceID=abc\r\n250 OK\r\n"),
+        Reply::Whole("250 closing connection\r\n"),
+    ]])
+    .await;
+
+    let config = config(port, directory.path().to_path_buf());
+
+    assert_eq!(
+        ensure_hidden_service(&config).await,
+        HiddenServiceOutcome::Disabled,
+        "`addOnion` throws when no key arrived, so the onion is unpinnable"
+    );
+    assert!(
+        !directory.path().join(ONION_KEY_FILE).exists(),
+        "`NEW:BEST` is never written as a key"
+    );
+    assert_eq!(
+        commands(&received)[1],
+        "ADD_ONION NEW:BEST Port=80,127.0.0.1:8008\r\n"
     );
 }
 

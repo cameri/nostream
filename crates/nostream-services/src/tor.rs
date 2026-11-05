@@ -114,6 +114,7 @@ impl TorClient {
         port_spec: &str,
         key: Option<&str>,
     ) -> Result<OnionService, ServicesError> {
+        let request_key = key;
         let key = key.unwrap_or("NEW:BEST");
         let reply = self
             .send_command(&format!("ADD_ONION {key} Port={port_spec}"))
@@ -152,7 +153,9 @@ impl TorClient {
 
         Ok(OnionService {
             service_id: format!("{service_id}.onion"),
-            private_key: private_key.or_else(|| Some(key.to_owned())),
+            // `if (!result.PrivateKey && privateKey)` (`src/tor/client.ts:142-143`): the key
+            // the request named is reported back, never the `NEW:BEST` default.
+            private_key: private_key.or_else(|| request_key.map(str::to_owned)),
         })
     }
 
@@ -302,8 +305,18 @@ pub async fn ensure_hidden_service(config: &TorConfig) -> HiddenServiceOutcome {
         }
     };
 
+    // `addOnion` throws when no key arrived (`src/tor/client.ts:197-207`), so the service is
+    // reported disabled rather than left unpinned.
+    let Some(private_key) = onion.private_key.as_deref() else {
+        tracing::debug!(
+            service_id = %onion.service_id,
+            "Tor replied without a private key; the hidden service is disabled"
+        );
+        client.quit().await;
+        return HiddenServiceOutcome::Disabled;
+    };
+
     if stored_key.is_none()
-        && let Some(private_key) = onion.private_key.as_deref()
         && let Err(error) = tokio::fs::write(&key_file, private_key).await
     {
         tracing::warn!(path = %key_file.display(), error = %error, "unable to save the onion key");
