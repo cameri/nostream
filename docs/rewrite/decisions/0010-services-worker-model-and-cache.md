@@ -13,6 +13,11 @@ and the transaction the capture wraps `createInvoice`/`confirmInvoice` in. This 
 answers all four so a later reader does not have to reopen #866 to know what the Rust side
 chose.
 
+The branch adds three third-party crates, not one: `reqwest` for the services' single
+HTTP seam, and `aes` with `cbc` in `nostream-core` for the NIP-04 body that NIP-47
+encrypts, because the capture delegates that encryption to `@getalby/sdk` rather than
+implementing it. The TLS stack is the one `sqlx` already links.
+
 ## Decisions
 
 ### D1 — No Redis client is added; the cache is embedded

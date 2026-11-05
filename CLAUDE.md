@@ -96,9 +96,10 @@ resolver 3:
   `name.workspace = true`.** A version literal in a crate manifest is a second place to
   bump; do not add one.
 - `nostream-services` is the only crate that opens sockets and child processes:
-  `reqwest` (the one third-party addition, `default-features = false` with `rustls-tls`,
-  so no new TLS stack) behind the `HttpClient` seam, and tokio's `process`/`fs` for the
-  DVM worker pipes and the onion key file. Nothing else may take those features.
+  `reqwest` (`default-features = false` with `rustls-tls`, so no new TLS stack) behind the
+  `HttpClient` seam, and tokio's `process`/`fs` for the DVM worker pipes and the onion key
+  file. Nothing else may take those features. The branch's other third-party additions are
+  `aes` and `cbc`, in `nostream-core`, for the NIP-04 body NIP-47 encrypts (ADR 0010, A23).
 - Each crate's `lib.rs` doc comment names the TypeScript paths it owns at the capture
   commit, and separately names what it deliberately does **not** own. Preserve both: a
   reader must be able to tell an omission from a gap.
