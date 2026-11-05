@@ -11,7 +11,8 @@ use nostream_services::workers::{dvm_orchestrator, maintenance};
 
 use crate::error::DaemonError;
 
-/// Starts the registered workers and ends only on drain.
+/// Starts the registered workers and returns when the supervisor drains, or earlier if every
+/// worker has finished on its own (both registered kinds loop until the drain).
 ///
 /// Registered: one maintenance worker, and one DVM orchestrator per `dvm.workers[i]`. The
 /// relay-monitor worker is issue #865's and is not registered here.
@@ -22,11 +23,11 @@ pub async fn spawn_workers(
     let mut supervisor = Supervisor::new(shutdown);
 
     let (_, maintenance_spec) = maintenance::maintenance_worker(&context)
-        .map_err(|error| DaemonError::Setup(format!("maintenance worker: {error}")))?;
+        .map_err(|error| worker_setup("maintenance worker", error))?;
     supervisor.register(maintenance_spec);
 
     for spec in dvm_orchestrator::dvm_specs(&context)
-        .map_err(|error| DaemonError::Setup(format!("dvm orchestrator: {error}")))?
+        .map_err(|error| worker_setup("dvm orchestrator", error))?
     {
         supervisor.register(spec);
     }
@@ -37,6 +38,15 @@ pub async fn spawn_workers(
         .run()
         .await
         .map_err(|error| DaemonError::Setup(format!("supervisor: {error}")))
+}
+
+/// A worker that cannot be built is reported where it happens: `serve` only joins the task
+/// after a drain, so without this the operator would see the failure after SIGINT.
+fn worker_setup(role: &str, error: nostream_services::ServicesError) -> DaemonError {
+    let error = DaemonError::Setup(format!("{role}: {error}"));
+    tracing::error!(%error, "a background worker could not be built");
+
+    error
 }
 
 /// One Tor bootstrap attempt. A missing `TOR_HOST`, an unreachable control port and a refused
