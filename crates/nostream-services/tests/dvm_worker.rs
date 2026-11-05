@@ -344,6 +344,11 @@ async fn a_picked_up_job_does_not_starve_the_submitted_one_behind_it() {
         vec![(submitted.id, 0)],
         "assign_worker skips the picked-up job at the head"
     );
+    let updates = await_updates(&fixture, 1).await;
+    assert_eq!(
+        updates[0].id, submitted.id,
+        "the submitted job is the one dispatched, not the picked-up one at the head"
+    );
     assert_eq!(
         fixture.jobs.pending_calls()[0],
         (DISPATCH_BATCH_SIZE, Some(vec![Kind(5100)])),
