@@ -197,9 +197,10 @@ Two consequences of the same bound:
   visits and skips one the count already holds — an earlier filter's page when that filter had
   a limit, or a predicate match when it had none — which is the capture's `UNION`. An unlimited
   filter walks its ranges whole, which is what counting every match costs.
-- A tag criterion the index selected is checked from the key (`name NUL value NUL …`), so the
-  event's body is decoded only for the filter's other tag families; a filter with one family
-  decodes none.
+- A `tags` range is built from the family's own criteria, so a key inside it has already proved
+  that family: the event's body is decoded only for the filter's *other* tag families, and a
+  filter with one family decodes none. A count reads the value out of the key too
+  (`name NUL value NUL …`), to count a row two criteria of one family would both select once.
 
 ## Constraints move into Rust
 
