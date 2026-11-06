@@ -89,13 +89,13 @@ keeping copies whose rules could drift apart.
 
 LMDB bounds a key at 511 bytes (`MDB_MAXKEYSIZE`, which this environment does not raise), and
 a `tags` key carries the tag value verbatim. **That is the one place this backend refuses a
-row Postgres would keep**: a tag value of 470 bytes or more pushes the key past the bound, so
-the event's write fails and the relay refuses the event, where the capture stores it. It is a
-recorded divergence, not a silent one — the write returns `StorageError::Lmdb` — and it is not
-fixed here: the repairs (hashing the value into the key and looking the row up twice, or a
-larger `max_key_size` at the open) change the index the benchmark job will measure. On the
-read side a criterion too long to name a stored key selects nothing, rather than failing the
-whole request.
+row Postgres would keep**: a tag value of 469 bytes or more (with a one-byte tag name) pushes
+the key past the bound, so the event's write fails and the relay refuses the event, where the
+capture stores it. It is a recorded divergence, not a silent one — the write returns
+`StorageError::Lmdb` — and it is not fixed here: the repairs (hashing the value into the key and
+looking the row up twice, or a larger `max_key_size` at the open) change the index the benchmark
+job will measure. On the read side a criterion too long to name a stored key selects nothing,
+rather than failing the whole request.
 
 Soft delete is a flag **and** the row's value, never an index removal (D4): `find_by_filters`
 does not apply the live predicate (`sql.rs:119-140` against `:262-267`), so the row must stay

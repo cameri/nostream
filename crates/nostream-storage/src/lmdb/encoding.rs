@@ -33,10 +33,10 @@ const EVENT_ID_LEN: usize = 32;
 /// place this backend rejects a row Postgres would keep, and ADR 0010 records it as a
 /// divergence.
 ///
-/// shortcut: the tag index carries the value verbatim in the key, so a value of 470 bytes or
-/// more cannot be indexed and its event is refused; upgrade when an event like that has to be
-/// stored, which needs the value hashed into the key plus a second lookup, or a larger
-/// `max_key_size` at the open.
+/// shortcut: the tag index carries the value verbatim in the key, so a value of 469 bytes or
+/// more (with a one-byte tag name) cannot be indexed and its event is refused; upgrade when such
+/// an event has to be stored, which needs the value hashed into the key plus a second lookup,
+/// or a larger `max_key_size` at the open.
 const MAX_KEY_LEN: usize = 511;
 
 /// An invalid stored value, naming the database it was read from.
