@@ -27,7 +27,7 @@ use nostream_storage::repositories::{
     EventRetentionOptions, FieldUpdate, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, InvoiceUnit, NewDeliveryLogEntry, NotificationDeliveryLogRepository,
     NotificationDeliveryStatus, NotificationOutboxRepository, NotificationTargetType,
-    UserRepository,
+    ReconciliationItem, UserRepository,
 };
 
 mod common;
@@ -495,6 +495,35 @@ async fn a_delivery_log_entry_must_name_an_existing_outbox_row() {
 }
 
 #[tokio::test]
+async fn a_target_id_a_text_column_cannot_hold_is_refused_rather_than_truncated() {
+    let (_directory, backend) = open_store().await;
+    let message = backend
+        .enqueue("note.created", &json!({ "id": "note-3" }))
+        .await
+        .unwrap();
+    let mut entry = one_entry(Some(message.id.clone()));
+    entry.target_id = "https://example.test/\0hook".to_owned();
+
+    // `notification_delivery_log.target_id` is a `text` column, and PostgreSQL cannot store
+    // `0x00` in one, so the capture could never have kept this row; the index key refuses it
+    // rather than truncating the id at the separator on the way back out.
+    match backend.append(&entry).await {
+        Err(StorageError::InvalidRow { column, .. }) => {
+            assert_eq!(column, "target_id");
+        }
+        other => panic!("a NUL target id is refused, got {other:?}"),
+    }
+    assert!(
+        backend
+            .find_successful_target_ids(&message.id)
+            .await
+            .unwrap()
+            .is_empty(),
+        "the refused entry stored nothing to read back"
+    );
+}
+
+#[tokio::test]
 async fn deleting_an_outbox_row_nulls_its_delivery_log_entries() {
     let (_directory, backend) = open_store().await;
     let message = backend
@@ -814,6 +843,49 @@ async fn a_reconciliation_lists_every_live_row_across_batches() {
             .all(|pair| (pair[0].created_at, pair[0].event_id)
                 < (pair[1].created_at, pair[1].event_id)),
         "reconciliation is oldest first and ignores the filter's limit"
+    );
+}
+
+#[tokio::test]
+async fn a_reconciliation_over_ids_lists_exactly_those_rows_oldest_first() {
+    let (_directory, backend) = open_store().await;
+    let records: Vec<EventRecord> = (0..300)
+        .map(|index| event(41, 1, 1_700_000_000 + index))
+        .collect();
+    backend
+        .create_many(&records)
+        .await
+        .expect("the events store");
+
+    let filter = Filter {
+        ids: Some(vec![
+            records[250].event.id.to_string(),
+            records[12].event.id.to_string(),
+            records[199].event.id.to_string(),
+        ]),
+        ..Filter::default()
+    };
+    let items = common::collect(backend.find_reconciliation_items(&filter).await.unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        items,
+        vec![
+            ReconciliationItem {
+                created_at: 1_700_000_012,
+                event_id: records[12].event.id,
+            },
+            ReconciliationItem {
+                created_at: 1_700_000_199,
+                event_id: records[199].event.id,
+            },
+            ReconciliationItem {
+                created_at: 1_700_000_250,
+                event_id: records[250].event.id,
+            },
+        ],
+        "the request's ids, oldest first, whatever order the ids arrive in"
     );
 }
 
