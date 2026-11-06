@@ -153,11 +153,13 @@ things — which is what a caller planning memory needs to know:
   comes first, so a filter that matches few of the keys it walks cannot make one poll span a
   whole range — the cursor resumes exactly where the key cap stopped.
   It scans the filter's own index when that index narrows the filter to a single range that
-  runs in `created_at` order (`{authors: [a], kinds: [k]}`, or one exact tag value); an `ids`
-  filter is read from its own id ranges as one batch and sorted, because the id list is the
-  request's own bound and an `events` key runs in id order. Any other filter scans
-  `events_by_created_at`, because only that range's order is the oldest-first order the seam
-  promises. Reading a candidate costs its header, plus its decoded record only for the tag
+  runs in `created_at` order (`{authors: [a], kinds: [k]}`, or one exact tag value). An `ids`
+  filter whose criteria are all exact ids is read from its own ranges as one batch and sorted,
+  because that list is the request's own bound and an `events` key runs in id order; a prefix
+  criterion is a byte range over the id field (requirement 12), where `""` is the whole
+  database, so it is not the request's list and takes the bounded scan below. Any other filter
+  scans `events_by_created_at`, because only that range's order is the oldest-first order the
+  seam promises. Reading a candidate costs its header, plus its decoded record only for the tag
   families the key has not already answered.
 
 **A stream is therefore not a snapshot** (D7): a row written or deleted between two batches
@@ -183,9 +185,10 @@ that page is the backend's to bound: the effective limit is the filter's own or 
 default of 500, clamped to `MAX_PAGE_KEYS = 5 000` — the shipped
 `limits.client.subscription.maxLimit` — so a wire `limit` cannot choose an allocation, whether
 or not a deployment sets `maxLimit`. A filter's branch keeps at most twice that many keys and
-cuts back to the best half whenever the buffer fills; a range whose key order *is* the page's
-order stops as soon as the page is full, keeping every row at the boundary timestamp so a tie
-breaks as the capture's does.
+cuts back to the best half whenever the buffer fills, and that page is one accumulator across
+every range the plan seeks: the top `limit` is global to them. A range whose key order *is* the
+page's order stops at the page's own worst kept row — not at the first row the range happened
+to offer — keeping every row at that timestamp so a tie breaks as the capture's does.
 
 The index is chosen from the filter, and which ranges can stop early follows from the key:
 
@@ -289,8 +292,8 @@ its op is one of the five above — so the list cannot grow without the diff sho
   client cannot choose how much a request materialises; a count is exact and holds no set.
   The price is that a `#g`-prefix page walks its whole (time-bounded) range, an author page
   without kinds reads the created-at index, and so does an author × kind filter whose
-  composition passes `MAX_PAGE_KEYS` ranges; an `ids` read is bounded by the request's own
-  list.
+  composition passes `MAX_PAGE_KEYS` ranges; an `ids` read whose criteria are exact is bounded
+  by the request's own list, and a prefix criterion takes the bounded created-at scan.
 - Two JSON values PostgreSQL's `jsonb` considers equal but that serialize differently
   (`1` against `1.0`) would be distinct deduplication pointers here; the repository builds
   the value in one shape and the relay passes a single string, so today's callers cannot

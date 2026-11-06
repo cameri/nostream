@@ -30,8 +30,9 @@ pub type StorageFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StorageErr
 /// to the backend's bound, so at most `MAX_PAGE_KEYS × filters` ids in all — and copies each
 /// batch's values out of that page, so its memory is the page; `find_reconciliation_items`
 /// keeps only a cursor key and re-seeks it per batch, so its result is never materialised —
-/// except for an `ids` filter, whose own id list, bounded by the request, is read as one batch
-/// and sorted before it is emitted.
+/// except for an `ids` filter naming exact ids, whose own list, bounded by the request, is read
+/// as one batch and sorted before it is emitted. A prefix criterion is a byte range over the id
+/// field rather than the request's list, so it takes the bounded scan.
 /// Neither is a snapshot: a row written or deleted between two batches may appear or vanish. A
 /// channel would force a background task and a buffer policy LMDB does not need, and a `Vec`
 /// would materialise a 10M-row NIP-77 reconciliation.
