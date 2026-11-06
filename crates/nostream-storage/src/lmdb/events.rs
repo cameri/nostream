@@ -607,8 +607,8 @@ struct Plan<'a> {
     database: Database<Bytes, Bytes>,
     path: AccessPath,
     ranges: Vec<KeyRange>,
-    /// Whether a range's own key order is the page's order, so a range stops once the page is
-    /// full instead of being walked whole.
+    /// Whether a range's own key order is the page's order, so a range stops at the page's own
+    /// worst kept row instead of being walked whole.
     ordered: bool,
     /// The tag family the ranges were built from, with its criteria in the criteria's order —
     /// `tag_ranges` builds one range per criterion. A key in these ranges has already proved
@@ -859,10 +859,13 @@ fn admits(filter: &Filter, gates: &Gates) -> Result<bool, StorageError> {
 
 /// One filter's page: the best `limit` keys it matches, ordered as the capture's branch is.
 ///
-/// The resident set is the page, never the range. A range whose key order is the page's order
-/// stops as soon as the page is full (keeping every row at the boundary timestamp, so a tie is
-/// the capture's); the other ranges offer their matches to a buffer of at most `2 × limit`,
-/// which is cut back to the best `limit` whenever it fills.
+/// The resident set is the page, never the range, and the page is one accumulator across every
+/// range the plan seeks — the top `limit` is global to them. A range whose key order is the
+/// page's order stops once the page holds its own worst kept row: every row after it in that
+/// range is past it, so a later range can no longer arm the stop at the first match it offers.
+/// The comparison is strict, so every row tied at the boundary timestamp is still offered and
+/// the tie breaks as the capture's does; the other ranges offer their matches to a buffer of at
+/// most `2 × limit`, cut back to the best `limit` whenever it fills.
 fn branch(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -890,7 +893,13 @@ fn branch(
     let mut page = Page::new(descending);
     for (low, high) in &plan.ranges {
         let range = encoding::bounds(low, high);
-        let mut boundary: Option<i64> = None;
+        // A range starts at the boundary the page already holds: a range whose oldest row is
+        // past it has nothing to add, and one that is not is walked from its own end.
+        let mut boundary = if plan.ordered {
+            page.boundary(limit)
+        } else {
+            None
+        };
         for entry in scan(plan.database, txn, &range, plan.ordered && descending)? {
             let (key, _) = entry?;
             key_evaluated();
@@ -902,8 +911,8 @@ fn branch(
             }
             if matcher.matches(txn, databases, &found.1)?.is_some() {
                 page.offer(found, limit);
-                if plan.ordered && page.len() >= limit {
-                    boundary = Some(found.0);
+                if plan.ordered {
+                    boundary = page.boundary(limit);
                 }
             }
         }
@@ -936,10 +945,6 @@ impl Page {
         }
     }
 
-    fn len(&self) -> usize {
-        self.entries.len()
-    }
-
     /// Keeps `key` if it can still be among the best `limit` the page has seen.
     fn offer(&mut self, key: (i64, EventId), limit: usize) {
         if limit == 0 || !self.seen.insert(key.1) {
@@ -949,6 +954,19 @@ impl Page {
         if self.entries.len() >= limit.saturating_mul(2) {
             self.cut(limit);
         }
+    }
+
+    /// The timestamp of the worst row the page would keep, once it holds `limit` of them.
+    ///
+    /// A range that runs in the page's order cannot offer a row past it, so the walk stops
+    /// there. Cutting to the limit first is what makes the boundary the page's own rather than
+    /// the last row offered, and it is only paid once the page is already full.
+    fn boundary(&mut self, limit: usize) -> Option<i64> {
+        if limit == 0 || self.entries.len() < limit {
+            return None;
+        }
+        self.cut(limit);
+        self.entries.last().map(|(created_at, _)| *created_at)
     }
 
     fn finish(mut self, limit: usize) -> Vec<(i64, EventId)> {
@@ -1495,8 +1513,9 @@ impl Stream for ValuesStream {
 
 /// Yields the live `(created_at, event_id)` pairs a reconciliation compares, oldest first, in
 /// batches of at most [`STREAM_BATCH_ITEMS`] items or [`STREAM_BATCH_KEYS`] evaluated keys —
-/// whichever comes first — with one read transaction per poll. An `ids` filter is one batch of
-/// the request's own id list, sorted in the poll that reads it.
+/// whichever comes first — with one read transaction per poll. An `ids` filter naming exact ids
+/// is one batch of the request's own list, sorted in the poll that reads it; a prefix criterion
+/// is a byte range and takes the bounded scan.
 pub(crate) struct ReconciliationStream {
     env: Env,
     databases: Databases,
@@ -1598,20 +1617,24 @@ impl Stream for ReconciliationStream {
 
 /// The plan a reconciliation scans with.
 ///
-/// The stream promises the pairs oldest first. `ids` is answered from the filter's own ranges —
-/// one per id, so the work is the request's id list and not the store — and the batch sorts the
-/// pairs before it emits them, because an `events` key runs in id order. A filter the faster
-/// index narrows to one range that runs in `created_at` order (`{authors: [a], kinds: [k]}` or
-/// one exact tag value) is scanned there; anything else scans the created-at index, whose order
-/// *is* the promise.
+/// The stream promises the pairs oldest first. An `ids` filter whose criteria are all exact is
+/// answered from the filter's own ranges — one point per id, so the work is the request's id
+/// list and not the store — and the batch sorts the pairs before it emits them, because an
+/// `events` key runs in id order. A criterion is exact only when its range is a point: a prefix
+/// is a byte range over the id field, and `""` is the whole store, so it is not the request's
+/// list and takes the bounded scan instead. A filter the faster index narrows to one range that
+/// runs in `created_at` order (`{authors: [a], kinds: [k]}` or one exact tag value) is scanned
+/// there; anything else scans the created-at index, whose order *is* the promise.
 ///
-/// shortcut: an author without kinds and a `#g` prefix narrow to no such range, so their stream
-/// scans `events_by_created_at` and the criteria are left to the matcher — a poll walks what the
-/// store holds rather than what the request names; upgrade when statistics can choose the
-/// cheaper index, which is the benchmark job's (ADR 0010).
+/// shortcut: an author without kinds, a `#g` prefix and an id prefix narrow to no such range,
+/// so their stream scans `events_by_created_at` and the criteria are left to the matcher — a
+/// poll walks what the store holds rather than what the request names; upgrade when statistics
+/// can choose the cheaper index, which is the benchmark job's (ADR 0010).
 fn stream_plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
     let chosen = plan(filter, databases);
-    if chosen.path == AccessPath::Ids || (chosen.ordered && chosen.ranges.len() == 1) {
+    let exact_ids =
+        chosen.path == AccessPath::Ids && chosen.ranges.iter().all(|(low, high)| low == high);
+    if exact_ids || (chosen.ordered && chosen.ranges.len() == 1) {
         return chosen;
     }
     Plan {
@@ -1688,11 +1711,13 @@ fn scan_batch(
     Ok(items)
 }
 
-/// The pairs an `ids` filter names, oldest first, with `position` moved past the id list.
+/// The pairs an exact `ids` filter names, oldest first, with `position` moved past the id list.
 ///
-/// The ranges are the request's own id list, one per id and already deduplicated, so the work is
-/// the request rather than the store, and the list is read whole because an `events` key runs in
-/// id order: the pairs are sorted before they are emitted instead of being sought in time order.
+/// The ranges are the request's own list, one point per id and already deduplicated, so the
+/// work is the request rather than the store, and the list is read whole because an `events`
+/// key runs in id order: the pairs are sorted before they are emitted instead of being sought
+/// in time order. [`stream_plan`] keeps a prefix criterion away from here, because its range is
+/// the id field's bytes rather than the request.
 ///
 /// shortcut: the whole list is read in one poll and its pairs are held until the stream ends, so
 /// the resident set is the request's own id list; upgrade when a request's list should be paged
@@ -1787,9 +1812,9 @@ mod tests {
         for step in 0u8..=100 {
             page.offer((i64::from(step), id(step)), 3);
             assert!(
-                page.len() <= 6,
+                page.entries.len() <= 6,
                 "the buffer is cut back to the limit whenever it fills: {} entries",
-                page.len()
+                page.entries.len()
             );
         }
         assert_eq!(page.finish(3).len(), 3);
@@ -1901,7 +1926,7 @@ mod tests {
         // The author index runs in kind order before `created_at`, so this page is answered by
         // the created-at index: it stops as soon as it is full instead of walking the author's
         // whole timeline (the round-2 shape evaluated every one of the 200).
-        let _serial = probes::COUNTING.lock().expect("the counting lock");
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let records: Vec<EventRecord> = (1..=200)
             .map(|step| signed(7, 1, step, Vec::new()))
@@ -1938,7 +1963,7 @@ mod tests {
     fn a_limited_page_stops_at_the_limit_inside_one_author_and_kind() {
         // The `pubkey ‖ kind ‖ created_at` ordering the layout writes is what lets this page
         // stop; without it the walk reads every event of the author.
-        let _serial = probes::COUNTING.lock().expect("the counting lock");
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let mut records: Vec<EventRecord> = (1..=200)
             .map(|step| signed(7, 1, step, Vec::new()))
@@ -1978,6 +2003,7 @@ mod tests {
         // The created-at index reverses the whole key, so two rows at one instant are scanned
         // id-descending: a walk that stopped at the first would keep the larger id, where the
         // capture's comparator keeps the smaller (V6).
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let tag = |value: &str| vec![vec!["t".to_owned(), value.to_owned()]];
         let first = signed(9, 1, 500, tag("first"));
@@ -2011,7 +2037,7 @@ mod tests {
 
     #[test]
     fn a_tag_page_checks_its_criterion_from_the_key_and_decodes_no_body() {
-        let _serial = probes::COUNTING.lock().expect("the counting lock");
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let tag = |step: i64| {
             vec![
@@ -2100,6 +2126,7 @@ mod tests {
 
     #[test]
     fn a_wire_limit_cannot_grow_a_page_past_the_backend_bound() {
+        let _serial = counting();
         assert_eq!(count_limit(10), 10);
         assert_eq!(count_limit(u64::MAX), MAX_PAGE_KEYS);
 
@@ -2136,6 +2163,7 @@ mod tests {
 
     #[test]
     fn a_count_holds_no_matches_and_deduplicates_the_union() {
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let records = vec![
             signed(21, 1, 10, Vec::new()),
@@ -2183,6 +2211,7 @@ mod tests {
 
     #[test]
     fn a_later_limited_page_does_not_recount_an_earlier_filter_s_rows() {
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let records = vec![
             signed(28, 1, 10, Vec::new()),
@@ -2211,6 +2240,7 @@ mod tests {
 
     #[test]
     fn a_count_counts_a_row_once_when_two_tag_values_select_it() {
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let record = signed(
             23,
@@ -2257,7 +2287,7 @@ mod tests {
 
     #[test]
     fn a_reconciliation_scans_the_filter_own_index_when_one_ordered_range_answers_it() {
-        let _serial = probes::COUNTING.lock().expect("the counting lock");
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let mut records: Vec<EventRecord> = (1..=300)
             .map(|step| signed(24, 1, step, Vec::new()))
@@ -2300,7 +2330,7 @@ mod tests {
 
     #[test]
     fn a_reconciliation_batch_stops_at_its_key_cap_and_resumes() {
-        let _serial = probes::COUNTING.lock().expect("the counting lock");
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let mut records: Vec<EventRecord> = (1..=1000)
             .map(|step| signed(26, 1, step, Vec::new()))
@@ -2403,6 +2433,7 @@ mod tests {
     fn a_prefix_author_counts_a_row_once_whatever_its_kind() {
         // A prefix author's bound runs to the end of the pubkey field, so a kind appended to
         // it does not narrow the range: the same key is in every kind's range.
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let records = vec![signed(30, 1, 10, Vec::new()), signed(30, 2, 20, Vec::new())];
         write(&env, &databases, &records);
@@ -2447,6 +2478,7 @@ mod tests {
 
     #[test]
     fn an_author_and_kind_product_past_the_page_is_answered_from_the_created_at_index() {
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let records = vec![
             signed(32, 10_000, 10, Vec::new()),
@@ -2501,7 +2533,7 @@ mod tests {
 
     #[test]
     fn a_reconciliation_reads_the_ids_the_filter_names_not_the_store() {
-        let _serial = probes::COUNTING.lock().expect("the counting lock");
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let records: Vec<EventRecord> = (1..=300)
             .map(|step| signed(29, 1, step, Vec::new()))
@@ -2571,5 +2603,459 @@ mod tests {
             .expect("a d value that JSON text would escape twice still stores");
         transaction.commit().expect("the commit");
         assert_eq!(affected, 1);
+    }
+    // -----------------------------------------------------------------------------------
+    // Round 6: the page across every range a plan seeks, and the id stream's two shapes.
+    // -----------------------------------------------------------------------------------
+
+    /// Serialises a test that counts work against every other one, so a clean run means what
+    /// it says. A test that panicked while holding the lock poisons it, and a poisoned lock
+    /// must not redden the tests that follow.
+    fn counting() -> std::sync::MutexGuard<'static, ()> {
+        probes::COUNTING
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The page a filter must return, built from the store itself rather than from an index:
+    /// every row the matcher accepts, in the capture's order, cut to the filter's page.
+    fn reference_page(
+        txn: &RoTxn<'_>,
+        databases: &Databases,
+        filter: &Filter,
+    ) -> Vec<(i64, EventId)> {
+        let matcher = Matcher {
+            filter,
+            gates: &Gates::default(),
+            now: 0,
+            live: false,
+            proven: None,
+        };
+        let mut page = Vec::new();
+        for entry in databases.events.iter(txn).expect("the store") {
+            let (key, _) = entry.expect("a row");
+            let id = encoding::event_id_from(key).expect("an event id");
+            if let Some(header) = matcher.matches(txn, databases, &id).expect("a match") {
+                page.push((header.created_at, id));
+            }
+        }
+        sort_page(&mut page, filter.limit.is_some());
+        page.truncate(page_limit(filter));
+        page
+    }
+
+    /// The items a reconciliation must yield for a filter, built from the store itself: every
+    /// row the matcher accepts, oldest first.
+    fn reference_items(
+        txn: &RoTxn<'_>,
+        databases: &Databases,
+        filter: &Filter,
+    ) -> Vec<ReconciliationItem> {
+        let matcher = Matcher {
+            filter,
+            gates: &Gates::default(),
+            now: 0,
+            live: true,
+            proven: None,
+        };
+        let mut items = Vec::new();
+        for entry in databases.events.iter(txn).expect("the store") {
+            let (key, _) = entry.expect("a row");
+            let id = encoding::event_id_from(key).expect("an event id");
+            if let Some(header) = matcher.matches(txn, databases, &id).expect("a match") {
+                items.push(ReconciliationItem {
+                    created_at: header.created_at,
+                    event_id: id,
+                });
+            }
+        }
+        items.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.event_id.cmp(&right.event_id))
+        });
+        items
+    }
+
+    /// The page `branch` returns, the store's own answer, and the count of the same filter all
+    /// agree.
+    fn assert_page_agrees(
+        txn: &RoTxn<'_>,
+        databases: &Databases,
+        filter: &Filter,
+        expected: &[i64],
+        what: &str,
+    ) {
+        let page = branch(
+            txn,
+            databases,
+            filter,
+            &Gates::default(),
+            0,
+            false,
+            page_limit(filter),
+        )
+        .expect("the page");
+        assert_eq!(
+            created(&page),
+            expected,
+            "{what}: the page is the capture's newest rows"
+        );
+        assert_eq!(
+            page,
+            reference_page(txn, databases, filter),
+            "{what}: the page is the store's own answer"
+        );
+        assert_eq!(
+            count(
+                txn,
+                databases,
+                std::slice::from_ref(filter),
+                &Gates::default(),
+                0
+            )
+            .expect("the count"),
+            page.len() as u64,
+            "{what}: the page and the count of the same filter agree"
+        );
+    }
+
+    #[test]
+    fn a_limited_page_over_several_time_ordered_ranges_holds_the_global_newest_rows() {
+        // A page is one accumulator across every range the plan seeks: an author × kind
+        // filter seeks one range per kind, and the top `limit` is global to them, so a later
+        // range may not stop at the first row it offers.
+        let _serial = counting();
+        let (_directory, env, databases) = store();
+        let records: Vec<EventRecord> = (1..=40)
+            .map(|step: i64| signed(7, (step % 3) as u64 + 1, step * 10, Vec::new()))
+            .collect();
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let author = records[0].event.pubkey.to_string();
+        let prefix = author[..8].to_owned();
+        let two_kinds = &[390, 380, 360, 350, 330];
+        let every_kind = &[400, 390, 380, 370, 360];
+
+        let cases: Vec<(&str, Filter, AccessPath, usize, &[i64])> = vec![
+            (
+                "one author and two kinds",
+                Filter {
+                    authors: Some(vec![author.clone()]),
+                    kinds: Some(vec![Kind(1), Kind(3)]),
+                    limit: Some(5),
+                    ..Filter::default()
+                },
+                AccessPath::Authors,
+                2,
+                two_kinds,
+            ),
+            (
+                "the same kinds in the other order",
+                Filter {
+                    authors: Some(vec![author.clone()]),
+                    kinds: Some(vec![Kind(3), Kind(1)]),
+                    limit: Some(5),
+                    ..Filter::default()
+                },
+                AccessPath::Authors,
+                2,
+                two_kinds,
+            ),
+            (
+                "two kinds without an author",
+                Filter {
+                    kinds: Some(vec![Kind(1), Kind(3)]),
+                    limit: Some(5),
+                    ..Filter::default()
+                },
+                AccessPath::CreatedAt,
+                1,
+                two_kinds,
+            ),
+            (
+                "one author without kinds",
+                Filter {
+                    authors: Some(vec![author]),
+                    limit: Some(5),
+                    ..Filter::default()
+                },
+                AccessPath::CreatedAt,
+                1,
+                every_kind,
+            ),
+            (
+                "a prefix author and two kinds",
+                Filter {
+                    authors: Some(vec![prefix]),
+                    kinds: Some(vec![Kind(1), Kind(3)]),
+                    limit: Some(5),
+                    ..Filter::default()
+                },
+                AccessPath::Authors,
+                1,
+                two_kinds,
+            ),
+        ];
+        for (what, filter, path, ranges, expected) in cases {
+            let plan = plan(&filter, &databases);
+            assert_eq!(
+                (plan.path, plan.ranges.len()),
+                (path, ranges),
+                "{what}: the plan"
+            );
+            assert_page_agrees(&transaction, &databases, &filter, expected, what);
+        }
+    }
+
+    #[test]
+    fn a_limited_page_over_two_tag_values_does_not_depend_on_the_criteria_s_order() {
+        // One criterion is one range on `tags`, and each range runs in `created_at` order
+        // under its own value, so a page over two values is the global top `limit` of both.
+        let _serial = counting();
+        let (_directory, env, databases) = store();
+        let records: Vec<EventRecord> = (1..=40)
+            .map(|step| {
+                let mut tags = vec![vec!["t".to_owned(), "a".to_owned()]];
+                if step % 3 != 1 {
+                    tags.push(vec!["t".to_owned(), "b".to_owned()]);
+                }
+                signed(8, 1, step * 10, tags)
+            })
+            .collect();
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let author = records[0].event.pubkey.to_string();
+        let expected = [400, 390, 380, 370, 360];
+
+        for criteria in [
+            vec!["a".to_owned(), "b".to_owned()],
+            vec!["b".to_owned(), "a".to_owned()],
+        ] {
+            let mut tags = BTreeMap::new();
+            tags.insert("#t".to_owned(), criteria.clone());
+            let filter = Filter {
+                tags: tags.clone(),
+                limit: Some(5),
+                ..Filter::default()
+            };
+            assert_eq!(
+                plan(&filter, &databases).ranges.len(),
+                2,
+                "one range per value"
+            );
+            assert_page_agrees(
+                &transaction,
+                &databases,
+                &filter,
+                &expected,
+                "two tag values",
+            );
+
+            // A criterion of another family is the matcher's, over the same two ranges.
+            let filter = Filter {
+                kinds: Some(vec![Kind(1)]),
+                tags,
+                limit: Some(5),
+                ..Filter::default()
+            };
+            assert_page_agrees(
+                &transaction,
+                &databases,
+                &filter,
+                &expected,
+                "a kind and two tag values",
+            );
+
+            // An author as well makes the author index the plan; the page is the same one.
+            let mut tags = BTreeMap::new();
+            tags.insert("#t".to_owned(), criteria);
+            let filter = Filter {
+                authors: Some(vec![author.clone()]),
+                kinds: Some(vec![Kind(1)]),
+                tags,
+                limit: Some(5),
+                ..Filter::default()
+            };
+            assert_page_agrees(
+                &transaction,
+                &databases,
+                &filter,
+                &expected,
+                "an author, a kind and two tag values",
+            );
+        }
+
+        // A single value's own page, so the two-value case is not "everything, in any order".
+        let mut tags = BTreeMap::new();
+        tags.insert("#t".to_owned(), vec!["b".to_owned()]);
+        let filter = Filter {
+            tags,
+            limit: Some(5),
+            ..Filter::default()
+        };
+        assert_page_agrees(
+            &transaction,
+            &databases,
+            &filter,
+            &[390, 380, 360, 350, 330],
+            "one tag value",
+        );
+    }
+
+    #[test]
+    fn the_author_index_and_the_created_at_fallback_return_the_same_page() {
+        // A filter composing more than `MAX_PAGE_KEYS` author × kind ranges is answered from
+        // the created-at index instead, and both plans must return the same page.
+        let _serial = counting();
+        let (_directory, env, databases) = store();
+        let records: Vec<EventRecord> = (1..=40)
+            .map(|step: i64| signed(9, (step % 3) as u64 + 1, step * 10, Vec::new()))
+            .collect();
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let expected = [390, 380, 360, 350, 330];
+        let composed = |fakes: u32| -> Vec<String> {
+            std::iter::once(records[0].event.pubkey.to_string())
+                .chain((0..fakes).map(|step| format!("{:064x}", 0x1000 + step)))
+                .collect()
+        };
+
+        let at_bound = Filter {
+            authors: Some(composed(MAX_PAGE_KEYS as u32 / 2 - 1)),
+            kinds: Some(vec![Kind(1), Kind(3)]),
+            limit: Some(5),
+            ..Filter::default()
+        };
+        let chosen = plan(&at_bound, &databases);
+        assert_eq!(
+            (chosen.path, chosen.ranges.len()),
+            (AccessPath::Authors, MAX_PAGE_KEYS)
+        );
+        assert_page_agrees(
+            &transaction,
+            &databases,
+            &at_bound,
+            &expected,
+            "at the page bound",
+        );
+        let index_page = branch(
+            &transaction,
+            &databases,
+            &at_bound,
+            &Gates::default(),
+            0,
+            false,
+            page_limit(&at_bound),
+        )
+        .expect("the page");
+
+        let past_bound = Filter {
+            authors: Some(composed(MAX_PAGE_KEYS as u32 / 2)),
+            kinds: Some(vec![Kind(1), Kind(3)]),
+            limit: Some(5),
+            ..Filter::default()
+        };
+        let chosen = plan(&past_bound, &databases);
+        assert_eq!(
+            (chosen.path, chosen.ranges.len()),
+            (AccessPath::CreatedAt, 1)
+        );
+        assert_page_agrees(
+            &transaction,
+            &databases,
+            &past_bound,
+            &expected,
+            "past the page bound",
+        );
+        let fallback_page = branch(
+            &transaction,
+            &databases,
+            &past_bound,
+            &Gates::default(),
+            0,
+            false,
+            page_limit(&past_bound),
+        )
+        .expect("the page");
+        assert_eq!(
+            index_page, fallback_page,
+            "the author index and the created-at fallback return the same page"
+        );
+    }
+
+    #[test]
+    fn a_prefix_id_reconciliation_scans_in_bounded_batches() {
+        // An exact id list is a point per id, so the list is the bound on the work; a prefix
+        // criterion is a byte range over the id field, and `""` is the whole store.
+        let _serial = counting();
+        let (_directory, env, databases) = store();
+        let records: Vec<EventRecord> = (1..=400)
+            .map(|step| signed(35, 1, step, Vec::new()))
+            .collect();
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let ids = |criteria: &str| Filter {
+            ids: Some(vec![criteria.to_owned()]),
+            ..Filter::default()
+        };
+
+        let exact = ids(&records[10].event.id.to_string());
+        assert_eq!(
+            stream_plan(&exact, &databases).path,
+            AccessPath::Ids,
+            "an exact id list is a point per id"
+        );
+        let prefix = ids(&records[0].event.id.to_string()[..2]);
+        assert_eq!(
+            stream_plan(&prefix, &databases).path,
+            AccessPath::CreatedAt,
+            "a prefix criterion is a byte range, so it takes the bounded scan"
+        );
+
+        for filter in [ids(""), prefix] {
+            probes::reset();
+            let mut position = Position::new();
+            let mut items = scan_batch(
+                &transaction,
+                &databases,
+                &filter,
+                &Gates::default(),
+                0,
+                &mut position,
+            )
+            .expect("the batch");
+            assert!(
+                probes::keys() <= STREAM_BATCH_KEYS,
+                "one poll evaluates at most the key cap: {} keys",
+                probes::keys()
+            );
+            assert!(
+                position.after.is_some(),
+                "and it resumes after the last key it evaluated"
+            );
+
+            for _ in 0..8 {
+                if position.index >= stream_plan(&filter, &databases).ranges.len() {
+                    break;
+                }
+                items.extend(
+                    scan_batch(
+                        &transaction,
+                        &databases,
+                        &filter,
+                        &Gates::default(),
+                        0,
+                        &mut position,
+                    )
+                    .expect("the batch"),
+                );
+            }
+            assert_eq!(
+                items,
+                reference_items(&transaction, &databases, &filter),
+                "the bounded scan yields every row the criterion selects, oldest first"
+            );
+        }
     }
 }

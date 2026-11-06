@@ -890,6 +890,65 @@ async fn a_reconciliation_over_ids_lists_exactly_those_rows_oldest_first() {
 }
 
 #[tokio::test]
+async fn a_reconciliation_over_an_id_prefix_lists_every_row_the_prefix_selects() {
+    // A prefix criterion is a byte range over the id field rather than the request's own list,
+    // so it is answered by the bounded created-at scan; `""` is that range over every row.
+    let (_directory, backend) = open_store().await;
+    let records: Vec<EventRecord> = (0..400)
+        .map(|index| event(42, 1, 1_700_000_000 + index))
+        .collect();
+    backend
+        .create_many(&records)
+        .await
+        .expect("the events store");
+
+    let filter = Filter {
+        ids: Some(vec![String::new()]),
+        ..Filter::default()
+    };
+    let items = common::collect(backend.find_reconciliation_items(&filter).await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        items.len(),
+        400,
+        "every row the criterion selects arrives across the batches"
+    );
+    assert!(
+        items
+            .windows(2)
+            .all(|pair| (pair[0].created_at, pair[0].event_id)
+                < (pair[1].created_at, pair[1].event_id)),
+        "and oldest first"
+    );
+
+    let prefix = records[7].event.id.to_string()[..2].to_owned();
+    let filter = Filter {
+        ids: Some(vec![prefix.clone()]),
+        ..Filter::default()
+    };
+    let items = common::collect(backend.find_reconciliation_items(&filter).await.unwrap())
+        .await
+        .unwrap();
+    let expected: Vec<ReconciliationItem> = records
+        .iter()
+        .filter(|record| record.event.id.to_string().starts_with(&prefix))
+        .map(|record| ReconciliationItem {
+            created_at: record.event.created_at,
+            event_id: record.event.id,
+        })
+        .collect();
+    assert!(
+        !expected.is_empty(),
+        "the prefix selects the row it came from"
+    );
+    assert_eq!(
+        items, expected,
+        "the prefix selects the same rows, oldest first"
+    );
+}
+
+#[tokio::test]
 async fn an_empty_tag_value_criterion_matches_nothing() {
     let (_directory, backend) = open_store().await;
     let record = tagged_event(3, 1_700_000_000, vec![vec!["e".to_owned(), String::new()]]);
