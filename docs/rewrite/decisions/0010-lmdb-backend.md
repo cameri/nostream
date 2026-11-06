@@ -81,8 +81,10 @@ in the flags byte, and the reserved byte is there for a field that has to be a b
 
 `row_id` stays `None` (D5): it is the Postgres row's `uuid` and nothing reads it through
 this backend. Text components of a composite key are NUL-terminated except the final one
-(`text_part`), so `tag_key` is `name NUL value NUL created_at ‖ event_id`, and a tag name or
-value carrying `0x00` is refused as `InvalidRow` rather than splitting the key. The three
+(`text_part`), so `tag_key` is `name NUL value NUL created_at ‖ event_id`. A component carrying
+`0x00` is refused as `InvalidRow` by `text_part` itself rather than splitting the key, and
+PostgreSQL's `text` cannot hold that byte either, so both backends reject the same value —
+including a delivery log's `target_id`, which the capture could not have stored. The three
 component codecs a key reader needs — `text_part`, `text_from` and `stamp_key` — have one
 home, `lmdb/encoding.rs`, beside the key builders; the tail modules call them rather than
 keeping copies whose rules could drift apart.
@@ -96,6 +98,16 @@ capture stores it. It is a recorded divergence, not a silent one — the write r
 looking the row up twice, or a larger `max_key_size` at the open) change the index the benchmark
 job will measure. On the read side a criterion too long to name a stored key selects nothing,
 rather than failing the whole request.
+
+The `replaceable` pointer is the second variable-length key, and it adds no second divergence.
+Its components are length-prefixed — `pubkey ‖ kind ‖ (tag ‖ len ‖ bytes)*`, a string element
+written as its own bytes and any other JSON value as its `serde_json` text behind a different
+tag — so JSON escaping cannot inflate a value into a refusal: a 235-byte quote-only `d` value
+is 235 key bytes, not 474. The same value costs 39 + len bytes here and 43 + len in the `tags`
+key, so the tag index refuses first (469 bytes against the pointer's 473), and a value past
+the pointer's own bound is refused as `InvalidRow` naming `event_deduplication` before LMDB
+sees the key. PostgreSQL keeps either row; when such a value has to be stored, the same repair
+the tag bound needs applies.
 
 Soft delete is a flag **and** the row's value, never an index removal (D4): `find_by_filters`
 does not apply the live predicate (`sql.rs:119-140` against `:262-267`), so the row must stay
@@ -141,10 +153,12 @@ things — which is what a caller planning memory needs to know:
   comes first, so a filter that matches few of the keys it walks cannot make one poll span a
   whole range — the cursor resumes exactly where the key cap stopped.
   It scans the filter's own index when that index narrows the filter to a single range that
-  runs in `created_at` order (`{authors: [a], kinds: [k]}`, or one exact tag value); any other
-  filter scans `events_by_created_at`, because only that range's order is the oldest-first
-  order the seam promises. Reading a candidate costs its header, plus its decoded record only
-  for the tag families the key has not already answered.
+  runs in `created_at` order (`{authors: [a], kinds: [k]}`, or one exact tag value); an `ids`
+  filter is read from its own id ranges as one batch and sorted, because the id list is the
+  request's own bound and an `events` key runs in id order. Any other filter scans
+  `events_by_created_at`, because only that range's order is the oldest-first order the seam
+  promises. Reading a candidate costs its header, plus its decoded record only for the tag
+  families the key has not already answered.
 
 **A stream is therefore not a snapshot** (D7): a row written or deleted between two batches
 may appear or vanish, where Postgres' portal holds one snapshot. No comparable behaviour
@@ -273,8 +287,10 @@ its op is one of the five above — so the list cannot grow without the diff sho
   `spec.md`, Assumption 10). The corpus is 483 events, so no current entry reaches it.
 - A page is bounded by `MAX_PAGE_KEYS` and a read holds a page rather than a range, so a
   client cannot choose how much a request materialises; a count is exact and holds no set.
-  The price is that the `ids` and `#g`-prefix paths walk their whole (time-bounded) range, and
-  an author page without kinds reads the created-at index.
+  The price is that a `#g`-prefix page walks its whole (time-bounded) range, an author page
+  without kinds reads the created-at index, and so does an author × kind filter whose
+  composition passes `MAX_PAGE_KEYS` ranges; an `ids` read is bounded by the request's own
+  list.
 - Two JSON values PostgreSQL's `jsonb` considers equal but that serialize differently
   (`1` against `1.0`) would be distinct deduplication pointers here; the repository builds
   the value in one shape and the relay passes a single string, so today's callers cannot
