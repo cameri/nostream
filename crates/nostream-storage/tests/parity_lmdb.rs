@@ -417,6 +417,51 @@ async fn confirm_invoice_scales_by_unit_and_rejects_an_overflow() {
 }
 
 #[tokio::test]
+async fn a_nanosecond_instant_reads_back_at_microsecond_precision() {
+    let (_directory, backend) = open_store().await;
+    let now = Utc::now();
+    let payee = Pubkey::from_byte_array([11; 32]);
+    backend.admit_user(&payee, now).await.unwrap();
+    let invoice = Invoice {
+        id: "invoice-micros".to_owned(),
+        pubkey: payee,
+        bolt11: "lnbc1".to_owned(),
+        amount_requested: 1,
+        amount_paid: None,
+        unit: InvoiceUnit::Sats,
+        status: InvoiceStatus::Pending,
+        description: "test".to_owned(),
+        confirmed_at: None,
+        expires_at: None,
+        updated_at: now,
+        created_at: now,
+        verify_url: None,
+    };
+    InvoiceRepository::upsert(&backend, &invoice).await.unwrap();
+
+    // Three digits past the microsecond, which no `timestamp` column can hold (V38).
+    let instant = DateTime::<Utc>::from_timestamp_nanos(1_700_000_000_123_456_789);
+    backend
+        .confirm_invoice("invoice-micros", 1, instant)
+        .await
+        .unwrap();
+
+    let confirmed_at = backend
+        .find_by_id("invoice-micros")
+        .await
+        .unwrap()
+        .unwrap()
+        .confirmed_at
+        .expect("the confirmation is stamped");
+    assert_eq!(
+        confirmed_at.timestamp_micros(),
+        1_700_000_000_123_456,
+        "a nanosecond instant reads back at microsecond precision (V38)"
+    );
+    assert_eq!(confirmed_at.timestamp_subsec_nanos(), 123_456_000);
+}
+
+#[tokio::test]
 async fn a_delivery_log_entry_must_name_an_existing_outbox_row() {
     let (_directory, backend) = open_store().await;
     let unknown = one_entry(Some("00000000-0000-4000-8000-000000000000".to_owned()));
@@ -516,4 +561,204 @@ async fn two_enqueues_return_distinct_uuids() {
     assert_ne!(first.id, second.id);
     assert_uuid_v4(&first.id);
     assert_uuid_v4(&second.id);
+}
+
+/// Five events of one author, created at 100, 200, … 500 seconds.
+async fn five_events_of_one_author(backend: &LmdbBackend) -> Vec<EventRecord> {
+    let records: Vec<EventRecord> = (1..=5).map(|step| event(5, 1, step * 100)).collect();
+    backend
+        .create_many(&records)
+        .await
+        .expect("the events store");
+    records
+}
+
+/// The `created_at` values a page returned, newest first.
+fn created_ats(records: &[EventRecord]) -> Vec<i64> {
+    records
+        .iter()
+        .map(|record| record.event.created_at)
+        .collect()
+}
+
+/// A signed event of one author, by the key `secret`, carrying `tags`.
+fn tagged_event(secret: u8, created_at: i64, tags: Vec<Vec<String>>) -> EventRecord {
+    let mut wire = Event {
+        id: EventId::from_byte_array([0; 32]),
+        pubkey: Pubkey::from_byte_array([0; 32]),
+        created_at,
+        kind: Kind(1),
+        tags,
+        content: format!("{secret}-{created_at}"),
+        sig: Signature::from_byte_array([0; 64]),
+    };
+    nostream_core::crypto::sign_event(&[secret; 32], &mut wire).expect("the event signs");
+    EventRecord::from_event(&wire)
+}
+
+#[tokio::test]
+async fn a_limited_ids_filter_returns_the_newest_events() {
+    let (_directory, backend) = open_store().await;
+    let records = five_events_of_one_author(&backend).await;
+    let filter = Filter {
+        ids: Some(
+            records
+                .iter()
+                .map(|record| record.event.id.to_string())
+                .collect(),
+        ),
+        limit: Some(3),
+        ..Filter::default()
+    };
+
+    let page = common::collect(
+        backend
+            .find_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        created_ats(&page),
+        vec![500, 400, 300],
+        "a limit orders the page newest first whatever index answered it (V6)"
+    );
+    assert_eq!(
+        backend
+            .count_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+        3,
+        "the count applies the same limit and order (V6)"
+    );
+}
+
+#[tokio::test]
+async fn a_limited_author_filter_returns_the_newest_events() {
+    let (_directory, backend) = open_store().await;
+    let records = five_events_of_one_author(&backend).await;
+    let filter = Filter {
+        authors: Some(vec![records[0].event.pubkey.to_string()]),
+        limit: Some(3),
+        ..Filter::default()
+    };
+
+    let page = common::collect(
+        backend
+            .find_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        created_ats(&page),
+        vec![500, 400, 300],
+        "a limit orders the page newest first whatever index answered it (V6)"
+    );
+}
+
+#[tokio::test]
+async fn a_reconciliation_lists_every_live_row_across_batches() {
+    let (_directory, backend) = open_store().await;
+    let records: Vec<EventRecord> = (0..500)
+        .map(|index| event((index % 200 + 1) as u8, 1, 1_700_000_000 + index))
+        .collect();
+    backend
+        .create_many(&records)
+        .await
+        .expect("the events store");
+
+    let filter = Filter {
+        kinds: Some(vec![Kind(1)]),
+        limit: Some(1),
+        ..Filter::default()
+    };
+    let items = common::collect(backend.find_reconciliation_items(&filter).await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        items.len(),
+        500,
+        "every live row arrives, not one per batch fewer (R20)"
+    );
+    assert!(
+        items
+            .windows(2)
+            .all(|pair| (pair[0].created_at, pair[0].event_id)
+                < (pair[1].created_at, pair[1].event_id)),
+        "reconciliation is oldest first and ignores the filter's limit"
+    );
+}
+
+#[tokio::test]
+async fn an_empty_tag_value_criterion_matches_nothing() {
+    let (_directory, backend) = open_store().await;
+    let record = tagged_event(3, 1_700_000_000, vec![vec!["e".to_owned(), String::new()]]);
+    EventRepository::create(&backend, &record)
+        .await
+        .expect("the event stores");
+
+    let mut filter = Filter {
+        ids: Some(vec![record.event.id.to_string()]),
+        limit: Some(10),
+        ..Filter::default()
+    };
+    let reachable = common::collect(
+        backend
+            .find_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(reachable.len(), 1, "the row is reachable by its id");
+
+    filter.tags.insert("#e".to_owned(), vec![String::new()]);
+    let page = common::collect(
+        backend
+            .find_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        page.is_empty(),
+        "event_tags holds no empty value, so no row can match one (V42)"
+    );
+}
+
+#[tokio::test]
+async fn a_delivery_log_entry_keeps_its_index_entry_when_a_sibling_is_pruned() {
+    let (_directory, backend) = open_store().await;
+    let message = backend
+        .enqueue("note.created", &json!({ "id": "note-3" }))
+        .await
+        .unwrap();
+    let entry = one_entry(Some(message.id.clone()));
+    backend.append(&entry).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    backend.append(&entry).await.unwrap();
+
+    let entries = backend
+        .find_recent(10, &DeliveryLogFilters::default())
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 2, "two attempts, one target");
+    let cutoff = entries[1].created_at + Duration::milliseconds(1);
+    assert_eq!(
+        backend.delete_older_than(cutoff).await.unwrap(),
+        1,
+        "only the older attempt is pruned"
+    );
+    assert_eq!(
+        backend
+            .find_successful_target_ids(&message.id)
+            .await
+            .unwrap(),
+        vec![entry.target_id.clone()],
+        "the surviving attempt keeps its index entry (V40)"
+    );
 }
