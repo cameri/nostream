@@ -428,10 +428,10 @@ pub(crate) fn hex_ranges(criteria: &[String], suffix: usize) -> Vec<(Vec<u8>, Ve
 
 /// The ranges no key is selected by more than once.
 ///
-/// Two hex criteria can select the same keys — `ab` and `abcd` nest, and a digit the [range
-/// builder](hex_ranges) maps to zero does the same — and a walk that reads one key twice would
-/// count an event twice. Dropping a range another already covers keeps every range a set of
-/// keys it alone selects.
+/// Two criteria can select the same keys — `ab` and `abcd` nest, a digit the [range
+/// builder](hex_ranges) maps to zero does the same, and a repeated kind composes the same author
+/// range twice — and a walk that reads one key twice would count an event twice. Dropping a
+/// range another already covers keeps every range a set of keys it alone selects.
 pub(crate) fn disjoint(mut ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<(Vec<u8>, Vec<u8>)> {
     ranges.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| right.1.cmp(&left.1)));
     let mut kept: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(ranges.len());
