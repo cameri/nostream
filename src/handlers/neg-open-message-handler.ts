@@ -16,6 +16,7 @@ import { isReconciliationAuthorized } from '../utils/nip42'
 import { getNip77Limits, isNip77Active, NEGENTROPY_FRAME_SIZE_LIMIT } from '../utils/nip77'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
 import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
+import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 
 const logger = createLogger('neg-open-message-handler')
 
@@ -29,6 +30,7 @@ export class NegOpenMessageHandler implements IMessageHandler {
     private readonly eventRepository: IEventRepository,
     private readonly settings: () => Settings,
     private readonly rateLimiter?: Factory<IRateLimiter>,
+    private readonly requestStats?: PeeringRequestStatsStore,
   ) {}
 
   public async handleMessage(message: NegOpenMessage): Promise<void> {
@@ -81,6 +83,10 @@ export class NegOpenMessageHandler implements IMessageHandler {
     if (!sessions.isCurrent(subscriptionId, token)) {
       sessions.endRead(token)
       return
+    }
+
+    if (peerPubkey) {
+      void this.requestStats?.recordRequest(peerPubkey, 'NEG-OPEN')
     }
 
     let items: ReconciliationItem[]

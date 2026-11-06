@@ -1,10 +1,26 @@
 import cluster from 'cluster'
-import { EventEmitter } from 'stream'
 import { IncomingMessage as IncomingHttpMessage } from 'http'
+import { SocketAddress } from 'net'
+import { EventEmitter } from 'stream'
 import { WebSocket } from 'ws'
 import { ZodError } from 'zod'
-
+import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
 import { ContextMetadata, Factory } from '../@types/base'
+import { Event } from '../@types/event'
+import { IAbortable, IMessageHandler } from '../@types/message-handlers'
+import { IncomingMessage, MessageType, OutgoingMessage } from '../@types/messages'
+import { INegentropySessions } from '../@types/negentropy'
+import { Settings } from '../@types/settings'
+import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
+import { IRateLimiter } from '../@types/utils'
+import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
+import { ContextMetadataKey } from '../constants/base'
+import { createLogger } from '../factories/logger-factory'
+import { messageSchema } from '../schemas/message-schema'
+import { recordWebsocketConnectionClosed, recordWebsocketConnectionOpened } from '../telemetry/event-metrics'
+import { isEventMatchingFilter } from '../utils/event'
+import { isHidden } from '../utils/hidden-content-cache'
+import { getRemoteAddress } from '../utils/http'
 import {
   createAuthChallengeMessage,
   createClosedMessage,
@@ -12,29 +28,13 @@ import {
   createNoticeMessage,
   createOutgoingEventMessage,
 } from '../utils/messages'
-import { IAbortable, IMessageHandler } from '../@types/message-handlers'
-import { IncomingMessage, MessageType, OutgoingMessage } from '../@types/messages'
-import { INegentropySessions } from '../@types/negentropy'
 import { NegentropySessions } from '../utils/negentropy-sessions'
-import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
-import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
-import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
-import { attemptValidation } from '../utils/validation'
-import { ContextMetadataKey } from '../constants/base'
-import { createLogger } from '../factories/logger-factory'
-import { recordWebsocketConnectionClosed, recordWebsocketConnectionOpened } from '../telemetry/event-metrics'
-import { Event } from '../@types/event'
-import { getRemoteAddress } from '../utils/http'
 import { createReadAuthorizationGuard } from '../utils/nip42'
 import { Nip42SessionManager } from '../utils/nip42-session'
-import { isConfiguredPeeringPeer } from '../utils/peering-auth'
 import { messageLimitsFor } from '../utils/peer-limits'
-import { IRateLimiter } from '../@types/utils'
-import { isEventMatchingFilter } from '../utils/event'
-import { isHidden } from '../utils/hidden-content-cache'
-import { messageSchema } from '../schemas/message-schema'
-import { Settings } from '../@types/settings'
-import { SocketAddress } from 'net'
+import { isConfiguredPeeringPeer } from '../utils/peering-auth'
+import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
+import { attemptValidation } from '../utils/validation'
 
 const logger = createLogger('web-socket-adapter')
 
@@ -90,6 +90,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     private readonly createMessageHandler: Factory<IMessageHandler, [IncomingMessage, IWebSocketAdapter]>,
     private readonly rateLimiter: Factory<IRateLimiter>,
     private readonly settings: Factory<Settings>,
+    private readonly requestStats?: PeeringRequestStatsStore,
   ) {
     super()
     this.alive = true
@@ -110,7 +111,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.client
       .on('error', (error) => {
         if (error.name === 'RangeError' && error.message === 'Max payload size exceeded') {
-          logger.error(`web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`)
+          logger.error(
+            `web-socket-adapter: client ${this.clientId} (${this.getClientAddress()}) sent payload too large`,
+          )
         } else if (error.name === 'RangeError' && error.message === 'Invalid WebSocket frame: RSV1 must be clear') {
           logger(`client ${this.clientId} (${this.getClientAddress()}) enabled compression`)
         } else {
@@ -206,6 +209,13 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
         this.pendingSend = undefined
       }
     })
+
+    if (message[0] === MessageType.EVENT) {
+      const peerPubkey = this.getPeerPubkey()
+      if (peerPubkey) {
+        void this.requestStats?.addEventsServed(peerPubkey, 1)
+      }
+    }
   }
 
   public waitForWritable(): Promise<void> {

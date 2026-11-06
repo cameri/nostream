@@ -72,4 +72,24 @@ describe('admin peering rows', () => {
     expect(rows[0].state).to.equal(undefined)
     expect(rows[0].stale).to.equal(true)
   })
+
+  it('attaches request accounting by peer pubkey', () => {
+    const rows = mergePeeringRows(
+      {
+        peering: {
+          enabled: true,
+          peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
+        },
+      } as Settings,
+      [state()],
+      undefined,
+      [{ pubkey: 'a'.repeat(64), requests: 4, eventsServed: 7 }],
+    )
+
+    expect(rows[0].requests).to.deep.equal({
+      pubkey: 'a'.repeat(64),
+      requests: 4,
+      eventsServed: 7,
+    })
+  })
 })

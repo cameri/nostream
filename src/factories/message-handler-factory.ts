@@ -20,6 +20,7 @@ import { NegOpenMessageHandler } from '../handlers/neg-open-message-handler'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
 import { UserSubscriptionRepository } from '../repositories/user-subscription-repository'
+import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 import { eventStrategyFactory } from './event-strategy-factory'
 import { rateLimiterFactory } from './rate-limiter-factory'
 import { createSettings } from './settings-factory'
@@ -39,6 +40,14 @@ const getUserSubscriptionRepository = (): UserSubscriptionRepository => {
     userSubscriptionRepository = new UserSubscriptionRepository(getMasterDbClient())
   }
   return userSubscriptionRepository
+}
+
+let peerRequestStatsStore: PeeringRequestStatsStore | undefined = undefined
+export const getPeerRequestStatsStore = (): PeeringRequestStatsStore => {
+  if (!peerRequestStatsStore) {
+    peerRequestStatsStore = new PeeringRequestStatsStore(getCache())
+  }
+  return peerRequestStatsStore
 }
 
 export const messageHandlerFactory =
@@ -81,15 +90,28 @@ export const messageHandlerFactory =
           createSettings,
           inviteCodeRepository,
           rateLimiterFactory,
+          getPeerRequestStatsStore(),
         )
       case MessageType.CLOSE:
         return new UnsubscribeMessageHandler(adapter)
       case MessageType.COUNT:
-        return new CountMessageHandler(adapter, eventRepository, createSettings, rateLimiterFactory)
+        return new CountMessageHandler(
+          adapter,
+          eventRepository,
+          createSettings,
+          rateLimiterFactory,
+          getPeerRequestStatsStore(),
+        )
       case MessageType.AUTH:
         return new AuthMessageHandler(adapter, createSettings)
       case MessageType.NEG_OPEN:
-        return new NegOpenMessageHandler(adapter, eventRepository, createSettings, rateLimiterFactory)
+        return new NegOpenMessageHandler(
+          adapter,
+          eventRepository,
+          createSettings,
+          rateLimiterFactory,
+          getPeerRequestStatsStore(),
+        )
       case MessageType.NEG_MSG:
         return new NegMsgMessageHandler(adapter, createSettings)
       case MessageType.NEG_CLOSE:

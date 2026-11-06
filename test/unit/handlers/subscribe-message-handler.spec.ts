@@ -50,6 +50,7 @@ describe('SubscribeMessageHandler', () => {
   let rateLimiterHitStub: Sinon.SinonStub
   let rateLimiterFactory: Sinon.SinonStub
   let endSubscriptionStub: Sinon.SinonStub
+  let requestStats: { recordRequest: Sinon.SinonStub }
 
   let sandbox: Sinon.SinonSandbox
 
@@ -64,6 +65,9 @@ describe('SubscribeMessageHandler', () => {
     webSocket.waitForWritable = sandbox.stub().resolves()
     endSubscriptionStub = sandbox.stub()
     webSocket.endSubscription = endSubscriptionStub
+    requestStats = {
+      recordRequest: sandbox.stub().resolves(),
+    }
     settingsFactory = sandbox.stub()
     stream = new PassThrough({
       objectMode: true,
@@ -94,6 +98,7 @@ describe('SubscribeMessageHandler', () => {
       settingsFactory,
       inviteCodeRepository,
       rateLimiterFactory,
+      requestStats as any,
     )
   })
 
@@ -222,6 +227,19 @@ describe('SubscribeMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(rateLimiterHitStub).not.to.have.been.called
+    })
+
+    it('records an accepted peer request', async () => {
+      const peer = 'a'.repeat(64)
+      canSubscribeStub.returns(undefined)
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({ limits: { peer: { request: { rateLimits: [] } } } })
+      message = [MessageType.REQ, subscriptionId, ...filters] as any
+
+      await handler.handleMessage(message)
+
+      expect(requestStats.recordRequest).to.have.been.calledOnceWithExactly(peer, 'REQ')
+      expect(fetchAndSendStub).to.have.been.calledOnce
     })
 
     it('emits subscribe event if subscription is accepted', async () => {

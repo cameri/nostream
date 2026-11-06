@@ -20,6 +20,7 @@ describe('CountMessageHandler', () => {
   let sandbox: Sinon.SinonSandbox
   let rateLimiterHitStub: Sinon.SinonStub
   let rateLimiterFactory: Sinon.SinonStub
+  let requestStats: { recordRequest: Sinon.SinonStub }
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
@@ -30,20 +31,28 @@ describe('CountMessageHandler', () => {
 
     rateLimiterHitStub = sandbox.stub().resolves({ limited: false })
     rateLimiterFactory = sandbox.stub().returns({ hit: rateLimiterHitStub })
+    requestStats = { recordRequest: sandbox.stub().resolves() }
 
     webSocket = new EventEmitter() as any
     webSocket.getPeerPubkey = sandbox.stub().returns(undefined)
 
-    handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-      limits: {
-        client: {
-          subscription: {
-            maxFilters: 10,
-            maxSubscriptionIdLength: 256,
+    handler = new CountMessageHandler(
+      webSocket,
+      eventRepository,
+      () =>
+        ({
+          limits: {
+            client: {
+              subscription: {
+                maxFilters: 10,
+                maxSubscriptionIdLength: 256,
+              },
+            },
           },
-        },
-      },
-    }) as Settings, rateLimiterFactory)
+        }) as Settings,
+      rateLimiterFactory,
+      requestStats as any,
+    )
   })
 
   afterEach(() => {
@@ -79,16 +88,21 @@ describe('CountMessageHandler', () => {
     })
 
     it('returns CLOSED when the request has too many filters', async () => {
-      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-        limits: {
-          client: {
-            subscription: {
-              maxFilters: 1,
-              maxSubscriptionIdLength: 256,
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            limits: {
+              client: {
+                subscription: {
+                  maxFilters: 1,
+                  maxSubscriptionIdLength: 256,
+                },
+              },
             },
-          },
-        },
-      }) as Settings)
+          }) as Settings,
+      )
 
       const message = [MessageType.COUNT, 'q1', { kinds: [1] }, { kinds: [2] }] as any
 
@@ -101,12 +115,19 @@ describe('CountMessageHandler', () => {
     })
 
     it('uses peer limits instead of client limits for a recognized peer', async () => {
-      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-        limits: {
-          client: { subscription: { maxFilters: 1, maxSubscriptionIdLength: 256 } },
-          peer: { subscription: { maxFilters: 5, maxSubscriptionIdLength: 256 } },
-        },
-      }) as Settings, rateLimiterFactory)
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            limits: {
+              client: { subscription: { maxFilters: 1, maxSubscriptionIdLength: 256 } },
+              peer: { subscription: { maxFilters: 5, maxSubscriptionIdLength: 256 } },
+            },
+          }) as Settings,
+        rateLimiterFactory,
+        requestStats as any,
+      )
       ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns('a'.repeat(64))
 
       const message = [MessageType.COUNT, 'q1', { kinds: [1] }, { kinds: [2] }] as any
@@ -115,15 +136,22 @@ describe('CountMessageHandler', () => {
 
       expect(eventRepository.countByFilters).to.have.been.calledOnceWithExactly([{ kinds: [1] }, { kinds: [2] }])
       expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([MessageType.COUNT, 'q1', { count: 7 }])
+      expect(requestStats.recordRequest).to.have.been.calledOnceWithExactly('a'.repeat(64), 'COUNT')
     })
 
     it('closes a peer count when the on-demand request limit is exceeded', async () => {
       const peer = 'a'.repeat(64)
       ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
       rateLimiterHitStub.resolves({ limited: true, retryAfterMs: 321 })
-      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-        limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
-      }) as Settings, rateLimiterFactory)
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            limits: { peer: { request: { rateLimits: [{ period: 60_000, rate: 1 }] } } },
+          }) as Settings,
+        rateLimiterFactory,
+      )
 
       await handler.handleMessage([MessageType.COUNT, 'q1', { kinds: [1] }] as any)
 
@@ -141,9 +169,14 @@ describe('CountMessageHandler', () => {
     })
 
     it('bounds raw filters before deduplicating them', async () => {
-      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-        limits: { client: { subscription: { maxFilters: 10, maxSubscriptionIdLength: 256 } } },
-      }) as Settings)
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            limits: { client: { subscription: { maxFilters: 10, maxSubscriptionIdLength: 256 } } },
+          }) as Settings,
+      )
       const duplicate = { kinds: [1] }
       const message = [MessageType.COUNT, 'q1', ...Array.from({ length: 11 }, () => duplicate)] as any
 
@@ -155,17 +188,22 @@ describe('CountMessageHandler', () => {
     })
 
     it('returns CLOSED when a filter has too many values', async () => {
-      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-        limits: {
-          client: {
-            subscription: {
-              maxFilters: 10,
-              maxFilterValues: 2,
-              maxSubscriptionIdLength: 256,
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            limits: {
+              client: {
+                subscription: {
+                  maxFilters: 10,
+                  maxFilterValues: 2,
+                  maxSubscriptionIdLength: 256,
+                },
+              },
             },
-          },
-        },
-      }) as Settings)
+          }) as Settings,
+      )
 
       const message = [MessageType.COUNT, 'q1', { authors: ['aa', 'bb', 'cc'] }] as any
 
@@ -180,16 +218,21 @@ describe('CountMessageHandler', () => {
     })
 
     it('returns CLOSED when the query ID is too long', async () => {
-      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-        limits: {
-          client: {
-            subscription: {
-              maxFilters: 10,
-              maxSubscriptionIdLength: 2,
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            limits: {
+              client: {
+                subscription: {
+                  maxFilters: 10,
+                  maxSubscriptionIdLength: 2,
+                },
+              },
             },
-          },
-        },
-      }) as Settings)
+          }) as Settings,
+      )
 
       const message = [MessageType.COUNT, 'q123', {}] as any
 
@@ -217,9 +260,14 @@ describe('CountMessageHandler', () => {
 
     it('returns CLOSED with auth-required when counting restricted kinds unauthenticated', async () => {
       webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set())
-      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-        nip42: { restrictedReads: { enabled: true } },
-      }) as Settings)
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            nip42: { restrictedReads: { enabled: true } },
+          }) as Settings,
+      )
 
       const message = [MessageType.COUNT, 'q1', { kinds: [1059], '#p': ['f'.repeat(64)] }] as any
 
@@ -235,9 +283,14 @@ describe('CountMessageHandler', () => {
 
     it('returns CLOSED when counting restricted kinds scoped to another pubkey', async () => {
       webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set(['a'.repeat(64)]))
-      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-        nip42: { restrictedReads: { enabled: true } },
-      }) as Settings)
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            nip42: { restrictedReads: { enabled: true } },
+          }) as Settings,
+      )
 
       const message = [MessageType.COUNT, 'q1', { kinds: [1059], '#p': ['f'.repeat(64)] }] as any
 
@@ -250,9 +303,14 @@ describe('CountMessageHandler', () => {
     it('returns COUNT when restricted kinds are scoped to the authenticated client', async () => {
       const pubkey = 'f'.repeat(64)
       webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set([pubkey]))
-      handler = new CountMessageHandler(webSocket, eventRepository, () => ({
-        nip42: { restrictedReads: { enabled: true } },
-      }) as Settings)
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            nip42: { restrictedReads: { enabled: true } },
+          }) as Settings,
+      )
 
       const filter = { kinds: [1059], '#p': [pubkey] }
       const message = [MessageType.COUNT, 'q1', filter] as any

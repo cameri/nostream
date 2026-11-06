@@ -145,13 +145,14 @@
   const renderPeering = (rows) => {
     if (!Array.isArray(rows) || !rows.length) {
       elements.peeringBody.innerHTML =
-        '<tr><td colspan="6" class="admin-muted small">No peering peers configured.</td></tr>'
+        '<tr><td colspan="8" class="admin-muted small">No peering peers configured.</td></tr>'
       return
     }
 
     elements.peeringBody.innerHTML = rows
       .map((row) => {
         const state = row.state
+        const requests = row.requests
         const status = state?.status ? String(state.status) : 'no sync yet'
         const title = [row.relayUrl, row.pubkey, status].filter(Boolean).join(' · ')
         return `<tr>
@@ -160,6 +161,8 @@
           <td class="small">${escapeHtml(formatTime(state?.lastReconciledAt))}</td>
           <td>${escapeHtml(formatLag(state?.lagSeconds))}</td>
           <td>${escapeHtml(state?.missingEvents ?? '—')}</td>
+          <td>${escapeHtml(requests?.requests ?? 0)}</td>
+          <td>${escapeHtml(requests?.eventsServed ?? 0)}</td>
           <td>${peeringSignalBadge(row)}</td>
         </tr>`
       })
