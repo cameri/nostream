@@ -37,7 +37,7 @@ opens `<root>/lmdb` itself.
 The eight tail tables are 22 named databases in the same environment (D2): one primary
 database per table keyed by its primary key, plus one per query path (`invoices_pending`,
 `nip05_by_last_checked_at`, `invite_codes_by_created_at`/`_by_expires_at`,
-`dvm_jobs_by_status_created_at`, four `reports_*`, three `outbox_*`/`delivery_log_*`), and a
+`dvm_jobs_by_status_created_at`, four `reports_*`, four `outbox_*`/`delivery_log_*`), and a
 `meta` database for the report sequence.
 
 **The reason is one write transaction spanning events and tail.** NIP-56's hidden-content
@@ -57,13 +57,14 @@ Rows are versioned: one format byte (`ROW_FORMAT_VERSION = 1`), then `serde_json
 per database rather than per table. ADR 0003 trigger 6 asked for a version marker before a
 second backend persisted `EventRecord`, and this is it.
 
-## An event value is a 54-byte header, then JSON
+## An event value is a 55-byte header, then JSON
 
-`events` holds `1 + 54` bytes of header, then `serde_json` of `EventRecord` (D5):
+`events` holds `1 + 54 = 55` bytes of header, then `serde_json` of `EventRecord` (D5):
 
 |bytes|field|
 |---|---|
 |1|format version (`1`)|
+|1|flags: bit 0 is `deleted_at.is_some()`, the soft-delete bit (`FLAG_DELETED`)|
 |8|`created_at`, big-endian i64|
 |4|`kind`, big-endian i32|
 |8|`expires_at`, big-endian i64, `i64::MIN` for NULL|
@@ -72,13 +73,29 @@ second backend persisted `EventRecord`, and this is it.
 
 The live predicate and the NIP-56 lookup read that header without decoding the body, so
 `count_by_filters` and reconciliation copy 55 bytes per candidate instead of an event.
-The reserved byte keeps the header at the 54 bytes R7, V35 and AC8 pin, and it is where a
-future flag goes without a version bump.
+The flags byte is header byte 0 — the first byte after the format byte — and it already
+carries the soft-delete bit, so a second flag lands there behind `FLAG_DELETED` rather than
+in the reserved byte. The reserved byte is the header's last (byte 53 of the 54-byte header),
+kept so the header stays the length R7, V35 and AC8 pin; a flag that needs its own bit goes
+in the flags byte, and the reserved byte is there for a field that has to be a byte wide.
 
 `row_id` stays `None` (D5): it is the Postgres row's `uuid` and nothing reads it through
 this backend. Text components of a composite key are NUL-terminated except the final one
 (`text_part`), so `tag_key` is `name NUL value NUL created_at ‖ event_id`, and a tag name or
-value carrying `0x00` is refused as `InvalidRow` rather than splitting the key.
+value carrying `0x00` is refused as `InvalidRow` rather than splitting the key. The three
+component codecs a key reader needs — `text_part`, `text_from` and `stamp_key` — have one
+home, `lmdb/encoding.rs`, beside the key builders; the tail modules call them rather than
+keeping copies whose rules could drift apart.
+
+LMDB bounds a key at 511 bytes (`MDB_MAXKEYSIZE`, which this environment does not raise), and
+a `tags` key carries the tag value verbatim. **That is the one place this backend refuses a
+row Postgres would keep**: a tag value of 470 bytes or more pushes the key past the bound, so
+the event's write fails and the relay refuses the event, where the capture stores it. It is a
+recorded divergence, not a silent one — the write returns `StorageError::Lmdb` — and it is not
+fixed here: the repairs (hashing the value into the key and looking the row up twice, or a
+larger `max_key_size` at the open) change the index the benchmark job will measure. On the
+read side a criterion too long to name a stored key selects nothing, rather than failing the
+whole request.
 
 Soft delete is a flag **and** the row's value, never an index removal (D4): `find_by_filters`
 does not apply the live predicate (`sql.rs:119-140` against `:262-267`), so the row must stay
@@ -111,22 +128,78 @@ the writer's mutex and a read transaction must not be held across an `await`. `L
 therefore has two helpers, `write` and `read`, that own their transaction and commit or drop
 it inside the closure; no `RwTxn` or `RoTxn` leaves one.
 
-A stream is a key page, not a held transaction. `find_by_filters` collects its union page
-inside one blocking closure; the returned `QueryStream` yields values in batches of
-`STREAM_BATCH_ITEMS = 256`, each poll opening a read transaction, seeking to the saved
-cursor key, copying up to 256 values and dropping it. `find_reconciliation_items` resumes
-the same cursor over `events_by_created_at`, reading a candidate's header and decoded record
-only to apply the filter's live predicate. **A stream is therefore not a snapshot** (D7):
-a row written or deleted between two batches may appear or vanish, where Postgres' portal
-holds one snapshot. No comparable behaviour exists to compare, so the divergence is recorded
-for the benchmark job, and ADR 0003 trigger 1 ("a long-lived LMDB read transaction hurts
-writes") is answered by construction: no transaction outlives a poll, and a dropped stream
-pins no pages.
+A stream is a key page, not a held transaction, and the two query methods keep different
+things — which is what a caller planning memory needs to know:
+
+- `find_by_filters` collects its union page inside one blocking closure, so the stream **holds
+  the page**: at most each filter's limit, clamped to `MAX_PAGE_KEYS = 5 000` ids. Each poll
+  opens a read transaction, copies up to `STREAM_BATCH_ITEMS = 256` values from that page and
+  drops it; nothing more is read from the index, and the page is the only thing resident.
+- `find_reconciliation_items` **holds a cursor key**. Each poll opens a read transaction,
+  resumes exclusively after the last key the previous batch evaluated, and drops it. A batch
+  ends at `STREAM_BATCH_ITEMS` items or `STREAM_BATCH_KEYS = 256` evaluated keys, whichever
+  comes first, so a filter that matches few of the keys it walks cannot make one poll span a
+  whole range — the cursor resumes exactly where the key cap stopped.
+  It scans the filter's own index when that index narrows the filter to a single range that
+  runs in `created_at` order (`{authors: [a], kinds: [k]}`, or one exact tag value); any other
+  filter scans `events_by_created_at`, because only that range's order is the oldest-first
+  order the seam promises. Reading a candidate costs its header, plus its decoded record only
+  for the tag families the key has not already answered.
+
+**A stream is therefore not a snapshot** (D7): a row written or deleted between two batches
+may appear or vanish, where Postgres' portal holds one snapshot. No comparable behaviour
+exists to compare, so the divergence is recorded for the benchmark job, and ADR 0003 trigger
+1 ("a long-lived LMDB read transaction hurts writes") is answered by construction: no
+transaction outlives a poll, and a dropped stream pins no pages.
 
 `Env::resize` is `unsafe` and this crate has one audited `unsafe` call, so the map is
 preallocated at `LMDB_MAP_SIZE = 64 GiB` and never grown (D6). The same single
 `#[allow(unsafe_code)]` open sets `LMDB_MAX_DBS = 64` (the 29 named databases, comfortably
 inside) and `LMDB_MAX_READERS = 512`.
+
+Because the map never grows, its approach has to be visible before the first failed write:
+`LmdbBackend::open` logs the map size, the bytes the pages in use occupy
+(`Env::non_free_pages_size`) and that as a percentage, and `LmdbBackend::map_usage` reports the
+same numbers to an operator's tooling.
+
+## What a read holds, and which index it reads
+
+The resident set of a read is the page, never the range it was chosen from, and the size of
+that page is the backend's to bound: the effective limit is the filter's own or the capture's
+default of 500, clamped to `MAX_PAGE_KEYS = 5 000` — the shipped
+`limits.client.subscription.maxLimit` — so a wire `limit` cannot choose an allocation, whether
+or not a deployment sets `maxLimit`. A filter's branch keeps at most twice that many keys and
+cuts back to the best half whenever the buffer fills; a range whose key order *is* the page's
+order stops as soon as the page is full, keeping every row at the boundary timestamp so a tie
+breaks as the capture's does.
+
+The index is chosen from the filter, and which ranges can stop early follows from the key:
+
+| filter | index | stops when full |
+|---|---|---|
+| `ids` | `events`, a point or prefix range per criterion | never: the key is the id, so the range runs in id order |
+| `authors` + `kinds` | `events_by_author`, one range per author criterion and kind | when the author criterion is a whole pubkey, so a range is one `pubkey ‖ kind ‖ created_at` run |
+| `authors` alone | `events_by_created_at` | yes — see below |
+| a `#` + letter criterion | `tags`, one range per criterion | for an exact value; a `#g` prefix spans values, so its range runs whole |
+| anything else | `events_by_created_at` | yes |
+
+The `authors`-alone row is the capture's own shape rather than the faster index: the author
+index orders by kind before `created_at`, so a page ordered by time cannot stop inside it, and
+the same query in Postgres walks the created-at index and filters (ADR 0003 records 5 508 rows
+discarded to return 500 for the kind-only form). The cost is that a quiet author's page reads
+further into the created-at index than the author's own timeline would; the page still stops at
+its limit, and the choice belongs to the benchmark job once it can choose with statistics
+rather than a rule.
+
+Two consequences of the same bound:
+
+- `count_by_filters` has no page, so it holds no matching set. Each filter counts the rows it
+  visits and skips one the count already holds — an earlier filter's page when that filter had
+  a limit, or a predicate match when it had none — which is the capture's `UNION`. An unlimited
+  filter walks its ranges whole, which is what counting every match costs.
+- A tag criterion the index selected is checked from the key (`name NUL value NUL …`), so the
+  event's body is decoded only for the filter's other tag families; a filter with one family
+  decodes none.
 
 ## Constraints move into Rust
 
@@ -189,6 +262,10 @@ its op is one of the five above — so the list cannot grow without the diff sho
 - Retention's batch composition can differ from Postgres' planner-chosen order when more than
   1000 rows qualify; both return 1000 rows classified by the same precedence (D13 in
   `spec.md`, Assumption 10). The corpus is 483 events, so no current entry reaches it.
+- A page is bounded by `MAX_PAGE_KEYS` and a read holds a page rather than a range, so a
+  client cannot choose how much a request materialises; a count is exact and holds no set.
+  The price is that the `ids` and `#g`-prefix paths walk their whole (time-bounded) range, and
+  an author page without kinds reads the created-at index.
 - Two JSON values PostgreSQL's `jsonb` considers equal but that serialize differently
   (`1` against `1.0`) would be distinct deduplication pointers here; the repository builds
   the value in one shape and the relay passes a single string, so today's callers cannot
