@@ -22,7 +22,7 @@ use chrono::Utc;
 use heed::types::Bytes;
 use heed::{Database, Env, RoTxn, RwTxn};
 use nostream_config::Settings;
-use nostream_core::{EventId, EventStoreBackend, Filter, Kind, Pubkey};
+use nostream_core::{EventId, Filter, Kind, Pubkey};
 
 use crate::backend::LmdbEnv;
 use crate::error::StorageError;
@@ -161,11 +161,8 @@ impl LmdbBackend {
     /// Opens (creating if needed) the store under `<root>/lmdb` and creates every database.
     pub async fn open(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let root = root.into();
-        let path = crate::backend::data_dir(&root, EventStoreBackend::Lmdb).ok_or(
-            StorageError::InvalidArgument {
-                message: "the lmdb backend has no data directory",
-            },
-        )?;
+        // The same rule `data_dir` answers, from the same constant.
+        let path = root.join(crate::backend::LMDB_DIR);
         let env = tokio::task::spawn_blocking(move || LmdbEnv::open(path, LMDB_MAP_SIZE))
             .await
             .map_err(|_| StorageError::LmdbTaskCancelled)??;
@@ -947,6 +944,38 @@ mod tests {
             created += 1;
         }
         assert!(created < LMDB_MAX_DBS, "the handle limit is enforced");
+        transaction.abort();
+    }
+
+    #[tokio::test]
+    async fn a_store_filled_past_its_map_size_reports_the_driver_error() {
+        // A small map is the only way to reach the boundary the fixed LMDB_MAP_SIZE stands
+        // in for: the environment never grows, so a full one is the driver's error (V27).
+        let directory = tempfile::tempdir().expect("tempdir");
+        let environment =
+            LmdbEnv::open(directory.path().join("map"), 1 << 20).expect("a 1 MiB environment");
+        let env = environment.env().clone();
+        let mut transaction = env.write_txn().expect("a write transaction");
+        let database = env
+            .create_database::<Bytes, Bytes>(&mut transaction, Some("fill"))
+            .expect("a database");
+
+        let value = vec![0u8; 64 << 10];
+        let mut written = 0u32;
+        loop {
+            match database.put(&mut transaction, &written.to_be_bytes(), &value) {
+                Ok(()) => written += 1,
+                Err(error) => {
+                    let error = StorageError::from(error);
+                    assert!(
+                        matches!(error, StorageError::Lmdb(_)),
+                        "a full map is the driver's error, got {error:?}"
+                    );
+                    break;
+                }
+            }
+        }
+        assert!(written > 0, "the map held rows before it filled");
         transaction.abort();
     }
 }
