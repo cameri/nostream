@@ -877,6 +877,8 @@ fn branch(
     }
 
     let plan = plan(filter, databases);
+    // A `tags` range is built from the family's own criteria, so every key in it satisfies that
+    // family: the matcher skips it and no body is decoded for it.
     let matcher = Matcher {
         filter,
         gates,
@@ -892,9 +894,6 @@ fn branch(
         for entry in scan(plan.database, txn, &range, plan.ordered && descending)? {
             let (key, _) = entry?;
             key_evaluated();
-            if !tag_key_proves(&plan, key)? {
-                continue;
-            }
             let Some(found) = candidate(txn, databases, plan.path, key)? else {
                 continue;
             };
@@ -910,19 +909,6 @@ fn branch(
         }
     }
     Ok(page.finish(limit))
-}
-
-/// Whether the key that selected a row satisfies the tag family's criteria.
-///
-/// A `tags` key is `name\0value\0…`, so the value the range sought is already in the key: the
-/// criterion is checked from it, and the row's body is decoded only for the filter's other tag
-/// families. Every other index selects a row without proving a tag criterion.
-fn tag_key_proves(plan: &Plan<'_>, key: &[u8]) -> Result<bool, StorageError> {
-    let Some((name, criteria)) = plan.tag else {
-        return Ok(true);
-    };
-    let value = encoding::tag_value(key)?;
-    Ok(tag_value_matches(name == "g", criteria, value))
 }
 
 /// Whether a key's timestamp is past the timestamp a full page stopped at.
@@ -1627,9 +1613,6 @@ fn scan_batch(
             // resumes exclusively after it.
             position.after = Some(key.to_vec());
             evaluated += 1;
-            if !tag_key_proves(&plan, key)? {
-                continue;
-            }
             let Some((created_at, event_id)) = key_candidate(plan.path, key)? else {
                 return Err(encoding::invalid(
                     "events",
