@@ -15,7 +15,7 @@ default = ["postgres", "lmdb"]
 postgres = ["dep:sqlx"]
 # The LMDB backend, its environment and its row encodings. `uuid` is only used to mint
 # the canonical text ids the outbox and delivery-log columns generate.
-lmdb = ["dep:heed", "dep:uuid"]
+lmdb = ["dep:heed", "dep:uuid", "dep:tracing"]
 
 [dependencies]
 chrono.workspace = true
@@ -28,6 +28,7 @@ serde_json.workspace = true
 sqlx = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
+tracing = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 
 [dev-dependencies]

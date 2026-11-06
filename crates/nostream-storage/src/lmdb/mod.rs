@@ -55,11 +55,25 @@ pub const LMDB_MAX_READERS: u32 = 512;
 /// The capture's default page size (`DEFAULT_FILTER_LIMIT`).
 pub(crate) const DEFAULT_FILTER_LIMIT: u64 = 500;
 
+/// The largest page a read materialises, however large a limit the wire asks for.
+///
+/// `limits.client.subscription.maxLimit` is the relay's own bound, but it is applied only when
+/// the deployment sets it, and a request reaches the store before some of those gates; this is
+/// the backend's bound, so the size of a read's resident set is never chosen by the client.
+/// 5 000 is exactly the shipped `maxLimit` (`resources/default-settings.yaml`), so the clamp
+/// cannot shorten a page a configured relay would have served.
+pub(crate) const MAX_PAGE_KEYS: usize = 5_000;
+
 /// The retention batch size (`RETENTION_BATCH_SIZE`).
 pub(crate) const RETENTION_BATCH_SIZE: usize = 1_000;
 
 /// How many rows one stream poll copies before it drops its read transaction.
 pub(crate) const STREAM_BATCH_ITEMS: usize = 256;
+
+/// How many index keys one reconciliation poll evaluates before it drops its read transaction.
+/// A filter that matches few of the keys it walks ends a batch on this count rather than on
+/// [`STREAM_BATCH_ITEMS`], so the transaction never spans a whole range.
+pub(crate) const STREAM_BATCH_KEYS: usize = 256;
 
 /// The settings gates the capture reads per query. The LMDB backend records only whether
 /// NIP-50 is on: it has no search implementation (ADR 0010, Out of scope).
@@ -149,6 +163,15 @@ impl Databases {
     }
 }
 
+/// How much of the fixed map one store has used (`Env::non_free_pages_size`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MapUsage {
+    /// The ceiling the store never grows past.
+    pub map_size: usize,
+    /// The bytes the pages in use occupy, as of the last committed transaction.
+    pub used_bytes: u64,
+}
+
 /// An embedded LMDB event store with its metadata tail, built from the root a caller supplies.
 #[derive(Debug, Clone)]
 pub struct LmdbBackend {
@@ -159,27 +182,48 @@ pub struct LmdbBackend {
 
 impl LmdbBackend {
     /// Opens (creating if needed) the store under `<root>/lmdb` and creates every database.
+    ///
+    /// The usage it reports is what the map's approach to [`LMDB_MAP_SIZE`] is read from: the
+    /// store never grows, so an operator sees it coming here rather than at the first failed
+    /// write.
     pub async fn open(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let root = root.into();
         // The same rule `data_dir` answers, from the same constant.
         let path = root.join(crate::backend::LMDB_DIR);
-        let env = tokio::task::spawn_blocking(move || LmdbEnv::open(path, LMDB_MAP_SIZE))
-            .await
-            .map_err(|_| StorageError::LmdbTaskCancelled)??;
-        let handle = env.env().clone();
-        let databases = tokio::task::spawn_blocking(move || {
+        let opened = tokio::task::spawn_blocking(move || {
+            let environment = LmdbEnv::open(&path, LMDB_MAP_SIZE)?;
+            let handle = environment.env().clone();
             let mut transaction = handle.write_txn()?;
             let databases = Databases::create(&handle, &mut transaction)?;
             transaction.commit()?;
-            Ok::<Databases, StorageError>(databases)
+            let used_bytes = handle.non_free_pages_size()?;
+            Ok::<_, StorageError>((environment, databases, used_bytes))
         })
         .await
         .map_err(|_| StorageError::LmdbTaskCancelled)??;
+        let (environment, databases, used_bytes) = opened;
+
+        tracing::info!(
+            path = %environment.path().display(),
+            map_size = LMDB_MAP_SIZE,
+            used_bytes,
+            used_percent = used_bytes as f64 / LMDB_MAP_SIZE as f64 * 100.0,
+            "the lmdb store is open"
+        );
 
         Ok(Self {
-            env: env.env().clone(),
+            env: environment.env().clone(),
             databases,
             settings: None,
+        })
+    }
+
+    /// How much of the fixed map the store has used, for an operator's tooling and the log
+    /// line [`open`](Self::open) writes.
+    pub fn map_usage(&self) -> Result<MapUsage, StorageError> {
+        Ok(MapUsage {
+            map_size: LMDB_MAP_SIZE,
+            used_bytes: self.env.non_free_pages_size()?,
         })
     }
 
@@ -909,6 +953,20 @@ mod tests {
                 .expect("the database opens");
             assert!(database.is_some(), "{name} exists");
         }
+    }
+
+    #[tokio::test]
+    async fn the_store_reports_how_much_of_its_map_it_uses() {
+        // The map never grows (LMDB_MAP_SIZE), so the approach to it is what an operator has to
+        // see; before this the first signal was the first failed write.
+        let directory = tempfile::tempdir().expect("tempdir");
+        let backend = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+        let usage = backend.map_usage().expect("the usage");
+        assert_eq!(usage.map_size, LMDB_MAP_SIZE);
+        assert!(usage.used_bytes > 0, "the 29 databases occupy pages");
+        assert!(usage.used_bytes <= LMDB_MAP_SIZE as u64);
     }
 
     #[tokio::test]

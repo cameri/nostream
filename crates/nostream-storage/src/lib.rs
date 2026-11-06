@@ -39,6 +39,6 @@ pub use backend::LmdbEnv;
 pub use backend::data_dir;
 pub use error::StorageError;
 #[cfg(feature = "lmdb")]
-pub use lmdb::LmdbBackend;
+pub use lmdb::{LmdbBackend, MapUsage};
 #[cfg(feature = "postgres")]
 pub use postgres::{PostgresBackend, PostgresTransaction};
