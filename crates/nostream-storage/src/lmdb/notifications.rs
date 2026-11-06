@@ -52,11 +52,26 @@ fn delivery_created_key(entry: &DeliveryLogEntry) -> Vec<u8> {
     key
 }
 
+/// `outbox_id ‖ status ‖ target_id ‖ id`, so one entry is addressable and two attempts at
+/// the same target do not share a key.
 fn delivery_outbox_key(outbox_id: &str, entry: &DeliveryLogEntry) -> Vec<u8> {
     let mut key = text_part(outbox_id);
     key.extend_from_slice(&text_part(entry.status.as_str()));
-    key.extend_from_slice(entry.target_id.as_bytes());
+    key.extend_from_slice(&text_part(&entry.target_id));
+    key.extend_from_slice(entry.id.as_bytes());
     key
+}
+
+/// The entry id one `delivery_log_by_outbox` key ends with.
+fn delivery_outbox_id(key: &[u8]) -> Result<&str, StorageError> {
+    let Some(start) = key.iter().rposition(|byte| *byte == 0) else {
+        return Err(StorageError::InvalidRow {
+            table: "delivery_log_by_outbox",
+            column: "key",
+            value: "a key without an entry id".to_owned(),
+        });
+    };
+    text_from(&key[start + 1..], "delivery_log_by_outbox")
 }
 
 fn delivery_load(
@@ -160,7 +175,15 @@ pub(crate) fn find_successful_target_ids(
     let mut targets = Vec::new();
     for entry in databases.delivery_log_by_outbox.prefix_iter(txn, &prefix)? {
         let (key, _) = entry?;
-        let target_id = text_from(&key[prefix.len()..], "delivery_log_by_outbox")?;
+        let rest = &key[prefix.len()..];
+        let Some(end) = rest.iter().position(|byte| *byte == 0) else {
+            return Err(StorageError::InvalidRow {
+                table: "delivery_log_by_outbox",
+                column: "key",
+                value: "a key without a target terminator".to_owned(),
+            });
+        };
+        let target_id = text_from(&rest[..end], "delivery_log_by_outbox")?;
         if seen.insert(target_id.to_owned()) {
             targets.push(target_id.to_owned());
         }
@@ -439,19 +462,18 @@ fn null_delivery_outbox(
     databases: &Databases,
     outbox_id: &str,
 ) -> Result<(), StorageError> {
+    let prefix = text_part(outbox_id);
     let mut named = Vec::new();
-    for entry in databases.notification_delivery_log.iter(txn)? {
-        let (_, value) = entry?;
-        let row: DeliveryLogEntry = rows::decode("notification_delivery_log", value)?;
-        if row.outbox_id.as_deref() == Some(outbox_id) {
-            named.push(row);
-        }
+    for entry in databases.delivery_log_by_outbox.prefix_iter(txn, &prefix)? {
+        let (key, _) = entry?;
+        named.push((key.to_vec(), delivery_outbox_id(key)?.to_owned()));
     }
 
-    for mut row in named {
-        databases
-            .delivery_log_by_outbox
-            .delete(txn, &delivery_outbox_key(outbox_id, &row))?;
+    for (index_key, id) in named {
+        let Some(mut row) = delivery_load(txn, databases, &id)? else {
+            continue;
+        };
+        databases.delivery_log_by_outbox.delete(txn, &index_key)?;
         row.outbox_id = None;
         let value = rows::encode("notification_delivery_log", &row)?;
         databases
