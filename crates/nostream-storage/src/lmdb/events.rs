@@ -2904,6 +2904,56 @@ mod tests {
     }
 
     #[test]
+    fn an_unlimited_page_over_two_tag_values_is_the_global_oldest_rows() {
+        // Without a limit the page keeps the oldest rows, so the same accumulator is read from
+        // the other end: a later range whose oldest row is older than the page's worst kept row
+        // must be walked, not stopped at its first match.
+        let _serial = counting();
+        let (_directory, env, databases) = store();
+        let records: Vec<EventRecord> = (1..=1200)
+            .map(|step: i64| {
+                let value = if step % 3 == 0 { "b" } else { "a" };
+                signed(36, 1, step, vec![vec!["t".to_owned(), value.to_owned()]])
+            })
+            .collect();
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let oldest: Vec<i64> = (1..=500).collect();
+
+        for criteria in [
+            vec!["a".to_owned(), "b".to_owned()],
+            vec!["b".to_owned(), "a".to_owned()],
+        ] {
+            let mut tags = BTreeMap::new();
+            tags.insert("#t".to_owned(), criteria);
+            let filter = Filter {
+                tags,
+                ..Filter::default()
+            };
+            let page = branch(
+                &transaction,
+                &databases,
+                &filter,
+                &Gates::default(),
+                0,
+                false,
+                page_limit(&filter),
+            )
+            .expect("the page");
+            assert_eq!(
+                created(&page),
+                oldest,
+                "the page is the 500 oldest rows the values select, in either order"
+            );
+            assert_eq!(
+                page,
+                reference_page(&transaction, &databases, &filter),
+                "and it is the store's own answer"
+            );
+        }
+    }
+
+    #[test]
     fn the_author_index_and_the_created_at_fallback_return_the_same_page() {
         // A filter composing more than `MAX_PAGE_KEYS` author × kind ranges is answered from
         // the created-at index instead, and both plans must return the same page.
