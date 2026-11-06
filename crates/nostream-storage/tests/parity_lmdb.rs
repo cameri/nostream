@@ -660,6 +660,130 @@ async fn a_limited_author_filter_returns_the_newest_events() {
     );
 }
 
+/// The page and count of one filter: `(rows, count)`.
+async fn page_and_count(backend: &LmdbBackend, filter: &Filter) -> (usize, u64) {
+    let page = common::collect(
+        backend
+            .find_by_filters(std::slice::from_ref(filter))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let count = backend
+        .count_by_filters(std::slice::from_ref(filter))
+        .await
+        .unwrap();
+    (page.len(), count)
+}
+
+#[tokio::test]
+async fn an_id_prefix_of_either_parity_selects_the_event_it_prefixes() {
+    let (_directory, backend) = open_store().await;
+    let record = event(4, 1, 1_700_000_000);
+    backend
+        .create_many(std::slice::from_ref(&record))
+        .await
+        .expect("the event stores");
+    let id = record.event.id.to_string();
+
+    // The capture's `substring(event_id from 1 for n/2)` takes an even prefix's whole bytes,
+    // and an odd one's final nibble is a range; both select the row (R12).
+    for length in [8, 9, 16] {
+        let filter = Filter {
+            ids: Some(vec![id[..length].to_owned()]),
+            ..Filter::default()
+        };
+        assert_eq!(
+            page_and_count(&backend, &filter).await,
+            (1, 1),
+            "an id prefix of {length} characters names the row"
+        );
+    }
+
+    let mut other = id[..8].to_owned();
+    let digit = other.pop().expect("the prefix is not empty");
+    other.push(if digit == '0' { '1' } else { '0' });
+    let filter = Filter {
+        ids: Some(vec![other]),
+        ..Filter::default()
+    };
+    assert_eq!(
+        page_and_count(&backend, &filter).await,
+        (0, 0),
+        "the prefix range stops at the prefix's own bytes"
+    );
+}
+
+#[tokio::test]
+async fn a_prefix_author_with_kinds_selects_the_event() {
+    let (_directory, backend) = open_store().await;
+    let record = event(12, 1, 1_700_000_000);
+    backend
+        .create_many(std::slice::from_ref(&record))
+        .await
+        .expect("the event stores");
+    let author = record.event.pubkey.to_string();
+
+    // The author index's key is `pubkey ‖ kind ‖ created_at ‖ event_id`, so the kind is at the
+    // field's own offset whatever the author criterion covers (R12).
+    for length in [8, 9, 16, 63, 64] {
+        let filter = Filter {
+            authors: Some(vec![author[..length].to_owned()]),
+            kinds: Some(vec![Kind(1)]),
+            ..Filter::default()
+        };
+        assert_eq!(
+            page_and_count(&backend, &filter).await,
+            (1, 1),
+            "an author prefix of {length} characters with the row's kind names it"
+        );
+
+        let filter = Filter {
+            authors: Some(vec![author[..length].to_owned()]),
+            kinds: Some(vec![Kind(2)]),
+            ..Filter::default()
+        };
+        assert_eq!(
+            page_and_count(&backend, &filter).await,
+            (0, 0),
+            "another kind excludes it at the same offset"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_repeated_kind_counts_its_row_once() {
+    let (_directory, backend) = open_store().await;
+    let note = event(13, 1, 1_700_000_000);
+    let highest = event(14, i32::MAX as u64, 1_700_000_001);
+    backend
+        .create_many(&[note.clone(), highest.clone()])
+        .await
+        .expect("the events store");
+
+    // A duplicated criterion, and two kinds that the key codec maps to the same `i32`, name one
+    // index range; a count that visited it per criterion would count the row twice (V6, UNION).
+    for (record, kinds) in [
+        (&note, vec![Kind(1), Kind(1)]),
+        (
+            &highest,
+            vec![Kind(i32::MAX as u64), Kind(i32::MAX as u64 + 1)],
+        ),
+    ] {
+        let filter = Filter {
+            authors: Some(vec![record.event.pubkey.to_string()]),
+            kinds: Some(kinds),
+            ..Filter::default()
+        };
+        assert_eq!(
+            page_and_count(&backend, &filter).await,
+            (1, 1),
+            "the row is one row however its kind is repeated"
+        );
+    }
+}
+
 #[tokio::test]
 async fn a_reconciliation_lists_every_live_row_across_batches() {
     let (_directory, backend) = open_store().await;

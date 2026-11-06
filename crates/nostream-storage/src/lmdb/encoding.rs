@@ -26,6 +26,9 @@ const NO_EXPIRY: i64 = i64::MIN;
 /// The number of bytes a `created_at ‖ event_id` key appends after the timestamp.
 const EVENT_ID_LEN: usize = 32;
 
+/// The width of the field a hex criterion is compared over: an id or a pubkey is 32 bytes.
+const HEX_FIELD_LEN: usize = 32;
+
 /// LMDB's maximum key length (`MDB_MAXKEYSIZE`, the default this environment is opened with).
 ///
 /// It bounds every key this module builds: a tag value longer than the room a `tags` key has
@@ -394,12 +397,14 @@ fn hex_digit(digit: u8) -> u8 {
 /// The inclusive key ranges one hex criterion family covers, over a 32-byte id or pubkey.
 ///
 /// A 64-character criterion is one equality range; an even prefix compares its bytes; an odd
-/// one compares the bytes of the nibble range `0` to `f`, as `sql.rs` composes it. `suffix` is
-/// the number of bytes the index key carries after the 32-byte field.
+/// one compares the bytes of the nibble range `0` to `f`, as `sql.rs` composes it. Both bounds
+/// are widened to [`HEX_FIELD_LEN`] bytes, so a prefix is compared against its own field and
+/// nothing a key carries after it; `suffix` is the number of bytes the index key carries after
+/// the field.
 pub(crate) fn hex_ranges(criteria: &[String], suffix: usize) -> Vec<(Vec<u8>, Vec<u8>)> {
     let mut ranges = Vec::with_capacity(criteria.len());
     for criterion in criteria {
-        let (lower, mut upper) = match criterion.len() % 2 {
+        let (mut lower, mut upper) = match criterion.len() % 2 {
             1 => (
                 hex_bytes(&format!("{criterion}0")),
                 hex_bytes(&format!("{criterion}f")),
@@ -409,6 +414,12 @@ pub(crate) fn hex_ranges(criteria: &[String], suffix: usize) -> Vec<(Vec<u8>, Ve
                 (prefix.clone(), prefix)
             }
         };
+        if lower.len() < HEX_FIELD_LEN {
+            lower.resize(HEX_FIELD_LEN, 0x00);
+        }
+        if upper.len() < HEX_FIELD_LEN {
+            upper.resize(HEX_FIELD_LEN, 0xff);
+        }
         upper.extend(std::iter::repeat_n(0xff, suffix));
         ranges.push((lower, upper));
     }
@@ -421,7 +432,7 @@ pub(crate) fn hex_ranges(criteria: &[String], suffix: usize) -> Vec<(Vec<u8>, Ve
 /// builder](hex_ranges) maps to zero does the same — and a walk that reads one key twice would
 /// count an event twice. Dropping a range another already covers keeps every range a set of
 /// keys it alone selects.
-fn disjoint(mut ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<(Vec<u8>, Vec<u8>)> {
+pub(crate) fn disjoint(mut ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<(Vec<u8>, Vec<u8>)> {
     ranges.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| right.1.cmp(&left.1)));
     let mut kept: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(ranges.len());
     for range in ranges {
@@ -502,14 +513,23 @@ mod tests {
     fn an_even_prefix_is_one_range_and_an_odd_one_is_one_nibble_range() {
         let ranges = hex_ranges(&["abcd".to_owned(), "abef".to_owned()], 40);
         assert_eq!(ranges.len(), 2, "two disjoint criteria seek two ranges");
-        assert_eq!(ranges[0].0, vec![0xab, 0xcd]);
-        assert_eq!(ranges[0].1.len(), 2 + 40);
-        assert_eq!(ranges[1].0, vec![0xab, 0xef]);
+        let mut low = vec![0xab, 0xcd];
+        low.resize(HEX_FIELD_LEN, 0x00);
+        let mut high = vec![0xab, 0xcd];
+        high.resize(HEX_FIELD_LEN, 0xff);
+        high.extend(std::iter::repeat_n(0xff, 40));
+        assert_eq!(ranges[0].0, low);
+        assert_eq!(
+            ranges[0].1, high,
+            "the upper bound widens to the field, so a longer key under the prefix is in range"
+        );
+        assert_eq!(ranges[1].0[..2], [0xab, 0xef]);
 
         let odd = hex_ranges(&["abcde".to_owned()], 40);
-        assert_eq!(odd[0].0, vec![0xab, 0xcd, 0xe0]);
+        assert_eq!(odd[0].0[..3], [0xab, 0xcd, 0xe0]);
         assert_eq!(odd[0].1, {
             let mut high = vec![0xab, 0xcd, 0xef];
+            high.resize(HEX_FIELD_LEN, 0xff);
             high.extend(std::iter::repeat_n(0xff, 40));
             high
         });
@@ -521,7 +541,7 @@ mod tests {
         // keys twice and count them twice.
         let nested = hex_ranges(&["abcd".to_owned(), "abcde".to_owned()], 40);
         assert_eq!(nested.len(), 1);
-        assert_eq!(nested[0].0, vec![0xab, 0xcd]);
+        assert_eq!(nested[0].0[..2], [0xab, 0xcd]);
 
         // Two criteria that decode to the same bytes are one range too.
         let duplicate = hex_ranges(&["zz".to_owned(), "z0".to_owned()], 0);
