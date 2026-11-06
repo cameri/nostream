@@ -49,16 +49,23 @@ pub enum StorageError {
     ValueOutOfRange { column: &'static str, value: String },
 
     /// An LMDB environment or transaction failed.
+    #[cfg(feature = "lmdb")]
     #[error("lmdb operation failed: {0}")]
     Lmdb(#[from] heed::Error),
 
     /// An LMDB environment could not be opened at the requested path.
+    #[cfg(feature = "lmdb")]
     #[error("failed to open the lmdb environment at {path}: {source}")]
     OpenLmdb {
         path: std::path::PathBuf,
         #[source]
         source: heed::Error,
     },
+
+    /// An LMDB blocking task was cancelled before it returned (the runtime is shutting down).
+    #[cfg(feature = "lmdb")]
+    #[error("the lmdb task did not finish")]
+    LmdbTaskCancelled,
 
     /// A value must be valid UTF-8 to be stored through the string codecs.
     #[error("lmdb values must be valid utf-8")]

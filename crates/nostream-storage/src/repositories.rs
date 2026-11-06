@@ -21,10 +21,11 @@ use crate::error::StorageError;
 pub type StorageFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StorageError>> + Send + 'a>>;
 
 /// One row per item, in exactly the query's `ORDER BY`. The borrow of the store is held for
-/// the stream's life, which is what both backends need: Postgres holds a portal and a
-/// pooled connection; LMDB holds a read transaction. A channel would force a background
-/// task and a buffer policy LMDB does not need, and a `Vec` would materialise a 10M-row
-/// NIP-77 reconciliation.
+/// the stream's life, which is what both backends need: Postgres holds a portal and a pooled
+/// connection, while LMDB holds only a cursor key and opens a short read transaction per batch
+/// (256 values), so a dropped stream pins no pages but a row written or deleted between two
+/// batches may appear or vanish. A channel would force a background task and a buffer policy
+/// LMDB does not need, and a `Vec` would materialise a 10M-row NIP-77 reconciliation.
 pub type QueryStream<'a, T> = Pin<Box<dyn Stream<Item = Result<T, StorageError>> + Send + 'a>>;
 
 /// The rows a retention pass deleted, expired and kept (`src/@types/repositories.ts`
@@ -79,7 +80,7 @@ pub struct ReconciliationItem {
 }
 
 /// One user row (`src/@types/user.ts` `User`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct User {
     pub pubkey: Pubkey,
     pub is_admitted: bool,
@@ -106,7 +107,8 @@ pub struct UserPatch {
 }
 
 /// `invoices.unit` (`src/@types/invoice.ts` `InvoiceUnit`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum InvoiceUnit {
     Msats,
     Sats,
@@ -114,7 +116,8 @@ pub enum InvoiceUnit {
 }
 
 /// `invoices.status` (`src/@types/invoice.ts` `InvoiceStatus`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum InvoiceStatus {
     Pending,
     Completed,
@@ -122,7 +125,7 @@ pub enum InvoiceStatus {
 }
 
 /// One payment invoice row (`src/@types/invoice.ts` `Invoice`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Invoice {
     pub id: String,
     pub pubkey: Pubkey,
@@ -140,7 +143,7 @@ pub struct Invoice {
 }
 
 /// One NIP-05 verification row (`src/@types/nip05.ts` `Nip05Verification`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Nip05Verification {
     pub pubkey: Pubkey,
     pub nip05: String,
@@ -164,7 +167,7 @@ pub struct CreateInviteCodeOptions {
 }
 
 /// One invite code (`src/@types/invite-code.ts` `InviteCode`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InviteCode {
     pub code: String,
     pub created_by: Option<Pubkey>,
@@ -176,7 +179,8 @@ pub struct InviteCode {
 }
 
 /// `dvm_jobs.status` (`src/@types/dvm.ts` `DvmJobStatus`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DvmJobStatus {
     Submitted,
     PickedUp,
@@ -186,7 +190,7 @@ pub enum DvmJobStatus {
 }
 
 /// One DVM job row (`src/@types/dvm.ts` `DvmJob`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DvmJob {
     pub id: EventId,
     pub requester_pubkey: Pubkey,
@@ -219,7 +223,8 @@ pub struct DvmJobUpdate {
 }
 
 /// `reports.report_type` (`src/@types/report.ts` `ReportType`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ReportType {
     Nudity,
     Malware,
@@ -244,7 +249,7 @@ pub struct NewReport {
 }
 
 /// One report row (`src/@types/report.ts` `Report`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Report {
     pub id: i32,
     pub event_id: EventId,
@@ -266,7 +271,8 @@ pub struct ActionableTarget {
 
 /// `notification_delivery_log.target_type` (`src/@types/operator-notifications.ts`
 /// `OperatorNotificationChannelType`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum NotificationTargetType {
     Http,
     Discord,
@@ -276,7 +282,8 @@ pub enum NotificationTargetType {
 
 /// `notification_delivery_log.status` (`src/@types/operator-notifications.ts`
 /// `NotificationDeliveryStatus`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum NotificationDeliveryStatus {
     Success,
     Failed,
@@ -296,7 +303,7 @@ pub struct NewDeliveryLogEntry {
 
 /// One stored delivery attempt (`src/@types/operator-notifications.ts`
 /// `NotificationDeliveryLogEntry`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeliveryLogEntry {
     pub id: String,
     pub outbox_id: Option<String>,
@@ -318,7 +325,8 @@ pub struct DeliveryLogFilters {
 
 /// `notification_outbox.status` (`src/@types/notification-outbox.ts`
 /// `NotificationOutboxStatus`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum OutboxStatus {
     Pending,
     Processing,
@@ -330,7 +338,7 @@ pub enum OutboxStatus {
 pub type OutboxPayload = serde_json::Value;
 
 /// One outbox message (`src/@types/notification-outbox.ts`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OutboxMessage {
     pub id: String,
     pub event_type: String,

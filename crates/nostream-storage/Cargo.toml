@@ -5,19 +5,22 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Repository traits, backend selection and the Postgres storage backend"
+description = "Repository traits, backend selection and the Postgres and LMDB storage backends"
 
 [features]
-# The Postgres backend and its driver. On by default because Postgres is the reference
-# implementation; a build that only needs the trait seam (the LMDB follow-up) can turn it
-# off and lose the sqlx link entirely.
-default = ["postgres"]
+# Both backends are on by default: Postgres is the reference implementation and the LMDB
+# backend is what the rewrite exists to provide. A build that only needs the trait seam
+# turns both off and links no driver at all.
+default = ["postgres", "lmdb"]
 postgres = ["dep:sqlx"]
+# The LMDB backend, its environment and its row encodings. `uuid` is only used to mint
+# the canonical text ids the outbox and delivery-log columns generate.
+lmdb = ["dep:heed", "dep:uuid"]
 
 [dependencies]
 chrono.workspace = true
 futures-core.workspace = true
-heed.workspace = true
+heed = { workspace = true, optional = true }
 nostream-config.workspace = true
 nostream-core.workspace = true
 serde.workspace = true
@@ -25,6 +28,7 @@ serde_json.workspace = true
 sqlx = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
+uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_yaml.workspace = true
