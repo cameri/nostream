@@ -12,7 +12,7 @@
 // workspace-wide, so a new test file still has to ask.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
@@ -729,6 +729,51 @@ async fn an_empty_tag_value_criterion_matches_nothing() {
         page.is_empty(),
         "event_tags holds no empty value, so no row can match one (V42)"
     );
+}
+
+#[tokio::test]
+async fn an_empty_criterion_family_matches_nothing() {
+    let (_directory, backend) = open_store().await;
+    let record = event(6, 1, 1_700_000_000);
+    EventRepository::create(&backend, &record)
+        .await
+        .expect("the event stores");
+
+    for filter in [
+        Filter {
+            ids: Some(Vec::new()),
+            ..Filter::default()
+        },
+        Filter {
+            authors: Some(Vec::new()),
+            ..Filter::default()
+        },
+        Filter {
+            tags: BTreeMap::from([("#e".to_owned(), Vec::new())]),
+            ..Filter::default()
+        },
+    ] {
+        let page = common::collect(
+            backend
+                .find_by_filters(std::slice::from_ref(&filter))
+                .await
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            page.is_empty(),
+            "a present-but-empty family matches nothing, not the next path (V45): {filter:?}"
+        );
+        assert_eq!(
+            backend
+                .count_by_filters(std::slice::from_ref(&filter))
+                .await
+                .unwrap(),
+            0,
+            "the count of an empty family is zero (V45): {filter:?}"
+        );
+    }
 }
 
 #[tokio::test]
