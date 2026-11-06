@@ -1,5 +1,17 @@
 # nostream
 
+## 3.14.0
+
+### Minor Changes
+
+- [#1059](https://github.com/cameri/nostream/pull/1059) [`dfcc967`](https://github.com/cameri/nostream/commit/dfcc967afff43be401164650de6b9112e1754aee) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(admin): account for peer on-demand requests
+
+  Records on-demand `REQ`, `COUNT`, and `NEG-OPEN` requests and the events served
+  for each authenticated peer pubkey in Redis. The admin console's Peering table
+  shows the request and event-served counts per peer, and the diagnostics export
+  includes the same counters. Accounting is best-effort and never fails the
+  request it describes.
+
 ## 3.13.0
 
 ### Minor Changes
