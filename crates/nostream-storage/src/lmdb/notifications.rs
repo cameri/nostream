@@ -36,12 +36,20 @@ fn delivery_created_key(entry: &DeliveryLogEntry) -> Vec<u8> {
 
 /// `outbox_id ‖ status ‖ target_id ‖ id`, so one entry is addressable and two attempts at
 /// the same target do not share a key.
-fn delivery_outbox_key(outbox_id: &str, entry: &DeliveryLogEntry) -> Vec<u8> {
-    let mut key = text_part(outbox_id);
-    key.extend_from_slice(&text_part(entry.status.as_str()));
-    key.extend_from_slice(&text_part(&entry.target_id));
+fn delivery_outbox_key(outbox_id: &str, entry: &DeliveryLogEntry) -> Result<Vec<u8>, StorageError> {
+    let mut key = text_part(outbox_id, "delivery_log_by_outbox", "outbox_id")?;
+    key.extend_from_slice(&text_part(
+        entry.status.as_str(),
+        "delivery_log_by_outbox",
+        "status",
+    )?);
+    key.extend_from_slice(&text_part(
+        &entry.target_id,
+        "delivery_log_by_outbox",
+        "target_id",
+    )?);
     key.extend_from_slice(entry.id.as_bytes());
-    key
+    Ok(key)
 }
 
 /// The entry id one `delivery_log_by_outbox` key ends with.
@@ -107,7 +115,7 @@ pub(crate) fn append(
     if let Some(outbox_id) = &entry.outbox_id {
         databases
             .delivery_log_by_outbox
-            .put(txn, &delivery_outbox_key(outbox_id, &entry), &[])?;
+            .put(txn, &delivery_outbox_key(outbox_id, &entry)?, &[])?;
     }
     Ok(())
 }
@@ -148,10 +156,12 @@ pub(crate) fn find_successful_target_ids(
     databases: &Databases,
     outbox_id: &str,
 ) -> Result<Vec<String>, StorageError> {
-    let mut prefix = text_part(outbox_id);
+    let mut prefix = text_part(outbox_id, "delivery_log_by_outbox", "outbox_id")?;
     prefix.extend_from_slice(&text_part(
         crate::repositories::NotificationDeliveryStatus::Success.as_str(),
-    ));
+        "delivery_log_by_outbox",
+        "status",
+    )?);
 
     let mut seen = HashSet::new();
     let mut targets = Vec::new();
@@ -203,7 +213,7 @@ pub(crate) fn delete_older_than(
         if let Some(outbox_id) = &entry.outbox_id {
             databases
                 .delivery_log_by_outbox
-                .delete(txn, &delivery_outbox_key(outbox_id, &entry))?;
+                .delete(txn, &delivery_outbox_key(outbox_id, &entry)?)?;
         }
         affected += 1;
     }
@@ -214,18 +224,26 @@ pub(crate) fn delete_older_than(
 // The outbox.
 // ---------------------------------------------------------------------------------------
 
-fn outbox_created_key(message: &OutboxMessage) -> Vec<u8> {
-    let mut key = text_part(message.status.as_str());
+fn outbox_created_key(message: &OutboxMessage) -> Result<Vec<u8>, StorageError> {
+    let mut key = text_part(
+        message.status.as_str(),
+        "outbox_by_status_created_at",
+        "status",
+    )?;
     key.extend_from_slice(&stamp_key(message.created_at));
     key.extend_from_slice(message.id.as_bytes());
-    key
+    Ok(key)
 }
 
-fn outbox_updated_key(message: &OutboxMessage) -> Vec<u8> {
-    let mut key = text_part(message.status.as_str());
+fn outbox_updated_key(message: &OutboxMessage) -> Result<Vec<u8>, StorageError> {
+    let mut key = text_part(
+        message.status.as_str(),
+        "outbox_by_status_updated_at",
+        "status",
+    )?;
     key.extend_from_slice(&stamp_key(message.updated_at));
     key.extend_from_slice(message.id.as_bytes());
-    key
+    Ok(key)
 }
 
 fn outbox_load(
@@ -251,17 +269,17 @@ fn outbox_write(
     if let Some(previous) = previous {
         databases
             .outbox_by_status_created_at
-            .delete(txn, &outbox_created_key(previous))?;
+            .delete(txn, &outbox_created_key(previous)?)?;
         databases
             .outbox_by_status_updated_at
-            .delete(txn, &outbox_updated_key(previous))?;
+            .delete(txn, &outbox_updated_key(previous)?)?;
     }
     databases
         .outbox_by_status_created_at
-        .put(txn, &outbox_created_key(message), &[])?;
+        .put(txn, &outbox_created_key(message)?, &[])?;
     databases
         .outbox_by_status_updated_at
-        .put(txn, &outbox_updated_key(message), &[])?;
+        .put(txn, &outbox_updated_key(message)?, &[])?;
     Ok(())
 }
 
@@ -303,7 +321,7 @@ pub(crate) fn claim_batch(
 
     let mut candidates = Vec::new();
     for status in [OutboxStatus::Pending, OutboxStatus::Processing] {
-        let prefix = text_part(status.as_str());
+        let prefix = text_part(status.as_str(), "outbox_by_status_created_at", "status")?;
         for entry in databases
             .outbox_by_status_created_at
             .prefix_iter(txn, &prefix)?
@@ -405,7 +423,7 @@ pub(crate) fn delete_terminal_older_than(
     let cutoff = encoding::micros(cutoff).timestamp_micros();
     let mut terminal = Vec::new();
     for status in [OutboxStatus::Delivered, OutboxStatus::Dead] {
-        let prefix = text_part(status.as_str());
+        let prefix = text_part(status.as_str(), "outbox_by_status_updated_at", "status")?;
         for entry in databases
             .outbox_by_status_updated_at
             .prefix_iter(txn, &prefix)?
@@ -428,10 +446,10 @@ pub(crate) fn delete_terminal_older_than(
         databases.outbox.delete(txn, id.as_bytes())?;
         databases
             .outbox_by_status_created_at
-            .delete(txn, &outbox_created_key(&message))?;
+            .delete(txn, &outbox_created_key(&message)?)?;
         databases
             .outbox_by_status_updated_at
-            .delete(txn, &outbox_updated_key(&message))?;
+            .delete(txn, &outbox_updated_key(&message)?)?;
         null_delivery_outbox(txn, databases, &id)?;
         affected += 1;
     }
@@ -444,7 +462,7 @@ fn null_delivery_outbox(
     databases: &Databases,
     outbox_id: &str,
 ) -> Result<(), StorageError> {
-    let prefix = text_part(outbox_id);
+    let prefix = text_part(outbox_id, "delivery_log_by_outbox", "outbox_id")?;
     let mut named = Vec::new();
     for entry in databases.delivery_log_by_outbox.prefix_iter(txn, &prefix)? {
         let (key, _) = entry?;

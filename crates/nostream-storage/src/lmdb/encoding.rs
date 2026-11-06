@@ -27,14 +27,16 @@ const NO_EXPIRY: i64 = i64::MIN;
 const EVENT_ID_LEN: usize = 32;
 
 /// The width of the field a hex criterion is compared over: an id or a pubkey is 32 bytes.
-const HEX_FIELD_LEN: usize = 32;
+pub(crate) const HEX_FIELD_LEN: usize = 32;
 
 /// LMDB's maximum key length (`MDB_MAXKEYSIZE`, the default this environment is opened with).
 ///
-/// It bounds every key this module builds: a tag value longer than the room a `tags` key has
-/// left cannot be stored, so an event carrying one is refused at the write. That is the one
-/// place this backend rejects a row Postgres would keep, and ADR 0010 records it as a
-/// divergence.
+/// It bounds every key this module builds. The `tags` key carries the tag value verbatim, so a
+/// value longer than the room the key has left cannot be indexed and its event is refused at
+/// the write: that is the one place this backend rejects a row Postgres would keep, and ADR
+/// 0010 records it as a divergence. The `replaceable` key is the other variable-length key; its
+/// components are length-prefixed ([`replaceable_key`]), which leaves it four bytes of room the
+/// `tags` key does not have for the same value, so it refuses nothing the tag index keeps.
 ///
 /// shortcut: the tag index carries the value verbatim in the key, so a value of 469 bytes or
 /// more (with a one-byte tag name) cannot be indexed and its event is refused; upgrade when such
@@ -201,12 +203,25 @@ pub(crate) fn check_version(table: &'static str, value: &[u8]) -> Result<(), Sto
 /// A text component of a composite key, terminated so the next component reads unambiguously.
 ///
 /// The terminator is what every key *reader* in this module splits on, so the rule lives here
-/// with the writers; a component that carries `0x00` cannot be read back, and the codec that
-/// puts a tag into a key ([`tag_key`]) refuses one for that reason.
-pub(crate) fn text_part(value: &str) -> Vec<u8> {
-    let mut bytes = value.as_bytes().to_vec();
+/// with the writers: a component that carries `0x00` cannot be read back, and PostgreSQL's
+/// `text` cannot hold the byte either, so it is refused rather than truncated — both backends
+/// reject the same value.
+pub(crate) fn text_part(
+    value: &str,
+    table: &'static str,
+    column: &'static str,
+) -> Result<Vec<u8>, StorageError> {
+    if value.contains('\0') {
+        return Err(StorageError::InvalidRow {
+            table,
+            column,
+            value: value.to_owned(),
+        });
+    }
+    let mut bytes = Vec::with_capacity(value.len() + 1);
+    bytes.extend_from_slice(value.as_bytes());
     bytes.push(0);
-    bytes
+    Ok(bytes)
 }
 
 /// The text a composite key's component carries, refusing bytes a `text` column could not hold.
@@ -253,8 +268,20 @@ pub(crate) fn author_key(
     key
 }
 
-/// `pubkey ‖ kind ‖ dedup_len ‖ canonical JSON`, where `dedup_len` is the JSON's byte length.
-// shortcut: the deduplication index uses `serde_json` text as its key, so `1` and `1.0` differ
+/// The tag a deduplication key's string element is written behind: its own bytes.
+const DEDUP_STRING: u8 = 0;
+
+/// The tag any other deduplication element is written behind: its `serde_json` text.
+const DEDUP_JSON: u8 = 1;
+
+/// `pubkey ‖ kind ‖ (tag u8 ‖ len u16 ‖ bytes)*`, one element per deduplication value: a string
+/// as its own bytes, and anything else as its `serde_json` text behind a different tag.
+///
+/// The length prefixes are what keep the key bounded by the value rather than by its JSON
+/// escaping — a quote byte is one key byte, not two — and a key past [`MAX_KEY_LEN`] is refused
+/// here, naming the column, before LMDB can reject the write. For the same `d` value this key
+/// is four bytes shorter than the `tags` key, so the tag index is the one that refuses first.
+// shortcut: a non-string element is written as its `serde_json` text, so `1` and `1.0` differ
 // where `jsonb` would not; upgrade when a caller can pass a hand-built JSON number, which
 // today's two callers cannot (spec Assumption 11).
 pub(crate) fn replaceable_key(
@@ -262,53 +289,57 @@ pub(crate) fn replaceable_key(
     kind: i32,
     deduplication: &[serde_json::Value],
 ) -> Result<Vec<u8>, StorageError> {
-    let json = serde_json::to_vec(deduplication).map_err(|error| StorageError::InvalidRow {
-        table: "events",
-        column: "event_deduplication",
-        value: error.to_string(),
-    })?;
-    let length = u16::try_from(json.len()).map_err(|_| StorageError::InvalidRow {
-        table: "events",
-        column: "event_deduplication",
-        value: "the deduplication value is longer than 65535 bytes".to_owned(),
-    })?;
-    let mut key = Vec::with_capacity(32 + 4 + 2 + json.len());
+    fn invalid(value: String) -> StorageError {
+        StorageError::InvalidRow {
+            table: "events",
+            column: "event_deduplication",
+            value,
+        }
+    }
+    fn length(len: usize) -> Result<u16, StorageError> {
+        u16::try_from(len)
+            .map_err(|_| invalid("a deduplication element is 65536 bytes or longer".to_owned()))
+    }
+
+    let mut key = Vec::with_capacity(32 + 4 + deduplication.len() * 3);
     key.extend_from_slice(pubkey.as_bytes());
     key.extend_from_slice(&i32_key(kind));
-    key.extend_from_slice(&length.to_be_bytes());
-    key.extend_from_slice(&json);
+    for value in deduplication {
+        match value {
+            serde_json::Value::String(text) => {
+                key.push(DEDUP_STRING);
+                key.extend_from_slice(&length(text.len())?.to_be_bytes());
+                key.extend_from_slice(text.as_bytes());
+            }
+            other => {
+                let json = serde_json::to_vec(other).map_err(|error| invalid(error.to_string()))?;
+                key.push(DEDUP_JSON);
+                key.extend_from_slice(&length(json.len())?.to_be_bytes());
+                key.extend_from_slice(&json);
+            }
+        }
+    }
+    if key.len() > MAX_KEY_LEN {
+        return Err(invalid(format!(
+            "the deduplication key is {} bytes, more than the {MAX_KEY_LEN} a key may hold",
+            key.len()
+        )));
+    }
     Ok(key)
 }
 
 /// `tag_name ‖ 0x00 ‖ tag_value ‖ 0x00 ‖ created_at ‖ event_id`.
 ///
-/// A name or value containing `0x00` is unrepresentable in the capture's `text` columns and
-/// would make the separator ambiguous, so it is rejected rather than encoded.
+/// A name or value carrying `0x00` is unrepresentable in the capture's `text` columns and would
+/// make the separator ambiguous; [`text_part`] owns that refusal, so both components get it.
 pub(crate) fn tag_key(
     name: &str,
     value: &str,
     created_at: i64,
     event_id: &EventId,
 ) -> Result<Vec<u8>, StorageError> {
-    if name.contains('\0') {
-        return Err(StorageError::InvalidRow {
-            table: "event_tags",
-            column: "tag_name",
-            value: name.to_owned(),
-        });
-    }
-    if value.contains('\0') {
-        return Err(StorageError::InvalidRow {
-            table: "event_tags",
-            column: "tag_value",
-            value: value.to_owned(),
-        });
-    }
-    let mut key = Vec::with_capacity(name.len() + value.len() + 2 + 8 + EVENT_ID_LEN);
-    key.extend_from_slice(name.as_bytes());
-    key.push(0);
-    key.extend_from_slice(value.as_bytes());
-    key.push(0);
+    let mut key = text_part(name, "event_tags", "tag_name")?;
+    key.extend_from_slice(&text_part(value, "event_tags", "tag_value")?);
     key.extend_from_slice(&i64_key(created_at));
     key.extend_from_slice(event_id.as_bytes());
     Ok(key)
@@ -682,5 +713,93 @@ mod tests {
         );
         assert!(!hex_matches(&[0xab, 0xcd], "abce"));
         assert!(!hex_matches(&[0xab, 0xcd], "abcdef"));
+    }
+
+    #[test]
+    fn a_deduplication_value_is_not_inflated_by_json_escaping() {
+        let pubkey = Pubkey::from_byte_array([5; 32]);
+        // 235 quote bytes are 470 bytes of JSON text once escaped; the key must not grow with
+        // the escapes, or a value Postgres and the tag index both keep is refused.
+        let value = "\"".repeat(235);
+        let key = replaceable_key(&pubkey, 30_023, &[serde_json::Value::String(value.clone())])
+            .expect("the pointer");
+        assert!(
+            key.len() <= MAX_KEY_LEN,
+            "the key is {} bytes for a {}-byte value",
+            key.len(),
+            value.len()
+        );
+    }
+
+    #[test]
+    fn a_deduplication_value_past_the_key_bound_is_refused() {
+        let pubkey = Pubkey::from_byte_array([5; 32]);
+        let longest = "x".repeat(MAX_KEY_LEN - 39);
+        assert!(
+            replaceable_key(&pubkey, 30_023, &[serde_json::Value::String(longest)]).is_ok(),
+            "the longest value a pointer key holds is stored"
+        );
+        let too_long = "x".repeat(MAX_KEY_LEN - 39 + 1);
+        let error = replaceable_key(&pubkey, 30_023, &[serde_json::Value::String(too_long)])
+            .expect_err("one byte past the bound");
+        assert!(matches!(
+            error,
+            StorageError::InvalidRow {
+                column: "event_deduplication",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn the_replaceable_key_never_refuses_a_value_the_tag_key_accepts() {
+        let pubkey = Pubkey::from_byte_array([5; 32]);
+        let value = "x".repeat(MAX_KEY_LEN - 43 + 1);
+        assert!(
+            tag_key("d", &value, 0, &id(1)).expect("the tag key").len() > MAX_KEY_LEN,
+            "the tag key is the tighter bound for the same value"
+        );
+        assert!(replaceable_key(&pubkey, 30_023, &[serde_json::Value::String(value)]).is_ok());
+    }
+
+    #[test]
+    fn a_deduplication_string_and_a_number_of_the_same_text_do_not_collide() {
+        let pubkey = Pubkey::from_byte_array([5; 32]);
+        let string = replaceable_key(
+            &pubkey,
+            30_023,
+            &[serde_json::Value::String("1".to_owned())],
+        )
+        .expect("a string element");
+        let number = replaceable_key(&pubkey, 30_023, &[serde_json::Value::from(1)])
+            .expect("a number element");
+        assert_ne!(string, number);
+    }
+
+    #[test]
+    fn a_text_component_a_text_column_cannot_hold_is_refused() {
+        // PostgreSQL's `text` cannot store `0x00`, and the key's separator is the same byte, so
+        // the codec refuses it where the writer meets it rather than reading it back truncated.
+        for value in ["a\0b", "\0", "ab\0"] {
+            let error = text_part(value, "delivery_log_by_outbox", "target_id")
+                .expect_err("a NUL in a key component");
+            assert!(matches!(
+                error,
+                StorageError::InvalidRow {
+                    table: "delivery_log_by_outbox",
+                    column: "target_id",
+                    ..
+                }
+            ));
+        }
+        assert_eq!(
+            text_part(
+                "https://example.test",
+                "delivery_log_by_outbox",
+                "target_id"
+            )
+            .unwrap(),
+            b"https://example.test\0".to_vec()
+        );
     }
 }

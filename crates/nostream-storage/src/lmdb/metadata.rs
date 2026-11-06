@@ -314,11 +314,15 @@ pub(crate) fn invite_delete_expired(
 // DVM jobs.
 // ---------------------------------------------------------------------------------------
 
-fn dvm_status_key(job: &DvmJob, created_at: DateTime<Utc>) -> Vec<u8> {
-    let mut key = text_part(job.status.as_str());
+fn dvm_status_key(job: &DvmJob, created_at: DateTime<Utc>) -> Result<Vec<u8>, StorageError> {
+    let mut key = text_part(
+        job.status.as_str(),
+        "dvm_jobs_by_status_created_at",
+        "status",
+    )?;
     key.extend_from_slice(&stamp_key(created_at));
     key.extend_from_slice(job.id.as_bytes());
-    key
+    Ok(key)
 }
 
 pub(crate) fn dvm_find_by_id(
@@ -343,11 +347,11 @@ fn dvm_write(
     if let Some(previous) = previous {
         databases
             .dvm_jobs_by_status_created_at
-            .delete(txn, &dvm_status_key(previous, previous.created_at))?;
+            .delete(txn, &dvm_status_key(previous, previous.created_at)?)?;
     }
     databases
         .dvm_jobs_by_status_created_at
-        .put(txn, &dvm_status_key(job, job.created_at), &[])?;
+        .put(txn, &dvm_status_key(job, job.created_at)?, &[])?;
     Ok(())
 }
 
@@ -442,7 +446,7 @@ pub(crate) fn dvm_find_pending_jobs(
 ) -> Result<Vec<DvmJob>, StorageError> {
     let mut jobs = Vec::new();
     for status in [DvmJobStatus::Submitted, DvmJobStatus::PickedUp] {
-        let prefix = text_part(status.as_str());
+        let prefix = text_part(status.as_str(), "dvm_jobs_by_status_created_at", "status")?;
         for entry in databases
             .dvm_jobs_by_status_created_at
             .prefix_iter(txn, &prefix)?
