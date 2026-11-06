@@ -114,8 +114,9 @@ it inside the closure; no `RwTxn` or `RoTxn` leaves one.
 A stream is a key page, not a held transaction. `find_by_filters` collects its union page
 inside one blocking closure; the returned `QueryStream` yields values in batches of
 `STREAM_BATCH_ITEMS = 256`, each poll opening a read transaction, seeking to the saved
-cursor key, copying up to 256 values and dropping it. `find_reconciliation_items` runs the
-same loop over keys and never reads a value. **A stream is therefore not a snapshot** (D7):
+cursor key, copying up to 256 values and dropping it. `find_reconciliation_items` resumes
+the same cursor over `events_by_created_at`, reading a candidate's header and decoded record
+only to apply the filter's live predicate. **A stream is therefore not a snapshot** (D7):
 a row written or deleted between two batches may appear or vanish, where Postgres' portal
 holds one snapshot. No comparable behaviour exists to compare, so the divergence is recorded
 for the benchmark job, and ADR 0003 trigger 1 ("a long-lived LMDB read transaction hurts
