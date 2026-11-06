@@ -220,11 +220,19 @@ impl LmdbBackend {
 
     /// How much of the fixed map the store has used, for an operator's tooling and the log
     /// line [`open`](Self::open) writes.
-    pub fn map_usage(&self) -> Result<MapUsage, StorageError> {
-        Ok(MapUsage {
-            map_size: LMDB_MAP_SIZE,
-            used_bytes: self.env.non_free_pages_size()?,
+    ///
+    /// `Env::non_free_pages_size` opens a read transaction and walks every named database, so
+    /// it runs on the blocking pool (D7) rather than on the caller's runtime worker.
+    pub async fn map_usage(&self) -> Result<MapUsage, StorageError> {
+        let env = self.env.clone();
+        tokio::task::spawn_blocking(move || {
+            Ok(MapUsage {
+                map_size: LMDB_MAP_SIZE,
+                used_bytes: env.non_free_pages_size()?,
+            })
         })
+        .await
+        .map_err(|_| StorageError::LmdbTaskCancelled)?
     }
 
     /// Supplies the `nip50`/`nip56` gates. Absent settings mean both features are off.
@@ -963,7 +971,7 @@ mod tests {
         let backend = LmdbBackend::open(directory.path())
             .await
             .expect("the store opens");
-        let usage = backend.map_usage().expect("the usage");
+        let usage = backend.map_usage().await.expect("the usage");
         assert_eq!(usage.map_size, LMDB_MAP_SIZE);
         assert!(usage.used_bytes > 0, "the 29 databases occupy pages");
         assert!(usage.used_bytes <= LMDB_MAP_SIZE as u64);
