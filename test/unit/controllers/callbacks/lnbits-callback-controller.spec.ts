@@ -7,11 +7,11 @@ chai.use(sinonChai)
 chai.use(chaiAsPromised)
 const { expect } = chai
 
-import * as httpUtils from '../../../../src/utils/http'
-import * as settingsFactory from '../../../../src/factories/settings-factory'
-import { deriveFromSecret, hmacSha256 } from '../../../../src/utils/secret'
 import { InvoiceStatus, InvoiceUnit } from '../../../../src/@types/invoice'
 import { LNbitsCallbackController } from '../../../../src/controllers/callbacks/lnbits-callback-controller'
+import * as settingsFactory from '../../../../src/factories/settings-factory'
+import * as httpUtils from '../../../../src/utils/http'
+import { deriveFromSecret, hmacSha256 } from '../../../../src/utils/secret'
 
 const PAYMENT_HASH = 'a'.repeat(64)
 const PUBKEY = 'b'.repeat(64)
@@ -160,6 +160,53 @@ describe('LNbitsCallbackController', () => {
 
       expect(res.status).to.have.been.calledWith(400)
       expect(res.setHeader).to.have.been.calledWith('content-type', 'text/plain; charset=utf8')
+      expect(res.send).to.have.been.calledWith('Malformed body')
+    })
+
+    it('accepts a JSON-string body from LNbits 1.x', async () => {
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+      const body = JSON.stringify({
+        checking_id: 'checking-id',
+        payment_hash: PAYMENT_HASH,
+        amount: 199000,
+        status: 'paid',
+      })
+
+      await controller.handleRequest(makeReq({ body }), res)
+
+      expect(paymentsService.getInvoiceFromPaymentsProcessor).to.have.been.calledWith(PAYMENT_HASH)
+      expect(res.status).to.have.been.calledWith(200)
+    })
+
+    it('accepts an object body carrying LNbits extra fields', async () => {
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(
+        makeReq({
+          body: {
+            checking_id: 'checking-id',
+            payment_hash: PAYMENT_HASH,
+            amount: 199000,
+            status: 'paid',
+          },
+        }),
+        res,
+      )
+
+      expect(paymentsService.getInvoiceFromPaymentsProcessor).to.have.been.calledWith(PAYMENT_HASH)
+      expect(res.status).to.have.been.calledWith(200)
+    })
+
+    it('returns 400 when the string body is not valid JSON', async () => {
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(makeReq({ body: 'not-json' }), res)
+
+      expect(paymentsService.getInvoiceFromPaymentsProcessor).not.to.have.been.called
+      expect(res.status).to.have.been.calledWith(400)
       expect(res.send).to.have.been.calledWith('Malformed body')
     })
   })

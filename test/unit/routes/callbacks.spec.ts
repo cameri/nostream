@@ -2,12 +2,13 @@ import axios from 'axios'
 import { expect } from 'chai'
 import express from 'express'
 import Sinon from 'sinon'
-
+import * as lnbitsControllerFactory from '../../../src/factories/controllers/lnbits-callback-controller-factory'
 import * as openNodeControllerFactory from '../../../src/factories/controllers/opennode-callback-controller-factory'
 import * as settingsFactory from '../../../src/factories/settings-factory'
 
 describe('callbacks router', () => {
   let createOpenNodeCallbackControllerStub: Sinon.SinonStub
+  let createLNbitsCallbackControllerStub: Sinon.SinonStub
   let createSettingsStub: Sinon.SinonStub
   let receivedBody: unknown
   let server: any
@@ -19,7 +20,16 @@ describe('callbacks router', () => {
       payments: { enabled: true, processor: 'opennode' },
     } as any)
 
-    createOpenNodeCallbackControllerStub = Sinon.stub(openNodeControllerFactory, 'createOpenNodeCallbackController').returns({
+    createOpenNodeCallbackControllerStub = Sinon.stub(
+      openNodeControllerFactory,
+      'createOpenNodeCallbackController',
+    ).returns({
+      handleRequest: async (request: any, response: any) => {
+        receivedBody = request.body
+        response.status(200).send('OK')
+      },
+    } as any)
+    createLNbitsCallbackControllerStub = Sinon.stub(lnbitsControllerFactory, 'createLNbitsCallbackController').returns({
       handleRequest: async (request: any, response: any) => {
         receivedBody = request.body
         response.status(200).send('OK')
@@ -41,6 +51,7 @@ describe('callbacks router', () => {
 
   afterEach(async () => {
     createOpenNodeCallbackControllerStub.restore()
+    createLNbitsCallbackControllerStub.restore()
     createSettingsStub.restore()
     delete require.cache[require.resolve('../../../src/routes/callbacks')]
 
@@ -83,5 +94,27 @@ describe('callbacks router', () => {
       order_id: 'pubkey',
       status: 'paid',
     })
+  })
+
+  it('parses the double-encoded LNbits 1.x callback body', async () => {
+    createSettingsStub.returns({
+      payments: { enabled: true, processor: 'lnbits' },
+    } as any)
+
+    const { port } = server.address()
+    const payment = JSON.stringify({
+      checking_id: 'checking-id',
+      payment_hash: 'a'.repeat(64),
+      amount: 199000,
+      status: 'paid',
+    })
+    const body = JSON.stringify(payment)
+    const response = await axios.post(`http://127.0.0.1:${port}/lnbits?hmac=1:00`, body, {
+      headers: { 'content-type': 'application/json' },
+      validateStatus: () => true,
+    })
+
+    expect(response.status).to.equal(200)
+    expect(receivedBody).to.equal(payment)
   })
 })
