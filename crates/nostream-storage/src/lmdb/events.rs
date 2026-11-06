@@ -1023,6 +1023,10 @@ impl Position {
 
 /// Reads one page of values in batches of [`STREAM_BATCH_ITEMS`], one read transaction per
 /// poll, so a stream that is dropped pins no pages.
+///
+/// shortcut: a stream is not a snapshot — a row written or deleted between two batches may
+/// appear or vanish; upgrade when a caller needs a stable view, per ADR 0003 trigger 1 and the
+/// benchmark job, which would buy the snapshot back with a held transaction.
 pub(crate) struct ValuesStream {
     env: Env,
     databases: Databases,
