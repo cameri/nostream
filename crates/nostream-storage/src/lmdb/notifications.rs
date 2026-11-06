@@ -12,31 +12,13 @@ use heed::{RoTxn, RwTxn};
 
 use super::Databases;
 use super::encoding;
+use super::encoding::{stamp_key, text_from, text_part};
 use super::rows;
 use crate::error::StorageError;
 use crate::repositories::{
     DeliveryLogEntry, DeliveryLogFilters, NOTIFICATION_OUTBOX_PROCESSING_LEASE_MS,
     NewDeliveryLogEntry, OutboxMessage, OutboxPayload, OutboxStatus,
 };
-
-/// A text component of a composite key, terminated so the next component reads unambiguously.
-fn text_part(value: &str) -> Vec<u8> {
-    let mut bytes = value.as_bytes().to_vec();
-    bytes.push(0);
-    bytes
-}
-
-fn text_from<'a>(bytes: &'a [u8], table: &'static str) -> Result<&'a str, StorageError> {
-    std::str::from_utf8(bytes).map_err(|_| StorageError::InvalidRow {
-        table,
-        column: "key",
-        value: "not utf-8".to_owned(),
-    })
-}
-
-fn stamp_key(value: DateTime<Utc>) -> [u8; 8] {
-    encoding::i64_key(value.timestamp_micros())
-}
 
 fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()

@@ -26,6 +26,19 @@ const NO_EXPIRY: i64 = i64::MIN;
 /// The number of bytes a `created_at ‖ event_id` key appends after the timestamp.
 const EVENT_ID_LEN: usize = 32;
 
+/// LMDB's maximum key length (`MDB_MAXKEYSIZE`, the default this environment is opened with).
+///
+/// It bounds every key this module builds: a tag value longer than the room a `tags` key has
+/// left cannot be stored, so an event carrying one is refused at the write. That is the one
+/// place this backend rejects a row Postgres would keep, and ADR 0010 records it as a
+/// divergence.
+///
+/// shortcut: the tag index carries the value verbatim in the key, so a value of 470 bytes or
+/// more cannot be indexed and its event is refused; upgrade when an event like that has to be
+/// stored, which needs the value hashed into the key plus a second lookup, or a larger
+/// `max_key_size` at the open.
+const MAX_KEY_LEN: usize = 511;
+
 /// An invalid stored value, naming the database it was read from.
 pub(crate) fn invalid(table: &'static str, message: String) -> StorageError {
     StorageError::InvalidRow {
@@ -182,6 +195,32 @@ pub(crate) fn check_version(table: &'static str, value: &[u8]) -> Result<(), Sto
     }
 }
 
+/// A text component of a composite key, terminated so the next component reads unambiguously.
+///
+/// The terminator is what every key *reader* in this module splits on, so the rule lives here
+/// with the writers; a component that carries `0x00` cannot be read back, and the codec that
+/// puts a tag into a key ([`tag_key`]) refuses one for that reason.
+pub(crate) fn text_part(value: &str) -> Vec<u8> {
+    let mut bytes = value.as_bytes().to_vec();
+    bytes.push(0);
+    bytes
+}
+
+/// The text a composite key's component carries, refusing bytes a `text` column could not hold.
+pub(crate) fn text_from<'a>(bytes: &'a [u8], table: &'static str) -> Result<&'a str, StorageError> {
+    std::str::from_utf8(bytes).map_err(|_| StorageError::InvalidRow {
+        table,
+        column: "key",
+        value: "not utf-8".to_owned(),
+    })
+}
+
+/// A `created_at`-style timestamp component of a tail index key, in the microseconds every
+/// PostgreSQL `timestamp` column carries.
+pub(crate) fn stamp_key(value: DateTime<Utc>) -> [u8; 8] {
+    i64_key(value.timestamp_micros())
+}
+
 /// `created_at ‖ event_id`.
 pub(crate) fn created_at_key(created_at: i64, event_id: &EventId) -> Vec<u8> {
     let mut key = Vec::with_capacity(8 + EVENT_ID_LEN);
@@ -272,6 +311,24 @@ pub(crate) fn tag_key(
     Ok(key)
 }
 
+/// The tag value a [`tag_key`] carries: the bytes between its two `0x00` separators.
+///
+/// A query that walked the `tags` index has already been told the value by the key, so it does
+/// not have to decode the event's body to check the criterion that selected the row.
+pub(crate) fn tag_value(key: &[u8]) -> Result<&str, StorageError> {
+    let Some(name_end) = key.iter().position(|byte| *byte == 0) else {
+        return Err(invalid("tags", "a key without a name separator".to_owned()));
+    };
+    let rest = &key[name_end + 1..];
+    let Some(value_end) = rest.iter().position(|byte| *byte == 0) else {
+        return Err(invalid(
+            "tags",
+            "a key without a value separator".to_owned(),
+        ));
+    };
+    text_from(&rest[..value_end], "tags")
+}
+
 /// The tag rows the capture's trigger writes: one per element whose name is exactly one
 /// character and whose value is present and non-empty, and never beyond the second element.
 pub(crate) fn tag_entries(record: &crate::repositories::EventRecord) -> Vec<(&str, &str)> {
@@ -355,11 +412,35 @@ pub(crate) fn hex_ranges(criteria: &[String], suffix: usize) -> Vec<(Vec<u8>, Ve
         upper.extend(std::iter::repeat_n(0xff, suffix));
         ranges.push((lower, upper));
     }
-    ranges
+    disjoint(ranges)
 }
 
-/// The inclusive key ranges one tag criterion covers: an exact value is the range from the
-/// value's own separator, and a `#g` prefix is the range over the value's first bytes.
+/// The ranges no key is selected by more than once.
+///
+/// Two hex criteria can select the same keys — `ab` and `abcd` nest, and a digit the [range
+/// builder](hex_ranges) maps to zero does the same — and a walk that reads one key twice would
+/// count an event twice. Dropping a range another already covers keeps every range a set of
+/// keys it alone selects.
+fn disjoint(mut ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<(Vec<u8>, Vec<u8>)> {
+    ranges.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| right.1.cmp(&left.1)));
+    let mut kept: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(ranges.len());
+    for range in ranges {
+        let covered = kept
+            .last()
+            .is_some_and(|last| last.0 <= range.0 && range.1 <= last.1);
+        if !covered {
+            kept.push(range);
+        }
+    }
+    kept
+}
+
+/// The inclusive key ranges one tag criterion covers, one range per criterion and in the
+/// criteria's order: an exact value is the range from the value's own separator, and a `#g`
+/// prefix is the range over the value's first bytes.
+///
+/// A criterion whose own bounds do not fit [`MAX_KEY_LEN`] selects nothing: no stored key can
+/// be that long, so seeking it would fail the read rather than answer it.
 pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(Vec<u8>, Vec<u8>)> {
     let is_geohash = name == "g";
     let mut ranges = Vec::with_capacity(criteria.len());
@@ -367,20 +448,23 @@ pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(Vec<u8>, Vec<u
         let mut head = Vec::with_capacity(name.len() + 1 + criterion.len());
         head.extend_from_slice(name.as_bytes());
         head.push(0);
-        match criterion.strip_suffix('*').filter(|_| is_geohash) {
+        let (lower, upper) = match criterion.strip_suffix('*').filter(|_| is_geohash) {
             Some(prefix) => {
                 head.extend_from_slice(prefix.as_bytes());
                 let mut upper = head.clone();
                 upper.extend(std::iter::repeat_n(0xff, 64));
-                ranges.push((head, upper));
+                (head, upper)
             }
             None => {
                 head.extend_from_slice(criterion.as_bytes());
                 head.push(0);
                 let mut upper = head.clone();
                 upper.extend(std::iter::repeat_n(0xff, 8 + EVENT_ID_LEN));
-                ranges.push((head, upper));
+                (head, upper)
             }
+        };
+        if lower.len() <= MAX_KEY_LEN && upper.len() <= MAX_KEY_LEN {
+            ranges.push((lower, upper));
         }
     }
     ranges
@@ -416,16 +500,53 @@ mod tests {
 
     #[test]
     fn an_even_prefix_is_one_range_and_an_odd_one_is_one_nibble_range() {
-        let ranges = hex_ranges(&["abcd".to_owned(), "abcde".to_owned()], 40);
-        assert_eq!(ranges.len(), 2);
+        let ranges = hex_ranges(&["abcd".to_owned(), "abef".to_owned()], 40);
+        assert_eq!(ranges.len(), 2, "two disjoint criteria seek two ranges");
         assert_eq!(ranges[0].0, vec![0xab, 0xcd]);
         assert_eq!(ranges[0].1.len(), 2 + 40);
-        assert_eq!(ranges[1].0, vec![0xab, 0xcd, 0xe0]);
-        assert_eq!(ranges[1].1, {
+        assert_eq!(ranges[1].0, vec![0xab, 0xef]);
+
+        let odd = hex_ranges(&["abcde".to_owned()], 40);
+        assert_eq!(odd[0].0, vec![0xab, 0xcd, 0xe0]);
+        assert_eq!(odd[0].1, {
             let mut high = vec![0xab, 0xcd, 0xef];
             high.extend(std::iter::repeat_n(0xff, 40));
             high
         });
+    }
+
+    #[test]
+    fn a_criterion_another_range_covers_seeks_no_range_of_its_own() {
+        // `abcd` selects every key `abcde` does, so a walk that read both would visit those
+        // keys twice and count them twice.
+        let nested = hex_ranges(&["abcd".to_owned(), "abcde".to_owned()], 40);
+        assert_eq!(nested.len(), 1);
+        assert_eq!(nested[0].0, vec![0xab, 0xcd]);
+
+        // Two criteria that decode to the same bytes are one range too.
+        let duplicate = hex_ranges(&["zz".to_owned(), "z0".to_owned()], 0);
+        assert_eq!(duplicate.len(), 1, "both criteria map to the zero digit");
+    }
+
+    #[test]
+    fn a_tag_key_names_the_value_that_selected_it() {
+        let key = tag_key("t", "perfprobe", 1_700_000_000, &id(9)).unwrap();
+        assert_eq!(tag_value(&key).unwrap(), "perfprobe");
+        // A value shorter than the key's tail is still read up to its own separator.
+        let key = tag_key("t", "a", 0, &id(1)).unwrap();
+        assert_eq!(tag_value(&key).unwrap(), "a");
+        assert!(tag_value(b"t").is_err());
+        assert!(tag_value(b"t\0a").is_err());
+    }
+
+    #[test]
+    fn a_criterion_too_long_for_a_key_seeks_nothing() {
+        // A key carrying it could not be written, so no stored row can match it; seeking it
+        // would fail the read with LMDB's key-length error instead of answering it.
+        let long = "x".repeat(MAX_KEY_LEN);
+        assert!(tag_ranges("t", std::slice::from_ref(&long)).is_empty());
+        let short = "x".repeat(64);
+        assert_eq!(tag_ranges("t", std::slice::from_ref(&short)).len(), 1);
     }
 
     #[test]
