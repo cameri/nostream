@@ -1003,6 +1003,10 @@ fn sort_page(page: &mut [(i64, EventId)], descending: bool) {
 
 /// The index a filter is answered from, the ranges within it, and whether a range's key order
 /// is the page's order.
+///
+/// shortcut: `ids`, an author prefix and a `#g` prefix name no index that runs in time order, so
+/// those pages are bounded in memory but walk their whole time-bounded range; upgrade when a
+/// deployment's range outgrows one request, which needs a second index ordered by time.
 fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
     if let Some(ids) = &filter.ids
         && !ids.is_empty()
@@ -1036,6 +1040,10 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
         // ordered by time has no early stop there. The created-at index is the capture's own
         // path for this shape — ADR 0003 measured 5 508 rows discarded to return 500 for the
         // kind-only form — and its order *is* the page order, so the page stops when full.
+        //
+        // shortcut: a quiet author's page therefore scans further into the created-at index
+        // than the author's own timeline would; upgrade when statistics can choose between the
+        // two, which is the benchmark job's (ADR 0010).
         return Plan {
             database: databases.events_by_created_at,
             path: AccessPath::CreatedAt,
