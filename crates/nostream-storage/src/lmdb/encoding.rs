@@ -295,8 +295,9 @@ pub(crate) fn replaceable_kind(kind: i32) -> bool {
         || (30_000..40_000).contains(&kind)
 }
 
-/// Whether the lowercase hex rendering of `bytes` starts with `prefix`, case-sensitively,
-/// exactly as `String.prototype.startsWith` compares the capture's ids and pubkeys.
+/// Whether `bytes` starts with `prefix`, compared one nibble at a time with the same digit
+/// mapping [`hex_bytes`] gives the range that selected the row, so a criterion means the same
+/// thing to the matcher as to the index it was sought in.
 pub(crate) fn hex_matches(bytes: &[u8], prefix: &str) -> bool {
     if prefix.len() > bytes.len() * 2 {
         return false;
@@ -308,12 +309,7 @@ pub(crate) fn hex_matches(bytes: &[u8], prefix: &str) -> bool {
         } else {
             byte & 0x0f
         };
-        let expected = match character {
-            b'0'..=b'9' => character - b'0',
-            b'a'..=b'f' => character - b'a' + 10,
-            _ => return false,
-        };
-        nibble == expected
+        nibble == hex_digit(character)
     })
 }
 
@@ -441,6 +437,18 @@ mod tests {
     }
 
     #[test]
+    fn a_nanosecond_instant_is_truncated_to_microseconds() {
+        let instant = DateTime::<Utc>::from_timestamp_nanos(1_700_000_000_123_456_789);
+        let truncated = micros(instant);
+        assert_eq!(truncated.timestamp_micros(), 1_700_000_000_123_456);
+        assert_eq!(
+            truncated.timestamp_subsec_nanos(),
+            123_456_000,
+            "the sub-microsecond digits are dropped, as a PostgreSQL timestamp drops them (V38)"
+        );
+    }
+
+    #[test]
     fn the_header_round_trips_without_its_body() {
         let header = EventHeader {
             deleted: true,
@@ -520,10 +528,17 @@ mod tests {
     }
 
     #[test]
-    fn hex_prefixes_compare_nibbles_case_sensitively() {
+    fn a_hex_prefix_compares_the_nibbles_the_range_builder_sought() {
         assert!(hex_matches(&[0xab, 0xcd], "abcd"));
         assert!(hex_matches(&[0xab, 0xcd], "abc"));
-        assert!(!hex_matches(&[0xab, 0xcd], "ABC"));
+        assert!(
+            hex_matches(&[0xab, 0xcd], "ABC"),
+            "an uppercase digit names the same nibble the range was built from"
+        );
+        assert!(
+            hex_matches(&[0x0a], "z"),
+            "an invalid digit maps to zero, as the capture's decode does"
+        );
         assert!(!hex_matches(&[0xab, 0xcd], "abce"));
         assert!(!hex_matches(&[0xab, 0xcd], "abcdef"));
     }
