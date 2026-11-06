@@ -29,7 +29,9 @@ pub type StorageFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StorageErr
 /// difference: `find_by_filters` collects its page first — at most each filter's limit, clamped
 /// to the backend's bound, so at most `MAX_PAGE_KEYS × filters` ids in all — and copies each
 /// batch's values out of that page, so its memory is the page; `find_reconciliation_items`
-/// keeps only a cursor key and re-seeks it per batch, so its result is never materialised.
+/// keeps only a cursor key and re-seeks it per batch, so its result is never materialised —
+/// except for an `ids` filter, whose own id list, bounded by the request, is read as one batch
+/// and sorted before it is emitted.
 /// Neither is a snapshot: a row written or deleted between two batches may appear or vanish. A
 /// channel would force a background task and a buffer policy LMDB does not need, and a `Vec`
 /// would materialise a 10M-row NIP-77 reconciliation.
