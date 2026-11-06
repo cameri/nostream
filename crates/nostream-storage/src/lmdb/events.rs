@@ -692,12 +692,18 @@ fn branch(
                 let Some(found) = candidate(txn, databases, path, key)? else {
                     continue;
                 };
-                if boundary.is_some_and(|bound| found.0 > bound) {
+                // Only the created-at index iterates in page order. `ids`, `authors` and
+                // `tags` iterate in key order, so an early stop there would drop the newest
+                // rows of a limited page; those paths scan the whole (time-bounded) range and
+                // the page is selected below.
+                if path == AccessPath::CreatedAt && boundary.is_some_and(|bound| found.0 > bound) {
                     break;
                 }
                 if matcher.matches(txn, databases, &found.1)?.is_some() {
                     push(&mut matches, &mut seen, found);
-                    if limit.is_some_and(|limit| matches.len() >= limit) {
+                    if path == AccessPath::CreatedAt
+                        && limit.is_some_and(|limit| matches.len() >= limit)
+                    {
                         boundary = Some(found.0);
                     }
                 }
@@ -986,6 +992,10 @@ fn tag_criteria_match(tags: &BTreeMap<String, Vec<String>>, record: &EventRecord
             let Some(value) = tag.get(1) else {
                 return false;
             };
+            // `event_tags` holds no empty value, so the capture cannot match one either.
+            if value.is_empty() {
+                return false;
+            }
             criteria.iter().any(|criterion| {
                 match criterion.strip_suffix('*').filter(|_| is_geohash) {
                     Some(prefix) => value.starts_with(prefix),
@@ -1230,11 +1240,13 @@ fn scan_batch(
         let mut reached_cap = false;
         for entry in databases.events_by_created_at.range(txn, &range)? {
             let (key, _) = entry?;
-            position.after = Some(key.to_vec());
             if items.len() >= STREAM_BATCH_ITEMS {
                 reached_cap = true;
                 break;
             }
+            // The cursor moves only onto a key this batch evaluated, because the next batch
+            // resumes exclusively after it.
+            position.after = Some(key.to_vec());
             let (created_at, event_id) =
                 key_candidate(AccessPath::CreatedAt, key)?.ok_or_else(|| {
                     encoding::invalid(
