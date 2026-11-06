@@ -23,10 +23,11 @@ use nostream_core::{Event, EventId, Filter, Kind, Pubkey, Signature};
 use nostream_storage::LmdbBackend;
 use nostream_storage::StorageError;
 use nostream_storage::repositories::{
-    CreateInviteCodeOptions, DeliveryLogFilters, EventRecord, EventRepository, FieldUpdate,
-    InviteCodeRepository, Invoice, InvoiceRepository, InvoiceStatus, InvoiceUnit,
-    NewDeliveryLogEntry, NotificationDeliveryLogRepository, NotificationDeliveryStatus,
-    NotificationOutboxRepository, NotificationTargetType, UserRepository,
+    CreateInviteCodeOptions, DeliveryLogFilters, EventRecord, EventRepository,
+    EventRetentionOptions, FieldUpdate, InviteCodeRepository, Invoice, InvoiceRepository,
+    InvoiceStatus, InvoiceUnit, NewDeliveryLogEntry, NotificationDeliveryLogRepository,
+    NotificationDeliveryStatus, NotificationOutboxRepository, NotificationTargetType,
+    UserRepository,
 };
 
 mod common;
@@ -760,5 +761,116 @@ async fn a_delivery_log_entry_keeps_its_index_entry_when_a_sibling_is_pruned() {
             .unwrap(),
         vec![entry.target_id.clone()],
         "the surviving attempt keeps its index entry (V40)"
+    );
+}
+
+#[tokio::test]
+async fn a_retention_pass_classifies_a_row_once_and_spares_the_whitelist() {
+    let (_directory, backend) = open_store().await;
+    let now = Utc::now();
+    let long_ago = 1_700_000_000;
+    let expired_at = now.timestamp() - 1;
+
+    // Deleted and expired at once: the capture counts it as deleted, and its precedence is
+    // what makes the total one row rather than two (R13, V8).
+    let deleted_and_expired = event(21, 1, long_ago).with_expires_at(expired_at);
+    let expired_only = event(22, 1, long_ago).with_expires_at(expired_at);
+    let retained_only = event(23, 1, long_ago);
+    // Every whitelist keeps kind 62, so this row is never a candidate.
+    let vanish = event(24, 62, long_ago);
+    backend
+        .create_many(&[
+            deleted_and_expired.clone(),
+            expired_only,
+            retained_only,
+            vanish.clone(),
+        ])
+        .await
+        .expect("the events store");
+    assert_eq!(
+        backend
+            .delete_by_pubkey_and_ids(
+                &deleted_and_expired.event.pubkey,
+                &[deleted_and_expired.event.id]
+            )
+            .await
+            .unwrap(),
+        1
+    );
+
+    let skipped = backend
+        .delete_expired_and_retained(&EventRetentionOptions {
+            max_days: Some(0),
+            kind_whitelist: None,
+            pubkey_whitelist: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        (skipped.deleted, skipped.expired, skipped.retained),
+        (0, 0, 0),
+        "max_days 0 touches nothing (V8)"
+    );
+
+    let counts = backend
+        .delete_expired_and_retained(&EventRetentionOptions {
+            max_days: Some(1),
+            kind_whitelist: None,
+            pubkey_whitelist: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        (counts.deleted, counts.expired, counts.retained),
+        (1, 1, 1),
+        "each qualifying row is classified once, in the capture's precedence"
+    );
+
+    let filter = Filter {
+        ids: Some(vec![vanish.event.id.to_string()]),
+        ..Filter::default()
+    };
+    let survivors = common::collect(
+        backend
+            .find_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        survivors.len(),
+        1,
+        "a kind-62 row survives an empty configured whitelist (V8)"
+    );
+}
+
+#[tokio::test]
+async fn a_retention_pass_takes_at_most_one_batch_of_candidates() {
+    let (_directory, backend) = open_store().await;
+    let records: Vec<EventRecord> = (0..1_001)
+        .map(|index| event((index % 200 + 1) as u8, 1, 1_700_000_000 + index))
+        .collect();
+    backend
+        .create_many(&records)
+        .await
+        .expect("the events store");
+
+    let options = EventRetentionOptions {
+        max_days: Some(1),
+        kind_whitelist: None,
+        pubkey_whitelist: None,
+    };
+    let first = backend.delete_expired_and_retained(&options).await.unwrap();
+    assert_eq!(
+        (first.deleted, first.expired, first.retained),
+        (0, 0, 1_000),
+        "one pass takes RETENTION_BATCH_SIZE candidates (V7)"
+    );
+    let second = backend.delete_expired_and_retained(&options).await.unwrap();
+    assert_eq!(
+        (second.deleted, second.expired, second.retained),
+        (0, 0, 1),
+        "the next pass takes the row the batch ceiling left behind"
     );
 }
