@@ -60,8 +60,9 @@ pub(crate) const DEFAULT_FILTER_LIMIT: u64 = 500;
 /// `limits.client.subscription.maxLimit` is the relay's own bound, but it is applied only when
 /// the deployment sets it, and a request reaches the store before some of those gates; this is
 /// the backend's bound, so no page a read materialises exceeds it. A multi-filter read holds one
-/// such page per filter, and a reconciliation over `ids` holds the request's own id list, whose
-/// size the relay's payload limit already bounds. 5 000 is exactly the shipped `maxLimit`
+/// such page per filter, and a reconciliation over `ids` holds the request's own id list when
+/// its criteria are exact — a prefix criterion is a byte range over the id field, so it takes
+/// the bounded scan instead. 5 000 is exactly the shipped `maxLimit`
 /// (`resources/default-settings.yaml`), so the clamp cannot shorten a page a configured relay
 /// would have served.
 pub(crate) const MAX_PAGE_KEYS: usize = 5_000;
