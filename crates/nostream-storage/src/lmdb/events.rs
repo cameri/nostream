@@ -1693,6 +1693,10 @@ fn scan_batch(
 /// The ranges are the request's own id list, one per id and already deduplicated, so the work is
 /// the request rather than the store, and the list is read whole because an `events` key runs in
 /// id order: the pairs are sorted before they are emitted instead of being sought in time order.
+///
+/// shortcut: the whole list is read in one poll and its pairs are held until the stream ends, so
+/// the resident set is the request's own id list; upgrade when a request's list should be paged
+/// too, which needs the pairs sorted before emission and therefore somewhere to spill them.
 fn scan_ids(
     txn: &RoTxn<'_>,
     databases: &Databases,
