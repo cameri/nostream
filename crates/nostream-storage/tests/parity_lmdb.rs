@@ -1,0 +1,516 @@
+//! Behavioural parity for the embedded backend: replays `tests/fixtures/repository-parity.json`
+//! through `LmdbBackend` and compares every result with the TypeScript implementation's
+//! recording, then covers the cases the replay cannot reach.
+//!
+//! No database and no network: the store is opened on a `tempfile::TempDir`. Every entry the
+//! seam can run is replayed, and the list of the ones it cannot is asserted entry by entry, so
+//! an exclusion can only grow by editing `EXCLUDED`, which the diff shows.
+
+#![cfg(feature = "lmdb")]
+// This integration-test target may unwrap: a failed assertion here is a failed test,
+// which is the point. The allowance names this file rather than exempting test targets
+// workspace-wide, so a new test file still has to ask.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use chrono::{DateTime, Duration, Utc};
+use serde_json::{Value, json};
+
+use common::{Repos, fixture, settings_from_fixture};
+use nostream_core::{Event, EventId, Filter, Kind, Pubkey, Signature};
+use nostream_storage::LmdbBackend;
+use nostream_storage::StorageError;
+use nostream_storage::repositories::{
+    CreateInviteCodeOptions, DeliveryLogFilters, EventRecord, EventRepository, FieldUpdate,
+    InviteCodeRepository, Invoice, InvoiceRepository, InvoiceStatus, InvoiceUnit,
+    NewDeliveryLogEntry, NotificationDeliveryLogRepository, NotificationDeliveryStatus,
+    NotificationOutboxRepository, NotificationTargetType, UserRepository,
+};
+
+mod common;
+
+/// The entries this arm cannot replay, fixed by index: 21 is `search` (NIP-50 is out of scope),
+/// 48 and 50 are `user.tos_accepted_at` (raw SQL, no seam form), and 112 and 115 are the two
+/// `transaction` groups the capture rolled back — a seam with no rollback cannot reproduce them.
+/// The two groups it committed (111, 117) are replayed: their nested ops in order leave exactly
+/// the state the commit left, which is why entries after 111 observe its rows.
+const EXCLUDED: [usize; 5] = [21, 48, 50, 112, 115];
+
+/// The entries that are replayed; `EXCLUDED.len() + REPLAYED` is the fixture's entry count.
+const REPLAYED: usize = 113;
+
+/// The exclusion list as the marker line prints it.
+const EXCLUDED_MARKER: &str = "21,48,50,112,115";
+
+/// Replays a transaction group the capture committed. The group's comparison is the aggregate
+/// `{failed: false, results: [...]}`, and running its nested ops in order through the seam
+/// produces exactly that shape and leaves the state the commit left. A group the capture rolled
+/// back needs rollback, which this seam has no form for, and is listed in `EXCLUDED` instead.
+async fn run_committed_transaction(
+    backend: &LmdbBackend,
+    op: &Value,
+    refs: &mut HashMap<String, String>,
+) -> Value {
+    let mut results = Vec::new();
+    for nested in op["request"]["ops"].as_array().expect("transaction ops") {
+        let name = nested["op"].as_str().expect("an op name");
+        let result = common::run_op(Repos::all(backend), nested, refs)
+            .await
+            .unwrap_or_else(|error| panic!("a committed transaction's {name} failed: {error}"));
+        results.push(result);
+    }
+    json!({ "failed": false, "results": results })
+}
+
+/// One store on a temporary directory, with the fixture's settings gates.
+async fn open_store() -> (tempfile::TempDir, LmdbBackend) {
+    let fixture = fixture();
+    let directory = tempfile::tempdir().expect("tempdir");
+    let backend = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens")
+        .with_settings(Arc::new(settings_from_fixture(&fixture)));
+    (directory, backend)
+}
+
+/// A signed event of the given kind and creation time, by the key `secret`.
+fn event(secret: u8, kind: u64, created_at: i64) -> EventRecord {
+    let mut event = Event {
+        id: EventId::from_byte_array([0; 32]),
+        pubkey: Pubkey::from_byte_array([0; 32]),
+        created_at,
+        kind: Kind(kind),
+        tags: Vec::new(),
+        content: format!("{secret}-{created_at}"),
+        sig: Signature::from_byte_array([0; 64]),
+    };
+    nostream_core::crypto::sign_event(&[secret; 32], &mut event).expect("the event signs");
+    EventRecord::from_event(&event)
+}
+
+fn one_entry(outbox_id: Option<String>) -> NewDeliveryLogEntry {
+    NewDeliveryLogEntry {
+        outbox_id,
+        event_type: "note.created".to_owned(),
+        target_id: "https://example.test/hook".to_owned(),
+        target_type: NotificationTargetType::Http,
+        status: NotificationDeliveryStatus::Success,
+        attempt_number: 1,
+        error_snippet: None,
+    }
+}
+
+/// `8-4-4-4-12`, all lowercase hex, version 4, variant 1.
+fn assert_uuid_v4(value: &str) {
+    let groups: Vec<&str> = value.split('-').collect();
+    let lengths: Vec<usize> = groups.iter().map(|group| group.len()).collect();
+    assert_eq!(
+        lengths,
+        vec![8, 4, 4, 4, 12],
+        "{value} is hyphenated 8-4-4-4-12"
+    );
+    assert!(
+        groups.iter().all(|group| group
+            .chars()
+            .all(|character| character.is_ascii_digit() || matches!(character, 'a'..='f'))),
+        "{value} is lowercase hex"
+    );
+    assert_eq!(groups[2].as_bytes()[0], b'4', "{value} is version 4");
+    assert!(
+        matches!(groups[3].as_bytes()[0], b'8' | b'9' | b'a' | b'b'),
+        "{value} carries the RFC 4122 variant"
+    );
+}
+
+#[tokio::test]
+async fn the_typescript_script_replays_with_an_empty_diff() {
+    let fixture = fixture();
+    let script = fixture["script"].as_array().expect("script");
+    assert_eq!(
+        script.len(),
+        REPLAYED + EXCLUDED.len(),
+        "the fixture's entry count is the one the exclusion list was written against"
+    );
+    for (index, name) in [
+        (21, "events.find_by_filters"),
+        (48, "user.tos_accepted_at"),
+        (50, "user.tos_accepted_at"),
+        (112, "transaction"),
+        (115, "transaction"),
+    ] {
+        assert_eq!(
+            script[index]["op"].as_str(),
+            Some(name),
+            "entry {index} is not what the exclusion list says it is"
+        );
+    }
+    // Each entry is excluded exactly when the seam has no form for it: a transaction group
+    // the capture rolled back, the two raw-SQL probes, and the one filter carrying `search`.
+    for (index, op) in script.iter().enumerate() {
+        let name = op["op"].as_str().expect("an op name");
+        let excluded_kind = match name {
+            "transaction" => op["result"]["compare"]["failed"] != Value::Bool(false),
+            "user.tos_accepted_at" => true,
+            _ => op["request"]["filters"]
+                .as_array()
+                .is_some_and(|filters| filters.iter().any(|filter| filter.get("search").is_some())),
+        };
+        assert_eq!(
+            EXCLUDED.contains(&index),
+            excluded_kind,
+            "entry {index} ({name}) is excluded exactly when the seam cannot run it"
+        );
+    }
+
+    let (_directory, backend) = open_store().await;
+    let corpus: Vec<EventRecord> = fixture["corpus"]
+        .as_array()
+        .expect("corpus")
+        .iter()
+        .map(common::event_record)
+        .collect();
+    backend
+        .create_many(&corpus)
+        .await
+        .expect("the corpus inserts");
+
+    let mut refs = HashMap::new();
+    let mut replayed = 0;
+    for (index, op) in script.iter().enumerate() {
+        if EXCLUDED.contains(&index) {
+            continue;
+        }
+        let name = op["op"].as_str().expect("an op name");
+        let actual = if name == "transaction" {
+            run_committed_transaction(&backend, op, &mut refs).await
+        } else {
+            common::run_op(Repos::all(&backend), op, &mut refs)
+                .await
+                .unwrap_or_else(|error| panic!("op {index} ({name}) failed: {error}"))
+        };
+        assert_eq!(
+            actual, op["result"]["compare"],
+            "op {index} ({name}) differs from the TypeScript capture"
+        );
+        replayed += 1;
+    }
+    assert_eq!(replayed, REPLAYED);
+    println!("LMDB_PARITY_COMPLETE replayed={replayed} excluded={EXCLUDED_MARKER}");
+}
+
+#[tokio::test]
+async fn a_soft_deleted_event_is_readable_by_filter_and_excluded_from_count() {
+    let (_directory, backend) = open_store().await;
+    let record = event(1, 1, 1_700_000_000);
+    EventRepository::create(&backend, &record)
+        .await
+        .expect("the event stores");
+
+    let filter = Filter {
+        ids: Some(vec![record.event.id.to_string()]),
+        ..Filter::default()
+    };
+    let live = common::collect(
+        backend
+            .find_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(live.len(), 1);
+    assert!(live[0].deleted_at.is_none());
+
+    assert_eq!(
+        backend
+            .delete_by_pubkey_and_ids(&record.event.pubkey, &[record.event.id])
+            .await
+            .unwrap(),
+        1
+    );
+
+    let after = common::collect(
+        backend
+            .find_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        after.len(),
+        1,
+        "find_by_filters does not apply the live predicate (V14)"
+    );
+    assert!(
+        after[0].deleted_at.is_some(),
+        "the row carries its deletion time"
+    );
+    assert_eq!(
+        backend
+            .count_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+        0,
+        "count_by_filters applies the live predicate (V13)"
+    );
+    let items = common::collect(backend.find_reconciliation_items(&filter).await.unwrap())
+        .await
+        .unwrap();
+    assert!(items.is_empty(), "reconciliation lists live rows only");
+}
+
+#[tokio::test]
+async fn a_filter_result_larger_than_one_batch_arrives_whole_and_in_order() {
+    let (_directory, backend) = open_store().await;
+    // 500 is above STREAM_BATCH_ITEMS (256), so the stream copies at least two batches.
+    let records: Vec<EventRecord> = (0..500)
+        .map(|index| event((index % 200 + 1) as u8, 1, 1_700_000_000 + index))
+        .collect();
+    backend
+        .create_many(&records)
+        .await
+        .expect("the events store");
+
+    let filter = Filter {
+        kinds: Some(vec![Kind(1)]),
+        ..Filter::default()
+    };
+    let seen = common::collect(
+        backend
+            .find_by_filters(std::slice::from_ref(&filter))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(seen.len(), 500, "the whole page arrives");
+    assert!(
+        seen.windows(2)
+            .all(|pair| pair[0].event.created_at < pair[1].event.created_at),
+        "a filter without a limit orders by created_at ascending (V6)"
+    );
+}
+
+#[tokio::test]
+async fn admit_user_creates_an_admitted_row() {
+    let (_directory, backend) = open_store().await;
+    let pubkey = Pubkey::from_byte_array([7; 32]);
+    assert!(backend.find_by_pubkey(&pubkey).await.unwrap().is_none());
+
+    let admitted_at = Utc::now();
+    backend.admit_user(&pubkey, admitted_at).await.unwrap();
+
+    let user = backend
+        .find_by_pubkey(&pubkey)
+        .await
+        .unwrap()
+        .expect("the call creates the row");
+    assert!(user.is_admitted);
+    assert_eq!(user.balance, 0);
+}
+
+#[tokio::test]
+async fn confirm_invoice_scales_by_unit_and_rejects_an_overflow() {
+    let (_directory, backend) = open_store().await;
+    let now = Utc::now();
+
+    // sats: the credit is `amount_received × 1000` (V18).
+    let sats_payee = Pubkey::from_byte_array([9; 32]);
+    backend.admit_user(&sats_payee, now).await.unwrap();
+    let sats_invoice = Invoice {
+        id: "invoice-sats".to_owned(),
+        pubkey: sats_payee,
+        bolt11: "lnbc1".to_owned(),
+        amount_requested: 1_000,
+        amount_paid: None,
+        unit: InvoiceUnit::Sats,
+        status: InvoiceStatus::Pending,
+        description: "test".to_owned(),
+        confirmed_at: None,
+        expires_at: None,
+        updated_at: now,
+        created_at: now,
+        verify_url: None,
+    };
+    InvoiceRepository::upsert(&backend, &sats_invoice)
+        .await
+        .unwrap();
+    backend
+        .confirm_invoice("invoice-sats", 1_000, now)
+        .await
+        .unwrap();
+
+    let confirmed = backend.find_by_id("invoice-sats").await.unwrap().unwrap();
+    assert_eq!(confirmed.amount_paid, Some(1_000));
+    assert!(confirmed.confirmed_at.is_some());
+    assert_eq!(
+        backend.get_balance_by_pubkey(&sats_payee).await.unwrap(),
+        1_000_000
+    );
+
+    // btc: `amount_received × 100_000_000 × 1000`.
+    let btc_payee = Pubkey::from_byte_array([10; 32]);
+    backend.admit_user(&btc_payee, now).await.unwrap();
+    let btc_invoice = Invoice {
+        id: "invoice-btc".to_owned(),
+        pubkey: btc_payee,
+        unit: InvoiceUnit::Btc,
+        ..sats_invoice.clone()
+    };
+    InvoiceRepository::upsert(&backend, &btc_invoice)
+        .await
+        .unwrap();
+    backend
+        .confirm_invoice("invoice-btc", 1, now)
+        .await
+        .unwrap();
+    assert_eq!(
+        backend.get_balance_by_pubkey(&btc_payee).await.unwrap(),
+        100_000_000_000
+    );
+
+    // An `int8` overflow is an error, not a wrap, and nothing is written (V19).
+    let overflowing = Invoice {
+        id: "invoice-overflow".to_owned(),
+        ..btc_invoice.clone()
+    };
+    InvoiceRepository::upsert(&backend, &overflowing)
+        .await
+        .unwrap();
+    let before = backend.get_balance_by_pubkey(&btc_payee).await.unwrap();
+    let error = backend
+        .confirm_invoice("invoice-overflow", i64::MAX, now)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            StorageError::ValueOutOfRange {
+                column: "users.balance",
+                ..
+            }
+        ),
+        "an amount that cannot be scaled is ValueOutOfRange, got {error:?}"
+    );
+    assert_eq!(
+        backend.get_balance_by_pubkey(&btc_payee).await.unwrap(),
+        before,
+        "the failed confirmation credits nothing"
+    );
+    assert!(
+        backend
+            .find_by_id("invoice-overflow")
+            .await
+            .unwrap()
+            .unwrap()
+            .confirmed_at
+            .is_none(),
+        "the failed confirmation leaves the invoice unconfirmed"
+    );
+}
+
+#[tokio::test]
+async fn a_delivery_log_entry_must_name_an_existing_outbox_row() {
+    let (_directory, backend) = open_store().await;
+    let unknown = one_entry(Some("00000000-0000-4000-8000-000000000000".to_owned()));
+    match backend.append(&unknown).await {
+        Err(StorageError::InvalidArgument { .. }) => {}
+        other => panic!("an unknown outbox id is rejected, got {other:?}"),
+    }
+    assert!(
+        backend
+            .find_recent(10, &DeliveryLogFilters::default())
+            .await
+            .unwrap()
+            .is_empty(),
+        "the rejected entry is not stored"
+    );
+
+    let message = backend
+        .enqueue("note.created", &json!({ "id": "note-1" }))
+        .await
+        .unwrap();
+    backend.append(&one_entry(Some(message.id))).await.unwrap();
+    assert_eq!(
+        backend
+            .find_recent(10, &DeliveryLogFilters::default())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn deleting_an_outbox_row_nulls_its_delivery_log_entries() {
+    let (_directory, backend) = open_store().await;
+    let message = backend
+        .enqueue("note.created", &json!({ "id": "note-2" }))
+        .await
+        .unwrap();
+    backend
+        .append(&one_entry(Some(message.id.clone())))
+        .await
+        .unwrap();
+    backend.mark_delivered(&message.id).await.unwrap();
+
+    let cutoff: DateTime<Utc> = Utc::now() + Duration::seconds(60);
+    assert_eq!(
+        backend.delete_terminal_older_than(cutoff).await.unwrap(),
+        1,
+        "the delivered row is deleted"
+    );
+
+    let entries = backend
+        .find_recent(10, &DeliveryLogFilters::default())
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 1, "the delivery log keeps its entry");
+    assert!(
+        entries[0].outbox_id.is_none(),
+        "the deleted outbox row leaves no dangling id (V40)"
+    );
+}
+
+#[tokio::test]
+async fn an_invite_code_rejects_a_negative_remaining_uses() {
+    let (_directory, backend) = open_store().await;
+    let negative = CreateInviteCodeOptions {
+        remaining_uses: FieldUpdate::Set(-5),
+        ..CreateInviteCodeOptions::default()
+    };
+    match InviteCodeRepository::create(&backend, "negative", &negative).await {
+        Err(StorageError::InvalidArgument { .. }) => {}
+        other => panic!("a negative remaining_uses is rejected, got {other:?}"),
+    }
+
+    let zero = CreateInviteCodeOptions {
+        remaining_uses: FieldUpdate::Set(0),
+        ..CreateInviteCodeOptions::default()
+    };
+    let invite = InviteCodeRepository::create(&backend, "zero", &zero)
+        .await
+        .unwrap();
+    assert_eq!(invite.remaining_uses, Some(0));
+}
+
+#[tokio::test]
+async fn two_enqueues_return_distinct_uuids() {
+    let (_directory, backend) = open_store().await;
+    let first = backend
+        .enqueue("note.created", &json!({ "id": "a" }))
+        .await
+        .unwrap();
+    let second = backend
+        .enqueue("note.created", &json!({ "id": "b" }))
+        .await
+        .unwrap();
+
+    assert_ne!(first.id, second.id);
+    assert_uuid_v4(&first.id);
+    assert_uuid_v4(&second.id);
+}
