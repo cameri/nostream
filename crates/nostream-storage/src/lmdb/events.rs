@@ -1075,6 +1075,10 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
 /// One range per author criterion and kind on `events_by_author`, whose key is
 /// `pubkey ‖ kind ‖ created_at ‖ event_id`: the `pubkey ‖ kind ‖ created_at` ordering the layout
 /// writes is what lets a page for one author and one kind stop as soon as it is full.
+///
+/// The author bounds are the index's whole 32-byte pubkey field, so a prefix criterion's kind
+/// is compared against the key's own kind bytes; a criterion another already covers, and a
+/// repeated kind, seek one range, so a count cannot visit their keys twice.
 fn author_kind_ranges(authors: &[String], kinds: &[Kind]) -> Vec<KeyRange> {
     let mut ranges = Vec::with_capacity(authors.len() * kinds.len());
     for (low, high) in encoding::hex_ranges(authors, 0) {
@@ -1088,7 +1092,7 @@ fn author_kind_ranges(authors: &[String], kinds: &[Kind]) -> Vec<KeyRange> {
             ranges.push((lower, upper));
         }
     }
-    ranges
+    encoding::disjoint(ranges)
 }
 
 /// The first tag criterion the capture treats as a query: `#` plus one ASCII letter with a
@@ -1694,6 +1698,20 @@ mod tests {
     }
 
     #[test]
+    fn a_page_buffer_holds_at_most_twice_its_limit() {
+        let mut page = Page::new(true);
+        for step in 0u8..=100 {
+            page.offer((i64::from(step), id(step)), 3);
+            assert!(
+                page.len() <= 6,
+                "the buffer is cut back to the limit whenever it fills: {} entries",
+                page.len()
+            );
+        }
+        assert_eq!(page.finish(3).len(), 3);
+    }
+
+    #[test]
     fn only_a_hash_and_one_letter_is_a_tag_query() {
         assert_eq!(generic_tag_name("#e"), Some("e"));
         assert_eq!(generic_tag_name("#1"), None);
@@ -1872,6 +1890,42 @@ mod tests {
     }
 
     #[test]
+    fn a_full_page_keeps_the_ties_at_its_boundary_timestamp() {
+        // The created-at index reverses the whole key, so two rows at one instant are scanned
+        // id-descending: a walk that stopped at the first would keep the larger id, where the
+        // capture's comparator keeps the smaller (V6).
+        let (_directory, env, databases) = store();
+        let tag = |value: &str| vec![vec!["t".to_owned(), value.to_owned()]];
+        let first = signed(9, 1, 500, tag("first"));
+        let second = signed(9, 1, 500, tag("second"));
+        let smallest = first.event.id.min(second.event.id);
+        write(&env, &databases, &[first, second]);
+        let transaction = env.read_txn().expect("a read transaction");
+        let filter = Filter {
+            kinds: Some(vec![Kind(1)]),
+            limit: Some(1),
+            ..Filter::default()
+        };
+
+        let page = branch(
+            &transaction,
+            &databases,
+            &filter,
+            &Gates::default(),
+            0,
+            false,
+            page_limit(&filter),
+        )
+        .expect("the page");
+
+        assert_eq!(
+            page,
+            vec![(500, smallest)],
+            "the row tied at the boundary is still offered, and the smaller id wins"
+        );
+    }
+
+    #[test]
     fn a_tag_page_checks_its_criterion_from_the_key_and_decodes_no_body() {
         let _serial = probes::COUNTING.lock().expect("the counting lock");
         let (_directory, env, databases) = store();
@@ -2040,6 +2094,34 @@ mod tests {
         assert_eq!(
             count(&transaction, &databases, &filters, &Gates::default(), 0).expect("the count"),
             3
+        );
+    }
+
+    #[test]
+    fn a_later_limited_page_does_not_recount_an_earlier_filter_s_rows() {
+        let (_directory, env, databases) = store();
+        let records = vec![
+            signed(28, 1, 10, Vec::new()),
+            signed(28, 1, 20, Vec::new()),
+            signed(28, 1, 30, Vec::new()),
+        ];
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let filters = vec![
+            Filter {
+                authors: Some(vec![records[0].event.pubkey.to_string()]),
+                ..Filter::default()
+            },
+            Filter {
+                kinds: Some(vec![Kind(1)]),
+                limit: Some(2),
+                ..Filter::default()
+            },
+        ];
+        assert_eq!(
+            count(&transaction, &databases, &filters, &Gates::default(), 0).expect("the count"),
+            3,
+            "the rows the earlier predicate counted are not counted again by the page"
         );
     }
 

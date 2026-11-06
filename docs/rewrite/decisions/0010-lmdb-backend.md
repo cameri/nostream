@@ -183,6 +183,14 @@ The index is chosen from the filter, and which ranges can stop early follows fro
 | a `#` + letter criterion | `tags`, one range per criterion | for an exact value; a `#g` prefix spans values, so its range runs whole |
 | anything else | `events_by_created_at` | yes |
 
+Every hex criterion's bounds are widened to the field they name — 32 bytes for an id or a
+pubkey — before anything the key carries after it is appended. A prefix is therefore compared
+against its own field's bytes and never against the kind, the timestamp or the id that follow,
+whether the path is `events` or `events_by_author`; an author prefix with `kinds` seeks the
+kind at byte 32 as a whole pubkey does, and `hex_ranges` (`encoding.rs`) is the one place that
+rule lives. A criterion another already covers, and a repeated kind, seek one range, so a
+count that walks ranges whole visits those keys once.
+
 The `authors`-alone row is the capture's own shape rather than the faster index: the author
 index orders by kind before `created_at`, so a page ordered by time cannot stop inside it, and
 the same query in Postgres walks the created-at index and filters (ADR 0003 records 5 508 rows
