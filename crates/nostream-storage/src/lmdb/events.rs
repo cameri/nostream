@@ -375,6 +375,9 @@ pub(crate) fn has_active_request_to_vanish(
 /// `delete_expired_and_retained`: one hard-delete batch of at most
 /// [`RETENTION_BATCH_SIZE`] rows, gathered in the capture's index order and classified
 /// deleted, then expired, then over-retention.
+// shortcut: retention takes its 1000 candidates in a fixed order (deleted, expiring,
+// created_at) where Postgres' planner chooses; upgrade when a deployment exceeds 1000
+// qualifying rows per pass and the mix, not the total, starts to matter (spec Assumption 10).
 pub(crate) fn delete_expired_and_retained(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
@@ -726,10 +729,7 @@ fn sort_page(page: &mut [(i64, EventId)], descending: bool) {
 }
 
 /// The index a filter is answered from, and the ranges within it.
-fn choose_ranges(
-    filter: &Filter,
-    databases: &Databases,
-) -> IndexRanges {
+fn choose_ranges(filter: &Filter, databases: &Databases) -> IndexRanges {
     if let Some(ids) = &filter.ids
         && !ids.is_empty()
     {

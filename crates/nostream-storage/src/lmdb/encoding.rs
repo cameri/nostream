@@ -212,6 +212,9 @@ pub(crate) fn author_key(
 }
 
 /// `pubkey ‖ kind ‖ dedup_len ‖ canonical JSON`, where `dedup_len` is the JSON's byte length.
+// shortcut: the deduplication index uses `serde_json` text as its key, so `1` and `1.0` differ
+// where `jsonb` would not; upgrade when a caller can pass a hand-built JSON number, which
+// today's two callers cannot (spec Assumption 11).
 pub(crate) fn replaceable_key(
     pubkey: &Pubkey,
     kind: i32,

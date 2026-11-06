@@ -38,9 +38,15 @@ use crate::repositories::{
 
 /// The fixed map size every environment is opened with: `Env::resize` is `unsafe` and this
 /// crate has one audited `unsafe` call, so the map is preallocated at 64 GiB and never grown.
+///
+/// shortcut: the map is fixed at 64 GiB and never grown; upgrade when a deployment's data can
+/// approach it, which needs `Env::resize` (a second `unsafe` call) or a refusal at open.
 pub const LMDB_MAP_SIZE: usize = 64 << 30;
 
 /// The number of named databases the environment reserves, comfortably above the 29 it opens.
+///
+/// shortcut: 29 databases open under a reserve of 64; upgrade when a tenth repository or a new
+/// query path crosses that reserve, which moves this value and every store's reopen path.
 pub const LMDB_MAX_DBS: u32 = 64;
 
 /// The number of concurrent read transactions the environment reserves.
