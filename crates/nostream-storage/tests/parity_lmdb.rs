@@ -36,6 +36,9 @@ mod common;
 /// `transaction` groups the capture rolled back — a seam with no rollback cannot reproduce them.
 /// The two groups it committed (111, 117) are replayed: their nested ops in order leave exactly
 /// the state the commit left, which is why entries after 111 observe its rows.
+// shortcut: five fixture entries are excluded by index and the count is a constant; upgrade
+// when the capture gains an entry, which fails the count assertion and forces this list to be
+// re-derived rather than quietly skipped.
 const EXCLUDED: [usize; 5] = [21, 48, 50, 112, 115];
 
 /// The entries that are replayed; `EXCLUDED.len() + REPLAYED` is the fixture's entry count.
