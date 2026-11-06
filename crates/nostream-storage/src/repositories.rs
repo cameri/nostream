@@ -22,10 +22,16 @@ pub type StorageFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StorageErr
 
 /// One row per item, in exactly the query's `ORDER BY`. The borrow of the store is held for
 /// the stream's life, which is what both backends need: Postgres holds a portal and a pooled
-/// connection, while LMDB holds only a cursor key and opens a short read transaction per batch
-/// (256 values), so a dropped stream pins no pages but a row written or deleted between two
-/// batches may appear or vanish. A channel would force a background task and a buffer policy
-/// LMDB does not need, and a `Vec` would materialise a 10M-row NIP-77 reconciliation.
+/// connection, and LMDB holds whatever its own query kept, opening a short read transaction
+/// per batch (256 values) so a dropped stream pins no pages.
+///
+/// An LMDB backend's two streams keep different things, and a caller plans memory from the
+/// difference: `find_by_filters` collects its page first — at most the filter's limit, clamped
+/// to the backend's bound — and copies each batch's values out of that page, so its memory is
+/// the page; `find_reconciliation_items` keeps only a cursor key and re-seeks it per batch, so
+/// its result is never materialised. Neither is a snapshot: a row written or deleted between
+/// two batches may appear or vanish. A channel would force a background task and a buffer
+/// policy LMDB does not need, and a `Vec` would materialise a 10M-row NIP-77 reconciliation.
 pub type QueryStream<'a, T> = Pin<Box<dyn Stream<Item = Result<T, StorageError>> + Send + 'a>>;
 
 /// The rows a retention pass deleted, expired and kept (`src/@types/repositories.ts`
