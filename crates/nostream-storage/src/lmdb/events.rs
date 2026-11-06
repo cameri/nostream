@@ -2126,8 +2126,8 @@ mod tests {
             "the filter's own index answers it"
         );
         assert!(
-            probes::keys() <= STREAM_BATCH_ITEMS,
-            "the narrow range is read, not the whole store: {} keys",
+            probes::keys() <= 2,
+            "the range the filter's own index narrows to is read, not the whole store: {} keys",
             probes::keys()
         );
     }
