@@ -9,6 +9,7 @@ use nostream_core::{EventId, Kind, Pubkey};
 
 use super::Databases;
 use super::encoding;
+use super::encoding::{stamp_key, text_from, text_part};
 use super::rows;
 use crate::error::StorageError;
 use crate::repositories::{
@@ -19,29 +20,13 @@ use crate::repositories::{
 /// The `meta` key holding the `reports.id` sequence (`reports_id_seq`).
 const REPORT_SEQUENCE: &[u8] = b"reports.next_id";
 
-/// A text component of a composite key, terminated so the next component reads unambiguously.
-fn text_part(value: &str) -> Vec<u8> {
-    let mut bytes = value.as_bytes().to_vec();
-    bytes.push(0);
-    bytes
-}
-
-fn text_from<'a>(bytes: &'a [u8], table: &'static str) -> Result<&'a str, StorageError> {
-    std::str::from_utf8(bytes).map_err(|_| StorageError::InvalidRow {
-        table,
-        column: "key",
-        value: "not utf-8".to_owned(),
-    })
-}
+/// The width of `reports.id` in every `reports_*` index key, pinned so a widening is a compile
+/// error here rather than a prefix lookup that silently seeks a narrower range.
+const REPORT_ID_LEN: usize = 4;
 
 // ---------------------------------------------------------------------------------------
 // NIP-05 verifications.
 // ---------------------------------------------------------------------------------------
-
-/// `created_at`-style keys for the tail indexes order by microseconds.
-fn stamp_key(value: DateTime<Utc>) -> [u8; 8] {
-    encoding::i64_key(value.timestamp_micros())
-}
 
 fn nip05_key(pubkey: &Pubkey) -> Vec<u8> {
     pubkey.as_bytes().to_vec()
@@ -486,7 +471,7 @@ pub(crate) fn dvm_find_pending_jobs(
 // Reports.
 // ---------------------------------------------------------------------------------------
 
-fn report_key(id: i32) -> [u8; 4] {
+fn report_key(id: i32) -> [u8; REPORT_ID_LEN] {
     encoding::i32_key(id)
 }
 
@@ -655,4 +640,44 @@ pub(crate) fn report_find_actionable_targets(
             reported_event_id: event_id.map(EventId::from_byte_array),
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+    use crate::repositories::ReportType;
+
+    fn report() -> Report {
+        Report {
+            id: 7,
+            event_id: EventId::from_byte_array([1; 32]),
+            reporter_pubkey: Pubkey::from_byte_array([2; 32]),
+            reported_pubkey: Some(Pubkey::from_byte_array([3; 32])),
+            reported_event_id: Some(EventId::from_byte_array([4; 32])),
+            report_type: ReportType::Spam,
+            weight: 0.0,
+            actionable: true,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn every_report_index_key_ends_with_the_id_width_the_codec_writes() {
+        // The NIP-56 lookups seek `reports_actionable_*` by the target's prefix and the walks
+        // read the id back from the tail, so the id's width is the one `report_key` writes: a
+        // widening has to change this assertion and the reads together, never one of them.
+        let report = report();
+        assert_eq!(REPORT_ID_LEN, report_key(report.id).len());
+        assert_eq!(
+            report_event_key(&report, &report.event_id).len(),
+            32 + REPORT_ID_LEN
+        );
+        assert_eq!(
+            report_pubkey_key(&report, &report.reporter_pubkey).len(),
+            32 + REPORT_ID_LEN
+        );
+        assert_eq!(report_created_key(&report).len(), 8 + REPORT_ID_LEN);
+    }
 }
