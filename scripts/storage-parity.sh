@@ -285,6 +285,10 @@ echo "== behavioural parity"
     cargo test -p nostream-storage --test parity -- --ignored --test-threads=1 \
     || fail "the parity target failed"
 
+echo "== lmdb behavioural parity (no database)"
+./scripts/rust.sh cargo test -p nostream-storage --test parity_lmdb -- --nocapture \
+    || fail "the lmdb parity target failed"
+
 echo "== tls parity (the same replay over sslmode=require)"
 # The test skips itself when the variable is absent, so the run has to prove it executed:
 # a renamed or quietly skipped TLS leg is the failure mode this check closes.
