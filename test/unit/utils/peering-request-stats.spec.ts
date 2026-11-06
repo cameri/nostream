@@ -31,7 +31,8 @@ describe('PeeringRequestStatsStore', () => {
   it('records a request with its type and timestamp', async () => {
     const pubkey = 'A'.repeat(64)
 
-    await store.recordRequest(pubkey, 'REQ')
+    store.recordRequest(pubkey, 'REQ')
+    await store.flushPending()
 
     const [, keys, args] = evalStub.firstCall.args
     expect(keys).to.deep.equal([`admin:peering:requests:${pubkey.toLowerCase()}`, PEERING_REQUEST_STATS_INDEX_KEY])
@@ -43,12 +44,28 @@ describe('PeeringRequestStatsStore', () => {
   })
 
   it('adds events served without counting another request', async () => {
-    await store.addEventsServed('a'.repeat(64), 5)
+    store.addEventsServed('a'.repeat(64), 5)
+    await store.flushPending()
 
     const [, , args] = evalStub.firstCall.args
     expect(args[0]).to.equal('0')
     expect(args[1]).to.equal('5')
     expect(args[3]).to.equal('')
+  })
+
+  it('coalesces request and event increments into one write per peer', async () => {
+    const pubkey = 'a'.repeat(64)
+
+    store.recordRequest(pubkey, 'REQ')
+    store.addEventsServed(pubkey, 5)
+    store.recordRequest(pubkey, 'COUNT')
+    await store.flushPending()
+
+    expect(evalStub).to.have.been.calledOnce
+    const [, , args] = evalStub.firstCall.args
+    expect(args[0]).to.equal('2')
+    expect(args[1]).to.equal('5')
+    expect(args[4]).to.equal('COUNT')
   })
 
   it('reads and parses all recorded peers', async () => {
@@ -108,7 +125,8 @@ describe('PeeringRequestStatsStore', () => {
   it('does not fail the request path when accounting storage is unavailable', async () => {
     evalStub.rejects(new Error('redis down'))
 
-    await store.recordRequest('a'.repeat(64), 'REQ')
-    await store.addEventsServed('a'.repeat(64), 2)
+    store.recordRequest('a'.repeat(64), 'REQ')
+    store.addEventsServed('a'.repeat(64), 2)
+    await store.flushPending()
   })
 })

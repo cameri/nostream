@@ -66,22 +66,45 @@ const parseStats = (raw: unknown): PeeringRequestStats | undefined => {
   }
 }
 
+interface PendingStats {
+  requests: number
+  eventsServed: number
+  lastRequestAt?: string
+  lastRequestType?: string
+}
+
+const ACCOUNTING_FLUSH_DELAY_MS = 250
+const MAX_CONCURRENT_ACCOUNTING_WRITES = 25
+
 export class PeeringRequestStatsStore {
+  private pending = new Map<string, PendingStats>()
+  private flushTimer: NodeJS.Timeout | undefined
+  private flushPromise: Promise<void> | undefined
+
   public constructor(private readonly cache: ICacheAdapter) {}
 
-  public async recordRequest(pubkey: string, type: string): Promise<void> {
-    await this.record(pubkey, 1, 0, { at: new Date().toISOString(), type })
+  public recordRequest(pubkey: string, type: string): void {
+    this.enqueue(pubkey, {
+      requests: 1,
+      eventsServed: 0,
+      lastRequestAt: new Date().toISOString(),
+      lastRequestType: type,
+    })
   }
 
-  public async addEventsServed(pubkey: string, count: number): Promise<void> {
+  public addEventsServed(pubkey: string, count: number): void {
     if (count <= 0) {
       return
     }
 
-    await this.record(pubkey, 0, count)
+    this.enqueue(pubkey, { requests: 0, eventsServed: count })
   }
 
   public async list(): Promise<PeeringRequestStats[]> {
+    // Flush the bounded pending batch so a dashboard poll sees the latest
+    // counters without adding one Redis write per delivered event.
+    await this.flushPending()
+
     let pubkeys: string[]
     try {
       pubkeys = await this.cache.getSetMembers(PEERING_REQUEST_STATS_INDEX_KEY)
@@ -112,11 +135,87 @@ export class PeeringRequestStatsStore {
     return stats.sort((left, right) => left.pubkey.localeCompare(right.pubkey))
   }
 
+  /** Flush pending counters now. Exposed for admin reads and deterministic tests. */
+  public async flushPending(): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer)
+      this.flushTimer = undefined
+    }
+
+    if (this.flushPromise) {
+      await this.flushPromise
+    }
+
+    if (this.pending.size === 0) {
+      return
+    }
+
+    const batch = this.pending
+    this.pending = new Map()
+    const entries = [...batch.entries()]
+
+    this.flushPromise = (async () => {
+      for (let offset = 0; offset < entries.length; offset += MAX_CONCURRENT_ACCOUNTING_WRITES) {
+        await Promise.all(
+          entries.slice(offset, offset + MAX_CONCURRENT_ACCOUNTING_WRITES).map(([pubkey, stats]) =>
+            this.record(pubkey, stats.requests, stats.eventsServed, {
+              at: stats.lastRequestAt,
+              type: stats.lastRequestType,
+            }),
+          ),
+        )
+      }
+    })()
+
+    try {
+      await this.flushPromise
+    } finally {
+      this.flushPromise = undefined
+      if (this.pending.size > 0) {
+        this.scheduleFlush()
+      }
+    }
+  }
+
+  private enqueue(pubkey: string, delta: PendingStats): void {
+    const normalized = pubkey.toLowerCase()
+    const current = this.pending.get(normalized) ?? { requests: 0, eventsServed: 0 }
+
+    this.pending.set(normalized, {
+      requests: current.requests + delta.requests,
+      eventsServed: current.eventsServed + delta.eventsServed,
+      ...(delta.lastRequestAt
+        ? { lastRequestAt: delta.lastRequestAt }
+        : current.lastRequestAt
+          ? { lastRequestAt: current.lastRequestAt }
+          : {}),
+      ...(delta.lastRequestType
+        ? { lastRequestType: delta.lastRequestType }
+        : current.lastRequestType
+          ? { lastRequestType: current.lastRequestType }
+          : {}),
+    })
+
+    this.scheduleFlush()
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushTimer || this.flushPromise) {
+      return
+    }
+
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = undefined
+      void this.flushPending()
+    }, ACCOUNTING_FLUSH_DELAY_MS)
+    this.flushTimer.unref()
+  }
+
   private async record(
     pubkey: string,
     requests: number,
     eventsServed: number,
-    last?: { at: string; type: string },
+    last?: { at?: string; type?: string },
   ): Promise<void> {
     try {
       await this.cache.eval(
