@@ -47,7 +47,10 @@ cargo test -p nostream-storage --test migrations --test parity -- --ignored --te
 `PARITY_ADMIN_URL` names the administrative database (CI sets
 `postgres://postgres:postgres@localhost:5432/postgres`); the targets create, migrate and
 drop their own scratch databases. `scripts/storage-parity.sh` runs both plus the
-TypeScript Cucumber suite against the sqlx-migrated schema — the complete local oracle.
+TypeScript Cucumber suite against the sqlx-migrated schema — the complete local oracle. The
+LMDB arm of that oracle needs no database: `cargo test -p nostream-storage --test parity_lmdb
+-- --nocapture` replays the same fixture on a temporary store and runs inside the fifth
+validation command above.
 
 - **`--workspace`, never a single crate.** A crate-local `cargo test -p` proves nothing
   about a workspace lint that another member trips.
