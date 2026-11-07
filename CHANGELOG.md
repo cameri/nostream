@@ -1,5 +1,27 @@
 # nostream
 
+## 3.15.0
+
+### Minor Changes
+
+- [#1068](https://github.com/cameri/nostream/pull/1068) [`d6b98ab`](https://github.com/cameri/nostream/commit/d6b98ab845d3f2e4e819ca39fa676876e502f87e) Thanks [@aikido-autofix](https://github.com/apps/aikido-autofix)! - feat(web): set security headers on every web response
+
+  The web app now sends `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy`, `X-DNS-Prefetch-Control`, `X-Permitted-Cross-Domain-Policies` and the cross-origin isolation headers through Helmet.
+
+  The app's own nonce-based `Content-Security-Policy` remains the single CSP on a response: Helmet's default policy is disabled, because a second CSP would intersect with the app's and block the nonce'd inline scripts the dashboard uses. Embedding the web UI in another origin is now refused by `X-Frame-Options`; the dashboard's own Grafana frame is unaffected.
+
+### Patch Changes
+
+- [#1067](https://github.com/cameri/nostream/pull/1067) [`0832ffd`](https://github.com/cameri/nostream/commit/0832ffdfea2f52d2b9558d6cd5c0dab8dd959136) Thanks [@Ferryx349](https://github.com/Ferryx349)! - fix(payments): accept LNbits 1.x callback bodies
+
+  LNbits 1.x sends the payment object as a JSON string inside the webhook body.
+  The callback route now allows a top-level JSON string, the controller parses it
+  before validation, and the body schema accepts and strips LNbits' extra payment
+  fields while still requiring a valid `payment_hash`.
+
+  Non-JSON string bodies still return `400 Malformed body`; the HMAC query check
+  and the invoice lookup from LNbits remain unchanged.
+
 ## 3.14.0
 
 ### Minor Changes
