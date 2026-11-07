@@ -1,5 +1,6 @@
 import express, { Express } from 'express'
 import { randomBytes } from 'crypto'
+import helmet from 'helmet'
 
 import { createSettings } from './settings-factory'
 import router from '../routes'
@@ -11,6 +12,7 @@ export const getWebProtocolForRelay = (relayProtocol: string): string => (relayP
 
 export const createWebApp = (): Express => {
   const app = express()
+  app.use(helmet())
   app
     .disable('x-powered-by')
     .use((req, res, next) => {
