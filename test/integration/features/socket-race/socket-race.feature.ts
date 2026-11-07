@@ -13,26 +13,6 @@ import * as rateLimiterMiddleware from '../../../../src/handlers/request-handler
 const RELAY_URL = 'ws://localhost:18808'
 const MESSAGE_TIMEOUT_MS = 10_000
 const STEP_TIMEOUT_MS = 120_000
-// Admission is a Redis round trip in production, and the frames a client
-// writes at the handshake arrive inside that window. Without a delay the check
-// answers before the first frame can reach the server, which makes these cases
-// pass against an adapter that drops it.
-const ADMISSION_DELAY_MS = 50
-
-let admissionSandbox: Sinon.SinonSandbox | undefined
-
-Before({ tags: '@socket-race' }, function () {
-  admissionSandbox = Sinon.createSandbox()
-  admissionSandbox.stub(rateLimiterMiddleware, 'isRateLimited').callsFake(async () => {
-    await new Promise((resolve) => setTimeout(resolve, ADMISSION_DELAY_MS))
-    return false
-  })
-})
-
-After({ tags: '@socket-race' }, function () {
-  admissionSandbox?.restore()
-  admissionSandbox = undefined
-})
 
 const world = (context: World<Record<string, any>>) => context.parameters as Record<string, any>
 
@@ -41,6 +21,8 @@ type Connection = {
   messages: ReplaySubject<OutgoingMessage>
   frames: OutgoingMessage[]
 }
+
+type Frame = { data: string | Buffer; options?: { fin?: boolean; binary?: boolean } }
 
 const eoseIds = (connection: Connection): string[] =>
   connection.frames.filter((message) => message[0] === 'EOSE').map((message) => message[1] as string)
@@ -55,10 +37,59 @@ const waitFor = async (predicate: () => boolean, label: string, timeoutMs = MESS
   }
 }
 
+// Admission is a Redis round trip in production, and the frames a client writes
+// at the handshake arrive inside that window. A fixed delay would race CI load:
+// the check could answer first and the case would then pass against an adapter
+// that drops frames. Admission is therefore held on an explicit gate and
+// released only once the scenario's frames have been flushed to the socket.
+type AdmissionGate = { promise: Promise<boolean>; release: () => void }
+
+const createAdmissionGate = (): AdmissionGate => {
+  let release: () => void = () => undefined
+  const promise = new Promise<boolean>((resolve) => {
+    release = () => resolve(false)
+  })
+
+  return { promise, release }
+}
+
+let admissionGate = createAdmissionGate()
+let admissionSandbox: Sinon.SinonSandbox | undefined
+
+const releaseAdmission = (): void => {
+  const gate = admissionGate
+  admissionGate = createAdmissionGate()
+  gate.release()
+}
+
+Before({ tags: '@socket-race' }, function () {
+  admissionGate = createAdmissionGate()
+  admissionSandbox = Sinon.createSandbox()
+  admissionSandbox.stub(rateLimiterMiddleware, 'isRateLimited').callsFake(() => admissionGate.promise)
+})
+
+After({ tags: '@socket-race' }, function () {
+  admissionSandbox?.restore()
+  admissionSandbox = undefined
+  releaseAdmission()
+})
+
+// Resolves when every frame has been flushed, which is the latest moment the
+// test can observe before the server is allowed to admit the client.
+const sendFrames = (ws: WebSocket, frames: Frame[]): Promise<void> =>
+  Promise.all(
+    frames.map(
+      ({ data, options }) =>
+        new Promise<void>((resolve, reject) => {
+          ws.send(data, options ?? {}, (error?: Error) => (error ? reject(error) : resolve()))
+        }),
+    ),
+  ).then(() => undefined)
+
 // The listener is attached before 'open' resolves, so a frame written in the
 // same turn as the handshake is captured rather than dropped — the whole point
 // of these cases, which the shared client steps cannot express.
-const createConnection = async (onOpen?: (ws: WebSocket) => void): Promise<Connection> => {
+const createConnection = async (onOpen?: (ws: WebSocket) => Promise<void> | void): Promise<Connection> => {
   const ws = new WebSocket(RELAY_URL)
   const messages = new ReplaySubject<OutgoingMessage>(1_000, 60_000)
   const frames: OutgoingMessage[] = []
@@ -71,8 +102,7 @@ const createConnection = async (onOpen?: (ws: WebSocket) => void): Promise<Conne
 
   await new Promise<void>((resolve, reject) => {
     ws.once('open', () => {
-      onOpen?.(ws)
-      resolve()
+      Promise.resolve(onOpen?.(ws)).then(resolve, reject)
     })
     ws.once('error', reject)
   })
@@ -97,6 +127,7 @@ When(
     const socketCount = Number(sockets)
     const roundCount = Number(rounds)
     const results: { id: string; eose: string[] }[] = []
+
     world(this).stormExpected = socketCount * roundCount
     world(this).stormResults = results
 
@@ -104,13 +135,14 @@ When(
       const opened = await Promise.all(
         Array.from({ length: socketCount }, (_, index) => {
           const id = `storm-${round}-${index}`
-          return createConnection((ws) => ws.send(JSON.stringify(['REQ', id, { kinds: [1] }]))).then((connection) => ({
-            id,
-            index,
-            connection,
-          }))
+          return createConnection((ws) => sendFrames(ws, [{ data: JSON.stringify(['REQ', id, { kinds: [1] }]) }])).then(
+            (connection) => ({ id, index, connection }),
+          )
         }),
       )
+
+      // Every frame from this round is flushed; only now let admission through.
+      releaseAdmission()
 
       for (const { id, index, connection } of opened) {
         track(this, `storm-${round}-${index}`, connection)
@@ -143,12 +175,15 @@ When(
     const connection = track(
       this,
       'pipelined',
-      await createConnection((ws) => {
-        ws.send(JSON.stringify(['REQ', first, { kinds: [1] }]))
-        ws.send(JSON.stringify(['REQ', second, { kinds: [1] }]))
-      }),
+      await createConnection((ws) =>
+        sendFrames(ws, [
+          { data: JSON.stringify(['REQ', first, { kinds: [1] }]) },
+          { data: JSON.stringify(['REQ', second, { kinds: [1] }]) },
+        ]),
+      ),
     )
 
+    releaseAdmission()
     await waitFor(() => eoseIds(connection).length >= 2, `EOSE for both ${first} and ${second}`)
   },
 )
@@ -157,8 +192,8 @@ Then(
   /^the socket received EOSE for "([^"]+)" and "([^"]+)"$/,
   { timeout: STEP_TIMEOUT_MS },
   function (this: World<Record<string, any>>, first: string, second: string) {
-    // Two REQs are independent handlers, and onClientMessage does not make the
-    // second wait for the first, so each EOSE is sent when its own query
+    // The two REQs are independent handlers, and onClientMessage does not make
+    // the second wait for the first, so each EOSE is sent when its own query
     // finishes. Both replies must arrive; their order is not the relay's to
     // promise, and asserting it would fail a correct run.
     expect(eoseIds(world(this).connections.pipelined).sort()).to.deep.equal([first, second].sort())
@@ -183,11 +218,15 @@ When(
     const connection = track(
       this,
       'cancel',
-      await createConnection((ws) => {
-        ws.send(JSON.stringify(['REQ', 'race-cancel', { authors: [pubkey], kinds: [1] }]))
-        ws.send(JSON.stringify(['CLOSE', 'race-cancel']))
-      }),
+      await createConnection((ws) =>
+        sendFrames(ws, [
+          { data: JSON.stringify(['REQ', 'race-cancel', { authors: [pubkey], kinds: [1] }]) },
+          { data: JSON.stringify(['CLOSE', 'race-cancel']) },
+        ]),
+      ),
     )
+
+    releaseAdmission()
 
     // A second subscription on the same socket is the barrier: its EOSE means
     // the CLOSE ahead of it has been handled, without sleeping on the clock.
@@ -202,6 +241,8 @@ When(
   async function (this: World<Record<string, any>>) {
     const identity = world(this).identities[world(this).publisher]
     const connection = track(this, 'publisher', await createConnection())
+
+    releaseAdmission()
 
     const event = await createEvent(
       { pubkey: identity.pubkey, kind: 1, content: 'race event', tags: [] },
@@ -232,7 +273,7 @@ Then(
 
     expect(cancel.frames.filter((message) => message[0] === 'EVENT' && message[1] === subscription)).to.deep.equal([])
     expect(cancel.frames.filter((message) => message[0] === 'NOTICE')).to.deep.equal([])
-    expect(eoseIds(cancel)).to.include('after-close')
+    expect(eoseIds(cancel)).to.deep.equal(['after-close'])
     expect(cancel.ws.readyState).to.equal(WebSocket.OPEN)
   },
 )
@@ -251,7 +292,13 @@ When(
     world(this).events[world(this).publisher] = world(this).events[world(this).publisher] ?? []
     world(this).events[world(this).publisher].push(event)
 
-    const connection = track(this, 'writer', await createConnection((ws) => ws.send(JSON.stringify(['EVENT', event]))))
+    const connection = track(
+      this,
+      'writer',
+      await createConnection((ws) => sendFrames(ws, [{ data: JSON.stringify(['EVENT', event]) }])),
+    )
+
+    releaseAdmission()
 
     await waitFor(
       () => connection.frames.some((message) => message[0] === 'OK' && message[1] === event.id),
@@ -280,12 +327,16 @@ When(
     const connection = track(
       this,
       'framing',
-      await createConnection((ws) => {
-        ws.send('["REQ","frag', { fin: false })
-        ws.send('-sub",{"kinds":[1]}]', { fin: true })
-        ws.send(Buffer.from('["REQ","binary-frame",{"kinds":[1]}]'), { binary: true })
-      }),
+      await createConnection((ws) =>
+        sendFrames(ws, [
+          { data: '["REQ","frag', options: { fin: false } },
+          { data: '-sub",{"kinds":[1]}]', options: { fin: true } },
+          { data: Buffer.from('["REQ","binary-frame",{"kinds":[1]}]'), options: { binary: true } },
+        ]),
+      ),
     )
+
+    releaseAdmission()
 
     await waitFor(() => eoseIds(connection).length >= 2, 'EOSE for the fragmented and the binary REQ')
 
@@ -316,11 +367,15 @@ When(
     const connection = track(
       this,
       'invalid',
-      await createConnection((ws) => {
-        ws.send('{"broken_json_without_closing_bracket')
-        ws.send(JSON.stringify(['REQ', 'valid-after-bad', { kinds: [1] }]))
-      }),
+      await createConnection((ws) =>
+        sendFrames(ws, [
+          { data: '{"broken_json_without_closing_bracket' },
+          { data: JSON.stringify(['REQ', 'valid-after-bad', { kinds: [1] }]) },
+        ]),
+      ),
     )
+
+    releaseAdmission()
 
     await waitFor(
       () => connection.frames.some((message) => message[0] === 'NOTICE') && eoseIds(connection).length >= 1,
