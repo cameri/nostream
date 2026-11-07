@@ -1,11 +1,14 @@
-import { Given, Then, When, World } from '@cucumber/cucumber'
+import { After, Before, Given, Then, When, World } from '@cucumber/cucumber'
 import { expect } from 'chai'
-import { Observable } from 'rxjs'
+import { assocPath } from 'ramda'
+import { filter, firstValueFrom, map, Observable, throwError, timeout } from 'rxjs'
 import WebSocket from 'ws'
 
 import { createEvent, publishEvent } from '../helpers'
 import { streams } from '../shared'
-import { CommandResult, OutgoingMessage } from '../../../../src/@types/messages'
+import { CommandResult, MessageType, OutgoingMessage } from '../../../../src/@types/messages'
+import { Event } from '../../../../src/@types/event'
+import { Settings } from '../../../../src/@types/settings'
 import { getMasterDbClient } from '../../../../src/database/client'
 import { InviteCodeRepository } from '../../../../src/repositories/invite-code-repository'
 import { SettingsStatic } from '../../../../src/utils/settings'
@@ -18,23 +21,62 @@ const world = (context: World<Record<string, any>>) => context.parameters as Rec
 
 const dbClient = () => getMasterDbClient()
 
-// The relay sends `["AUTH", <challenge>]` the moment a socket opens, and the
-// socket's message stream is a ReplaySubject, so a subscription made inside the
-// same scenario still sees it. The timeout turns a missed challenge into a
-// failure that names the cause rather than a hung step.
+let settingsBeforeNip43: Settings | undefined
+
+// Enabling NIP-43 makes the admission gate apply to every published event
+// (event-message-handler), and no other feature admits the identities it
+// creates — so a relay-wide override would refuse their writes. Turn it on for
+// these scenarios only, and put the shared settings back afterwards.
+Before({ tags: '@nip43' }, function () {
+  settingsBeforeNip43 = SettingsStatic._settings
+  SettingsStatic._settings = assocPath(['nip43', 'enabled'], true)(SettingsStatic._settings) as Settings
+})
+
+After({ tags: '@nip43' }, function () {
+  if (settingsBeforeNip43) {
+    SettingsStatic._settings = settingsBeforeNip43
+  }
+})
+
+// The relay sends `["AUTH", <challenge>]` the moment a socket opens and the
+// socket's stream is a ReplaySubject, so this step usually sees the challenge
+// replayed synchronously inside subscribe(). firstValueFrom owns the teardown,
+// which keeps the replayed path from racing a subscription that does not exist
+// yet.
 const waitForChallenge = (ws: WebSocket): Promise<string> =>
-  new Promise((resolve, reject) => {
+  firstValueFrom(
+    (streams.get(ws) as Observable<OutgoingMessage>).pipe(
+      filter((message) => message[0] === MessageType.AUTH),
+      map((message) => message[1] as string),
+      timeout({
+        first: CHALLENGE_TIMEOUT_MS,
+        with: () => throwError(() => new Error('relay did not send an AUTH challenge')),
+      }),
+    ),
+  )
+
+// The auth event travels as an AUTH message; sending it as an EVENT is refused
+// with 'invalid: auth events must be sent using the AUTH message type'. The
+// subscription is made before the send, so no replayed message can arrive
+// before it exists.
+const sendAuth = (ws: WebSocket, event: Event): Promise<CommandResult> =>
+  new Promise<CommandResult>((resolve, reject) => {
     const observable = streams.get(ws) as Observable<OutgoingMessage>
-    const timer = setTimeout(() => {
-      subscription.unsubscribe()
-      reject(new Error('relay did not send an AUTH challenge'))
-    }, CHALLENGE_TIMEOUT_MS)
 
     const subscription = observable.subscribe((message: OutgoingMessage) => {
-      if (message[0] === 'AUTH') {
-        clearTimeout(timer)
+      if (message[0] === MessageType.OK && message[1] === event.id) {
         subscription.unsubscribe()
-        resolve(message[1] as string)
+        resolve(message as CommandResult)
+      } else if (message[0] === MessageType.NOTICE) {
+        subscription.unsubscribe()
+        reject(new Error(message[1] as string))
+      }
+    })
+
+    ws.send(JSON.stringify(['AUTH', event]), (error?: Error) => {
+      if (error) {
+        subscription.unsubscribe()
+        reject(error)
       }
     })
   })
@@ -44,7 +86,7 @@ const authenticate = async (context: World<Record<string, any>>, name: string): 
   const { pubkey, privkey } = world(context).identities[name]
 
   const challenge = await waitForChallenge(ws)
-  const relayUrl = SettingsStatic._settings.info.relay_url
+  const relayUrl = SettingsStatic._settings?.info?.relay_url as string
 
   const event = await createEvent(
     {
@@ -58,7 +100,7 @@ const authenticate = async (context: World<Record<string, any>>, name: string): 
     privkey,
   )
 
-  return publishEvent(ws, event)
+  return sendAuth(ws, event)
 }
 
 const sendJoinRequest = async (

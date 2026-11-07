@@ -19,8 +19,3 @@ peering:
     - amount: 1000
       unit: msats
       period: 2592000
-
-# NIP-43 membership: the join path is what admits a pubkey through a stored
-# function guarded by ASSERT_SERIALIZED(), and it has no other coverage.
-nip43:
-  enabled: true
