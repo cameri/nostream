@@ -9,9 +9,9 @@ Feature: Commands that race the connection are answered, not just survived
     When 10 sockets subscribe at the open tick, repeated 20 times
     Then each socket received EOSE for its own subscription
 
-  Scenario: Two subscriptions sent in one turn are answered in order
+  Scenario: Two subscriptions sent in one turn are both answered
     When a socket sends REQ "pipelined-1" and then REQ "pipelined-2" in one turn
-    Then the socket received EOSE for "pipelined-1" before "pipelined-2"
+    Then the socket received EOSE for "pipelined-1" and "pipelined-2"
 
   Scenario: A subscription closed in the same turn never receives an event
     Given a publisher called race-cancel-author

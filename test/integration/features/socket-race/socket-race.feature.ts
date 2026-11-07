@@ -132,10 +132,14 @@ When(
 )
 
 Then(
-  /^the socket received EOSE for "([^"]+)" before "([^"]+)"$/,
+  /^the socket received EOSE for "([^"]+)" and "([^"]+)"$/,
   { timeout: STEP_TIMEOUT_MS },
   function (this: World<Record<string, any>>, first: string, second: string) {
-    expect(eoseIds(world(this).connections.pipelined)).to.deep.equal([first, second])
+    // Two REQs are independent handlers, and onClientMessage does not make the
+    // second wait for the first, so each EOSE is sent when its own query
+    // finishes. Both replies must arrive; their order is not the relay's to
+    // promise, and asserting it would fail a correct run.
+    expect(eoseIds(world(this).connections.pipelined).sort()).to.deep.equal([first, second].sort())
   },
 )
 
@@ -272,7 +276,14 @@ Then(
   'both subscriptions received EOSE and the socket still answers',
   { timeout: STEP_TIMEOUT_MS },
   function (this: World<Record<string, any>>) {
-    expect(eoseIds(world(this).connections.framing)).to.deep.equal(['frag-sub', 'binary-frame', 'after-frames'])
+    const ids = eoseIds(world(this).connections.framing)
+
+    // The fragmented and the binary REQ are independent handlers, so their
+    // replies may arrive in either order. after-frames was sent only after
+    // both had answered, so it must come last.
+    expect(ids).to.have.length(3)
+    expect(ids.slice(2)).to.deep.equal(['after-frames'])
+    expect(ids.slice(0, 2).sort()).to.deep.equal(['binary-frame', 'frag-sub'])
   },
 )
 
