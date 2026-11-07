@@ -1,5 +1,11 @@
 # nostream
 
+## 3.15.1
+
+### Patch Changes
+
+- [#1075](https://github.com/cameri/nostream/pull/1075) [`4b4b247`](https://github.com/cameri/nostream/commit/4b4b247f67a8f2a5ca2177254b960eb4620dcd5d) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - Admission now runs inside a serializable transaction. `admit_user()` opens with `PERFORM ASSERT_SERIALIZED()`, so calling it on the default read-committed connection raised `SN_NOT_SERIALIZABLE` and every NIP-43 join request failed. A caller that supplies its own client (the payments path) still runs inside the transaction it passes.
+
 ## 3.15.0
 
 ### Minor Changes
