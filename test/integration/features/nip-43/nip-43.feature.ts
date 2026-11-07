@@ -1,10 +1,10 @@
 import { After, Before, Given, Then, When, World } from '@cucumber/cucumber'
 import { expect } from 'chai'
 import { assocPath } from 'ramda'
-import { filter, firstValueFrom, map, Observable, throwError, timeout } from 'rxjs'
-import WebSocket from 'ws'
+import { filter, firstValueFrom, map, Observable, ReplaySubject, throwError, timeout } from 'rxjs'
+import WebSocket, { RawData } from 'ws'
 
-import { createEvent, publishEvent } from '../helpers'
+import { createEvent, createIdentity, publishEvent } from '../helpers'
 import { streams } from '../shared'
 import { CommandResult, MessageType, OutgoingMessage } from '../../../../src/@types/messages'
 import { Event } from '../../../../src/@types/event'
@@ -16,6 +16,7 @@ import { SettingsStatic } from '../../../../src/utils/settings'
 const JOIN_REQUEST_KIND = 28934
 const AUTH_EVENT_KIND = 22242
 const CHALLENGE_TIMEOUT_MS = 3000
+const RELAY_URL = 'ws://localhost:18808'
 
 const world = (context: World<Record<string, any>>) => context.parameters as Record<string, any>
 
@@ -131,6 +132,33 @@ const isAdmitted = async (pubkey: string): Promise<boolean | undefined> => {
 
   return row?.is_admitted
 }
+
+// The relay sends ["AUTH", <challenge>] as soon as the handshake completes,
+// while the shared `someone called` step only subscribes to the socket after
+// 'open' resolves — by then the challenge can already have been parsed and
+// dropped. Listen from the first frame instead and hand that buffered stream to
+// everything that follows, keeping the socket in the same world slots so the
+// shared After hook still closes it.
+Given(
+  /(\w+) connects and keeps the relay's auth challenge/,
+  async function (this: World<Record<string, any>>, name: string) {
+    const ws = new WebSocket(RELAY_URL)
+    const messages = new ReplaySubject<OutgoingMessage>(20, 10_000)
+    ws.on('message', (raw: RawData) => messages.next(JSON.parse(raw.toString()) as OutgoingMessage))
+
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', () => resolve())
+      ws.once('error', reject)
+    })
+
+    const parameters = world(this)
+    parameters.identities[name] = createIdentity(name)
+    parameters.clients[name] = ws
+    parameters.subscriptions[name] = []
+    parameters.events[name] = []
+    streams.set(ws, messages)
+  },
+)
 
 Given(/an invite code "([^"]+)" with one use/, async (code: string) => {
   const repository = new InviteCodeRepository(dbClient())
