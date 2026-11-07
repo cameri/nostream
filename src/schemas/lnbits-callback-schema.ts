@@ -1,5 +1,5 @@
-import { idSchema } from './base-schema'
 import { z } from 'zod'
+import { idSchema } from './base-schema'
 
 export const lnbitsCallbackQuerySchema = z
   .object({
@@ -7,8 +7,6 @@ export const lnbitsCallbackQuerySchema = z
   })
   .strict()
 
-export const lnbitsCallbackBodySchema = z
-  .object({
-    payment_hash: idSchema,
-  })
-  .strict()
+export const lnbitsCallbackBodySchema = z.object({
+  payment_hash: idSchema,
+})

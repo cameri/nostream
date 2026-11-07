@@ -1,14 +1,13 @@
 import { Request, Response } from 'express'
-
-import { deriveFromSecret, hmacSha256 } from '../../utils/secret'
-import { Invoice, InvoiceStatus } from '../../@types/invoice'
-import { lnbitsCallbackBodySchema, lnbitsCallbackQuerySchema } from '../../schemas/lnbits-callback-schema'
-import { createLogger } from '../../factories/logger-factory'
-import { createSettings } from '../../factories/settings-factory'
-import { getRemoteAddress } from '../../utils/http'
 import { IController } from '../../@types/controllers'
+import { Invoice, InvoiceStatus } from '../../@types/invoice'
 import { IInvoiceRepository } from '../../@types/repositories'
 import { IPaymentsService } from '../../@types/services'
+import { createLogger } from '../../factories/logger-factory'
+import { createSettings } from '../../factories/settings-factory'
+import { lnbitsCallbackBodySchema, lnbitsCallbackQuerySchema } from '../../schemas/lnbits-callback-schema'
+import { getRemoteAddress } from '../../utils/http'
+import { deriveFromSecret, hmacSha256 } from '../../utils/secret'
 import { validateSchema } from '../../utils/validation'
 
 const logger = createLogger('lnbits-callback-controller')
@@ -28,7 +27,11 @@ export class LNbitsCallbackController implements IController {
 
     const queryValidation = validateSchema(lnbitsCallbackQuerySchema)(request.query)
     if (queryValidation.error) {
-      logger('unauthorized request from %s to /callbacks/lnbits: invalid query %o', remoteAddress, queryValidation.error)
+      logger(
+        'unauthorized request from %s to /callbacks/lnbits: invalid query %o',
+        remoteAddress,
+        queryValidation.error,
+      )
       response.status(403).send('Forbidden')
       return
     }
@@ -50,13 +53,25 @@ export class LNbitsCallbackController implements IController {
       return
     }
 
-    const bodyValidation = validateSchema(lnbitsCallbackBodySchema)(request.body)
+    let rawBody = request.body
+    if (typeof rawBody === 'string') {
+      // LNbits 1.x sends the payment object as a JSON *string* inside a JSON
+      // body. Accept both that double-encoded form and a plain object.
+      try {
+        rawBody = JSON.parse(rawBody)
+      } catch {
+        response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Malformed body')
+        return
+      }
+    }
+
+    const bodyValidation = validateSchema(lnbitsCallbackBodySchema)(rawBody)
     if (bodyValidation.error) {
       response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Malformed body')
       return
     }
 
-    const body = request.body
+    const body = bodyValidation.value
     const invoice = await this.paymentsService.getInvoiceFromPaymentsProcessor(body.payment_hash)
     const storedInvoice = await this.invoiceRepository.findById(body.payment_hash)
 
