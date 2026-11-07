@@ -2847,8 +2847,10 @@ mod tests {
         // The boundary is the page's own worst kept row and the page is a heap rooted at it, so
         // an offer costs a comparison with that root and the one sort happens in `finish`.
         // Computing the boundary by sorting the page instead costs `limit` entries sorted on
-        // every accepted offer: 5 000 whole-pubkey ranges at the 500 default sorted 2 828 653
-        // entries, and 5 000 rows tied at one timestamp sorted 2 255 500.
+        // every accepted offer: the 5 000 whole-pubkey ranges built here sorted 2 820 637
+        // entries at the 500 default, and the 5 000 rows tied at one timestamp sorted 2 255 500.
+        // (Round 6's performance review quotes 2 828 653 for a different corpus — 5 001 events
+        // with one quiet author — so the two figures are not the same measurement.)
         let _serial = counting();
 
         // One kind-1 event for each of 5 000 authors: one range per author, one key each.
