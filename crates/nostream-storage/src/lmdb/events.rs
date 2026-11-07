@@ -5,7 +5,8 @@
 //! `(created_at, event_id)` keys inside one blocking closure, and the stream that returns the
 //! rows re-seeks its cursor per batch (see [`ValuesStream`] and [`ReconciliationStream`]).
 
-use std::collections::{BTreeMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BinaryHeap, HashSet};
 use std::future::Future;
 use std::ops::Bound;
 use std::pin::Pin;
@@ -564,8 +565,8 @@ fn body_decoded() {
     probes::decode();
 }
 
-/// The work counters the cost tests assert on: a page's cost is its keys evaluated and its
-/// bodies decoded, and neither is visible in its result.
+/// The work counters the cost tests assert on: a page's cost is its keys evaluated, its bodies
+/// decoded and the entries it sorted, and none of the three is visible in its result.
 #[cfg(test)]
 mod probes {
     use std::sync::Mutex;
@@ -576,10 +577,12 @@ mod probes {
 
     static KEYS: AtomicUsize = AtomicUsize::new(0);
     static DECODES: AtomicUsize = AtomicUsize::new(0);
+    static SORTED: AtomicUsize = AtomicUsize::new(0);
 
     pub(super) fn reset() {
         KEYS.store(0, Ordering::Relaxed);
         DECODES.store(0, Ordering::Relaxed);
+        SORTED.store(0, Ordering::Relaxed);
     }
 
     pub(super) fn key() {
@@ -590,12 +593,20 @@ mod probes {
         DECODES.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub(super) fn sorted(entries: usize) {
+        SORTED.fetch_add(entries, Ordering::Relaxed);
+    }
+
     pub(super) fn keys() -> usize {
         KEYS.load(Ordering::Relaxed)
     }
 
     pub(super) fn decodes() -> usize {
         DECODES.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn sorted_entries() -> usize {
+        SORTED.load(Ordering::Relaxed)
     }
 }
 
@@ -864,8 +875,8 @@ fn admits(filter: &Filter, gates: &Gates) -> Result<bool, StorageError> {
 /// page's order stops once the page holds its own worst kept row: every row after it in that
 /// range is past it, so a later range can no longer arm the stop at the first match it offers.
 /// The comparison is strict, so every row tied at the boundary timestamp is still offered and
-/// the tie breaks as the capture's does; the other ranges offer their matches to a buffer of at
-/// most `2 × limit`, cut back to the best `limit` whenever it fills.
+/// the tie breaks as the capture's does. The page is a heap rooted at that worst kept row, so
+/// the boundary is one peek and an offer is one comparison until it beats the root.
 fn branch(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -929,9 +940,10 @@ fn past(boundary: i64, created_at: i64, descending: bool) -> bool {
     }
 }
 
-/// A page under construction: at most `2 × limit` entries, cut back to the best `limit`.
+/// A page under construction: at most `limit` entries, held so the row the page would drop first
+/// is the heap's root.
 struct Page {
-    entries: Vec<(i64, EventId)>,
+    kept: BinaryHeap<Kept>,
     seen: HashSet<EventId>,
     descending: bool,
 }
@@ -939,7 +951,7 @@ struct Page {
 impl Page {
     fn new(descending: bool) -> Self {
         Self {
-            entries: Vec::new(),
+            kept: BinaryHeap::new(),
             seen: HashSet::new(),
             descending,
         }
@@ -950,36 +962,82 @@ impl Page {
         if limit == 0 || !self.seen.insert(key.1) {
             return;
         }
-        self.entries.push(key);
-        if self.entries.len() >= limit.saturating_mul(2) {
-            self.cut(limit);
+        if self.kept.len() < limit {
+            self.kept.push(Kept {
+                entry: key,
+                descending: self.descending,
+            });
+            return;
+        }
+        let Some(worst) = self.kept.peek().map(|kept| kept.entry) else {
+            return;
+        };
+        // A row the page would drop on its way in cannot be in it, and its id must leave `seen`
+        // with it so that a later range may offer it again.
+        if page_order(key, worst, self.descending) == Ordering::Less {
+            if let Some(dropped) = self.kept.pop() {
+                self.seen.remove(&dropped.entry.1);
+            }
+            self.kept.push(Kept {
+                entry: key,
+                descending: self.descending,
+            });
+        } else {
+            self.seen.remove(&key.1);
         }
     }
 
     /// The timestamp of the worst row the page would keep, once it holds `limit` of them.
     ///
     /// A range that runs in the page's order cannot offer a row past it, so the walk stops
-    /// there. Cutting to the limit first is what makes the boundary the page's own rather than
-    /// the last row offered, and it is only paid once the page is already full.
-    fn boundary(&mut self, limit: usize) -> Option<i64> {
-        if limit == 0 || self.entries.len() < limit {
+    /// there. That row is the heap's root, so the boundary costs one peek and the page is cut to
+    /// the limit as it fills rather than when the boundary is read.
+    fn boundary(&self, limit: usize) -> Option<i64> {
+        if limit == 0 || self.kept.len() < limit {
             return None;
         }
-        self.cut(limit);
-        self.entries.last().map(|(created_at, _)| *created_at)
+        self.kept.peek().map(|worst| worst.entry.0)
     }
 
-    fn finish(mut self, limit: usize) -> Vec<(i64, EventId)> {
-        self.cut(limit);
-        self.entries
-    }
-
-    fn cut(&mut self, limit: usize) {
-        sort_page(&mut self.entries, self.descending);
-        self.entries.truncate(limit);
-        self.seen = self.entries.iter().map(|(_, id)| *id).collect();
+    /// The page in the capture's order, which is the one sort the whole page pays.
+    fn finish(self, limit: usize) -> Vec<(i64, EventId)> {
+        let mut page: Vec<(i64, EventId)> = self.kept.into_iter().map(|kept| kept.entry).collect();
+        #[cfg(test)]
+        probes::sorted(page.len());
+        sort_page(&mut page, self.descending);
+        page.truncate(limit);
+        page
     }
 }
+
+/// A page entry, ordered by the page's own comparison: the row the page would drop first is the
+/// greatest of them, so a max-heap keeps it at the root. Every entry of one heap shares its
+/// direction.
+#[derive(Clone, Copy)]
+struct Kept {
+    entry: (i64, EventId),
+    descending: bool,
+}
+
+impl Ord for Kept {
+    fn cmp(&self, other: &Self) -> Ordering {
+        page_order(self.entry, other.entry, self.descending)
+    }
+}
+
+impl PartialOrd for Kept {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for Kept {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for Kept {}
 
 /// One range's keys, in the plan's order.
 enum Scan<'txn> {
@@ -1011,12 +1069,18 @@ fn scan<'txn>(
     })
 }
 
-fn sort_page(page: &mut [(i64, EventId)], descending: bool) {
+/// The capture's page order: newest first when `descending`, oldest first otherwise, the
+/// smaller id first on a tie.
+fn page_order(left: (i64, EventId), right: (i64, EventId), descending: bool) -> Ordering {
     if descending {
-        page.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+        right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1))
     } else {
-        page.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1))
     }
+}
+
+fn sort_page(page: &mut [(i64, EventId)], descending: bool) {
+    page.sort_by(|left, right| page_order(*left, *right, descending));
 }
 
 /// The index a filter is answered from, the ranges within it, and whether a range's key order
@@ -1807,14 +1871,14 @@ mod tests {
     }
 
     #[test]
-    fn a_page_buffer_holds_at_most_twice_its_limit() {
+    fn a_page_holds_at_most_its_limit() {
         let mut page = Page::new(true);
         for step in 0u8..=100 {
             page.offer((i64::from(step), id(step)), 3);
             assert!(
-                page.entries.len() <= 6,
-                "the buffer is cut back to the limit whenever it fills: {} entries",
-                page.entries.len()
+                page.kept.len() <= 3,
+                "the page is its limit, never a buffer behind it: {} entries",
+                page.kept.len()
             );
         }
         assert_eq!(page.finish(3).len(), 3);
@@ -1907,6 +1971,22 @@ mod tests {
             sig: Signature::from_byte_array([0; 64]),
         };
         nostream_core::crypto::sign_event(&[secret; 32], &mut wire).expect("the event signs");
+        EventRecord::from_event(&wire)
+    }
+
+    /// A signed event of one author and its own body, for a corpus `signed` cannot build: more
+    /// than its 256 authors, or several rows at one `created_at` under one author.
+    fn signed_by(secret: [u8; 32], created_at: i64, content: &str) -> EventRecord {
+        let mut wire = Event {
+            id: EventId::from_byte_array([0; 32]),
+            pubkey: Pubkey::from_byte_array([0; 32]),
+            created_at,
+            kind: Kind(1),
+            tags: Vec::new(),
+            content: content.to_owned(),
+            sig: Signature::from_byte_array([0; 64]),
+        };
+        nostream_core::crypto::sign_event(&secret, &mut wire).expect("the event signs");
         EventRecord::from_event(&wire)
     }
 
@@ -2720,6 +2800,114 @@ mod tests {
         );
     }
 
+    /// The page `branch` returns over a filter whose plan seeks `ranges` time-ordered ranges,
+    /// with the entries it sorted counted: the accumulator holds the page as a heap rooted at
+    /// its worst kept row, so the only sort is the one in `finish` and the request sorts its own
+    /// `limit` rows however many ranges it walks.
+    fn assert_page_sorts_once(
+        txn: &RoTxn<'_>,
+        databases: &Databases,
+        filter: &Filter,
+        ranges: usize,
+    ) -> Vec<(i64, EventId)> {
+        let plan = plan(filter, databases);
+        assert_eq!(plan.ranges.len(), ranges, "the plan seeks its own ranges");
+        assert!(plan.ordered, "and a range's key order is the page's");
+        probes::reset();
+        let page = branch(
+            txn,
+            databases,
+            filter,
+            &Gates::default(),
+            0,
+            false,
+            page_limit(filter),
+        )
+        .expect("the page");
+        assert_eq!(
+            probes::sorted_entries(),
+            page.len(),
+            "one page sorts its own rows once, whatever the number of ranges"
+        );
+        assert_eq!(
+            probes::sorted_entries(),
+            page_limit(filter),
+            "and a full page is exactly the limit"
+        );
+        assert_eq!(
+            page,
+            reference_page(txn, databases, filter),
+            "the page is the store's own answer"
+        );
+        page
+    }
+
+    #[test]
+    fn a_page_sorts_its_own_limit_once_however_many_ranges_it_seeks() {
+        // The boundary is the page's own worst kept row and the page is a heap rooted at it, so
+        // an offer costs a comparison with that root and the one sort happens in `finish`.
+        // Computing the boundary by sorting the page instead costs `limit` entries sorted on
+        // every accepted offer: 5 000 whole-pubkey ranges at the 500 default sorted 2 828 653
+        // entries, and 5 000 rows tied at one timestamp sorted 2 255 500.
+        let _serial = counting();
+
+        // One kind-1 event for each of 5 000 authors: one range per author, one key each.
+        let (_directory, env, databases) = store();
+        let records: Vec<EventRecord> = (0..MAX_PAGE_KEYS as u32)
+            .map(|author| {
+                let mut secret = [0u8; 32];
+                secret[..4].copy_from_slice(&author.to_be_bytes());
+                secret[31] = 1;
+                signed_by(secret, i64::from(author), &author.to_string())
+            })
+            .collect();
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let filter = Filter {
+            authors: Some(
+                records
+                    .iter()
+                    .map(|record| record.event.pubkey.to_string())
+                    .collect(),
+            ),
+            kinds: Some(vec![Kind(1)]),
+            limit: Some(DEFAULT_FILTER_LIMIT),
+            ..Filter::default()
+        };
+        let page = assert_page_sorts_once(&transaction, &databases, &filter, MAX_PAGE_KEYS);
+        assert_eq!(
+            created(&page),
+            (MAX_PAGE_KEYS as i64 - DEFAULT_FILTER_LIMIT as i64..MAX_PAGE_KEYS as i64)
+                .rev()
+                .collect::<Vec<i64>>(),
+            "the page is the newest `limit` authors, newest first"
+        );
+
+        // One author's 5 000 rows at one timestamp: one range, and every row past the limit is
+        // a match the accumulator considers.
+        let (_directory, env, databases) = store();
+        let records: Vec<EventRecord> = (0..MAX_PAGE_KEYS as u32)
+            .map(|step| signed_by([9; 32], 5_000, &step.to_string()))
+            .collect();
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let filter = Filter {
+            authors: Some(vec![records[0].event.pubkey.to_string()]),
+            kinds: Some(vec![Kind(1)]),
+            limit: Some(DEFAULT_FILTER_LIMIT),
+            ..Filter::default()
+        };
+        let page = assert_page_sorts_once(&transaction, &databases, &filter, 1);
+        assert!(
+            created(&page).iter().all(|created_at| *created_at == 5_000),
+            "every row the page holds is at the boundary timestamp"
+        );
+        assert!(
+            page.windows(2).all(|pair| pair[0].1 < pair[1].1),
+            "so the tie is broken by the smaller id"
+        );
+    }
+
     #[test]
     fn a_limited_page_over_several_time_ordered_ranges_holds_the_global_newest_rows() {
         // A page is one accumulator across every range the plan seeks: an author × kind
@@ -2806,6 +2994,72 @@ mod tests {
             );
             assert_page_agrees(&transaction, &databases, &filter, expected, what);
         }
+    }
+
+    #[test]
+    fn a_tie_at_the_boundary_timestamp_is_decided_by_a_later_range() {
+        // A row tied with the page's worst kept row is not past the boundary, so a later range
+        // still offers it and the smaller id wins the tie. Stopping at the boundary instead of
+        // after it would keep the earlier range's row.
+        let _serial = counting();
+        let (_directory, env, databases) = store();
+        let mut records = vec![
+            signed(11, 1, 200, Vec::new()),
+            signed(11, 3, 200, Vec::new()),
+            signed(11, 1, 190, Vec::new()),
+            signed(11, 3, 190, Vec::new()),
+        ];
+        // The tie breaks on the id, so the pair at the boundary timestamp is chosen for it: the
+        // row of the kind whose range runs second carries the smaller id.
+        let (first, second) = (0..64)
+            .map(|step| {
+                (
+                    signed(11, 1, 180, vec![vec!["x".to_owned(), format!("a{step}")]]),
+                    signed(11, 3, 180, vec![vec!["x".to_owned(), format!("b{step}")]]),
+                )
+            })
+            .find(|(first, second)| second.event.id < first.event.id)
+            .expect("a pair whose later range carries the smaller id");
+        records.push(first);
+        let tied = second.event.id;
+        records.push(second);
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let filter = Filter {
+            authors: Some(vec![records[0].event.pubkey.to_string()]),
+            kinds: Some(vec![Kind(1), Kind(3)]),
+            limit: Some(5),
+            ..Filter::default()
+        };
+        let chosen = plan(&filter, &databases);
+        assert_eq!(
+            (chosen.path, chosen.ranges.len()),
+            (AccessPath::Authors, 2),
+            "one range per kind, the first kind's before the second's"
+        );
+
+        assert_page_agrees(
+            &transaction,
+            &databases,
+            &filter,
+            &[200, 200, 190, 190, 180],
+            "a tie at the boundary",
+        );
+        let page = branch(
+            &transaction,
+            &databases,
+            &filter,
+            &Gates::default(),
+            0,
+            false,
+            page_limit(&filter),
+        )
+        .expect("the page");
+        assert_eq!(
+            page.last().map(|(_, id)| *id),
+            Some(tied),
+            "the tie goes to the smaller id, from the range that runs later"
+        );
     }
 
     #[test]
