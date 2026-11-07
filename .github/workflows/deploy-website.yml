@@ -31,9 +31,6 @@ on:
   # head_branch is the tag the release named, so this selects relay releases
   # (`nostream@X.Y.Z`) and leaves the website ones, which the Release workflow
   # skips as `skipped`, alone.
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
   workflow_dispatch:
 
 jobs:
@@ -57,11 +54,6 @@ jobs:
     # the site's build-time version and changelog worth redeploying.
     if: >-
       ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
-      (github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      (startsWith(github.event.workflow_run.head_branch || '', 'nostream@') ||
-      (github.event.workflow_run.event == 'workflow_dispatch' &&
-      github.event.workflow_run.head_branch == 'main'))) ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
     name: Build and deploy to Cloudflare Workers
     runs-on: ubuntu-latest
