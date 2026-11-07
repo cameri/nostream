@@ -1,16 +1,38 @@
-import { Given, Then, When, World } from '@cucumber/cucumber'
+import { After, Before, Given, Then, When, World } from '@cucumber/cucumber'
 import { expect } from 'chai'
 import { ReplaySubject } from 'rxjs'
+import Sinon from 'sinon'
 import WebSocket, { RawData } from 'ws'
 
 import { createEvent, createIdentity, publishEvent } from '../helpers'
 import { streams } from '../shared'
 import { OutgoingMessage } from '../../../../src/@types/messages'
 import { Event } from '../../../../src/@types/event'
+import * as rateLimiterMiddleware from '../../../../src/handlers/request-handlers/rate-limiter-middleware'
 
 const RELAY_URL = 'ws://localhost:18808'
 const MESSAGE_TIMEOUT_MS = 10_000
 const STEP_TIMEOUT_MS = 120_000
+// Admission is a Redis round trip in production, and the frames a client
+// writes at the handshake arrive inside that window. Without a delay the check
+// answers before the first frame can reach the server, which makes these cases
+// pass against an adapter that drops it.
+const ADMISSION_DELAY_MS = 50
+
+let admissionSandbox: Sinon.SinonSandbox | undefined
+
+Before({ tags: '@socket-race' }, function () {
+  admissionSandbox = Sinon.createSandbox()
+  admissionSandbox.stub(rateLimiterMiddleware, 'isRateLimited').callsFake(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ADMISSION_DELAY_MS))
+    return false
+  })
+})
+
+After({ tags: '@socket-race' }, function () {
+  admissionSandbox?.restore()
+  admissionSandbox = undefined
+})
 
 const world = (context: World<Record<string, any>>) => context.parameters as Record<string, any>
 
