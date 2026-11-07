@@ -128,11 +128,23 @@ export class UserRepository implements IUserRepository {
     return typeof result === 'number' ? result : 0
   }
 
-  public async admitUser(pubkey: Pubkey, admittedAt: Date, client: DatabaseClient = this.dbClient): Promise<void> {
+  public async admitUser(pubkey: Pubkey, admittedAt: Date, client?: DatabaseClient): Promise<void> {
     logger('admit user: %s at %s', pubkey, admittedAt)
 
+    const admit = (executor: DatabaseClient) =>
+      executor.raw('select admit_user(?, ?)', [toBuffer(pubkey), admittedAt.toISOString()])
+
     try {
-      await client.raw('select admit_user(?, ?)', [toBuffer(pubkey), admittedAt.toISOString()])
+      // admit_user() opens with PERFORM ASSERT_SERIALIZED(), so it has to run
+      // inside a serializable transaction: on the default read-committed
+      // connection Postgres raises SN_NOT_SERIALIZABLE and every join request
+      // fails. Callers that already hold a transaction pass their own client.
+      if (client) {
+        await admit(client)
+        return
+      }
+
+      await this.dbClient.transaction((trx) => admit(trx), { isolationLevel: 'serializable' })
     } catch (error) {
       logger.error('Unable to admit user. Reason:', error)
 

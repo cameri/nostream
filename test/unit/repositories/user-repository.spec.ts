@@ -326,6 +326,39 @@ describe('UserRepository', () => {
         repository.admitUser(pubkeyHex, fixedDate, client),
       ).to.be.rejectedWith(dbError)
     })
+
+    // admit_user() is guarded by PERFORM ASSERT_SERIALIZED(), which raises
+    // SN_NOT_SERIALIZABLE on the default read-committed connection. A caller
+    // that supplies no client therefore needs this method to open one.
+    it('opens a serializable transaction when no client is supplied', async () => {
+      const rawStub = sandbox.stub().resolves()
+      const transactionStub = sandbox.stub().callsFake(async (callback: (trx: unknown) => Promise<void>) =>
+        callback({ raw: rawStub }),
+      )
+      const client = { transaction: transactionStub } as unknown as DatabaseClient
+      const admittingRepository = new UserRepository(client, eventRepository)
+
+      await admittingRepository.admitUser(pubkeyHex, fixedDate)
+
+      expect(transactionStub).to.have.been.calledOnce
+      expect(transactionStub.firstCall.args[1]).to.deep.equal({ isolationLevel: 'serializable' })
+      expect(rawStub).to.have.been.calledOnce
+      expect(rawStub.firstCall.args[0]).to.equal('select admit_user(?, ?)')
+      expect(Buffer.isBuffer(rawStub.firstCall.args[1][0])).to.be.true
+      expect(rawStub.firstCall.args[1][1]).to.equal(fixedDate.toISOString())
+    })
+
+    it('does not open a transaction when the caller supplies a client', async () => {
+      const rawStub = sandbox.stub().resolves()
+      const transactionStub = sandbox.stub()
+      const client = { raw: rawStub, transaction: transactionStub } as unknown as DatabaseClient
+      const admittingRepository = new UserRepository(client, eventRepository)
+
+      await admittingRepository.admitUser(pubkeyHex, fixedDate, client)
+
+      expect(rawStub).to.have.been.calledOnce
+      expect(transactionStub).to.have.not.been.called
+    })
   })
 
   describe('.revokeAdmission', () => {
