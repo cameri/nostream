@@ -52,7 +52,7 @@ dependency and could still tear against the LMDB file.
 The price is recorded with the decision: 29 named databases maintained by hand, `DISTINCT`
 and `OFFSET` become cursor walks (`BTreeSet` for `find_actionable_targets`, a skip count for
 `find_pending_invoices`), and the columns' `CHECK` and foreign-key constraints move into
-Rust (§ Constraints, below).
+Rust (§ Constraints move into Rust, below).
 
 Rows are versioned: one format byte (`ROW_FORMAT_VERSION = 1`), then `serde_json`, the byte
 per database rather than per table. ADR 0003 trigger 6 asked for a version marker before a
@@ -327,8 +327,8 @@ its op is one of the five above — so the list cannot grow without the diff sho
 - Postgres remains the reference: every query path is written against `sql.rs`'s predicates
   and orderings, and the shared executor is what proves it.
 - Retention's batch composition can differ from Postgres' planner-chosen order when more than
-  1000 rows qualify; both return 1000 rows classified by the same precedence (D13 in
-  `spec.md`, Assumption 10). The corpus is 483 events, so no current entry reaches it.
+  1000 rows qualify; both return 1000 rows classified by the same precedence (Assumption 10
+  in `spec.md`). The corpus is 483 events, so no current entry reaches it.
 - A page is bounded by `MAX_PAGE_KEYS` and a read holds a page rather than a range, so a
   client cannot choose how much a request materialises; a count is exact and holds no set.
   The price is that a `#g`-prefix page walks its whole (time-bounded) range, an author page
