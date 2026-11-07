@@ -184,18 +184,20 @@ The resident set of a read is the page, never the range it was chosen from, and 
 that page is the backend's to bound: the effective limit is the filter's own or the capture's
 default of 500, clamped to `MAX_PAGE_KEYS = 5 000` — the shipped
 `limits.client.subscription.maxLimit` — so a wire `limit` cannot choose an allocation, whether
-or not a deployment sets `maxLimit`. A filter's branch keeps at most twice that many keys and
-cuts back to the best half whenever the buffer fills, and that page is one accumulator across
-every range the plan seeks: the top `limit` is global to them. A range whose key order *is* the
-page's order stops at the page's own worst kept row — not at the first row the range happened
-to offer — keeping every row at that timestamp so a tie breaks as the capture's does.
+or not a deployment sets `maxLimit`. A filter's branch holds at most that many rows — the page
+itself, kept as a heap rooted at the row it would drop first, so an offer is one comparison
+against that root and the page is sorted once, when it is returned — and that page is one
+accumulator across every range the plan seeks: the top `limit` is global to them. A range whose
+key order *is* the page's order stops at the page's own worst kept row — the heap's root, not
+the first row the range happened to offer — keeping every row at that timestamp so a tie breaks
+as the capture's does.
 
 The index is chosen from the filter, and which ranges can stop early follows from the key:
 
 | filter | index | stops when full |
 |---|---|---|
 | `ids` | `events`, a point or prefix range per criterion | never: the key is the id, so the range runs in id order |
-| `authors` + `kinds` | `events_by_author`, one range per author criterion and kind | when the author criterion is a whole pubkey, so a range is one `pubkey ‖ kind ‖ created_at` run |
+| `authors` + `kinds` | `events_by_author`, one range per whole-pubkey criterion and kind, and one whole-tail range per prefix criterion | when every criterion is a whole pubkey, so a range is one `pubkey ‖ kind ‖ created_at` run; a prefix range spans every kind |
 | `authors` alone | `events_by_created_at` | yes — see below |
 | a `#` + letter criterion | `tags`, one range per criterion | for an exact value; a `#g` prefix spans values, so its range runs whole |
 | anything else | `events_by_created_at` | yes |
@@ -203,10 +205,16 @@ The index is chosen from the filter, and which ranges can stop early follows fro
 Every hex criterion's bounds are widened to the field they name — 32 bytes for an id or a
 pubkey — before anything the key carries after it is appended. A prefix is therefore compared
 against its own field's bytes and never against the kind, the timestamp or the id that follow,
-whether the path is `events` or `events_by_author`; an author prefix with `kinds` seeks the
-kind at byte 32 as a whole pubkey does, and `hex_ranges` (`encoding.rs`) is the one place that
-rule lives. A criterion another already covers, and a repeated kind, seek one range, so a
-count that walks ranges whole visits those keys once.
+whether the path is `events` or `events_by_author`. That is why an author prefix with `kinds`
+seeks no kind at byte 32: its upper bound runs to the end of the pubkey field, a kind appended
+after that bound is compared where no key writes one, and every kind's range would then contain
+every other kind's keys — a count visiting each row once per kind. `author_kind_ranges`
+(`events.rs`) is where the split is composed, a whole pubkey to one range per kind and a prefix
+to one range over its whole tail, and it bounds the composition too: a whole-pubkey × kind
+product past `MAX_PAGE_KEYS` composes no range at all and the filter is answered from
+`events_by_created_at` instead. `hex_ranges` (`encoding.rs`) is the one place the widening rule
+lives. A criterion another already covers, and a repeated kind, seek one range, so a count that
+walks ranges whole visits those keys once.
 
 The `authors`-alone row is the capture's own shape rather than the faster index: the author
 index orders by kind before `created_at`, so a page ordered by time cannot stop inside it, and
