@@ -270,9 +270,9 @@ contract is added here, and the same tree is what the Postgres arm is migrated f
 (`src/repositories/user-subscription-repository.ts`) and no Rust trait, and the capture holds no
 entry that exercises it, so it belongs to the job that adds that repository's slice.
 `events.first_seen` is inside the contract and carries no index — the sqlx tree declares the
-column (`migrations/20220524153400_create_events_table.sql:10`) and indexes it nowhere — so this
-backend stores it in the row's JSON body, sets it at create and preserves it across a replace,
-and seeks nothing by it.
+column (`crates/nostream-storage/migrations/20220524153400_create_events_table.sql:10`) and
+indexes it nowhere — so this backend stores it in the row's JSON body, sets it at create and
+preserves it across a replace, and seeks nothing by it.
 
 The two knex migrations the sqlx tree lacks are closed elsewhere, each by the job that first needs
 it:
