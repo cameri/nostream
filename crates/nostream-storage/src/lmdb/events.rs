@@ -1872,6 +1872,7 @@ mod tests {
 
     #[test]
     fn a_page_holds_at_most_its_limit() {
+        let _serial = counting();
         let mut page = Page::new(true);
         for step in 0u8..=100 {
             page.offer((i64::from(step), id(step)), 3);
