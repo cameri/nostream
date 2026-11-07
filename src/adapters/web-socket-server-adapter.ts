@@ -175,8 +175,6 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
       earlyMessages.push({ data, isBinary })
     }
 
-    client.on('message', onEarlyMessage)
-    client.pause()
 
     let accepted = false
     try {
