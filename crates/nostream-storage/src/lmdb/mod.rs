@@ -79,7 +79,8 @@ pub(crate) const STREAM_BATCH_ITEMS: usize = 256;
 pub(crate) const STREAM_BATCH_KEYS: usize = 256;
 
 /// The settings gates the capture reads per query. The LMDB backend records only whether
-/// NIP-50 is on: it has no search implementation (ADR 0010, Out of scope).
+/// NIP-50 is on: it has no search implementation (ADR 0010, "Oracle: two arms, one executor" —
+/// entry 21, out of scope, not a permitted failure).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Gates {
     pub(crate) nip50: bool,
