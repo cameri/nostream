@@ -20,6 +20,25 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 3_000): Promise<voi
   }
 }
 
+// Every case below sends at the open tick, but an immediately resolved
+// admission check answers before the client's frames can reach the server, so
+// the adapter installs its normal listener first and the buffering path never
+// runs. Hold admission open until the frames are known to be in the server's
+// queue, then admit every client at once.
+const holdAdmission = (stub: Sinon.SinonStub) => {
+  let release: (() => void) | undefined
+  stub.returns(
+    new Promise<boolean>((resolve) => {
+      release = () => resolve(false)
+    }),
+  )
+
+  return async (settleMs = 50) => {
+    await new Promise((resolve) => setTimeout(resolve, settleMs))
+    release?.()
+  }
+}
+
 describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)', function () {
   this.timeout(10_000)
 
@@ -132,14 +151,19 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
   it('Shape 1: handles concurrent reconnect storm with REQs sent at open tick across N sockets', async () => {
     const address = server.address() as AddressInfo
     const N = 10
+    const admit = holdAdmission(isRateLimitedStub)
+    const sentIds = new Set<string>()
 
     const connectPromises = Array.from({ length: N }).map((_, i) => {
       return new Promise<void>((resolve, reject) => {
         const ws = new WebSocket(`ws://127.0.0.1:${address.port}`)
         clients.push(ws)
 
+        const id = `sub-storm-${i}`
+        sentIds.add(id)
+
         ws.on('open', () => {
-          ws.send(Buffer.from(JSON.stringify(['REQ', `sub-storm-${i}`, { kinds: [1] }])))
+          ws.send(Buffer.from(JSON.stringify(['REQ', id, { kinds: [1] }])))
           resolve()
         })
         ws.on('error', reject)
@@ -147,6 +171,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
     })
 
     await Promise.all(connectPromises)
+    await admit()
 
     await waitFor(() => {
       let total = 0
@@ -157,11 +182,21 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
     })
 
     expect(receivedFramesByClient.size).to.equal(N)
+
+    const receivedIds: string[] = []
     for (const frames of receivedFramesByClient.values()) {
-      expect(frames.length).to.be.at.least(1)
+      expect(frames).to.have.length(1)
       const parsed = JSON.parse(frames[0].toString())
+      expect(parsed).to.have.length(3)
       expect(parsed[0]).to.equal('REQ')
+      expect(parsed[1]).to.match(/^sub-storm-\d+$/)
+      expect(parsed[2]).to.deep.equal({ kinds: [1] })
+      receivedIds.push(parsed[1])
     }
+
+    // One complete command per socket, and the N ids received are exactly the
+    // N ids sent — a duplicated or cross-wired command would break the set.
+    expect(receivedIds.sort()).to.deep.equal([...sentIds].sort())
   })
 
   // --------------------------------------------------------------------------
@@ -169,6 +204,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
   // --------------------------------------------------------------------------
   it('Shape 2: delivers pipelined commands in the exact order sent', async () => {
     const address = server.address() as AddressInfo
+    const admit = holdAdmission(isRateLimitedStub)
     const client = new WebSocket(`ws://127.0.0.1:${address.port}`)
     clients.push(client)
 
@@ -184,6 +220,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
     client.send(cmd1)
     client.send(cmd2)
 
+    await admit()
     await waitFor(() => (receivedFrames?.length ?? 0) >= 2)
 
     expect(receivedFrames.map((f) => f.toString())).to.deep.equal([cmd1.toString(), cmd2.toString()])
@@ -194,6 +231,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
   // --------------------------------------------------------------------------
   it('Shape 3: processes REQ followed immediately by CLOSE without error or socket termination', async () => {
     const address = server.address() as AddressInfo
+    const admit = holdAdmission(isRateLimitedStub)
     const client = new WebSocket(`ws://127.0.0.1:${address.port}`)
     clients.push(client)
 
@@ -205,6 +243,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
     client.send(Buffer.from('["REQ","race-cancel",{"kinds":[1]}]'))
     client.send(Buffer.from('["CLOSE","race-cancel"]'))
 
+    await admit()
     await waitFor(() => (receivedFrames?.length ?? 0) >= 2)
 
     const parsed = receivedFrames.map((f) => JSON.parse(f.toString()))
@@ -218,6 +257,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
   // --------------------------------------------------------------------------
   it('Shape 4: delivers EVENT sent in the same turn as open', async () => {
     const address = server.address() as AddressInfo
+    const admit = holdAdmission(isRateLimitedStub)
     const client = new WebSocket(`ws://127.0.0.1:${address.port}`)
     clients.push(client)
 
@@ -231,6 +271,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
       client.on('error', reject)
     })
 
+    await admit()
     await waitFor(() => (receivedFrames?.length ?? 0) >= 1)
 
     expect(JSON.parse(receivedFrames[0].toString())).to.deep.equal(testEvent)
@@ -241,6 +282,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
   // --------------------------------------------------------------------------
   it('Shape 5: correctly receives fragmented frames and binary frames and keeps socket usable', async () => {
     const address = server.address() as AddressInfo
+    const admit = holdAdmission(isRateLimitedStub)
     const client = new WebSocket(`ws://127.0.0.1:${address.port}`)
     clients.push(client)
 
@@ -261,6 +303,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
     const nextCommand = Buffer.from('["REQ","next-cmd",{"kinds":[1]}]')
     client.send(nextCommand)
 
+    await admit()
     await waitFor(() => (receivedFrames?.length ?? 0) >= 3)
 
     expect(receivedFrames[0].toString()).to.equal('["REQ","frag-sub",{"kinds":[1]}]')
@@ -273,6 +316,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
   // --------------------------------------------------------------------------
   it('Shape 6: maintains socket usability for next valid command after invalid JSON', async () => {
     const address = server.address() as AddressInfo
+    const admit = holdAdmission(isRateLimitedStub)
     const client = new WebSocket(`ws://127.0.0.1:${address.port}`)
     clients.push(client)
 
@@ -287,6 +331,7 @@ describe('WebSocketServerAdapter real socket non-sequential & race cases (#1052)
     client.send(badPayload)
     client.send(nextValidCommand)
 
+    await admit()
     await waitFor(() => (receivedFrames?.length ?? 0) >= 2)
 
     expect(receivedFrames[0].toString()).to.equal(badPayload.toString())
