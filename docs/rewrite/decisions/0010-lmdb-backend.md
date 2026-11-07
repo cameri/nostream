@@ -14,7 +14,8 @@ with the same integration test the Postgres backend passes replayed against it.
 
 `spec.md` records ten decisions (D1–D10) with their reasons and their measurements. This
 document keeps the parts a later reader needs to judge the code: where the state lives, how
-a value is shaped, what the seam does not offer, and what the oracle therefore measures.
+a value is shaped, what the seam does not offer, which schema it implements, and what the oracle
+therefore measures.
 
 ## The backend is a feature of the crate, not a crate
 
@@ -255,6 +256,38 @@ schema functions they replace. `confirm_invoice` scales by `sats × 1000`, `msat
 `int8` would overflow. `reports.id` is allocated from `meta` starting at 1; every other
 generated id is a UUID v4 in canonical text form, which is why `uuid` (v4) is the job's only
 new dependency.
+
+## The schema contract is 37 migrations (D9)
+
+The store implements the contract both schema oracles pin: 37 migrations
+(`crates/nostream-storage/migrations/`, the count `crates/nostream-storage/tests/migrations.rs:25`
+asserts as `EXPECTED_MIGRATIONS`) and the captured catalogue's own `subject.migration_count: 37`
+(`crates/nostream-storage/tests/fixtures/schema.json`). No table, column or index outside that
+contract is added here, and the same tree is what the Postgres arm is migrated from.
+
+**The seam therefore stays 9 of the capture's 10 repositories.** The tenth is
+`user_subscriptions`: it has a TypeScript repository
+(`src/repositories/user-subscription-repository.ts`) and no Rust trait, and the capture holds no
+entry that exercises it, so it belongs to the job that adds that repository's slice.
+`events.first_seen` is inside the contract and carries no index — the sqlx tree declares the
+column (`migrations/20220524153400_create_events_table.sql:10`) and indexes it nowhere — so this
+backend stores it in the row's JSON body, sets it at create and preserves it across a replace,
+and seeks nothing by it.
+
+The two knex migrations the sqlx tree lacks are closed elsewhere, each by the job that first needs
+it:
+
+- `migrations/20261016_120000_create_user_subscriptions_table.js` creates `user_subscriptions`
+  and adds three nullable `invoices` columns (`plan_id`, `period_start`, `period_end`) — closed by
+  the job that adds the capture's tenth repository.
+- `migrations/20261025_120000_add_moderation_stats_first_seen_indexes.js` adds two partial
+  `events` indexes on `first_seen` (`events_live_first_seen_pubkey_idx`,
+  `events_live_first_seen_remote_address_idx`, built outside a transaction) and changes no column
+  this store encodes — closed by the job that ports the moderation-stats query.
+
+Both consequences — nine repositories of ten, and a `first_seen` stored but never indexed — are
+stated in `lib.rs`'s "does not own" paragraph, which is where a reader of the crate meets them
+first.
 
 ## Oracle: two arms, one executor
 
