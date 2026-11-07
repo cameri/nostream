@@ -49,6 +49,9 @@ importers:
       express:
         specifier: 4.22.1
         version: 4.22.1
+      helmet:
+        specifier: ^8.3.0
+        version: 8.3.0
       js-yaml:
         specifier: 4.3.2
         version: 4.3.2
@@ -2962,6 +2965,10 @@ packages:
   he@1.2.0:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
+
+  helmet@8.3.0:
+    resolution: {integrity: sha512-Qgpiaws3Sm30Av8Eah6sjMCZZwjlBu+E68rhpCWBshY1lb09HtLwj5GviX0OyQIn+ulUS0iX0AxN5n3tLZzz1w==}
+    engines: {node: '>=18.0.0'}
 
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
@@ -8716,6 +8723,8 @@ snapshots:
       space-separated-tokens: 2.0.2
 
   he@1.2.0: {}
+
+  helmet@8.3.0: {}
 
   help-me@5.0.0: {}
 

@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import { createSettings } from './settings-factory'
 import router from '../routes'
 import { getGrafanaFrameOrigin } from '../utils/admin-grafana'
+import { securityHeaders } from '../utils/security-headers'
 
 // Extracted so the ws:/wss: -> http:/https: mapping can be unit tested directly,
 // without needing to exercise the full Express middleware stack.
@@ -11,6 +12,7 @@ export const getWebProtocolForRelay = (relayProtocol: string): string => (relayP
 
 export const createWebApp = (): Express => {
   const app = express()
+  app.use(securityHeaders())
   app
     .disable('x-powered-by')
     .use((req, res, next) => {
