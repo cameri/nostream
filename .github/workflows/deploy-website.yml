@@ -31,6 +31,18 @@ on:
   # head_branch is the tag the release named, so this selects relay releases
   # (`nostream@X.Y.Z`) and leaves the website ones, which the Release workflow
   # skips as `skipped`, alone.
+  #
+  # This trigger is not removable, whatever a scanner reports. The `website`
+  # environment admits only `main` and `nostream-website@*`, and a deployment is
+  # checked against its own run's ref, so a `release: published` run for
+  # `nostream@X.Y.Z` is refused at the environment — measured on the policy
+  # itself, not assumed. `workflow_run` runs on the default branch, which the
+  # policy admits. The escalation it is reported for is closed by the
+  # head_repository assertion in the job `if` below: a Release run from a fork
+  # can never reach this deploy.
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 jobs:
@@ -54,6 +66,12 @@ jobs:
     # the site's build-time version and changelog worth redeploying.
     if: >-
       ${{ startsWith(github.event.release.tag_name, 'nostream-website@') ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.conclusion == 'success' &&
+      (startsWith(github.event.workflow_run.head_branch || '', 'nostream@') ||
+      (github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main'))) ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
     name: Build and deploy to Cloudflare Workers
     runs-on: ubuntu-latest
