@@ -224,6 +224,10 @@ When(
   async function (this: World<Record<string, any>>) {
     const { pubkey } = world(this).identities[world(this).publisher]
 
+    // race-cancel is closed in the same flush, so it can leave no trace to
+    // assert on. batch-probe rides in the same flush and lives on: its EOSE
+    // proves the batch reached the server at all, which a dropped frame would
+    // otherwise hide behind an empty race-cancel.
     const connection = track(
       this,
       'cancel',
@@ -231,16 +235,14 @@ When(
         sendFrames(ws, [
           { data: JSON.stringify(['REQ', 'race-cancel', { authors: [pubkey], kinds: [1] }]) },
           { data: JSON.stringify(['CLOSE', 'race-cancel']) },
+          { data: JSON.stringify(['REQ', 'batch-probe', { authors: [pubkey], kinds: [1] }]) },
         ]),
       ),
     )
 
     await releaseAdmission()
 
-    // A second subscription on the same socket is the barrier: its EOSE means
-    // the CLOSE ahead of it has been handled, without sleeping on the clock.
-    connection.ws.send(JSON.stringify(['REQ', 'after-close', { authors: [pubkey], kinds: [1] }]))
-    await waitFor(() => eoseIds(connection).includes('after-close'), 'EOSE for after-close')
+    await waitFor(() => eoseIds(connection).includes('batch-probe'), 'EOSE for batch-probe')
   },
 )
 
@@ -268,7 +270,7 @@ When(
     // absence from `race-cancel` is a closed subscription, not a missed write.
     const cancel: Connection = world(this).connections.cancel
     await waitFor(
-      () => cancel.frames.some((message) => message[0] === 'EVENT' && message[1] === 'after-close'),
+      () => cancel.frames.some((message) => message[0] === 'EVENT' && message[1] === 'batch-probe'),
       'the event on the live subscription',
     )
   },
@@ -282,7 +284,7 @@ Then(
 
     expect(cancel.frames.filter((message) => message[0] === 'EVENT' && message[1] === subscription)).to.deep.equal([])
     expect(cancel.frames.filter((message) => message[0] === 'NOTICE')).to.deep.equal([])
-    expect(eoseIds(cancel)).to.deep.equal(['after-close'])
+    expect(eoseIds(cancel)).to.deep.equal(['batch-probe'])
     expect(cancel.ws.readyState).to.equal(WebSocket.OPEN)
   },
 )
