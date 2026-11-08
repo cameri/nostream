@@ -24,6 +24,38 @@ fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+/// Counts the outbox rows a claim loaded. Only the tests read the count, so a release build
+/// drops it.
+fn probe_load() {
+    #[cfg(test)]
+    probes::load();
+}
+
+/// The work counter the claim's cost test asserts on: a claim is bounded by the rows it
+/// returns, never by the backlog behind them.
+#[cfg(test)]
+mod probes {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Serialises the tests that count loads, so one cannot read another's numbers.
+    pub(super) static COUNTING: Mutex<()> = Mutex::new(());
+
+    static LOADS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(super) fn reset() {
+        LOADS.store(0, Ordering::Relaxed);
+    }
+
+    pub(super) fn load() {
+        LOADS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(super) fn loads() -> usize {
+        LOADS.load(Ordering::Relaxed)
+    }
+}
+
 // ---------------------------------------------------------------------------------------
 // The delivery log.
 // ---------------------------------------------------------------------------------------
@@ -34,19 +66,16 @@ fn delivery_created_key(entry: &DeliveryLogEntry) -> Vec<u8> {
     key
 }
 
-/// `outbox_id ‖ status ‖ target_id ‖ id`, so one entry is addressable and two attempts at
-/// the same target do not share a key.
+/// `outbox_id ‖ status ‖ id`, so one entry is addressable and two attempts do not share a key.
+///
+/// The target is in the row, not the key: a target id may be longer than an LMDB key holds,
+/// and the index only has to find the entry, whose row carries the id to report.
 fn delivery_outbox_key(outbox_id: &str, entry: &DeliveryLogEntry) -> Result<Vec<u8>, StorageError> {
     let mut key = text_part(outbox_id, "delivery_log_by_outbox", "outbox_id")?;
     key.extend_from_slice(&text_part(
         entry.status.as_str(),
         "delivery_log_by_outbox",
         "status",
-    )?);
-    key.extend_from_slice(&text_part(
-        &entry.target_id,
-        "delivery_log_by_outbox",
-        "target_id",
     )?);
     key.extend_from_slice(entry.id.as_bytes());
     Ok(key)
@@ -105,6 +134,15 @@ pub(crate) fn append(
         error_snippet: entry.error_snippet.clone(),
         created_at: encoding::micros(now),
     };
+    // `target_id` is a `text` column, which cannot hold `0x00`: the capture could never have
+    // stored this row, and the index key no longer carries the value to refuse it on.
+    if entry.target_id.contains('\0') {
+        return Err(StorageError::InvalidRow {
+            table: "notification_delivery_log",
+            column: "target_id",
+            value: entry.target_id.clone(),
+        });
+    }
     let value = rows::encode("notification_delivery_log", &entry)?;
     databases
         .notification_delivery_log
@@ -127,6 +165,9 @@ pub(crate) fn find_recent(
     limit: u64,
     filters: &DeliveryLogFilters,
 ) -> Result<Vec<DeliveryLogEntry>, StorageError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let mut entries = Vec::new();
     for entry in databases.delivery_log_by_created_at.rev_iter(txn)? {
         let (key, _) = entry?;
@@ -167,17 +208,12 @@ pub(crate) fn find_successful_target_ids(
     let mut targets = Vec::new();
     for entry in databases.delivery_log_by_outbox.prefix_iter(txn, &prefix)? {
         let (key, _) = entry?;
-        let rest = &key[prefix.len()..];
-        let Some(end) = rest.iter().position(|byte| *byte == 0) else {
-            return Err(StorageError::InvalidRow {
-                table: "delivery_log_by_outbox",
-                column: "key",
-                value: "a key without a target terminator".to_owned(),
-            });
+        let id = delivery_outbox_id(key)?;
+        let Some(row) = delivery_load(txn, databases, id)? else {
+            continue;
         };
-        let target_id = text_from(&rest[..end], "delivery_log_by_outbox")?;
-        if seen.insert(target_id.to_owned()) {
-            targets.push(target_id.to_owned());
+        if seen.insert(row.target_id.clone()) {
+            targets.push(row.target_id);
         }
     }
     Ok(targets)
@@ -320,8 +356,16 @@ pub(crate) fn claim_batch(
     let stale = now - Duration::milliseconds(NOTIFICATION_OUTBOX_PROCESSING_LEASE_MS);
 
     let mut candidates = Vec::new();
+    // Each status range runs in creation order, so the merge only needs the first `limit`
+    // eligible rows of each: the global first `limit` cannot need more from either one. The
+    // backlog is never materialised: a small claim reads a small slice whatever it holds.
+    let take = usize::try_from(limit).unwrap_or(usize::MAX);
+    if take == 0 {
+        return Ok(Vec::new());
+    }
     for status in [OutboxStatus::Pending, OutboxStatus::Processing] {
         let prefix = text_part(status.as_str(), "outbox_by_status_created_at", "status")?;
+        let mut taken = 0;
         for entry in databases
             .outbox_by_status_created_at
             .prefix_iter(txn, &prefix)?
@@ -331,6 +375,7 @@ pub(crate) fn claim_batch(
             let Some(message) = outbox_load(txn, databases, id)? else {
                 continue;
             };
+            probe_load();
             let due = match status {
                 OutboxStatus::Pending => message.available_at <= now,
                 OutboxStatus::Processing => message.updated_at < stale,
@@ -338,6 +383,10 @@ pub(crate) fn claim_batch(
             };
             if due {
                 candidates.push(message);
+                taken += 1;
+                if taken >= take {
+                    break;
+                }
             }
         }
     }
@@ -346,7 +395,7 @@ pub(crate) fn claim_batch(
             .cmp(&right.created_at)
             .then_with(|| left.id.cmp(&right.id))
     });
-    candidates.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+    candidates.truncate(take);
 
     let mut claimed = Vec::with_capacity(candidates.len());
     for message in candidates {
@@ -507,4 +556,99 @@ fn truncate_bytes(value: &str, limit: usize) -> String {
         end -= 1;
     }
     value[..end].to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+    use crate::backend::LmdbEnv;
+    use crate::repositories::{NotificationDeliveryStatus, NotificationTargetType};
+    use heed::Env;
+
+    fn store() -> (tempfile::TempDir, Env, Databases) {
+        let directory = tempfile::tempdir().expect("a temporary directory");
+        let environment =
+            LmdbEnv::open(directory.path().join("lmdb"), 8 << 20).expect("an environment");
+        let env = environment.env().clone();
+        let mut transaction = env.write_txn().expect("a write transaction");
+        let databases = Databases::create(&env, &mut transaction).expect("the databases");
+        transaction.commit().expect("the commit");
+        (directory, env, databases)
+    }
+
+    fn now() -> DateTime<Utc> {
+        DateTime::<Utc>::from_timestamp(1_700_000_000, 0).expect("an instant")
+    }
+
+    /// A claim is bounded by the rows it returns: a small request over a large backlog reads
+    /// the head of each status range, not the backlog.
+    #[test]
+    fn a_small_claim_does_not_load_the_backlog() {
+        let _serial = probes::COUNTING
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (_directory, env, databases) = store();
+        let now = now();
+
+        let mut transaction = env.write_txn().expect("a write transaction");
+        for step in 0..200 {
+            enqueue(
+                &mut transaction,
+                &databases,
+                "test",
+                &serde_json::json!({ "step": step }),
+                now,
+            )
+            .expect("a message");
+        }
+        transaction.commit().expect("the commit");
+
+        let mut transaction = env.write_txn().expect("a write transaction");
+        probes::reset();
+        let claimed = claim_batch(&mut transaction, &databases, 5, now).expect("the claim");
+        let loads = probes::loads();
+        transaction.commit().expect("the commit");
+
+        assert_eq!(claimed.len(), 5, "the claim is the request's size");
+        assert!(
+            loads <= 10,
+            "a claim reads the head of each status range, not the backlog: {loads} rows loaded"
+        );
+    }
+
+    /// A target id may be longer than an LMDB key holds: the delivery index keys the entry, and
+    /// the row carries the target, so the success is recorded and reported.
+    #[test]
+    fn a_long_target_id_still_reaches_its_delivery_record() {
+        let (_directory, env, databases) = store();
+        let now = now();
+        let target = "t".repeat(430);
+
+        let mut transaction = env.write_txn().expect("a write transaction");
+        let message = enqueue(
+            &mut transaction,
+            &databases,
+            "test",
+            &serde_json::json!({}),
+            now,
+        )
+        .expect("a message");
+        let entry = NewDeliveryLogEntry {
+            outbox_id: Some(message.id.clone()),
+            event_type: "test".to_owned(),
+            target_id: target.clone(),
+            target_type: NotificationTargetType::Telegram,
+            status: NotificationDeliveryStatus::Success,
+            attempt_number: 1,
+            error_snippet: None,
+        };
+        append(&mut transaction, &databases, &entry, now).expect("the log row");
+        let targets = find_successful_target_ids(&transaction, &databases, &message.id)
+            .expect("the successful targets");
+        transaction.commit().expect("the commit");
+
+        assert_eq!(targets, vec![target]);
+    }
 }
