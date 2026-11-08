@@ -52,3 +52,6 @@ docker-compose.overrides.yml
 
 # Code coverage report output
 coverage-report/
+
+# graphify code-graph output (regenerated, ~4 MB per run)
+graphify-out/
