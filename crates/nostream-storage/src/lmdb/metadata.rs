@@ -62,6 +62,10 @@ pub(crate) fn nip05_upsert(
     stored.created_at = previous
         .as_ref()
         .map_or_else(|| encoding::micros(now), |row| row.created_at);
+    // Every timestamp column is a PostgreSQL `timestamp` (V38): the caller's instants are
+    // truncated too, not only the ones this backend stamps.
+    stored.last_checked_at = encoding::micros(stored.last_checked_at);
+    stored.last_verified_at = stored.last_verified_at.map(encoding::micros);
     stored.updated_at = encoding::micros(now);
 
     let value = rows::encode("nip05_verifications", &stored)?;
@@ -89,6 +93,9 @@ pub(crate) fn nip05_find_pending(
     limit: u64,
     now: DateTime<Utc>,
 ) -> Result<Vec<Nip05Verification>, StorageError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let cutoff = encoding::micros(now - Duration::milliseconds(update_frequency_ms));
     let mut verifications = Vec::new();
     for entry in databases.nip05_by_last_checked_at.iter(txn)? {
@@ -251,6 +258,9 @@ pub(crate) fn invite_find_active_codes(
     limit: u64,
     now: DateTime<Utc>,
 ) -> Result<Vec<InviteCode>, StorageError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let now = encoding::micros(now);
     let mut invites = Vec::new();
     for entry in databases.invite_codes_by_created_at.rev_iter(txn)? {
@@ -364,6 +374,11 @@ pub(crate) fn dvm_create(
     kind: Kind,
     now: DateTime<Utc>,
 ) -> Result<DvmJob, StorageError> {
+    if dvm_find_by_id(txn, databases, id)?.is_some() {
+        return Err(StorageError::InvalidArgument {
+            message: "dvm_jobs.id must not already exist",
+        });
+    }
     let now = encoding::micros(now);
     let job = DvmJob {
         id: *id,
@@ -444,9 +459,16 @@ pub(crate) fn dvm_find_pending_jobs(
     limit: u64,
     kinds: Option<&[Kind]>,
 ) -> Result<Vec<DvmJob>, StorageError> {
+    // Each status range runs in creation order, so the merge only needs the first `limit`
+    // eligible rows of each: the backlog is not materialised for a small request.
+    let take = usize::try_from(limit).unwrap_or(usize::MAX);
+    if take == 0 {
+        return Ok(Vec::new());
+    }
     let mut jobs = Vec::new();
     for status in [DvmJobStatus::Submitted, DvmJobStatus::PickedUp] {
         let prefix = text_part(status.as_str(), "dvm_jobs_by_status_created_at", "status")?;
+        let mut taken = 0;
         for entry in databases
             .dvm_jobs_by_status_created_at
             .prefix_iter(txn, &prefix)?
@@ -460,6 +482,10 @@ pub(crate) fn dvm_find_pending_jobs(
                 continue;
             }
             jobs.push(job);
+            taken += 1;
+            if taken >= take {
+                break;
+            }
         }
     }
     jobs.sort_by(|left, right| {
@@ -467,7 +493,7 @@ pub(crate) fn dvm_find_pending_jobs(
             .cmp(&right.created_at)
             .then_with(|| left.id.cmp(&right.id))
     });
-    jobs.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+    jobs.truncate(take);
     Ok(jobs)
 }
 
@@ -603,6 +629,9 @@ pub(crate) fn report_find_actionable(
     databases: &Databases,
     limit: u64,
 ) -> Result<Vec<Report>, StorageError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let mut reports = Vec::new();
     for entry in databases.reports_actionable_by_created_at.rev_iter(txn)? {
         let (key, _) = entry?;

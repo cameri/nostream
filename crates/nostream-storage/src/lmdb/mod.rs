@@ -385,7 +385,7 @@ impl EventRepository for LmdbBackend {
                     &filter,
                     gates,
                     now,
-                ));
+                )?);
             Ok(stream)
         })
     }

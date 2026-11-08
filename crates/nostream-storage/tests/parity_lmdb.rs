@@ -23,11 +23,11 @@ use nostream_core::{Event, EventId, Filter, Kind, Pubkey, Signature};
 use nostream_storage::LmdbBackend;
 use nostream_storage::StorageError;
 use nostream_storage::repositories::{
-    CreateInviteCodeOptions, DeliveryLogFilters, EventRecord, EventRepository,
+    CreateInviteCodeOptions, DeliveryLogFilters, DvmJobStatus, EventRecord, EventRepository,
     EventRetentionOptions, FieldUpdate, InviteCodeRepository, Invoice, InvoiceRepository,
-    InvoiceStatus, InvoiceUnit, NewDeliveryLogEntry, NotificationDeliveryLogRepository,
-    NotificationDeliveryStatus, NotificationOutboxRepository, NotificationTargetType,
-    ReconciliationItem, UserRepository,
+    InvoiceStatus, InvoiceUnit, NewDeliveryLogEntry, NewReport, Nip05Verification,
+    NotificationDeliveryLogRepository, NotificationDeliveryStatus, NotificationOutboxRepository,
+    NotificationTargetType, ReconciliationItem, ReportType, UserRepository,
 };
 
 mod common;
@@ -423,6 +423,8 @@ async fn a_nanosecond_instant_reads_back_at_microsecond_precision() {
     let now = Utc::now();
     let payee = Pubkey::from_byte_array([11; 32]);
     backend.admit_user(&payee, now).await.unwrap();
+    // Three digits past the microsecond, which no `timestamp` column can hold (V38).
+    let instant = DateTime::<Utc>::from_timestamp_nanos(1_700_000_000_123_456_789);
     let invoice = Invoice {
         id: "invoice-micros".to_owned(),
         pubkey: payee,
@@ -433,15 +435,28 @@ async fn a_nanosecond_instant_reads_back_at_microsecond_precision() {
         status: InvoiceStatus::Pending,
         description: "test".to_owned(),
         confirmed_at: None,
-        expires_at: None,
+        expires_at: Some(instant),
         updated_at: now,
-        created_at: now,
+        created_at: instant,
         verify_url: None,
     };
     InvoiceRepository::upsert(&backend, &invoice).await.unwrap();
 
-    // Three digits past the microsecond, which no `timestamp` column can hold (V38).
-    let instant = DateTime::<Utc>::from_timestamp_nanos(1_700_000_000_123_456_789);
+    let stored = backend.find_by_id("invoice-micros").await.unwrap().unwrap();
+    assert_eq!(
+        stored.created_at.timestamp_subsec_nanos(),
+        123_456_000,
+        "the insert truncates the caller's created_at (V38)"
+    );
+    assert_eq!(
+        stored
+            .expires_at
+            .expect("the expiry")
+            .timestamp_subsec_nanos(),
+        123_456_000,
+        "and its expires_at"
+    );
+
     backend
         .confirm_invoice("invoice-micros", 1, instant)
         .await
@@ -460,6 +475,44 @@ async fn a_nanosecond_instant_reads_back_at_microsecond_precision() {
         "a nanosecond instant reads back at microsecond precision (V38)"
     );
     assert_eq!(confirmed_at.timestamp_subsec_nanos(), 123_456_000);
+
+    // The NIP-05 row keeps the caller's last check and verification at the same precision.
+    use nostream_storage::repositories::Nip05VerificationRepository;
+
+    let watched = Pubkey::from_byte_array([12; 32]);
+    Nip05VerificationRepository::upsert(
+        &backend,
+        &Nip05Verification {
+            pubkey: watched,
+            nip05: "micros@example.test".to_owned(),
+            domain: "example.test".to_owned(),
+            is_verified: true,
+            last_verified_at: Some(instant),
+            last_checked_at: instant,
+            failure_count: 0,
+            created_at: instant,
+            updated_at: instant,
+        },
+    )
+    .await
+    .unwrap();
+    let verification = Nip05VerificationRepository::find_by_pubkey(&backend, &watched)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        verification.last_checked_at.timestamp_subsec_nanos(),
+        123_456_000,
+        "the NIP-05 row truncates last_checked_at"
+    );
+    assert_eq!(
+        verification
+            .last_verified_at
+            .expect("the verification")
+            .timestamp_subsec_nanos(),
+        123_456_000,
+        "and last_verified_at"
+    );
 }
 
 #[tokio::test]
@@ -1172,5 +1225,157 @@ async fn a_retention_pass_takes_at_most_one_batch_of_candidates() {
         (second.deleted, second.expired, second.retained),
         (0, 0, 1),
         "the next pass takes the row the batch ceiling left behind"
+    );
+}
+
+/// A `LIMIT 0` returns no rows, in every finder whose walk arms its bound after the first
+/// match: Postgres answers an empty list, so a bound of zero must not return one.
+#[tokio::test]
+async fn a_zero_limit_returns_no_rows() {
+    use nostream_storage::repositories::{Nip05VerificationRepository, ReportRepository};
+
+    let (_directory, backend) = open_store().await;
+    let now = Utc::now();
+
+    let watched = Pubkey::from_byte_array([21; 32]);
+    Nip05VerificationRepository::upsert(
+        &backend,
+        &Nip05Verification {
+            pubkey: watched,
+            nip05: "pending@example.test".to_owned(),
+            domain: "example.test".to_owned(),
+            is_verified: false,
+            last_verified_at: None,
+            last_checked_at: now - Duration::hours(2),
+            failure_count: 0,
+            created_at: now - Duration::hours(2),
+            updated_at: now - Duration::hours(2),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        backend
+            .find_pending_verifications(0, 3, 1)
+            .await
+            .unwrap()
+            .len()
+            == 1,
+        "the row the zero limit must not return"
+    );
+    assert!(
+        backend
+            .find_pending_verifications(0, 3, 0)
+            .await
+            .unwrap()
+            .is_empty(),
+        "a zero limit returns no pending verification"
+    );
+
+    InviteCodeRepository::create(
+        &backend,
+        "invite-zero",
+        &CreateInviteCodeOptions {
+            expires_at: Some(now + Duration::hours(1)),
+            remaining_uses: FieldUpdate::Set(3),
+            created_by: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(backend.find_active_codes(1).await.unwrap().len(), 1);
+    assert!(
+        backend.find_active_codes(0).await.unwrap().is_empty(),
+        "a zero limit returns no invite code"
+    );
+
+    ReportRepository::create(
+        &backend,
+        &NewReport {
+            event_id: EventId::from_byte_array([22; 32]),
+            reporter_pubkey: Pubkey::from_byte_array([23; 32]),
+            reported_pubkey: Some(Pubkey::from_byte_array([24; 32])),
+            reported_event_id: None,
+            report_type: ReportType::Spam,
+            weight: 1.0,
+            actionable: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(backend.find_actionable(1).await.unwrap().len(), 1);
+    assert!(
+        backend.find_actionable(0).await.unwrap().is_empty(),
+        "a zero limit returns no report"
+    );
+
+    backend.append(&one_entry(None)).await.unwrap();
+    let filters = DeliveryLogFilters::default();
+    assert_eq!(backend.find_recent(1, &filters).await.unwrap().len(), 1);
+    assert!(
+        backend.find_recent(0, &filters).await.unwrap().is_empty(),
+        "a zero limit returns no delivery-log entry"
+    );
+}
+
+/// `dvm_jobs.id` is the primary key: creating a row that already exists is refused instead of
+/// overwriting the worker and result a later state wrote.
+#[tokio::test]
+async fn creating_a_job_that_exists_is_refused() {
+    use nostream_storage::repositories::DvmJobRepository;
+
+    let (_directory, backend) = open_store().await;
+    let id = EventId::from_byte_array([31; 32]);
+    let requester = Pubkey::from_byte_array([32; 32]);
+
+    DvmJobRepository::create(&backend, &id, &requester, Kind(5_000))
+        .await
+        .expect("the job");
+    assert!(backend.assign_worker(&id, 3).await.unwrap());
+
+    let error = DvmJobRepository::create(&backend, &id, &requester, Kind(5_000))
+        .await
+        .expect_err("a second create of the same id");
+    assert!(
+        matches!(error, StorageError::InvalidArgument { .. }),
+        "the primary key refuses the row, got {error:?}"
+    );
+
+    let stored = DvmJobRepository::find_by_id(&backend, &id)
+        .await
+        .unwrap()
+        .expect("the job");
+    assert_eq!(stored.status, DvmJobStatus::PickedUp);
+    assert_eq!(
+        stored.worker_index,
+        Some(3),
+        "the refused create changed nothing"
+    );
+}
+
+/// A non-empty `search` with the NIP-50 gate on is refused by every query method, the
+/// reconciliation stream included: this backend cannot search, and returning a broader filter's
+/// rows would answer a question it did not ask.
+#[tokio::test]
+async fn reconciliation_refuses_a_search_the_gate_enables() {
+    let (_directory, backend) = open_store().await;
+    let filter = Filter {
+        search: Some("nostr".to_owned()),
+        ..Filter::default()
+    };
+
+    let error = backend
+        .find_reconciliation_items(&filter)
+        .await
+        .err()
+        .expect("the refusal");
+    assert!(
+        matches!(
+            error,
+            StorageError::NotImplemented {
+                module: "storage::lmdb::nip50_search"
+            }
+        ),
+        "a search the gate enables is NotImplemented, got {error:?}"
     );
 }

@@ -76,6 +76,10 @@ pub(crate) fn upsert(
             // The insert's column list omits both, so the database fills them with NULL.
             stored.amount_paid = None;
             stored.confirmed_at = None;
+            // Every timestamp column is a PostgreSQL `timestamp` (V38): the caller's instants
+            // are truncated too, not only the ones this backend stamps.
+            stored.created_at = encoding::micros(stored.created_at);
+            stored.expires_at = stored.expires_at.map(encoding::micros);
             stored.updated_at = encoding::micros(now);
             write(txn, databases, &stored, None)?;
         }
