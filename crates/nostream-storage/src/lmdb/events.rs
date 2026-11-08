@@ -671,12 +671,8 @@ struct Plan<'a> {
     /// The tag family the ranges were built from, with its criteria in the criteria's order —
     /// `tag_ranges` builds one range per criterion that fits a key. A key in these ranges has
     /// already proved that family, so the row's body is decoded only for the filter's other tag
-    /// families.
+    /// families, and a count holds the ids its walk has counted rather than decoding one.
     tag: Option<(&'a str, &'a [String])>,
-    /// The criterion each range was built from, in the same order as `ranges`. Empty for a plan
-    /// that does not read the tags index; a dropped criterion leaves the later positions alone,
-    /// so a count still knows which criteria came before a range.
-    tag_positions: Vec<usize>,
 }
 
 /// One reconciliation batch still running on the blocking pool, with the cursor it returns.
@@ -806,63 +802,15 @@ fn already_counted(
     Ok(false)
 }
 
-/// Whether an earlier criterion — the criterion this range was built from, or one before it —
-/// already answers for this row, so counting it here would count it twice.
-///
-/// Two ranges select one row when two criteria of the filter's tag family both match one of its
-/// tags; one criterion selects it twice when a `#g` prefix matches two of its tags. The first
-/// criterion in the criteria's order answers for the row, and within a prefix criterion the
-/// smallest matching value does.
-///
-/// This is the one place a count reads an event's tags instead of its key: the key names a
-/// single value, and the other values the event carries are in the body.
-fn counted_earlier(
-    txn: &RoTxn<'_>,
-    databases: &Databases,
-    plan: &Plan<'_>,
-    index: usize,
-    value: Option<&str>,
-    id: &EventId,
-) -> Result<bool, StorageError> {
-    let Some((name, criteria)) = plan.tag else {
-        return Ok(false);
-    };
-    let position = plan.tag_positions.get(index).copied().unwrap_or(index);
-    let prefix = criteria
-        .get(position)
-        .and_then(|criterion| criterion.strip_suffix('*').filter(|_| name == "g"));
-    if position == 0 && prefix.is_none() {
-        return Ok(false);
-    }
-    let Some(stored) = databases.events.get(txn, id.as_bytes())? else {
-        return Ok(false);
-    };
-    let record = rows::decode_event(stored)?;
-    if criteria
-        .iter()
-        .take(position)
-        .any(|earlier| record_has_tag(&record, name, std::slice::from_ref(earlier)))
-    {
-        return Ok(true);
-    }
-    let (Some(prefix), Some(value)) = (prefix, value) else {
-        return Ok(false);
-    };
-    Ok(record.event.tags.iter().any(|tag| {
-        matches!(
-            (tag.first(), tag.get(1)),
-            (Some(tag_name), Some(candidate))
-                if tag_name == name
-                    && candidate.starts_with(prefix)
-                    && candidate.as_str() < value
-        )
-    }))
-}
-
 /// Counts the live rows one unlimited filter matches that the count does not already hold.
 ///
 /// Every range is walked whole — a count has no page to stop at — and a row two of them select
-/// is counted once, at the first criterion's range.
+/// is counted once, at the first key that selects it.
+///
+/// A `tags` key names one value of one row, so a row's keys within this walk are one per
+/// matching value and per matching criterion, in criteria order and then value order: the first
+/// one is the row's smallest matching key, and the id it ends with answers both a second
+/// criterion and a second value of a `#g` prefix without reading the body.
 fn count_matches(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -882,28 +830,37 @@ fn count_matches(
         live: true,
         proven: plan.tag.map(|(name, _)| name),
     };
+    // A single exact criterion names one key per row, so only a second criterion or a `#g`
+    // prefix can walk one row twice, and only then is the id set paid for.
+    //
+    // shortcut: such a walk holds the id of every row it counts for its length, against a body
+    // decode per key; upgrade when a single count's match set outgrows the request's memory
+    // budget, which needs an index order that visits a row once.
+    let mut counted_ids = HashSet::new();
+    let dedupe = plan.tag.is_some_and(|(name, criteria)| {
+        criteria.len() > 1
+            || (name == "g" && criteria.iter().any(|criterion| criterion.ends_with('*')))
+    });
     let mut total = 0;
-    for (index, (low, high)) in plan.ranges.iter().enumerate() {
+    for (low, high) in &plan.ranges {
         let range = encoding::bounds(low, high);
         for entry in plan.database.range(txn, &range)? {
             let (key, _) = entry?;
             key_evaluated();
-            let value = match plan.tag {
-                Some((name, criteria)) => {
-                    let value = encoding::tag_value(key)?;
-                    if !tag_value_matches(name == "g", criteria, value) {
-                        continue;
-                    }
-                    Some(value)
+            if let Some((name, criteria)) = plan.tag {
+                let value = encoding::tag_value(key)?;
+                if !tag_value_matches(name == "g", criteria, value) {
+                    continue;
                 }
-                None => None,
-            };
+            }
             let Some((_, id)) = candidate(txn, databases, plan.path, key)? else {
                 continue;
             };
+            if dedupe && !counted_ids.insert(id) {
+                continue;
+            }
             if matcher.matches(txn, databases, &id)?.is_some()
                 && !already_counted(txn, databases, counted, gates, now, &id)?
-                && !counted_earlier(txn, databases, &plan, index, value, &id)?
             {
                 total += 1;
             }
@@ -1181,7 +1138,6 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
             // The `events` key is the id, so the range runs in id order, not time order.
             ordered: false,
             tag: None,
-            tag_positions: Vec::new(),
         };
     }
     if let Some(authors) = &filter.authors
@@ -1200,7 +1156,6 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
                 // kind.
                 ordered: authors.iter().all(|criterion| criterion.len() == 64),
                 tag: None,
-                tag_positions: Vec::new(),
             };
         }
         // Without kinds the author index runs in kind order before `created_at`, so a page
@@ -1219,24 +1174,17 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
             ranges: created_at_ranges(filter),
             ordered: true,
             tag: None,
-            tag_positions: Vec::new(),
         };
     }
     if let Some((name, criteria)) = tag_path(filter) {
-        let ranged = encoding::tag_ranges(name, criteria);
-        let tag_positions = ranged.iter().map(|(position, _, _)| *position).collect();
         return Plan {
             database: databases.tags,
             path: AccessPath::Tags,
-            ranges: ranged
-                .into_iter()
-                .map(|(_, low, high)| (low, high))
-                .collect(),
+            ranges: encoding::tag_ranges(name, criteria),
             // An exact criterion's range runs `created_at` under one value; a `#g` prefix range
             // spans values, so its keys are in value order and the range is walked whole.
             ordered: name != "g" || criteria.iter().all(|criterion| !criterion.ends_with('*')),
             tag: Some((name, criteria)),
-            tag_positions,
         };
     }
     Plan {
@@ -1245,7 +1193,6 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
         ranges: created_at_ranges(filter),
         ordered: true,
         tag: None,
-        tag_positions: Vec::new(),
     }
 }
 
@@ -1806,7 +1753,6 @@ fn stream_plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
         ranges: created_at_ranges(filter),
         ordered: true,
         tag: None,
-        tag_positions: Vec::new(),
     }
 }
 
@@ -3023,10 +2969,51 @@ mod tests {
         );
     }
 
-    /// A criterion too long to seek leaves the later criteria's positions alone, so a row
-    /// carrying a later value as well is still counted once.
+    /// A count walks keys, not bodies: the id a tag key ends with says whether the row is
+    /// already counted, so a wildcard count decodes nothing however many values it matches.
     #[test]
-    fn a_dropped_criterion_does_not_shift_the_counted_positions() {
+    fn a_wildcard_count_decodes_no_body() {
+        let _serial = counting();
+        let (_directory, env, databases) = store();
+        let record = signed(
+            7,
+            1,
+            1_700_000_000,
+            vec![
+                vec!["g".to_owned(), "u4a".to_owned()],
+                vec!["g".to_owned(), "u4b".to_owned()],
+            ],
+        );
+        write(&env, &databases, &[record]);
+        let transaction = env.read_txn().expect("a read transaction");
+        let mut tags = BTreeMap::new();
+        tags.insert("#g".to_owned(), vec!["u4*".to_owned()]);
+        let filter = Filter {
+            tags,
+            ..Filter::default()
+        };
+
+        probes::reset();
+        assert_eq!(
+            count(
+                &transaction,
+                &databases,
+                std::slice::from_ref(&filter),
+                &Gates::default(),
+                0
+            )
+            .expect("the count"),
+            1
+        );
+        assert_eq!(probes::decodes(), 0, "a count decodes no body");
+        assert_eq!(probes::keys(), 2, "both keys the prefix selects are read");
+    }
+
+    /// A criterion too long to seek selects nothing, so a row carrying only later criteria is
+    /// still counted — once, at the first criterion's range that selects it.
+    #[test]
+    fn a_dropped_criterion_does_not_count_a_row_twice() {
+        let _serial = counting();
         let (_directory, env, databases) = store();
         let record = signed(
             7,
@@ -3054,6 +3041,7 @@ mod tests {
             2,
             "the oversized criterion seeks nothing"
         );
+        probes::reset();
         assert_eq!(
             count(
                 &transaction,
@@ -3065,6 +3053,11 @@ mod tests {
             .expect("the count"),
             1,
             "the row carries both values and is one row"
+        );
+        assert_eq!(
+            probes::decodes(),
+            0,
+            "two criteria are deduplicated by the id, not the body"
         );
     }
 

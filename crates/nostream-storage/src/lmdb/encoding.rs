@@ -480,9 +480,7 @@ pub(crate) fn disjoint(mut ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<(Vec<u8>, Vec
 }
 
 /// The inclusive key ranges one tag criterion covers, one range per criterion that fits a key
-/// and in the criteria's order, each with the criterion's own position: a criterion that
-/// selects nothing leaves the positions after it unshifted, so a count still knows which
-/// criteria came before a range.
+/// and in the criteria's order.
 ///
 /// An exact value is the range from the value's own separator, and a `#g` prefix is the range
 /// over every value that starts with the prefix, padded to the longest key the store can hold
@@ -490,10 +488,10 @@ pub(crate) fn disjoint(mut ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<(Vec<u8>, Vec
 ///
 /// A criterion whose lower bound does not fit [`MAX_KEY_LEN`] selects nothing: a key carrying
 /// it could not be written, so seeking it would fail the read rather than answer it.
-pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(usize, Vec<u8>, Vec<u8>)> {
+pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(Vec<u8>, Vec<u8>)> {
     let is_geohash = name == "g";
     let mut ranges = Vec::with_capacity(criteria.len());
-    for (position, criterion) in criteria.iter().enumerate() {
+    for criterion in criteria {
         let mut head = Vec::with_capacity(name.len() + 1 + criterion.len());
         head.extend_from_slice(name.as_bytes());
         head.push(0);
@@ -516,7 +514,7 @@ pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(usize, Vec<u8>
             }
         };
         if lower.len() <= MAX_KEY_LEN && upper.len() <= MAX_KEY_LEN {
-            ranges.push((position, lower, upper));
+            ranges.push((lower, upper));
         }
     }
     ranges
@@ -613,9 +611,9 @@ mod tests {
     #[test]
     fn a_geohash_criterion_is_a_prefix_range_and_another_tag_is_exact() {
         let geohash = tag_ranges("g", &["u4pru*".to_owned()]);
-        assert_eq!(geohash[0].1, b"g\0u4pru".to_vec());
+        assert_eq!(geohash[0].0, b"g\0u4pru".to_vec());
         let exact = tag_ranges("e", &["u4pru*".to_owned()]);
-        assert_eq!(exact[0].1, b"e\0u4pru*\0".to_vec());
+        assert_eq!(exact[0].0, b"e\0u4pru*\0".to_vec());
     }
 
     #[test]
