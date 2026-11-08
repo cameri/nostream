@@ -196,10 +196,16 @@ the first row the range happened to offer — keeping every row at that timestam
 as the capture's does.
 
 One read keeps a second thing resident, and it is a count's rather than a page's: a `tags` count
-whose criteria can select one row twice holds the id of each row its matcher accepts, for the
-length of that filter's tag walk. Nothing bounds that set — `MAX_PAGE_KEYS` bounds a page — so it
-grows with the rows the walk matches, and the same bullet's index that would visit each row once
-is what would remove it.
+whose criteria can select one row twice holds an id per row its matcher accepts, and that set is
+bounded by `MAX_PAGE_KEYS` — the same 5 000. Below the cap the walk reads no body; at the cap it
+stops inserting and decides each further key with a bounded-memory check instead: a repeated key
+reads the row's body and asks whether an earlier key of the walk already answered for it, an
+earlier criterion that matches one of its tags or, within one `#g` prefix range, a smaller value
+the prefix matches. The total is therefore the same at every corpus size, and the set is a
+constant 270 352 B once full (measured live: 5 000 ids at a `HashSet` capacity of 7 168 slots,
+against 1 081 360 B for the same 20 000-row corpus with the set unbounded). The price of the
+cap is a body decode per repeated key past it; an index order that visits each row once is what
+would remove that too.
 
 The index is chosen from the filter, and which ranges can stop early follows from the key:
 
@@ -239,16 +245,21 @@ Two consequences of the same bound:
   it visits and skips one the count already holds — an earlier filter's page when that filter
   had a limit, or a predicate match when it had none — which is the capture's `UNION`. An
   unlimited filter walks its ranges whole, which is what counting every match costs, and a
-  `tags` walk that can select one row twice also holds that row's id (see above).
+  `tags` walk that can select one row twice also holds that row's id, up to `MAX_PAGE_KEYS`
+  ids (see above). The slot is filled before the cross-filter check, so the set also holds rows
+  an earlier filter already counts; the same cap bounds that residue.
 - A `tags` range is built from the family's own criteria, so a key inside it has already proved
   that family: the event's body is decoded only for the filter's *other* tag families, and a
-  filter with one family decodes none. A count may hold the id each key ends with for the length
-  of its tag walk, so a row two criteria — or two values of a `#g` prefix — both select is
-  counted at the first key the walk reaches and skipped at the rest, without a body decode: the
+  filter with one family decodes none. The id a key ends with answers the rest of the walk, so a
+  row two criteria — or two values of a `#g` prefix — both select is counted at the first key
+  the walk reaches and skipped at the rest without a body decode, while the set has room: the
   ranges run in the criteria's order, so that key is not necessarily the row's smallest matching
-  one. Only those two shapes hold the set, whose population is one id per row its matcher
-  accepts: a single exact criterion names one key per row. It is the count's one resident cost,
-  and the index has no order that would let a walk visit each row once instead.
+  one. Once the set is full the walk reads the body of a repeated key instead and asks whether
+  an earlier key of the walk already answered for it — an earlier criterion, or a smaller value
+  of the same prefix — so the count stays exact and its resident set stays a constant. Only those
+  two shapes hold the set, whose population is one id per row its matcher accepts: a single exact
+  criterion names one key per row. The tags index has no order that visits each row once, which
+  is why the cap trades a slot past it for a body decode.
 
 ## Constraints move into Rust
 
@@ -343,9 +354,11 @@ its op is one of the five above — so the list cannot grow without the diff sho
 - Retention's batch composition can differ from Postgres' planner-chosen order when more than
   1000 rows qualify; both return 1000 rows classified by the same precedence (Assumption 10
   in `spec.md`). The corpus is 483 events, so no current entry reaches it.
-- A page is bounded by `MAX_PAGE_KEYS` and a read holds a page rather than a range, so a
-  client cannot choose how much a request materialises; a count materialises no result set and
-  holds ids only for a tag walk that can select a row twice, which no `MAX_PAGE_KEYS` bounds.
+- A page is bounded by `MAX_PAGE_KEYS` and a read holds a page rather than a range; a count
+  materialises no result set, and the ids it holds for a tag walk that can select a row twice
+  are bounded by the same `MAX_PAGE_KEYS` — 270 352 B of resident set once full, however large
+  the corpus, with a body decode per repeated key past the cap. So a client cannot choose how
+  much a request materialises.
   The price is that a `#g`-prefix page walks its whole (time-bounded) range, an author page
   without kinds reads the created-at index, and so does an author × kind filter whose
   composition passes `MAX_PAGE_KEYS` ranges; an `ids` read whose criteria are exact is bounded
