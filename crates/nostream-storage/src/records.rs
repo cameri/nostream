@@ -8,7 +8,7 @@ use std::net::IpAddr;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use nostream_core::{Event, Kind, Pubkey};
+use nostream_core::{Event, EventId, Kind, Pubkey};
 
 use crate::error::StorageError;
 use crate::repositories::{
@@ -101,12 +101,30 @@ pub fn replacement_key(record: &EventRecord) -> Option<(Pubkey, u64, Replacement
     Some((record.event.pubkey, kind.0, key))
 }
 
-/// The merge predicate the replaceable upsert applies: the incoming row wins when it is newer,
-/// or equal and the smaller id.
+/// The merge predicate the replaceable upsert applies, on the two fields it reads: the incoming
+/// row wins when it is newer, or equal and the smaller id.
+///
+/// The fields are separate from the records because a backend may hold the stored row as a
+/// header and a pointer rather than a whole record — LMDB reads `created_at` from the value's
+/// fixed header and the id from the `replaceable` pointer, and decodes the body only once the
+/// incoming row has won.
+pub fn replaces_fields(
+    created_at: i64,
+    id: EventId,
+    current_created_at: i64,
+    current_id: EventId,
+) -> bool {
+    created_at > current_created_at || (created_at == current_created_at && id < current_id)
+}
+
+/// [`replaces_fields`] applied to the two records a backend holds in memory.
 pub fn replaces(candidate: &EventRecord, current: &EventRecord) -> bool {
-    candidate.event.created_at > current.event.created_at
-        || (candidate.event.created_at == current.event.created_at
-            && candidate.event.id < current.event.id)
+    replaces_fields(
+        candidate.event.created_at,
+        candidate.event.id,
+        current.event.created_at,
+        current.event.id,
+    )
 }
 
 /// `records` with at most one row per conflict key, in first-seen order.

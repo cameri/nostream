@@ -26,7 +26,7 @@ use super::{
     STREAM_BATCH_ITEMS, STREAM_BATCH_KEYS,
 };
 use crate::error::StorageError;
-use crate::records::{distinct_replacements, replaces};
+use crate::records::{distinct_replacements, replaces_fields};
 use crate::repositories::{
     EventPurgeCounts, EventRecord, EventRetentionOptions, ReconciliationItem,
 };
@@ -127,10 +127,16 @@ fn upsert_one(
                 // A pointer with no row: treat the incoming event as a plain insert.
                 return write_upserted(txn, databases, record, now, kind, &deduplication, None);
             };
-            let stored_record = rows::decode_event(value)?;
-            if !replaces(record, &stored_record) {
+            let header = rows::event_header(value)?;
+            if !replaces_fields(
+                record.event.created_at,
+                record.event.id,
+                header.created_at,
+                stored_id,
+            ) {
                 return Ok(false);
             }
+            let stored_record = rows::decode_event(value)?;
             first_seen = stored_record.first_seen;
             hard_delete(txn, databases, &stored_record)?;
             databases.replaceable.delete(txn, &pointer)?;
@@ -2728,6 +2734,44 @@ mod tests {
                 "the newer version is the row the batch keeps"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------------------
+    // Round 12: the merge predicate reads the header and the pointer, never the body.
+    // -----------------------------------------------------------------------------------
+
+    /// A losing upsert decides from the stored value's header and the pointer's id, so it never
+    /// decodes the body: a stored row whose body is unreadable still loses cleanly.
+    #[test]
+    fn a_losing_merge_reads_the_header_and_not_the_body() {
+        let stored = signed(7, 0, 1_700_000_100, Vec::new());
+        let older = signed(7, 0, 1_700_000_000, Vec::new());
+        let (_directory, env, databases) = store();
+
+        let mut transaction = env.write_txn().expect("a write transaction");
+        upsert(&mut transaction, &databases, &stored, Utc::now()).expect("the stored version");
+        transaction.commit().expect("the commit");
+
+        // The value keeps its header — where the merge reads the stored `created_at` — and
+        // loses its body.
+        let mut transaction = env.write_txn().expect("a write transaction");
+        let value = databases
+            .events
+            .get(&transaction, stored.event.id.as_bytes())
+            .expect("the store")
+            .expect("the stored row");
+        let mut headless = value[..1 + encoding::EVENT_HEADER_LEN].to_vec();
+        headless.extend_from_slice(b"{not json");
+        databases
+            .events
+            .put(&mut transaction, stored.event.id.as_bytes(), &headless)
+            .expect("the stored value");
+
+        let affected = upsert(&mut transaction, &databases, &older, Utc::now())
+            .expect("the older version loses from the header, never the body");
+        transaction.commit().expect("the commit");
+
+        assert_eq!(affected, 0, "the stored version is still the newer one");
     }
     // -----------------------------------------------------------------------------------
     // Round 6: the page across every range a plan seeks, and the id stream's two shapes.
