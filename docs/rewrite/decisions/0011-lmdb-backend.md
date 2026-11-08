@@ -195,6 +195,12 @@ key order *is* the page's order stops at the page's own worst kept row — the h
 the first row the range happened to offer — keeping every row at that timestamp so a tie breaks
 as the capture's does.
 
+One read keeps a second thing resident, and it is a count's rather than a page's: a `tags` count
+whose criteria can select one row twice holds the id of each row its matcher accepts, for the
+length of that filter's tag walk. Nothing bounds that set — `MAX_PAGE_KEYS` bounds a page — so it
+grows with the rows the walk matches, and the same bullet's index that would visit each row once
+is what would remove it.
+
 The index is chosen from the filter, and which ranges can stop early follows from the key:
 
 | filter | index | stops when full |
@@ -232,15 +238,17 @@ Two consequences of the same bound:
 - `count_by_filters` has no page, so it materialises no result set: each filter counts the rows
   it visits and skips one the count already holds — an earlier filter's page when that filter
   had a limit, or a predicate match when it had none — which is the capture's `UNION`. An
-  unlimited filter walks its ranges whole, which is what counting every match costs.
+  unlimited filter walks its ranges whole, which is what counting every match costs, and a
+  `tags` walk that can select one row twice also holds that row's id (see above).
 - A `tags` range is built from the family's own criteria, so a key inside it has already proved
   that family: the event's body is decoded only for the filter's *other* tag families, and a
   filter with one family decodes none. A count may hold the id each key ends with for the length
   of its tag walk, so a row two criteria — or two values of a `#g` prefix — both select is
-  counted at its smallest matching key and skipped at the rest, without a body decode. Only
-  those two shapes hold the set: a single exact criterion names one key per row. It is the
-  count's one resident cost, per distinct match, and the index has no order that would let a
-  walk visit each row once instead.
+  counted at the first key the walk reaches and skipped at the rest, without a body decode: the
+  ranges run in the criteria's order, so that key is not necessarily the row's smallest matching
+  one. Only those two shapes hold the set, whose population is one id per row its matcher
+  accepts: a single exact criterion names one key per row. It is the count's one resident cost,
+  and the index has no order that would let a walk visit each row once instead.
 
 ## Constraints move into Rust
 
@@ -336,7 +344,8 @@ its op is one of the five above — so the list cannot grow without the diff sho
   1000 rows qualify; both return 1000 rows classified by the same precedence (Assumption 10
   in `spec.md`). The corpus is 483 events, so no current entry reaches it.
 - A page is bounded by `MAX_PAGE_KEYS` and a read holds a page rather than a range, so a
-  client cannot choose how much a request materialises; a count is exact and holds no set.
+  client cannot choose how much a request materialises; a count materialises no result set and
+  holds ids only for a tag walk that can select a row twice, which no `MAX_PAGE_KEYS` bounds.
   The price is that a `#g`-prefix page walks its whole (time-bounded) range, an author page
   without kinds reads the created-at index, and so does an author × kind filter whose
   composition passes `MAX_PAGE_KEYS` ranges; an `ids` read whose criteria are exact is bounded
