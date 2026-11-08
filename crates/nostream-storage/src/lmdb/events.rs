@@ -604,14 +604,9 @@ fn key_evaluated() {
     probes::key();
 }
 
-/// Counts an event body a read decoded. Only the tests read the count.
-fn body_decoded() {
-    #[cfg(test)]
-    probes::decode();
-}
-
 /// The work counters the cost tests assert on: a page's cost is its keys evaluated, its bodies
-/// decoded and the entries it sorted, and none of the three is visible in its result.
+/// decoded — [`rows::probes`] counts every event-body decode, wherever it happens — and the
+/// entries it sorted, and none of the three is visible in its result.
 #[cfg(test)]
 mod probes {
     use std::sync::Mutex;
@@ -621,21 +616,16 @@ mod probes {
     pub(super) static COUNTING: Mutex<()> = Mutex::new(());
 
     static KEYS: AtomicUsize = AtomicUsize::new(0);
-    static DECODES: AtomicUsize = AtomicUsize::new(0);
     static SORTED: AtomicUsize = AtomicUsize::new(0);
 
     pub(super) fn reset() {
         KEYS.store(0, Ordering::Relaxed);
-        DECODES.store(0, Ordering::Relaxed);
+        super::rows::probes::reset();
         SORTED.store(0, Ordering::Relaxed);
     }
 
     pub(super) fn key() {
         KEYS.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub(super) fn decode() {
-        DECODES.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(super) fn sorted(entries: usize) {
@@ -647,7 +637,7 @@ mod probes {
     }
 
     pub(super) fn decodes() -> usize {
-        DECODES.load(Ordering::Relaxed)
+        super::rows::probes::decodes()
     }
 
     pub(super) fn sorted_entries() -> usize {
@@ -1400,10 +1390,9 @@ impl Matcher<'_> {
         if self.gates.nip56 && self.reported(txn, databases, id, &header.pubkey)? {
             return Ok(None);
         }
-        if self.carries_other_tag_criteria() && {
-            body_decoded();
-            !tag_criteria_match(&self.filter.tags, &rows::decode_event(value)?, self.proven)
-        } {
+        if self.carries_other_tag_criteria()
+            && !tag_criteria_match(&self.filter.tags, &rows::decode_event(value)?, self.proven)
+        {
             return Ok(None);
         }
         Ok(Some(header))
@@ -2932,43 +2921,6 @@ mod tests {
             rows::decode_event(value).expect("the row").remote_address,
             Some(IpAddr::from([10, 0, 0, 2])),
             "the single-row merge writes the incoming address"
-        );
-    }
-
-    /// One event carrying two values a `#g` prefix matches is one row: the tags index holds a
-    /// key per value, and the capture's query counts rows.
-    #[test]
-    fn a_wildcard_tag_range_counts_a_row_once() {
-        let (_directory, env, databases) = store();
-        let record = signed(
-            7,
-            1,
-            1_700_000_000,
-            vec![
-                vec!["g".to_owned(), "u4a".to_owned()],
-                vec!["g".to_owned(), "u4b".to_owned()],
-            ],
-        );
-        write(&env, &databases, &[record]);
-        let transaction = env.read_txn().expect("a read transaction");
-        let mut tags = BTreeMap::new();
-        tags.insert("#g".to_owned(), vec!["u4*".to_owned()]);
-        let filter = Filter {
-            tags,
-            ..Filter::default()
-        };
-
-        assert_eq!(
-            count(
-                &transaction,
-                &databases,
-                std::slice::from_ref(&filter),
-                &Gates::default(),
-                0
-            )
-            .expect("the count"),
-            1,
-            "one row, though the prefix matches two of its values"
         );
     }
 

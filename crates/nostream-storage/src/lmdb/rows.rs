@@ -106,6 +106,8 @@ pub(crate) fn encode_event(record: &EventRecord) -> Result<Vec<u8>, StorageError
 
 /// Decodes one event value. `row_id` is backend-defined and this backend writes none.
 pub(crate) fn decode_event(value: &[u8]) -> Result<EventRecord, StorageError> {
+    #[cfg(test)]
+    probes::decode();
     let body = encoding::body("events", value)?;
     let mut record: EventRecord =
         serde_json::from_slice(body).map_err(|error| StorageError::InvalidRow {
@@ -115,6 +117,32 @@ pub(crate) fn decode_event(value: &[u8]) -> Result<EventRecord, StorageError> {
         })?;
     record.row_id = None;
     Ok(record)
+}
+
+/// The body-decode counter the read tests assert on: every `serde_json` decode of an event body
+/// passes through [`decode_event`], whatever reader asked for it.
+///
+/// The count is per thread, so a test reads its own read's decodes and not a sibling's write
+/// path; the blocking-pool callers never assert on it.
+#[cfg(test)]
+pub(crate) mod probes {
+    use std::cell::Cell;
+
+    thread_local! {
+        static DECODES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn reset() {
+        DECODES.with(|count| count.set(0));
+    }
+
+    pub(crate) fn decode() {
+        DECODES.with(|count| count.set(count.get() + 1));
+    }
+
+    pub(crate) fn decodes() -> usize {
+        DECODES.with(Cell::get)
+    }
 }
 
 /// Decodes one event value's fixed header, without its JSON body.
