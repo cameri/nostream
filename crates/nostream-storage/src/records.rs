@@ -108,22 +108,15 @@ pub fn replacement_key(record: &EventRecord) -> Option<(Pubkey, u64, Replacement
 /// header and a pointer rather than a whole record — LMDB reads `created_at` from the value's
 /// fixed header and the id from the `replaceable` pointer, and decodes the body only once the
 /// incoming row has won.
-pub fn replaces_fields(
-    created_at: i64,
-    id: EventId,
-    current_created_at: i64,
-    current_id: EventId,
-) -> bool {
-    created_at > current_created_at || (created_at == current_created_at && id < current_id)
+pub fn replaces_fields(candidate: (i64, EventId), current: (i64, EventId)) -> bool {
+    candidate.0 > current.0 || (candidate.0 == current.0 && candidate.1 < current.1)
 }
 
 /// [`replaces_fields`] applied to the two records a backend holds in memory.
 pub fn replaces(candidate: &EventRecord, current: &EventRecord) -> bool {
     replaces_fields(
-        candidate.event.created_at,
-        candidate.event.id,
-        current.event.created_at,
-        current.event.id,
+        (candidate.event.created_at, candidate.event.id),
+        (current.event.created_at, current.event.id),
     )
 }
 

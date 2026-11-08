@@ -155,10 +155,8 @@ fn upsert_one(
             };
             let header = rows::event_header(value)?;
             if !replaces_fields(
-                record.event.created_at,
-                record.event.id,
-                header.created_at,
-                stored_id,
+                (record.event.created_at, record.event.id),
+                (header.created_at, stored_id),
             ) {
                 return Ok(false);
             }
