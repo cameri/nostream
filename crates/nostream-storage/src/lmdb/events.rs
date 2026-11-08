@@ -26,6 +26,7 @@ use super::{
     STREAM_BATCH_ITEMS, STREAM_BATCH_KEYS,
 };
 use crate::error::StorageError;
+use crate::records::{distinct_replacements, replaces};
 use crate::repositories::{
     EventPurgeCounts, EventRecord, EventRetentionOptions, ReconciliationItem,
 };
@@ -80,15 +81,19 @@ pub(crate) fn upsert(
     Ok(u64::from(upsert_one(txn, databases, record, now)?))
 }
 
-/// `upsert_many`: the same merge, row by row, in one write transaction.
+/// `upsert_many`: one row per replaceable address, then the same merge, in one write
+/// transaction.
 pub(crate) fn upsert_many(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
     records: &[EventRecord],
     now: DateTime<Utc>,
 ) -> Result<u64, StorageError> {
+    // A batch may hold several versions of one replaceable address: the conflict key's owner
+    // picks the winner, as Postgres does before its one statement, so the count is rows
+    // written rather than records passed.
     let mut affected = 0;
-    for record in records {
+    for record in distinct_replacements(records) {
         if upsert_one(txn, databases, record, now)? {
             affected += 1;
         }
@@ -122,14 +127,10 @@ fn upsert_one(
                 // A pointer with no row: treat the incoming event as a plain insert.
                 return write_upserted(txn, databases, record, now, kind, &deduplication, None);
             };
-            let stored_header = rows::event_header(value)?;
-            let incoming_wins = stored_header.created_at < record.event.created_at
-                || (stored_header.created_at == record.event.created_at
-                    && stored_id > record.event.id);
-            if !incoming_wins {
+            let stored_record = rows::decode_event(value)?;
+            if !replaces(record, &stored_record) {
                 return Ok(false);
             }
-            let stored_record = rows::decode_event(value)?;
             first_seen = stored_record.first_seen;
             hard_delete(txn, databases, &stored_record)?;
             databases.replaceable.delete(txn, &pointer)?;
@@ -2684,6 +2685,49 @@ mod tests {
             .expect("a d value that JSON text would escape twice still stores");
         transaction.commit().expect("the commit");
         assert_eq!(affected, 1);
+    }
+
+    // -----------------------------------------------------------------------------------
+    // Round 11: one row per replaceable address in a batch.
+    // -----------------------------------------------------------------------------------
+
+    /// Two versions of one address reach the same batch in either order: the batch writes the
+    /// newer row and counts one, which is what `upsert_many` promises its caller.
+    #[test]
+    fn a_batch_with_two_versions_of_one_address_writes_one_row() {
+        let older = signed(7, 0, 1_700_000_000, Vec::new());
+        let newer = signed(7, 0, 1_700_000_100, Vec::new());
+        assert_eq!(older.event.pubkey, newer.event.pubkey);
+
+        for batch in [
+            vec![older.clone(), newer.clone()],
+            vec![newer.clone(), older.clone()],
+        ] {
+            let (_directory, env, databases) = store();
+            let mut transaction = env.write_txn().expect("a write transaction");
+            let affected =
+                upsert_many(&mut transaction, &databases, &batch, Utc::now()).expect("the batch");
+            transaction.commit().expect("the commit");
+
+            assert_eq!(affected, 1, "rows written, whatever the order");
+            let transaction = env.read_txn().expect("a read transaction");
+            assert!(
+                databases
+                    .events
+                    .get(&transaction, older.event.id.as_bytes())
+                    .expect("the store")
+                    .is_none(),
+                "the dropped version is not written"
+            );
+            assert!(
+                databases
+                    .events
+                    .get(&transaction, newer.event.id.as_bytes())
+                    .expect("the store")
+                    .is_some(),
+                "the newer version is the row the batch keeps"
+            );
+        }
     }
     // -----------------------------------------------------------------------------------
     // Round 6: the page across every range a plan seeks, and the id stream's two shapes.

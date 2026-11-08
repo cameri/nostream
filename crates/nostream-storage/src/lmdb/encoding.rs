@@ -5,7 +5,7 @@
 use std::ops::Bound;
 
 use chrono::{DateTime, Utc};
-use nostream_core::{EventId, Pubkey};
+use nostream_core::{EventId, Kind, Pubkey};
 
 use crate::error::StorageError;
 
@@ -378,12 +378,14 @@ pub(crate) fn tag_entries(record: &crate::repositories::EventRecord) -> Vec<(&st
     entries
 }
 
-/// Whether a kind is replaceable, exactly as the capture's conflict-target predicate says:
-/// 0, 3, 41 and the two parameterized ranges.
+/// Whether the capture's conflict-target predicate covers a kind: its replaceable and its
+/// parameterized-replaceable kinds, which `records::replacement_key` gates the same way.
 pub(crate) fn replaceable_kind(kind: i32) -> bool {
-    matches!(kind, 0 | 3 | 41)
-        || (10_000..20_000).contains(&kind)
-        || (30_000..40_000).contains(&kind)
+    let Ok(kind) = u64::try_from(kind) else {
+        return false;
+    };
+    let kind = Kind(kind);
+    kind.is_replaceable() || kind.is_parameterized_replaceable()
 }
 
 /// Whether `bytes` starts with `prefix`, compared one nibble at a time with the same digit
