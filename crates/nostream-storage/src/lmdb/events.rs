@@ -669,7 +669,7 @@ struct Plan<'a> {
     /// The tag family the ranges were built from, with its criteria in the criteria's order —
     /// `tag_ranges` builds one range per criterion that fits a key. A key in these ranges has
     /// already proved that family, so the row's body is decoded only for the filter's other tag
-    /// families, and a count holds the ids its walk has counted rather than decoding one.
+    /// families, and a `tags` count holds one id per row its matcher accepts rather than decoding.
     tag: Option<(&'a str, &'a [String])>,
 }
 
@@ -722,10 +722,12 @@ pub(crate) fn page(
 
 /// The count of the live ids the filters match, deduplicated across filters.
 ///
-/// A count has no page, so it holds no candidate set: each filter counts the rows it visits and
-/// skips one the count already holds — a row of an earlier filter's page when that filter had a
-/// limit (a page is at most [`MAX_PAGE_KEYS`] ids), or one its predicate matches when it had
-/// none — which is the capture's `UNION`.
+/// A count has no page, so it materialises no result set: each filter counts the rows it visits
+/// and skips one the count already holds — a row of an earlier filter's page when that filter had
+/// a limit (a page is at most [`MAX_PAGE_KEYS`] ids), or one its predicate matches when it had
+/// none — which is the capture's `UNION`. A `tags` walk whose criteria can select one row twice
+/// also holds the ids of the rows it matches, for the length of that walk; no
+/// [`MAX_PAGE_KEYS`] bounds that set.
 pub(crate) fn count(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -806,9 +808,9 @@ fn already_counted(
 /// is counted once, at the first key that selects it.
 ///
 /// A `tags` key names one value of one row, so a row's keys within this walk are one per
-/// matching value and per matching criterion, in criteria order and then value order: the first
-/// one is the row's smallest matching key, and the id it ends with answers both a second
-/// criterion and a second value of a `#g` prefix without reading the body.
+/// matching value and per matching criterion. Whichever key the walk reaches first answers for
+/// the row — ranges run in the criteria's order, so that is not necessarily the smallest of its
+/// matching values — and the id it ends with answers the rest without reading the body.
 fn count_matches(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -831,9 +833,9 @@ fn count_matches(
     // A single exact criterion names one key per row, so only a second criterion or a `#g`
     // prefix can walk one row twice, and only then is the id set paid for.
     //
-    // shortcut: such a walk holds the id of every row it counts for its length, against a body
-    // decode per key; upgrade when a single count's match set outgrows the request's memory
-    // budget, which needs an index order that visits a row once.
+    // shortcut: such a walk holds one id per row its matcher accepts for the walk's length,
+    // against a body decode per key; upgrade when a single count's match set outgrows the
+    // request's memory budget, which needs an index order that visits a row once.
     let mut counted_ids = HashSet::new();
     let dedupe = plan.tag.is_some_and(|(name, criteria)| {
         criteria.len() > 1
@@ -854,12 +856,15 @@ fn count_matches(
             let Some((_, id)) = candidate(txn, databases, plan.path, key)? else {
                 continue;
             };
+            if matcher.matches(txn, databases, &id)?.is_none() {
+                continue;
+            }
+            // The verdict is the row's, not the key's, so a second key is decided the same way
+            // and only a row this filter matches takes a slot in the set.
             if dedupe && !counted_ids.insert(id) {
                 continue;
             }
-            if matcher.matches(txn, databases, &id)?.is_some()
-                && !already_counted(txn, databases, counted, gates, now, &id)?
-            {
+            if !already_counted(txn, databases, counted, gates, now, &id)? {
                 total += 1;
             }
         }
