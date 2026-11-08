@@ -47,8 +47,9 @@ pub(crate) fn find_by_pubkey(
     Ok(load(txn, databases, pubkey)?.map(StoredUser::user))
 }
 
-/// `upsert`: admission, the vanished flag and `updated_at`, plus `tos_accepted_at` only when
-/// the patch carries it. `balance` and `created_at` are never touched.
+/// `upsert`: the flags the patch carries and `updated_at`, plus `tos_accepted_at` only when the
+/// patch carries it. A flag the patch leaves `Absent` is `false` on a new row and left alone on
+/// an existing one, as the Postgres merge does. `balance` and `created_at` are never touched.
 pub(crate) fn upsert(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
@@ -59,8 +60,12 @@ pub(crate) fn upsert(
         Some(stored) => stored,
         None => StoredUser::new(patch.pubkey, encoding::micros(now)),
     };
-    stored.is_admitted = patch.is_admitted;
-    stored.is_vanished = patch.is_vanished;
+    if let Some(is_admitted) = patch.is_admitted.value() {
+        stored.is_admitted = *is_admitted;
+    }
+    if let Some(is_vanished) = patch.is_vanished.value() {
+        stored.is_vanished = *is_vanished;
+    }
     stored.updated_at = encoding::micros(now);
     match patch.tos_accepted_at {
         FieldUpdate::Absent => {}
@@ -145,4 +150,81 @@ pub(crate) fn revoke_admission(
     stored.updated_at = encoding::micros(now);
     store(txn, databases, &stored)?;
     Ok(1)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+    use crate::lmdb::LmdbBackend;
+    use crate::repositories::UserRepository;
+
+    fn patch(
+        pubkey: Pubkey,
+        is_admitted: FieldUpdate<bool>,
+        is_vanished: FieldUpdate<bool>,
+    ) -> UserPatch {
+        UserPatch {
+            pubkey,
+            is_admitted,
+            is_vanished,
+            tos_accepted_at: FieldUpdate::Absent,
+        }
+    }
+
+    /// A new row takes the capture's column defaults for the flags the patch does not carry.
+    #[tokio::test]
+    async fn a_new_row_writes_false_for_a_flag_the_patch_leaves_absent() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let backend = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+        let pubkey = Pubkey::from_byte_array([1; 32]);
+
+        backend
+            .upsert(&patch(pubkey, FieldUpdate::Absent, FieldUpdate::Absent))
+            .await
+            .expect("the upsert");
+
+        let user = backend
+            .find_by_pubkey(&pubkey)
+            .await
+            .expect("the row")
+            .expect("a row");
+        assert!(!user.is_admitted);
+        assert!(!user.is_vanished);
+    }
+
+    /// An upsert that only needs the row to exist must not clear an admission or a vanish flag
+    /// that is already there, which is what the Postgres merge's omitted assignments do.
+    #[tokio::test]
+    async fn a_flag_the_patch_leaves_absent_keeps_the_stored_value() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let backend = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+        let pubkey = Pubkey::from_byte_array([2; 32]);
+
+        backend
+            .upsert(&patch(
+                pubkey,
+                FieldUpdate::Set(true),
+                FieldUpdate::Set(true),
+            ))
+            .await
+            .expect("the upsert");
+        backend
+            .upsert(&patch(pubkey, FieldUpdate::Absent, FieldUpdate::Absent))
+            .await
+            .expect("the upsert");
+
+        let user = backend
+            .find_by_pubkey(&pubkey)
+            .await
+            .expect("the row")
+            .expect("a row");
+        assert!(user.is_admitted);
+        assert!(user.is_vanished);
+    }
 }
