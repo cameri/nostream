@@ -1,4 +1,4 @@
-# ADR 0010: The LMDB event store behind the existing seam (job 024)
+# ADR 0011: The LMDB event store behind the existing seam (job 024)
 
 - **Status:** accepted (job 024, Phase 2)
 - **Deciders:** the rewrite team, on the evidence in job 024's recon and spec

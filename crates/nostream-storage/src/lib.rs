@@ -23,7 +23,7 @@
 //! complete: Postgres against the 37-migration schema, and LMDB against the same column
 //! contract for 9 of the capture's 10 repositories — `user_subscriptions` has a TypeScript
 //! repository and no trait yet, and `events.first_seen` is stored but never indexed
-//! (`docs/rewrite/decisions/0010-lmdb-backend.md`).
+//! (`docs/rewrite/decisions/0011-lmdb-backend.md`).
 
 pub mod backend;
 pub mod error;

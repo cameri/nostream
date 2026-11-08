@@ -1136,7 +1136,7 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
         // shortcut: a quiet author's page, and an author × kind filter composing more than
         // `MAX_PAGE_KEYS` ranges, read the created-at index with the criteria left to the
         // matcher; upgrade when statistics can choose between the two indexes, which is the
-        // benchmark job's (ADR 0010).
+        // benchmark job's (ADR 0011).
         return Plan {
             database: databases.events_by_created_at,
             path: AccessPath::CreatedAt,
@@ -1700,7 +1700,7 @@ impl Stream for ReconciliationStream {
 /// shortcut: an author without kinds, a `#g` prefix and an id prefix narrow to no such range,
 /// so their stream scans `events_by_created_at` and the criteria are left to the matcher — a
 /// poll walks what the store holds rather than what the request names; upgrade when statistics
-/// can choose the cheaper index, which is the benchmark job's (ADR 0010).
+/// can choose the cheaper index, which is the benchmark job's (ADR 0011).
 fn stream_plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
     let chosen = plan(filter, databases);
     let exact_ids =

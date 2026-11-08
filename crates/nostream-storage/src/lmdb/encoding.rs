@@ -1,6 +1,6 @@
 //! Key and value codecs for the LMDB store: the format byte, the fixed event header, the
 //! big-endian key layout, timestamp truncation and the hex/tag ranges the event queries seek
-//! with. `docs/rewrite/decisions/0010-lmdb-backend.md` records why each shape was chosen.
+//! with. `docs/rewrite/decisions/0011-lmdb-backend.md` records why each shape was chosen.
 
 use std::ops::Bound;
 
@@ -34,7 +34,7 @@ pub(crate) const HEX_FIELD_LEN: usize = 32;
 /// It bounds every key this module builds. The `tags` key carries the tag value verbatim, so a
 /// value longer than the room the key has left cannot be indexed and its event is refused at
 /// the write: that is the one place this backend rejects a row Postgres would keep, and ADR
-/// 0010 records it as a divergence. The `replaceable` key is the other variable-length key; its
+/// 0011 records it as a divergence. The `replaceable` key is the other variable-length key; its
 /// components are length-prefixed ([`replaceable_key`]), which leaves it four bytes of room the
 /// `tags` key does not have for the same value, so it refuses nothing the tag index keeps.
 ///
