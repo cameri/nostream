@@ -1,31 +1,40 @@
-//! The LMDB environment slice, the trait surface, and the backend's dyn compatibility.
+//! The backend seam: the enum, the data directory, and the dyn-compatible trait surface.
 
 // This integration-test target may unwrap: a failed assertion here is a failed test,
 // which is the point. The allowance names this file rather than exempting test targets
 // workspace-wide, so a new test file still has to ask.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use nostream_storage::{Backend, LmdbEnv};
-
-#[tokio::test]
-async fn the_lmdb_environment_round_trips_a_value() {
-    let directory = tempfile::tempdir().expect("tempdir");
-    let env = LmdbEnv::open(directory.path(), 1024 * 1024).expect("the environment opens");
-
-    env.put("greeting", "hello").expect("put");
-    assert_eq!(env.get("greeting").expect("get"), Some("hello".to_owned()));
-    assert_eq!(env.get("absent").expect("get"), None);
-    assert_eq!(env.path(), Path::new(directory.path()));
-}
+use nostream_core::EventStoreBackend;
+use nostream_storage::data_dir;
 
 #[test]
 fn the_backend_parses_the_settings_spelling() {
-    assert_eq!(Backend::parse("postgres"), Some(Backend::Postgres));
-    assert_eq!(Backend::parse("lmdb"), Some(Backend::Lmdb));
-    assert_eq!(Backend::parse("mongodb"), None);
-    assert_eq!(Backend::Lmdb.to_string(), "lmdb");
+    assert_eq!(
+        EventStoreBackend::parse("postgres"),
+        Some(EventStoreBackend::Postgres)
+    );
+    assert_eq!(
+        EventStoreBackend::parse("lmdb"),
+        Some(EventStoreBackend::Lmdb)
+    );
+    assert_eq!(EventStoreBackend::parse("mongodb"), None);
+    assert_eq!(EventStoreBackend::parse("LMDB"), None);
+    assert_eq!(EventStoreBackend::Lmdb.to_string(), "lmdb");
+}
+
+#[test]
+fn the_lmdb_backend_keeps_a_data_directory_of_its_own() {
+    assert_eq!(
+        data_dir(Path::new("/data"), EventStoreBackend::Lmdb),
+        Some(PathBuf::from("/data/lmdb"))
+    );
+    assert_eq!(
+        data_dir(Path::new("/data"), EventStoreBackend::Postgres),
+        None
+    );
 }
 
 #[tokio::test]
@@ -401,6 +410,37 @@ async fn the_postgres_backend_coerces_to_all_nine_trait_objects() {
 
     let backend = PostgresBackend::connect_lazy("postgres://postgres:postgres@127.0.0.1/postgres")
         .expect("a lazy backend");
+    let _: &dyn EventRepository = &backend;
+    let _: &dyn InvoiceRepository = &backend;
+    let _: &dyn UserRepository = &backend;
+    let _: &dyn Nip05VerificationRepository = &backend;
+    let _: &dyn InviteCodeRepository = &backend;
+    let _: &dyn DvmJobRepository = &backend;
+    let _: &dyn ReportRepository = &backend;
+    let _: &dyn NotificationDeliveryLogRepository = &backend;
+    let _: &dyn NotificationOutboxRepository = &backend;
+}
+
+/// The embedded backend coerces into the same nine forms, from a store it opens itself.
+#[cfg(feature = "lmdb")]
+#[tokio::test]
+async fn the_lmdb_backend_coerces_to_all_nine_trait_objects() {
+    use nostream_storage::LmdbBackend;
+    use nostream_storage::repositories::{
+        DvmJobRepository, EventRepository, InviteCodeRepository, InvoiceRepository,
+        Nip05VerificationRepository, NotificationDeliveryLogRepository,
+        NotificationOutboxRepository, ReportRepository, UserRepository,
+    };
+
+    let directory = tempfile::tempdir().expect("tempdir");
+    let backend = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+    assert!(
+        data_dir(directory.path(), EventStoreBackend::Lmdb)
+            .expect("a data directory")
+            .is_dir()
+    );
     let _: &dyn EventRepository = &backend;
     let _: &dyn InvoiceRepository = &backend;
     let _: &dyn UserRepository = &backend;

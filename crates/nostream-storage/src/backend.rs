@@ -1,47 +1,33 @@
-//! Backend selection and the two backends. Mirrors `src/utils/event-store.ts` (the selection
-//! half) and the storage boundary in `src/@types/adapters.ts`.
+//! Backend selection and the LMDB environment. Mirrors `src/utils/event-store.ts` (the
+//! selection half) and the storage boundary in `src/@types/adapters.ts`.
 
 use std::path::{Path, PathBuf};
 
-use heed::types::Str;
+use nostream_core::EventStoreBackend;
 
+#[cfg(feature = "lmdb")]
+use heed::{Env, EnvOpenOptions};
+
+#[cfg(feature = "lmdb")]
 use crate::error::StorageError;
-use heed::{Database, Env, EnvOpenOptions};
+#[cfg(feature = "lmdb")]
+use crate::lmdb::{LMDB_MAX_DBS, LMDB_MAX_READERS};
 
-/// The storage backends the rewrite can be configured with (`src/constants/base.ts`
-/// `EventStoreBackend`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Backend {
-    Postgres,
-    Lmdb,
-}
+/// The directory one backend's data lives in, under the root a caller supplies.
+/// `src/@types/adapters.ts` names the LMDB store as a directory of its own beside the
+/// database it replaces.
+pub const LMDB_DIR: &str = "lmdb";
 
-impl Backend {
-    /// The settings spelling of this backend.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Postgres => "postgres",
-            Self::Lmdb => "lmdb",
-        }
-    }
-
-    /// Parses a settings value.
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "postgres" => Some(Self::Postgres),
-            "lmdb" => Some(Self::Lmdb),
-            _ => None,
-        }
+/// Resolves the data directory under `root` for one backend. A backend that keeps its data
+/// somewhere other than a directory of its own answers `None`.
+pub fn data_dir(root: &Path, backend: EventStoreBackend) -> Option<PathBuf> {
+    match backend {
+        EventStoreBackend::Lmdb => Some(root.join(LMDB_DIR)),
+        EventStoreBackend::Postgres => None,
     }
 }
 
-impl std::fmt::Display for Backend {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-/// An opened LMDB environment with one named database of string keys and values.
+/// An opened LMDB environment, with the named databases the backend creates.
 ///
 /// The constructor is the crate's single `unsafe` boundary. heed 0.20.5 marks
 /// `EnvOpenOptions::open` unsafe because an LMDB environment memory-maps a file shared with
@@ -51,34 +37,36 @@ impl std::fmt::Display for Backend {
 /// and `Error::BadOpenOptions` when they differ (heed-0.20.5 `src/env.rs`, `OPENED_ENV`).
 /// heed's documented preconditions, and where each stands today:
 ///
-/// - **No long-lived transactions** — upheld by the code: `put`/`get` open a transaction,
-///   use it, and commit/drop it before returning; nothing holds one across an await.
+/// - **No long-lived transactions** — upheld by the code: every repository call opens a
+///   transaction, uses it, and commits or drops it inside one `spawn_blocking` closure;
+///   nothing holds one across an await.
 /// - **No aborting the process with an active transaction** — relied on the operator for
-///   SIGKILL-class exits; the Phase-2 daemon drain path must ensure a clean shutdown
+///   SIGKILL-class exits; the daemon drain path must ensure a clean shutdown
 ///   (SIGINT/SIGTERM drain through `ShutdownState` does not abort mid-transaction).
-/// - **No network filesystems** — relied on the operator today: `open` accepts any path and
-///   only `create_dir_all` before mapping; the Phase-2 backend factory must refuse a remote
-///   location before this slice is wired into settings.
+/// - **No network filesystems** — relied on the operator: `open` accepts any path and only
+///   `create_dir_all` before mapping; the daemon's backend factory must refuse a remote
+///   location before this environment is wired into settings.
 /// - **`NO_LOCK` requires self-managed concurrency; a broken lock file means
 ///   synchronization issues and possible UB** — split responsibility. The code guarantees
 ///   its half: no env flags are passed (`EnvOpenOptions::new()` only), so `NO_LOCK` is
 ///   never in play and this crate never reads, writes or removes the lock file. The
-///   operator must supply the rest: the data directory's lock file must not be broken
-///   (stale locks left by a crashed process on a filesystem without proper flock support,
-///   manual deletion, two processes on different hosts sharing a volume — LMDB cannot
-///   recover from any of those, per heed's contract).
+///   operator must supply the rest: the data directory's lock file must not be broken.
 /// - **One `map_size` per path for the life of the process** — upheld by heed + propagated:
 ///   heed's per-process `OPENED_ENV` registry returns the same `Env` for a second open with
 ///   equal options and `Error::BadOpenOptions` when they differ, and `open` surfaces that
-///   error to the caller rather than opening a second environment.
+///   error to the caller rather than opening a second environment. `Env::resize` is unsafe
+///   as well, so the map is sized once and never grown.
+#[cfg(feature = "lmdb")]
 #[derive(Debug, Clone)]
 pub struct LmdbEnv {
     env: Env,
     path: PathBuf,
 }
 
+#[cfg(feature = "lmdb")]
 impl LmdbEnv {
-    /// Opens (creating if needed) an LMDB environment at `path` with `map_size` bytes.
+    /// Opens (creating if needed) an LMDB environment at `path` with `map_size` bytes, room
+    /// for the backend's named databases and its reader slots.
     pub fn open(path: impl Into<PathBuf>, map_size: usize) -> Result<Self, StorageError> {
         let path = path.into();
         std::fs::create_dir_all(&path).map_err(|source| StorageError::CreateDirectory {
@@ -87,40 +75,26 @@ impl LmdbEnv {
         })?;
 
         // # Safety: the preconditions on `LmdbEnv` above, each marked upheld or relied-on:
-        // no env flags (LMDB's locking runs), transactions never escape the call, and
-        // heed's per-process dedup turns a second open into the same Env or
-        // BadOpenOptions. The network-filesystem precondition rests on the operator
-        // passing a local path; see the list above.
+        // no env flags (LMDB's locking runs), transactions never escape the closure they are
+        // opened in, and heed's per-process dedup turns a second open into the same Env or
+        // BadOpenOptions. The network-filesystem precondition rests on the operator passing a
+        // local path; see the list above.
         #[allow(unsafe_code)]
-        let env =
-            unsafe { EnvOpenOptions::new().map_size(map_size).open(&path) }.map_err(|source| {
-                StorageError::OpenLmdb {
-                    path: path.clone(),
-                    source,
-                }
-            })?;
+        let env = unsafe {
+            EnvOpenOptions::new()
+                .map_size(map_size)
+                .max_dbs(LMDB_MAX_DBS)
+                .max_readers(LMDB_MAX_READERS)
+                .open(&path)
+        }
+        .map_err(|source| StorageError::OpenLmdb {
+            path: path.clone(),
+            source,
+        })?;
         Ok(Self { env, path })
     }
 
-    /// Writes one value under one key, committing immediately.
-    pub fn put(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        let mut transaction = self.env.write_txn()?;
-        let database: Database<Str, Str> = self.env.create_database(&mut transaction, None)?;
-        database.put(&mut transaction, key, value)?;
-        transaction.commit()?;
-        Ok(())
-    }
-
-    /// Reads one value; `Ok(None)` means the key is absent.
-    pub fn get(&self, key: &str) -> Result<Option<String>, StorageError> {
-        let transaction = self.env.read_txn()?;
-        let Some(database) = self.env.open_database::<Str, Str>(&transaction, None)? else {
-            return Ok(None);
-        };
-        Ok(database.get(&transaction, key)?.map(str::to_owned))
-    }
-
-    /// The environment handle, for the Phase-2 repository implementations.
+    /// The environment handle, for the repository implementations.
     pub fn env(&self) -> &Env {
         &self.env
     }
@@ -129,14 +103,4 @@ impl LmdbEnv {
     pub fn path(&self) -> &Path {
         &self.path
     }
-}
-
-/// Resolves the database path under `root` for one backend.
-///
-/// Phase 1 stub — job 005; will pick the per-backend data directory; see `src/@types/adapters.ts`.
-pub fn data_dir(root: &Path, backend: Backend) -> Result<PathBuf, StorageError> {
-    let _ = (root, backend);
-    Err(StorageError::NotImplemented {
-        module: "storage::backend::data_dir",
-    })
 }
