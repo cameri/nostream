@@ -19,9 +19,9 @@ therefore measures.
 
 ## The backend is a feature of the crate, not a crate
 
-`lmdb = ["dep:heed", "dep:uuid"]`, default on beside `postgres` (D1). heed was already a
-hard dependency, the seams' own ADR says the `--no-default-features` build is what this
-follow-up uses (ADR 0003, "Backend coupling"), and a second crate would repeat five
+`lmdb = ["dep:heed", "dep:uuid", "dep:tracing"]`, default on beside `postgres` (D1). heed was
+already a hard dependency, the seams' own ADR says the `--no-default-features` build is what
+this follow-up uses (ADR 0003, "Backend coupling"), and a second crate would repeat five
 manifest fields plus `[lints] workspace = true` to isolate code that shares every type in
 `nostream-storage`. The cost is that `--no-default-features` now links no driver at all —
 which is also the point: `cargo check -p nostream-storage --no-default-features --all-targets`
@@ -82,13 +82,15 @@ in the flags byte, and the reserved byte is there for a field that has to be a b
 
 `row_id` stays `None` (D5): it is the Postgres row's `uuid` and nothing reads it through
 this backend. Text components of a composite key are NUL-terminated except the final one
-(`text_part`), so `tag_key` is `name NUL value NUL created_at ‖ event_id`. A component carrying
-`0x00` is refused as `InvalidRow` by `text_part` itself rather than splitting the key, and
-PostgreSQL's `text` cannot hold that byte either, so both backends reject the same value —
-including a delivery log's `target_id`, which the capture could not have stored. The three
-component codecs a key reader needs — `text_part`, `text_from` and `stamp_key` — have one
-home, `lmdb/encoding.rs`, beside the key builders; the tail modules call them rather than
-keeping copies whose rules could drift apart.
+(`text_part`), so `tag_key` is `name NUL value NUL created_at ‖ event_id`. A value carrying
+`0x00` is refused as `InvalidRow` by `refuse_nul` rather than splitting the key, and
+PostgreSQL's `text` cannot hold that byte either, so both backends reject the same value. A
+row's own text column meets the same check: the outbox key stopped carrying the target, so
+`append` refuses `notification_delivery_log.target_id` through `refuse_nul` rather than
+writing a value the capture could not have stored. The three component codecs a key reader
+needs — `text_part`, `text_from` and `stamp_key` — have one home, `lmdb/encoding.rs`, beside
+the key builders; the tail modules call them rather than keeping copies whose rules could
+drift apart.
 
 LMDB bounds a key at 511 bytes (`MDB_MAXKEYSIZE`, which this environment does not raise), and
 a `tags` key carries the tag value verbatim. **That is the one place this backend refuses a
@@ -227,14 +229,18 @@ rather than a rule.
 
 Two consequences of the same bound:
 
-- `count_by_filters` has no page, so it holds no matching set. Each filter counts the rows it
-  visits and skips one the count already holds — an earlier filter's page when that filter had
-  a limit, or a predicate match when it had none — which is the capture's `UNION`. An unlimited
-  filter walks its ranges whole, which is what counting every match costs.
+- `count_by_filters` has no page, so it materialises no result set: each filter counts the rows
+  it visits and skips one the count already holds — an earlier filter's page when that filter
+  had a limit, or a predicate match when it had none — which is the capture's `UNION`. An
+  unlimited filter walks its ranges whole, which is what counting every match costs.
 - A `tags` range is built from the family's own criteria, so a key inside it has already proved
   that family: the event's body is decoded only for the filter's *other* tag families, and a
-  filter with one family decodes none. A count reads the value out of the key too
-  (`name NUL value NUL …`), to count a row two criteria of one family would both select once.
+  filter with one family decodes none. A count may hold the id each key ends with for the length
+  of its tag walk, so a row two criteria — or two values of a `#g` prefix — both select is
+  counted at its smallest matching key and skipped at the rest, without a body decode. Only
+  those two shapes hold the set: a single exact criterion names one key per row. It is the
+  count's one resident cost, per distinct match, and the index has no order that would let a
+  walk visit each row once instead.
 
 ## Constraints move into Rust
 
