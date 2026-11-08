@@ -8,6 +8,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap, HashSet};
 use std::future::Future;
+use std::net::IpAddr;
 use std::ops::Bound;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -78,11 +79,12 @@ pub(crate) fn upsert(
     record: &EventRecord,
     now: DateTime<Utc>,
 ) -> Result<u64, StorageError> {
-    Ok(u64::from(upsert_one(txn, databases, record, now)?))
+    Ok(u64::from(upsert_one(txn, databases, record, now, false)?))
 }
 
 /// `upsert_many`: one row per replaceable address, then the same merge, in one write
-/// transaction.
+/// transaction. The capture's bulk merge list omits `remote_address`, so a replacement keeps
+/// the address the stored row had, which `postgres/events.rs`'s `upsert_many` does too.
 pub(crate) fn upsert_many(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
@@ -94,7 +96,7 @@ pub(crate) fn upsert_many(
     // written rather than records passed.
     let mut affected = 0;
     for record in distinct_replacements(records) {
-        if upsert_one(txn, databases, record, now)? {
+        if upsert_one(txn, databases, record, now, true)? {
             affected += 1;
         }
     }
@@ -106,18 +108,33 @@ fn upsert_one(
     databases: &Databases,
     record: &EventRecord,
     now: DateTime<Utc>,
+    keep_stored_address: bool,
 ) -> Result<bool, StorageError> {
+    let kind = kind_of(record)?;
+    let deduplication = record.deduplication();
+
     if databases
         .events
         .get(txn, record.event.id.as_bytes())?
         .is_some()
     {
+        // A replaceable write conflicts on its address, not on its id: replaying one the store
+        // already holds updates that row against itself and counts zero (`REPLACEABLE_MERGE`
+        // never matches), and only an id naming another address violates
+        // `events_event_id_unique`.
+        if encoding::replaceable_kind(kind) {
+            let pointer = encoding::replaceable_key(&record.event.pubkey, kind, &deduplication)?;
+            if let Some(stored) = databases.replaceable.get(txn, &pointer)?
+                && encoding::event_id_from(stored)? == record.event.id
+            {
+                return Ok(false);
+            }
+        }
         return Err(StorageError::DuplicateEvent);
     }
 
-    let kind = kind_of(record)?;
-    let deduplication = record.deduplication();
     let mut first_seen = None;
+    let mut remote_address = record.remote_address;
 
     if encoding::replaceable_kind(kind) {
         let pointer = encoding::replaceable_key(&record.event.pubkey, kind, &deduplication)?;
@@ -125,7 +142,16 @@ fn upsert_one(
             let stored_id = encoding::event_id_from(stored)?;
             let Some(value) = databases.events.get(txn, stored_id.as_bytes())? else {
                 // A pointer with no row: treat the incoming event as a plain insert.
-                return write_upserted(txn, databases, record, now, kind, &deduplication, None);
+                return write_upserted(
+                    txn,
+                    databases,
+                    record,
+                    now,
+                    kind,
+                    &deduplication,
+                    None,
+                    remote_address,
+                );
             };
             let header = rows::event_header(value)?;
             if !replaces_fields(
@@ -138,6 +164,9 @@ fn upsert_one(
             }
             let stored_record = rows::decode_event(value)?;
             first_seen = stored_record.first_seen;
+            if keep_stored_address {
+                remote_address = stored_record.remote_address;
+            }
             hard_delete(txn, databases, &stored_record)?;
             databases.replaceable.delete(txn, &pointer)?;
         }
@@ -151,9 +180,11 @@ fn upsert_one(
         kind,
         &deduplication,
         first_seen,
+        remote_address,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_upserted(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
@@ -162,6 +193,7 @@ fn write_upserted(
     kind: i32,
     deduplication: &[serde_json::Value],
     first_seen: Option<DateTime<Utc>>,
+    remote_address: Option<IpAddr>,
 ) -> Result<bool, StorageError> {
     let stored = EventRecord {
         row_id: None,
@@ -172,7 +204,7 @@ fn write_upserted(
         deleted_at: None,
         expires_at: record.expires_at,
         event_deduplication: Some(deduplication.to_vec()),
-        remote_address: record.remote_address,
+        remote_address,
     };
     write_event(txn, databases, &stored)?;
     if encoding::replaceable_kind(kind) {
@@ -429,7 +461,14 @@ pub(crate) fn delete_expired_and_retained(
         }
     }
     if candidates.len() < RETENTION_BATCH_SIZE {
-        for entry in databases.events_expiring.iter(txn)? {
+        // A row whose expiry has not passed cannot be classified expired, and one that
+        // qualifies by age is the created-at pass's business: the index's own order lets this
+        // walk stop at `now` instead of reading every future expiry under the writer.
+        let lower = encoding::i64_key(i64::MIN).to_vec();
+        let mut upper = encoding::i64_key(now.saturating_sub(1)).to_vec();
+        upper.extend([0xff; 32]);
+        let range = encoding::bounds(&lower, &upper);
+        for entry in databases.events_expiring.range(txn, &range)? {
             let (key, _) = entry?;
             let id = header_id(key, 8, "events_expiring")?;
             gather(
@@ -507,6 +546,7 @@ fn gather(
     candidates: &mut Vec<EventId>,
     seen: &mut HashSet<[u8; 32]>,
 ) -> Result<(), StorageError> {
+    key_evaluated();
     let Some(value) = databases.events.get(txn, id.as_bytes())? else {
         return Ok(());
     };
@@ -629,9 +669,14 @@ struct Plan<'a> {
     /// worst kept row instead of being walked whole.
     ordered: bool,
     /// The tag family the ranges were built from, with its criteria in the criteria's order —
-    /// `tag_ranges` builds one range per criterion. A key in these ranges has already proved
-    /// that family, so the row's body is decoded only for the filter's other tag families.
+    /// `tag_ranges` builds one range per criterion that fits a key. A key in these ranges has
+    /// already proved that family, so the row's body is decoded only for the filter's other tag
+    /// families.
     tag: Option<(&'a str, &'a [String])>,
+    /// The criterion each range was built from, in the same order as `ranges`. Empty for a plan
+    /// that does not read the tags index; a dropped criterion leaves the later positions alone,
+    /// so a count still knows which criteria came before a range.
+    tag_positions: Vec<usize>,
 }
 
 /// One reconciliation batch still running on the blocking pool, with the cursor it returns.
@@ -761,33 +806,57 @@ fn already_counted(
     Ok(false)
 }
 
-/// Whether a criterion of the filter's own tag family, other than the one this range was built
-/// from, also selects the row. One event can carry two values the family asks for, and the
-/// criterion whose range comes first answers for it, so the row is counted once.
+/// Whether an earlier criterion — the criterion this range was built from, or one before it —
+/// already answers for this row, so counting it here would count it twice.
+///
+/// Two ranges select one row when two criteria of the filter's tag family both match one of its
+/// tags; one criterion selects it twice when a `#g` prefix matches two of its tags. The first
+/// criterion in the criteria's order answers for the row, and within a prefix criterion the
+/// smallest matching value does.
 ///
 /// This is the one place a count reads an event's tags instead of its key: the key names a
-/// single value, and which values the event also carries is in the body.
-fn earlier_criterion_selects(
+/// single value, and the other values the event carries are in the body.
+fn counted_earlier(
     txn: &RoTxn<'_>,
     databases: &Databases,
     plan: &Plan<'_>,
     index: usize,
+    value: Option<&str>,
     id: &EventId,
 ) -> Result<bool, StorageError> {
     let Some((name, criteria)) = plan.tag else {
         return Ok(false);
     };
-    if index == 0 {
+    let position = plan.tag_positions.get(index).copied().unwrap_or(index);
+    let prefix = criteria
+        .get(position)
+        .and_then(|criterion| criterion.strip_suffix('*').filter(|_| name == "g"));
+    if position == 0 && prefix.is_none() {
         return Ok(false);
     }
-    let Some(value) = databases.events.get(txn, id.as_bytes())? else {
+    let Some(stored) = databases.events.get(txn, id.as_bytes())? else {
         return Ok(false);
     };
-    let record = rows::decode_event(value)?;
-    Ok(criteria
+    let record = rows::decode_event(stored)?;
+    if criteria
         .iter()
-        .take(index)
-        .any(|earlier| record_has_tag(&record, name, std::slice::from_ref(earlier))))
+        .take(position)
+        .any(|earlier| record_has_tag(&record, name, std::slice::from_ref(earlier)))
+    {
+        return Ok(true);
+    }
+    let (Some(prefix), Some(value)) = (prefix, value) else {
+        return Ok(false);
+    };
+    Ok(record.event.tags.iter().any(|tag| {
+        matches!(
+            (tag.first(), tag.get(1)),
+            (Some(tag_name), Some(candidate))
+                if tag_name == name
+                    && candidate.starts_with(prefix)
+                    && candidate.as_str() < value
+        )
+    }))
 }
 
 /// Counts the live rows one unlimited filter matches that the count does not already hold.
@@ -819,17 +888,22 @@ fn count_matches(
         for entry in plan.database.range(txn, &range)? {
             let (key, _) = entry?;
             key_evaluated();
-            if let Some((name, criteria)) = plan.tag
-                && !tag_value_matches(name == "g", criteria, encoding::tag_value(key)?)
-            {
-                continue;
-            }
+            let value = match plan.tag {
+                Some((name, criteria)) => {
+                    let value = encoding::tag_value(key)?;
+                    if !tag_value_matches(name == "g", criteria, value) {
+                        continue;
+                    }
+                    Some(value)
+                }
+                None => None,
+            };
             let Some((_, id)) = candidate(txn, databases, plan.path, key)? else {
                 continue;
             };
             if matcher.matches(txn, databases, &id)?.is_some()
                 && !already_counted(txn, databases, counted, gates, now, &id)?
-                && !earlier_criterion_selects(txn, databases, &plan, index, &id)?
+                && !counted_earlier(txn, databases, &plan, index, value, &id)?
             {
                 total += 1;
             }
@@ -1107,6 +1181,7 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
             // The `events` key is the id, so the range runs in id order, not time order.
             ordered: false,
             tag: None,
+            tag_positions: Vec::new(),
         };
     }
     if let Some(authors) = &filter.authors
@@ -1125,6 +1200,7 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
                 // kind.
                 ordered: authors.iter().all(|criterion| criterion.len() == 64),
                 tag: None,
+                tag_positions: Vec::new(),
             };
         }
         // Without kinds the author index runs in kind order before `created_at`, so a page
@@ -1143,17 +1219,24 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
             ranges: created_at_ranges(filter),
             ordered: true,
             tag: None,
+            tag_positions: Vec::new(),
         };
     }
     if let Some((name, criteria)) = tag_path(filter) {
+        let ranged = encoding::tag_ranges(name, criteria);
+        let tag_positions = ranged.iter().map(|(position, _, _)| *position).collect();
         return Plan {
             database: databases.tags,
             path: AccessPath::Tags,
-            ranges: encoding::tag_ranges(name, criteria),
+            ranges: ranged
+                .into_iter()
+                .map(|(_, low, high)| (low, high))
+                .collect(),
             // An exact criterion's range runs `created_at` under one value; a `#g` prefix range
             // spans values, so its keys are in value order and the range is walked whole.
             ordered: name != "g" || criteria.iter().all(|criterion| !criterion.ends_with('*')),
             tag: Some((name, criteria)),
+            tag_positions,
         };
     }
     Plan {
@@ -1162,6 +1245,7 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
         ranges: created_at_ranges(filter),
         ordered: true,
         tag: None,
+        tag_positions: Vec::new(),
     }
 }
 
@@ -1601,15 +1685,23 @@ pub(crate) struct ReconciliationStream {
 }
 
 impl ReconciliationStream {
+    /// Builds the stream for one filter, or refuses it as every other read does: a non-empty
+    /// `search` with the NIP-50 gate on is [`StorageError::NotImplemented`], and a criterion
+    /// family that is present but empty selects nothing (the capture's `1 = 0`).
     pub(crate) fn new(
         env: Env,
         databases: Databases,
         filter: &Filter,
         gates: Gates,
         now: i64,
-    ) -> Self {
-        let range_count = stream_plan(filter, &databases).ranges.len();
-        Self {
+    ) -> Result<Self, StorageError> {
+        let admitted = admits(filter, &gates)?;
+        let range_count = if admitted {
+            stream_plan(filter, &databases).ranges.len()
+        } else {
+            0
+        };
+        Ok(Self {
             env,
             databases,
             filter: filter.clone(),
@@ -1619,8 +1711,8 @@ impl ReconciliationStream {
             position: Position::new(),
             pending: None,
             buffer: Vec::new().into_iter(),
-            finished: false,
-        }
+            finished: !admitted,
+        })
     }
 }
 
@@ -1714,6 +1806,7 @@ fn stream_plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
         ranges: created_at_ranges(filter),
         ordered: true,
         tag: None,
+        tag_positions: Vec::new(),
     }
 }
 
@@ -2772,6 +2865,241 @@ mod tests {
         transaction.commit().expect("the commit");
 
         assert_eq!(affected, 0, "the stored version is still the newer one");
+    }
+
+    // -----------------------------------------------------------------------------------
+    // Round 12 rework: the replaceable write paths the PR's reviewer named.
+    // -----------------------------------------------------------------------------------
+
+    /// A replay of a replaceable event the store already holds updates that row against
+    /// itself: the merge predicate never matches, so the count is zero — not the id collision
+    /// `events_event_id_unique` reports for a kind with no conflict target.
+    #[test]
+    fn a_replayed_replaceable_event_counts_zero() {
+        let record = signed(7, 0, 1_700_000_000, Vec::new());
+        let (_directory, env, databases) = store();
+
+        let mut transaction = env.write_txn().expect("a write transaction");
+        assert_eq!(
+            upsert(&mut transaction, &databases, &record, Utc::now()).expect("the first write"),
+            1
+        );
+        assert_eq!(
+            upsert(&mut transaction, &databases, &record, Utc::now()).expect("the replay"),
+            0,
+            "the replaceable conflict matches and the merge predicate does not"
+        );
+        transaction.commit().expect("the commit");
+
+        let transaction = env.read_txn().expect("a read transaction");
+        let value = databases
+            .events
+            .get(&transaction, record.event.id.as_bytes())
+            .expect("the store")
+            .expect("the row");
+        assert_eq!(
+            rows::decode_event(value).expect("the row").event.id,
+            record.event.id,
+            "the replay left the row in place"
+        );
+    }
+
+    /// A kind with no conflict target has only the id to collide on, so a replay is still the
+    /// capture's `rejected: event already exists`.
+    #[test]
+    fn a_duplicate_id_of_a_regular_kind_is_rejected() {
+        let record = signed(8, 1, 1_700_000_000, Vec::new());
+        let (_directory, env, databases) = store();
+
+        let mut transaction = env.write_txn().expect("a write transaction");
+        upsert(&mut transaction, &databases, &record, Utc::now()).expect("the first write");
+        let error = upsert(&mut transaction, &databases, &record, Utc::now())
+            .expect_err("the second insert of the same id");
+        assert!(matches!(error, StorageError::DuplicateEvent));
+    }
+
+    /// The capture's bulk merge list omits `remote_address`, so a bulk replacement keeps the
+    /// address the stored row had — even when the incoming record carries none — while the
+    /// single-row merge writes the incoming address.
+    #[test]
+    fn a_bulk_replacement_keeps_the_stored_source_address() {
+        let stored = signed(7, 0, 1_700_000_000, Vec::new())
+            .with_remote_address(IpAddr::from([10, 0, 0, 1]));
+        let newer = signed(7, 0, 1_700_000_100, Vec::new())
+            .with_remote_address(IpAddr::from([10, 0, 0, 2]));
+        let anonymous = signed(7, 0, 1_700_000_200, Vec::new());
+
+        let (_directory, env, databases) = store();
+        let mut transaction = env.write_txn().expect("a write transaction");
+        upsert_many(
+            &mut transaction,
+            &databases,
+            std::slice::from_ref(&stored),
+            Utc::now(),
+        )
+        .expect("the stored version");
+        upsert_many(
+            &mut transaction,
+            &databases,
+            std::slice::from_ref(&newer),
+            Utc::now(),
+        )
+        .expect("the bulk replacement");
+        upsert_many(
+            &mut transaction,
+            &databases,
+            std::slice::from_ref(&anonymous),
+            Utc::now(),
+        )
+        .expect("a bulk replacement with no address");
+        transaction.commit().expect("the commit");
+
+        let transaction = env.read_txn().expect("a read transaction");
+        let value = databases
+            .events
+            .get(&transaction, anonymous.event.id.as_bytes())
+            .expect("the store")
+            .expect("the last row");
+        let row = rows::decode_event(value).expect("the row");
+        assert_eq!(
+            row.remote_address,
+            Some(IpAddr::from([10, 0, 0, 1])),
+            "the bulk merge preserves the address across both replacements"
+        );
+
+        let (_directory, env, databases) = store();
+        let mut transaction = env.write_txn().expect("a write transaction");
+        upsert(&mut transaction, &databases, &stored, Utc::now()).expect("the stored version");
+        upsert(&mut transaction, &databases, &newer, Utc::now()).expect("the single replacement");
+        transaction.commit().expect("the commit");
+
+        let transaction = env.read_txn().expect("a read transaction");
+        let value = databases
+            .events
+            .get(&transaction, newer.event.id.as_bytes())
+            .expect("the store")
+            .expect("the replacement");
+        assert_eq!(
+            rows::decode_event(value).expect("the row").remote_address,
+            Some(IpAddr::from([10, 0, 0, 2])),
+            "the single-row merge writes the incoming address"
+        );
+    }
+
+    /// One event carrying two values a `#g` prefix matches is one row: the tags index holds a
+    /// key per value, and the capture's query counts rows.
+    #[test]
+    fn a_wildcard_tag_range_counts_a_row_once() {
+        let (_directory, env, databases) = store();
+        let record = signed(
+            7,
+            1,
+            1_700_000_000,
+            vec![
+                vec!["g".to_owned(), "u4a".to_owned()],
+                vec!["g".to_owned(), "u4b".to_owned()],
+            ],
+        );
+        write(&env, &databases, &[record]);
+        let transaction = env.read_txn().expect("a read transaction");
+        let mut tags = BTreeMap::new();
+        tags.insert("#g".to_owned(), vec!["u4*".to_owned()]);
+        let filter = Filter {
+            tags,
+            ..Filter::default()
+        };
+
+        assert_eq!(
+            count(
+                &transaction,
+                &databases,
+                std::slice::from_ref(&filter),
+                &Gates::default(),
+                0
+            )
+            .expect("the count"),
+            1,
+            "one row, though the prefix matches two of its values"
+        );
+    }
+
+    /// A criterion too long to seek leaves the later criteria's positions alone, so a row
+    /// carrying a later value as well is still counted once.
+    #[test]
+    fn a_dropped_criterion_does_not_shift_the_counted_positions() {
+        let (_directory, env, databases) = store();
+        let record = signed(
+            7,
+            1,
+            1_700_000_000,
+            vec![
+                vec!["t".to_owned(), "a".to_owned()],
+                vec!["t".to_owned(), "b".to_owned()],
+            ],
+        );
+        write(&env, &databases, &[record]);
+        let transaction = env.read_txn().expect("a read transaction");
+        let mut tags = BTreeMap::new();
+        tags.insert(
+            "#t".to_owned(),
+            vec!["x".repeat(500), "a".to_owned(), "b".to_owned()],
+        );
+        let filter = Filter {
+            tags,
+            ..Filter::default()
+        };
+
+        assert_eq!(
+            plan(&filter, &databases).ranges.len(),
+            2,
+            "the oversized criterion seeks nothing"
+        );
+        assert_eq!(
+            count(
+                &transaction,
+                &databases,
+                std::slice::from_ref(&filter),
+                &Gates::default(),
+                0
+            )
+            .expect("the count"),
+            1,
+            "the row carries both values and is one row"
+        );
+    }
+
+    /// The expiry pass reads the index no further than the last expired row: a future expiry is
+    /// not a candidate, and a row that qualifies only by age is the created-at pass's business.
+    #[test]
+    fn the_expiry_pass_stops_at_the_last_expired_row() {
+        let _serial = counting();
+        let (_directory, env, databases) = store();
+        let now = 1_700_000_000;
+        let mut records = vec![signed(7, 1, now - 100, Vec::new()).with_expires_at(now - 50)];
+        records.extend((0..500).map(|step| {
+            signed_by([9; 32], now - 10, &format!("future-{step}"))
+                .with_expires_at(now + 1_000 + step)
+        }));
+        write(&env, &databases, &records);
+
+        let options = EventRetentionOptions {
+            max_days: Some(1),
+            kind_whitelist: None,
+            pubkey_whitelist: None,
+        };
+        probes::reset();
+        let mut transaction = env.write_txn().expect("a write transaction");
+        let counts = delete_expired_and_retained(&mut transaction, &databases, &options, now)
+            .expect("the pass");
+        transaction.commit().expect("the commit");
+
+        assert_eq!(counts.expired, 1);
+        assert_eq!(counts.retained, 0, "ten seconds old is not over retention");
+        assert_eq!(
+            probes::keys(),
+            1,
+            "the pass visits the expired row and stops at `now`"
+        );
     }
     // -----------------------------------------------------------------------------------
     // Round 6: the page across every range a plan seeks, and the id stream's two shapes.

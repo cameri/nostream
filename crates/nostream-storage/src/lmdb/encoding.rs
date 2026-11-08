@@ -479,24 +479,32 @@ pub(crate) fn disjoint(mut ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<(Vec<u8>, Vec
     kept
 }
 
-/// The inclusive key ranges one tag criterion covers, one range per criterion and in the
-/// criteria's order: an exact value is the range from the value's own separator, and a `#g`
-/// prefix is the range over the value's first bytes.
+/// The inclusive key ranges one tag criterion covers, one range per criterion that fits a key
+/// and in the criteria's order, each with the criterion's own position: a criterion that
+/// selects nothing leaves the positions after it unshifted, so a count still knows which
+/// criteria came before a range.
 ///
-/// A criterion whose own bounds do not fit [`MAX_KEY_LEN`] selects nothing: no stored key can
-/// be that long, so seeking it would fail the read rather than answer it.
-pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(Vec<u8>, Vec<u8>)> {
+/// An exact value is the range from the value's own separator, and a `#g` prefix is the range
+/// over every value that starts with the prefix, padded to the longest key the store can hold
+/// so a prefix long enough to leave little room still covers its own values.
+///
+/// A criterion whose lower bound does not fit [`MAX_KEY_LEN`] selects nothing: a key carrying
+/// it could not be written, so seeking it would fail the read rather than answer it.
+pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(usize, Vec<u8>, Vec<u8>)> {
     let is_geohash = name == "g";
     let mut ranges = Vec::with_capacity(criteria.len());
-    for criterion in criteria {
+    for (position, criterion) in criteria.iter().enumerate() {
         let mut head = Vec::with_capacity(name.len() + 1 + criterion.len());
         head.extend_from_slice(name.as_bytes());
         head.push(0);
         let (lower, upper) = match criterion.strip_suffix('*').filter(|_| is_geohash) {
             Some(prefix) => {
                 head.extend_from_slice(prefix.as_bytes());
+                if head.len() > MAX_KEY_LEN {
+                    continue;
+                }
                 let mut upper = head.clone();
-                upper.extend(std::iter::repeat_n(0xff, 64));
+                upper.resize(MAX_KEY_LEN, 0xff);
                 (head, upper)
             }
             None => {
@@ -508,7 +516,7 @@ pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(Vec<u8>, Vec<u
             }
         };
         if lower.len() <= MAX_KEY_LEN && upper.len() <= MAX_KEY_LEN {
-            ranges.push((lower, upper));
+            ranges.push((position, lower, upper));
         }
     }
     ranges
@@ -605,9 +613,35 @@ mod tests {
     #[test]
     fn a_geohash_criterion_is_a_prefix_range_and_another_tag_is_exact() {
         let geohash = tag_ranges("g", &["u4pru*".to_owned()]);
-        assert_eq!(geohash[0].0, b"g\0u4pru".to_vec());
+        assert_eq!(geohash[0].1, b"g\0u4pru".to_vec());
         let exact = tag_ranges("e", &["u4pru*".to_owned()]);
-        assert_eq!(exact[0].0, b"e\0u4pru*\0".to_vec());
+        assert_eq!(exact[0].1, b"e\0u4pru*\0".to_vec());
+    }
+
+    #[test]
+    fn a_long_geohash_prefix_still_seeks_the_values_it_names() {
+        // The prefix's own key fits; padding it with a fixed 64 bytes would not, and dropping
+        // the range would miss every value the prefix names.
+        let prefix = "u".repeat(447);
+        let ranges = tag_ranges("g", &[format!("{prefix}*")]);
+        assert_eq!(ranges.len(), 1, "the prefix names a range");
+        let (position, lower, upper) = &ranges[0];
+        assert_eq!(*position, 0);
+        assert_eq!(upper.len(), MAX_KEY_LEN, "the upper bound is a legal key");
+        let mut expected = b"g\0".to_vec();
+        expected.extend_from_slice(prefix.as_bytes());
+        assert_eq!(lower, &expected);
+
+        // The key of a stored value that is exactly the prefix: the separator, the timestamp
+        // and the id follow it, and the whole key is 490 bytes.
+        let mut stored = lower.clone();
+        stored.extend_from_slice(&[0; 1 + 8 + EVENT_ID_LEN]);
+        assert!(stored.len() <= MAX_KEY_LEN, "such an event can be stored");
+        assert!(stored.as_slice() >= lower.as_slice());
+        assert!(
+            stored.as_slice() <= upper.as_slice(),
+            "and the range selects it"
+        );
     }
 
     #[test]
