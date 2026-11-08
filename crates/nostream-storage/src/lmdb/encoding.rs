@@ -492,6 +492,30 @@ pub(crate) fn disjoint(mut ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<(Vec<u8>, Vec
     kept
 }
 
+/// One inclusive key range a plan seeks, with the tag criterion that built it.
+///
+/// A `tags` walk can reach one row more than once — two criteria, or two values of one `#g`
+/// prefix — so a count past its id cap asks the criterion which keys of the row came earlier in
+/// the walk. The criterion travels with the range it built, so the pairing cannot drift.
+pub(crate) struct KeyRange<'a> {
+    /// The criterion this range was built from, and the family's criteria before it in the
+    /// search order. `None` for a range another index built.
+    pub(crate) tag: Option<(&'a [String], &'a str)>,
+    pub(crate) low: Vec<u8>,
+    pub(crate) high: Vec<u8>,
+}
+
+impl<'a> KeyRange<'a> {
+    /// A range another index built: no tag criterion answers for the keys in it.
+    pub(crate) fn plain((low, high): (Vec<u8>, Vec<u8>)) -> Self {
+        Self {
+            tag: None,
+            low,
+            high,
+        }
+    }
+}
+
 /// The inclusive key ranges one tag criterion covers, one range per criterion that fits a key
 /// and in the criteria's order.
 ///
@@ -499,12 +523,15 @@ pub(crate) fn disjoint(mut ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<(Vec<u8>, Vec
 /// over every value that starts with the prefix, padded to the longest key the store can hold
 /// so a prefix long enough to leave little room still covers its own values.
 ///
+/// Each range carries the criterion that built it, preceded by the family's earlier criteria,
+/// so a count can ask which keys of one row this walk has already reached.
+///
 /// A criterion whose lower bound does not fit [`MAX_KEY_LEN`] selects nothing: a key carrying
 /// it could not be written, so seeking it would fail the read rather than answer it.
-pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(Vec<u8>, Vec<u8>)> {
+pub(crate) fn tag_ranges<'a>(name: &str, criteria: &'a [String]) -> Vec<KeyRange<'a>> {
     let is_geohash = name == "g";
     let mut ranges = Vec::with_capacity(criteria.len());
-    for criterion in criteria {
+    for (index, criterion) in criteria.iter().enumerate() {
         let mut head = Vec::with_capacity(name.len() + 1 + criterion.len());
         head.extend_from_slice(name.as_bytes());
         head.push(0);
@@ -527,7 +554,11 @@ pub(crate) fn tag_ranges(name: &str, criteria: &[String]) -> Vec<(Vec<u8>, Vec<u
             }
         };
         if lower.len() <= MAX_KEY_LEN && upper.len() <= MAX_KEY_LEN {
-            ranges.push((lower, upper));
+            ranges.push(KeyRange {
+                tag: Some((&criteria[..index], criterion)),
+                low: lower,
+                high: upper,
+            });
         }
     }
     ranges
@@ -623,10 +654,22 @@ mod tests {
 
     #[test]
     fn a_geohash_criterion_is_a_prefix_range_and_another_tag_is_exact() {
-        let geohash = tag_ranges("g", &["u4pru*".to_owned()]);
-        assert_eq!(geohash[0].0, b"g\0u4pru".to_vec());
-        let exact = tag_ranges("e", &["u4pru*".to_owned()]);
-        assert_eq!(exact[0].0, b"e\0u4pru*\0".to_vec());
+        let criteria = vec!["u4pru*".to_owned()];
+        let geohash = tag_ranges("g", &criteria);
+        assert_eq!(geohash[0].low, b"g\0u4pru".to_vec());
+        let exact = tag_ranges("e", &criteria);
+        assert_eq!(exact[0].low, b"e\0u4pru*\0".to_vec());
+    }
+
+    #[test]
+    fn a_tag_range_carries_the_criterion_that_built_it() {
+        // A criterion too long to seek builds no range, but it still precedes the criteria
+        // after it, so a count asks it too — it matches nothing the store holds.
+        let criteria = vec!["x".repeat(MAX_KEY_LEN), "a".to_owned(), "b".to_owned()];
+        let ranges = tag_ranges("t", &criteria);
+        assert_eq!(ranges.len(), 2, "the oversized criterion seeks nothing");
+        assert_eq!(ranges[0].tag, Some((&criteria[..1], "a")));
+        assert_eq!(ranges[1].tag, Some((&criteria[..2], "b")));
     }
 
     #[test]
@@ -634,9 +677,10 @@ mod tests {
         // The prefix's own key fits; padding it with a fixed 64 bytes would not, and dropping
         // the range would miss every value the prefix names.
         let prefix = "u".repeat(447);
-        let ranges = tag_ranges("g", &[format!("{prefix}*")]);
+        let criteria = vec![format!("{prefix}*")];
+        let ranges = tag_ranges("g", &criteria);
         assert_eq!(ranges.len(), 1, "the prefix names a range");
-        let (lower, upper) = &ranges[0];
+        let (lower, upper) = (&ranges[0].low, &ranges[0].high);
         assert_eq!(upper.len(), MAX_KEY_LEN, "the upper bound is a legal key");
         let mut expected = b"g\0".to_vec();
         expected.extend_from_slice(prefix.as_bytes());

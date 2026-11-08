@@ -645,21 +645,19 @@ mod probes {
     }
 }
 
-/// One database's inclusive key range.
-type KeyRange = (Vec<u8>, Vec<u8>);
-
 /// The index one filter is answered from, the ranges within it, and what a key proves.
 struct Plan<'a> {
     database: Database<Bytes, Bytes>,
     path: AccessPath,
-    ranges: Vec<KeyRange>,
+    ranges: Vec<encoding::KeyRange<'a>>,
     /// Whether a range's own key order is the page's order, so a range stops at the page's own
     /// worst kept row instead of being walked whole.
     ordered: bool,
     /// The tag family the ranges were built from, with its criteria in the criteria's order —
-    /// `tag_ranges` builds one range per criterion that fits a key. A key in these ranges has
-    /// already proved that family, so the row's body is decoded only for the filter's other tag
-    /// families, and a `tags` count holds one id per row its matcher accepts rather than decoding.
+    /// `tag_ranges` builds one range per criterion that fits a key, carrying that criterion. A
+    /// key in these ranges has already proved that family, so the row's body is decoded only for
+    /// the filter's other tag families, and a `tags` count holds one id per row its matcher
+    /// accepts until the set is full, then reads a repeated key's body instead.
     tag: Option<(&'a str, &'a [String])>,
 }
 
@@ -716,8 +714,9 @@ pub(crate) fn page(
 /// and skips one the count already holds — a row of an earlier filter's page when that filter had
 /// a limit (a page is at most [`MAX_PAGE_KEYS`] ids), or one its predicate matches when it had
 /// none — which is the capture's `UNION`. A `tags` walk whose criteria can select one row twice
-/// also holds the ids of the rows it matches, for the length of that walk; no
-/// [`MAX_PAGE_KEYS`] bounds that set.
+/// also holds the ids of the rows it matches, at most [`MAX_PAGE_KEYS`] of them; past that the
+/// walk reads a row's body to tell an earlier key of the walk from a first one, so the set stops
+/// growing and the total stays exact.
 pub(crate) fn count(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -800,7 +799,8 @@ fn already_counted(
 /// A `tags` key names one value of one row, so a row's keys within this walk are one per
 /// matching value and per matching criterion. Whichever key the walk reaches first answers for
 /// the row — ranges run in the criteria's order, so that is not necessarily the smallest of its
-/// matching values — and the id it ends with answers the rest without reading the body.
+/// matching values — and the id it ends with answers the rest until the set holds
+/// [`MAX_PAGE_KEYS`] of them.
 fn count_matches(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -808,6 +808,20 @@ fn count_matches(
     counted: &Counted<'_>,
     gates: &Gates,
     now: i64,
+) -> Result<u64, StorageError> {
+    count_matches_bounded(txn, databases, filter, counted, gates, now, MAX_PAGE_KEYS)
+}
+
+/// [`count_matches`], with the number of ids the walk may hold given explicitly, so a test can
+/// compare the bounded walk against an unbounded one over one corpus.
+fn count_matches_bounded(
+    txn: &RoTxn<'_>,
+    databases: &Databases,
+    filter: &Filter,
+    counted: &Counted<'_>,
+    gates: &Gates,
+    now: i64,
+    cap: usize,
 ) -> Result<u64, StorageError> {
     if !admits(filter, gates)? {
         return Ok(0);
@@ -823,36 +837,52 @@ fn count_matches(
     // A single exact criterion names one key per row, so only a second criterion or a `#g`
     // prefix can walk one row twice, and only then is the id set paid for.
     //
-    // shortcut: such a walk holds one id per row its matcher accepts for the walk's length,
-    // against a body decode per key; upgrade when a single count's match set outgrows the
-    // request's memory budget, which needs an index order that visits a row once.
+    // shortcut: the set holds at most `MAX_PAGE_KEYS` ids; a repeated key past that reads the
+    // row's body to ask whether an earlier key of this walk already answered for it, against a
+    // slot per repeated row. Upgrade when a count past the cap must decode nothing, which needs
+    // an index order that visits a row once.
     let mut counted_ids = HashSet::new();
     let dedupe = plan.tag.is_some_and(|(name, criteria)| {
         criteria.len() > 1
             || (name == "g" && criteria.iter().any(|criterion| criterion.ends_with('*')))
     });
     let mut total = 0;
-    for (low, high) in &plan.ranges {
-        let range = encoding::bounds(low, high);
-        for entry in plan.database.range(txn, &range)? {
+    for range in &plan.ranges {
+        let bounds = encoding::bounds(&range.low, &range.high);
+        for entry in plan.database.range(txn, &bounds)? {
             let (key, _) = entry?;
             key_evaluated();
-            if let Some((name, criteria)) = plan.tag {
-                let value = encoding::tag_value(key)?;
-                if !tag_value_matches(name == "g", criteria, value) {
-                    continue;
+            let value = match plan.tag {
+                Some((name, criteria)) => {
+                    let value = encoding::tag_value(key)?;
+                    if !tag_value_matches(name == "g", criteria, value) {
+                        continue;
+                    }
+                    Some(value)
                 }
-            }
+                None => None,
+            };
             let Some((_, id)) = candidate(txn, databases, plan.path, key)? else {
                 continue;
             };
+            // The set holds only rows this walk accepted, so a hit is a row it already counted:
+            // no second test and no second decode.
+            if dedupe && counted_ids.contains(&id) {
+                continue;
+            }
             if matcher.matches(txn, databases, &id)?.is_none() {
                 continue;
             }
-            // The verdict is the row's, not the key's, so a second key is decided the same way
-            // and only a row this filter matches takes a slot in the set.
-            if dedupe && !counted_ids.insert(id) {
-                continue;
+            if dedupe {
+                // The verdict is the row's, not the key's, so a second key is decided the same
+                // way and only a row this filter matches takes a slot in the set.
+                if counted_ids.len() < cap {
+                    counted_ids.insert(id);
+                } else if let (Some((name, _)), Some((earlier, criterion))) = (plan.tag, range.tag)
+                    && counted_earlier(txn, databases, name, earlier, criterion, value, &id)?
+                {
+                    continue;
+                }
             }
             if !already_counted(txn, databases, counted, gates, now, &id)? {
                 total += 1;
@@ -860,6 +890,59 @@ fn count_matches(
         }
     }
     Ok(total)
+}
+
+/// Whether an earlier key of this walk already selects the row `id`, so counting it here would
+/// count the row twice — the check a count makes once its id set is full.
+///
+/// Two ranges select one row when two criteria of the family match its tags; one range selects
+/// it twice when a `#g` prefix matches two of its tags. The family's criteria before `criterion`
+/// are passed in their order, so the first of them that matches answers for the row, and within
+/// one prefix range the walk reaches the smallest matching value first.
+///
+/// This is the one place a count reads a row's body instead of its key: the key names a single
+/// value, and the other values the row carries are only in the body.
+fn counted_earlier(
+    txn: &RoTxn<'_>,
+    databases: &Databases,
+    name: &str,
+    earlier: &[String],
+    criterion: &str,
+    value: Option<&str>,
+    id: &EventId,
+) -> Result<bool, StorageError> {
+    let is_geohash = name == "g";
+    let prefix = criterion.strip_suffix('*').filter(|_| is_geohash);
+    // A first exact criterion is the row's only key in this walk, so nothing earlier answers
+    // for it and the body is not read.
+    if earlier.is_empty() && prefix.is_none() {
+        return Ok(false);
+    }
+    let Some(stored) = databases.events.get(txn, id.as_bytes())? else {
+        return Ok(false);
+    };
+    let record = rows::decode_event(stored)?;
+    if earlier.iter().any(|earlier_criterion| {
+        record_has_tag(&record, name, std::slice::from_ref(earlier_criterion))
+    }) {
+        return Ok(true);
+    }
+    if prefix.is_none() {
+        return Ok(false);
+    }
+    let Some(value) = value else {
+        return Ok(false);
+    };
+    Ok(record.event.tags.iter().any(|tag| {
+        matches!(
+            (tag.first(), tag.get(1)),
+            (Some(tag_name), Some(candidate))
+                if tag_name == name
+                    && !candidate.is_empty()
+                    && matching_value(is_geohash, criterion, candidate).is_some()
+                    && candidate.as_str() < value
+        )
+    }))
 }
 
 /// The page a filter may materialise: its own limit or the capture's default, and never more
@@ -933,8 +1016,8 @@ fn branch(
     };
     let descending = filter.limit.is_some();
     let mut page = Page::new(descending);
-    for (low, high) in &plan.ranges {
-        let range = encoding::bounds(low, high);
+    for range in &plan.ranges {
+        let bounds = encoding::bounds(&range.low, &range.high);
         // A range starts at the boundary the page already holds: a range whose oldest row is
         // past it has nothing to add, and one that is not is walked from its own end.
         let mut boundary = if plan.ordered {
@@ -942,7 +1025,7 @@ fn branch(
         } else {
             None
         };
-        for entry in scan(plan.database, txn, &range, plan.ordered && descending)? {
+        for entry in scan(plan.database, txn, &bounds, plan.ordered && descending)? {
             let (key, _) = entry?;
             key_evaluated();
             let Some(found) = candidate(txn, databases, plan.path, key)? else {
@@ -1127,7 +1210,7 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
         return Plan {
             database: databases.events,
             path: AccessPath::Ids,
-            ranges: encoding::hex_ranges(ids, 0),
+            ranges: plain_ranges(encoding::hex_ranges(ids, 0)),
             // The `events` key is the id, so the range runs in id order, not time order.
             ordered: false,
             tag: None,
@@ -1143,7 +1226,7 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
             return Plan {
                 database: databases.events_by_author,
                 path: AccessPath::Authors,
-                ranges,
+                ranges: plain_ranges(ranges),
                 // A range is `pubkey ‖ kind ‖ created_at ‖ event_id`, so it runs in time order
                 // only when every criterion is a whole pubkey and every range one author and
                 // kind.
@@ -1164,7 +1247,7 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
         return Plan {
             database: databases.events_by_created_at,
             path: AccessPath::CreatedAt,
-            ranges: created_at_ranges(filter),
+            ranges: plain_ranges(created_at_ranges(filter)),
             ordered: true,
             tag: None,
         };
@@ -1183,10 +1266,16 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
     Plan {
         database: databases.events_by_created_at,
         path: AccessPath::CreatedAt,
-        ranges: created_at_ranges(filter),
+        ranges: plain_ranges(created_at_ranges(filter)),
         ordered: true,
         tag: None,
     }
+}
+
+/// The ranges of a plan that reads an index a tag family did not build, so no criterion answers
+/// for the keys in them.
+fn plain_ranges<'a>(ranges: Vec<(Vec<u8>, Vec<u8>)>) -> Vec<encoding::KeyRange<'a>> {
+    ranges.into_iter().map(encoding::KeyRange::plain).collect()
 }
 
 /// One range per author criterion on `events_by_author`, whose key is
@@ -1203,7 +1292,7 @@ fn plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
 /// `None` when the whole-pubkey ranges and kinds compose more than [`MAX_PAGE_KEYS`] ranges: a
 /// filter can name a thousand authors and a thousand kinds, and their product is not bounded by
 /// the page, so the caller answers it from the created-at index rather than materialising it.
-fn author_kind_ranges(authors: &[String], kinds: &[Kind]) -> Option<Vec<KeyRange>> {
+fn author_kind_ranges(authors: &[String], kinds: &[Kind]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
     let mut kinds: Vec<i32> = kinds
         .iter()
         .map(|kind| i32::try_from(kind.0).unwrap_or(i32::MAX))
@@ -1450,19 +1539,25 @@ pub(crate) fn generic_tag_name(key: &str) -> Option<&str> {
     Some(&key[1..2])
 }
 
-/// Whether a tag value satisfies one of a family's criteria: an exact value, and only `#g`
-/// honours a trailing `*` as a prefix.
+/// The value a criterion selects, when it selects `value`: an exact equality, and only `#g`
+/// honours a trailing `*` as a prefix. The one place the wildcard rule is written.
+fn matching_value<'v>(is_geohash: bool, criterion: &str, value: &'v str) -> Option<&'v str> {
+    let matches = match criterion.strip_suffix('*').filter(|_| is_geohash) {
+        Some(prefix) => value.starts_with(prefix),
+        None => value == criterion,
+    };
+    matches.then_some(value)
+}
+
+/// Whether a tag value satisfies one of a family's criteria.
 ///
 /// `event_tags` holds no empty value, so an empty one satisfies nothing. The criterion a `tags`
 /// key carries is checked here, from the key, and the same rule answers the decoded record.
 fn tag_value_matches(is_geohash: bool, criteria: &[String], value: &str) -> bool {
     !value.is_empty()
-        && criteria.iter().any(|criterion| {
-            match criterion.strip_suffix('*').filter(|_| is_geohash) {
-                Some(prefix) => value.starts_with(prefix),
-                None => value == criterion,
-            }
-        })
+        && criteria
+            .iter()
+            .any(|criterion| matching_value(is_geohash, criterion, value).is_some())
 }
 
 /// Whether an event carries a tag called `name` whose value satisfies one of `criteria`.
@@ -1735,14 +1830,14 @@ impl Stream for ReconciliationStream {
 fn stream_plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
     let chosen = plan(filter, databases);
     let exact_ids =
-        chosen.path == AccessPath::Ids && chosen.ranges.iter().all(|(low, high)| low == high);
+        chosen.path == AccessPath::Ids && chosen.ranges.iter().all(|range| range.low == range.high);
     if exact_ids || (chosen.ordered && chosen.ranges.len() == 1) {
         return chosen;
     }
     Plan {
         database: databases.events_by_created_at,
         path: AccessPath::CreatedAt,
-        ranges: created_at_ranges(filter),
+        ranges: plain_ranges(created_at_ranges(filter)),
         ordered: true,
         tag: None,
     }
@@ -1777,10 +1872,10 @@ fn scan_batch(
     let mut items = Vec::new();
     let mut evaluated = 0;
     while position.index < plan.ranges.len() {
-        let (low, high) = &plan.ranges[position.index];
-        let range = encoding::resume_bounds(position.after.as_deref(), low, high);
+        let range = &plan.ranges[position.index];
+        let bounds = encoding::resume_bounds(position.after.as_deref(), &range.low, &range.high);
         let mut reached_cap = false;
-        for entry in plan.database.range(txn, &range)? {
+        for entry in plan.database.range(txn, &bounds)? {
             if items.len() >= STREAM_BATCH_ITEMS || evaluated >= STREAM_BATCH_KEYS {
                 reached_cap = true;
                 break;
@@ -1832,9 +1927,9 @@ fn scan_ids(
     position: &mut Position,
 ) -> Result<Vec<ReconciliationItem>, StorageError> {
     let mut items = Vec::with_capacity(plan.ranges.len());
-    for (low, high) in &plan.ranges {
-        let range = encoding::bounds(low, high);
-        for entry in plan.database.range(txn, &range)? {
+    for range in &plan.ranges {
+        let bounds = encoding::bounds(&range.low, &range.high);
+        for entry in plan.database.range(txn, &bounds)? {
             let (key, _) = entry?;
             key_evaluated();
             let Some((created_at, event_id)) = candidate(txn, databases, plan.path, key)? else {
@@ -1988,9 +2083,14 @@ mod tests {
 
     /// An open store on a temporary directory.
     fn store() -> (tempfile::TempDir, Env, Databases) {
+        store_with_map(8 << 20)
+    }
+
+    /// An open store on a temporary directory, with room for a corpus past `MAX_PAGE_KEYS`.
+    fn store_with_map(map_size: usize) -> (tempfile::TempDir, Env, Databases) {
         let directory = tempfile::tempdir().expect("a temporary directory");
         let environment =
-            LmdbEnv::open(directory.path().join("lmdb"), 8 << 20).expect("an environment");
+            LmdbEnv::open(directory.path().join("lmdb"), map_size).expect("an environment");
         let env = environment.env().clone();
         let mut transaction = env.write_txn().expect("a write transaction");
         let databases = Databases::create(&env, &mut transaction).expect("the databases");
@@ -3014,6 +3114,112 @@ mod tests {
             0,
             "two criteria are deduplicated by the id, not the body"
         );
+    }
+
+    /// A count's total does not depend on how many ids its walk may hold: past the cap a
+    /// repeated key reads the row's body to tell an earlier key from a first one, and this runs
+    /// that walk and the one the set alone answers over one corpus.
+    #[test]
+    fn a_count_past_its_id_cap_totals_what_the_unbounded_walk_totals() {
+        let _serial = counting();
+        let (_directory, env, databases) = store_with_map(32 << 20);
+        // Past `MAX_PAGE_KEYS`, so every filter below crosses the cap: the first 5 000 ids fill
+        // the set and the rest of the walk takes the body check.
+        let rows = MAX_PAGE_KEYS as i64 + 200;
+        let records: Vec<EventRecord> = (0..rows)
+            .map(|step| {
+                signed(
+                    (step % 200 + 1) as u8,
+                    1,
+                    step,
+                    vec![
+                        vec!["t".to_owned(), "a".to_owned()],
+                        vec!["t".to_owned(), "b".to_owned()],
+                        vec!["g".to_owned(), "u4a".to_owned()],
+                        vec!["g".to_owned(), "u4b".to_owned()],
+                    ],
+                )
+            })
+            .collect();
+        write(&env, &databases, &records);
+        let transaction = env.read_txn().expect("a read transaction");
+        let tags = |families: &[(&str, &[&str])]| -> BTreeMap<String, Vec<String>> {
+            families
+                .iter()
+                .map(|(key, criteria)| {
+                    (
+                        (*key).to_owned(),
+                        criteria.iter().map(|value| (*value).to_owned()).collect(),
+                    )
+                })
+                .collect()
+        };
+        let cases = [
+            ("two criteria", tags(&[("#t", &["a", "b"])])),
+            ("a repeated criterion", tags(&[("#t", &["a", "a"])])),
+            ("a prefix over two values", tags(&[("#g", &["u4*"])])),
+            (
+                "a prefix and an exact value it covers",
+                tags(&[("#g", &["u4*", "u4b"])]),
+            ),
+            (
+                "a value only the later criterion names",
+                tags(&[("#t", &["zz", "a"])]),
+            ),
+        ];
+        for (what, tags) in cases {
+            let filter = Filter {
+                tags,
+                ..Filter::default()
+            };
+            let counted = Counted::default();
+            probes::reset();
+            let capped = count_matches_bounded(
+                &transaction,
+                &databases,
+                &filter,
+                &counted,
+                &Gates::default(),
+                0,
+                MAX_PAGE_KEYS,
+            )
+            .expect("the bounded count");
+            let decodes = probes::decodes();
+            probes::reset();
+            let uncapped = count_matches_bounded(
+                &transaction,
+                &databases,
+                &filter,
+                &counted,
+                &Gates::default(),
+                0,
+                usize::MAX,
+            )
+            .expect("the unbounded count");
+            assert_eq!(
+                capped, uncapped,
+                "{what}: the cap changes how, not how many"
+            );
+            assert_eq!(capped, rows as u64, "{what}: every row matches");
+            assert_eq!(probes::decodes(), 0, "{what}: the set decodes no body");
+            assert!(
+                decodes > 0,
+                "{what}: the walk past the cap really took the body check"
+            );
+            probes::reset();
+            assert_eq!(
+                count(
+                    &transaction,
+                    &databases,
+                    std::slice::from_ref(&filter),
+                    &Gates::default(),
+                    0
+                )
+                .expect("the count"),
+                capped,
+                "{what}: the count's own path agrees with the bounded walk"
+            );
+        }
     }
 
     /// The expiry pass reads the index no further than the last expired row: a future expiry is
