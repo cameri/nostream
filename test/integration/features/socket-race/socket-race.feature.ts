@@ -56,7 +56,14 @@ const createAdmissionGate = (): AdmissionGate => {
 let admissionGate = createAdmissionGate()
 let admissionSandbox: Sinon.SinonSandbox | undefined
 
-const releaseAdmission = (): void => {
+// The gate keeps admission from answering early; the settle wait makes sure the
+// frames have actually reached the server's socket before it does, so a client
+// that writes at the handshake is always inside the admission window.
+const ADMISSION_SETTLE_MS = 50
+
+const releaseAdmission = async (settleMs = ADMISSION_SETTLE_MS): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, settleMs))
+
   const gate = admissionGate
   admissionGate = createAdmissionGate()
   gate.release()
@@ -71,7 +78,9 @@ Before({ tags: '@socket-race' }, function () {
 After({ tags: '@socket-race' }, function () {
   admissionSandbox?.restore()
   admissionSandbox = undefined
-  releaseAdmission()
+  // Nothing is waiting on this admission any more; release it so a failing
+  // scenario cannot leave a connection parked on the gate.
+  void releaseAdmission(0)
 })
 
 // Resolves when every frame has been flushed, which is the latest moment the
@@ -142,7 +151,7 @@ When(
       )
 
       // Every frame from this round is flushed; only now let admission through.
-      releaseAdmission()
+      await releaseAdmission()
 
       for (const { id, index, connection } of opened) {
         track(this, `storm-${round}-${index}`, connection)
@@ -183,7 +192,7 @@ When(
       ),
     )
 
-    releaseAdmission()
+    await releaseAdmission()
     await waitFor(() => eoseIds(connection).length >= 2, `EOSE for both ${first} and ${second}`)
   },
 )
@@ -226,7 +235,7 @@ When(
       ),
     )
 
-    releaseAdmission()
+    await releaseAdmission()
 
     // A second subscription on the same socket is the barrier: its EOSE means
     // the CLOSE ahead of it has been handled, without sleeping on the clock.
@@ -242,7 +251,7 @@ When(
     const identity = world(this).identities[world(this).publisher]
     const connection = track(this, 'publisher', await createConnection())
 
-    releaseAdmission()
+    await releaseAdmission()
 
     const event = await createEvent(
       { pubkey: identity.pubkey, kind: 1, content: 'race event', tags: [] },
@@ -298,7 +307,7 @@ When(
       await createConnection((ws) => sendFrames(ws, [{ data: JSON.stringify(['EVENT', event]) }])),
     )
 
-    releaseAdmission()
+    await releaseAdmission()
 
     await waitFor(
       () => connection.frames.some((message) => message[0] === 'OK' && message[1] === event.id),
@@ -336,7 +345,7 @@ When(
       ),
     )
 
-    releaseAdmission()
+    await releaseAdmission()
 
     await waitFor(() => eoseIds(connection).length >= 2, 'EOSE for the fragmented and the binary REQ')
 
@@ -375,7 +384,7 @@ When(
       ),
     )
 
-    releaseAdmission()
+    await releaseAdmission()
 
     await waitFor(
       () => connection.frames.some((message) => message[0] === 'NOTICE') && eoseIds(connection).length >= 1,
