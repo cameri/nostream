@@ -1,5 +1,19 @@
 # nostream
 
+## 3.15.2
+
+### Patch Changes
+
+- [#1072](https://github.com/cameri/nostream/pull/1072) [`81edd16`](https://github.com/cameri/nostream/commit/81edd16652a5472e25fa8c1627dc9b1fdbda57df) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - test(relay): add non-sequential socket test suite for connection and command races
+
+  Adds deterministic real-socket test cases covering racing connection states:
+  - Reconnect storm with immediate REQ on the open tick across multiple concurrent sockets
+  - Pipelined commands in a single write buffer preserving arrival order
+  - REQ immediately followed by CLOSE of the same subscription ID
+  - EVENT sent on open tick
+  - Binary-framed JSON commands
+  - Socket resilience and valid command processing following malformed JSON
+
 ## 3.15.1
 
 ### Patch Changes
