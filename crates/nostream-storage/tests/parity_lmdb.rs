@@ -558,8 +558,8 @@ async fn a_target_id_a_text_column_cannot_hold_is_refused_rather_than_truncated(
     entry.target_id = "https://example.test/\0hook".to_owned();
 
     // `notification_delivery_log.target_id` is a `text` column, and PostgreSQL cannot store
-    // `0x00` in one, so the capture could never have kept this row; the index key refuses it
-    // rather than truncating the id at the separator on the way back out.
+    // `0x00` in one, so the capture could never have kept this row; `append` refuses it through
+    // `encoding::refuse_nul` rather than writing a value the other backend cannot hold.
     match backend.append(&entry).await {
         Err(StorageError::InvalidRow { column, .. }) => {
             assert_eq!(column, "target_id");

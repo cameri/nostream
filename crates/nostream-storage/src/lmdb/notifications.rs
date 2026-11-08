@@ -134,15 +134,9 @@ pub(crate) fn append(
         error_snippet: entry.error_snippet.clone(),
         created_at: encoding::micros(now),
     };
-    // `target_id` is a `text` column, which cannot hold `0x00`: the capture could never have
-    // stored this row, and the index key no longer carries the value to refuse it on.
-    if entry.target_id.contains('\0') {
-        return Err(StorageError::InvalidRow {
-            table: "notification_delivery_log",
-            column: "target_id",
-            value: entry.target_id.clone(),
-        });
-    }
+    // The outbox key no longer carries the target, so the row's own text column is where the
+    // codec's refusal is met.
+    encoding::refuse_nul("notification_delivery_log", "target_id", &entry.target_id)?;
     let value = rows::encode("notification_delivery_log", &entry)?;
     databases
         .notification_delivery_log

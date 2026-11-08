@@ -200,17 +200,16 @@ pub(crate) fn check_version(table: &'static str, value: &[u8]) -> Result<(), Sto
     }
 }
 
-/// A text component of a composite key, terminated so the next component reads unambiguously.
+/// Refuses a value a `text` column cannot hold.
 ///
-/// The terminator is what every key *reader* in this module splits on, so the rule lives here
-/// with the writers: a component that carries `0x00` cannot be read back, and PostgreSQL's
-/// `text` cannot hold the byte either, so it is refused rather than truncated — both backends
-/// reject the same value.
-pub(crate) fn text_part(
-    value: &str,
+/// PostgreSQL's `text` cannot store `0x00`, and this module's key separator is the same byte, so
+/// one check serves a key component and a row's own text column: both backends reject the same
+/// value rather than truncating it.
+pub(crate) fn refuse_nul(
     table: &'static str,
     column: &'static str,
-) -> Result<Vec<u8>, StorageError> {
+    value: &str,
+) -> Result<(), StorageError> {
     if value.contains('\0') {
         return Err(StorageError::InvalidRow {
             table,
@@ -218,6 +217,20 @@ pub(crate) fn text_part(
             value: value.to_owned(),
         });
     }
+    Ok(())
+}
+
+/// A text component of a composite key, terminated so the next component reads unambiguously.
+///
+/// The terminator is what every key *reader* in this module splits on, so the rule lives here
+/// with the writers: a component that carries `0x00` cannot be read back, and the value is
+/// refused by [`refuse_nul`] rather than truncated.
+pub(crate) fn text_part(
+    value: &str,
+    table: &'static str,
+    column: &'static str,
+) -> Result<Vec<u8>, StorageError> {
+    refuse_nul(table, column, value)?;
     let mut bytes = Vec::with_capacity(value.len() + 1);
     bytes.extend_from_slice(value.as_bytes());
     bytes.push(0);
@@ -623,8 +636,7 @@ mod tests {
         let prefix = "u".repeat(447);
         let ranges = tag_ranges("g", &[format!("{prefix}*")]);
         assert_eq!(ranges.len(), 1, "the prefix names a range");
-        let (position, lower, upper) = &ranges[0];
-        assert_eq!(*position, 0);
+        let (lower, upper) = &ranges[0];
         assert_eq!(upper.len(), MAX_KEY_LEN, "the upper bound is a legal key");
         let mut expected = b"g\0".to_vec();
         expected.extend_from_slice(prefix.as_bytes());
@@ -811,16 +823,26 @@ mod tests {
     }
 
     #[test]
-    fn a_text_component_a_text_column_cannot_hold_is_refused() {
-        // PostgreSQL's `text` cannot store `0x00`, and the key's separator is the same byte, so
-        // the codec refuses it where the writer meets it rather than reading it back truncated.
+    fn a_value_a_text_column_cannot_hold_is_refused() {
+        // PostgreSQL's `text` cannot store `0x00`, so the check refuses it wherever a writer meets
+        // the value: a key component here, a row's own text column in the delivery log.
         for value in ["a\0b", "\0", "ab\0"] {
-            let error = text_part(value, "delivery_log_by_outbox", "target_id")
+            let error = text_part(value, "delivery_log_by_outbox", "outbox_id")
                 .expect_err("a NUL in a key component");
             assert!(matches!(
                 error,
                 StorageError::InvalidRow {
                     table: "delivery_log_by_outbox",
+                    column: "outbox_id",
+                    ..
+                }
+            ));
+            let error = refuse_nul("notification_delivery_log", "target_id", value)
+                .expect_err("a NUL in a text column");
+            assert!(matches!(
+                error,
+                StorageError::InvalidRow {
+                    table: "notification_delivery_log",
                     column: "target_id",
                     ..
                 }
@@ -830,10 +852,16 @@ mod tests {
             text_part(
                 "https://example.test",
                 "delivery_log_by_outbox",
-                "target_id"
+                "outbox_id"
             )
             .unwrap(),
             b"https://example.test\0".to_vec()
         );
+        refuse_nul(
+            "notification_delivery_log",
+            "target_id",
+            "https://example.test",
+        )
+        .expect("a target a text column can hold");
     }
 }
