@@ -44,13 +44,19 @@ pub use lmdb::{LmdbBackend, MapUsage};
 #[cfg(feature = "postgres")]
 pub use postgres::{PostgresBackend, PostgresTransaction};
 
-/// The most rows one filter's page can hold on any shipped backend, whatever `limit` it
-/// carries.
+/// The largest page the relay assumes any shipped backend can return for one filter, whatever
+/// `limit` it carries.
 ///
 /// A caller that must know whether a page was truncated compares the rows a stream yielded
-/// against `min(limit, MAX_PAGE_ROWS)`: a stream that yields that many has a full page and says
-/// nothing about what lies beyond it. LMDB clamps every filter to this bound
-/// (`lmdb::MAX_PAGE_KEYS`, which is this constant); Postgres honours the filter's own `limit`,
-/// and its default (`DEFAULT_FILTER_LIMIT`) is smaller. A new backend that clamps lower must
-/// lower this constant, and the LMDB clamp's own test fails if the two drift apart.
+/// against `min(limit, MAX_PAGE_ROWS)`: a stream that yields that many has a page whose end the
+/// relay cannot see, and must say nothing about what lies beyond it.
+///
+/// The two backends reach the bound differently. LMDB clamps every filter to it in code
+/// (`lmdb::MAX_PAGE_KEYS`, which is this constant, and the clamp's own test fails if the two
+/// drift apart). Postgres does **not** clamp by constant: it honours the filter's own `limit`,
+/// with `DEFAULT_FILTER_LIMIT = 500` when there is none. The bound reaches it through the wire
+/// instead — `limits.client.subscription.maxLimit` ships at this number and a `REQ` above it is
+/// refused (`subscribe.rs:525`) — so the two agree only while that setting does. Raising it
+/// above this constant leaves Postgres able to serve more than the relay will believe, which
+/// suppresses `finish` where it could have been proved and never claims it where it should not.
 pub const MAX_PAGE_ROWS: u64 = 5_000;

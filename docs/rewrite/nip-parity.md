@@ -878,7 +878,17 @@ is a defect, and §10 is the same record in table form.
     whose tags are `a`-only deletes nothing. The rewrite either implements
     addressable-event deletion or records the omission deliberately — but §5 and the
     §7 row now say so, and Phase 2 must not inherit the silence.
-    - **Status:** done in this job — an `a` tag resolves to the author's addressable row, subject to the author-equality rule and the request's `created_at`, and its id joins the `e`-tag ids in one `delete_by_pubkey_and_ids`; `strategies::delete_soft_deletes_an_addressable_event_named_by_an_a_tag` and three more (§10).
+    - **Status:** done in this job — an `a` tag is handed to `EventRepository::delete_by_address`,
+      which resolves the address and soft-deletes it in **one** storage operation: LMDB walks the
+      author-and-kind prefix of `events_by_author` (one index range, no read page, so a narrow
+      address is never found by scanning a page that sorts it out of view) and Postgres runs one
+      `UPDATE … WHERE`; the request's `created_at` is compared inside that transaction, so a
+      replacement cannot land between a lookup and the delete, and the author-equality and
+      addressable-kind rules still gate the tag before it is read. Records with an actionable
+      NIP-56 report are reachable too, because the delete no longer goes through the read path
+      that withholds them. `strategies::delete_resolves_and_deletes_an_address_in_one_operation`,
+      `delete_by_address_reaches_a_row_past_the_page_bound`,
+      `delete_by_address_reaches_a_reported_row` and four more (§10).
 
 ## 10. Phase 2: the advertisement and the harness map
 
@@ -946,7 +956,7 @@ no relay-side test reaches them.
 | 03 | `core/nip03.rs`; `relay/strategies/timestamp.rs` | `vectors-only: strategies::timestamp_stores_and_broadcasts_a_valid_proof` |
 | 04 | `core/event.rs`; `relay/strategies/default.rs`; `core/nip42.rs` | `vectors-only: handlers::a_restricted_read_delivers_only_to_the_author_or_a_p_tagged_reader` |
 | 05 | `core/nip05.rs`; `relay/handlers/event.rs`; `services/workers/maintenance.rs` | `vectors-only: handlers::nip05_gates_publication` |
-| 09 | `relay/strategies/delete.rs` | `divergent: strategies::delete_soft_deletes_an_addressable_event_named_by_an_a_tag` |
+| 09 | `relay/strategies/delete.rs` | `divergent: strategies::delete_resolves_and_deletes_an_address_in_one_operation` |
 | 11 | none: the constant is the record | `no-wire-surface: no HTTP listener and no NIP-11 document (D1)` |
 | 12 | `core/filter.rs` generic `#` criteria | `vectors-only: event_parity::nip12_d_filter_returns_true_if_d_filter_contains_an_empty_tag_value_in_the_event` *(nostream-core)* |
 | 13 | `core/pow.rs`, `core/adaptive_pow.rs`; `relay/handlers/event.rs` | `session event-rejections` |
