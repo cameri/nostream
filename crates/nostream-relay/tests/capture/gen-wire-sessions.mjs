@@ -1059,8 +1059,9 @@ const runAll = async () => {
         await send(['EVENT', event], { expect: 1 })
       }
 
-      // One filter per kind, so no ordering between rows is asserted, and no filter carries a
-      // `limit`, so the EOSE keeps its two-element form on both sides.
+      // shortcut: one filter per kind, so no ordering between stored rows is asserted; upgrade
+      // when a backend's row order is what the replay must pin. No filter carries a `limit`, so
+      // the EOSE keeps its two-element form on both sides.
       for (const [id, kind] of [
         ['v1', 1],
         ['v2', 1111],
