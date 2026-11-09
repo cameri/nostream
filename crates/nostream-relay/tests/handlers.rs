@@ -1170,6 +1170,26 @@ async fn eose_hints_are_absent_when_the_backend_page_cap_was_reached() {
     assert_eq!(frames[5_000], r#"["EOSE","s1"]"#);
 }
 
+/// A backend that declares a smaller page than `MAX_PAGE_ROWS` is believed: it served one row
+/// and said it can serve no more, so the page came back full and `finish` would be a claim about
+/// rows beyond the one it was given. Before the relay asked the backend, this read sent `finish`
+/// over a store that still held a match.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_backend_declares_a_smaller_page() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 2).await;
+    fixture.events.declare_page_bound(1);
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":3}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[1], r#"["EOSE","s1"]"#);
+}
+
 /// A storage error leaves the read's extent unknown, so no hint is added after it.
 #[tokio::test]
 async fn eose_hints_are_absent_when_the_stream_failed() {

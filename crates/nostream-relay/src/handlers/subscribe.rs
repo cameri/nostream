@@ -28,7 +28,6 @@ use nostream_core::messages::{
 };
 use nostream_core::nip42;
 use nostream_core::{Filter, Kind};
-use nostream_storage::MAX_PAGE_ROWS;
 
 use crate::connection::InFlightRead;
 use crate::error::RelayError;
@@ -274,23 +273,25 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     // admits nothing beyond the maximum and so cannot hide a row. The backends already honour
     // `limit`; the in-memory double does not, and the loop below drops the extra row either way.
     let probe = limit.map(|limit| limit.saturating_add(1));
-    let storage_filters: Vec<Filter> = match probe {
-        Some(probe) => filters
-            .iter()
-            .map(|filter| Filter {
-                limit: Some(probe),
-                ..filter.clone()
-            })
-            .collect(),
-        None => filters.to_vec(),
+    // Only a probing read needs new filters, and it only rewrites `limit`: every other read
+    // borrows the subscription's own list rather than copying it (a 1 000-author filter costs
+    // 63 µs to clone, and the copy buys nothing).
+    let probed;
+    let storage_filters: &[Filter] = match probe {
+        Some(probe) => {
+            probed = filters
+                .iter()
+                .map(|filter| Filter {
+                    limit: Some(probe),
+                    ..filter.clone()
+                })
+                .collect::<Vec<Filter>>();
+            &probed
+        }
+        None => filters,
     };
 
-    let stream = match context
-        .stores
-        .events
-        .find_by_filters(&storage_filters)
-        .await
-    {
+    let stream = match context.stores.events.find_by_filters(storage_filters).await {
         Ok(stream) => stream,
         Err(error) => {
             tracing::error!(error = %error, "unable to stream events");
@@ -421,7 +422,7 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     // all three:
     //
     // 1. the stream ended **cleanly** — after a storage error, how far the read got is unknown;
-    // 2. the page was **not full** — a page that yielded `min(probe, MAX_PAGE_ROWS)` rows says
+    // 2. the page was **not full** — a page that yielded `min(probe, page_bound())` rows says
     //    nothing about the rows beyond it, whether the bound came from the client's `limit` or
     //    from the backend's own page cap, and a skipped row spends a page slot just as a match
     //    does (which is why `rows`, not `matched`, decides this);
@@ -435,7 +436,8 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     // absent hint is honest and a wrong one is not. `more` needs one further **match** beyond
     // the delivered window, `auth` is unaffected, and `finish` is never sent beside `auth`
     // because a withheld event falsifies it.
-    let page_full = probe.is_some_and(|probe| rows >= probe.min(MAX_PAGE_ROWS));
+    let page_bound = context.stores.events.page_bound();
+    let page_full = probe.is_some_and(|probe| rows >= probe.min(page_bound));
     let proven = !failed && !page_full;
 
     let mut hints = Vec::new();
