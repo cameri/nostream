@@ -290,6 +290,18 @@ describe('SubscribeMessageHandler', () => {
       await handler.handleMessage(message)
 
       expect(setSubscriptionExpiry).to.have.been.calledWith(subscriptionId, periodEnd, Sinon.match.func)
+
+      const check = setSubscriptionExpiry.firstCall.args[2] as () => Promise<Date | null | false>
+      const renewedPeriodEnd = new Date(periodEnd.getTime() + 60_000)
+      billing.getAccess.resolves({ allowed: true, periodEnd: renewedPeriodEnd })
+      expect(await check()).to.equal(renewedPeriodEnd)
+      expect(billing.getAccess).to.have.been.calledWith(peer, { recheck: true })
+
+      billing.getAccess.resolves({ allowed: true, status: 'free' })
+      expect(await check()).to.be.null
+
+      billing.getAccess.resolves({ allowed: false })
+      expect(await check()).to.be.false
     })
 
     it('bounds raw filters before deduplicating them', async () => {

@@ -167,7 +167,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   public setSubscriptionExpiry(
     subscriptionId: SubscriptionId,
     periodEnd: Date,
-    check: () => Promise<Date | undefined>,
+    check: () => Promise<Date | null | false>,
   ): void {
     this.clearSubscriptionExpiry(subscriptionId)
 
@@ -194,9 +194,9 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private async runSubscriptionExpiry(
     subscriptionId: SubscriptionId,
     token: symbol,
-    check: () => Promise<Date | undefined>,
+    check: () => Promise<Date | null | false>,
   ): Promise<void> {
-    let nextPeriodEnd: Date | undefined
+    let nextPeriodEnd: Date | null | false = false
 
     try {
       nextPeriodEnd = await check()
@@ -209,7 +209,13 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
       return
     }
 
-    if (nextPeriodEnd && nextPeriodEnd.getTime() > Date.now()) {
+    if (nextPeriodEnd === null) {
+      // Free peering: access no longer has an expiry, so stop watching it.
+      this.clearSubscriptionExpiry(subscriptionId)
+      return
+    }
+
+    if (nextPeriodEnd instanceof Date && nextPeriodEnd.getTime() > Date.now()) {
       this.setSubscriptionExpiry(subscriptionId, nextPeriodEnd, check)
       return
     }

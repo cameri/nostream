@@ -113,6 +113,7 @@ describe('settings-config', () => {
           contact: 'test@example.com',
         },
         network: { maxPayloadSize: 1024 },
+        payments: { enabled: true, processor: 'lnbits' },
         peering,
       }) as any
 
@@ -273,6 +274,20 @@ describe('settings-config', () => {
 
       expect(issues.some((issue) => issue.path === 'peering.terms')).to.equal(true)
       expect(issues.find((issue) => issue.path === 'peering.terms')?.message).to.include('only one paid')
+    })
+
+    it('rejects paid terms while payments are disabled', () => {
+      const issues = validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        network: { maxPayloadSize: 1024 },
+        peering: {
+          ...settlementFreePeering,
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
+        },
+      } as any)
+
+      expect(issues.some((issue) => issue.path === 'peering.terms')).to.equal(true)
+      expect(issues.find((issue) => issue.path === 'peering.terms')?.message).to.include('payments must be enabled')
     })
 
     it('rejects a proof-of-work requirement above the NIP-13 maximum', () => {

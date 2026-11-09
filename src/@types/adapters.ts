@@ -42,10 +42,10 @@ export type IWebSocketAdapter = EventEmitter & {
   /**
    * Schedules a paid-access expiry check for this subscription. The adapter owns
    * the timer and clears it on CLOSE, socket close and subscription ID reuse.
-   * `check` returns the next period end when access continues, or undefined when
-   * the subscription should be closed.
+   * `check` returns the next period end when access continues, `null` when access
+   * is free and no longer expires, or `false` when the subscription should close.
    */
-  setSubscriptionExpiry(subscriptionId: string, periodEnd: Date, check: () => Promise<Date | undefined>): void
+  setSubscriptionExpiry(subscriptionId: string, periodEnd: Date, check: () => Promise<Date | null | false>): void
 }
 
 export interface ICacheAdapter {
