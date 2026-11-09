@@ -1,4 +1,4 @@
-import { always, applySpec, head, ifElse, is, map, omit, pipe, prop, propSatisfies, toString } from 'ramda'
+import { always, applySpec, head, ifElse, is, isNil, map, omit, pipe, prop, propSatisfies, toString } from 'ramda'
 
 import { DBInvoice, Invoice, InvoiceStatus } from '../@types/invoice'
 import { fromDBInvoice, toBuffer } from '../utils/transform'
@@ -27,6 +27,21 @@ export class InvoiceRepository implements IInvoiceRepository {
 
       throw error
     }
+  }
+
+  public async updatePeriod(
+    invoiceId: string,
+    periodStart: Date,
+    periodEnd: Date,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<void> {
+    await client<DBInvoice>('invoices')
+      .update({
+        period_start: periodStart,
+        period_end: periodEnd,
+        updated_at: new Date(),
+      })
+      .where('id', invoiceId)
   }
 
   public async findById(id: string, client: DatabaseClient = this.dbClient): Promise<Invoice | undefined> {
@@ -92,9 +107,16 @@ export class InvoiceRepository implements IInvoiceRepository {
       updated_at: always(new Date()),
       created_at: prop('createdAt'),
       verify_url: prop('verifyURL'),
+      purpose: prop('purpose'),
       plan_id: prop('planId'),
       period_start: prop('periodStart'),
       period_end: prop('periodEnd'),
+      term_amount_msats: ifElse(
+        propSatisfies((value) => isNil(value), 'termAmountMsats'),
+        always(null),
+        pipe(prop('termAmountMsats') as () => bigint, toString),
+      ),
+      term_period_seconds: prop('termPeriodSeconds'),
     })(invoice)
 
     logger('row: %o', row)
@@ -113,9 +135,12 @@ export class InvoiceRepository implements IInvoiceRepository {
           'expires_at',
           'created_at',
           'verify_url',
+          'purpose',
           'plan_id',
           'period_start',
           'period_end',
+          'term_amount_msats',
+          'term_period_seconds',
         ])(row),
       )
 
