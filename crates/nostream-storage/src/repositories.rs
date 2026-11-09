@@ -442,6 +442,10 @@ pub trait EventRepository: Send + Sync {
     /// and a read and a delete are two operations, so a replacement landing between them
     /// survives the delete the client was told had happened. Both are properties of the store,
     /// so the store performs the resolution and the deletion as one.
+    ///
+    /// `shortcut: the addressable kind range is the caller's to check, not the store's; upgrade
+    /// when a caller other than the NIP-09 `a`-tag strategy passes a kind`, because the store
+    /// takes the kind it is given exactly as `delete_by_pubkey_and_ids` takes the ids it is given.
     fn delete_by_address<'a>(
         &'a self,
         pubkey: &'a Pubkey,
