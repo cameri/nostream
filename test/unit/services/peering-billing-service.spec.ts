@@ -533,4 +533,40 @@ describe('PeeringBillingService', () => {
       )
     })
   })
+
+  describe('processLifecycle', () => {
+    it('issues renewals and then lapses ended periods', async () => {
+      const running = payment({
+        status: PeeringPaymentStatus.ACTIVE,
+        periodEnd: new Date(now.getTime() + 86_400_000),
+      })
+      paymentRepository.findDueForRenewal.resolves([running])
+      paymentRepository.findPeriodEnded.resolves([])
+      sandbox.stub(service, 'ensureInvoice').resolves(invoice({ id: 'renewal-1' }))
+
+      const changed = await service.processLifecycle(now)
+
+      expect(changed).to.equal(1)
+      expect(service.ensureInvoice).to.have.been.calledWith(peer, { now, renewal: true })
+    })
+
+    it('runs the ended-period sweep', async () => {
+      const expired = payment({
+        status: PeeringPaymentStatus.ACTIVE,
+        periodEnd: new Date(now.getTime() - 1000),
+      })
+      paymentRepository.findDueForRenewal.resolves([])
+      paymentRepository.findPeriodEnded.resolves([expired])
+      paymentRepository.findByPeer.resolves(expired)
+      paymentRepository.lockByPeer.resolves(expired)
+
+      const changed = await service.processLifecycle(now)
+
+      expect(changed).to.equal(1)
+      expect(paymentRepository.save).to.have.been.calledWith(
+        Sinon.match({ status: PeeringPaymentStatus.LAPSED }),
+        mockTrx,
+      )
+    })
+  })
 })

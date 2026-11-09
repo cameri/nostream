@@ -11,6 +11,7 @@ import {
   InvalidPeeringTermError,
   PEERING_RECHECK_COOLDOWN_SECONDS,
   PEERING_REISSUE_COOLDOWN_SECONDS,
+  PEERING_RENEWAL_LEAD_SECONDS,
   PeeringInvoiceCooldownError,
   peeringInvoiceDescription,
   resolvePaidPeeringTerm,
@@ -331,6 +332,56 @@ export class PeeringBillingService implements IPeeringBillingService {
       (limit, offset) => this.peeringPaymentRepository.findPeriodEnded(now, limit, offset),
       (payment) => this.handlePeriodEnded(payment.peerPubkey, now),
     )
+  }
+
+  /**
+   * One pass of the renewal window followed by the ended-period lapse scan.
+   * Lapses are handled by processLapses so they keep their own cursor and alert.
+   */
+  public async processLifecycle(now = new Date()): Promise<number> {
+    let term: PeeringTermSnapshot | undefined
+    try {
+      term = resolvePaidPeeringTerm(this.settings())
+    } catch (error) {
+      logger.error('not processing peering lifecycle: %o', error)
+      return 0
+    }
+
+    if (!term) {
+      return 0
+    }
+
+    const renewalChanged = await this.sweep(
+      'renewal',
+      (limit, offset) =>
+        this.peeringPaymentRepository.findDueForRenewal(
+          new Date(now.getTime() + PEERING_RENEWAL_LEAD_SECONDS * 1000),
+          limit,
+          offset,
+        ),
+      async (payment) => {
+        // The ended-period sweep owns already-ended rows; issuing a renewal for one
+        // here would create an invoice and immediately lapse the relationship.
+        if (payment.periodEnd && payment.periodEnd.getTime() <= now.getTime()) {
+          return false
+        }
+
+        try {
+          await this.ensureInvoice(payment.peerPubkey, { now, renewal: true })
+          return true
+        } catch (error) {
+          if (error instanceof PeeringInvoiceCooldownError) {
+            return false
+          }
+          logger.error('unable to issue renewal for %s: %o', payment.peerPubkey, error)
+          return false
+        }
+      },
+    )
+
+    const endedChanged = await this.processLapses(now)
+
+    return renewalChanged + endedChanged
   }
 
   private async handlePeriodEnded(peerPubkey: Pubkey, now: Date): Promise<boolean> {
