@@ -51,6 +51,13 @@ pub use postgres::{PostgresBackend, PostgresTransaction};
 /// against `min(limit, MAX_PAGE_ROWS)`: a stream that yields that many has a page whose end the
 /// relay cannot see, and must say nothing about what lies beyond it.
 ///
+/// This is only the relay's **default** assumption. The obligation itself is stated on
+/// [`EventRepository::find_by_filters`](repositories::EventRepository::find_by_filters), in both
+/// directions — a backend must yield up to the bound and must not exceed it — and a backend that
+/// clamps lower declares its own through
+/// [`EventRepository::page_bound`](repositories::EventRepository::page_bound), which the relay
+/// reads instead of this constant.
+///
 /// The two backends reach the bound differently. LMDB clamps every filter to it in code
 /// (`lmdb::MAX_PAGE_KEYS`, which is this constant, and the clamp's own test fails if the two
 /// drift apart). Postgres does **not** clamp by constant: it honours the filter's own `limit`,

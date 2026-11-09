@@ -237,33 +237,44 @@ where
         .rows_affected())
 }
 
-/// `delete_by_address`: one statement that resolves and deletes, so a replacement landing
+/// `delete_by_addresses`: one statement that resolves and deletes, so a replacement landing
 /// between a read and a delete cannot survive it.
 ///
-/// The address is `(event_pubkey, event_kind, event_deduplication->>0)` — the key the
-/// addressable strategy upserts on — and `event_created_at <= not_after` is `09.md`'s "all
-/// versions up to the `created_at` timestamp of the deletion request". Kind 62 is excluded, as
-/// in [`delete_by_pubkey_and_ids`].
-pub(crate) async fn delete_by_address<'e, E>(
+/// Each address is `(event_pubkey, event_kind, event_deduplication->>0)` — the key the addressable
+/// strategy upserts on — and the pairs are compared as row values, so a batch cannot match a kind
+/// from one address against another address's identifier. `event_created_at <= not_after` is
+/// `09.md`'s "all versions up to the `created_at` timestamp of the deletion request", and kind 62
+/// is excluded, as in [`delete_by_pubkey_and_ids`].
+pub(crate) async fn delete_by_addresses<'e, E>(
     executor: E,
     pubkey: &Pubkey,
-    kind: Kind,
-    identifier: &str,
+    addresses: &[(Kind, String)],
     not_after: i64,
 ) -> Result<u64, StorageError>
 where
     E: Executor<'e, Database = Postgres>,
 {
+    if addresses.is_empty() {
+        return Ok(0);
+    }
+
     let mut args = Args::default();
     let pubkey_slot = args.push(Arg::Bytes(pubkey.as_bytes().to_vec()));
-    let kind_slot = args.push(Arg::Int(i32::try_from(kind.0).unwrap_or(i32::MAX)));
-    let identifier_slot = args.push(Arg::Text(identifier.to_owned()));
     let not_after_slot = args.push(Arg::BigInt(not_after));
+    let mut pairs = Vec::with_capacity(addresses.len());
+
+    for (kind, identifier) in addresses {
+        let kind_slot = args.push(Arg::Int(i32::try_from(kind.0).unwrap_or(i32::MAX)));
+        let identifier_slot = args.push(Arg::Text(identifier.clone()));
+        pairs.push(format!("({kind_slot}, {identifier_slot})"));
+    }
+
     let sql = format!(
         "UPDATE events SET deleted_at = now() WHERE event_pubkey = {pubkey_slot} \
-         AND event_kind = {kind_slot} AND event_deduplication->>0 = {identifier_slot} \
+         AND (event_kind, event_deduplication->>0) IN ({}) \
          AND event_created_at <= {not_after_slot} AND event_kind <> {REQUEST_TO_VANISH} \
-         AND deleted_at IS NULL"
+         AND deleted_at IS NULL",
+        pairs.join(", ")
     );
 
     Ok(EventQuery { sql, args }

@@ -100,11 +100,10 @@ impl EventRepository for UnavailableEventRepository {
         Box::pin(async { Err(unavailable()) })
     }
 
-    fn delete_by_address<'a>(
+    fn delete_by_addresses<'a>(
         &'a self,
         _pubkey: &'a nostream_core::Pubkey,
-        _kind: nostream_core::Kind,
-        _identifier: &'a str,
+        _addresses: &'a [(nostream_core::Kind, String)],
         _not_after: i64,
     ) -> StoreFuture<'a, u64> {
         Box::pin(async { Err(unavailable()) })

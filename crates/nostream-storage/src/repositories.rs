@@ -407,6 +407,22 @@ pub trait EventRepository: Send + Sync {
     fn upsert_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64>;
 
     /// Streams the events matching the filters, in the query's order.
+    ///
+    /// **The page obligation.** A NIP-67 `finish` hint claims that every stored event matching a
+    /// subscription's filters has been sent, and the relay decides it by comparing the rows it
+    /// received against `min(limit, page_bound())` — so this method carries a contract that has a
+    /// direction in each half:
+    ///
+    /// - a backend **MUST** yield up to `min(limit, page_bound())` matching rows whenever that
+    ///   many exist. Yielding *fewer* while more exist is indistinguishable, at the call site,
+    ///   from a short result, and makes a false `finish` reach the wire;
+    /// - a backend **MUST NOT** yield more than `min(limit, page_bound())` rows for one filter.
+    ///   Yielding more only suppresses a hint the relay could have proved — the harmless
+    ///   direction, but it is still a contract, because a caller sizes its buffers by it.
+    ///
+    /// A backend whose own page is smaller than [`MAX_PAGE_ROWS`](crate::MAX_PAGE_ROWS) declares it through
+    /// [`EventRepository::page_bound`]; the relay then asks for no more than it will be given and
+    /// emits no hint where it cannot prove one.
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [nostream_core::Filter],
@@ -417,6 +433,17 @@ pub trait EventRepository: Send + Sync {
         &'a self,
         filters: &'a [nostream_core::Filter],
     ) -> StorageFuture<'a, u64>;
+
+    /// The largest page this backend will return for one filter, whatever `limit` it carries.
+    ///
+    /// Defaults to [`MAX_PAGE_ROWS`](crate::MAX_PAGE_ROWS), which both shipped backends satisfy. A backend that clamps
+    /// lower overrides it: [`EventRepository::find_by_filters`]' obligation is stated in terms of
+    /// this value, and a caller that must know whether a page was truncated compares the rows it
+    /// received against `min(limit, page_bound())`. Overriding it is what keeps a smaller page
+    /// from being read as a short result.
+    fn page_bound(&self) -> u64 {
+        crate::MAX_PAGE_ROWS
+    }
 
     /// Streams the live `(created_at, event_id)` pairs a NIP-77 reconciliation compares.
     fn find_reconciliation_items<'a>(
@@ -431,10 +458,19 @@ pub trait EventRepository: Send + Sync {
         ids: &'a [EventId],
     ) -> StorageFuture<'a, u64>;
 
-    /// Soft-deletes the author's live addressable rows that one address names — the `d`
-    /// identifier and the kinds 30000..=39999, with `created_at` no later than `not_after` —
-    /// returning the count. Kind 62 is never touched, as in
+    /// Soft-deletes the author's live addressable rows that these addresses name — each one's
+    /// `d` identifier and kind, with `created_at` no later than `not_after` — returning the
+    /// count. Kind 62 is never touched, as in
     /// [`delete_by_pubkey_and_ids`](Self::delete_by_pubkey_and_ids).
+    ///
+    /// **The caller checks the addresses are the author's to delete**: the pubkey and kind are
+    /// taken as given, exactly as `delete_by_pubkey_and_ids` takes the ids it is given, and one
+    /// address is one `(kind, d)` pair. The store's own guard is that every row it can reach is
+    /// keyed by this pubkey.
+    ///
+    /// The whole batch is **one transaction**, which is why this is a batch rather than one call
+    /// per address: a deletion request names its addresses in one event, and one event must not
+    /// become N write transactions at the store.
     ///
     /// This exists as its own operation rather than as a read followed by
     /// `delete_by_pubkey_and_ids`, for two reasons a caller cannot work around: a read is
@@ -442,15 +478,10 @@ pub trait EventRepository: Send + Sync {
     /// and a read and a delete are two operations, so a replacement landing between them
     /// survives the delete the client was told had happened. Both are properties of the store,
     /// so the store performs the resolution and the deletion as one.
-    ///
-    /// `shortcut: the addressable kind range is the caller's to check, not the store's; upgrade
-    /// when a caller other than the NIP-09 `a`-tag strategy passes a kind`, because the store
-    /// takes the kind it is given exactly as `delete_by_pubkey_and_ids` takes the ids it is given.
-    fn delete_by_address<'a>(
+    fn delete_by_addresses<'a>(
         &'a self,
         pubkey: &'a Pubkey,
-        kind: Kind,
-        identifier: &'a str,
+        addresses: &'a [(Kind, String)],
         not_after: i64,
     ) -> StorageFuture<'a, u64>;
 
