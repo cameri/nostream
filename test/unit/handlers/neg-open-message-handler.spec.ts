@@ -139,13 +139,18 @@ describe('NegOpenMessageHandler', () => {
   it('does not close a replacement NEG-OPEN after a stale billing wait', async () => {
     const peer = 'a'.repeat(64)
     let releaseAccess: ((access: unknown) => void) | undefined
+    let markGetAccessCalled: (() => void) | undefined
+    const getAccessCalled = new Promise<void>((resolve) => {
+      markGetAccessCalled = resolve
+    })
     ;(webSocket as any).getPeerPubkey = () => peer
     const billing = {
-      getAccess: sandbox.stub().returns(
-        new Promise((resolve) => {
+      getAccess: sandbox.stub().callsFake(() => {
+        markGetAccessCalled?.()
+        return new Promise((resolve) => {
           releaseAccess = resolve
-        }),
-      ),
+        })
+      }),
     }
     handler = new NegOpenMessageHandler(
       webSocket,
@@ -157,7 +162,7 @@ describe('NegOpenMessageHandler', () => {
     )
 
     const pending = open()
-    await new Promise((resolve) => setImmediate(resolve))
+    await getAccessCalled
     sessions.close('sync1')
     releaseAccess?.({ allowed: false, reason: 'peering payment required' })
     await pending

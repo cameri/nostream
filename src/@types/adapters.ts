@@ -39,6 +39,13 @@ export type IWebSocketAdapter = EventEmitter & {
   getNegentropySessions(): INegentropySessions
   /** Removes a subscription and aborts any in-flight read still serving it. */
   endSubscription(subscriptionId: string): void
+  /**
+   * Schedules a paid-access expiry check for this subscription. The adapter owns
+   * the timer and clears it on CLOSE, socket close and subscription ID reuse.
+   * `check` returns the next period end when access continues, or undefined when
+   * the subscription should be closed.
+   */
+  setSubscriptionExpiry(subscriptionId: string, periodEnd: Date, check: () => Promise<Date | undefined>): void
 }
 
 export interface ICacheAdapter {

@@ -253,6 +253,8 @@ describe('SubscribeMessageHandler', () => {
       message = [MessageType.REQ, subscriptionId, { kinds: [1] }] as any
 
       const pending = handler.handleMessage(message)
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(billing.getAccess).to.have.been.calledOnce
       ;(handler as any).abort()
       releaseAccess?.({ allowed: true, periodEnd: new Date(Date.now() + 60_000) })
       await pending
@@ -261,19 +263,19 @@ describe('SubscribeMessageHandler', () => {
       expect(fetchAndSendStub).not.to.have.been.called
     })
 
-    it('closes a paid feed when its access period ends', async () => {
+    it('schedules a paid feed expiry with the socket adapter', async () => {
       const peer = 'a'.repeat(64)
-      const clock = Sinon.useFakeTimers({ now: new Date('2026-11-09T12:00:00.000Z') })
-      const periodEnd = new Date('2026-11-09T12:00:01.000Z')
+      const periodEnd = new Date(Date.now() + 60_000)
+      const setSubscriptionExpiry = sandbox.stub()
       const billing = {
         getAccess: sandbox.stub().resolves({ allowed: true, periodEnd }),
         ensureInvoice: sandbox.stub().resolves(),
       }
+      ;(webSocket as any).setSubscriptionExpiry = setSubscriptionExpiry
       ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
       settingsFactory.returns({
         limits: { peer: { subscription: { maxFilters: 10, maxLimit: 0 } } },
       })
-      webSocketOnSubscribeStub.callsFake((id: string, registered: any) => subscriptions.set(id, registered))
       handler = new SubscribeMessageHandler(
         webSocket,
         eventRepository,
@@ -286,17 +288,8 @@ describe('SubscribeMessageHandler', () => {
       message = [MessageType.REQ, subscriptionId, { kinds: [1] }] as any
 
       await handler.handleMessage(message)
-      await clock.tickAsync(1000)
 
-      expect(endSubscriptionStub).to.have.been.calledWith(subscriptionId)
-      expect(webSocketOnMessageStub).to.have.been.calledWith([
-        'CLOSED',
-        subscriptionId,
-        'payment-required: peering access expired',
-      ])
-
-      handler.abort()
-      clock.restore()
+      expect(setSubscriptionExpiry).to.have.been.calledWith(subscriptionId, periodEnd, Sinon.match.func)
     })
 
     it('bounds raw filters before deduplicating them', async () => {

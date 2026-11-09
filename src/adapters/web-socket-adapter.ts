@@ -77,6 +77,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private alive: boolean
   private pendingSend: Promise<void> | undefined
   private subscriptions: Map<SubscriptionId, SubscriptionFilter[]>
+  private readonly subscriptionExpiries = new Map<SubscriptionId, { timer: NodeJS.Timeout; token: symbol }>()
   private readonly session: Nip42SessionManager
   /** Configured peering peer proven by AUTH on this socket, if any. */
   private peerPubkey: string | undefined
@@ -152,12 +153,86 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
   public onUnsubscribed(subscriptionId: string): void {
     logger('client %s unsubscribed %s', this.clientId, subscriptionId)
+    this.clearSubscriptionExpiry(subscriptionId)
     this.subscriptions.delete(subscriptionId)
   }
 
   public onSubscribed(subscriptionId: string, filters: SubscriptionFilter[]): void {
     logger('client %s subscribed %s to %o', this.clientId, subscriptionId, filters)
+    // Reusing an id starts a new subscription; the old expiry must not close it.
+    this.clearSubscriptionExpiry(subscriptionId)
     this.subscriptions.set(subscriptionId, filters)
+  }
+
+  public setSubscriptionExpiry(
+    subscriptionId: SubscriptionId,
+    periodEnd: Date,
+    check: () => Promise<Date | undefined>,
+  ): void {
+    this.clearSubscriptionExpiry(subscriptionId)
+
+    const token = Symbol(subscriptionId)
+    const remaining = Math.max(0, periodEnd.getTime() - Date.now())
+    const delay = Math.min(remaining, 2_147_483_647)
+
+    const timer = setTimeout(() => {
+      if (this.subscriptionExpiries.get(subscriptionId)?.token !== token) {
+        return
+      }
+
+      if (remaining > delay) {
+        this.setSubscriptionExpiry(subscriptionId, periodEnd, check)
+        return
+      }
+
+      void this.runSubscriptionExpiry(subscriptionId, token, check)
+    }, delay)
+
+    this.subscriptionExpiries.set(subscriptionId, { timer, token })
+  }
+
+  private async runSubscriptionExpiry(
+    subscriptionId: SubscriptionId,
+    token: symbol,
+    check: () => Promise<Date | undefined>,
+  ): Promise<void> {
+    let nextPeriodEnd: Date | undefined
+
+    try {
+      nextPeriodEnd = await check()
+    } catch (error) {
+      logger.error('unable to check paid subscription expiry for %s: %o', subscriptionId, error)
+    }
+
+    // The id may have been reused, closed or disconnected while the check ran.
+    if (this.subscriptionExpiries.get(subscriptionId)?.token !== token) {
+      return
+    }
+
+    if (nextPeriodEnd && nextPeriodEnd.getTime() > Date.now()) {
+      this.setSubscriptionExpiry(subscriptionId, nextPeriodEnd, check)
+      return
+    }
+
+    this.clearSubscriptionExpiry(subscriptionId)
+    this.endSubscription(subscriptionId)
+    this.sendMessage(createClosedMessage(subscriptionId, 'payment-required: peering access expired'))
+  }
+
+  private clearSubscriptionExpiry(subscriptionId: SubscriptionId): void {
+    const entry = this.subscriptionExpiries.get(subscriptionId)
+    if (!entry) {
+      return
+    }
+
+    clearTimeout(entry.timer)
+    this.subscriptionExpiries.delete(subscriptionId)
+  }
+
+  private clearAllSubscriptionExpiries(): void {
+    for (const subscriptionId of this.subscriptionExpiries.keys()) {
+      this.clearSubscriptionExpiry(subscriptionId)
+    }
   }
 
   public onBroadcast(event: Event): void {
@@ -245,6 +320,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   }
 
   public drainAndClose(reason = 'relay shutting down'): void {
+    this.clearAllSubscriptionExpiries()
+
     this.subscriptions.forEach((_filters, subscriptionId) => {
       this.sendMessage(createClosedMessage(subscriptionId, `error: ${reason}`))
     })
@@ -466,6 +543,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private onClientClose() {
     recordWebsocketConnectionClosed()
     this.alive = false
+    this.clearAllSubscriptionExpiries()
     this.subscriptions.clear()
     this.negentropySessions.closeAll()
     this.session.clear()

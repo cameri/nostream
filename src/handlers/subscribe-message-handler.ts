@@ -38,9 +38,6 @@ const MAX_PEERING_INVOICE_SUBSCRIPTIONS = 1
 
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private readonly abortController: AbortController
-  private peeringExpiryTimer?: NodeJS.Timeout
-  private peeringExpiryGeneration = 0
-  private subscriptionFilters: SubscriptionFilter[] = []
 
   /** Set while `handleMessage` runs; used to abort in-flight reads when the sub is closed early. */
   public activeSubscriptionId: SubscriptionId | undefined
@@ -58,7 +55,6 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   }
 
   public abort(): void {
-    this.clearPeeringExpiry()
     this.abortController.abort()
   }
 
@@ -139,73 +135,18 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       return
     }
 
-    this.subscriptionFilters = filters
     this.webSocket.emit(WebSocketAdapterEvent.Subscribe, subscriptionId, filters)
 
     if (peeringAccess?.periodEnd) {
-      this.schedulePeeringExpiry(subscriptionId, peerPubkey!, peeringAccess.periodEnd)
+      this.webSocket.setSubscriptionExpiry(subscriptionId, peeringAccess.periodEnd, async () => {
+        const latest = await this.peeringBillingService!.getAccess(peerPubkey!)
+        return latest.allowed ? (latest.periodEnd ?? undefined) : undefined
+      })
     }
 
     await this.maybeIssueInviteCode(subscriptionId, filters)
 
     await this.fetchAndSend(subscriptionId, filters)
-  }
-
-  private schedulePeeringExpiry(
-    subscriptionId: SubscriptionId,
-    peerPubkey: Pubkey,
-    periodEnd: Date,
-  ): void {
-    this.clearPeeringExpiry()
-    const generation = this.peeringExpiryGeneration
-    const remaining = Math.max(0, periodEnd.getTime() - Date.now())
-    const delay = Math.min(remaining, 2_147_483_647)
-
-    this.peeringExpiryTimer = setTimeout(() => {
-      if (generation !== this.peeringExpiryGeneration) {
-        return
-      }
-
-      if (remaining > delay) {
-        this.schedulePeeringExpiry(subscriptionId, peerPubkey, periodEnd)
-        return
-      }
-
-      void this.expirePeeringSubscription(subscriptionId, peerPubkey)
-    }, delay)
-  }
-
-  private clearPeeringExpiry(): void {
-    this.peeringExpiryGeneration++
-    if (this.peeringExpiryTimer) {
-      clearTimeout(this.peeringExpiryTimer)
-      this.peeringExpiryTimer = undefined
-    }
-  }
-
-  private async expirePeeringSubscription(subscriptionId: SubscriptionId, peerPubkey: Pubkey): Promise<void> {
-    // The id may have been reused by a different subscription in the meantime.
-    const registered = this.webSocket.getSubscriptions().get(subscriptionId)
-    if (!registered || !equals(registered, this.subscriptionFilters)) {
-      return
-    }
-
-    try {
-      const access = await this.peeringBillingService?.getAccess(peerPubkey)
-      if (access?.allowed && access.periodEnd && access.periodEnd.getTime() > Date.now()) {
-        this.schedulePeeringExpiry(subscriptionId, peerPubkey, access.periodEnd)
-        return
-      }
-    } catch (error) {
-      logger.error('unable to check peering expiry for %s: %o', peerPubkey, error)
-    }
-
-    this.webSocket.endSubscription(subscriptionId)
-    this.webSocket.emit(
-      WebSocketAdapterEvent.Message,
-      createClosedMessage(subscriptionId, 'payment-required: peering access expired'),
-    )
-    this.clearPeeringExpiry()
   }
 
   /**
