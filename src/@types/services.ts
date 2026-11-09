@@ -60,6 +60,10 @@ export interface IPeeringBillingService {
   getAccess(peerPubkey: Pubkey, options?: { now?: Date; recheck?: boolean }): Promise<PeeringAccess>
   /** Returns a usable invoice, creating or reissuing one when needed. */
   ensureInvoice(peerPubkey: Pubkey, options?: { now?: Date; renewal?: boolean }): Promise<Invoice | undefined>
+  /** Renewal window, period end/lapse, and invoice expiry bookkeeping. */
+  processLifecycle(now?: Date): Promise<number>
+  /** Clears a pointer and updates status after the processor confirms an invoice expired. */
+  handleInvoiceExpired(invoice: Invoice): Promise<void>
 }
 
 export interface ISubscriptionService {

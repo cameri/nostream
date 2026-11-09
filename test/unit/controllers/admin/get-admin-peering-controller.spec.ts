@@ -39,7 +39,24 @@ describe('GetAdminPeeringController', () => {
         peers: [{ pubkey: state.pubkey, relayUrl: state.relayUrl }],
       },
     } as Settings
-    const controller = new GetAdminPeeringController(stateStore as any, () => settings, requestStatsStore as any)
+    const peeringPaymentRepository = {
+      list: Sinon.stub().resolves([
+        {
+          peerPubkey: state.pubkey,
+          direction: 'sell',
+          status: 'active',
+          periodEnd: new Date('2026-12-01T00:00:00.000Z'),
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+        },
+      ]),
+    }
+    const controller = new GetAdminPeeringController(
+      stateStore as any,
+      () => settings,
+      requestStatsStore as any,
+      peeringPaymentRepository as any,
+    )
     const response = {
       status: Sinon.stub().returnsThis(),
       setHeader: Sinon.stub().returnsThis(),
@@ -63,6 +80,11 @@ describe('GetAdminPeeringController', () => {
       eventsServed: 34,
       lastRequestAt: '2026-01-01T00:00:00.000Z',
       lastRequestType: 'REQ',
+    })
+    expect(payload.peers[0].billing).to.include({
+      status: 'active',
+      termAmountMsats: 21000n,
+      termPeriodSeconds: 2592000,
     })
   })
 })
