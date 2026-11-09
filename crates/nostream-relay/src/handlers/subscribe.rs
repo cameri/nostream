@@ -28,6 +28,7 @@ use nostream_core::messages::{
 };
 use nostream_core::nip42;
 use nostream_core::{Filter, Kind};
+use nostream_storage::MAX_PAGE_ROWS;
 
 use crate::connection::InFlightRead;
 use crate::error::RelayError;
@@ -268,15 +269,16 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
         None
     };
 
-    // The probe: ask storage for one more row than the client's cap, so the `(limit + 1)`th
-    // matching row is the one that says `more` without being sent. `u64::MAX` saturates, which
+    // The probe: ask storage for one more row than the client's cap, so a `(limit + 1)`th
+    // **matching** row is what says `more` without being sent. `u64::MAX` saturates, which
     // admits nothing beyond the maximum and so cannot hide a row. The backends already honour
     // `limit`; the in-memory double does not, and the loop below drops the extra row either way.
-    let storage_filters: Vec<Filter> = match limit {
-        Some(limit) => filters
+    let probe = limit.map(|limit| limit.saturating_add(1));
+    let storage_filters: Vec<Filter> = match probe {
+        Some(probe) => filters
             .iter()
             .map(|filter| Filter {
-                limit: Some(limit.saturating_add(1)),
+                limit: Some(probe),
                 ..filter.clone()
             })
             .collect(),
@@ -303,12 +305,15 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     let matches_any =
         |event: &nostream_core::Event| filters.iter().any(|filter| filter.matches(event));
 
-    // `trimmed`: the guard withheld a matching, unexpired event this read would otherwise have
-    // delivered. `more`: the cap cut the result. `delivered`: matching rows inside the cap, in
-    // stream order — a deleted, expired or non-matching row is not one of them.
+    // `rows`: every row the page yielded, skipped ones included — a full page is what makes the
+    // backend's remaining extent unknown. `matched`: rows that were a match inside the client's
+    // window, which is what `limit` bounds. `trimmed`: the guard withheld a match. `more`: a
+    // match beyond the window was found. `failed`: the stream errored.
+    let mut rows = 0u64;
+    let mut matched = 0u64;
     let mut trimmed = false;
     let mut more = false;
-    let mut matched = 0u64;
+    let mut failed = false;
 
     loop {
         if *read.cancellation().borrow() {
@@ -357,10 +362,13 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
 
         match record {
             Ok(record) => {
+                // Every row the page yielded counts towards whether the page was full, whether
+                // or not it turns out to be a match.
+                rows += 1;
+
                 if record.deleted_at.is_some() {
                     continue;
                 }
-
                 let event = record.event;
 
                 if expiration::is_expired_event(&event, now) || !matches_any(&event) {
@@ -398,6 +406,8 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
             }
             Err(error) => {
                 tracing::error!(error = %error, "error streaming events");
+                failed = true;
+
                 break;
             }
         }
@@ -405,9 +415,27 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
 
     context.connection.end_read(read);
 
-    // `auth` first, then the completeness hint. `finish` is never sent beside `auth`: `67.md`
-    // defines `finish` as "every stored event matching the subscription's filters" has been
-    // sent, and a withheld event makes that false even though the NIP's example shows the pair.
+    // The rule, in one place, so the next reader does not have to re-derive it. `finish` claims
+    // that every stored event matching the subscription's filters has been sent (`67.md`
+    // §"Specification"), and this read can fail to establish that three ways, so `finish` needs
+    // all three:
+    //
+    // 1. the stream ended **cleanly** — after a storage error, how far the read got is unknown;
+    // 2. the page was **not full** — a page that yielded `min(probe, MAX_PAGE_ROWS)` rows says
+    //    nothing about the rows beyond it, whether the bound came from the client's `limit` or
+    //    from the backend's own page cap, and a skipped row spends a page slot just as a match
+    //    does (which is why `rows`, not `matched`, decides this);
+    // 3. **no further match** was found — `more` stayed false, which is only meaningful once 1
+    //    and 2 hold, because the loop keeps asking past deleted, expired, withheld and
+    //    non-matching rows until it sees a match, the genuine end, or the page cap.
+    //
+    // Where any of the three cannot be established the relay sends no completeness hint: an
+    // absent hint is honest and a wrong one is not. `more` needs one further **match** beyond
+    // the delivered window, `auth` is unaffected, and `finish` is never sent beside `auth`
+    // because a withheld event falsifies it.
+    let page_full = probe.is_some_and(|probe| rows >= probe.min(MAX_PAGE_ROWS));
+    let finish = !failed && !more && !page_full;
+
     let mut hints = Vec::new();
 
     if trimmed {
@@ -417,7 +445,7 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     if hint_eligible {
         if more {
             hints.push(EOSE_HINT_MORE.to_owned());
-        } else if !trimmed {
+        } else if finish && !trimmed {
             hints.push(EOSE_HINT_FINISH.to_owned());
         }
     }

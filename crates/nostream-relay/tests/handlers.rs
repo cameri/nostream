@@ -32,7 +32,7 @@ use nostream_relay::connection::Connection;
 use nostream_relay::relay_key::RelayKeySource;
 use nostream_relay::sink::FrameSink;
 use nostream_relay::testing::{Fixture, nip42_settings, nip43_settings, nip45_settings, settings};
-use nostream_storage::repositories::User;
+use nostream_storage::repositories::{EventRepository, User};
 
 /// The relay's public key for [`RELAY_SECRET`].
 fn relay_pubkey() -> nostream_core::Pubkey {
@@ -1109,6 +1109,105 @@ async fn eose_hints_more_when_the_limit_was_reached() {
     assert_eq!(frames.len(), 3, "exactly the limit's events: {frames:?}");
     assert!(events_then_eose(&frames), "{frames:?}");
     assert_eq!(frames[2], r#"["EOSE","s1",["more"]]"#);
+}
+
+/// A skipped row spends a page slot just as a match does, so a page that came back full of skips
+/// cannot say whether the row after it was a match. Deleted rows sort ahead of live ones here,
+/// which is the shape the review measured against LMDB: two deleted rows and one live one fill a
+/// three-row probe for a `limit` of 2.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_page_was_full_of_skips() {
+    let fixture = Fixture::new(settings());
+
+    for index in 0..2 {
+        let deleted = signed_event(
+            &CLIENT_SECRET,
+            1,
+            vec![],
+            &format!("gone {index}"),
+            NOW_SECS,
+        );
+        fixture.seed_event(deleted.clone()).await;
+        fixture
+            .events
+            .delete_by_pubkey_and_ids(&deleted.pubkey, &[deleted.id])
+            .await
+            .expect("the double deletes");
+    }
+
+    seed_notes(&fixture, 2).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":2}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(
+        frames.len(),
+        2,
+        "two deleted rows cost the page a slot each, so one live row is left: {frames:?}"
+    );
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[1], r#"["EOSE","s1"]"#);
+}
+
+/// The backend caps the page below the client's `limit`, so the probe came back full and the rows
+/// beyond it are unknown: exactly 5000 sent is not a claim that nothing was left.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_backend_page_cap_was_reached() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 5_001).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client
+        .send(r#"["REQ","s1",{"kinds":[1],"limit":5000}]"#)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 5_001, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[5_000], r#"["EOSE","s1"]"#);
+}
+
+/// A storage error leaves the read's extent unknown, so no hint is added after it.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_stream_failed() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 1).await;
+    fixture.events.fail_reads(true);
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":5}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames, vec![r#"["EOSE","s1"]"#.to_owned()], "{frames:?}");
+}
+
+/// `auth` and the completeness hint compose: a withheld match falsifies `finish` even where the
+/// page was neither full nor capped, and `auth` is what is sent.
+#[tokio::test]
+async fn eose_hints_send_auth_without_finish_when_a_match_was_withheld() {
+    let mut settings = settings();
+    settings.nip42 = Some(nip42_settings());
+    let fixture = Fixture::new(settings);
+
+    let stranger_secret = [0x77; 32];
+    let withheld = signed_event(&stranger_secret, 4, vec![], "ciphertext", NOW_SECS);
+    fixture.seed_event(withheld).await;
+    seed_notes(&fixture, 1).await;
+
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client
+        .send(r#"["REQ","s1",{"kinds":[1,4],"limit":2}]"#)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert_eq!(frames[1], r#"["EOSE","s1",["auth"]]"#);
 }
 
 #[tokio::test]
