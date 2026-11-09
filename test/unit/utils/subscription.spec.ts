@@ -244,13 +244,17 @@ describe('subscription utils', () => {
         expect(paidFor().currentPeriodStart).to.deep.equal(at(-25 * DAY))
       })
 
-      it('does not take the plan away from a pubkey whose renewal is pending either', () => {
+      it('keeps a pending renewal pending, since its invoice is still payable and a second one must not be issued', () => {
         const pending = { ...running, status: SubscriptionStatus.RENEWAL_PENDING }
 
         const result = applyPayment(pubkey, pending, plan, NOW, { existingPlan: premium, paidMsat: plan.amount })
 
         expect(result.planId).to.equal('premium')
-        expect(result.status).to.equal(SubscriptionStatus.ACTIVE)
+        expect(result.status).to.equal(SubscriptionStatus.RENEWAL_PENDING)
+      })
+
+      it('keeps an active subscription active', () => {
+        expect(paidFor().status).to.equal(SubscriptionStatus.ACTIVE)
       })
 
       it('gives a plan with no grace no grace end', () => {

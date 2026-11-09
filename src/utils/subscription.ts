@@ -87,7 +87,9 @@ export const applyPayment = (
     return {
       pubkey,
       planId: existing.planId,
-      status: SubscriptionStatus.ACTIVE,
+      // Not paid for the renewal that may be waiting: a pending renewal invoice is still payable, and moving the
+      // subscription back to active would let the next sweep issue a second one if the credit leaves the end near.
+      status: existing.status,
       currentPeriodStart: existing.currentPeriodStart,
       currentPeriodEnd: periodEnd,
       graceEndsAt:
