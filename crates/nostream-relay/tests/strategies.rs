@@ -463,6 +463,11 @@ fn address_delete_event(address: &str) -> Event {
     event(5, vec![tag(&["a", address])], "")
 }
 
+/// The one address delete a request naming `post-1` makes, in the order the seam takes it.
+fn one_address_delete(d: &str, not_after: i64) -> Vec<(Pubkey, Kind, String, i64)> {
+    vec![(author(), Kind(30_023), d.to_owned(), not_after)]
+}
+
 #[tokio::test]
 async fn delete_soft_deletes_an_addressable_event_named_by_an_a_tag() {
     let fixture = Fixture::new(settings());
@@ -474,7 +479,54 @@ async fn delete_soft_deletes_an_addressable_event_named_by_an_a_tag() {
 
     DeleteStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(fixture.events.deletes(), vec![(author(), vec![target.id])]);
+    assert_eq!(
+        fixture.events.address_deletes(),
+        one_address_delete("post-1", NOW_SECS)
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// The lookup and the deletion are one storage operation, so there is no window between them for
+/// a replacement to land in: the seam is asked once, by address, and no id list is resolved.
+#[tokio::test]
+async fn delete_resolves_and_deletes_an_address_in_one_operation() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let (context, mut sink) = socket(&fixture);
+    let event = address_delete_event(&format!("30023:{}:post-1", author()));
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(
+        fixture.events.deletes(),
+        Vec::new(),
+        "the a-tag path never builds an id list"
+    );
+    assert_eq!(
+        fixture.events.address_deletes(),
+        one_address_delete("post-1", NOW_SECS)
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// The delete does not consult a read, which is what makes it reach a row NIP-56 hides from
+/// reads: a failing stream changes nothing about the address path.
+#[tokio::test]
+async fn delete_deletes_by_address_without_a_read() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+    fixture.events.fail_reads(true);
+
+    let (context, mut sink) = socket(&fixture);
+    let event = address_delete_event(&format!("30023:{}:post-1", author()));
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
     assert_eq!(fixture.events.live_events(), vec![event.clone()]);
     assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
 }
@@ -492,6 +544,7 @@ async fn delete_ignores_an_a_tag_naming_another_authors_address() {
 
     DeleteStrategy.execute(&event, &context).await.unwrap();
 
+    assert_eq!(fixture.events.address_deletes(), Vec::new());
     assert_eq!(fixture.events.deletes(), Vec::new());
     assert!(fixture.events.live_events().contains(&target));
     assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
@@ -508,7 +561,12 @@ async fn delete_leaves_an_addressable_event_newer_than_the_request() {
 
     DeleteStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(fixture.events.deletes(), Vec::new());
+    // The bound travels with the delete, which is what makes it a compare-and-delete rather than
+    // a list of ids chosen earlier.
+    assert_eq!(
+        fixture.events.address_deletes(),
+        one_address_delete("post-1", NOW_SECS)
+    );
     assert!(fixture.events.live_events().contains(&target));
     assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
 }
@@ -525,7 +583,10 @@ async fn delete_matches_an_empty_d_identifier() {
 
     DeleteStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(fixture.events.deletes(), vec![(author(), vec![target.id])]);
+    assert_eq!(
+        fixture.events.address_deletes(),
+        one_address_delete("", NOW_SECS)
+    );
     assert_eq!(fixture.events.live_events(), vec![event.clone()]);
     assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
 }

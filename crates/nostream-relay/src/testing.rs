@@ -22,6 +22,7 @@ use nostream_config::settings::{
 };
 use nostream_core::clock::Clock;
 use nostream_core::{Event, EventId, Filter, Kind, Pubkey};
+use nostream_storage::MAX_PAGE_ROWS;
 use nostream_storage::StorageError;
 use nostream_storage::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobStatus, EventPurgeCounts, EventRecord,
@@ -153,9 +154,11 @@ pub struct InMemoryEventRepository {
     fail_count: AtomicBool,
     fail_queries: AtomicBool,
     fail_delete: AtomicBool,
+    fail_reads: AtomicBool,
     upsert_failure: Mutex<Option<UpsertFailure>>,
     upserts: Mutex<Vec<Vec<serde_json::Value>>>,
     deletes: Mutex<Vec<(Pubkey, Vec<EventId>)>>,
+    address_deletes: Mutex<Vec<(Pubkey, Kind, String, i64)>>,
     delete_except_kinds_calls: Mutex<Vec<(Pubkey, Vec<Kind>)>>,
     /// When set, `find_by_filters` holds its stream until a permit is released, which is how
     /// a test gets a read in flight long enough to `CLOSE` it.
@@ -202,6 +205,12 @@ impl InMemoryEventRepository {
     /// Makes every `count_by_filters` fail.
     pub fn fail_count(&self) {
         self.fail_queries.store(true, Ordering::SeqCst);
+    }
+
+    /// Makes a read yield one error and end, so a handler's error path can be reached. The
+    /// stream carries no rows first, which is the case a `finish` hint would misreport.
+    pub fn fail_reads(&self, fail: bool) {
+        self.fail_reads.store(fail, Ordering::SeqCst);
     }
 
     /// Makes every read wait for a permit. Grant one with `Semaphore::add_permits` to let a
@@ -267,6 +276,14 @@ impl InMemoryEventRepository {
             .clone()
     }
 
+    /// The `(pubkey, kind, d, not_after)` each `delete_by_address` was called with.
+    pub fn address_deletes(&self) -> Vec<(Pubkey, Kind, String, i64)> {
+        self.address_deletes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
     /// The `(pubkey, excluded kinds)` each `delete_by_pubkey_except_kinds` was called with.
     pub fn delete_except_kinds_calls(&self) -> Vec<(Pubkey, Vec<Kind>)> {
         self.delete_except_kinds_calls
@@ -306,6 +323,17 @@ impl InMemoryEventRepository {
 
         deleted
     }
+}
+
+/// The value of an event's first `d` tag, `""` when it carries none — the key the addressable
+/// strategy deduplicates on.
+fn d_identifier(event: &Event) -> &str {
+    event
+        .tags
+        .iter()
+        .find(|tag| tag.len() >= 2 && tag[0] == "d")
+        .map(|tag| tag[1].as_str())
+        .unwrap_or_default()
 }
 
 impl EventRepository for InMemoryEventRepository {
@@ -415,19 +443,47 @@ impl EventRepository for InMemoryEventRepository {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         let per_item = self.gate_per_item.load(std::sync::atomic::Ordering::SeqCst);
+        let failing = self.fail_reads.load(Ordering::SeqCst);
 
         Box::pin(async move {
+            if failing {
+                let failed: Vec<Result<EventRecord, StorageError>> =
+                    vec![Err(StorageError::InvalidArgument {
+                        message: "in-memory double: the read failed",
+                    })];
+
+                return Ok(Box::pin(stream::iter(failed)) as QueryStream<'a, EventRecord>);
+            }
+
             let records = self
                 .records
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
 
-            let matched: Vec<Result<EventRecord, StorageError>> = records
-                .into_iter()
-                .filter(|record| filters.iter().any(|filter| filter.matches(&record.event)))
-                .map(Ok)
-                .collect();
+            // A page, as the real backends answer one: each filter's own `limit`, never more
+            // than the backend bound, in insertion order, the union of the filters with no row
+            // twice. The double used to answer every match, which is what a handler that
+            // counted pages could not be tested against.
+            let mut matched: Vec<Result<EventRecord, StorageError>> = Vec::new();
+            let mut seen: Vec<EventId> = Vec::new();
+
+            for filter in filters {
+                let bound = filter.limit.unwrap_or(u64::MAX).min(MAX_PAGE_ROWS);
+                let mut taken = 0u64;
+
+                for record in &records {
+                    if taken >= bound {
+                        break;
+                    }
+
+                    if filter.matches(&record.event) && !seen.contains(&record.event.id) {
+                        seen.push(record.event.id);
+                        matched.push(Ok(record.clone()));
+                        taken += 1;
+                    }
+                }
+            }
 
             let Some(gate) = gate else {
                 return Ok(Box::pin(stream::iter(matched)) as QueryStream<'a, EventRecord>);
@@ -530,6 +586,37 @@ impl EventRepository for InMemoryEventRepository {
                 record.event.pubkey == *pubkey
                     && ids.contains(&record.event.id)
                     && record.event.kind != Kind::REQUEST_TO_VANISH
+            }))
+        })
+    }
+
+    /// The addressable row one `(pubkey, kind, d)` names, soft-deleted when it is no newer than
+    /// `not_after` — one operation, so there is no window between a lookup and a delete.
+    fn delete_by_address<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        kind: Kind,
+        identifier: &'a str,
+        not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            self.address_deletes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push((*pubkey, kind, identifier.to_owned(), not_after));
+
+            if self.fail_delete.load(Ordering::SeqCst) {
+                return Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the delete failed",
+                });
+            }
+
+            Ok(self.soft_delete(|record| {
+                record.event.pubkey == *pubkey
+                    && record.event.kind == kind
+                    && record.event.created_at <= not_after
+                    && record.event.kind != Kind::REQUEST_TO_VANISH
+                    && d_identifier(&record.event) == identifier
             }))
         })
     }
