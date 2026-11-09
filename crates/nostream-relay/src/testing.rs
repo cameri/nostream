@@ -461,10 +461,12 @@ impl EventRepository for InMemoryEventRepository {
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
 
-            // A page, as the real backends answer one: each filter's own `limit`, never more
-            // than the backend bound, in insertion order, the union of the filters with no row
-            // twice. The double used to answer every match, which is what a handler that
-            // counted pages could not be tested against.
+            // A page, as the real backends answer one: each filter takes its own `limit` in
+            // insertion order, never more than the backend bound, and the union is deduplicated
+            // afterwards — so a row another filter already returned still spends a slot of this
+            // filter's limit, exactly as it does in both backends. The double used to answer
+            // every match, and then to not charge an overlap against the limit, which is how a
+            // handler test stops meaning anything.
             let mut matched: Vec<Result<EventRecord, StorageError>> = Vec::new();
             let mut seen: Vec<EventId> = Vec::new();
 
@@ -477,11 +479,18 @@ impl EventRepository for InMemoryEventRepository {
                         break;
                     }
 
-                    if filter.matches(&record.event) && !seen.contains(&record.event.id) {
-                        seen.push(record.event.id);
-                        matched.push(Ok(record.clone()));
-                        taken += 1;
+                    if !filter.matches(&record.event) {
+                        continue;
                     }
+
+                    taken += 1;
+
+                    if seen.contains(&record.event.id) {
+                        continue;
+                    }
+
+                    seen.push(record.event.id);
+                    matched.push(Ok(record.clone()));
                 }
             }
 
@@ -1686,6 +1695,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::*;
+    use nostream_core::Signature;
 
     fn claimant(byte: u8) -> Pubkey {
         Pubkey::from_byte_array([byte; 32])
@@ -1697,6 +1707,60 @@ mod tests {
             remaining_uses,
             created_by: None,
         }
+    }
+
+    #[tokio::test]
+    async fn a_row_another_filter_returned_still_spends_this_filters_limit() {
+        // Both backends take each filter's page first and deduplicate the union afterwards, so a
+        // row the first filter already returned is still one of the second filter's `limit`
+        // rows. The double used to skip it without charging the slot, which handed a handler
+        // more rows than either backend would (`double=["old","new"]` against `lmdb=["new"]`
+        // for two overlapping filters each capped at one).
+        let events = InMemoryEventRepository::new();
+        let author = Pubkey::from_byte_array([7; 32]);
+
+        for (index, content) in ["old", "new"].into_iter().enumerate() {
+            let event = Event {
+                id: EventId::from_byte_array([index as u8; 32]),
+                pubkey: author,
+                created_at: index as i64 + 1,
+                kind: Kind(1),
+                tags: Vec::new(),
+                content: content.to_owned(),
+                sig: Signature::from_byte_array([0; 64]),
+            };
+            events
+                .create(&EventRecord::from_event(&event))
+                .await
+                .unwrap();
+        }
+
+        let filters = [
+            Filter {
+                kinds: Some(vec![Kind(1)]),
+                limit: Some(1),
+                ..Filter::default()
+            },
+            Filter {
+                authors: Some(vec![author.to_string()]),
+                limit: Some(1),
+                ..Filter::default()
+            },
+        ];
+
+        let stream = events.find_by_filters(&filters).await.unwrap();
+        futures_util::pin_mut!(stream);
+
+        let mut rows = Vec::new();
+        while let Some(record) = futures_util::StreamExt::next(&mut stream).await {
+            rows.push(record.unwrap());
+        }
+
+        assert_eq!(
+            rows.len(),
+            1,
+            "one row, because the second filter's first match was the first filter's row"
+        );
     }
 
     #[tokio::test]
