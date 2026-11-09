@@ -307,13 +307,13 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     let matches_any =
         |event: &nostream_core::Event| filters.iter().any(|filter| filter.matches(event));
 
-    // `rows`: every row the page yielded, skipped ones included — a full page is what makes the
-    // backend's remaining extent unknown. `matched`: rows that were a match inside the client's
-    // window, which is what `limit` bounds. `trimmed`: the guard withheld a match. `more`: a
-    // match beyond the window was found. `failed`: the stream errored. `refused`: the backend
-    // yielded a row this relay's matcher refuses, which is what a backend whose predicate is not
-    // `Filter::matches` looks like from here. `vanished`: the backend spent a page slot on a key
-    // that was gone when it came to read it.
+    // `rows`: every page slot the backend spent, skipped and vanished ones included — a full
+    // page is what makes the backend's remaining extent unknown. `matched`: rows that were a match
+    // inside the client's window, which is what `limit` bounds. `trimmed`: the guard withheld a
+    // match. `more`: a match beyond the window was found. `failed`: the stream errored. `refused`:
+    // the backend yielded a row this relay's matcher refuses, which is what a backend whose
+    // predicate is not `Filter::matches` looks like from here. `vanished`: the backend spent a
+    // page slot on a key that was gone when it came to read it.
     let mut rows = 0u64;
     let mut matched = 0u64;
     let mut trimmed = false;
@@ -453,7 +453,7 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     // all six:
     //
     // 1. the stream ended **cleanly** — after a storage error, how far the read got is unknown;
-    // 2. the page was **not full** — a page that yielded `min(probe, page_bound())` rows says
+    // 2. the page was **not full** — a page that spent `min(probe, page_bound())` slots says
     //    nothing about the rows beyond it, whether the bound came from the client's `limit` or
     //    from the backend's own page cap, and a skipped row spends a page slot just as a match
     //    does (which is why `rows`, not `matched`, decides this);
