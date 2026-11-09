@@ -197,10 +197,12 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     check: () => Promise<Date | null | false>,
   ): Promise<void> {
     let nextPeriodEnd: Date | null | false = false
+    let checkFailed = false
 
     try {
       nextPeriodEnd = await check()
     } catch (error) {
+      checkFailed = true
       logger.error('unable to check paid subscription expiry for %s: %o', subscriptionId, error)
     }
 
@@ -222,7 +224,14 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
 
     this.clearSubscriptionExpiry(subscriptionId)
     this.endSubscription(subscriptionId)
-    this.sendMessage(createClosedMessage(subscriptionId, 'payment-required: peering access expired'))
+    this.sendMessage(
+      createClosedMessage(
+        subscriptionId,
+        checkFailed
+          ? 'error: unable to check peering access'
+          : 'payment-required: peering access expired',
+      ),
+    )
   }
 
   private clearSubscriptionExpiry(subscriptionId: SubscriptionId): void {
