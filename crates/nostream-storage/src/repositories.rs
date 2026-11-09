@@ -457,10 +457,10 @@ pub enum SearchRule {
 ///
 /// [`nostream_core::Filter::matches`] compares a tag value to the criterion with `==`, so the
 /// criterion `""` accepts a tag stored as `["d", ""]`. A backend that answers tag criteria from
-/// an index of non-empty values holds no entry for the empty one, and then the read selects
-/// nothing while the matcher would have accepted every such row — a short page that proves
-/// nothing about the rows it never enumerated. Each variant names the rule, as [`SearchRule`]'s
-/// do, so an implementor has to read what it is asserting.
+/// an index of non-empty values holds no entry for the empty one, and then that criterion
+/// selects nothing while the matcher would have accepted every such row — a short page that
+/// proves nothing about the rows it never enumerated. Each variant names the rule, as
+/// [`SearchRule`]'s do, so an implementor has to read what it is asserting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmptyTagRule {
     /// A criterion that is the empty string selects at least what
