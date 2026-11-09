@@ -995,6 +995,89 @@ const runAll = async () => {
 
     },
   })
+
+  // 17. NIP-14/22/28/65/89: the event shapes the generic store-and-serve path carries, published
+  // and then read back. No filter carries a `limit` and no kind is restricted, so no step can
+  // depend on a NIP-67 hint; each kind is published once, so nothing depends on the doubles'
+  // missing replaceability either. The read-back frames are compared as JSON values, not bytes,
+  // because a stored row's key order is the capture's and every other EVENT frame in the fixture
+  // is the other path's.
+  await runSession({
+    id: 'nip-generic-events',
+    settings: settingsFor({ limits: noConnectionLimit(baseLimits()) }),
+    script: async ({ send }) => {
+      const subject = makeEvent({
+        kind: 1,
+        content: 'nip14',
+        tags: [['subject', 'A test subject']],
+      })
+      const rootId = 'aa'.repeat(32)
+      const rootAuthor = 'bb'.repeat(32)
+      const comment = makeEvent({
+        kind: 1111,
+        content: 'nip22',
+        tags: [
+          ['K', '1'],
+          ['E', rootId],
+          ['P', rootAuthor],
+          ['k', '1'],
+          ['e', rootId],
+          ['p', rootAuthor],
+        ],
+      })
+      const channel = makeEvent({
+        kind: 40,
+        content: 'nip28',
+        tags: [['name', 'the channel']],
+      })
+      const channelMessage = makeEvent({
+        kind: 42,
+        content: 'nip28 message',
+        tags: [['e', channel.id]],
+      })
+      const relayList = makeEvent({
+        kind: 10002,
+        content: '',
+        tags: [['r', 'wss://relay.one.example']],
+      })
+      const handler = makeEvent({
+        kind: 31990,
+        content: '',
+        tags: [
+          ['d', 'example-app'],
+          ['k', '1'],
+          ['web', 'https://example.com/app'],
+        ],
+      })
+      const recommendation = makeEvent({
+        kind: 31989,
+        content: '',
+        tags: [['d', '1'], ['a', `31990:${CLIENT_PUBKEY}:example-app`]],
+      })
+
+      for (const event of [subject, comment, channel, channelMessage, relayList, handler, recommendation]) {
+        await send(['EVENT', event], { expect: 1 })
+      }
+
+      // One filter per kind, so no ordering between rows is asserted, and no filter carries a
+      // `limit`, so the EOSE keeps its two-element form on both sides.
+      for (const [id, kind] of [
+        ['v1', 1],
+        ['v2', 1111],
+        ['v3', 40],
+        ['v4', 42],
+        ['v5', 10002],
+        ['v6', 31990],
+        ['v7', 31989],
+      ]) {
+        await send(['REQ', id, { kinds: [kind] }], {
+          expect: 2,
+          compare: 'json',
+          why: 'a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 025',
+        })
+      }
+    },
+  })
 }
 
 // The stream restarts here: module loading draws nothing this fixture wants to replay, and the
