@@ -141,9 +141,10 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
       throw new SetupCancelledError()
     }
 
-    const trimmed = value.trim()
-    if (!needsSecretReplacement(trimmed)) {
-      return trimmed
+    // Without the quotes, as for an inherited secret: they are not part of the secret, and .env is read without them.
+    const unquoted = stripQuotes(value)
+    if (!needsSecretReplacement(unquoted)) {
+      return unquoted
     }
   }
 

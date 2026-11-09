@@ -206,6 +206,34 @@ describe('runSetup', () => {
       expect(readEnv()).to.equal(placeholderEnv)
     })
 
+    it('saves a quoted secret typed at the prompt without its quotes, so every start has the same value', async () => {
+      process.stdin.isTTY = true
+      sinon.stub(setupCommand.setupPrompts, 'text').resolves('"quoted-secret"')
+      sinon.stub(setupCommand.setupPrompts, 'confirm').resolves(false as any)
+
+      const code = await setupCommand.runSetup({ yes: false })
+
+      expect(code).to.equal(0)
+      expect(process.env.SECRET).to.equal('quoted-secret')
+      expect(readEnv()).to.include('SECRET=quoted-secret\n')
+      expect(parseEnv(readEnv()).SECRET).to.equal('quoted-secret')
+
+      delete process.env.SECRET
+      expect(await setupCommand.runSetup({ yes: true })).to.equal(0)
+      expect(process.env.SECRET).to.equal('quoted-secret')
+    })
+
+    it('saves a single-quoted secret typed at the prompt without its quotes too', async () => {
+      process.stdin.isTTY = true
+      sinon.stub(setupCommand.setupPrompts, 'text').resolves("'quoted-secret'")
+      sinon.stub(setupCommand.setupPrompts, 'confirm').resolves(false as any)
+
+      await setupCommand.runSetup({ yes: false })
+
+      expect(process.env.SECRET).to.equal('quoted-secret')
+      expect(parseEnv(readEnv()).SECRET).to.equal('quoted-secret')
+    })
+
     it('refuses the same values in the interactive prompt', async () => {
       process.stdin.isTTY = true
       let validateFn: ((input: string) => string | undefined) | undefined
@@ -246,6 +274,11 @@ describe('runSetup', () => {
         expect(code).to.equal(0)
         expect(process.env.SECRET).to.equal(expected)
         expect(parseEnv(readEnv()).SECRET).to.equal(expected)
+
+        // and what a later run of setup reads back through its own parser, with nothing inherited
+        delete process.env.SECRET
+        expect(await setupCommand.runSetup({ yes: true })).to.equal(0)
+        expect(process.env.SECRET).to.equal(expected)
       })
     }
   })
