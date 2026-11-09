@@ -52,12 +52,18 @@ export const hasSubscriptionAccess = (subscription: UserSubscription | undefined
  * The subscription after a payment for `plan`. A payment made while access is still running
  * extends it from the current period end, so paying early costs nothing. After access has
  * lapsed, or on the never-ending grandfathered plan, the new period starts now.
+ *
+ * Anyone can pay an invoice for any pubkey, so a payment must not take away what the pubkey already has paid for. While
+ * a period of a dearer plan is running, a payment for a cheaper plan therefore does not switch the plan (its lower limits
+ * and shorter retention would take effect at once, and the purge would delete events the dearer plan keeps). The money
+ * is credited to the plan the pubkey has, as the share of one of its periods it pays for.
  */
 export const applyPayment = (
   pubkey: Pubkey,
   existing: UserSubscription | undefined,
   plan: SubscriptionPlan,
   now: Date,
+  context: { existingPlan?: SubscriptionPlan; paidMsat?: bigint } = {},
 ): Omit<UserSubscription, 'createdAt' | 'updatedAt'> => {
   const stillRunning =
     existing &&
@@ -65,6 +71,30 @@ export const applyPayment = (
     existing.currentPeriodEnd &&
     (existing.status === SubscriptionStatus.ACTIVE || existing.status === SubscriptionStatus.RENEWAL_PENDING) &&
     existing.currentPeriodEnd.getTime() > now.getTime()
+
+  const { existingPlan } = context
+  if (
+    stillRunning &&
+    existingPlan &&
+    existingPlan.id === existing.planId &&
+    BigInt(plan.amount) < BigInt(existingPlan.amount)
+  ) {
+    // The share of a period of the plan the pubkey has that the payment covers, in milliseconds.
+    const paidMsat = context.paidMsat ?? BigInt(plan.amount)
+    const creditMs = Number((BigInt(existingPlan.intervalSeconds) * 1000n * paidMsat) / BigInt(existingPlan.amount))
+    const periodEnd = new Date((existing.currentPeriodEnd as Date).getTime() + creditMs)
+
+    return {
+      pubkey,
+      planId: existing.planId,
+      status: SubscriptionStatus.ACTIVE,
+      currentPeriodStart: existing.currentPeriodStart,
+      currentPeriodEnd: periodEnd,
+      graceEndsAt:
+        existingPlan.graceSeconds > 0 ? new Date(periodEnd.getTime() + existingPlan.graceSeconds * 1000) : null,
+      cancelAtPeriodEnd: false,
+    }
+  }
 
   const periodStart = stillRunning ? (existing.currentPeriodEnd as Date) : now
   const periodEnd = new Date(periodStart.getTime() + plan.intervalSeconds * 1000)

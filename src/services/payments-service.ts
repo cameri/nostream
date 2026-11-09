@@ -219,7 +219,10 @@ export class PaymentsService implements IPaymentsService {
           const date = new Date()
           const existing = await this.userSubscriptionRepository.findByPubkey(invoice.pubkey, transaction.transaction)
           await this.userSubscriptionRepository.upsert(
-            applyPayment(invoice.pubkey, existing, plan, date),
+            applyPayment(invoice.pubkey, existing, plan, date, {
+              existingPlan: findSubscriptionPlan(currentSettings, existing?.planId),
+              paidMsat: amountPaidMsat,
+            }),
             transaction.transaction,
           )
           await this.userRepository.admitUser(invoice.pubkey, date, transaction.transaction)
