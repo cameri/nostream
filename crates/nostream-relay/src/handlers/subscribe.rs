@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use nostream_core::expiration;
-use nostream_core::filter::{count_filter_values, is_generic_tag_query, normalise_subscription};
+use nostream_core::filter::{count_filter_values, has_empty_tag_criterion, normalise_subscription};
 use nostream_core::messages::{
     EOSE_HINT_AUTH, EOSE_HINT_FINISH, EOSE_HINT_MORE, EoseMessage, OutgoingEventMessage,
     RelayMessage, SubscribeMessage,
@@ -505,11 +505,7 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     // A tag criterion that is the empty string is one `Filter::matches` accepts and a tag index
     // built from non-empty values cannot answer: nothing is yielded, so neither a refusal nor a
     // short page shows it, and the enumeration could not answer a criterion the matcher accepts.
-    let empty_tag_query = filters.iter().any(|filter| {
-        filter.tags.iter().any(|(key, criteria)| {
-            is_generic_tag_query(key) && criteria.iter().any(String::is_empty)
-        })
-    });
+    let empty_tag_query = filters.iter().any(has_empty_tag_criterion);
     let tag_agrees = context.stores.events.empty_tag_rule() == EmptyTagRule::AnswersEmptyCriterion
         || !empty_tag_query;
     let proven = !failed && !page_full && !vanished && !refused && search_agrees && tag_agrees;

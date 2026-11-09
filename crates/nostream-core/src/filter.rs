@@ -186,6 +186,15 @@ pub fn is_generic_tag_query(key: &str) -> bool {
         && characters.next().is_none()
 }
 
+/// Whether a filter carries a generic tag criterion that is the empty string — the one criterion a
+/// tag index built from non-empty values cannot answer, while [`Filter::matches`] accepts it.
+pub fn has_empty_tag_criterion(filter: &Filter) -> bool {
+    filter
+        .tags
+        .iter()
+        .any(|(key, criteria)| is_generic_tag_query(key) && criteria.iter().any(String::is_empty))
+}
+
 /// Whether the lowercase hex rendering of `bytes` starts with `prefix`.
 ///
 /// The comparison is on nibbles of the byte array, so no string is built. It is
@@ -727,6 +736,17 @@ mod tests {
         assert!(!is_generic_tag_query("#0"));
         assert!(!is_generic_tag_query("#ee"));
         assert!(!is_generic_tag_query("e"));
+    }
+
+    #[test]
+    fn only_a_generic_tag_family_can_carry_an_empty_criterion() {
+        let empty = |json: &str| has_empty_tag_criterion(&serde_json::from_str(json).unwrap());
+
+        assert!(empty(r##"{"#d":[""]}"##));
+        assert!(empty(r##"{"#d":["","post-1"]}"##));
+        assert!(!empty(r##"{"#d":["post-1"]}"##));
+        assert!(!empty(r##"{"#expiration":[""]}"##));
+        assert!(!empty(r#"{"kinds":[1]}"#));
     }
 
     #[test]
