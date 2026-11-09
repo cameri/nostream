@@ -157,8 +157,21 @@ fn addresses(event: &Event) -> Vec<(Kind, String)> {
         let d = parts.next().unwrap_or_default();
         let address = (kind, d.to_owned());
 
-        if !addresses.contains(&address) {
-            addresses.push(address);
+        if addresses.contains(&address) {
+            continue;
+        }
+
+        addresses.push(address);
+
+        // Stop as soon as the request is over the cap: it will be refused, and the tags left are
+        // not worth parsing. The check is on the **distinct** count, so a run of repeated tags
+        // (which the `contains` above drops without pushing) never trips it — a request that names
+        // one address 6 096 times is legal, and this breaks only on the (cap + 1)th new address.
+        // Without this the collection is O(T²) in the tag count, spent before the cap is even
+        // consulted: 6 096 addresses cost 42.5 ms (release) against 2.4 ms to decode the same
+        // frame, and the work happens on a tokio worker.
+        if addresses.len() > MAX_ADDRESSES_PER_REQUEST {
+            break;
         }
     }
 

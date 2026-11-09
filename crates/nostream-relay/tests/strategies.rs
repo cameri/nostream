@@ -665,6 +665,36 @@ async fn delete_refuses_a_request_naming_too_many_addresses() {
     );
 }
 
+/// A legal request stays legal when its addresses repeat: the cap counts distinct addresses, and the
+/// early break that keeps an over-cap list cheap must not turn one of these into a refusal. Twenty
+/// tags per address, a total far past the cap, plus a repeat of the first address at the end.
+#[tokio::test]
+async fn delete_admits_a_cap_sized_batch_with_repeats() {
+    let fixture = Fixture::new(settings());
+    let mut tags: Vec<Vec<String>> = Vec::new();
+
+    for _ in 0..20 {
+        for index in 0..100 {
+            tags.push(tag(&["a", &format!("30023:{}:post-{index}", author())]));
+        }
+    }
+
+    tags.push(tag(&["a", &format!("30023:{}:post-0", author())]));
+    assert!(tags.len() > 101, "the tag count is past the cap on purpose");
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(
+        fixture.events.address_deletes().len(),
+        100,
+        "one entry per distinct address, and no refusal"
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
 /// One hundred and one tags naming **one** address are admitted: the cap bounds distinct
 /// addresses, which is the work, not the tag list the transport already bounds.
 #[tokio::test]
