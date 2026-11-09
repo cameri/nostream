@@ -37,6 +37,23 @@ const stripQuotes = (value: string): string => {
   return trimmed
 }
 
+/**
+ * Why a secret cannot be written to `.env` and read back unchanged, or undefined when it can. An unquoted `#` starts a
+ * comment for the loader, a newline ends the line, and a quote the loader cannot match changes what it reads.
+ */
+const getUnsafeSecretReason = (secret: string): string | undefined => {
+  if (secret.includes('#')) {
+    return 'SECRET cannot contain "#"'
+  }
+  if (/[\r\n]/.test(secret)) {
+    return 'SECRET cannot contain newlines'
+  }
+  if (/^["'`]/.test(stripQuotes(secret))) {
+    return 'SECRET cannot start with an unmatched quote'
+  }
+  return undefined
+}
+
 const parseEnvValue = (rawValue: string): string => {
   const trimmed = rawValue.trim()
   if (!trimmed) {
@@ -91,6 +108,15 @@ const needsSecretReplacement = (secret: string | undefined): boolean => {
 const resolveSecret = async (assumeYes: boolean): Promise<string> => {
   const inheritedSecret = process.env.SECRET?.trim()
   if (inheritedSecret && !needsSecretReplacement(inheritedSecret)) {
+    // It will be written to .env and read back by a loader that would not return it unchanged, which would give the
+    // relay a different secret, and so different derived keys, from the one this run started with.
+    const unsafeReason = getUnsafeSecretReason(inheritedSecret)
+    if (unsafeReason) {
+      throw new Error(
+        `${unsafeReason}. The SECRET in the environment cannot be saved to .env and read back unchanged: unset it, or use one without those characters.`,
+      )
+    }
+
     return stripQuotes(inheritedSecret)
   }
 
@@ -106,13 +132,7 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
         if (needsSecretReplacement(trimmed)) {
           return 'SECRET cannot be the default placeholder'
         }
-        if (input.includes('#')) {
-          return 'SECRET cannot contain "#"'
-        }
-        if (/[\r\n]/.test(input)) {
-          return 'SECRET cannot contain newlines'
-        }
-        return undefined
+        return getUnsafeSecretReason(input)
       },
     })
 
@@ -131,6 +151,11 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
 }
 
 const upsertSecret = (content: string, secret: string): string => {
+  const unsafeReason = getUnsafeSecretReason(secret)
+  if (unsafeReason) {
+    throw new Error(unsafeReason)
+  }
+
   const normalized = content.length > 0 ? content : ''
   const lines = normalized.split(/\r?\n/)
   let replaced = false

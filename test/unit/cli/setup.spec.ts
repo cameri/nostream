@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import sinon from 'sinon'
+import { parseEnv } from 'util'
 
 const setupCommand: typeof import('../../../dist/src/cli/commands/setup.js') = require('../../../dist/src/cli/commands/setup.js')
 
@@ -156,6 +157,97 @@ describe('runSetup', () => {
 
     expect(readEnv()).to.include('SECRET=my-strong-interactive-secret')
     expect(process.env.SECRET).to.equal('my-strong-interactive-secret')
+  })
+
+  describe('a secret that cannot be saved to .env and read back unchanged', () => {
+    const placeholderEnv = 'SECRET=change_me_to_something_long_and_random\nFOO=bar\n'
+
+    beforeEach(() => {
+      fs.writeFileSync(path.join(tempDir, '.env'), placeholderEnv, 'utf-8')
+    })
+
+    const unsafe: Array<[string, string, string]> = [
+      ['contains "#"', 'my-secret#suffix', 'SECRET cannot contain "#"'],
+      ['contains a newline', 'first\nsecond', 'SECRET cannot contain newlines'],
+      ['starts with an unmatched double quote', '"unterminated', 'SECRET cannot start with an unmatched quote'],
+      ['starts with an unmatched single quote', "'unterminated", 'SECRET cannot start with an unmatched quote'],
+    ]
+
+    for (const [label, secret, reason] of unsafe) {
+      it(`rejects an inherited SECRET that ${label}, and leaves .env alone`, async () => {
+        process.env.SECRET = secret
+
+        let error: Error | undefined
+        try {
+          await setupCommand.runSetup({ yes: true })
+        } catch (caught) {
+          error = caught as Error
+        }
+
+        expect(error?.message).to.contain(reason)
+        expect(error?.message).to.contain('unset it')
+        expect(readEnv()).to.equal(placeholderEnv)
+      })
+    }
+
+    it('rejects a secret the prompt hands back with a "#", even though the prompt validator should have refused it', async () => {
+      process.stdin.isTTY = true
+      sinon.stub(setupCommand.setupPrompts, 'text').resolves('typed#secret')
+      sinon.stub(setupCommand.setupPrompts, 'confirm').resolves(false as any)
+
+      let error: Error | undefined
+      try {
+        await setupCommand.runSetup({ yes: false })
+      } catch (caught) {
+        error = caught as Error
+      }
+
+      expect(error?.message).to.equal('SECRET cannot contain "#"')
+      expect(readEnv()).to.equal(placeholderEnv)
+    })
+
+    it('refuses the same values in the interactive prompt', async () => {
+      process.stdin.isTTY = true
+      let validateFn: ((input: string) => string | undefined) | undefined
+      sinon.stub(setupCommand.setupPrompts, 'text').callsFake((opts: any) => {
+        validateFn = opts.validate
+        return Promise.resolve('my-strong-interactive-secret')
+      })
+      sinon.stub(setupCommand.setupPrompts, 'confirm').resolves(false as any)
+
+      await setupCommand.runSetup({ yes: false })
+
+      expect(validateFn!('"unterminated')).to.equal('SECRET cannot start with an unmatched quote')
+      expect(validateFn!("'unterminated")).to.equal('SECRET cannot start with an unmatched quote')
+      expect(validateFn!('"quoted-secret"')).to.equal(undefined)
+    })
+  })
+
+  describe('a secret that is accepted', () => {
+    const safe = [
+      'plain-hex-0123456789abcdef',
+      'a=b',
+      'pa$$word!',
+      "it's-fine",
+      'with space inside',
+      'trailing-equals==',
+      '"quoted-secret"',
+    ]
+
+    for (const secret of safe) {
+      it(`reads back from .env as the same value: ${secret}`, async () => {
+        fs.writeFileSync(path.join(tempDir, '.env'), 'SECRET=change_me_to_something_long_and_random\n', 'utf-8')
+        process.env.SECRET = secret
+
+        const code = await setupCommand.runSetup({ yes: true })
+
+        // what the CLI hands the relay, and what a later start reads from .env with Node's own loader
+        const expected = secret.replace(/^"(.*)"$/, '$1')
+        expect(code).to.equal(0)
+        expect(process.env.SECRET).to.equal(expected)
+        expect(parseEnv(readEnv()).SECRET).to.equal(expected)
+      })
+    }
   })
 
   it('replaces placeholder with generated secret if interactive input somehow resolves to placeholder', async () => {
