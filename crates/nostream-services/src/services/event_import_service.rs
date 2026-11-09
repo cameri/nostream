@@ -493,13 +493,7 @@ fn enrich(event: &Event) -> EventRecord {
     }
 
     if event.kind.is_parameterized_replaceable() {
-        let deduplication = event
-            .tags
-            .iter()
-            .find(|tag| tag.len() >= 2 && tag[0] == "d")
-            .map(|tag| tag[1].clone())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_default();
+        let deduplication = event.d_tag_value().to_owned();
 
         record.event_deduplication = Some(vec![serde_json::Value::String(deduplication)]);
     }
