@@ -380,6 +380,36 @@ pub struct OutboxMessage {
 /// (`src/repositories/notification-outbox-repository.ts`).
 pub const NOTIFICATION_OUTBOX_PROCESSING_LEASE_MS: i64 = 5 * 60 * 1000;
 
+/// The matching rule a backend applies to a filter that carries `search` (NIP-50).
+///
+/// A completeness claim is a claim about the set a backend *enumerated*, so the caller has to
+/// know what that backend's `search` predicate actually does. Saying only "my predicate may
+/// differ" would let the next backend tick a box; each variant names the rule, so an implementor
+/// has to read what it is asserting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SearchRule {
+    /// Exactly [`nostream_core::Filter::matches`]: every whitespace-separated term of `search`
+    /// must appear as a lowercase **substring** of the content. The backend enumerates with the
+    /// relay's own matcher, so a completeness claim over such a read is one the relay can check.
+    SubstringTerms,
+    /// Postgres' prefilter: `to_tsvector(<language>, content) @@ plainto_tsquery(<language>,
+    /// query)`. Word **tokens**, stemmed by the `language` regconfig — not substrings, and not
+    /// the relay's rule. The two predicates contain neither the other:
+    ///
+    /// - the query `study` selects a row whose content is `studies` (both reduce to the one
+    ///   English stem `studi`), and [`nostream_core::Filter::matches`] refuses it because
+    ///   `"studies"` contains no `"study"`;
+    /// - `abcdef` is a substring of the content `xxabcdefyy`, which `Filter::matches` accepts and
+    ///   the tsquery never yields, because that content is one token.
+    ///
+    /// The first is the direction a probe can see (a yielded row the relay refuses); the second
+    /// is why no probe is enough, and why a caller withholds rather than checks.
+    ToTsvector {
+        /// The regconfig the predicate is evaluated under (`nip50.language`, `simple` by default).
+        language: String,
+    },
+}
+
 /// Event storage (`src/@types/repositories.ts` `IEventRepository`).
 pub trait EventRepository: Send + Sync {
     /// Inserts one event, returning the affected row count (0 on a duplicate `event_id`).
@@ -416,9 +446,11 @@ pub trait EventRepository: Send + Sync {
     /// - a backend **MUST** yield up to `min(limit, page_bound())` matching rows whenever that
     ///   many exist. Yielding *fewer* while more exist is indistinguishable, at the call site,
     ///   from a short result, and makes a false `finish` reach the wire;
-    /// - a backend **MUST NOT** yield more than `min(limit, page_bound())` rows for one filter.
-    ///   Yielding more only suppresses a hint the relay could have proved — the harmless
-    ///   direction, but it is still a contract, because a caller sizes its buffers by it.
+    /// - a backend **MUST NOT** yield more than `min(limit, page_bound())` rows for one filter,
+    ///   with one exception the relay itself asks for: its probe passes `limit + 1`, so a backend
+    ///   honouring that filter yields up to `min(limit + 1, page_bound())`. Yielding more only
+    ///   suppresses a hint the relay could have proved — the harmless direction, but it is still
+    ///   a contract, because a caller sizes its buffers by it.
     ///
     /// A backend whose own page is smaller than [`MAX_PAGE_ROWS`](crate::MAX_PAGE_ROWS) declares it through
     /// [`EventRepository::page_bound`]; the relay then asks for no more than it will be given and
@@ -443,6 +475,17 @@ pub trait EventRepository: Send + Sync {
     /// from being read as a short result.
     fn page_bound(&self) -> u64 {
         crate::MAX_PAGE_ROWS
+    }
+
+    /// The matching rule this backend applies to a filter that carries `search` (NIP-50).
+    ///
+    /// Defaults to [`SearchRule::SubstringTerms`], which is what a backend that filters with
+    /// [`nostream_core::Filter::matches`] applies — LMDB's filter path *is* that matcher. A
+    /// backend whose own predicate answers the filter overrides this, and a caller that must
+    /// claim completeness over such a read reads it rather than assuming the relay's matcher
+    /// enumerated the set.
+    fn search_rule(&self) -> SearchRule {
+        SearchRule::SubstringTerms
     }
 
     /// Streams the live `(created_at, event_id)` pairs a NIP-77 reconciliation compares.

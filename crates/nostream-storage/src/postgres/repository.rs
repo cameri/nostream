@@ -13,8 +13,8 @@ use crate::repositories::{
     EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
     NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, StorageFuture, User, UserPatch,
-    UserRepository,
+    QueryStream, ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture, User,
+    UserPatch, UserRepository,
 };
 
 impl EventRepository for PostgresBackend {
@@ -67,6 +67,18 @@ impl EventRepository for PostgresBackend {
         ids: &'a [EventId],
     ) -> StorageFuture<'a, u64> {
         Box::pin(async move { events::delete_by_pubkey_and_ids(&self.master, pubkey, ids).await })
+    }
+
+    /// Postgres answers a search filter with `to_tsvector(@@) plainto_tsquery` when NIP-50 is
+    /// enabled (`sql.rs:317-323`), and with no text predicate at all when it is not — in which
+    /// case the relay's own matcher is what decides, which is `SubstringTerms`.
+    fn search_rule(&self) -> SearchRule {
+        match self.gates().nip50 {
+            Some(gate) => SearchRule::ToTsvector {
+                language: gate.language,
+            },
+            None => SearchRule::SubstringTerms,
+        }
     }
 
     fn delete_by_addresses<'a>(
