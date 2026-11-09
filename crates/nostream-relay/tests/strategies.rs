@@ -606,6 +606,83 @@ async fn delete_matches_an_empty_d_identifier() {
     }
 }
 
+/// A request naming the same address a thousand times makes **one** storage call: the addresses
+/// are deduplicated before the seam, so the tag count is not the work count. Measured before the
+/// change: 1 000 identical tags produced 1 000 `delete_by_address` calls, each its own write
+/// transaction.
+#[tokio::test]
+async fn delete_names_each_distinct_address_once() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let address = format!("30023:{}:post-1", author());
+    let tags: Vec<Vec<String>> = (0..1_000).map(|_| tag(&["a", &address])).collect();
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(
+        fixture.events.address_deletes(),
+        one_address_delete("post-1", NOW_SECS),
+        "a thousand identical tags are one address, so one call"
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// A request naming more distinct addresses than one event may is refused before anything is
+/// deleted or stored: `OK false`, no storage call, no row written. Partial work with a `true`
+/// would tell the client its other articles were gone.
+#[tokio::test]
+async fn delete_refuses_a_request_naming_too_many_addresses() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-0"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let tags: Vec<Vec<String>> = (0..101)
+        .map(|index| tag(&["a", &format!("30023:{}:post-{index}", author())]))
+        .collect();
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.address_deletes(), Vec::new());
+    assert_eq!(
+        fixture.events.live_events(),
+        vec![target],
+        "nothing was deleted and the request itself was not stored"
+    );
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(
+            &event,
+            false,
+            "invalid: a deletion request may name at most 100 addresses"
+        )]
+    );
+}
+
+/// One hundred and one tags naming **one** address are admitted: the cap bounds distinct
+/// addresses, which is the work, not the tag list the transport already bounds.
+#[tokio::test]
+async fn delete_admits_a_cap_sized_batch() {
+    let fixture = Fixture::new(settings());
+    let tags: Vec<Vec<String>> = (0..100)
+        .map(|index| tag(&["a", &format!("30023:{}:post-{index}", author())]))
+        .collect();
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.address_deletes().len(), 100);
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
 // ---------------------------------------------------------------------------
 // dvm_job_request — `dvm-job-request-event-strategy.spec.ts`
 // ---------------------------------------------------------------------------

@@ -155,6 +155,7 @@ pub struct InMemoryEventRepository {
     fail_queries: AtomicBool,
     fail_delete: AtomicBool,
     fail_reads: AtomicBool,
+    page_bound: std::sync::atomic::AtomicU64,
     upsert_failure: Mutex<Option<UpsertFailure>>,
     upserts: Mutex<Vec<Vec<serde_json::Value>>>,
     deletes: Mutex<Vec<(Pubkey, Vec<EventId>)>>,
@@ -211,6 +212,13 @@ impl InMemoryEventRepository {
     /// stream carries no rows first, which is the case a `finish` hint would misreport.
     pub fn fail_reads(&self, fail: bool) {
         self.fail_reads.store(fail, Ordering::SeqCst);
+    }
+
+    /// Declares a smaller page than `MAX_PAGE_ROWS`, the way a backend that clamps lower would,
+    /// so a test can see the relay honour it instead of its own assumption. Zero restores the
+    /// default.
+    pub fn declare_page_bound(&self, bound: u64) {
+        self.page_bound.store(bound, Ordering::SeqCst);
     }
 
     /// Makes every read wait for a permit. Grant one with `Semaphore::add_permits` to let a
@@ -325,17 +333,6 @@ impl InMemoryEventRepository {
     }
 }
 
-/// The value of an event's first `d` tag, `""` when it carries none — the key the addressable
-/// strategy deduplicates on.
-fn d_identifier(event: &Event) -> &str {
-    event
-        .tags
-        .iter()
-        .find(|tag| tag.len() >= 2 && tag[0] == "d")
-        .map(|tag| tag[1].as_str())
-        .unwrap_or_default()
-}
-
 impl EventRepository for InMemoryEventRepository {
     fn create<'a>(&'a self, record: &'a EventRecord) -> StorageFuture<'a, u64> {
         Box::pin(async move {
@@ -433,6 +430,15 @@ impl EventRepository for InMemoryEventRepository {
         })
     }
 
+    /// The page this double serves, which a test may lower with
+    /// [`InMemoryEventRepository::declare_page_bound`]; zero means "not declared".
+    fn page_bound(&self) -> u64 {
+        match self.page_bound.load(Ordering::SeqCst) {
+            0 => MAX_PAGE_ROWS,
+            bound => bound,
+        }
+    }
+
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
@@ -470,8 +476,10 @@ impl EventRepository for InMemoryEventRepository {
             let mut matched: Vec<Result<EventRecord, StorageError>> = Vec::new();
             let mut seen: Vec<EventId> = Vec::new();
 
+            let page_bound = self.page_bound();
+
             for filter in filters {
-                let bound = filter.limit.unwrap_or(u64::MAX).min(MAX_PAGE_ROWS);
+                let bound = filter.limit.unwrap_or(u64::MAX).min(page_bound);
                 let mut taken = 0u64;
 
                 for record in &records {
@@ -599,20 +607,25 @@ impl EventRepository for InMemoryEventRepository {
         })
     }
 
-    /// The addressable row one `(pubkey, kind, d)` names, soft-deleted when it is no newer than
-    /// `not_after` — one operation, so there is no window between a lookup and a delete.
-    fn delete_by_address<'a>(
+    /// The row at each address, soft-deleted when it is no newer than `not_after` — one
+    /// operation for the batch, and one recorded entry per address so a test can count the work.
+    fn delete_by_addresses<'a>(
         &'a self,
         pubkey: &'a Pubkey,
-        kind: Kind,
-        identifier: &'a str,
+        addresses: &'a [(Kind, String)],
         not_after: i64,
     ) -> StorageFuture<'a, u64> {
         Box::pin(async move {
-            self.address_deletes
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .push((*pubkey, kind, identifier.to_owned(), not_after));
+            {
+                let mut recorded = self
+                    .address_deletes
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+                for (kind, identifier) in addresses {
+                    recorded.push((*pubkey, *kind, identifier.clone(), not_after));
+                }
+            }
 
             if self.fail_delete.load(Ordering::SeqCst) {
                 return Err(StorageError::InvalidArgument {
@@ -622,10 +635,11 @@ impl EventRepository for InMemoryEventRepository {
 
             Ok(self.soft_delete(|record| {
                 record.event.pubkey == *pubkey
-                    && record.event.kind == kind
                     && record.event.created_at <= not_after
                     && record.event.kind != Kind::REQUEST_TO_VANISH
-                    && d_identifier(&record.event) == identifier
+                    && addresses.iter().any(|(kind, identifier)| {
+                        record.event.kind == *kind && record.event.d_tag_value() == identifier
+                    })
             }))
         })
     }
