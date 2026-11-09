@@ -573,22 +573,37 @@ async fn delete_leaves_an_addressable_event_newer_than_the_request() {
 
 #[tokio::test]
 async fn delete_matches_an_empty_d_identifier() {
-    let fixture = Fixture::new(settings());
-    // A row with no `d` tag is the one stored under the address's empty `d`.
-    let target = addressable_row(None, NOW_SECS);
-    fixture.seed_event(target.clone()).await;
+    // A row with no `d` tag is stored under the address's empty `d`, and an address may spell
+    // that `d` as an empty third part or leave the third part off entirely.
+    for address in [
+        format!("30023:{}:", author()),
+        format!("30023:{}", author()),
+    ] {
+        let fixture = Fixture::new(settings());
+        let target = addressable_row(None, NOW_SECS);
+        fixture.seed_event(target.clone()).await;
 
-    let (context, mut sink) = socket(&fixture);
-    let event = address_delete_event(&format!("30023:{}:", author()));
+        let (context, mut sink) = socket(&fixture);
+        let event = address_delete_event(&address);
 
-    DeleteStrategy.execute(&event, &context).await.unwrap();
+        DeleteStrategy.execute(&event, &context).await.unwrap();
 
-    assert_eq!(
-        fixture.events.address_deletes(),
-        one_address_delete("", NOW_SECS)
-    );
-    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
-    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+        assert_eq!(
+            fixture.events.address_deletes(),
+            one_address_delete("", NOW_SECS),
+            "{address}"
+        );
+        assert_eq!(
+            fixture.events.live_events(),
+            vec![event.clone()],
+            "{address}"
+        );
+        assert_eq!(
+            frames(&mut sink),
+            vec![ok_frame(&event, true, "")],
+            "{address}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
