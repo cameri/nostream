@@ -169,6 +169,10 @@ describe('runSetup', () => {
     const unsafe: Array<[string, string, string]> = [
       ['contains "#"', 'my-secret#suffix', 'SECRET cannot contain "#"'],
       ['contains a newline', 'first\nsecond', 'SECRET cannot contain newlines'],
+      ['contains a variable reference that Docker Compose would expand', 'pre$TOKEN', 'SECRET cannot contain "$"'],
+      ['contains a braced variable reference', 'pre${TOKEN}post', 'SECRET cannot contain "$"'],
+      ['contains "$$", which Docker Compose turns into one "$"', 'pa$$word', 'SECRET cannot contain "$"'],
+      ['contains a lone "$"', 'cost$', 'SECRET cannot contain "$"'],
       ['starts with an unmatched double quote', '"unterminated', 'SECRET cannot start with an unmatched quote'],
       ['starts with an unmatched single quote', "'unterminated", 'SECRET cannot start with an unmatched quote'],
     ]
@@ -248,6 +252,8 @@ describe('runSetup', () => {
       expect(validateFn!('"unterminated')).to.equal('SECRET cannot start with an unmatched quote')
       expect(validateFn!("'unterminated")).to.equal('SECRET cannot start with an unmatched quote')
       expect(validateFn!('"quoted-secret"')).to.equal(undefined)
+      expect(validateFn!('$TOKEN')).to.equal('SECRET cannot contain "$"')
+      expect(validateFn!("'$TOKEN'")).to.equal('SECRET cannot contain "$"')
     })
   })
 
@@ -255,7 +261,6 @@ describe('runSetup', () => {
     const safe = [
       'plain-hex-0123456789abcdef',
       'a=b',
-      'pa$$word!',
       "it's-fine",
       'with space inside',
       'trailing-equals==',
