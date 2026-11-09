@@ -463,9 +463,11 @@ pub enum SearchRule {
 /// do, so an implementor has to read what it is asserting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmptyTagRule {
-    /// A criterion that is the empty string selects what [`nostream_core::Filter::matches`]
-    /// selects. The in-memory backends' tag predicate *is* that matcher, so a completeness claim
-    /// over such a read is one the relay can check.
+    /// A criterion that is the empty string selects at least what
+    /// [`nostream_core::Filter::matches`] selects: the implementor asserts its tag predicate
+    /// accepts everything that matcher accepts on the tag criteria — a wider predicate accepts
+    /// more, and cannot hide a row, because a yielded row the matcher refuses is what the caller
+    /// reads as a failed claim.
     AnswersEmptyCriterion,
     /// The tag index holds no entry for an empty value, so the criterion `""` selects nothing
     /// however many rows carry `["d", ""]`. LMDB: `tag_entries` writes a key only when the value
@@ -563,11 +565,11 @@ pub trait EventRepository: Send + Sync {
     /// Whether a tag criterion that is the empty string can be answered from this backend's tag
     /// index (see [`EmptyTagRule`]).
     ///
-    /// Defaults to [`EmptyTagRule::AnswersEmptyCriterion`], which is what a backend that filters
-    /// with [`nostream_core::Filter::matches`] answers — its tag predicate *is* that matcher. A
-    /// backend that answers tag criteria from an index of non-empty values overrides this, and a
-    /// caller that must claim completeness over such a read reads it rather than assuming the
-    /// criterion enumerated the set.
+    /// Defaults to [`EmptyTagRule::AnswersEmptyCriterion`], which is what a backend whose tag
+    /// predicate is [`nostream_core::Filter::matches`] on the tag criteria, or a wider one,
+    /// answers. A backend that answers tag criteria from an index of non-empty values overrides
+    /// this, and a caller that must claim completeness over such a read reads it rather than
+    /// assuming the criterion enumerated the set.
     fn empty_tag_rule(&self) -> EmptyTagRule {
         EmptyTagRule::AnswersEmptyCriterion
     }
