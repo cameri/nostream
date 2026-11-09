@@ -1973,6 +1973,55 @@ mod tests {
         .unwrap();
 
         assert!(rows.is_empty(), "no index entry holds `\"\"`: {rows:?}");
+
+        // A non-generic family is not a criterion a tag index answers at all: the matcher skips
+        // the key (`filter.rs:110-113`) and both backends skip it (`lmdb/events.rs:1646-1648`,
+        // `postgres/sql.rs:327-329`), so a strip that emptied it instead would answer nothing for
+        // a filter all three answer. `validate_filter` refuses the key (`filter.rs:281-285`), so
+        // only a hand-built filter reaches this shape.
+        let non_generic = [Filter {
+            tags: BTreeMap::from([
+                ("#expiration".to_owned(), vec![String::new()]),
+                ("#d".to_owned(), vec!["post-1".to_owned()]),
+            ]),
+            ..Filter::default()
+        }];
+        let rows = nostream_storage::repositories::collect_records(
+            events.find_by_filters(&non_generic).await.unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            rows.len(),
+            1,
+            "a non-generic family is skipped, not emptied: {rows:?}"
+        );
+        assert_eq!(rows[0].event.content, "post-1");
+
+        // The strip runs only when the filter carries an empty criterion in a *generic* family,
+        // so that family is what makes the guard observable: without it the non-generic one
+        // strips to an empty list, `without_empty_tag_criteria` answers `None`, and the whole
+        // filter selects nothing where every real predicate answers the `post-1` row.
+        let straddling = [Filter {
+            tags: BTreeMap::from([
+                ("#expiration".to_owned(), vec![String::new()]),
+                ("#d".to_owned(), vec![String::new(), "post-1".to_owned()]),
+            ]),
+            ..Filter::default()
+        }];
+        let rows = nostream_storage::repositories::collect_records(
+            events.find_by_filters(&straddling).await.unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            rows.len(),
+            1,
+            "the generic family's `post-1` criterion still answers: {rows:?}"
+        );
+        assert_eq!(rows[0].event.content, "post-1");
     }
 
     #[tokio::test]
