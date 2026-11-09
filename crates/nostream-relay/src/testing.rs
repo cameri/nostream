@@ -28,7 +28,7 @@ use nostream_storage::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobStatus, EventPurgeCounts, EventRecord,
     EventRepository, EventRetentionOptions, FieldUpdate, InviteCode, InviteCodeRepository,
     NewReport, Nip05Verification, Nip05VerificationRepository, QueryStream, ReconciliationItem,
-    Report, ReportRepository, StorageFuture, User, UserPatch, UserRepository,
+    Report, ReportRepository, SearchRule, StorageFuture, User, UserPatch, UserRepository,
 };
 use tokio::sync::Notify;
 
@@ -156,6 +156,11 @@ pub struct InMemoryEventRepository {
     fail_delete: AtomicBool,
     fail_reads: AtomicBool,
     page_bound: std::sync::atomic::AtomicU64,
+    search_rule: Mutex<Option<SearchRule>>,
+    /// Rows this double yields for **any** filter: what a backend whose `search` predicate is not
+    /// `Filter::matches` looks like from the handler's side, which is the case no honest filter
+    /// can produce.
+    unmatched: Mutex<Vec<EventId>>,
     upsert_failure: Mutex<Option<UpsertFailure>>,
     upserts: Mutex<Vec<Vec<serde_json::Value>>>,
     deletes: Mutex<Vec<(Pubkey, Vec<EventId>)>>,
@@ -212,6 +217,30 @@ impl InMemoryEventRepository {
     /// stream carries no rows first, which is the case a `finish` hint would misreport.
     pub fn fail_reads(&self, fail: bool) {
         self.fail_reads.store(fail, Ordering::SeqCst);
+    }
+
+    /// Seeds a row this double yields whatever the filter says — a backend that selected it by a
+    /// predicate the relay's matcher does not share (NIP-50's text search is the one that ships).
+    pub fn seed_unmatched(&self, event: Event) {
+        let record = EventRecord::from_event(&event);
+
+        self.records
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(record);
+        self.unmatched
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(event.id);
+    }
+
+    /// Declares the matching rule this double answers a `search` filter with, the way a backend
+    /// whose predicate is its own would.
+    pub fn declare_search_rule(&self, rule: SearchRule) {
+        *self
+            .search_rule
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(rule);
     }
 
     /// Declares a smaller page than `MAX_PAGE_ROWS`, the way a backend that clamps lower would,
@@ -284,7 +313,7 @@ impl InMemoryEventRepository {
             .clone()
     }
 
-    /// The `(pubkey, kind, d, not_after)` each `delete_by_address` was called with.
+    /// The `(pubkey, kind, d, not_after)` each `delete_by_addresses` entry was called with.
     pub fn address_deletes(&self) -> Vec<(Pubkey, Kind, String, i64)> {
         self.address_deletes
             .lock()
@@ -439,6 +468,14 @@ impl EventRepository for InMemoryEventRepository {
         }
     }
 
+    fn search_rule(&self) -> SearchRule {
+        self.search_rule
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+            .unwrap_or(SearchRule::SubstringTerms)
+    }
+
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
@@ -477,6 +514,11 @@ impl EventRepository for InMemoryEventRepository {
             let mut seen: Vec<EventId> = Vec::new();
 
             let page_bound = self.page_bound();
+            let unmatched = self
+                .unmatched
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
 
             for filter in filters {
                 let bound = filter.limit.unwrap_or(u64::MAX).min(page_bound);
@@ -487,7 +529,7 @@ impl EventRepository for InMemoryEventRepository {
                         break;
                     }
 
-                    if !filter.matches(&record.event) {
+                    if !filter.matches(&record.event) && !unmatched.contains(&record.event.id) {
                         continue;
                     }
 

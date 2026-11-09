@@ -28,6 +28,7 @@ use nostream_core::messages::{
 };
 use nostream_core::nip42;
 use nostream_core::{Filter, Kind};
+use nostream_storage::repositories::SearchRule;
 
 use crate::connection::InFlightRead;
 use crate::error::RelayError;
@@ -309,12 +310,15 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     // `rows`: every row the page yielded, skipped ones included — a full page is what makes the
     // backend's remaining extent unknown. `matched`: rows that were a match inside the client's
     // window, which is what `limit` bounds. `trimmed`: the guard withheld a match. `more`: a
-    // match beyond the window was found. `failed`: the stream errored.
+    // match beyond the window was found. `failed`: the stream errored. `refused`: the backend
+    // yielded a row this relay's matcher refuses, which is what a backend whose predicate is not
+    // `Filter::matches` looks like from here.
     let mut rows = 0u64;
     let mut matched = 0u64;
     let mut trimmed = false;
     let mut more = false;
     let mut failed = false;
+    let mut refused = false;
 
     loop {
         if *read.cancellation().borrow() {
@@ -372,7 +376,18 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
                 }
                 let event = record.event;
 
-                if expiration::is_expired_event(&event, now) || !matches_any(&event) {
+                if expiration::is_expired_event(&event, now) {
+                    continue;
+                }
+
+                if !matches_any(&event) {
+                    // The backend selected a row this relay's own matcher refuses. That is not a
+                    // skip: it is evidence that the set the backend enumerated is not the set the
+                    // relay would have, so completeness over this read cannot be claimed. It is
+                    // tracked apart from `trimmed` because a refused row is one **no** client
+                    // could see, while `auth` means "a client could see this".
+                    refused = true;
+
                     continue;
                 }
 
@@ -426,7 +441,13 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     //    nothing about the rows beyond it, whether the bound came from the client's `limit` or
     //    from the backend's own page cap, and a skipped row spends a page slot just as a match
     //    does (which is why `rows`, not `matched`, decides this);
-    // 3. **no further match** was found — the `more` branch below is where this one lives: a
+    // 3. the set the backend enumerated is the set this relay would have — no row it yielded was
+    //    refused by `Filter::matches`, and no filter carrying `search` was answered by a
+    //    predicate other than that matcher. Both are needed and neither implies the other: a
+    //    refusal is the direction a probe can see (`study` yields `studies`, which the matcher
+    //    refuses), while a row the matcher *would* accept and the backend never yields
+    //    (`abcdef` inside `xxabcdefyy`) leaves no trace at all. See `EventRepository::search_rule`.
+    // 4. **no further match** was found — the `more` branch below is where this one lives: a
     //    further match ends the read with `more` set, so the code that can reach the hint is the
     //    code where none was found. It is only meaningful once 1 and 2 hold, because the loop
     //    keeps asking past deleted, expired, withheld and non-matching rows until it sees a
@@ -438,7 +459,15 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     // because a withheld event falsifies it.
     let page_bound = context.stores.events.page_bound();
     let page_full = probe.is_some_and(|probe| rows >= probe.min(page_bound));
-    let proven = !failed && !page_full;
+    let search_rule = context.stores.events.search_rule();
+    let searched = filters.iter().any(|filter| {
+        filter
+            .search
+            .as_deref()
+            .is_some_and(|search| !search.trim().is_empty())
+    });
+    let search_agrees = search_rule == SearchRule::SubstringTerms || !searched;
+    let proven = !failed && !page_full && !refused && search_agrees;
 
     let mut hints = Vec::new();
 

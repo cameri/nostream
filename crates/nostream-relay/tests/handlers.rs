@@ -31,8 +31,10 @@ use nostream_core::messages::{SubscribeMessage, UnsubscribeMessage};
 use nostream_relay::connection::Connection;
 use nostream_relay::relay_key::RelayKeySource;
 use nostream_relay::sink::FrameSink;
-use nostream_relay::testing::{Fixture, nip42_settings, nip43_settings, nip45_settings, settings};
-use nostream_storage::repositories::{EventRepository, User};
+use nostream_relay::testing::{
+    Fixture, nip42_settings, nip43_settings, nip45_settings, nip50_settings, settings,
+};
+use nostream_storage::repositories::{EventRepository, SearchRule, User};
 
 /// The relay's public key for [`RELAY_SECRET`].
 fn relay_pubkey() -> nostream_core::Pubkey {
@@ -1183,6 +1185,79 @@ async fn eose_hints_are_absent_when_the_backend_declares_a_smaller_page() {
     let (mut client, _challenge) = server.connect().await;
 
     client.send(r#"["REQ","s1",{"kinds":[1],"limit":3}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[1], r#"["EOSE","s1"]"#);
+}
+
+/// The backend's `search` predicate is not this relay's matcher, and the two disagree in **both**
+/// directions — so a row the backend yielded and the matcher refused ends any completeness claim.
+///
+/// The case: filter `search: "study"`, stored content `studies`. Postgres prefilter yields that
+/// row (`plainto_tsquery` and the content's tsvector both reduce to the one English stem `studi`,
+/// which is the `english` regconfig's documented stemming and not something this repository has
+/// run), and `Filter::matches` refuses it because `"studies"` contains no `"study"` — that half is
+/// arithmetic on the two strings. So the read is short, the page is not full, and before the fix
+/// the relay said `["finish"]`: every matching event sent. The other direction (`abcdef` inside
+/// `xxabcdefyy`, which the matcher accepts and the tsquery never yields) leaves no trace, which is
+/// why the declared rule below is needed as well.
+///
+/// Note what this test is built to catch: if someone "fixes" the asymmetry by loosening `matches`
+/// instead of suppressing the hint, the row here starts being delivered and the exact frame
+/// assertion below fails — because the predicate is a statement about the backend, not a bug in
+/// the matcher.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_backend_yields_a_row_the_matcher_refuses() {
+    let mut settings = settings();
+    settings.nip50 = Some(nip50_settings());
+    settings.nip50 = Some(nostream_config::settings::Nip50Settings {
+        enabled: Some(true),
+        ..nip50_settings()
+    });
+    let fixture = Fixture::new(settings);
+    fixture
+        .events
+        .seed_unmatched(signed_event(&CLIENT_SECRET, 1, vec![], "studies", NOW_SECS));
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client
+        .send(r#"["REQ","s1",{"kinds":[1],"search":"study","limit":5}]"#)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(
+        frames,
+        vec![r#"["EOSE","s1"]"#.to_owned()],
+        "one row was yielded and refused, so the page is not a proof of anything"
+    );
+}
+
+/// A backend whose `search` rule is its own withholds `finish` for that filter even where every
+/// row agreed: the set it enumerated is not the set the relay would have enumerated, so no check
+/// the relay can run proves the claim. This is the half that closes the direction no probe sees.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_search_rule_is_the_backends_own() {
+    let mut settings = settings();
+    settings.nip50 = Some(nostream_config::settings::Nip50Settings {
+        enabled: Some(true),
+        ..nip50_settings()
+    });
+    let fixture = Fixture::new(settings);
+    fixture.events.declare_search_rule(SearchRule::ToTsvector {
+        language: "english".to_owned(),
+    });
+    fixture
+        .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "a study", NOW_SECS))
+        .await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client
+        .send(r#"["REQ","s1",{"kinds":[1],"search":"study","limit":5}]"#)
+        .await;
     let frames = client.read_until_eose().await;
 
     assert_eq!(frames.len(), 2, "{frames:?}");
