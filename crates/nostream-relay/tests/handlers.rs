@@ -1322,10 +1322,14 @@ async fn eose_hints_are_absent_when_a_selected_row_vanished() {
 
 /// The same vanished slot in a page that **was** full at enumeration: `limit: 1` probes two, two
 /// rows are stored, and one of them vanishes. The marker is counted as a row, so `rows` reaches
-/// two and `page_full` is what withholds `finish` — removing `!vanished` would not fail this
-/// test, and its purpose is the pair with
-/// `eose_hints_are_absent_when_a_selected_row_vanished`: each names the mechanism carrying it, so
-/// neither `rows += 1` nor `!vanished` can be dropped as redundant on the other's evidence.
+/// two and the page is full by count.
+///
+/// It is the pair of `eose_hints_are_absent_when_a_selected_row_vanished`, which is the page that
+/// never filled: removing `!vanished` leaves this test green and turns that one red, so the marker
+/// is what that case needs and not this one. Removing `rows += 1` leaves this test green too —
+/// a marker always sets `vanished`, so no frame separates the two here — which is why the count is
+/// justified by the rule's arithmetic rather than by an assertion. The pair exists so a reader
+/// sees both shapes and neither rule item is dropped as covered by the other.
 #[tokio::test]
 async fn eose_hints_are_absent_when_the_page_was_full_at_enumeration() {
     let fixture = Fixture::new(settings());
