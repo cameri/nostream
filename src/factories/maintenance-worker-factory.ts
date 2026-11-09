@@ -2,6 +2,7 @@ import { createAdminOpsCacheAdapter } from './admin-ops-cache-adapter-factory'
 import { createMaintenanceService } from './maintenance-service-factory'
 import { createNotificationOutboxService } from './notification-outbox-service-factory'
 import { createPaymentsService } from './payments-service-factory'
+import { createPeeringBillingService } from './peering-billing-service-factory'
 import { createSubscriptionService } from './subscription-service-factory'
 import { createSettings } from './settings-factory'
 import { getMasterDbClient } from '../database/client'
@@ -26,5 +27,6 @@ export const maintenanceWorkerFactory = () => {
     notificationOutboxRepository,
     createAdminOpsCacheAdapter(),
     createSubscriptionService(),
+    createPeeringBillingService(),
   )
 }

@@ -2,6 +2,8 @@ import { IController } from '../../@types/controllers'
 import { RedisAdapter } from '../../adapters/redis-adapter'
 import { getCacheClient } from '../../cache/client'
 import { GetAdminPeeringController } from '../../controllers/admin/get-admin-peering-controller'
+import { getMasterDbClient } from '../../database/client'
+import { PeeringPaymentRepository } from '../../repositories/peering-payment-repository'
 import { PeeringRequestStatsStore } from '../../utils/peering-request-stats'
 import { PeeringSyncStateStore } from '../../utils/peering-sync-state'
 
@@ -13,7 +15,12 @@ export const createGetAdminPeeringController = (): IController => {
     const cache = new RedisAdapter(getCacheClient())
     const stateStore = new PeeringSyncStateStore(cache)
     const requestStatsStore = new PeeringRequestStatsStore(cache)
-    sharedController = new GetAdminPeeringController(stateStore, undefined, requestStatsStore)
+    sharedController = new GetAdminPeeringController(
+      stateStore,
+      undefined,
+      requestStatsStore,
+      new PeeringPaymentRepository(getMasterDbClient()),
+    )
   }
 
   return sharedController

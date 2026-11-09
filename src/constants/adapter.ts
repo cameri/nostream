@@ -10,4 +10,6 @@ export enum WebSocketAdapterEvent {
 export enum WebSocketServerAdapterEvent {
   Broadcast = 'broadcast',
   Connection = 'connection',
+  /** Close any socket currently authenticated as a peer whose paid access ended. */
+  PeeringRevoke = 'peering-revoke',
 }

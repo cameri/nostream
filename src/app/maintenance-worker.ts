@@ -2,7 +2,7 @@ import { FSWatcher } from 'fs'
 import { mergeDeepLeft, path, pipe } from 'ramda'
 import { ICacheAdapter } from '../@types/adapters'
 import { IRunnable } from '../@types/base'
-import { InvoiceStatus } from '../@types/invoice'
+import { InvoicePurpose, InvoiceStatus } from '../@types/invoice'
 import { Nip05Verification } from '../@types/nip05'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import {
@@ -14,6 +14,7 @@ import {
   IMaintenanceService,
   INotificationOutboxService,
   IPaymentsService,
+  IPeeringBillingService,
   ISubscriptionService,
 } from '../@types/services'
 import { Settings } from '../@types/settings'
@@ -106,6 +107,7 @@ export class MaintenanceWorker implements IRunnable {
     private readonly notificationOutboxRepository: INotificationOutboxRepository,
     private readonly opsCache?: ICacheAdapter,
     private readonly subscriptionService?: ISubscriptionService,
+    private readonly peeringBillingService?: IPeeringBillingService,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -223,10 +225,13 @@ export class MaintenanceWorker implements IRunnable {
             mergeDeepLeft({ amountPaid: invoice.amountRequested }),
           )(invoice)
 
-          await Promise.all([
-            this.paymentsService.confirmInvoice(update),
-            this.paymentsService.sendInvoiceUpdateNotification(update),
-          ])
+          await this.paymentsService.confirmInvoice(update)
+
+          // Peering settlement is complete once confirmInvoice applies the period;
+          // a generic “invoice paid” notice would not match the peer's peering filter.
+          if (invoice.purpose !== InvoicePurpose.PEERING) {
+            await this.paymentsService.sendInvoiceUpdateNotification(update)
+          }
 
           await delay()
         }
@@ -238,14 +243,18 @@ export class MaintenanceWorker implements IRunnable {
             id: invoice.id,
             status: InvoiceStatus.EXPIRED,
           })
-          try {
-            await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.ADMISSION_INVOICE_FAILED, {
-              invoiceId: invoice.id,
-              pubkey: invoice.pubkey,
-              reason: 'expired',
-            })
-          } catch (error) {
-            logger.error('Unable to enqueue admission.invoice.failed notification', error)
+          if (invoice.purpose === InvoicePurpose.PEERING) {
+            await this.peeringBillingService?.handleInvoiceExpired(invoice)
+          } else {
+            try {
+              await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.ADMISSION_INVOICE_FAILED, {
+                invoiceId: invoice.id,
+                pubkey: invoice.pubkey,
+                reason: 'expired',
+              })
+            } catch (error) {
+              logger.error('Unable to enqueue admission.invoice.failed notification', error)
+            }
           }
           successful++
           continue
@@ -258,6 +267,7 @@ export class MaintenanceWorker implements IRunnable {
     }
 
     await this.processSubscriptions()
+    await this.processPeering()
 
     await clearOldEventsPromise
     await this.publishOpsHeartbeat({
@@ -274,6 +284,17 @@ export class MaintenanceWorker implements IRunnable {
       }
     } catch (error) {
       logger.error('Unable to process subscriptions', error)
+    }
+  }
+
+  private async processPeering(): Promise<void> {
+    try {
+      const changed = await this.peeringBillingService?.processLifecycle()
+      if (changed) {
+        logger('moved %d peering relationship(s) through their lifecycle', changed)
+      }
+    } catch (error) {
+      logger.error('Unable to process peering billing', error)
     }
   }
 

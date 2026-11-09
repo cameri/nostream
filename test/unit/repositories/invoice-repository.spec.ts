@@ -1,8 +1,8 @@
 import * as chai from 'chai'
-import * as sinon from 'sinon'
-import knex from 'knex'
-import sinonChai from 'sinon-chai'
 import chaiAsPromised from 'chai-as-promised'
+import knex from 'knex'
+import * as sinon from 'sinon'
+import sinonChai from 'sinon-chai'
 
 import { DatabaseClient } from '../../../src/@types/base'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
@@ -71,19 +71,18 @@ describe('InvoiceRepository', () => {
 
       await repository.confirmInvoice('invoice-123', 5000n, fixedDate, client)
 
-      expect(rawStub).to.have.been.calledOnceWithExactly(
-        'select confirm_invoice(?, ?, ?)',
-        ['invoice-123', '5000', fixedDate.toISOString()],
-      )
+      expect(rawStub).to.have.been.calledOnceWithExactly('select confirm_invoice(?, ?, ?)', [
+        'invoice-123',
+        '5000',
+        fixedDate.toISOString(),
+      ])
     })
 
     it('re-throws when raw call rejects', async () => {
       const dbError = new Error('connection refused')
       const client = { raw: sandbox.stub().rejects(dbError) } as unknown as DatabaseClient
 
-      await expect(
-        repository.confirmInvoice('invoice-123', 5000n, fixedDate, client),
-      ).to.be.rejectedWith(dbError)
+      await expect(repository.confirmInvoice('invoice-123', 5000n, fixedDate, client)).to.be.rejectedWith(dbError)
     })
   })
 
@@ -112,6 +111,27 @@ describe('InvoiceRepository', () => {
       expect(result!.pubkey).to.equal(pubkeyHex)
       expect(result!.status).to.equal(InvoiceStatus.PENDING)
       expect(result!.amountRequested).to.equal(1000n)
+    })
+
+    it('maps the purpose and peering term snapshot', async () => {
+      const client = sandbox.stub().returns({
+        where: sandbox.stub().returns({
+          select: sandbox.stub().resolves([
+            {
+              ...dbInvoiceRow,
+              purpose: 'peering',
+              term_amount_msats: '21000',
+              term_period_seconds: 2592000,
+            },
+          ]),
+        }),
+      }) as unknown as DatabaseClient
+
+      const result = await repository.findById('test-invoice-id', client)
+
+      expect(result!.purpose).to.equal('peering')
+      expect(result!.termAmountMsats).to.equal(21000n)
+      expect(result!.termPeriodSeconds).to.equal(2592000)
     })
 
     it('maps the subscription plan and period when the invoice has them', async () => {
@@ -151,6 +171,20 @@ describe('InvoiceRepository', () => {
 
       expect(client).to.have.been.calledWith('invoices')
       expect(whereStub).to.have.been.calledWith('id', 'some-id')
+    })
+  })
+
+  describe('.updatePeriod', () => {
+    it('updates the period columns for the invoice', async () => {
+      const update = sandbox.stub().returns({ where: sandbox.stub().resolves() })
+      const client = sandbox.stub().returns({ update }) as unknown as DatabaseClient
+      const start = new Date('2026-11-01T00:00:00.000Z')
+      const end = new Date('2026-12-01T00:00:00.000Z')
+
+      await repository.updatePeriod('inv-1', start, end, client)
+
+      expect(client).to.have.been.calledWith('invoices')
+      expect(update).to.have.been.calledWith(sandbox.match({ period_start: start, period_end: end }))
     })
   })
 
@@ -294,6 +328,17 @@ describe('InvoiceRepository', () => {
       expect(sql).to.include(`'basic'`)
       expect(sql).to.include('"period_start"')
       expect(sql).to.include('"period_end"')
+    })
+
+    it('stores the invoice purpose and peering term snapshot', () => {
+      const sql = repository
+        .upsert({ ...testInvoice, purpose: 'peering' as any, termAmountMsats: 21000n, termPeriodSeconds: 2592000 })
+        .toString()
+
+      expect(sql).to.include('"purpose"')
+      expect(sql).to.include(`'peering'`)
+      expect(sql).to.include('"term_amount_msats"')
+      expect(sql).to.include('"term_period_seconds"')
     })
 
     it('never rewrites the plan or period of an existing invoice', () => {

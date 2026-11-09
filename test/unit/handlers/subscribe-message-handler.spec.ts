@@ -132,6 +132,66 @@ describe('SubscribeMessageHandler', () => {
       expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(['NOTICE', 'Subscription rejected: reason'])
     })
 
+    it('closes a peer feed request when paid access is not active', async () => {
+      const peer = 'a'.repeat(64)
+      const billing = {
+        getAccess: sandbox.stub().resolves({ allowed: false, reason: 'peering payment required' }),
+        ensureInvoice: sandbox.stub().resolves(),
+      }
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { subscription: { maxFilters: 10, maxLimit: 0 } } },
+      })
+      handler = new SubscribeMessageHandler(
+        webSocket,
+        eventRepository,
+        settingsFactory,
+        inviteCodeRepository,
+        rateLimiterFactory,
+        requestStats as any,
+        billing as any,
+      )
+      message = [MessageType.REQ, subscriptionId, { kinds: [1] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(billing.getAccess).to.have.been.calledWith(peer, { recheck: true })
+      expect(webSocketOnMessageStub.firstCall.args[0]).to.deep.equal([
+        'CLOSED',
+        subscriptionId,
+        'payment-required: peering payment required',
+      ])
+      expect(fetchAndSendStub).not.to.have.been.called
+    })
+
+    it('lets a peer request its invoice without paid access', async () => {
+      const peer = 'a'.repeat(64)
+      const billing = {
+        getAccess: sandbox.stub(),
+        ensureInvoice: sandbox.stub().resolves(),
+      }
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { subscription: { maxFilters: 10, maxLimit: 0 } } },
+      })
+      handler = new SubscribeMessageHandler(
+        webSocket,
+        eventRepository,
+        settingsFactory,
+        inviteCodeRepository,
+        rateLimiterFactory,
+        requestStats as any,
+        billing as any,
+      )
+      message = [MessageType.REQ, subscriptionId, { kinds: [402], '#p': [peer], '#t': ['peering'], limit: 1 }] as any
+
+      await handler.handleMessage(message)
+
+      expect(billing.ensureInvoice).to.have.been.calledWith(peer)
+      expect(billing.getAccess).not.to.have.been.called
+      expect(fetchAndSendStub).to.have.been.calledOnce
+    })
+
     it('bounds raw filters before deduplicating them', async () => {
       settingsFactory.returns({ limits: { client: { subscription: { maxFilters: 10 } } } })
       const duplicate = { kinds: [1] }
