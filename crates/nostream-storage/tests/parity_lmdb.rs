@@ -27,7 +27,7 @@ use nostream_storage::repositories::{
     EventRetentionOptions, FieldUpdate, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, InvoiceUnit, NewDeliveryLogEntry, NewReport, Nip05Verification,
     NotificationDeliveryLogRepository, NotificationDeliveryStatus, NotificationOutboxRepository,
-    NotificationTargetType, ReconciliationItem, ReportType, UserRepository,
+    NotificationTargetType, ReconciliationItem, ReportType, UserRepository, collect_records,
 };
 
 mod common;
@@ -216,7 +216,7 @@ async fn a_soft_deleted_event_is_readable_by_filter_and_excluded_from_count() {
         ids: Some(vec![record.event.id.to_string()]),
         ..Filter::default()
     };
-    let live = common::collect(
+    let live = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(&filter))
             .await
@@ -235,7 +235,7 @@ async fn a_soft_deleted_event_is_readable_by_filter_and_excluded_from_count() {
         1
     );
 
-    let after = common::collect(
+    let after = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(&filter))
             .await
@@ -282,7 +282,7 @@ async fn a_filter_result_larger_than_one_batch_arrives_whole_and_in_order() {
         kinds: Some(vec![Kind(1)]),
         ..Filter::default()
     };
-    let seen = common::collect(
+    let seen = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(&filter))
             .await
@@ -694,7 +694,7 @@ async fn a_limited_ids_filter_returns_the_newest_events() {
         ..Filter::default()
     };
 
-    let page = common::collect(
+    let page = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(&filter))
             .await
@@ -727,7 +727,7 @@ async fn a_limited_author_filter_returns_the_newest_events() {
         ..Filter::default()
     };
 
-    let page = common::collect(
+    let page = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(&filter))
             .await
@@ -744,7 +744,7 @@ async fn a_limited_author_filter_returns_the_newest_events() {
 
 /// The page and count of one filter: `(rows, count)`.
 async fn page_and_count(backend: &LmdbBackend, filter: &Filter) -> (usize, u64) {
-    let page = common::collect(
+    let page = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(filter))
             .await
@@ -1014,7 +1014,7 @@ async fn an_empty_tag_value_criterion_matches_nothing() {
         limit: Some(10),
         ..Filter::default()
     };
-    let reachable = common::collect(
+    let reachable = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(&filter))
             .await
@@ -1025,7 +1025,7 @@ async fn an_empty_tag_value_criterion_matches_nothing() {
     assert_eq!(reachable.len(), 1, "the row is reachable by its id");
 
     filter.tags.insert("#e".to_owned(), vec![String::new()]);
-    let page = common::collect(
+    let page = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(&filter))
             .await
@@ -1061,7 +1061,7 @@ async fn an_empty_criterion_family_matches_nothing() {
             ..Filter::default()
         },
     ] {
-        let page = common::collect(
+        let page = collect_records(
             backend
                 .find_by_filters(std::slice::from_ref(&filter))
                 .await
@@ -1183,7 +1183,7 @@ async fn a_retention_pass_classifies_a_row_once_and_spares_the_whitelist() {
         ids: Some(vec![vanish.event.id.to_string()]),
         ..Filter::default()
     };
-    let survivors = common::collect(
+    let survivors = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(&filter))
             .await

@@ -589,16 +589,18 @@ async fn restricted_read_with(authenticate_mid_read: bool) -> Vec<String> {
 
 #[tokio::test]
 async fn a_restricted_read_is_judged_against_the_authenticated_set_at_each_event() {
-    // No AUTH: the public record arrives and the restricted one is withheld.
+    // No AUTH: the public record arrives and the restricted one is withheld, which is what
+    // NIP-67's `auth` hint reports (`67.md` §"Specification").
     let withheld = restricted_read_with(false).await;
 
     assert_eq!(withheld.len(), 2, "{withheld:?}");
     assert!(withheld[0].starts_with(r#"["EVENT","restricted","#));
     assert!(withheld[0].contains("public"));
-    assert_eq!(withheld[1], r#"["EOSE","restricted"]"#);
+    assert_eq!(withheld[1], r#"["EOSE","restricted",["auth"]]"#);
 
     // AUTH between the two records: the second one is delivered, which a guard built once per
-    // read could not do.
+    // read could not do. Nothing was withheld, and the read carries no limit, so the `EOSE`
+    // keeps its two-element form.
     let authenticated = restricted_read_with(true).await;
 
     assert_eq!(authenticated.len(), 3, "{authenticated:?}");

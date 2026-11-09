@@ -74,7 +74,7 @@ impl EventRepository for UnavailableEventRepository {
     fn find_by_filters<'a>(
         &'a self,
         _filters: &'a [nostream_core::Filter],
-    ) -> StoreFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StoreFuture<'a, QueryStream<'a, nostream_storage::repositories::StreamedEvent>> {
         Box::pin(async { Err(unavailable()) })
     }
 
@@ -96,6 +96,15 @@ impl EventRepository for UnavailableEventRepository {
         &'a self,
         _pubkey: &'a nostream_core::Pubkey,
         _ids: &'a [EventId],
+    ) -> StoreFuture<'a, u64> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn delete_by_addresses<'a>(
+        &'a self,
+        _pubkey: &'a nostream_core::Pubkey,
+        _addresses: &'a [(nostream_core::Kind, String)],
+        _not_after: i64,
     ) -> StoreFuture<'a, u64> {
         Box::pin(async { Err(unavailable()) })
     }

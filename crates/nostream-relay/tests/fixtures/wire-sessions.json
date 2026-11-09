@@ -7475,6 +7475,589 @@
         "challenge": "836083c53e97aeba32c1e6c0836090361eb77a252ad8a18b562b463195d50a14",
         "invite_code": null
       }
+    },
+    {
+      "id": "nip-generic-events",
+      "challenge": "YEyYCe_MOiyZ-Yp4GLqr_M5GMBN3vb4rAHks19zbx6o",
+      "clock": {
+        "start_ms": 1700000000000
+      },
+      "seed": 20261023,
+      "settings": {
+        "info": {
+          "relay_url": "wss://nostream.your-domain.com",
+          "name": "nostream.your-domain.com",
+          "description": "A nostr relay written in Typescript.",
+          "banner": "https://nostream.your-domain.com/banner.png",
+          "icon": "https://nostream.your-domain.com/icon.png",
+          "pubkey": "replace-with-your-pubkey-in-hex",
+          "contact": "mailto:operator@your-domain.com",
+          "terms_of_service": "https://nostream.your-domain.com/terms"
+        },
+        "payments": {
+          "enabled": false,
+          "processor": "zebedee",
+          "feeSchedules": {
+            "admission": [
+              {
+                "enabled": false,
+                "description": "Admission fee charged per public key in msats (1000 msats = 1 satoshi)",
+                "amount": 1000000,
+                "whitelists": {
+                  "pubkeys": [
+                    "replace-with-your-pubkey-in-hex"
+                  ],
+                  "event_kinds": [
+                    9735
+                  ]
+                }
+              }
+            ]
+          },
+          "invoiceExpirySeconds": 86400
+        },
+        "paymentsProcessors": {
+          "zebedee": {
+            "baseURL": "https://api.zebedee.io/",
+            "callbackBaseURL": "https://nostream.your-domain.com/callbacks/zebedee",
+            "ipWhitelist": [
+              "3.225.112.64",
+              "::ffff:3.225.112.64"
+            ]
+          },
+          "lnbits": {
+            "baseURL": "https://lnbits.your-domain.com/",
+            "callbackBaseURL": "https://nostream.your-domain.com/callbacks/lnbits"
+          },
+          "lnurl": {
+            "invoiceURL": "https://getalby.com/lnurlp/your-username"
+          },
+          "nodeless": {
+            "baseURL": "https://nodeless.io",
+            "storeId": "your-nodeless-io-store-id"
+          },
+          "opennode": {
+            "baseURL": "api.opennode.com",
+            "callbackBaseURL": "https://nostream.your-domain.com/callbacks/opennode"
+          },
+          "nwc": {
+            "invoiceExpirySeconds": 900,
+            "replyTimeoutMs": 10000
+          }
+        },
+        "nip05": {
+          "mode": "disabled",
+          "verifyExpiration": 604800000,
+          "verifyUpdateFrequency": 86400000,
+          "maxConsecutiveFailures": 20,
+          "domainWhitelist": [],
+          "domainBlacklist": []
+        },
+        "nip42": {
+          "authRequired": false,
+          "sessionExpirySeconds": 0,
+          "restrictedReads": {
+            "enabled": false,
+            "kinds": [
+              4,
+              1059
+            ]
+          }
+        },
+        "nip43": {
+          "enabled": false,
+          "inviteCodeExpirySeconds": 600,
+          "defaultMaxUses": 1,
+          "allowInviteRequests": false,
+          "inviteRequestWhitelist": []
+        },
+        "nip45": {
+          "enabled": true
+        },
+        "nip50": {
+          "enabled": false,
+          "language": "simple",
+          "maxQueryLength": 256
+        },
+        "nip66": {
+          "enabled": false,
+          "probeIntervalSeconds": 3600,
+          "timeouts": {
+            "dnsMs": 10000,
+            "tlsMs": 10000,
+            "wsRttMs": 10000,
+            "nip11Ms": 10000
+          },
+          "targets": [],
+          "dnsCacheTtlSeconds": 300
+        },
+        "wot": {
+          "enabled": false,
+          "seedPubkey": "",
+          "minimumFollowers": 1,
+          "maxDepth": 2,
+          "refreshIntervalHours": 24
+        },
+        "nip56": {
+          "enabled": false,
+          "trustedModerators": [],
+          "hideActionableReports": false
+        },
+        "network": {
+          "maxPayloadSize": 524288,
+          "trustedProxies": [
+            "127.0.0.1",
+            "::ffff:127.0.0.1",
+            "::1",
+            "10.10.10.1",
+            "::ffff:10.10.10.1"
+          ]
+        },
+        "workers": {
+          "count": 0
+        },
+        "eventStore": {
+          "backend": "postgres"
+        },
+        "mirroring": {
+          "static": []
+        },
+        "dvm": {
+          "workers": []
+        },
+        "limits": {
+          "rateLimiter": {
+            "strategy": "ewma"
+          },
+          "invoice": {
+            "rateLimits": [
+              {
+                "period": 60000,
+                "rate": 12
+              },
+              {
+                "period": 3600000,
+                "rate": 30
+              }
+            ],
+            "ipWhitelist": [
+              "::1",
+              "10.10.10.1",
+              "::ffff:10.10.10.1"
+            ]
+          },
+          "invite": {
+            "rateLimits": [
+              {
+                "description": "5 invite requests per hour per pubkey",
+                "period": 3600000,
+                "rate": 5
+              }
+            ]
+          },
+          "admissionCheck": {
+            "rateLimits": [
+              {
+                "description": "30 admission checks/min or 1 check every 2 seconds",
+                "period": 60000,
+                "rate": 30
+              }
+            ],
+            "ipWhitelist": [
+              "::1",
+              "10.10.10.1",
+              "::ffff:10.10.10.1"
+            ]
+          },
+          "admin": {
+            "rateLimits": [
+              {
+                "description": "30 admin requests/min",
+                "period": 60000,
+                "rate": 30
+              }
+            ],
+            "loginRateLimits": [
+              {
+                "description": "10 login attempts per 15 minutes",
+                "period": 900000,
+                "rate": 10
+              }
+            ],
+            "ipWhitelist": [
+              "::1",
+              "10.10.10.1",
+              "::ffff:10.10.10.1"
+            ]
+          },
+          "connection": {
+            "rateLimits": [
+              {
+                "period": 1000,
+                "rate": 12
+              },
+              {
+                "period": 60000,
+                "rate": 48
+              }
+            ],
+            "ipWhitelist": [
+              "127.0.0.1",
+              "::1",
+              "::ffff:127.0.0.1"
+            ]
+          },
+          "event": {
+            "retention": {
+              "maxDays": -1,
+              "kind": {
+                "whitelist": [
+                  62
+                ]
+              },
+              "pubkey": {
+                "whitelist": []
+              }
+            },
+            "eventId": {
+              "minLeadingZeroBits": 0
+            },
+            "pow": {
+              "enabled": false,
+              "floorBits": 0,
+              "ceilingBits": 24,
+              "targetEventsPerSecond": 50,
+              "periodMs": 60000,
+              "wotThresholds": []
+            },
+            "kind": {
+              "whitelist": [],
+              "blacklist": []
+            },
+            "pubkey": {
+              "minBalance": 0,
+              "minLeadingZeroBits": 0,
+              "whitelist": [],
+              "blacklist": []
+            },
+            "createdAt": {
+              "maxPositiveDelta": 900,
+              "maxNegativeDelta": 0
+            },
+            "content": [
+              {
+                "description": "64 KB for event kind ranges 0-10 and 40-49",
+                "maxLength": 102400,
+                "kinds": [
+                  [
+                    0,
+                    10
+                  ],
+                  [
+                    40,
+                    49
+                  ]
+                ]
+              },
+              {
+                "description": "96 KB for event kind ranges 11-39 and 50-max",
+                "maxLength": 102400,
+                "kinds": [
+                  [
+                    11,
+                    39
+                  ],
+                  [
+                    50,
+                    9007199254740991
+                  ]
+                ]
+              }
+            ],
+            "rateLimits": [
+              {
+                "description": "6 events/min for event kinds 0, 3, 40 and 41",
+                "kinds": [
+                  0,
+                  3,
+                  40,
+                  41
+                ],
+                "period": 60000,
+                "rate": 6
+              },
+              {
+                "description": "12 events/min for event kinds 1, 2, 4 and 42",
+                "kinds": [
+                  1,
+                  2,
+                  4,
+                  42
+                ],
+                "period": 60000,
+                "rate": 12
+              },
+              {
+                "description": "30 events/min for event kind ranges 5-7 and 43-49",
+                "kinds": [
+                  [
+                    5,
+                    7
+                  ],
+                  [
+                    43,
+                    49
+                  ]
+                ],
+                "period": 60000,
+                "rate": 30
+              },
+              {
+                "description": "24 events/min for replaceable events and parameterized replaceable events",
+                "kinds": [
+                  [
+                    10000,
+                    19999
+                  ],
+                  [
+                    30000,
+                    39999
+                  ]
+                ],
+                "period": 60000,
+                "rate": 24
+              },
+              {
+                "description": "60 events/min for Marmot group events (kind 445)",
+                "kinds": [
+                  445
+                ],
+                "period": 60000,
+                "rate": 60
+              },
+              {
+                "description": "60 events/min for ephemeral events",
+                "kinds": [
+                  [
+                    20000,
+                    29999
+                  ]
+                ],
+                "period": 60000,
+                "rate": 60
+              },
+              {
+                "description": "720 events/hour for all events",
+                "period": 3600000,
+                "rate": 720
+              }
+            ],
+            "whitelists": {
+              "pubkeys": [],
+              "ipAddresses": [
+                "::1",
+                "10.10.10.1",
+                "::ffff:10.10.10.1"
+              ]
+            }
+          },
+          "client": {
+            "subscription": {
+              "maxSubscriptions": 10,
+              "maxFilters": 10,
+              "maxFilterValues": 2500,
+              "maxSubscriptionIdLength": 256,
+              "maxLimit": 5000,
+              "minPrefixLength": 4
+            }
+          },
+          "message": {
+            "rateLimits": [
+              {
+                "description": "240 raw messages/min",
+                "period": 60000,
+                "rate": 240
+              }
+            ],
+            "ipWhitelist": [
+              "::1",
+              "10.10.10.1",
+              "::ffff:10.10.10.1"
+            ]
+          }
+        },
+        "admin": {
+          "enabled": false,
+          "sessionTtlSeconds": 86400,
+          "nip98": {
+            "enabled": false,
+            "allowedPubkeys": [],
+            "maxSkewSeconds": 60
+          },
+          "notifications": {
+            "enabled": false,
+            "targets": [],
+            "events": {
+              "admission.invoice.created": true,
+              "admission.invoice.paid": true,
+              "admission.invoice.failed": true,
+              "settings.changed": true,
+              "relay.restarted": false
+            },
+            "retry": {
+              "maxAttempts": 5,
+              "baseDelayMs": 1000
+            },
+            "deliveryLogRetentionDays": 30
+          }
+        }
+      },
+      "steps": [
+        {
+          "connect": true,
+          "expect": [
+            "[\"AUTH\",\"{{challenge}}\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"EVENT\",{\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"kind\":1,\"created_at\":1700000000,\"content\":\"nip14\",\"tags\":[[\"subject\",\"A test subject\"]],\"id\":\"5a817569bf079d278e77109178a56f0b339c238c9324fbd831023012818d23ee\",\"sig\":\"b4adf24b065467544b47c62a06680348374ae0ab48c6173d90caaedb4c285c9f510d3279dfb358b7e39b6726e03862fd719837fadbe8d11141c8350bdeb946cd\"}]"
+          },
+          "expect": [
+            "[\"OK\",\"5a817569bf079d278e77109178a56f0b339c238c9324fbd831023012818d23ee\",true,\"\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"EVENT\",{\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"kind\":1111,\"created_at\":1700000000,\"content\":\"nip22\",\"tags\":[[\"K\",\"1\"],[\"E\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],[\"P\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"],[\"k\",\"1\"],[\"e\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],[\"p\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]],\"id\":\"46b5cacbf77960162bf0d7b66cc8efcc6ad248f34fbdc80ed97052b9034b105c\",\"sig\":\"65f1ed07bb3f9f88c5a35d2000978be63b3dd659b67dbfb04fb189ce4631b32d495c954ca88a9e55f06d6f37b9c542adbf11799ff1c47f150e363eaa730ca814\"}]"
+          },
+          "expect": [
+            "[\"OK\",\"46b5cacbf77960162bf0d7b66cc8efcc6ad248f34fbdc80ed97052b9034b105c\",true,\"\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"EVENT\",{\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"kind\":40,\"created_at\":1700000000,\"content\":\"nip28\",\"tags\":[[\"name\",\"the channel\"]],\"id\":\"a568281922bd58433eed9a8db1912d17c0b887631b53ce80410600a20b728d1c\",\"sig\":\"f84015cc91d82f766a23d93f9910edbc9d5b7607741b27840172afc272a15ea645ee952939a5e02466037d7fac6caa4ee6e9f0ecd0baec53fea5362bc39602e1\"}]"
+          },
+          "expect": [
+            "[\"OK\",\"a568281922bd58433eed9a8db1912d17c0b887631b53ce80410600a20b728d1c\",true,\"\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"EVENT\",{\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"kind\":42,\"created_at\":1700000000,\"content\":\"nip28 message\",\"tags\":[[\"e\",\"a568281922bd58433eed9a8db1912d17c0b887631b53ce80410600a20b728d1c\"]],\"id\":\"e11eae30ca8f4bee275bdd09c1de41cb12f20dc0c95c4a367d7b9156d55753bd\",\"sig\":\"72cb4822fc40a8fe9e9939f0576dd6a895659ca3e297421387dfe3dce446d7114fdd03d6346948f072620d6dc65f6b6490c617aff16c2dc981b77e516126fca5\"}]"
+          },
+          "expect": [
+            "[\"OK\",\"e11eae30ca8f4bee275bdd09c1de41cb12f20dc0c95c4a367d7b9156d55753bd\",true,\"\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"EVENT\",{\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"kind\":10002,\"created_at\":1700000000,\"content\":\"\",\"tags\":[[\"r\",\"wss://relay.one.example\"]],\"id\":\"bbcfe396e0bbac69cadc7966685623455e0ab3937f20eded80fdc81a6187250d\",\"sig\":\"3e60d23d6157b29f3ec2e323c34105e7da17dfd2048659d56b76e63dc7fe6d6005067ee82ab8f88c754107d87fb07a671aa0f4fa2124f0b095e1d05c481ae717\"}]"
+          },
+          "expect": [
+            "[\"OK\",\"bbcfe396e0bbac69cadc7966685623455e0ab3937f20eded80fdc81a6187250d\",true,\"\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"EVENT\",{\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"kind\":31990,\"created_at\":1700000000,\"content\":\"\",\"tags\":[[\"d\",\"example-app\"],[\"k\",\"1\"],[\"web\",\"https://example.com/app\"]],\"id\":\"13d1dd1821b2a617592c03b5062e4245f8c72667cdfce9d3167677255f8a37b3\",\"sig\":\"23a3123048ed4f67b0aa43642f0878564ba22452b38136e94126f87b5a77b4bc8217d0a490b7381634720b7daf9d734accaa36f83c14156fa1cf6ff1aa3f3c73\"}]"
+          },
+          "expect": [
+            "[\"OK\",\"13d1dd1821b2a617592c03b5062e4245f8c72667cdfce9d3167677255f8a37b3\",true,\"\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"EVENT\",{\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"kind\":31989,\"created_at\":1700000000,\"content\":\"\",\"tags\":[[\"d\",\"1\"],[\"a\",\"31990:8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271:example-app\"]],\"id\":\"1e9a2f8d62ef969cb708b8f6ffd526cb9c2ca6741fcc55f3fc163113212b7020\",\"sig\":\"43b6e3b1d28b4e053d91921d13173674dc0934cee6a283c9c2d080d67e911d01f446fb4e3d1a60d840f9abd8e4cc69c68e62876408604cccbdf207b27bb8e042\"}]"
+          },
+          "expect": [
+            "[\"OK\",\"1e9a2f8d62ef969cb708b8f6ffd526cb9c2ca6741fcc55f3fc163113212b7020\",true,\"\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"REQ\",\"v1\",{\"kinds\":[1]}]"
+          },
+          "compare": "json",
+          "compare_why": "a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 025",
+          "expect": [
+            "[\"EVENT\",\"v1\",{\"id\":\"5a817569bf079d278e77109178a56f0b339c238c9324fbd831023012818d23ee\",\"kind\":1,\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"created_at\":1700000000,\"content\":\"nip14\",\"tags\":[[\"subject\",\"A test subject\"]],\"sig\":\"b4adf24b065467544b47c62a06680348374ae0ab48c6173d90caaedb4c285c9f510d3279dfb358b7e39b6726e03862fd719837fadbe8d11141c8350bdeb946cd\"}]",
+            "[\"EOSE\",\"v1\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"REQ\",\"v2\",{\"kinds\":[1111]}]"
+          },
+          "compare": "json",
+          "compare_why": "a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 025",
+          "expect": [
+            "[\"EVENT\",\"v2\",{\"id\":\"46b5cacbf77960162bf0d7b66cc8efcc6ad248f34fbdc80ed97052b9034b105c\",\"kind\":1111,\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"created_at\":1700000000,\"content\":\"nip22\",\"tags\":[[\"K\",\"1\"],[\"E\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],[\"P\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"],[\"k\",\"1\"],[\"e\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],[\"p\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]],\"sig\":\"65f1ed07bb3f9f88c5a35d2000978be63b3dd659b67dbfb04fb189ce4631b32d495c954ca88a9e55f06d6f37b9c542adbf11799ff1c47f150e363eaa730ca814\"}]",
+            "[\"EOSE\",\"v2\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"REQ\",\"v3\",{\"kinds\":[40]}]"
+          },
+          "compare": "json",
+          "compare_why": "a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 025",
+          "expect": [
+            "[\"EVENT\",\"v3\",{\"id\":\"a568281922bd58433eed9a8db1912d17c0b887631b53ce80410600a20b728d1c\",\"kind\":40,\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"created_at\":1700000000,\"content\":\"nip28\",\"tags\":[[\"name\",\"the channel\"]],\"sig\":\"f84015cc91d82f766a23d93f9910edbc9d5b7607741b27840172afc272a15ea645ee952939a5e02466037d7fac6caa4ee6e9f0ecd0baec53fea5362bc39602e1\"}]",
+            "[\"EOSE\",\"v3\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"REQ\",\"v4\",{\"kinds\":[42]}]"
+          },
+          "compare": "json",
+          "compare_why": "a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 025",
+          "expect": [
+            "[\"EVENT\",\"v4\",{\"id\":\"e11eae30ca8f4bee275bdd09c1de41cb12f20dc0c95c4a367d7b9156d55753bd\",\"kind\":42,\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"created_at\":1700000000,\"content\":\"nip28 message\",\"tags\":[[\"e\",\"a568281922bd58433eed9a8db1912d17c0b887631b53ce80410600a20b728d1c\"]],\"sig\":\"72cb4822fc40a8fe9e9939f0576dd6a895659ca3e297421387dfe3dce446d7114fdd03d6346948f072620d6dc65f6b6490c617aff16c2dc981b77e516126fca5\"}]",
+            "[\"EOSE\",\"v4\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"REQ\",\"v5\",{\"kinds\":[10002]}]"
+          },
+          "compare": "json",
+          "compare_why": "a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 025",
+          "expect": [
+            "[\"EVENT\",\"v5\",{\"id\":\"bbcfe396e0bbac69cadc7966685623455e0ab3937f20eded80fdc81a6187250d\",\"kind\":10002,\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"created_at\":1700000000,\"content\":\"\",\"tags\":[[\"r\",\"wss://relay.one.example\"]],\"sig\":\"3e60d23d6157b29f3ec2e323c34105e7da17dfd2048659d56b76e63dc7fe6d6005067ee82ab8f88c754107d87fb07a671aa0f4fa2124f0b095e1d05c481ae717\"}]",
+            "[\"EOSE\",\"v5\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"REQ\",\"v6\",{\"kinds\":[31990]}]"
+          },
+          "compare": "json",
+          "compare_why": "a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 025",
+          "expect": [
+            "[\"EVENT\",\"v6\",{\"id\":\"13d1dd1821b2a617592c03b5062e4245f8c72667cdfce9d3167677255f8a37b3\",\"kind\":31990,\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"created_at\":1700000000,\"content\":\"\",\"tags\":[[\"d\",\"example-app\"],[\"k\",\"1\"],[\"web\",\"https://example.com/app\"]],\"sig\":\"23a3123048ed4f67b0aa43642f0878564ba22452b38136e94126f87b5a77b4bc8217d0a490b7381634720b7daf9d734accaa36f83c14156fa1cf6ff1aa3f3c73\"}]",
+            "[\"EOSE\",\"v6\"]"
+          ]
+        },
+        {
+          "send": {
+            "text": "[\"REQ\",\"v7\",{\"kinds\":[31989]}]"
+          },
+          "compare": "json",
+          "compare_why": "a REQ result carries the capture’s stored-row field order; the values are compared, the key order is the capture’s — job 025",
+          "expect": [
+            "[\"EVENT\",\"v7\",{\"id\":\"1e9a2f8d62ef969cb708b8f6ffd526cb9c2ca6741fcc55f3fc163113212b7020\",\"kind\":31989,\"pubkey\":\"8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271\",\"created_at\":1700000000,\"content\":\"\",\"tags\":[[\"d\",\"1\"],[\"a\",\"31990:8f92e601a0dd56fb250621d9c12e3249e94ab82bb58e9698b6e50400554ef271:example-app\"]],\"sig\":\"43b6e3b1d28b4e053d91921d13173674dc0934cee6a283c9c2d080d67e911d01f446fb4e3d1a60d840f9abd8e4cc69c68e62876408604cccbdf207b27bb8e042\"}]",
+            "[\"EOSE\",\"v7\"]"
+          ]
+        }
+      ],
+      "relay_secret": "683c29961bc5247d177a5019710ee3b776fb07ef636d834b848b4f726ace3f51",
+      "random": {
+        "challenge": "604c9809efcc3a2c99f98a7818baabfcce46301377bdbe2b00792cd7dcdbc7aa",
+        "invite_code": null
+      }
     }
   ]
 }

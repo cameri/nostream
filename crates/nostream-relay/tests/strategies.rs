@@ -442,6 +442,277 @@ async fn delete_returns_an_error_when_the_create_fails() {
     assert_eq!(frames(&mut sink), Vec::<String>::new());
 }
 
+// --- NIP-09 `a` tags (09.md §"Deletion Request") -----------------------------------------
+
+/// A kind-30023 row carrying `d`, under [`other_event_id`] so it cannot be confused with the
+/// request.
+fn addressable_row(d: Option<&str>, created_at: i64) -> Event {
+    Event {
+        id: other_event_id(),
+        created_at,
+        ..event(
+            30_023,
+            d.map(|value| vec![tag(&["d", value])]).unwrap_or_default(),
+            "a long-form post",
+        )
+    }
+}
+
+/// A kind-5 request naming `30023:<pubkey>:<d>`.
+fn address_delete_event(address: &str) -> Event {
+    event(5, vec![tag(&["a", address])], "")
+}
+
+/// The one address delete a request naming `post-1` makes, in the order the seam takes it.
+fn one_address_delete(d: &str, not_after: i64) -> Vec<(Pubkey, Kind, String, i64)> {
+    vec![(author(), Kind(30_023), d.to_owned(), not_after)]
+}
+
+#[tokio::test]
+async fn delete_soft_deletes_an_addressable_event_named_by_an_a_tag() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let (context, mut sink) = socket(&fixture);
+    let event = address_delete_event(&format!("30023:{}:post-1", author()));
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(
+        fixture.events.address_deletes(),
+        one_address_delete("post-1", NOW_SECS)
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// The lookup and the deletion are one storage operation, so there is no window between them for
+/// a replacement to land in: the seam is asked once, by address, and no id list is resolved.
+#[tokio::test]
+async fn delete_resolves_and_deletes_an_address_in_one_operation() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let (context, mut sink) = socket(&fixture);
+    let event = address_delete_event(&format!("30023:{}:post-1", author()));
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(
+        fixture.events.deletes(),
+        Vec::new(),
+        "the a-tag path never builds an id list"
+    );
+    assert_eq!(
+        fixture.events.address_deletes(),
+        one_address_delete("post-1", NOW_SECS)
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// The delete does not consult a read, which is what makes it reach a row NIP-56 hides from
+/// reads: a failing stream changes nothing about the address path.
+#[tokio::test]
+async fn delete_deletes_by_address_without_a_read() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+    fixture.events.fail_reads(true);
+
+    let (context, mut sink) = socket(&fixture);
+    let event = address_delete_event(&format!("30023:{}:post-1", author()));
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+#[tokio::test]
+async fn delete_ignores_an_a_tag_naming_another_authors_address() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let (context, mut sink) = socket(&fixture);
+    // The address names `author()`, but the request is signed by somebody else.
+    let mut event = address_delete_event(&format!("30023:{}:post-1", author()));
+    event.pubkey = Pubkey::from_byte_array([0x44; 32]);
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.address_deletes(), Vec::new());
+    assert_eq!(fixture.events.deletes(), Vec::new());
+    assert!(fixture.events.live_events().contains(&target));
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+#[tokio::test]
+async fn delete_leaves_an_addressable_event_newer_than_the_request() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS + 10);
+    fixture.seed_event(target.clone()).await;
+
+    let (context, mut sink) = socket(&fixture);
+    let event = address_delete_event(&format!("30023:{}:post-1", author()));
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    // The bound travels with the delete, which is what makes it a compare-and-delete rather than
+    // a list of ids chosen earlier.
+    assert_eq!(
+        fixture.events.address_deletes(),
+        one_address_delete("post-1", NOW_SECS)
+    );
+    assert!(fixture.events.live_events().contains(&target));
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+#[tokio::test]
+async fn delete_matches_an_empty_d_identifier() {
+    // A row with no `d` tag is stored under the address's empty `d`, and an address may spell
+    // that `d` as an empty third part or leave the third part off entirely.
+    for address in [
+        format!("30023:{}:", author()),
+        format!("30023:{}", author()),
+    ] {
+        let fixture = Fixture::new(settings());
+        let target = addressable_row(None, NOW_SECS);
+        fixture.seed_event(target.clone()).await;
+
+        let (context, mut sink) = socket(&fixture);
+        let event = address_delete_event(&address);
+
+        DeleteStrategy.execute(&event, &context).await.unwrap();
+
+        assert_eq!(
+            fixture.events.address_deletes(),
+            one_address_delete("", NOW_SECS),
+            "{address}"
+        );
+        assert_eq!(
+            fixture.events.live_events(),
+            vec![event.clone()],
+            "{address}"
+        );
+        assert_eq!(
+            frames(&mut sink),
+            vec![ok_frame(&event, true, "")],
+            "{address}"
+        );
+    }
+}
+
+/// A request naming the same address a thousand times makes **one** storage call: the addresses
+/// are deduplicated before the seam, so the tag count is not the work count. Measured before the
+/// change: 1 000 identical tags produced 1 000 `delete_by_address` calls, each its own write
+/// transaction.
+#[tokio::test]
+async fn delete_names_each_distinct_address_once() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let address = format!("30023:{}:post-1", author());
+    let tags: Vec<Vec<String>> = (0..1_000).map(|_| tag(&["a", &address])).collect();
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(
+        fixture.events.address_deletes(),
+        one_address_delete("post-1", NOW_SECS),
+        "a thousand identical tags are one address, so one call"
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// A request naming more distinct addresses than one event may is refused before anything is
+/// deleted or stored: `OK false`, no storage call, no row written. Partial work with a `true`
+/// would tell the client its other articles were gone.
+#[tokio::test]
+async fn delete_refuses_a_request_naming_too_many_addresses() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-0"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let tags: Vec<Vec<String>> = (0..101)
+        .map(|index| tag(&["a", &format!("30023:{}:post-{index}", author())]))
+        .collect();
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.address_deletes(), Vec::new());
+    assert_eq!(
+        fixture.events.live_events(),
+        vec![target],
+        "nothing was deleted and the request itself was not stored"
+    );
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(
+            &event,
+            false,
+            "invalid: a deletion request may name at most 100 addresses"
+        )]
+    );
+}
+
+/// A legal request stays legal when its addresses repeat: the cap counts distinct addresses, and the
+/// early break that keeps an over-cap list cheap must not turn one of these into a refusal. Twenty
+/// tags per address, a total far past the cap, plus a repeat of the first address at the end.
+#[tokio::test]
+async fn delete_admits_a_cap_sized_batch_with_repeats() {
+    let fixture = Fixture::new(settings());
+    let mut tags: Vec<Vec<String>> = Vec::new();
+
+    for _ in 0..20 {
+        for index in 0..100 {
+            tags.push(tag(&["a", &format!("30023:{}:post-{index}", author())]));
+        }
+    }
+
+    tags.push(tag(&["a", &format!("30023:{}:post-0", author())]));
+    assert!(tags.len() > 101, "the tag count is past the cap on purpose");
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(
+        fixture.events.address_deletes().len(),
+        100,
+        "one entry per distinct address, and no refusal"
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// One hundred and one tags naming **one** address are admitted: the cap bounds distinct
+/// addresses, which is the work, not the tag list the transport already bounds.
+#[tokio::test]
+async fn delete_admits_a_cap_sized_batch() {
+    let fixture = Fixture::new(settings());
+    let tags: Vec<Vec<String>> = (0..100)
+        .map(|index| tag(&["a", &format!("30023:{}:post-{index}", author())]))
+        .collect();
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.address_deletes().len(), 100);
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
 // ---------------------------------------------------------------------------
 // dvm_job_request — `dvm-job-request-event-strategy.spec.ts`
 // ---------------------------------------------------------------------------

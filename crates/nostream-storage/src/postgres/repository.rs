@@ -9,12 +9,12 @@ use super::{
 use crate::error::StorageError;
 use crate::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
-    DvmJobRepository, DvmJobUpdate, EventPurgeCounts, EventRecord, EventRepository,
+    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventPurgeCounts, EventRecord, EventRepository,
     EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
     NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, StorageFuture, User, UserPatch,
-    UserRepository,
+    QueryStream, ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture,
+    StreamedEvent, User, UserPatch, UserRepository,
 };
 
 impl EventRepository for PostgresBackend {
@@ -37,7 +37,7 @@ impl EventRepository for PostgresBackend {
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
         Box::pin(async move {
             let gates = self.gates();
             events::find_by_filters(&self.reader, filters, &gates)
@@ -67,6 +67,37 @@ impl EventRepository for PostgresBackend {
         ids: &'a [EventId],
     ) -> StorageFuture<'a, u64> {
         Box::pin(async move { events::delete_by_pubkey_and_ids(&self.master, pubkey, ids).await })
+    }
+
+    /// Postgres answers a search filter with `to_tsvector(@@) plainto_tsquery` when NIP-50 is
+    /// enabled (`sql.rs:317-323`), and with no text predicate at all when it is not — in which
+    /// case the relay's own matcher is what decides, which is `SubstringTerms`.
+    fn search_rule(&self) -> SearchRule {
+        match self.gates().nip50 {
+            Some(gate) => SearchRule::ToTsvector {
+                language: gate.language,
+            },
+            None => SearchRule::SubstringTerms,
+        }
+    }
+
+    /// Postgres answers a tag criterion from `event_tags` (`sql.rs:347-354`), and that table
+    /// holds no empty value: its trigger inserts a row only where `tag_value <> ''`
+    /// (`migrations/20240108130100_add_event_tags_table.sql:24`), so `tag_value = ANY('{""}')`
+    /// matches nothing while `Filter::matches` accepts `["d", ""]`.
+    fn empty_tag_rule(&self) -> EmptyTagRule {
+        EmptyTagRule::IndexesNoEmptyValue
+    }
+
+    fn delete_by_addresses<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        addresses: &'a [(Kind, String)],
+        not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            events::delete_by_addresses(&self.master, pubkey, addresses, not_after).await
+        })
     }
 
     fn delete_by_pubkey_except_kinds<'a>(

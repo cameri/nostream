@@ -8,6 +8,13 @@
 //! random one passes a fixed nonce instead — the "valid base64 string" and "different
 //! ciphertexts" cases are exactly that re-expression. The ten padding cases observe the
 //! padded length through the payload size, as the capture does.
+//!
+//! One case **diverges from the capture by design**: `44.md` at the audit cutoff carries a
+//! `u32` plaintext length with the six-byte `[0x00, 0x00][u32]` prefix, so the capture's
+//! "throws for plaintext exceeding 65535 bytes" case becomes the round trip at 65 536 bytes
+//! (`accepts_a_plaintext_of_65536_bytes_with_the_extended_prefix`), and the payload ceiling
+//! moves to the one derived from the format's. `docs/rewrite/nip-parity.md` §9 item 5 and
+//! §10 record it.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -15,7 +22,10 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use nostream_core::Pubkey;
 use nostream_core::crypto::public_key;
-use nostream_core::nip44::{decrypt, encrypt, get_conversation_key, validate_payload};
+use nostream_core::nip44::{
+    MAX_PAYLOAD_LENGTH, decrypt, encrypt, get_conversation_key, payload_length_refusal,
+    validate_payload,
+};
 
 const KNOWN_CONVERSATION_KEY: &str =
     "c41c775356fd92eadc63ff5a0dc1da211b268cbea22316767095b2871ea1412d";
@@ -131,12 +141,25 @@ fn throws_for_empty_plaintext() {
     assert_eq!(error.to_string(), "invalid plaintext length");
 }
 
+/// The format's extended length: a plaintext of 65 536 bytes is written behind the six-byte
+/// prefix and round-trips. Against the pre-`733a047` format the capture implements, `encrypt`
+/// answers `invalid plaintext length` here.
+///
+/// The prefix itself is inside the encrypted region, so it is not readable in the payload; its
+/// width is what the decoded length pins (a two-byte prefix would make this 65 603 bytes, not
+/// 65 607), and `decrypt` succeeding is the proof that `unpad` read `[0x00, 0x00][u32]`: read as
+/// a `u16`, those bytes are a length of zero. The prefix bytes as written are asserted where
+/// they are visible, in `nip44`'s own `the_prefix_widens_at_65_536_bytes`.
 #[test]
-fn throws_for_plaintext_exceeding_65535_bytes() {
+fn accepts_a_plaintext_of_65536_bytes_with_the_extended_prefix() {
     let key = conversation_key(1, 2);
-    let error = encrypt(&"x".repeat(65_536), &key, &nonce(1)).unwrap_err();
+    let plaintext = "x".repeat(65_536);
+    let payload = encrypt(&plaintext, &key, &nonce(1)).unwrap();
+    let decoded = STANDARD.decode(&payload).unwrap();
 
-    assert_eq!(error.to_string(), "invalid plaintext length");
+    // version, nonce, the six-byte prefix, the padded plaintext, the MAC.
+    assert_eq!(decoded.len(), 1 + 32 + 6 + 65_536 + 32);
+    assert_eq!(decrypt(&payload, &key).unwrap(), plaintext);
 }
 
 // --- nip44Decrypt (7) --------------------------------------------------------------------
@@ -237,12 +260,15 @@ fn returns_error_string_for_payload_that_is_too_short() {
     );
 }
 
+/// One byte past the base64 ceiling the format derives. The ceiling itself is 5 726 623 156
+/// characters, so the refusal is asked of the length helper rather than of a string that size.
 #[test]
 fn returns_error_string_for_payload_that_is_too_long() {
     assert_eq!(
-        validate_payload(&"A".repeat(87_473)),
+        payload_length_refusal(MAX_PAYLOAD_LENGTH + 1),
         Some("invalid payload size".to_owned())
     );
+    assert_eq!(payload_length_refusal(MAX_PAYLOAD_LENGTH), None);
 }
 
 #[test]

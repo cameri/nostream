@@ -20,10 +20,11 @@ use crate::error::StorageError;
 /// `src/@types/repositories.ts`, whose methods take the ambient `DatabaseClient`.
 pub type StorageFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StorageError>> + Send + 'a>>;
 
-/// One row per item, in exactly the query's `ORDER BY`. The borrow of the store is held for
-/// the stream's life, which is what both backends need: Postgres holds a portal and a pooled
-/// connection, and LMDB holds whatever its own query kept, opening a short read transaction
-/// per batch (256 values) so a dropped stream pins no pages.
+/// One item per page slot, in exactly the query's `ORDER BY`. The borrow of the store is held
+/// for the stream's life, which is what both backends need: Postgres holds a portal and a
+/// pooled connection, and LMDB holds whatever its own query kept, opening a short read
+/// transaction per batch (256 values) so a dropped stream pins no pages. A filter read's item
+/// is a [`StreamedEvent`], because a slot the backend selected may have no row to yield.
 ///
 /// An LMDB backend's two streams keep different things, and a caller plans memory from the
 /// difference: `find_by_filters` collects its page first — at most each filter's limit, clamped
@@ -80,6 +81,48 @@ pub struct EventRecord {
     pub event_deduplication: Option<Vec<serde_json::Value>>,
     /// `events.remote_address` (the `ContextMetadataKey` insert metadata).
     pub remote_address: Option<std::net::IpAddr>,
+}
+
+/// One item of a filter read: the row for a page slot, or the marker for a slot the backend
+/// selected and could not read.
+///
+/// The distinction exists because a `limit` read is a claim about a **count of slots**, and the
+/// page obligation on [`EventRepository::find_by_filters`] is stated in rows. A backend that
+/// enumerated a key and found it gone when it came to read the value has spent the slot without
+/// a row; reporting that as "fewer rows" is indistinguishable at the call site from a short
+/// result, which is how a false NIP-67 `finish` reaches the wire. [`StreamedEvent::Vanished`] is
+/// the backend saying so, and the relay counts it as a spent slot.
+// The row is the item, and it moves by value exactly as it did inside `Result<EventRecord, _>`
+// before the marker existed; boxing it would add one allocation per streamed row to the read
+// path to make a two-variant enum smaller than the rows it carries.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum StreamedEvent {
+    /// One stored row, as the query ordered it.
+    Record(EventRecord),
+    /// The backend selected this slot and then could not read it: the key was in the page when
+    /// the backend enumerated it and gone when the backend read its value.
+    Vanished,
+}
+
+/// Drains a filter read into the rows it yielded, dropping [`StreamedEvent::Vanished`].
+///
+/// This is the helper for every call site that does not account for vanished slots: the marker
+/// is a fact about the page, not a row, so a consumer that only wants rows cannot inherit it.
+pub fn collect_records<'a>(
+    mut stream: QueryStream<'a, StreamedEvent>,
+) -> StorageFuture<'a, Vec<EventRecord>> {
+    Box::pin(async move {
+        let mut records = Vec::new();
+        while let Some(item) =
+            std::future::poll_fn(|context| stream.as_mut().poll_next(context)).await
+        {
+            if let StreamedEvent::Record(record) = item? {
+                records.push(record);
+            }
+        }
+        Ok(records)
+    })
 }
 
 /// One NIP-77 reconciliation item (`src/@types/repositories.ts` `ReconciliationItem`).
@@ -380,6 +423,60 @@ pub struct OutboxMessage {
 /// (`src/repositories/notification-outbox-repository.ts`).
 pub const NOTIFICATION_OUTBOX_PROCESSING_LEASE_MS: i64 = 5 * 60 * 1000;
 
+/// The matching rule a backend applies to a filter that carries `search` (NIP-50).
+///
+/// A completeness claim is a claim about the set a backend *enumerated*, so the caller has to
+/// know what that backend's `search` predicate actually does. Saying only "my predicate may
+/// differ" would let the next backend tick a box; each variant names the rule, so an implementor
+/// has to read what it is asserting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SearchRule {
+    /// Exactly [`nostream_core::Filter::matches`]: every whitespace-separated term of `search`
+    /// must appear as a lowercase **substring** of the content. The backend enumerates with the
+    /// relay's own matcher, so a completeness claim over such a read is one the relay can check.
+    SubstringTerms,
+    /// Postgres' prefilter: `to_tsvector(<language>, content) @@ plainto_tsquery(<language>,
+    /// query)`. Word **tokens**, stemmed by the `language` regconfig — not substrings, and not
+    /// the relay's rule. The two predicates contain neither the other:
+    ///
+    /// - the query `study` selects a row whose content is `studies` (both reduce to the one
+    ///   English stem `studi`), and [`nostream_core::Filter::matches`] refuses it because
+    ///   `"studies"` contains no `"study"`;
+    /// - `abcdef` is a substring of the content `xxabcdefyy`, which `Filter::matches` accepts and
+    ///   the tsquery never yields, because that content is one token.
+    ///
+    /// The first is the direction a probe can see (a yielded row the relay refuses); the second
+    /// is why no probe is enough, and why a caller withholds rather than checks.
+    ToTsvector {
+        /// The regconfig the predicate is evaluated under (`nip50.language`, `simple` by default).
+        language: String,
+    },
+}
+
+/// Whether a backend's tag index can answer a criterion that is the empty string.
+///
+/// [`nostream_core::Filter::matches`] compares a tag value to the criterion with `==`, so the
+/// criterion `""` accepts a tag stored as `["d", ""]`. A backend that answers tag criteria from
+/// an index of non-empty values holds no entry for the empty one, and then that criterion
+/// selects nothing while the matcher would have accepted every such row — a short page that
+/// proves nothing about the rows it never enumerated. Each variant names the rule, as
+/// [`SearchRule`]'s do, so an implementor has to read what it is asserting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmptyTagRule {
+    /// A criterion that is the empty string selects at least what
+    /// [`nostream_core::Filter::matches`] selects: the implementor asserts its tag predicate
+    /// accepts everything that matcher accepts on the tag criteria — a wider predicate accepts
+    /// more, and cannot hide a row, because a yielded row the matcher refuses is what the caller
+    /// reads as a failed claim.
+    AnswersEmptyCriterion,
+    /// The tag index holds no entry for an empty value, so the criterion `""` selects nothing
+    /// however many rows carry `["d", ""]`. LMDB: `tag_entries` writes a key only when the value
+    /// is non-empty (`crates/nostream-storage/src/lmdb/encoding.rs:387`). Postgres: the
+    /// `event_tags` trigger inserts a row only where `tag_value <> ''`
+    /// (`migrations/20240108130100_add_event_tags_table.sql:24`).
+    IndexesNoEmptyValue,
+}
+
 /// Event storage (`src/@types/repositories.ts` `IEventRepository`).
 pub trait EventRepository: Send + Sync {
     /// Inserts one event, returning the affected row count (0 on a duplicate `event_id`).
@@ -407,16 +504,75 @@ pub trait EventRepository: Send + Sync {
     fn upsert_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64>;
 
     /// Streams the events matching the filters, in the query's order.
+    ///
+    /// **The page obligation.** A NIP-67 `finish` hint claims that every stored event matching a
+    /// subscription's filters has been sent, and the relay decides it by comparing the rows it
+    /// received against `min(limit, page_bound())` — so this method carries a contract that has a
+    /// direction in each half:
+    ///
+    /// - a backend **MUST** yield up to `min(limit, page_bound())` matching rows whenever that
+    ///   many exist. Yielding *fewer* while more exist is indistinguishable, at the call site,
+    ///   from a short result, and makes a false `finish` reach the wire;
+    /// - a backend **MUST NOT** yield more than `min(limit, page_bound())` rows for one filter,
+    ///   with one exception the relay itself asks for: its probe passes `limit + 1`, so a backend
+    ///   honouring that filter yields up to `min(limit + 1, page_bound())`. Yielding more only
+    ///   suppresses a hint the relay could have proved — the harmless direction, but it is still
+    ///   a contract, because a caller sizes its buffers by it.
+    ///
+    /// A backend whose own page is smaller than [`MAX_PAGE_ROWS`](crate::MAX_PAGE_ROWS) declares it through
+    /// [`EventRepository::page_bound`]; the relay then asks for no more than it will be given and
+    /// emits no hint where it cannot prove one.
+    ///
+    /// **The marker.** A backend that cannot honour the page at read time — it selected a key and
+    /// the key was gone when it came to read the value — **MUST** yield
+    /// [`StreamedEvent::Vanished`] for that slot rather than skipping it. The obligation above
+    /// forbids the silent short page; this names the signal that keeps it honest when a
+    /// concurrent write removes a selected row. The slot is spent either way, so a caller that
+    /// only wants rows reads them through [`collect_records`], which drops the marker.
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [nostream_core::Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>>;
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>>;
 
     /// Counts the events matching the filters.
     fn count_by_filters<'a>(
         &'a self,
         filters: &'a [nostream_core::Filter],
     ) -> StorageFuture<'a, u64>;
+
+    /// The largest page this backend will return for one filter, whatever `limit` it carries.
+    ///
+    /// Defaults to [`MAX_PAGE_ROWS`](crate::MAX_PAGE_ROWS), which both shipped backends satisfy. A backend that clamps
+    /// lower overrides it: [`EventRepository::find_by_filters`]' obligation is stated in terms of
+    /// this value, and a caller that must know whether a page was truncated compares the rows it
+    /// received against `min(limit, page_bound())`. Overriding it is what keeps a smaller page
+    /// from being read as a short result.
+    fn page_bound(&self) -> u64 {
+        crate::MAX_PAGE_ROWS
+    }
+
+    /// The matching rule this backend applies to a filter that carries `search` (NIP-50).
+    ///
+    /// Defaults to [`SearchRule::SubstringTerms`], which is what a backend that filters with
+    /// [`nostream_core::Filter::matches`] applies — LMDB's filter path *is* that matcher. A
+    /// backend whose own predicate answers the filter overrides this, and a caller that must
+    /// claim completeness over such a read reads it rather than assuming the relay's matcher
+    /// enumerated the set.
+    fn search_rule(&self) -> SearchRule {
+        SearchRule::SubstringTerms
+    }
+
+    /// Whether a tag criterion that is the empty string can be answered from this backend's tag
+    /// index (see [`EmptyTagRule`]).
+    ///
+    /// Defaults to [`EmptyTagRule::AnswersEmptyCriterion`], which is what a backend whose tag
+    /// predicate is [`nostream_core::Filter::matches`] on the tag criteria, or a wider one,
+    /// answers. A backend that answers tag criteria from an index of non-empty values overrides
+    /// this, and a caller that must claim completeness over such a read reads it rather than
+    /// assuming the criterion enumerated the set.
+    fn empty_tag_rule(&self) -> EmptyTagRule {
+        EmptyTagRule::AnswersEmptyCriterion
+    }
 
     /// Streams the live `(created_at, event_id)` pairs a NIP-77 reconciliation compares.
     fn find_reconciliation_items<'a>(
@@ -429,6 +585,33 @@ pub trait EventRepository: Send + Sync {
         &'a self,
         pubkey: &'a Pubkey,
         ids: &'a [EventId],
+    ) -> StorageFuture<'a, u64>;
+
+    /// Soft-deletes the author's live addressable rows that these addresses name — each one's
+    /// `d` identifier and kind, with `created_at` no later than `not_after` — returning the
+    /// count. Kind 62 is never touched, as in
+    /// [`delete_by_pubkey_and_ids`](Self::delete_by_pubkey_and_ids).
+    ///
+    /// **The caller checks the addresses are the author's to delete**: the pubkey and kind are
+    /// taken as given, exactly as `delete_by_pubkey_and_ids` takes the ids it is given, and one
+    /// address is one `(kind, d)` pair. The store's own guard is that every row it can reach is
+    /// keyed by this pubkey.
+    ///
+    /// The whole batch is **one transaction**, which is why this is a batch rather than one call
+    /// per address: a deletion request names its addresses in one event, and one event must not
+    /// become N write transactions at the store.
+    ///
+    /// This exists as its own operation rather than as a read followed by
+    /// `delete_by_pubkey_and_ids`, for two reasons a caller cannot work around: a read is
+    /// bounded by the backend's page, so a narrow address must not be found by scanning a page;
+    /// and a read and a delete are two operations, so a replacement landing between them
+    /// survives the delete the client was told had happened. Both are properties of the store,
+    /// so the store performs the resolution and the deletion as one.
+    fn delete_by_addresses<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        addresses: &'a [(Kind, String)],
+        not_after: i64,
     ) -> StorageFuture<'a, u64>;
 
     /// Soft-deletes every event of one pubkey except the given kinds.
@@ -649,4 +832,64 @@ pub trait NotificationOutboxRepository: Send + Sync {
 
     /// Deletes delivered and dead messages older than the cutoff.
     fn delete_terminal_older_than<'a>(&'a self, cutoff: DateTime<Utc>) -> StorageFuture<'a, u64>;
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use futures_core::Stream;
+    use nostream_core::{Event, EventId, Kind, Pubkey, Signature};
+
+    use super::*;
+
+    /// A stream of the items it was built from.
+    struct Items(std::vec::IntoIter<Result<StreamedEvent, StorageError>>);
+
+    impl Stream for Items {
+        type Item = Result<StreamedEvent, StorageError>;
+
+        fn poll_next(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<Option<Self::Item>> {
+            Poll::Ready(self.0.next())
+        }
+    }
+
+    /// A kind-1 row whose content is `content`.
+    fn record(content: &str) -> EventRecord {
+        EventRecord::from_event(&Event {
+            id: EventId::from_byte_array([content.len() as u8; 32]),
+            pubkey: Pubkey::from_byte_array([0; 32]),
+            created_at: 1_700_000_000,
+            kind: Kind(1),
+            tags: Vec::new(),
+            content: content.to_owned(),
+            sig: Signature::from_byte_array([0; 64]),
+        })
+    }
+
+    /// The helper hands a consumer only rows: the vanished slot is dropped, and the rows keep
+    /// the page's order, so the marker cannot be read as if it were a record.
+    #[tokio::test]
+    async fn collect_records_drops_the_marker_and_keeps_every_row() {
+        let items = vec![
+            Ok(StreamedEvent::Record(record("one"))),
+            Ok(StreamedEvent::Vanished),
+            Ok(StreamedEvent::Record(record("two"))),
+        ];
+        let stream: QueryStream<'_, StreamedEvent> = Box::pin(Items(items.into_iter()));
+
+        let rows = collect_records(stream).await.expect("the read drains");
+        let contents: Vec<&str> = rows
+            .iter()
+            .map(|row| row.event.content.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(contents, vec!["one", "two"]);
+    }
 }

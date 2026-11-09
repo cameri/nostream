@@ -963,6 +963,7 @@ async fn every_recorded_session_replays_frame_for_frame() {
         "count-disabled",
         "nip42-expiry",
         "event-rejections",
+        "nip-generic-events",
     ] {
         assert!(
             ids.contains(&required),
@@ -1046,8 +1047,14 @@ async fn every_declared_tolerance_is_one_of_the_two() {
 /// capture's three event-building paths disagree about key order) and a session whose frames
 /// the capture does not record (AC29). Weakening the fixture by another step or session fails
 /// here, and each exception still compares everything but its declared difference.
+///
+/// `nip-generic-events`' seven read steps are stored-row read-backs, which carry the capture's
+/// own key order (`id, kind, pubkey, created_at, content, tags, sig`) where every other EVENT
+/// frame in the fixture is the broadcast path's — the same declared difference
+/// `measured-session:13` carries, one per kind because one filter per kind is what keeps the row
+/// order out of the comparison.
 #[test]
-fn the_not_byte_compared_steps_are_exactly_the_declared_two_and_one_session() {
+fn the_not_byte_compared_steps_are_exactly_the_declared_ones() {
     let fixture = fixture();
     let mut json_steps = Vec::new();
 
@@ -1074,7 +1081,17 @@ fn the_not_byte_compared_steps_are_exactly_the_declared_two_and_one_session() {
 
     assert_eq!(
         json_steps,
-        ["measured-session:13", "invite-mint:2"],
+        [
+            "measured-session:13",
+            "invite-mint:2",
+            "nip-generic-events:8",
+            "nip-generic-events:9",
+            "nip-generic-events:10",
+            "nip-generic-events:11",
+            "nip-generic-events:12",
+            "nip-generic-events:13",
+            "nip-generic-events:14",
+        ],
         "the steps compared as JSON values"
     );
 

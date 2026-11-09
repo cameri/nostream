@@ -29,7 +29,7 @@ use super::{
 use crate::error::StorageError;
 use crate::records::{distinct_replacements, replaces_fields};
 use crate::repositories::{
-    EventPurgeCounts, EventRecord, EventRetentionOptions, ReconciliationItem,
+    EventPurgeCounts, EventRecord, EventRetentionOptions, ReconciliationItem, StreamedEvent,
 };
 
 /// The kind of the capture's `REQUEST_TO_VANISH`, which every retention whitelist keeps and
@@ -348,6 +348,71 @@ pub(crate) fn delete_by_pubkey_and_ids(
         soft_delete(txn, databases, &record, now)?;
         affected += 1;
     }
+    Ok(affected)
+}
+
+/// `delete_by_addresses`: the author's live row at each address, soft-deleted when its
+/// `created_at` is no later than `not_after` — one write transaction for the whole batch.
+///
+/// The address is resolved through `databases.replaceable`, the point index every production path
+/// writes for an addressable kind (`upsert`, `upsert_many`): its key is
+/// `replaceable_key(pubkey, kind, [d])`, so one `get` names the row and no scan is involved. That
+/// matters twice over. It is the difference between O(1) and O(K) in the author's rows of the
+/// kind — measured at 0.0395 ms against 144 ms for a 5 000-article author — and it means a miss
+/// costs one lookup rather than a walk.
+///
+/// The one row the index names is decoded and checked for the same five predicates the pointer
+/// cannot express: not already deleted, `created_at` not after the request's, not kind 62, the
+/// address the caller asked for, and — as a second, independent guard beside the key's pubkey — the
+/// row's own author and kind.
+///
+/// A row written through `create` has no pointer (`create` stores `event_deduplication: None`, the
+/// capture's `INSERT` omitting the column), so it is invisible here; so it is to Postgres'
+/// `event_deduplication->>0` predicate. No production path creates an addressable kind — the relay
+/// and the importer both upsert — so the two backends agree, which they would not if this walked
+/// the tags instead.
+///
+/// The NIP-56 gate is a read's, not a delete's, so a reported row is reachable here.
+pub(crate) fn delete_by_addresses(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+    pubkey: &Pubkey,
+    addresses: &[(Kind, String)],
+    not_after: i64,
+    now: DateTime<Utc>,
+) -> Result<u64, StorageError> {
+    let mut affected = 0;
+
+    for (kind, identifier) in addresses {
+        let kind_number = i32::try_from(kind.0).unwrap_or(i32::MAX);
+        let pointer = encoding::replaceable_key(
+            pubkey,
+            kind_number,
+            &[serde_json::Value::String(identifier.clone())],
+        )?;
+        let Some(stored) = databases.replaceable.get(txn, &pointer)? else {
+            continue;
+        };
+        let id = encoding::event_id_from(stored)?;
+        let Some(value) = databases.events.get(txn, id.as_bytes())? else {
+            continue;
+        };
+        let record = rows::decode_event(value)?;
+
+        if record.deleted_at.is_some()
+            || record.event.created_at > not_after
+            || record.event.kind == Kind::REQUEST_TO_VANISH
+            || record.event.kind != *kind
+            || record.event.pubkey != *pubkey
+            || record.event.d_tag_value() != identifier
+        {
+            continue;
+        }
+
+        soft_delete(txn, databases, &record, now)?;
+        affected += 1;
+    }
+
     Ok(affected)
 }
 
@@ -1617,6 +1682,12 @@ impl Position {
 /// copies each batch's values out of it; it is the reconciliation stream, not this one, that
 /// holds only a cursor key.
 ///
+/// A key the page selected may be gone when its batch is read: a replacement hard-deletes the
+/// row it supersedes (`hard_delete`), a retention pass removes a soft-deleted one, and this
+/// stream opens a fresh read transaction per batch, so the removal can land between the two.
+/// The slot is still spent, and it is reported as [`StreamedEvent::Vanished`] rather than
+/// skipped — a silent skip reads at the call site as a short page.
+///
 /// shortcut: a stream is not a snapshot — a row written or deleted between two batches may
 /// appear or vanish; upgrade when a caller needs a stable view, per ADR 0003 trigger 1 and the
 /// benchmark job, which would buy the snapshot back with a held transaction.
@@ -1624,8 +1695,8 @@ pub(crate) struct ValuesStream {
     env: Env,
     databases: Databases,
     keys: std::vec::IntoIter<EventId>,
-    pending: Option<JoinHandle<Result<Vec<EventRecord>, StorageError>>>,
-    buffer: std::vec::IntoIter<EventRecord>,
+    pending: Option<JoinHandle<Result<Vec<StreamedEvent>, StorageError>>>,
+    buffer: std::vec::IntoIter<StreamedEvent>,
     finished: bool,
 }
 
@@ -1647,7 +1718,7 @@ impl ValuesStream {
 }
 
 impl Stream for ValuesStream {
-    type Item = Result<EventRecord, StorageError>;
+    type Item = Result<StreamedEvent, StorageError>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -1690,9 +1761,10 @@ impl Stream for ValuesStream {
                 let mut records = Vec::with_capacity(batch.len());
                 for id in batch {
                     let Some(value) = database.get(&transaction, id.as_bytes())? else {
+                        records.push(StreamedEvent::Vanished);
                         continue;
                     };
-                    records.push(rows::decode_event(value)?);
+                    records.push(StreamedEvent::Record(rows::decode_event(value)?));
                 }
                 Ok(records)
             }));
@@ -2378,6 +2450,14 @@ mod tests {
             "the page the backend materialises is its own bound, not the wire's"
         );
         assert_eq!(page[0].0, MAX_PAGE_KEYS as i64 + 1, "and it is the newest");
+
+        // The relay decides whether a page was full from `MAX_PAGE_ROWS`, so the two constants
+        // are the same number and cannot drift apart unnoticed.
+        assert_eq!(
+            MAX_PAGE_KEYS as u64,
+            crate::MAX_PAGE_ROWS,
+            "the relay's page bound is the backend's"
+        );
     }
 
     #[test]

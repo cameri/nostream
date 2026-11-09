@@ -28,12 +28,12 @@ use crate::backend::LmdbEnv;
 use crate::error::StorageError;
 use crate::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
-    DvmJobRepository, DvmJobUpdate, EventPurgeCounts, EventRecord, EventRepository,
+    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventPurgeCounts, EventRecord, EventRepository,
     EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
     NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, StorageFuture, User, UserPatch,
-    UserRepository,
+    QueryStream, ReconciliationItem, Report, ReportRepository, StorageFuture, StreamedEvent, User,
+    UserPatch, UserRepository,
 };
 
 /// The fixed map size every environment is opened with: `Env::resize` is `unsafe` and this
@@ -343,7 +343,7 @@ impl EventRepository for LmdbBackend {
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
         Box::pin(async move {
             let filters = filters.to_vec();
             let gates = self.gates();
@@ -351,7 +351,7 @@ impl EventRepository for LmdbBackend {
             let page = self
                 .read(move |txn, databases| events::page(txn, databases, &filters, &gates, now))
                 .await?;
-            let stream: QueryStream<'_, EventRecord> = Box::pin(events::ValuesStream::new(
+            let stream: QueryStream<'_, StreamedEvent> = Box::pin(events::ValuesStream::new(
                 self.env.clone(),
                 self.databases,
                 &page,
@@ -368,6 +368,13 @@ impl EventRepository for LmdbBackend {
             self.read(move |txn, databases| events::count(txn, databases, &filters, &gates, now))
                 .await
         })
+    }
+
+    /// LMDB's tag index holds no empty value: `encoding::tag_entries` writes a key only when the
+    /// value is non-empty (`encoding.rs:387`), so the criterion `""` — which `Filter::matches`
+    /// accepts — selects nothing.
+    fn empty_tag_rule(&self) -> EmptyTagRule {
+        EmptyTagRule::IndexesNoEmptyValue
     }
 
     fn find_reconciliation_items<'a>(
@@ -417,6 +424,23 @@ impl EventRepository for LmdbBackend {
             let now = encoding::micros(Utc::now());
             self.write(move |txn, databases| {
                 events::delete_by_pubkey_except_kinds(txn, databases, &pubkey, &kinds, now)
+            })
+            .await
+        })
+    }
+
+    fn delete_by_addresses<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        addresses: &'a [(Kind, String)],
+        not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            let pubkey = *pubkey;
+            let addresses = addresses.to_vec();
+            let now = encoding::micros(Utc::now());
+            self.write(move |txn, databases| {
+                events::delete_by_addresses(txn, databases, &pubkey, &addresses, not_after, now)
             })
             .await
         })

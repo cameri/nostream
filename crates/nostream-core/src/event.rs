@@ -383,6 +383,24 @@ impl Event {
             .iter()
             .any(|tag| tag.first().is_some_and(|name| name == "-"))
     }
+
+    /// The event's addressable identifier: the value of its **first** `["d", <value>]` tag, `""`
+    /// when it carries none — or carries only a valueless `["d"]` — which is the key an address
+    /// without a `d` is stored and deleted under.
+    ///
+    /// One derivation, because this value is a storage key in three places: the addressable
+    /// strategy writes it, the import path writes it, and a NIP-09 `a` tag is resolved through it
+    /// (LMDB by its address pointer, Postgres by the `event_deduplication` column). A second copy
+    /// of the rule is how the two backends come to delete different rows for one `a` tag.
+    pub fn d_tag_value(&self) -> &str {
+        self.tags
+            .iter()
+            .find_map(|tag| match tag.as_slice() {
+                [name, value, ..] if name == "d" => Some(value.as_str()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
 }
 
 /// The six-element array the event id is hashed over (`serializeEvent`,
@@ -440,6 +458,40 @@ mod tests {
 
     fn parse_id(value: &str) -> Result<EventId, CoreError> {
         EventId::try_from(value)
+    }
+
+    #[test]
+    fn d_tag_value_is_the_first_valued_d_tag_and_empty_when_there_is_none() {
+        // The rule every consumer shares: the first `["d", <value>]` tag, `""` when absent. A
+        // duplicate `d` takes the first, a valueless `["d"]` is skipped rather than yielding `""`,
+        // and a colon in the value is part of the value (the address parser splits at most twice).
+        let addresses = [
+            (vec![vec!["d".to_owned(), "post-1".to_owned()]], "post-1"),
+            (vec![vec!["t".to_owned(), "x".to_owned()]], ""),
+            (
+                vec![
+                    vec!["d".to_owned(), "a".to_owned()],
+                    vec!["d".to_owned(), "b".to_owned()],
+                ],
+                "a",
+            ),
+            (vec![vec!["d".to_owned()]], ""),
+            (
+                vec![
+                    vec!["d".to_owned()],
+                    vec!["d".to_owned(), "post-2".to_owned()],
+                ],
+                "post-2",
+            ),
+            (vec![vec!["d".to_owned(), "a:b".to_owned()]], "a:b"),
+        ];
+
+        for (tags, expected) in addresses {
+            let mut event = event();
+            event.tags = tags;
+
+            assert_eq!(event.d_tag_value(), expected, "{:?}", event.tags);
+        }
     }
 
     #[test]

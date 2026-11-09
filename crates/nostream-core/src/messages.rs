@@ -105,12 +105,30 @@ pub struct ClosedMessage {
     pub params: Option<String>,
 }
 
-/// `["EOSE", <subscription id>]` (`src/@types/messages.ts` `EndOfStoredEventsNotice`,
-/// NIP-15).
+/// `["EOSE", <subscription id>, <hints>?]` (`src/@types/messages.ts` `EndOfStoredEventsNotice`,
+/// NIP-15; the optional third element is NIP-67).
+///
+/// The third element is **an array of hint strings** — `67.md` §"Specification": *"A relay that
+/// implements this NIP MAY append a third element to the `EOSE` message: an array of hint
+/// strings"*. Issue cameri/nostream#718 proposed `{"completeness": "limit"|"full"}` instead; that
+/// object is **rejected** here, because the registry defines an array, an object is a different
+/// message, and a client parsing one would not parse the other.
+///
+/// The hints stay [`String`] rather than an enum: `67.md` says clients MUST ignore unknown hint
+/// values, and nothing in this tree decodes an `EOSE`, so no code path could reject one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EoseMessage {
     pub subscription_id: SubscriptionId,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hints: Vec<String>,
 }
+
+/// `67.md` §"Specification": the relay withheld stored events that `AUTH` could release.
+pub const EOSE_HINT_AUTH: &str = "auth";
+/// `67.md` §"Specification": every stored event matching the filters has been sent.
+pub const EOSE_HINT_FINISH: &str = "finish";
+/// `67.md` §"Specification": the relay holds more matching stored events than it sent.
+pub const EOSE_HINT_MORE: &str = "more";
 
 /// `["EVENT", <subscription id>, <event>]` (`src/@types/messages.ts` `OutgoingEventMessage`).
 ///
@@ -219,7 +237,7 @@ impl RelayMessage {
                     &[&quote(&message.subscription_id), &quote(&message.message)],
                 ),
             },
-            Self::Eose(message) => frame("EOSE", &[&quote(&message.subscription_id)]),
+            Self::Eose(message) => eose_frame(message),
             Self::Event(message) => event_frame(message),
             Self::Count(message) => frame(
                 "COUNT",
@@ -292,6 +310,25 @@ fn event_frame(message: &OutgoingEventMessage) -> String {
             .unwrap_or_else(|_| frame("EVENT", &[&quote(&message.subscription_id), "null"])),
         Err(_) => frame("EVENT", &[&quote(&message.subscription_id), "null"]),
     }
+}
+
+/// `["EOSE", <id>]`, or `["EOSE", <id>, ["auth","finish"]]` when the relay has hints to give
+/// (`67.md` §"Specification"). The hints keep the order the builder pushed them in, which is
+/// why the caller puts `auth` before a completeness hint.
+fn eose_frame(message: &EoseMessage) -> String {
+    if message.hints.is_empty() {
+        return frame("EOSE", &[&quote(&message.subscription_id)]);
+    }
+
+    let hints: Vec<String> = message.hints.iter().map(|hint| quote(hint)).collect();
+
+    frame(
+        "EOSE",
+        &[
+            &quote(&message.subscription_id),
+            &format!("[{}]", hints.join(",")),
+        ],
+    )
 }
 
 fn frame(verb: &str, parts: &[&str]) -> String {

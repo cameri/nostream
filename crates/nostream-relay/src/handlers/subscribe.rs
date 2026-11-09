@@ -21,10 +21,14 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use nostream_core::expiration;
-use nostream_core::filter::{count_filter_values, normalise_subscription};
-use nostream_core::messages::{EoseMessage, OutgoingEventMessage, RelayMessage, SubscribeMessage};
+use nostream_core::filter::{count_filter_values, has_empty_tag_criterion, normalise_subscription};
+use nostream_core::messages::{
+    EOSE_HINT_AUTH, EOSE_HINT_FINISH, EOSE_HINT_MORE, EoseMessage, OutgoingEventMessage,
+    RelayMessage, SubscribeMessage,
+};
 use nostream_core::nip42;
 use nostream_core::{Filter, Kind};
+use nostream_storage::repositories::{EmptyTagRule, SearchRule, StreamedEvent};
 
 use crate::connection::InFlightRead;
 use crate::error::RelayError;
@@ -238,6 +242,12 @@ async fn mint_invite_code(
 ///
 /// The read is already in flight when this runs: it is registered before the invite mint, so
 /// a `CLOSE` that landed during the mint has set its cancellation.
+///
+/// The `EOSE` may carry NIP-67's third element (`67.md` §"Specification"), and only from the
+/// two causes that make the two-element form misleading: the read guard withheld a matching
+/// event (`auth`), or a single-filter subscription's `limit` decided the answer
+/// (`finish`/`more`). A read with neither cause keeps `["EOSE", <id>]`, which is what makes
+/// every recorded session's EOSE byte-identical to the capture's.
 async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &HandlerContext) {
     let subscription_id = read.subscription_id().to_owned();
 
@@ -248,7 +258,41 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
         return;
     }
 
-    let stream = match context.stores.events.find_by_filters(filters).await {
+    // NIP-67 can only be answered exactly for a single filter carrying a `limit`: a
+    // multi-filter union is deduplicated after each filter's own limit, so "did this
+    // subscription's cap cut the result" has no cheap exact answer there — and `more` is
+    // optional in the NIP for exactly that reason.
+    let hint_eligible = filters.len() == 1 && filters[0].limit.is_some();
+    let limit = if hint_eligible {
+        filters[0].limit
+    } else {
+        None
+    };
+
+    // The probe: ask storage for one more row than the client's cap, so a `(limit + 1)`th
+    // **matching** row is what says `more` without being sent. `u64::MAX` saturates, which
+    // admits nothing beyond the maximum and so cannot hide a row. The backends already honour
+    // `limit`; the in-memory double does not, and the loop below drops the extra row either way.
+    let probe = limit.map(|limit| limit.saturating_add(1));
+    // Only a probing read needs new filters, and it only rewrites `limit`: every other read
+    // borrows the subscription's own list rather than copying it (a 1 000-author filter costs
+    // 63 µs to clone, and the copy buys nothing).
+    let probed;
+    let storage_filters: &[Filter] = match probe {
+        Some(probe) => {
+            probed = filters
+                .iter()
+                .map(|filter| Filter {
+                    limit: Some(probe),
+                    ..filter.clone()
+                })
+                .collect::<Vec<Filter>>();
+            &probed
+        }
+        None => filters,
+    };
+
+    let stream = match context.stores.events.find_by_filters(storage_filters).await {
         Ok(stream) => stream,
         Err(error) => {
             tracing::error!(error = %error, "unable to stream events");
@@ -262,6 +306,21 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     let now = context.now_secs();
     let matches_any =
         |event: &nostream_core::Event| filters.iter().any(|filter| filter.matches(event));
+
+    // `rows`: every page slot the backend spent, skipped and vanished ones included — a full
+    // page is what makes the backend's remaining extent unknown. `matched`: rows that were a match
+    // inside the client's window, which is what `limit` bounds. `trimmed`: the guard withheld a
+    // match. `more`: a match beyond the window was found. `failed`: the stream errored. `refused`:
+    // the backend yielded a row this relay's matcher refuses, which is what a backend whose
+    // predicate is not `Filter::matches` looks like from here. `vanished`: the backend spent a
+    // page slot on a key that was gone when it came to read it.
+    let mut rows = 0u64;
+    let mut matched = 0u64;
+    let mut trimmed = false;
+    let mut more = false;
+    let mut failed = false;
+    let mut refused = false;
+    let mut vanished = false;
 
     loop {
         if *read.cancellation().borrow() {
@@ -309,21 +368,50 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
         };
 
         match record {
-            Ok(record) => {
+            Ok(StreamedEvent::Record(record)) => {
+                // Every row the page yielded counts towards whether the page was full, whether
+                // or not it turns out to be a match.
+                rows += 1;
+
                 if record.deleted_at.is_some() {
                     continue;
                 }
-
                 let event = record.event;
+
+                if expiration::is_expired_event(&event, now) {
+                    continue;
+                }
+
+                if !matches_any(&event) {
+                    // The backend selected a row this relay's own matcher refuses. That is not a
+                    // skip: it is evidence that the set the backend enumerated is not the set the
+                    // relay would have, so completeness over this read cannot be claimed. It is
+                    // tracked apart from `trimmed` because a refused row is one **no** client
+                    // could see, while `auth` means "a client could see this".
+                    refused = true;
+
+                    continue;
+                }
+
+                // The `(limit + 1)`th matching row is beyond the cap, so nothing after it can
+                // change the answer: it sets `more` and ends the read undelivered.
+                if let Some(limit) = limit
+                    && matched >= limit
+                {
+                    more = true;
+                    break;
+                }
+
+                matched += 1;
 
                 // The guard is the crate's one definition of "may this socket read this
                 // event"; it is asked per event, as the capture's
                 // `createReadAuthorizationGuard` is, so an AUTH that lands mid-read applies to
-                // the rest of the stream.
-                if expiration::is_expired_event(&event, now)
-                    || !context.read_authorization_guard().allows(&event)
-                    || !matches_any(&event)
-                {
+                // the rest of the stream. A withheld row still occupied a place inside the
+                // cap, which is why the counter moves before the guard is asked.
+                if !context.read_authorization_guard().allows(&event) {
+                    trimmed = true;
+
                     continue;
                 }
 
@@ -334,8 +422,24 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
                         event: std::sync::Arc::new(event),
                     }));
             }
+            Ok(StreamedEvent::Vanished) => {
+                // The backend selected this slot and the key was gone when it read the value, so
+                // the slot is spent without a record. It counts as a row, exactly as a skipped row
+                // does, so a page that was full at enumeration is full by count and `page_full`
+                // withholds on its own. What the count cannot carry is the page that **never
+                // filled**: fewer rows than the probe, so `page_full` is false, and a slot that
+                // was a match when the page was enumerated produced nothing when it was read. That
+                // slot may have been deleted — `finish` would still be true over the current set —
+                // or replaced, in which case the new version was never enumerated and `finish` is
+                // false, and the read cannot tell the two apart, so it declines rather than
+                // argues.
+                rows += 1;
+                vanished = true;
+            }
             Err(error) => {
                 tracing::error!(error = %error, "error streaming events");
+                failed = true;
+
                 break;
             }
         }
@@ -343,9 +447,87 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
 
     context.connection.end_read(read);
 
-    context
-        .sink
-        .send(&RelayMessage::Eose(EoseMessage { subscription_id }));
+    // The rule, in one place, so the next reader does not have to re-derive it. `finish` claims
+    // that every stored event matching the subscription's filters has been sent (`67.md`
+    // §"Specification"), and this read can fail to establish that six ways, so `finish` needs
+    // all six:
+    //
+    // 1. the stream ended **cleanly** — after a storage error, how far the read got is unknown;
+    // 2. the page was **not full** — a page that spent `min(probe, page_bound())` slots says
+    //    nothing about the rows beyond it, whether the bound came from the client's `limit` or
+    //    from the backend's own page cap, and a skipped row spends a page slot just as a match
+    //    does (which is why `rows`, not `matched`, decides this);
+    // 3. **no page slot was spent without its row** — a backend reports a slot it selected and
+    //    then could not read as `StreamedEvent::Vanished`, and that slot is counted as a row, so
+    //    a page that was full at enumeration is full by count and item 2 withholds on its own.
+    //    The marker's own work is the page that **never filled**: fewer rows than the probe, so
+    //    `page_full` is false, and a slot that was a match when the page was enumerated produced
+    //    nothing when it was read. That slot may have been deleted — `finish` would still be
+    //    true over the current set — or replaced, in which case the new version was never
+    //    enumerated and `finish` is false, and the read cannot tell the two apart, so it
+    //    declines rather than argues;
+    // 4. **no yielded row was refused** — the backend selected a row `Filter::matches` refuses,
+    //    which proves the two predicates disagree, so a short page proves nothing about the rows
+    //    the backend never yielded;
+    // 5. **no `search` filter was answered by another predicate** — Postgres prefilters with
+    //    `to_tsvector`, and a row the matcher *would* accept and the backend never yields
+    //    (`abcdef` inside `xxabcdefyy`) leaves no trace at all, so the backend declares its rule
+    //    rather than the read probing for it. See `EventRepository::search_rule`;
+    // 6. **no tag criterion that is the empty string was read from an index without one** — the
+    //    matcher accepts a `["d", ""]` tag, an index of non-empty values selects nothing for
+    //    the criterion `""`, and nothing is yielded to refuse, so like item 5 the enumeration
+    //    could not answer a criterion the matcher accepts and no probe shows it. See
+    //    `EventRepository::empty_tag_rule`.
+    //
+    // Items 4 and 5 are both needed and neither implies the other: a refusal is the direction a
+    // probe can see (`study` yields `studies`, which the matcher refuses), while a row the
+    // matcher would accept and the backend never yields leaves no trace at all.
+    //
+    // Beyond the six, `more` needs one further **match** beyond the delivered window: that branch
+    // ends the read with `more` set, so the code that can reach the hint is the code where none
+    // was found. It is only meaningful once items 1 and 2 hold, because the loop keeps asking
+    // past deleted, expired, withheld and non-matching rows until it sees a match, the genuine
+    // end, or the page cap.
+    //
+    // Where any of the six cannot be established the relay sends no completeness hint: an absent
+    // hint is honest and a wrong one is not. `auth` is unaffected, and `finish` is never sent
+    // beside `auth` because a withheld event falsifies it.
+    let page_bound = context.stores.events.page_bound();
+    let page_full = probe.is_some_and(|probe| rows >= probe.min(page_bound));
+    let search_rule = context.stores.events.search_rule();
+    let searched = filters.iter().any(|filter| {
+        filter
+            .search
+            .as_deref()
+            .is_some_and(|search| !search.trim().is_empty())
+    });
+    let search_agrees = search_rule == SearchRule::SubstringTerms || !searched;
+    // A tag criterion that is the empty string is one `Filter::matches` accepts and a tag index
+    // built from non-empty values cannot answer: nothing is yielded, so neither a refusal nor a
+    // short page shows it, and the enumeration could not answer a criterion the matcher accepts.
+    let empty_tag_query = filters.iter().any(has_empty_tag_criterion);
+    let tag_agrees = context.stores.events.empty_tag_rule() == EmptyTagRule::AnswersEmptyCriterion
+        || !empty_tag_query;
+    let proven = !failed && !page_full && !vanished && !refused && search_agrees && tag_agrees;
+
+    let mut hints = Vec::new();
+
+    if trimmed {
+        hints.push(EOSE_HINT_AUTH.to_owned());
+    }
+
+    if hint_eligible {
+        if more {
+            hints.push(EOSE_HINT_MORE.to_owned());
+        } else if proven && !trimmed {
+            hints.push(EOSE_HINT_FINISH.to_owned());
+        }
+    }
+
+    context.sink.send(&RelayMessage::Eose(EoseMessage {
+        subscription_id,
+        hints,
+    }));
 }
 
 /// `canSubscribe` (`:258-301`): six reasons, the capture's strings — including

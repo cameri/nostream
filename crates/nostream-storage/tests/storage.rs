@@ -52,8 +52,8 @@ async fn the_repository_traits_are_dyn_compatible() {
         InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification,
         Nip05VerificationRepository, NotificationDeliveryLogRepository,
         NotificationOutboxRepository, OutboxMessage, OutboxPayload, QueryStream,
-        ReconciliationItem, Report, ReportRepository, StorageFuture, User, UserPatch,
-        UserRepository,
+        ReconciliationItem, Report, ReportRepository, StorageFuture, StreamedEvent, User,
+        UserPatch, UserRepository,
     };
 
     struct Noop;
@@ -82,7 +82,7 @@ async fn the_repository_traits_are_dyn_compatible() {
         fn find_by_filters<'a>(
             &'a self,
             _filters: &'a [Filter],
-        ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+        ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
             unsupported("noop::events::find_by_filters")
         }
 
@@ -103,6 +103,15 @@ async fn the_repository_traits_are_dyn_compatible() {
             _ids: &'a [EventId],
         ) -> StorageFuture<'a, u64> {
             unsupported("noop::events::delete_by_pubkey_and_ids")
+        }
+
+        fn delete_by_addresses<'a>(
+            &'a self,
+            _pubkey: &'a Pubkey,
+            _addresses: &'a [(Kind, String)],
+            _not_after: i64,
+        ) -> StorageFuture<'a, u64> {
+            unsupported("noop::events::delete_by_addresses")
         }
 
         fn delete_by_pubkey_except_kinds<'a>(

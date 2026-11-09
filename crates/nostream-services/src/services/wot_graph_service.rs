@@ -10,7 +10,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use futures_util::StreamExt;
 use nostream_config::Settings;
 use nostream_core::{Filter, Kind, Pubkey};
 use nostream_relay::wot::{WotFuture, WotGraph};
@@ -272,11 +271,13 @@ impl WotGraphService {
         };
 
         let filters = [filter];
-        let mut stream = self.inner.events.find_by_filters(&filters).await?;
-        let Some(record) = stream.next().await else {
+        let rows = nostream_storage::repositories::collect_records(
+            self.inner.events.find_by_filters(&filters).await?,
+        )
+        .await?;
+        let Some(record) = rows.into_iter().next() else {
             return Ok(Vec::new());
         };
-        let record = record?;
 
         let follows = deduplicated(
             record

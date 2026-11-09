@@ -31,8 +31,10 @@ use nostream_core::messages::{SubscribeMessage, UnsubscribeMessage};
 use nostream_relay::connection::Connection;
 use nostream_relay::relay_key::RelayKeySource;
 use nostream_relay::sink::FrameSink;
-use nostream_relay::testing::{Fixture, nip42_settings, nip43_settings, nip45_settings, settings};
-use nostream_storage::repositories::User;
+use nostream_relay::testing::{
+    Fixture, nip42_settings, nip43_settings, nip45_settings, nip50_settings, settings,
+};
+use nostream_storage::repositories::{EventRepository, SearchRule, User};
 
 /// The relay's public key for [`RELAY_SECRET`].
 fn relay_pubkey() -> nostream_core::Pubkey {
@@ -1030,6 +1032,425 @@ async fn a_restricted_read_delivers_only_to_the_author_or_a_p_tagged_reader() {
     assert_eq!(frames.len(), 2, "{frames:?}");
     assert!(frames[0].starts_with(r#"["EVENT","mine","#));
     assert_eq!(frames[1], r#"["EOSE","mine"]"#);
+}
+
+// ---------------------------------------------------------------------------------------
+// NIP-67 EOSE hints
+// ---------------------------------------------------------------------------------------
+
+/// `count` stored notes by the client's key, so a `limit` can sit above or below the count.
+async fn seed_notes(fixture: &Fixture, count: usize) {
+    for index in 0..count {
+        fixture
+            .seed_event(signed_event(
+                &CLIENT_SECRET,
+                1,
+                vec![],
+                &format!("note {index}"),
+                NOW_SECS,
+            ))
+            .await;
+    }
+}
+
+/// Every frame but the last is an `EVENT` for the given subscription.
+fn events_then_eose(frames: &[String]) -> bool {
+    let (last, events) = frames.split_last().expect("an EOSE at least");
+
+    events
+        .iter()
+        .all(|frame| frame.starts_with(r#"["EVENT","s1","#))
+        && last.starts_with(r#"["EOSE","s1""#)
+}
+
+/// Reading without a limit is the case the client's legacy heuristic is exact for, so the relay
+/// adds nothing (`67.md` §"Specification": the third element is optional, and its absence is not
+/// a claim). This is also the shape the sixteen recorded sessions pin.
+#[tokio::test]
+async fn eose_hints_are_absent_without_a_limit() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 2).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1]}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 3, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[2], r#"["EOSE","s1"]"#);
+}
+
+/// The cap was not reached: every matching stored event has been sent.
+#[tokio::test]
+async fn eose_hints_finish_when_the_limit_was_not_reached() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 2).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":3}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 3, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[2], r#"["EOSE","s1",["finish"]]"#);
+}
+
+/// The cap was reached: the probe row exists, is not sent, and ends the read.
+#[tokio::test]
+async fn eose_hints_more_when_the_limit_was_reached() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 3).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":2}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 3, "exactly the limit's events: {frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[2], r#"["EOSE","s1",["more"]]"#);
+}
+
+/// A skipped row spends a page slot just as a match does, so a page that came back full of skips
+/// cannot say whether the row after it was a match. Deleted rows sort ahead of live ones here,
+/// which is the shape the review measured against LMDB: two deleted rows and one live one fill a
+/// three-row probe for a `limit` of 2.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_page_was_full_of_skips() {
+    let fixture = Fixture::new(settings());
+
+    for index in 0..2 {
+        let deleted = signed_event(
+            &CLIENT_SECRET,
+            1,
+            vec![],
+            &format!("gone {index}"),
+            NOW_SECS,
+        );
+        fixture.seed_event(deleted.clone()).await;
+        fixture
+            .events
+            .delete_by_pubkey_and_ids(&deleted.pubkey, &[deleted.id])
+            .await
+            .expect("the double deletes");
+    }
+
+    seed_notes(&fixture, 2).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":2}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(
+        frames.len(),
+        2,
+        "two deleted rows cost the page a slot each, so one live row is left: {frames:?}"
+    );
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[1], r#"["EOSE","s1"]"#);
+}
+
+/// The backend caps the page below the client's `limit`, so the probe came back full and the rows
+/// beyond it are unknown: exactly 5000 sent is not a claim that nothing was left.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_backend_page_cap_was_reached() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 5_001).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client
+        .send(r#"["REQ","s1",{"kinds":[1],"limit":5000}]"#)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 5_001, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[5_000], r#"["EOSE","s1"]"#);
+}
+
+/// A backend that declares a smaller page than `MAX_PAGE_ROWS` is believed: it served one row
+/// and said it can serve no more, so the page came back full and `finish` would be a claim about
+/// rows beyond the one it was given. Before the relay asked the backend, this read sent `finish`
+/// over a store that still held a match.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_backend_declares_a_smaller_page() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 2).await;
+    fixture.events.declare_page_bound(1);
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":3}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[1], r#"["EOSE","s1"]"#);
+}
+
+/// The backend's `search` predicate is not this relay's matcher, and the two disagree in **both**
+/// directions — so a row the backend yielded and the matcher refused ends any completeness claim.
+///
+/// The case: filter `search: "study"`, stored content `studies`. Postgres prefilter yields that
+/// row (`plainto_tsquery` and the content's tsvector both reduce to the one English stem `studi`,
+/// which is the `english` regconfig's documented stemming and not something this repository has
+/// run), and `Filter::matches` refuses it because `"studies"` contains no `"study"` — that half is
+/// arithmetic on the two strings. So the read is short, the page is not full, and before the fix
+/// the relay said `["finish"]`: every matching event sent. The other direction (`abcdef` inside
+/// `xxabcdefyy`, which the matcher accepts and the tsquery never yields) leaves no trace, which is
+/// why the declared rule below is needed as well.
+///
+/// Note what this test is built to catch: if someone "fixes" the asymmetry by loosening `matches`
+/// instead of suppressing the hint, the row here starts being delivered and the exact frame
+/// assertion below fails — because the predicate is a statement about the backend, not a bug in
+/// the matcher.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_backend_yields_a_row_the_matcher_refuses() {
+    let mut settings = settings();
+    settings.nip50 = Some(nip50_settings());
+    settings.nip50 = Some(nostream_config::settings::Nip50Settings {
+        enabled: Some(true),
+        ..nip50_settings()
+    });
+    let fixture = Fixture::new(settings);
+    fixture
+        .events
+        .seed_unmatched(signed_event(&CLIENT_SECRET, 1, vec![], "studies", NOW_SECS));
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client
+        .send(r#"["REQ","s1",{"kinds":[1],"search":"study","limit":5}]"#)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(
+        frames,
+        vec![r#"["EOSE","s1"]"#.to_owned()],
+        "one row was yielded and refused, so the page is not a proof of anything"
+    );
+}
+
+/// A backend whose `search` rule is its own withholds `finish` for that filter even where every
+/// row agreed: the set it enumerated is not the set the relay would have enumerated, so no check
+/// the relay can run proves the claim. This is the half that closes the direction no probe sees.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_search_rule_is_the_backends_own() {
+    let mut settings = settings();
+    settings.nip50 = Some(nostream_config::settings::Nip50Settings {
+        enabled: Some(true),
+        ..nip50_settings()
+    });
+    let fixture = Fixture::new(settings);
+    fixture.events.declare_search_rule(SearchRule::ToTsvector {
+        language: "english".to_owned(),
+    });
+    fixture
+        .seed_event(signed_event(&CLIENT_SECRET, 1, vec![], "a study", NOW_SECS))
+        .await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client
+        .send(r#"["REQ","s1",{"kinds":[1],"search":"study","limit":5}]"#)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[1], r#"["EOSE","s1"]"#);
+}
+
+/// A storage error leaves the read's extent unknown, so no hint is added after it.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_stream_failed() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 1).await;
+    fixture.events.fail_reads(true);
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":5}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames, vec![r#"["EOSE","s1"]"#.to_owned()], "{frames:?}");
+}
+
+/// A row the backend selected and could not read spends a page slot without a record. The case is
+/// real on LMDB, where a replacement hard-deletes the row it supersedes between the page and the
+/// batch that would have read it.
+///
+/// This is the page that **never filled**, which is the case the marker exists for: two rows
+/// against a probe of four (`limit: 3`), so `page_full` is `false` and the only thing withholding
+/// `finish` is `vanished`. The read cannot tell whether the lost key was deleted — where `finish`
+/// would still be honest over the current set — or replaced, where the new version was never
+/// enumerated and `finish` would be false, which is why it declines rather than argues. Its pair
+/// is `eose_hints_are_absent_when_the_page_was_full_at_enumeration`, where `page_full` carries the
+/// suppression and `!vanished` could be removed without failing anything.
+///
+/// The other direction is `eose_hints_finish_when_the_limit_was_not_reached`: an honest short
+/// page still proves `finish`, so the suppression is the marker's and not the read's.
+#[tokio::test]
+async fn eose_hints_are_absent_when_a_selected_row_vanished() {
+    let fixture = Fixture::new(settings());
+    let survivor = signed_event(&CLIENT_SECRET, 1, vec![], "note 0", NOW_SECS);
+    let vanished = signed_event(&CLIENT_SECRET, 1, vec![], "note 1", NOW_SECS);
+    fixture.seed_event(survivor.clone()).await;
+    fixture.seed_event(vanished.clone()).await;
+    fixture.events.vanish(vanished.id);
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":3}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(
+        frames.len(),
+        2,
+        "one row was spent without a record: {frames:?}"
+    );
+    assert!(
+        frames[0].starts_with(r#"["EVENT","s1","#),
+        "the survivor is still delivered: {frames:?}"
+    );
+    assert_eq!(frames[1], r#"["EOSE","s1"]"#, "{frames:?}");
+}
+
+/// The same vanished slot in a page that **was** full at enumeration: `limit: 1` probes two, two
+/// rows are stored, and one of them vanishes. The marker is counted as a row, so `rows` reaches
+/// two and the page is full by count.
+///
+/// It is the pair of `eose_hints_are_absent_when_a_selected_row_vanished`, which is the page that
+/// never filled: removing `!vanished` leaves this test green and turns that one red, so the marker
+/// is what that case needs and not this one. Removing `rows += 1` leaves this test green too —
+/// a marker always sets `vanished`, so no frame separates the two here — which is why the count is
+/// justified by the rule's arithmetic rather than by an assertion. The pair exists so a reader
+/// sees both shapes and neither rule item is dropped as covered by the other.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_page_was_full_at_enumeration() {
+    let fixture = Fixture::new(settings());
+    let survivor = signed_event(&CLIENT_SECRET, 1, vec![], "note 0", NOW_SECS);
+    let vanished = signed_event(&CLIENT_SECRET, 1, vec![], "note 1", NOW_SECS);
+    fixture.seed_event(survivor).await;
+    fixture.seed_event(vanished.clone()).await;
+    fixture.events.vanish(vanished.id);
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":1}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(
+        frames.len(),
+        2,
+        "one row was spent without a record: {frames:?}"
+    );
+    assert!(
+        frames[0].starts_with(r#"["EVENT","s1","#),
+        "the survivor is still delivered: {frames:?}"
+    );
+    assert_eq!(frames[1], r#"["EOSE","s1"]"#, "{frames:?}");
+}
+
+/// A tag criterion that is the empty string is one `Filter::matches` accepts and the tag index
+/// cannot answer: `#d: [""]` matches a stored `["d", ""]`, while both shipped backends index no
+/// empty value, so the read yields nothing. With no row yielded there is no refusal and no short
+/// page to see, so before this round the relay finished over a stored article it never sent. The
+/// second request is the same fixture's ordinary `#d` filter, which still finishes: the
+/// suppression is the empty criterion's and not a blanket refusal of tag filters. The third is
+/// the mixed one — the index answers `post-1` and cannot answer `""`, so that row is delivered
+/// and `finish` is still withheld, because the `["d", ""]` row the matcher accepts was never
+/// enumerated.
+#[tokio::test]
+async fn eose_hints_are_absent_for_an_empty_tag_criterion() {
+    let fixture = Fixture::new(settings());
+    fixture
+        .seed_event(signed_event(
+            &CLIENT_SECRET,
+            30_023,
+            vec![vec!["d", ""]],
+            "empty d",
+            NOW_SECS,
+        ))
+        .await;
+    fixture
+        .seed_event(signed_event(
+            &CLIENT_SECRET,
+            30_023,
+            vec![vec!["d", "post-1"]],
+            "named d",
+            NOW_SECS,
+        ))
+        .await;
+    fixture.events.declare_no_empty_tag_values();
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r##"["REQ","s1",{"#d":[""],"limit":5}]"##).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(
+        frames,
+        vec![r#"["EOSE","s1"]"#.to_owned()],
+        "the index cannot answer `\"\"`, so nothing proves completion: {frames:?}"
+    );
+
+    client
+        .send(r##"["REQ","s2",{"#d":["post-1"],"limit":5}]"##)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert!(
+        frames[0].starts_with(r#"["EVENT","s2","#),
+        "the named row is delivered: {frames:?}"
+    );
+    assert_eq!(frames[1], r#"["EOSE","s2",["finish"]]"#, "{frames:?}");
+
+    client
+        .send(r##"["REQ","s3",{"#d":["","post-1"],"limit":5}]"##)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert!(
+        frames[0].starts_with(r#"["EVENT","s3","#) && frames[0].contains("named d"),
+        "the `post-1` row answers the criterion: {frames:?}"
+    );
+    assert!(
+        !frames[0].contains("empty d"),
+        "the empty value is not a row the index can answer: {frames:?}"
+    );
+    assert_eq!(frames[1], r#"["EOSE","s3"]"#, "{frames:?}");
+}
+
+/// `auth` and the completeness hint compose: a withheld match falsifies `finish` even where the
+/// page was neither full nor capped, and `auth` is what is sent.
+#[tokio::test]
+async fn eose_hints_send_auth_without_finish_when_a_match_was_withheld() {
+    let mut settings = settings();
+    settings.nip42 = Some(nip42_settings());
+    let fixture = Fixture::new(settings);
+
+    let stranger_secret = [0x77; 32];
+    let withheld = signed_event(&stranger_secret, 4, vec![], "ciphertext", NOW_SECS);
+    fixture.seed_event(withheld).await;
+    seed_notes(&fixture, 1).await;
+
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client
+        .send(r#"["REQ","s1",{"kinds":[1,4],"limit":2}]"#)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert_eq!(frames[1], r#"["EOSE","s1",["auth"]]"#);
 }
 
 #[tokio::test]

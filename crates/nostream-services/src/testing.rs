@@ -26,8 +26,8 @@ use nostream_storage::repositories::{
     EventPurgeCounts, EventRecord, EventRepository, EventRetentionOptions, FieldUpdate, Invoice,
     InvoiceRepository, InvoiceStatus, NewDeliveryLogEntry, Nip05Verification,
     Nip05VerificationRepository, NotificationDeliveryLogRepository, NotificationOutboxRepository,
-    OutboxMessage, OutboxPayload, QueryStream, ReconciliationItem, StorageFuture, User, UserPatch,
-    UserRepository,
+    OutboxMessage, OutboxPayload, QueryStream, ReconciliationItem, StorageFuture, StreamedEvent,
+    User, UserPatch, UserRepository,
 };
 
 use crate::error::ServicesError;
@@ -497,7 +497,7 @@ impl EventRepository for InMemoryEventRepository {
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
         Box::pin(async move {
             let gate = self
                 .read_gate
@@ -535,8 +535,13 @@ impl EventRepository for InMemoryEventRepository {
                 selected.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
             }
 
-            let stream: QueryStream<'a, EventRecord> =
-                Box::pin(stream::iter(selected.into_iter().map(Ok)));
+            // This double holds its page, so it has no slot it selected and could not read:
+            // every item is a record.
+            let stream: QueryStream<'a, StreamedEvent> = Box::pin(stream::iter(
+                selected
+                    .into_iter()
+                    .map(|record| Ok(StreamedEvent::Record(record))),
+            ));
 
             Ok(stream)
         })
@@ -571,6 +576,15 @@ impl EventRepository for InMemoryEventRepository {
 
             Ok(ids.len() as u64)
         })
+    }
+
+    fn delete_by_addresses<'a>(
+        &'a self,
+        _pubkey: &'a Pubkey,
+        _addresses: &'a [(Kind, String)],
+        _not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async { Ok(0) })
     }
 
     fn delete_by_pubkey_except_kinds<'a>(

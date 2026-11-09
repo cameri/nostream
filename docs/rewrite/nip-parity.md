@@ -769,7 +769,9 @@ keep.
 ## 9. Open items for Phase 2
 
 This job files no issues: the dispositions above are the deliverable, and Phase 2
-turns them into work. The items, in the order they affect the rewrite:
+turns them into work. The items, in the order they affect the rewrite. Each carries a
+**Status:** line once Phase 2 has an answer for it; a status that drifts from the code
+is a defect, and §10 is the same record in table form.
 
 1. **The advertisement set needs a decision, not a copy.** Nine live features are
    unadvertised (NIP-05, 56, 59, 62, 66, 70, 89, 90, 98), five advertised numbers have
@@ -779,14 +781,17 @@ turns them into work. The items, in the order they affect the rewrite:
    behaviour, decide 15 and 22 in item 2, name the nine — but it should be one list
    that matches what the relay does, and `README.md:69-95` should stop contradicting
    `package.json:7` in both directions.
+   - **Status:** done in this job — decision **D2** fixes the list at 34 ids in `crates/nostream-core/src/constants.rs`, pinned by `crates/nostream-core/tests/supported_nips.rs`; NIP-15 is out and NIP-67 is in (§10). Nothing serves the list yet (**D1**).
 2. **NIP-15 and NIP-22 are number collisions.** `README.md:79` and `:82` name the old
    NIPs. Either the relay drops those numbers from `supported_nips` (NIP-15 has no
    relay duty; NIP-22's kind 1111 is client-side) or it implements the current texts.
    Implementing NIP-22's tag rules is the larger of the two.
+   - **Status:** done in this job — 15 is dropped and 22 stays with the current text, whose event shape `nip_vectors::nip22_a_kind_1111_comment_is_stored_and_served_unchanged` pins (§10).
 3. **NIP-42 / NIP-67: the `auth` hint.** One change closes both: emit the third
    `EOSE` element with `"auth"` where restricted kinds were trimmed (and `"finish"` /
    `"more"` where the limit was reached), and add 67 to `supported_nips`. This is the
    `opportunistic` disposition on 67 and the narrow gap in §4's NIP-42.
+   - **Status:** done in this job — the third `EOSE` element, carrying `auth` for a trimmed read and `finish`/`more` for a capped one, emitted only from **D3**'s two causes so the recorded sessions keep their two-element frames. `messages::{EOSE_HINT_AUTH,EOSE_HINT_FINISH,EOSE_HINT_MORE}`, `handlers::eose_hints_*`, `connection::a_restricted_read_is_judged_against_the_authenticated_set_at_each_event`; 67 is in the advertised set (**D2**).
 4. **NIP-43 / NIP-86: the invite flow.** `43.md` now delegates claims to NIP-86's
    `createclaim`. The rewrite either exposes that method (which also covers the
    NIP-86 disposition) or keeps the removed kind-28935 `REQ` path and says so. If it
@@ -794,14 +799,17 @@ turns them into work. The items, in the order they affect the rewrite:
    `Authorization` on every method (`86.md:255-259`) — and must stay behind
    `admin.nip98.allowedPubkeys` (`src/handlers/request-handlers/admin-auth-middleware.ts:41-100`);
    as a public route it would mint invite codes for anyone.
+   - **Status:** deferred — `createclaim` needs NIP-86's HTTP surface, and this tree has no HTTP listener at all (**D1**); the kind-28935 `REQ` path stays as it is. The item lives on #865's checklist.
 5. **NIP-44's extended length.** Adopt the 6-byte prefix and the raised cap, or the
    relay keeps rejecting valid large gift wraps at admission. This is a prerequisite
    for NIP-17 parity, not a separate feature. The 4 GiB figure is the format's ceiling,
    not the relay's: `network.maxPayloadSize` (524288,
    `resources/default-settings.yaml:161`) still caps what arrives, so the raise is a
    format change, not a bigger buffer.
+   - **Status:** done in this job — the six-byte `[0x00, 0x00][u32]` prefix and the format's 2³²−1 plaintext ceiling, with `MAX_PAYLOAD_LENGTH` (5 726 623 156) and `MAX_DATA_LENGTH` (4 294 967 367) derived from it. `nip44_parity::accepts_a_plaintext_of_65536_bytes_with_the_extended_prefix`, `nip44::tests::the_ceilings_are_derived_from_the_formats_plaintext_ceiling`. The relay's own bound stays `network.maxPayloadSize`.
 6. **NIP-62's deletion.** Replace the soft delete for vanish requests with a real
    delete, and remove gift wraps that p-tag the vanished pubkey.
+   - **Status:** deferred — a hard delete across both storage backends plus a gift-wrap `p`-tag sweep; both backends still soft-delete, and the work is its own job.
 7. **NIP-78's AUTH guard — two halves, two decisions.** The serving half: set
    `nip42.restrictedReads` to `enabled: true` with `kinds: [78, 30078]`, or take the
    broader `[4, 1059, 78, 30078]` — which a relay already running `enabled: true` with
@@ -830,6 +838,7 @@ turns them into work. The items, in the order they affect the rewrite:
    refusals — admission (`isUserAdmitted`, `:125`), NIP-05 (`:132`), content limits, PoW
    and lists (`canAcceptEvent`, `:97`), rate limits (`:86`) and vanish blocks (`:118`) —
    are policy, not AUTH, and a port carries them unchanged.
+   - **Status:** deferred — kinds 78 and 30078 appear nowhere in `crates`, and the owner rule plus the kindless COUNT stay open; the item lives on #865's checklist.
 8. **NIP-01's prefix matching.** Keep it or move to exact 64-character values as the
    current text requires; whether `min_prefix` stays advertised is item 11's decision,
    per key. Keeping it is not free: the prefix arms are `substring(...)` predicates
@@ -838,13 +847,16 @@ turns them into work. The items, in the order they affect the rewrite:
    `events`. The rewrite can keep the extension cheaply by making a prefix a range seek
    in its key layout; otherwise the honest choice is exact values. Either way the
    decision should be written down, because today it is an undocumented extension.
+   - **Status:** deferred — prefix matching is kept exactly as the capture has it (a 4..64-character hex prefix) and `min_prefix` is not advertised; the decision belongs with NIP-11's field set, item 11.
 9. **NIP-45's HyperLogLog response** is optional under the cutoff text. Take it when
    `COUNT` is next touched, not before — and set the exact-versus-approximate policy
    at the same time, because HLL still visits every matching event to fill its
    registers; its leverage is the deterministic `offset` and cross-query caching, not
    a cheaper single pass.
+   - **Status:** deferred — optional under the cutoff text, and `COUNT` still answers the plain `{"count":N}`; the item belongs to the next `COUNT` change.
 10. **NIP-29 and NIP-96 are out of scope** until the rewrite takes on relay groups or
     a file-storage service; neither exists in nostream today.
+    - **Status:** deferred — relay groups and file storage are outside the rewrite's scope, as the audit recorded.
 11. **NIP-11's field set.** Four keys in `limitation` are not in `11.md` today
     (`max_filters` and `min_prefix` were removed, `max_filter_values` and
     `search_supported` were never defined) and two top-level keys never were
@@ -860,8 +872,152 @@ turns them into work. The items, in the order they affect the rewrite:
     the four untested keys are `min_prefix`, `supported_nip_extensions`, `supported_mips`
     and `max_event_tags` (§1). NIP-78's two kinds have no test either, and item 7
     carries that pair.
+    - **Status:** deferred — **D1** defers the HTTP surface and the document itself, and the field set is decided with the document; the four untested keys stay untested until then.
 12. **NIP-09 `a`-tag deletion.** `DeleteEventStrategy` accepts only `e` tags
     (`src/handlers/event-strategies/delete-event-strategy.ts:22-31`); a kind-5 event
     whose tags are `a`-only deletes nothing. The rewrite either implements
     addressable-event deletion or records the omission deliberately — but §5 and the
     §7 row now say so, and Phase 2 must not inherit the silence.
+    - **Status:** done in this job — an `a` tag is handed to
+      `EventRepository::delete_by_addresses`, which resolves each address and soft-deletes the
+      batch in **one** storage operation:
+      - **LMDB** probes the `replaceable` point index every production path writes
+        (`upsert`/`upsert_many`), so an address costs one lookup and one row decode — measured
+        0.0395 ms against 144 ms for the author-kind walk this replaced at 5 000 rows of the kind
+        — and applies the remaining predicates (not deleted, `created_at` not after the request's,
+        not kind 62, the row's own author and kind, the `d` value) to the one row the index names.
+      - **Postgres** runs one `UPDATE … WHERE (event_kind, event_deduplication->>0) IN (…)`, the
+        row-value form, so a batch cannot pair one address's kind with another's identifier.
+      - The request's `created_at` is compared inside that transaction, so a replacement cannot
+        land between a lookup and the delete; the author-equality and addressable-kind rules gate
+        the tag before it is read; and records with an actionable NIP-56 report are reachable,
+        because the delete does not go through the read path that withholds them.
+      - **The `d` is `Event::d_tag_value()`** — one derivation in `nostream-core`, used by the
+        addressable strategy, the import path, the LMDB delete and the relay's double, so the
+        column Postgres matches and the value LMDB compares cannot drift apart.
+      - **One request names at most 100 distinct addresses** (`delete.rs`'s
+        `MAX_ADDRESSES_PER_REQUEST`), and a request naming more is refused with
+        `["OK",<id>,false,"invalid: …"]` before anything is deleted or stored. The number is
+        derived, not felt: `maxPayloadSize` 524 288 admits ≈6 096 `a` tags and nothing else caps a
+        tag list, one address is ~0.04 ms of one write transaction, and kind 5 is limited to 30
+        events/min per free key — so 30 × 100 ≈ 3 000 address-deletes/min (~0.2 % of the single
+        LMDB writer), where 30 × 6 096 would be ≈7.3 s of writer time per minute from one free key.
+        A refusal changes nothing, so the client can retry with the addresses split across
+        requests; a partial delete answered `true` would claim deletions that did not happen.
+      - **Postgres's arm has never been executed.** No command in this repository runs it: the
+        capture has no such operation, so neither parity target can replay it, and
+        `tests/address_delete.rs` is `#![cfg(feature = "lmdb")]`. What would close it: a
+        hand-written case in `tests/parity.rs` (the target that CI runs against
+        `postgres:16-alpine`) seeding one row at the bound and one newer, or a Postgres-parameterised
+        `address_delete.rs`.
+      - Tests: `strategies::delete_names_each_distinct_address_once`,
+        `delete_refuses_a_request_naming_too_many_addresses`, `delete_admits_a_cap_sized_batch`,
+        `delete_resolves_and_deletes_an_address_in_one_operation`,
+        `delete_by_addresses_reaches_a_row_past_the_page_bound`,
+        `delete_by_addresses_reaches_a_reported_row`,
+        `delete_by_addresses_uses_the_first_d_tag`,
+        `delete_by_addresses_keeps_a_row_newer_than_the_request` (§10).
+
+## 10. Phase 2: the advertisement and the harness map
+
+This section is Phase 2's record, set against §2's dated audit of the capture. It states
+**two deltas** from §2 rather than rewriting a measured table: **67 is in** the
+advertised set (`67.md` §"Relay advertisement", and the hint §4 asks for) and **15 is
+out** (it is not `must-have`; the number now means Marketplace, §3). §2 and §3 keep the
+capture's wording.
+
+**The decisions, by id.**
+
+- **D1 — NIP-11's HTTP surface is not the advertisement's job.** `SUPPORTED_NIPS` is
+  fixed and the wire gap recorded; nothing listens on HTTP and no NIP-11 document is
+  built. The surface is a dependency decision (no HTTP server crate anywhere in the
+  workspace), a second bind in `nostreamd`, and a document assembled from `info`,
+  `limits`, `payments` and `peering`. §9 item 11 carries it.
+- **D2 — the advertised set is the audit's 33 `must-have` rows plus NIP-67: 34 ids.**
+  04, 14 and 28 stay as behaviour the generic path satisfies, which costs nothing and
+  avoids a silent parity change; the tombstones 12/16/20/33 stay because nostream
+  advertises them and the behaviour their text names is implemented; 15 is out; 98
+  stays because the list is what the audit says the relay must carry, and this job
+  records the gap rather than narrowing the claim. The array length in the type is the
+  second guard: an id added without the type changing does not compile.
+- **D3 — the third `EOSE` element appears only when the two-element form would
+  mislead.** A hint is emitted from exactly two causes: the read guard withheld a
+  matching event (`auth`), or a single-filter subscription carried a `limit` and the cap
+  decided the answer (`finish`/`more`). A no-limit, no-trim read keeps
+  `["EOSE", <id>]`, which is what the sixteen sessions recorded from the capture require
+  of the harness. `finish` is not sent beside `auth`: `67.md` defines it as "the relay
+  has sent every stored event matching the subscription's filters", and a withheld event
+  makes that false.
+
+**The advertisement.**
+
+| where | value |
+| --- | --- |
+| `crates/nostream-core/src/constants.rs` | `pub const SUPPORTED_NIPS: [u16; 34]`, ascending and free of duplicates |
+| `crates/nostream-core/tests/supported_nips.rs` | `the_advertisement_is_the_audited_set`, `the_advertisement_is_ascending_and_free_of_duplicates` |
+| served to a client? | nothing: no HTTP listener and no NIP-11 document (**D1**) |
+
+The 34 ids: 01, 02, 03, 04, 05, 09, 11, 12, 13, 14, 16, 17, 20, 22, 25, 28, 33, 40,
+42, 43, 44, 45, 50, 56, 59, 62, 65, 66, 67, 70, 77, 89, 90, 98.
+
+**The harness map**, one row per advertised id. The harness column is one of four forms:
+
+- `session <id>` — the capture recorded this behaviour's own frames, in
+  `crates/nostream-relay/tests/fixtures/wire-sessions.json`, replayed byte for byte by
+  `crates/nostream-relay/tests/wire_parity.rs`;
+- `divergent: <target>::<test>` — this relay deliberately does it differently from the
+  capture, so **no session may record it**; a Rust test pins it instead;
+- `vectors-only: <target>::<test>` — a Rust test pins the behaviour and the capture has
+  no session for it;
+- `no-wire-surface: <reason>` — the NIP's duty is not a client-visible frame.
+
+`<target>` is the test file's stem. Every target lives in that crate's `tests/`
+directory; the two marked *(nostream-core)* are the behaviours whose pinning test is in
+`crates/nostream-core/tests/` because the behaviour itself is the core crate's (the
+filter matcher, the event schema, the NIP-44 format and the reconciliation engine), and
+no relay-side test reaches them.
+
+| # | implementation (Rust) | harness |
+| --- | --- | --- |
+| 01 | `core/{event,filter,messages}.rs`; `relay/handlers/*` | `session measured-session`, `live-dispatch`, `req-close-abort` |
+| 02 | `relay/strategies/contact_list.rs` | `vectors-only: strategies::contact_list_upserts_the_event` |
+| 03 | `core/nip03.rs`; `relay/strategies/timestamp.rs` | `vectors-only: strategies::timestamp_stores_and_broadcasts_a_valid_proof` |
+| 04 | `core/event.rs`; `relay/strategies/default.rs`; `core/nip42.rs` | `vectors-only: handlers::a_restricted_read_delivers_only_to_the_author_or_a_p_tagged_reader` |
+| 05 | `core/nip05.rs`; `relay/handlers/event.rs`; `services/workers/maintenance.rs` | `vectors-only: handlers::nip05_gates_publication` |
+| 09 | `relay/strategies/delete.rs` | `divergent: strategies::delete_resolves_and_deletes_an_address_in_one_operation` |
+| 11 | none: the constant is the record | `no-wire-surface: no HTTP listener and no NIP-11 document (D1)` |
+| 12 | `core/filter.rs` generic `#` criteria | `vectors-only: event_parity::nip12_d_filter_returns_true_if_d_filter_contains_an_empty_tag_value_in_the_event` *(nostream-core)* |
+| 13 | `core/pow.rs`, `core/adaptive_pow.rs`; `relay/handlers/event.rs` | `session event-rejections` |
+| 14 | the generic path (`relay/strategies/default.rs`) | `session nip-generic-events` |
+| 16 | `core/event.rs`; `relay/strategies/{replaceable,ephemeral}.rs` | `vectors-only: strategies::replaceable_upserts_the_event` |
+| 17 | `relay/strategies/gift_wrap.rs`; `core/nip44.rs` | `session event-rejections`, step 3 |
+| 20 | `core/messages.rs` `OK`/`CLOSED` encoders | `session measured-session` |
+| 22 | the generic path | `session nip-generic-events` |
+| 25 | `core/validation.rs` | `vectors-only: wire_codec::strict_event_schema_checks_the_refinements` *(nostream-core)* |
+| 28 | the generic path; kind 41 replaceable via `core/event.rs` | `session nip-generic-events` |
+| 33 | `core/event.rs`; `relay/strategies/parameterized_replaceable.rs` | `vectors-only: strategies::parameterized_replaceable_uses_the_first_d_tag_value` |
+| 40 | `core/expiration.rs`; `relay/handlers/event.rs` | `session event-rejections` |
+| 42 | `core/nip42.rs`; `relay/handlers/{auth,subscribe}.rs` | `session req-auth-required`, `nip42-expiry` |
+| 43 | `core/nip43.rs`; `relay/strategies/{join,leave,invite}_request.rs` | `session invite-mint` |
+| 44 | `core/nip44.rs` | `divergent: nip44_parity::produces_the_canonical_payload_from_the_nip44_spec_test_vector` *(nostream-core)* |
+| 45 | `relay/handlers/count.rs`; `core/messages.rs` | `session count-disabled`, `measured-session` |
+| 50 | `core/filter.rs`; `storage/postgres/sql.rs` | `vectors-only: nip_vectors::nip50_a_search_filter_is_served_only_when_enabled` |
+| 56 | `core/nip56.rs`; `relay/strategies/report.rs`; `relay/hidden_content.rs` | `session hidden-report` |
+| 59 | `relay/strategies/gift_wrap.rs`; `core/event.rs` | `session event-rejections`, step 3 |
+| 62 | `relay/strategies/vanish.rs` | `vectors-only: strategies::vanish_soft_deletes_the_other_events_and_stores_the_request` |
+| 65 | `core/validation.rs`; `core/event.rs` | `session nip-generic-events` |
+| 66 | `core/nip66.rs`; `services/monitor.rs` | `no-wire-surface: the probes and the publisher are #865 checklist stubs` |
+| 67 | `core/messages.rs`; `relay/handlers/subscribe.rs` | `divergent: handlers::eose_hints_more_when_the_limit_was_reached` |
+| 70 | `core/event.rs`; `relay/handlers/event.rs` | `session event-rejections` |
+| 77 | `core/negentropy.rs` | `vectors-only: negentropy_parity::answers_that_message_exactly_like_the_reference` *(nostream-core; the `NEG-*` handlers are #865's)* |
+| 89 | the generic path | `session nip-generic-events` |
+| 90 | `core/event.rs`; `relay/strategies/dvm_job_request.rs`; `services/workers/dvm_orchestrator.rs` | `vectors-only: strategies::dvm_job_request_creates_the_event` |
+| 98 | `core/nip98.rs` (stub) | `no-wire-surface: header verification needs the admin HTTP surface (D1, #865)` |
+
+Two limits of the map, stated so a later reader does not take it for more than it is.
+**NIP-50's ranking** is not in it: `ts_rank` lives in the SQL backend and needs Postgres,
+so ranking stays with the `#[ignore]`d `parity` target while the vector above pins the
+matcher's accept-and-drop behaviour. **The census is a different oracle**: it maps 658
+TypeScript unit cases to Rust tests and is untouched here, because a NIP with a vector
+and no TypeScript case has nothing to map, and hand-adding one fails `ts_case_parity` by
+design.

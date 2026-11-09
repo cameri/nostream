@@ -16,6 +16,7 @@ use crate::error::StorageError;
 use crate::records::distinct_replacements;
 use crate::repositories::{
     EventPurgeCounts, EventRecord, EventRetentionOptions, QueryStream, ReconciliationItem,
+    StreamedEvent,
 };
 
 /// The conflict target of every replaceable write, exactly as the capture spells it.
@@ -174,7 +175,7 @@ pub(crate) fn find_by_filters<'a>(
     reader: &'a sqlx::PgPool,
     filters: &[Filter],
     gates: &Gates,
-) -> Result<QueryStream<'a, EventRecord>, StorageError> {
+) -> Result<QueryStream<'a, StreamedEvent>, StorageError> {
     let query = sql::find_by_filters(filters, gates)?;
     Ok(Box::pin(EventStream {
         inner: query.into_query().fetch(reader),
@@ -228,6 +229,53 @@ where
     let sql = format!(
         "UPDATE events SET deleted_at = now() WHERE event_pubkey = {pubkey_slot} \
          AND event_id = ANY({ids_slot}) AND event_kind <> {REQUEST_TO_VANISH} AND deleted_at IS NULL"
+    );
+
+    Ok(EventQuery { sql, args }
+        .into_query()
+        .execute(executor)
+        .await?
+        .rows_affected())
+}
+
+/// `delete_by_addresses`: one statement that resolves and deletes, so a replacement landing
+/// between a read and a delete cannot survive it.
+///
+/// Each address is `(event_pubkey, event_kind, event_deduplication->>0)` — the key the addressable
+/// strategy upserts on — and the pairs are compared as row values, so a batch cannot match a kind
+/// from one address against another address's identifier. `event_created_at <= not_after` is
+/// `09.md`'s "all versions up to the `created_at` timestamp of the deletion request", and kind 62
+/// is excluded, as in [`delete_by_pubkey_and_ids`].
+pub(crate) async fn delete_by_addresses<'e, E>(
+    executor: E,
+    pubkey: &Pubkey,
+    addresses: &[(Kind, String)],
+    not_after: i64,
+) -> Result<u64, StorageError>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    if addresses.is_empty() {
+        return Ok(0);
+    }
+
+    let mut args = Args::default();
+    let pubkey_slot = args.push(Arg::Bytes(pubkey.as_bytes().to_vec()));
+    let not_after_slot = args.push(Arg::BigInt(not_after));
+    let mut pairs = Vec::with_capacity(addresses.len());
+
+    for (kind, identifier) in addresses {
+        let kind_slot = args.push(Arg::Int(i32::try_from(kind.0).unwrap_or(i32::MAX)));
+        let identifier_slot = args.push(Arg::Text(identifier.clone()));
+        pairs.push(format!("({kind_slot}, {identifier_slot})"));
+    }
+
+    let sql = format!(
+        "UPDATE events SET deleted_at = now() WHERE event_pubkey = {pubkey_slot} \
+         AND (event_kind, event_deduplication->>0) IN ({}) \
+         AND event_created_at <= {not_after_slot} AND event_kind <> {REQUEST_TO_VANISH} \
+         AND deleted_at IS NULL",
+        pairs.join(", ")
     );
 
     Ok(EventQuery { sql, args }
@@ -443,17 +491,22 @@ fn tags_json(record: &EventRecord) -> Result<String, StorageError> {
 }
 
 /// A stream of stored events, mapping each driver row.
+///
+/// Postgres streams one query over rows it has already read, so it has no slot it selected and
+/// could not read: every item is [`StreamedEvent::Record`] and the marker never appears here.
 struct EventStream<'a> {
     inner: Pin<Box<dyn Stream<Item = Result<PgRow, sqlx::Error>> + Send + 'a>>,
 }
 
 impl Stream for EventStream<'_> {
-    type Item = Result<EventRecord, StorageError>;
+    type Item = Result<StreamedEvent, StorageError>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         match this.inner.as_mut().poll_next(context) {
-            Poll::Ready(Some(Ok(row))) => Poll::Ready(Some(super::rows::event_record(&row))),
+            Poll::Ready(Some(Ok(row))) => Poll::Ready(Some(
+                super::rows::event_record(&row).map(StreamedEvent::Record),
+            )),
             Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(StorageError::Database(error)))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,

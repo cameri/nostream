@@ -302,10 +302,10 @@ impl DvmOrchestrator {
             ..Filter::default()
         };
         let record = match self.stores.events.find_by_filters(&[filter]).await {
-            Ok(mut stream) => {
-                use futures_util::StreamExt;
-                stream.next().await.and_then(Result::ok)
-            }
+            Ok(stream) => nostream_storage::repositories::collect_records(stream)
+                .await
+                .ok()
+                .and_then(|rows| rows.into_iter().next()),
             Err(error) => {
                 tracing::error!(error = %error, "unable to read a dvm job's source event");
                 None

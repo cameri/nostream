@@ -14,7 +14,7 @@ use nostream_storage::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobUpdate, EventPurgeCounts, EventRecord,
     EventRepository, EventRetentionOptions, InviteCode, InviteCodeRepository, Nip05Verification,
     Nip05VerificationRepository, QueryStream, ReconciliationItem, Report, ReportRepository,
-    StorageFuture, User, UserPatch, UserRepository,
+    StorageFuture, StreamedEvent, User, UserPatch, UserRepository,
 };
 
 use crate::handlers::Stores;
@@ -90,7 +90,7 @@ impl EventRepository for UnavailableEventRepository {
     fn find_by_filters<'a>(
         &'a self,
         _filters: &'a [Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
         Box::pin(async { Err(unavailable()) })
     }
 
@@ -109,6 +109,15 @@ impl EventRepository for UnavailableEventRepository {
         &'a self,
         _pubkey: &'a Pubkey,
         _ids: &'a [EventId],
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn delete_by_addresses<'a>(
+        &'a self,
+        _pubkey: &'a Pubkey,
+        _addresses: &'a [(Kind, String)],
+        _not_after: i64,
     ) -> StorageFuture<'a, u64> {
         Box::pin(async { Err(unavailable()) })
     }

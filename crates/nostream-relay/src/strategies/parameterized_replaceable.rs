@@ -28,12 +28,7 @@ impl EventStrategy for ParameterizedReplaceableStrategy {
         context: &'a HandlerContext,
     ) -> Pin<Box<dyn Future<Output = Result<(), RelayError>> + Send + 'a>> {
         Box::pin(async move {
-            let deduplication = event
-                .tags
-                .iter()
-                .find(|tag| tag.len() >= 2 && tag[0] == "d")
-                .map(|tag| tag[1].clone())
-                .unwrap_or_default();
+            let deduplication = event.d_tag_value().to_owned();
 
             let record = event_record(event, context)
                 .with_deduplication(vec![serde_json::Value::String(deduplication)]);

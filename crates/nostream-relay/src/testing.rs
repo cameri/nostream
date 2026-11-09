@@ -21,13 +21,16 @@ use nostream_config::settings::{
     RateLimiterSettings, Settings,
 };
 use nostream_core::clock::Clock;
+use nostream_core::filter::{has_empty_tag_criterion, is_generic_tag_query};
 use nostream_core::{Event, EventId, Filter, Kind, Pubkey};
+use nostream_storage::MAX_PAGE_ROWS;
 use nostream_storage::StorageError;
 use nostream_storage::repositories::{
-    ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobStatus, EventPurgeCounts, EventRecord,
-    EventRepository, EventRetentionOptions, FieldUpdate, InviteCode, InviteCodeRepository,
-    NewReport, Nip05Verification, Nip05VerificationRepository, QueryStream, ReconciliationItem,
-    Report, ReportRepository, StorageFuture, User, UserPatch, UserRepository,
+    ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobStatus, EmptyTagRule,
+    EventPurgeCounts, EventRecord, EventRepository, EventRetentionOptions, FieldUpdate, InviteCode,
+    InviteCodeRepository, NewReport, Nip05Verification, Nip05VerificationRepository, QueryStream,
+    ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture, StreamedEvent, User,
+    UserPatch, UserRepository,
 };
 use tokio::sync::Notify;
 
@@ -153,9 +156,27 @@ pub struct InMemoryEventRepository {
     fail_count: AtomicBool,
     fail_queries: AtomicBool,
     fail_delete: AtomicBool,
+    fail_reads: AtomicBool,
+    page_bound: std::sync::atomic::AtomicU64,
+    search_rule: Mutex<Option<SearchRule>>,
+    /// When set, the double models a backend whose tag index holds no entry for an empty value:
+    /// the criterion `""` selects nothing, a family left with no other criterion selects nothing,
+    /// and the family's remaining criteria still answer — the filter is matched with its empty
+    /// criteria dropped, as both backends answer it. `empty_tag_rule` declares it; LMDB and
+    /// Postgres are both that backend.
+    empty_tag_index: AtomicBool,
+    /// Rows this double yields for **any** filter: what a backend whose `search` predicate is not
+    /// `Filter::matches` looks like from the handler's side, which is the case no honest filter
+    /// can produce.
+    unmatched: Mutex<Vec<EventId>>,
+    /// Rows this double yields as [`StreamedEvent::Vanished`] instead of as a record: a page slot
+    /// the backend selected and then could not read, which is what a concurrent replacement
+    /// leaves behind in LMDB.
+    vanishing: Mutex<Vec<EventId>>,
     upsert_failure: Mutex<Option<UpsertFailure>>,
     upserts: Mutex<Vec<Vec<serde_json::Value>>>,
     deletes: Mutex<Vec<(Pubkey, Vec<EventId>)>>,
+    address_deletes: Mutex<Vec<(Pubkey, Kind, String, i64)>>,
     delete_except_kinds_calls: Mutex<Vec<(Pubkey, Vec<Kind>)>>,
     /// When set, `find_by_filters` holds its stream until a permit is released, which is how
     /// a test gets a read in flight long enough to `CLOSE` it.
@@ -202,6 +223,61 @@ impl InMemoryEventRepository {
     /// Makes every `count_by_filters` fail.
     pub fn fail_count(&self) {
         self.fail_queries.store(true, Ordering::SeqCst);
+    }
+
+    /// Makes a read yield one error and end, so a handler's error path can be reached. The
+    /// stream carries no rows first, which is the case a `finish` hint would misreport.
+    pub fn fail_reads(&self, fail: bool) {
+        self.fail_reads.store(fail, Ordering::SeqCst);
+    }
+
+    /// Seeds a row this double yields whatever the filter says — a backend that selected it by a
+    /// predicate the relay's matcher does not share (NIP-50's text search is the one that ships).
+    pub fn seed_unmatched(&self, event: Event) {
+        let record = EventRecord::from_event(&event);
+
+        self.records
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(record);
+        self.unmatched
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(event.id);
+    }
+
+    /// Makes the read yield [`StreamedEvent::Vanished`] in place of this row's slot, after the
+    /// row has counted towards the page: the case a replacement removes a selected key before
+    /// its batch is read.
+    pub fn vanish(&self, id: EventId) {
+        self.vanishing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(id);
+    }
+
+    /// Declares the matching rule this double answers a `search` filter with, the way a backend
+    /// whose predicate is its own would.
+    pub fn declare_search_rule(&self, rule: SearchRule) {
+        *self
+            .search_rule
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(rule);
+    }
+
+    /// Declares a smaller page than `MAX_PAGE_ROWS`, the way a backend that clamps lower would,
+    /// so a test can see the relay honour it instead of its own assumption. Zero restores the
+    /// default.
+    pub fn declare_page_bound(&self, bound: u64) {
+        self.page_bound.store(bound, Ordering::SeqCst);
+    }
+
+    /// Declares the tag index this double answers from, the way LMDB and Postgres do: no entry
+    /// for an empty value, so the criterion `""` selects nothing even from a row that holds one,
+    /// and a filter is matched with its empty criteria dropped — a family left with no other
+    /// criterion selects nothing, and the rest of that family still answers.
+    pub fn declare_no_empty_tag_values(&self) {
+        self.empty_tag_index.store(true, Ordering::SeqCst);
     }
 
     /// Makes every read wait for a permit. Grant one with `Semaphore::add_permits` to let a
@@ -267,6 +343,14 @@ impl InMemoryEventRepository {
             .clone()
     }
 
+    /// The `(pubkey, kind, d, not_after)` each `delete_by_addresses` entry was called with.
+    pub fn address_deletes(&self) -> Vec<(Pubkey, Kind, String, i64)> {
+        self.address_deletes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
     /// The `(pubkey, excluded kinds)` each `delete_by_pubkey_except_kinds` was called with.
     pub fn delete_except_kinds_calls(&self) -> Vec<(Pubkey, Vec<Kind>)> {
         self.delete_except_kinds_calls
@@ -306,6 +390,27 @@ impl InMemoryEventRepository {
 
         deleted
     }
+}
+
+/// The filter a tag index built from non-empty values answers: the empty criteria removed from
+/// every generic tag family, or `None` when a family is left with no criterion — the one shape
+/// that selects nothing.
+fn without_empty_tag_criteria(filter: &Filter) -> Option<Filter> {
+    let mut stripped = filter.clone();
+
+    for (key, criteria) in &mut stripped.tags {
+        if !is_generic_tag_query(key) {
+            continue;
+        }
+
+        criteria.retain(|criterion| !criterion.is_empty());
+
+        if criteria.is_empty() {
+            return None;
+        }
+    }
+
+    Some(stripped)
 }
 
 impl EventRepository for InMemoryEventRepository {
@@ -405,39 +510,150 @@ impl EventRepository for InMemoryEventRepository {
         })
     }
 
+    /// The page this double serves, which a test may lower with
+    /// [`InMemoryEventRepository::declare_page_bound`]; zero means "not declared".
+    fn page_bound(&self) -> u64 {
+        match self.page_bound.load(Ordering::SeqCst) {
+            0 => MAX_PAGE_ROWS,
+            bound => bound,
+        }
+    }
+
+    fn search_rule(&self) -> SearchRule {
+        self.search_rule
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+            .unwrap_or(SearchRule::SubstringTerms)
+    }
+
+    /// The double's filter path *is* `Filter::matches`, so it answers the empty criterion; a test
+    /// that models an indexed backend declares the other rule with
+    /// [`InMemoryEventRepository::declare_no_empty_tag_values`].
+    fn empty_tag_rule(&self) -> EmptyTagRule {
+        match self.empty_tag_index.load(Ordering::SeqCst) {
+            true => EmptyTagRule::IndexesNoEmptyValue,
+            false => EmptyTagRule::AnswersEmptyCriterion,
+        }
+    }
+
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
         let gate = self
             .read_gate
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         let per_item = self.gate_per_item.load(std::sync::atomic::Ordering::SeqCst);
+        let failing = self.fail_reads.load(Ordering::SeqCst);
+        let empty_tag_index = self.empty_tag_index.load(Ordering::SeqCst);
 
         Box::pin(async move {
+            if failing {
+                let failed: Vec<Result<StreamedEvent, StorageError>> =
+                    vec![Err(StorageError::InvalidArgument {
+                        message: "in-memory double: the read failed",
+                    })];
+
+                return Ok(Box::pin(stream::iter(failed)) as QueryStream<'a, StreamedEvent>);
+            }
+
             let records = self
                 .records
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
 
-            let matched: Vec<Result<EventRecord, StorageError>> = records
+            // A page, as the real backends answer one: each filter takes its own `limit` in
+            // insertion order, never more than the backend bound, and the union is deduplicated
+            // afterwards — so a row another filter already returned still spends a slot of this
+            // filter's limit, exactly as it does in both backends. The double used to answer
+            // every match, and then to not charge an overlap against the limit, which is how a
+            // handler test stops meaning anything.
+            let mut matched: Vec<EventRecord> = Vec::new();
+            let mut seen: Vec<EventId> = Vec::new();
+
+            let page_bound = self.page_bound();
+            let unmatched = self
+                .unmatched
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+
+            for filter in filters {
+                // An index built from non-empty values cannot answer the criterion `""`, but both
+                // shipped backends still answer the rest of that filter: LMDB skips an empty tag
+                // value and compares the remaining criteria
+                // (`crates/nostream-storage/src/lmdb/events.rs:1621-1626`), and Postgres binds
+                // every criterion left into one `tag_value = ANY(…)`
+                // (`crates/nostream-storage/src/postgres/sql.rs:338-354`). So the double matches
+                // the stripped filter — and a family the strip leaves with no criterion selects
+                // nothing, which is also what both answer for `{"#d": [""]}`. Dropping the whole
+                // filter, as this did, answered none of the rows both answer for
+                // `{"#d": ["", "post-1"]}`.
+                let stripped = if empty_tag_index && has_empty_tag_criterion(filter) {
+                    match without_empty_tag_criteria(filter) {
+                        Some(stripped) => Some(stripped),
+                        None => continue,
+                    }
+                } else {
+                    None
+                };
+                let filter = stripped.as_ref().unwrap_or(filter);
+
+                let bound = filter.limit.unwrap_or(u64::MAX).min(page_bound);
+                let mut taken = 0u64;
+
+                for record in &records {
+                    if taken >= bound {
+                        break;
+                    }
+
+                    if !filter.matches(&record.event) && !unmatched.contains(&record.event.id) {
+                        continue;
+                    }
+
+                    taken += 1;
+
+                    if seen.contains(&record.event.id) {
+                        continue;
+                    }
+
+                    seen.push(record.event.id);
+                    matched.push(record.clone());
+                }
+            }
+
+            // A row the test marked as vanished is a slot this double selected and cannot read:
+            // it keeps its place in the page and yields the marker instead of the record, which
+            // is what LMDB does when a replacement removes a selected key before its batch.
+            let vanishing = self
+                .vanishing
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            let items: Vec<Result<StreamedEvent, StorageError>> = matched
                 .into_iter()
-                .filter(|record| filters.iter().any(|filter| filter.matches(&record.event)))
-                .map(Ok)
+                .map(|record| {
+                    Ok(if vanishing.contains(&record.event.id) {
+                        StreamedEvent::Vanished
+                    } else {
+                        StreamedEvent::Record(record)
+                    })
+                })
                 .collect();
 
             let Some(gate) = gate else {
-                return Ok(Box::pin(stream::iter(matched)) as QueryStream<'a, EventRecord>);
+                return Ok(Box::pin(stream::iter(items)) as QueryStream<'a, StreamedEvent>);
             };
 
             if per_item {
                 // One permit per record, and the permits are held rather than returned, so
                 // one release lets exactly one record through.
                 let held = Arc::new(Mutex::new(Vec::new()));
-                let gated = stream::iter(matched).then(move |item| {
+                let gated = stream::iter(items).then(move |item| {
                     let gate = Arc::clone(&gate);
                     let held = Arc::clone(&held);
 
@@ -457,7 +673,7 @@ impl EventRepository for InMemoryEventRepository {
                     }
                 });
 
-                return Ok(Box::pin(gated) as QueryStream<'a, EventRecord>);
+                return Ok(Box::pin(gated) as QueryStream<'a, StreamedEvent>);
             }
 
             let permit = gate
@@ -469,13 +685,13 @@ impl EventRepository for InMemoryEventRepository {
 
             // The permit is held by the stream, so the read stays gated until it completes or
             // the handler drops it.
-            let gated = stream::iter(matched).map(move |item| {
+            let gated = stream::iter(items).map(move |item| {
                 let _held = &permit;
 
                 item
             });
 
-            Ok(Box::pin(gated) as QueryStream<'a, EventRecord>)
+            Ok(Box::pin(gated) as QueryStream<'a, StreamedEvent>)
         })
     }
 
@@ -530,6 +746,43 @@ impl EventRepository for InMemoryEventRepository {
                 record.event.pubkey == *pubkey
                     && ids.contains(&record.event.id)
                     && record.event.kind != Kind::REQUEST_TO_VANISH
+            }))
+        })
+    }
+
+    /// The row at each address, soft-deleted when it is no newer than `not_after` — one
+    /// operation for the batch, and one recorded entry per address so a test can count the work.
+    fn delete_by_addresses<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        addresses: &'a [(Kind, String)],
+        not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            {
+                let mut recorded = self
+                    .address_deletes
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+                for (kind, identifier) in addresses {
+                    recorded.push((*pubkey, *kind, identifier.clone(), not_after));
+                }
+            }
+
+            if self.fail_delete.load(Ordering::SeqCst) {
+                return Err(StorageError::InvalidArgument {
+                    message: "in-memory double: the delete failed",
+                });
+            }
+
+            Ok(self.soft_delete(|record| {
+                record.event.pubkey == *pubkey
+                    && record.event.created_at <= not_after
+                    && record.event.kind != Kind::REQUEST_TO_VANISH
+                    && addresses.iter().any(|(kind, identifier)| {
+                        record.event.kind == *kind && record.event.d_tag_value() == identifier
+                    })
             }))
         })
     }
@@ -1599,6 +1852,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
     use super::*;
+    use nostream_core::Signature;
 
     fn claimant(byte: u8) -> Pubkey {
         Pubkey::from_byte_array([byte; 32])
@@ -1610,6 +1864,164 @@ mod tests {
             remaining_uses,
             created_by: None,
         }
+    }
+
+    #[tokio::test]
+    async fn a_row_another_filter_returned_still_spends_this_filters_limit() {
+        // Both backends take each filter's page first and deduplicate the union afterwards, so a
+        // row the first filter already returned is still one of the second filter's `limit`
+        // rows. The double used to skip it without charging the slot, which handed a handler
+        // more rows than either backend would (`double=["old","new"]` against `lmdb=["new"]`
+        // for two overlapping filters each capped at one).
+        let events = InMemoryEventRepository::new();
+        let author = Pubkey::from_byte_array([7; 32]);
+
+        for (index, content) in ["old", "new"].into_iter().enumerate() {
+            let event = Event {
+                id: EventId::from_byte_array([index as u8; 32]),
+                pubkey: author,
+                created_at: index as i64 + 1,
+                kind: Kind(1),
+                tags: Vec::new(),
+                content: content.to_owned(),
+                sig: Signature::from_byte_array([0; 64]),
+            };
+            events
+                .create(&EventRecord::from_event(&event))
+                .await
+                .unwrap();
+        }
+
+        let filters = [
+            Filter {
+                kinds: Some(vec![Kind(1)]),
+                limit: Some(1),
+                ..Filter::default()
+            },
+            Filter {
+                authors: Some(vec![author.to_string()]),
+                limit: Some(1),
+                ..Filter::default()
+            },
+        ];
+
+        let stream = events.find_by_filters(&filters).await.unwrap();
+        let rows = nostream_storage::repositories::collect_records(stream)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            rows.len(),
+            1,
+            "one row, because the second filter's first match was the first filter's row"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_index_without_an_empty_value_answers_the_rest_of_the_filter() {
+        // Both backends keep the non-empty criteria of the family and compare those: LMDB skips
+        // the empty tag value and matches the others (`lmdb/events.rs:1621-1626`), and Postgres
+        // binds everything left into one `tag_value = ANY(…)` (`postgres/sql.rs:338-354`). So
+        // `{"#d": ["", "post-1"]}` answers the `post-1` row, and `{"#d": [""]}` answers nothing.
+        // The double used to drop the whole filter, which for the mixed one answered none of the
+        // rows both backends answer.
+        let events = InMemoryEventRepository::new();
+        events.declare_no_empty_tag_values();
+
+        for (index, d) in ["", "post-1"].into_iter().enumerate() {
+            let event = Event {
+                id: EventId::from_byte_array([index as u8 + 1; 32]),
+                pubkey: Pubkey::from_byte_array([7; 32]),
+                created_at: index as i64 + 1,
+                kind: Kind(30_023),
+                tags: vec![vec!["d".to_owned(), d.to_owned()]],
+                content: d.to_owned(),
+                sig: Signature::from_byte_array([0; 64]),
+            };
+            events
+                .create(&EventRecord::from_event(&event))
+                .await
+                .unwrap();
+        }
+
+        let family = |criteria: &[&str]| Filter {
+            tags: BTreeMap::from([(
+                "#d".to_owned(),
+                criteria
+                    .iter()
+                    .map(|criterion| (*criterion).to_owned())
+                    .collect(),
+            )]),
+            ..Filter::default()
+        };
+
+        let mixed = [family(&["", "post-1"])];
+        let rows = nostream_storage::repositories::collect_records(
+            events.find_by_filters(&mixed).await.unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1, "the `post-1` criterion is still answered");
+        assert_eq!(rows[0].event.content, "post-1");
+
+        let empty = [family(&[""])];
+        let rows = nostream_storage::repositories::collect_records(
+            events.find_by_filters(&empty).await.unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert!(rows.is_empty(), "no index entry holds `\"\"`: {rows:?}");
+
+        // A non-generic family is not a criterion a tag index answers at all: the matcher skips
+        // the key (`filter.rs:110-113`) and both backends skip it (`lmdb/events.rs:1646-1648`,
+        // `postgres/sql.rs:327-329`), so a strip that emptied it instead would answer nothing for
+        // a filter all three answer. `validate_filter` refuses the key (`filter.rs:281-285`), so
+        // only a hand-built filter reaches this shape.
+        let non_generic = [Filter {
+            tags: BTreeMap::from([
+                ("#expiration".to_owned(), vec![String::new()]),
+                ("#d".to_owned(), vec!["post-1".to_owned()]),
+            ]),
+            ..Filter::default()
+        }];
+        let rows = nostream_storage::repositories::collect_records(
+            events.find_by_filters(&non_generic).await.unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            rows.len(),
+            1,
+            "a non-generic family is skipped, not emptied: {rows:?}"
+        );
+        assert_eq!(rows[0].event.content, "post-1");
+
+        // The strip runs only when the filter carries an empty criterion in a *generic* family,
+        // so that family is what makes the guard observable: without it the non-generic one
+        // strips to an empty list, `without_empty_tag_criteria` answers `None`, and the whole
+        // filter selects nothing where every real predicate answers the `post-1` row.
+        let straddling = [Filter {
+            tags: BTreeMap::from([
+                ("#expiration".to_owned(), vec![String::new()]),
+                ("#d".to_owned(), vec![String::new(), "post-1".to_owned()]),
+            ]),
+            ..Filter::default()
+        }];
+        let rows = nostream_storage::repositories::collect_records(
+            events.find_by_filters(&straddling).await.unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            rows.len(),
+            1,
+            "the generic family's `post-1` criterion still answers: {rows:?}"
+        );
+        assert_eq!(rows[0].event.content, "post-1");
     }
 
     #[tokio::test]
