@@ -69,6 +69,18 @@ impl EventRepository for PostgresBackend {
         Box::pin(async move { events::delete_by_pubkey_and_ids(&self.master, pubkey, ids).await })
     }
 
+    fn delete_by_address<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        kind: Kind,
+        identifier: &'a str,
+        not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            events::delete_by_address(&self.master, pubkey, kind, identifier, not_after).await
+        })
+    }
+
     fn delete_by_pubkey_except_kinds<'a>(
         &'a self,
         pubkey: &'a Pubkey,

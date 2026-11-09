@@ -573,6 +573,16 @@ impl EventRepository for InMemoryEventRepository {
         })
     }
 
+    fn delete_by_address<'a>(
+        &'a self,
+        _pubkey: &'a Pubkey,
+        _kind: Kind,
+        _identifier: &'a str,
+        _not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async { Ok(0) })
+    }
+
     fn delete_by_pubkey_except_kinds<'a>(
         &'a self,
         _pubkey: &'a Pubkey,

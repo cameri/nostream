@@ -422,6 +422,32 @@ impl EventRepository for LmdbBackend {
         })
     }
 
+    fn delete_by_address<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        kind: Kind,
+        identifier: &'a str,
+        not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            let pubkey = *pubkey;
+            let identifier = identifier.to_owned();
+            let now = encoding::micros(Utc::now());
+            self.write(move |txn, databases| {
+                events::delete_by_address(
+                    txn,
+                    databases,
+                    &pubkey,
+                    kind,
+                    &identifier,
+                    not_after,
+                    now,
+                )
+            })
+            .await
+        })
+    }
+
     fn has_active_request_to_vanish<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, bool> {
         Box::pin(async move {
             let pubkey = *pubkey;

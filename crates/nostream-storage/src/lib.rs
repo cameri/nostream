@@ -43,3 +43,14 @@ pub use error::StorageError;
 pub use lmdb::{LmdbBackend, MapUsage};
 #[cfg(feature = "postgres")]
 pub use postgres::{PostgresBackend, PostgresTransaction};
+
+/// The most rows one filter's page can hold on any shipped backend, whatever `limit` it
+/// carries.
+///
+/// A caller that must know whether a page was truncated compares the rows a stream yielded
+/// against `min(limit, MAX_PAGE_ROWS)`: a stream that yields that many has a full page and says
+/// nothing about what lies beyond it. LMDB clamps every filter to this bound
+/// (`lmdb::MAX_PAGE_KEYS`, which is this constant); Postgres honours the filter's own `limit`,
+/// and its default (`DEFAULT_FILTER_LIMIT`) is smaller. A new backend that clamps lower must
+/// lower this constant, and the LMDB clamp's own test fails if the two drift apart.
+pub const MAX_PAGE_ROWS: u64 = 5_000;

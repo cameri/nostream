@@ -17,7 +17,7 @@ use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use heed::types::Bytes;
 use heed::{Database, Env, RoTxn, RwTxn};
-use nostream_core::{EventId, Filter, Kind, KindSelector, Pubkey};
+use nostream_core::{Event, EventId, Filter, Kind, KindSelector, Pubkey};
 use tokio::task::JoinHandle;
 
 use super::encoding::{self, EventHeader};
@@ -349,6 +349,64 @@ pub(crate) fn delete_by_pubkey_and_ids(
         affected += 1;
     }
     Ok(affected)
+}
+
+/// `delete_by_address`: the author's live rows of one addressable kind whose first `d` tag is
+/// `identifier` and whose `created_at` is no later than `not_after`, soft-deleted.
+///
+/// The walk is the author-and-kind prefix of `events_by_author` — `pubkey ‖ kind ‖ created_at ‖
+/// id` — so it is one index range rather than a filter page, and no page bound applies: a page
+/// is what would put the address outside the search. The NIP-56 gate is a read's, not a
+/// delete's, so a reported row is reachable here.
+pub(crate) fn delete_by_address(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+    pubkey: &Pubkey,
+    kind: Kind,
+    identifier: &str,
+    not_after: i64,
+    now: DateTime<Utc>,
+) -> Result<u64, StorageError> {
+    let kind_number = i32::try_from(kind.0).unwrap_or(i32::MAX);
+    let mut prefix = Vec::with_capacity(36);
+    prefix.extend_from_slice(pubkey.as_bytes());
+    prefix.extend_from_slice(&encoding::i32_key(kind_number));
+
+    let mut keys = Vec::new();
+    for entry in databases.events_by_author.prefix_iter(txn, &prefix)? {
+        let (key, _) = entry?;
+        keys.push(key.to_vec());
+    }
+
+    let mut affected = 0;
+    for key in keys {
+        let header = author_key_header(&key)?;
+        let Some(value) = databases.events.get(txn, header.event_id.as_bytes())? else {
+            continue;
+        };
+        let record = rows::decode_event(value)?;
+        if record.deleted_at.is_some()
+            || record.event.created_at > not_after
+            || kind_of(&record)? == REQUEST_TO_VANISH
+            || d_identifier(&record.event) != identifier
+        {
+            continue;
+        }
+        soft_delete(txn, databases, &record, now)?;
+        affected += 1;
+    }
+    Ok(affected)
+}
+
+/// The value of an event's first `d` tag, `""` when it carries none — the key the addressable
+/// strategy deduplicates on (`parameterized_replaceable.rs:29-35`).
+fn d_identifier(event: &Event) -> &str {
+    event
+        .tags
+        .iter()
+        .find(|tag| tag.len() >= 2 && tag[0] == "d")
+        .map(|tag| tag[1].as_str())
+        .unwrap_or_default()
 }
 
 /// `delete_by_pubkey_except_kinds`: every other live row of one author, soft-deleted.
@@ -2378,6 +2436,14 @@ mod tests {
             "the page the backend materialises is its own bound, not the wire's"
         );
         assert_eq!(page[0].0, MAX_PAGE_KEYS as i64 + 1, "and it is the newest");
+
+        // The relay decides whether a page was full from `MAX_PAGE_ROWS`, so the two constants
+        // are the same number and cannot drift apart unnoticed.
+        assert_eq!(
+            MAX_PAGE_KEYS as u64,
+            crate::MAX_PAGE_ROWS,
+            "the relay's page bound is the backend's"
+        );
     }
 
     #[test]

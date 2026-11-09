@@ -431,6 +431,25 @@ pub trait EventRepository: Send + Sync {
         ids: &'a [EventId],
     ) -> StorageFuture<'a, u64>;
 
+    /// Soft-deletes the author's live addressable rows that one address names — the `d`
+    /// identifier and the kinds 30000..=39999, with `created_at` no later than `not_after` —
+    /// returning the count. Kind 62 is never touched, as in
+    /// [`delete_by_pubkey_and_ids`](Self::delete_by_pubkey_and_ids).
+    ///
+    /// This exists as its own operation rather than as a read followed by
+    /// `delete_by_pubkey_and_ids`, for two reasons a caller cannot work around: a read is
+    /// bounded by the backend's page, so a narrow address must not be found by scanning a page;
+    /// and a read and a delete are two operations, so a replacement landing between them
+    /// survives the delete the client was told had happened. Both are properties of the store,
+    /// so the store performs the resolution and the deletion as one.
+    fn delete_by_address<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        kind: Kind,
+        identifier: &'a str,
+        not_after: i64,
+    ) -> StorageFuture<'a, u64>;
+
     /// Soft-deletes every event of one pubkey except the given kinds.
     fn delete_by_pubkey_except_kinds<'a>(
         &'a self,
