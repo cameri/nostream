@@ -74,7 +74,7 @@ impl EventRepository for UnavailableEventRepository {
     fn find_by_filters<'a>(
         &'a self,
         _filters: &'a [nostream_core::Filter],
-    ) -> StoreFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StoreFuture<'a, QueryStream<'a, nostream_storage::repositories::StreamedEvent>> {
         Box::pin(async { Err(unavailable()) })
     }
 

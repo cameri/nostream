@@ -52,8 +52,8 @@ async fn the_repository_traits_are_dyn_compatible() {
         InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification,
         Nip05VerificationRepository, NotificationDeliveryLogRepository,
         NotificationOutboxRepository, OutboxMessage, OutboxPayload, QueryStream,
-        ReconciliationItem, Report, ReportRepository, StorageFuture, User, UserPatch,
-        UserRepository,
+        ReconciliationItem, Report, ReportRepository, StorageFuture, StreamedEvent, User,
+        UserPatch, UserRepository,
     };
 
     struct Noop;
@@ -82,7 +82,7 @@ async fn the_repository_traits_are_dyn_compatible() {
         fn find_by_filters<'a>(
             &'a self,
             _filters: &'a [Filter],
-        ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+        ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
             unsupported("noop::events::find_by_filters")
         }
 

@@ -28,7 +28,8 @@ use nostream_storage::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobStatus, EventPurgeCounts, EventRecord,
     EventRepository, EventRetentionOptions, FieldUpdate, InviteCode, InviteCodeRepository,
     NewReport, Nip05Verification, Nip05VerificationRepository, QueryStream, ReconciliationItem,
-    Report, ReportRepository, SearchRule, StorageFuture, User, UserPatch, UserRepository,
+    Report, ReportRepository, SearchRule, StorageFuture, StreamedEvent, User, UserPatch,
+    UserRepository,
 };
 use tokio::sync::Notify;
 
@@ -161,6 +162,10 @@ pub struct InMemoryEventRepository {
     /// `Filter::matches` looks like from the handler's side, which is the case no honest filter
     /// can produce.
     unmatched: Mutex<Vec<EventId>>,
+    /// Rows this double yields as [`StreamedEvent::Vanished`] instead of as a record: a page slot
+    /// the backend selected and then could not read, which is what a concurrent replacement
+    /// leaves behind in LMDB.
+    vanishing: Mutex<Vec<EventId>>,
     upsert_failure: Mutex<Option<UpsertFailure>>,
     upserts: Mutex<Vec<Vec<serde_json::Value>>>,
     deletes: Mutex<Vec<(Pubkey, Vec<EventId>)>>,
@@ -232,6 +237,16 @@ impl InMemoryEventRepository {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push(event.id);
+    }
+
+    /// Makes the read yield [`StreamedEvent::Vanished`] in place of this row's slot, after the
+    /// row has counted towards the page: the case a replacement removes a selected key before
+    /// its batch is read.
+    pub fn vanish(&self, id: EventId) {
+        self.vanishing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(id);
     }
 
     /// Declares the matching rule this double answers a `search` filter with, the way a backend
@@ -479,7 +494,7 @@ impl EventRepository for InMemoryEventRepository {
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
         let gate = self
             .read_gate
             .lock()
@@ -490,12 +505,12 @@ impl EventRepository for InMemoryEventRepository {
 
         Box::pin(async move {
             if failing {
-                let failed: Vec<Result<EventRecord, StorageError>> =
+                let failed: Vec<Result<StreamedEvent, StorageError>> =
                     vec![Err(StorageError::InvalidArgument {
                         message: "in-memory double: the read failed",
                     })];
 
-                return Ok(Box::pin(stream::iter(failed)) as QueryStream<'a, EventRecord>);
+                return Ok(Box::pin(stream::iter(failed)) as QueryStream<'a, StreamedEvent>);
             }
 
             let records = self
@@ -510,7 +525,7 @@ impl EventRepository for InMemoryEventRepository {
             // filter's limit, exactly as it does in both backends. The double used to answer
             // every match, and then to not charge an overlap against the limit, which is how a
             // handler test stops meaning anything.
-            let mut matched: Vec<Result<EventRecord, StorageError>> = Vec::new();
+            let mut matched: Vec<EventRecord> = Vec::new();
             let mut seen: Vec<EventId> = Vec::new();
 
             let page_bound = self.page_bound();
@@ -540,19 +555,38 @@ impl EventRepository for InMemoryEventRepository {
                     }
 
                     seen.push(record.event.id);
-                    matched.push(Ok(record.clone()));
+                    matched.push(record.clone());
                 }
             }
 
+            // A row the test marked as vanished is a slot this double selected and cannot read:
+            // it keeps its place in the page and yields the marker instead of the record, which
+            // is what LMDB does when a replacement removes a selected key before its batch.
+            let vanishing = self
+                .vanishing
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            let items: Vec<Result<StreamedEvent, StorageError>> = matched
+                .into_iter()
+                .map(|record| {
+                    Ok(if vanishing.contains(&record.event.id) {
+                        StreamedEvent::Vanished
+                    } else {
+                        StreamedEvent::Record(record)
+                    })
+                })
+                .collect();
+
             let Some(gate) = gate else {
-                return Ok(Box::pin(stream::iter(matched)) as QueryStream<'a, EventRecord>);
+                return Ok(Box::pin(stream::iter(items)) as QueryStream<'a, StreamedEvent>);
             };
 
             if per_item {
                 // One permit per record, and the permits are held rather than returned, so
                 // one release lets exactly one record through.
                 let held = Arc::new(Mutex::new(Vec::new()));
-                let gated = stream::iter(matched).then(move |item| {
+                let gated = stream::iter(items).then(move |item| {
                     let gate = Arc::clone(&gate);
                     let held = Arc::clone(&held);
 
@@ -572,7 +606,7 @@ impl EventRepository for InMemoryEventRepository {
                     }
                 });
 
-                return Ok(Box::pin(gated) as QueryStream<'a, EventRecord>);
+                return Ok(Box::pin(gated) as QueryStream<'a, StreamedEvent>);
             }
 
             let permit = gate
@@ -584,13 +618,13 @@ impl EventRepository for InMemoryEventRepository {
 
             // The permit is held by the stream, so the read stays gated until it completes or
             // the handler drops it.
-            let gated = stream::iter(matched).map(move |item| {
+            let gated = stream::iter(items).map(move |item| {
                 let _held = &permit;
 
                 item
             });
 
-            Ok(Box::pin(gated) as QueryStream<'a, EventRecord>)
+            Ok(Box::pin(gated) as QueryStream<'a, StreamedEvent>)
         })
     }
 
@@ -1805,12 +1839,9 @@ mod tests {
         ];
 
         let stream = events.find_by_filters(&filters).await.unwrap();
-        futures_util::pin_mut!(stream);
-
-        let mut rows = Vec::new();
-        while let Some(record) = futures_util::StreamExt::next(&mut stream).await {
-            rows.push(record.unwrap());
-        }
+        let rows = nostream_storage::repositories::collect_records(stream)
+            .await
+            .unwrap();
 
         assert_eq!(
             rows.len(),

@@ -13,8 +13,8 @@ use crate::repositories::{
     EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
     NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture, User,
-    UserPatch, UserRepository,
+    QueryStream, ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture,
+    StreamedEvent, User, UserPatch, UserRepository,
 };
 
 impl EventRepository for PostgresBackend {
@@ -37,7 +37,7 @@ impl EventRepository for PostgresBackend {
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
         Box::pin(async move {
             let gates = self.gates();
             events::find_by_filters(&self.reader, filters, &gates)

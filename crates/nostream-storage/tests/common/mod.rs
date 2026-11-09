@@ -23,7 +23,7 @@ use nostream_storage::repositories::{
     InvoiceRepository, InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification,
     Nip05VerificationRepository, NotificationDeliveryLogRepository, NotificationOutboxRepository,
     OutboxMessage, QueryStream, ReconciliationItem, Report, ReportRepository, User, UserPatch,
-    UserRepository,
+    UserRepository, collect_records,
 };
 
 /// The nine repositories one replay calls, as the traits rather than a concrete backend.
@@ -412,7 +412,7 @@ pub async fn run_op(
                 let failed = repos.events.find_by_filters(&[]).await.is_err();
                 return Ok(json!({ "error": failed }));
             }
-            let rows = collect(repos.events.find_by_filters(&filters).await?).await?;
+            let rows = collect_records(repos.events.find_by_filters(&filters).await?).await?;
             Ok(json!({ "rows": rows.iter().map(event_row).collect::<Vec<_>>() }))
         }
         "events.count_by_filters" => {

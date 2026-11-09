@@ -13,9 +13,9 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{collect, fixture, settings_from_fixture};
+use common::{fixture, settings_from_fixture};
 use nostream_core::{Event, EventId, Filter, Kind, Pubkey, Signature};
-use nostream_storage::repositories::{EventRecord, EventRepository};
+use nostream_storage::repositories::{EventRecord, EventRepository, collect_records};
 use nostream_storage::{LmdbBackend, MAX_PAGE_ROWS};
 
 /// A store on a temporary directory with the fixture's settings gates.
@@ -61,7 +61,7 @@ async fn lmdb_declares_and_fills_the_page_bound() {
 
     let stored = filter(Kind(1));
 
-    let full = collect(
+    let full = collect_records(
         backend
             .find_by_filters(&[Filter {
                 limit: Some(MAX_PAGE_ROWS + 1),
@@ -78,7 +78,7 @@ async fn lmdb_declares_and_fills_the_page_bound() {
         "a page asking for more than the bound gets the bound, not more"
     );
 
-    let short = collect(
+    let short = collect_records(
         backend
             .find_by_filters(&[Filter {
                 limit: Some(3),

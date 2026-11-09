@@ -32,8 +32,8 @@ use crate::repositories::{
     EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
     NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, StorageFuture, User, UserPatch,
-    UserRepository,
+    QueryStream, ReconciliationItem, Report, ReportRepository, StorageFuture, StreamedEvent, User,
+    UserPatch, UserRepository,
 };
 
 /// The fixed map size every environment is opened with: `Env::resize` is `unsafe` and this
@@ -343,7 +343,7 @@ impl EventRepository for LmdbBackend {
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
         Box::pin(async move {
             let filters = filters.to_vec();
             let gates = self.gates();
@@ -351,7 +351,7 @@ impl EventRepository for LmdbBackend {
             let page = self
                 .read(move |txn, databases| events::page(txn, databases, &filters, &gates, now))
                 .await?;
-            let stream: QueryStream<'_, EventRecord> = Box::pin(events::ValuesStream::new(
+            let stream: QueryStream<'_, StreamedEvent> = Box::pin(events::ValuesStream::new(
                 self.env.clone(),
                 self.databases,
                 &page,

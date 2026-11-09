@@ -28,7 +28,7 @@ use nostream_core::messages::{
 };
 use nostream_core::nip42;
 use nostream_core::{Filter, Kind};
-use nostream_storage::repositories::SearchRule;
+use nostream_storage::repositories::{SearchRule, StreamedEvent};
 
 use crate::connection::InFlightRead;
 use crate::error::RelayError;
@@ -312,13 +312,15 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     // window, which is what `limit` bounds. `trimmed`: the guard withheld a match. `more`: a
     // match beyond the window was found. `failed`: the stream errored. `refused`: the backend
     // yielded a row this relay's matcher refuses, which is what a backend whose predicate is not
-    // `Filter::matches` looks like from here.
+    // `Filter::matches` looks like from here. `vanished`: the backend spent a page slot on a key
+    // that was gone when it came to read it.
     let mut rows = 0u64;
     let mut matched = 0u64;
     let mut trimmed = false;
     let mut more = false;
     let mut failed = false;
     let mut refused = false;
+    let mut vanished = false;
 
     loop {
         if *read.cancellation().borrow() {
@@ -366,7 +368,7 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
         };
 
         match record {
-            Ok(record) => {
+            Ok(StreamedEvent::Record(record)) => {
                 // Every row the page yielded counts towards whether the page was full, whether
                 // or not it turns out to be a match.
                 rows += 1;
@@ -420,6 +422,17 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
                         event: std::sync::Arc::new(event),
                     }));
             }
+            Ok(StreamedEvent::Vanished) => {
+                // The backend selected this slot and the key was gone when it read the value, so
+                // the slot is spent without a record. It counts as a row, exactly as a skipped
+                // row does, and it sets `vanished` on its own: `page_full` compares the rows the
+                // read *yielded* against the probe, so a page that lost a key arrives short of it
+                // and reads as innocent, and where no probe was built `page_full` is `false`
+                // outright. The marker is the one signal in the read that says a selected slot
+                // produced nothing, so `finish` is withheld on it rather than argued about.
+                rows += 1;
+                vanished = true;
+            }
             Err(error) => {
                 tracing::error!(error = %error, "error streaming events");
                 failed = true;
@@ -433,27 +446,34 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
 
     // The rule, in one place, so the next reader does not have to re-derive it. `finish` claims
     // that every stored event matching the subscription's filters has been sent (`67.md`
-    // §"Specification"), and this read can fail to establish that three ways, so `finish` needs
-    // all three:
+    // §"Specification"), and this read can fail to establish that four ways, so `finish` needs
+    // all four:
     //
     // 1. the stream ended **cleanly** — after a storage error, how far the read got is unknown;
     // 2. the page was **not full** — a page that yielded `min(probe, page_bound())` rows says
     //    nothing about the rows beyond it, whether the bound came from the client's `limit` or
     //    from the backend's own page cap, and a skipped row spends a page slot just as a match
     //    does (which is why `rows`, not `matched`, decides this);
-    // 3. the set the backend enumerated is the set this relay would have — no row it yielded was
+    // 3. **no page slot was spent without its row** — a backend reports a slot it selected and
+    //    then could not read as `StreamedEvent::Vanished`, and that slot is a row the read was
+    //    promised. The count of yielded rows cannot carry that on its own: `page_full` compares
+    //    that count against the probe, so a page that lost a key to a concurrent replacement
+    //    arrives short of it and reads as innocent, and where no probe was built `page_full` is
+    //    `false` by construction. The marker withholds `finish` directly, rather than relying on
+    //    the arithmetic a vanished row happens to disturb;
+    // 4. the set the backend enumerated is the set this relay would have — no row it yielded was
     //    refused by `Filter::matches`, and no filter carrying `search` was answered by a
     //    predicate other than that matcher. Both are needed and neither implies the other: a
     //    refusal is the direction a probe can see (`study` yields `studies`, which the matcher
     //    refuses), while a row the matcher *would* accept and the backend never yields
     //    (`abcdef` inside `xxabcdefyy`) leaves no trace at all. See `EventRepository::search_rule`.
-    // 4. **no further match** was found — the `more` branch below is where this one lives: a
+    // 5. **no further match** was found — the `more` branch below is where this one lives: a
     //    further match ends the read with `more` set, so the code that can reach the hint is the
     //    code where none was found. It is only meaningful once 1 and 2 hold, because the loop
     //    keeps asking past deleted, expired, withheld and non-matching rows until it sees a
     //    match, the genuine end, or the page cap.
     //
-    // Where any of the three cannot be established the relay sends no completeness hint: an
+    // Where any of the four cannot be established the relay sends no completeness hint: an
     // absent hint is honest and a wrong one is not. `more` needs one further **match** beyond
     // the delivered window, `auth` is unaffected, and `finish` is never sent beside `auth`
     // because a withheld event falsifies it.
@@ -467,7 +487,7 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
             .is_some_and(|search| !search.trim().is_empty())
     });
     let search_agrees = search_rule == SearchRule::SubstringTerms || !searched;
-    let proven = !failed && !page_full && !refused && search_agrees;
+    let proven = !failed && !page_full && !vanished && !refused && search_agrees;
 
     let mut hints = Vec::new();
 

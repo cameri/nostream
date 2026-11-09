@@ -20,10 +20,11 @@ use crate::error::StorageError;
 /// `src/@types/repositories.ts`, whose methods take the ambient `DatabaseClient`.
 pub type StorageFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StorageError>> + Send + 'a>>;
 
-/// One row per item, in exactly the query's `ORDER BY`. The borrow of the store is held for
-/// the stream's life, which is what both backends need: Postgres holds a portal and a pooled
-/// connection, and LMDB holds whatever its own query kept, opening a short read transaction
-/// per batch (256 values) so a dropped stream pins no pages.
+/// One item per page slot, in exactly the query's `ORDER BY`. The borrow of the store is held
+/// for the stream's life, which is what both backends need: Postgres holds a portal and a
+/// pooled connection, and LMDB holds whatever its own query kept, opening a short read
+/// transaction per batch (256 values) so a dropped stream pins no pages. A filter read's item
+/// is a [`StreamedEvent`], because a slot the backend selected may have no row to yield.
 ///
 /// An LMDB backend's two streams keep different things, and a caller plans memory from the
 /// difference: `find_by_filters` collects its page first — at most each filter's limit, clamped
@@ -80,6 +81,48 @@ pub struct EventRecord {
     pub event_deduplication: Option<Vec<serde_json::Value>>,
     /// `events.remote_address` (the `ContextMetadataKey` insert metadata).
     pub remote_address: Option<std::net::IpAddr>,
+}
+
+/// One item of a filter read: the row for a page slot, or the marker for a slot the backend
+/// selected and could not read.
+///
+/// The distinction exists because a `limit` read is a claim about a **count of slots**, and the
+/// page obligation on [`EventRepository::find_by_filters`] is stated in rows. A backend that
+/// enumerated a key and found it gone when it came to read the value has spent the slot without
+/// a row; reporting that as "fewer rows" is indistinguishable at the call site from a short
+/// result, which is how a false NIP-67 `finish` reaches the wire. [`StreamedEvent::Vanished`] is
+/// the backend saying so, and the relay counts it as a spent slot.
+// The row is the item, and it moves by value exactly as it did inside `Result<EventRecord, _>`
+// before the marker existed; boxing it would add one allocation per streamed row to the read
+// path to make a two-variant enum smaller than the rows it carries.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum StreamedEvent {
+    /// One stored row, as the query ordered it.
+    Record(EventRecord),
+    /// The backend selected this slot and then could not read it: the key was in the page when
+    /// the backend enumerated it and gone when the backend read its value.
+    Vanished,
+}
+
+/// Drains a filter read into the rows it yielded, dropping [`StreamedEvent::Vanished`].
+///
+/// This is the helper for every call site that does not account for vanished slots: the marker
+/// is a fact about the page, not a row, so a consumer that only wants rows cannot inherit it.
+pub fn collect_records<'a>(
+    mut stream: QueryStream<'a, StreamedEvent>,
+) -> StorageFuture<'a, Vec<EventRecord>> {
+    Box::pin(async move {
+        let mut records = Vec::new();
+        while let Some(item) =
+            std::future::poll_fn(|context| stream.as_mut().poll_next(context)).await
+        {
+            if let StreamedEvent::Record(record) = item? {
+                records.push(record);
+            }
+        }
+        Ok(records)
+    })
 }
 
 /// One NIP-77 reconciliation item (`src/@types/repositories.ts` `ReconciliationItem`).
@@ -455,10 +498,17 @@ pub trait EventRepository: Send + Sync {
     /// A backend whose own page is smaller than [`MAX_PAGE_ROWS`](crate::MAX_PAGE_ROWS) declares it through
     /// [`EventRepository::page_bound`]; the relay then asks for no more than it will be given and
     /// emits no hint where it cannot prove one.
+    ///
+    /// **The marker.** A backend that cannot honour the page at read time — it selected a key and
+    /// the key was gone when it came to read the value — **MUST** yield
+    /// [`StreamedEvent::Vanished`] for that slot rather than skipping it. The obligation above
+    /// forbids the silent short page; this names the signal that keeps it honest when a
+    /// concurrent write removes a selected row. The slot is spent either way, so a caller that
+    /// only wants rows reads them through [`collect_records`], which drops the marker.
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [nostream_core::Filter],
-    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>>;
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>>;
 
     /// Counts the events matching the filters.
     fn count_by_filters<'a>(
@@ -746,4 +796,64 @@ pub trait NotificationOutboxRepository: Send + Sync {
 
     /// Deletes delivered and dead messages older than the cutoff.
     fn delete_terminal_older_than<'a>(&'a self, cutoff: DateTime<Utc>) -> StorageFuture<'a, u64>;
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use futures_core::Stream;
+    use nostream_core::{Event, EventId, Kind, Pubkey, Signature};
+
+    use super::*;
+
+    /// A stream of the items it was built from.
+    struct Items(std::vec::IntoIter<Result<StreamedEvent, StorageError>>);
+
+    impl Stream for Items {
+        type Item = Result<StreamedEvent, StorageError>;
+
+        fn poll_next(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<Option<Self::Item>> {
+            Poll::Ready(self.0.next())
+        }
+    }
+
+    /// A kind-1 row whose content is `content`.
+    fn record(content: &str) -> EventRecord {
+        EventRecord::from_event(&Event {
+            id: EventId::from_byte_array([content.len() as u8; 32]),
+            pubkey: Pubkey::from_byte_array([0; 32]),
+            created_at: 1_700_000_000,
+            kind: Kind(1),
+            tags: Vec::new(),
+            content: content.to_owned(),
+            sig: Signature::from_byte_array([0; 64]),
+        })
+    }
+
+    /// The helper hands a consumer only rows: the vanished slot is dropped, and the rows keep
+    /// the page's order, so the marker cannot be read as if it were a record.
+    #[tokio::test]
+    async fn collect_records_drops_the_marker_and_keeps_every_row() {
+        let items = vec![
+            Ok(StreamedEvent::Record(record("one"))),
+            Ok(StreamedEvent::Vanished),
+            Ok(StreamedEvent::Record(record("two"))),
+        ];
+        let stream: QueryStream<'_, StreamedEvent> = Box::pin(Items(items.into_iter()));
+
+        let rows = collect_records(stream).await.expect("the read drains");
+        let contents: Vec<&str> = rows
+            .iter()
+            .map(|row| row.event.content.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(contents, vec!["one", "two"]);
+    }
 }

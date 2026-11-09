@@ -12,10 +12,12 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{Repos, collect, fixture, settings_from_fixture};
+use common::{Repos, fixture, settings_from_fixture};
 use nostream_core::{Event, EventId, Filter, Kind, Pubkey, Signature};
 use nostream_storage::LmdbBackend;
-use nostream_storage::repositories::{EventRecord, EventRepository, NewReport, ReportType};
+use nostream_storage::repositories::{
+    EventRecord, EventRepository, NewReport, ReportType, collect_records,
+};
 
 /// A store on a temporary directory with the fixture's settings gates.
 async fn open_store() -> (tempfile::TempDir, LmdbBackend) {
@@ -86,7 +88,7 @@ async fn delete_by_addresses_reaches_a_row_past_the_page_bound() {
         ..Default::default()
     };
 
-    let served = collect(
+    let served = collect_records(
         backend
             .find_by_filters(std::slice::from_ref(&filter))
             .await

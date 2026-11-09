@@ -16,6 +16,7 @@ use crate::error::StorageError;
 use crate::records::distinct_replacements;
 use crate::repositories::{
     EventPurgeCounts, EventRecord, EventRetentionOptions, QueryStream, ReconciliationItem,
+    StreamedEvent,
 };
 
 /// The conflict target of every replaceable write, exactly as the capture spells it.
@@ -174,7 +175,7 @@ pub(crate) fn find_by_filters<'a>(
     reader: &'a sqlx::PgPool,
     filters: &[Filter],
     gates: &Gates,
-) -> Result<QueryStream<'a, EventRecord>, StorageError> {
+) -> Result<QueryStream<'a, StreamedEvent>, StorageError> {
     let query = sql::find_by_filters(filters, gates)?;
     Ok(Box::pin(EventStream {
         inner: query.into_query().fetch(reader),
@@ -490,17 +491,22 @@ fn tags_json(record: &EventRecord) -> Result<String, StorageError> {
 }
 
 /// A stream of stored events, mapping each driver row.
+///
+/// Postgres streams one query over rows it has already read, so it has no slot it selected and
+/// could not read: every item is [`StreamedEvent::Record`] and the marker never appears here.
 struct EventStream<'a> {
     inner: Pin<Box<dyn Stream<Item = Result<PgRow, sqlx::Error>> + Send + 'a>>,
 }
 
 impl Stream for EventStream<'_> {
-    type Item = Result<EventRecord, StorageError>;
+    type Item = Result<StreamedEvent, StorageError>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         match this.inner.as_mut().poll_next(context) {
-            Poll::Ready(Some(Ok(row))) => Poll::Ready(Some(super::rows::event_record(&row))),
+            Poll::Ready(Some(Ok(row))) => Poll::Ready(Some(
+                super::rows::event_record(&row).map(StreamedEvent::Record),
+            )),
             Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(StorageError::Database(error)))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
