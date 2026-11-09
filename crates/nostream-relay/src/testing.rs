@@ -160,8 +160,10 @@ pub struct InMemoryEventRepository {
     page_bound: std::sync::atomic::AtomicU64,
     search_rule: Mutex<Option<SearchRule>>,
     /// When set, the double models a backend whose tag index holds no entry for an empty value:
-    /// a filter carrying a generic tag criterion of `""` selects nothing, and `empty_tag_rule`
-    /// declares it. LMDB and Postgres are both that backend.
+    /// the criterion `""` selects nothing, a family left with no other criterion selects nothing,
+    /// and the family's remaining criteria still answer — the filter is matched with its empty
+    /// criteria dropped, as both backends answer it. `empty_tag_rule` declares it; LMDB and
+    /// Postgres are both that backend.
     empty_tag_index: AtomicBool,
     /// Rows this double yields for **any** filter: what a backend whose `search` predicate is not
     /// `Filter::matches` looks like from the handler's side, which is the case no honest filter
@@ -271,8 +273,9 @@ impl InMemoryEventRepository {
     }
 
     /// Declares the tag index this double answers from, the way LMDB and Postgres do: no entry
-    /// for an empty value, so a filter carrying a generic tag criterion of `""` selects nothing
-    /// even from a row that holds one.
+    /// for an empty value, so the criterion `""` selects nothing even from a row that holds one,
+    /// and a filter is matched with its empty criteria dropped — a family left with no other
+    /// criterion selects nothing, and the rest of that family still answers.
     pub fn declare_no_empty_tag_values(&self) {
         self.empty_tag_index.store(true, Ordering::SeqCst);
     }
