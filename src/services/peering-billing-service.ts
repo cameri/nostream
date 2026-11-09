@@ -118,6 +118,28 @@ export class PeeringBillingService implements IPeeringBillingService {
     }
 
     const now = options.now ?? new Date()
+
+    // Check the open invoice before retiring a locally expired one. The processor
+    // may have accepted payment just before expiry, especially without webhooks.
+    const settled = await this.recheckPendingInvoice(peerPubkey, now, true)
+    if (settled) {
+      const payment = await this.peeringPaymentRepository.findByPeer(peerPubkey)
+      const settledInvoiceId = payment?.lastSettledInvoiceId
+      if (settledInvoiceId) {
+        const settledInvoice = await this.invoiceRepository.findById(settledInvoiceId)
+        if (settledInvoice) {
+          try {
+            await this.paymentsService.ensurePeeringInvoiceNotification(settledInvoice)
+          } catch (error) {
+            logger.error('unable to publish settled peering invoice %s: %o', settledInvoice.id, error)
+          }
+          return settledInvoice
+        }
+      }
+
+      return undefined
+    }
+
     const transaction = new Transaction(this.dbClient)
     let invoice: Invoice | undefined
 
@@ -244,7 +266,9 @@ export class PeeringBillingService implements IPeeringBillingService {
     }
 
     const invoice = await this.invoiceRepository.findById(invoiceId)
-    if (!invoice || invoice.status !== InvoiceStatus.PENDING || isExpiredAt(invoice, now)) {
+    // A locally expired invoice can still have been paid before its expiry. Ask the
+    // processor before retiring it; LNURL and NWC rely on polling for settlement.
+    if (!invoice || invoice.status !== InvoiceStatus.PENDING) {
       return false
     }
 
@@ -259,19 +283,21 @@ export class PeeringBillingService implements IPeeringBillingService {
         return true
       }
 
-      await this.peeringPaymentRepository.save({
-        ...payment,
-        lastCheckedAt: now,
-        lastError: updated.status ? `processor status: ${updated.status}` : null,
-      })
+      // Update only the check columns. The processor call yields, and a webhook may
+      // have settled this peer in the meantime; saving the old row would undo it.
+      await this.peeringPaymentRepository.recordCheck(
+        peerPubkey,
+        now,
+        updated.status ? `processor status: ${updated.status}` : null,
+      )
       return false
     } catch (error) {
       logger.error('unable to recheck peering invoice %s: %o', invoiceId, error)
-      await this.peeringPaymentRepository.save({
-        ...payment,
-        lastCheckedAt: now,
-        lastError: error instanceof Error ? error.message : 'processor check failed',
-      })
+      await this.peeringPaymentRepository.recordCheck(
+        peerPubkey,
+        now,
+        error instanceof Error ? error.message : 'processor check failed',
+      )
       return false
     }
   }

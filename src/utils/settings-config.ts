@@ -1099,13 +1099,6 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
     })
   }
 
-  if (paidTerms.length > 0 && settings.payments?.enabled !== true) {
-    issues.push({
-      path: 'peering.terms',
-      message: 'payments must be enabled to charge for peering',
-    })
-  }
-
   if (!enabled) {
     return
   }

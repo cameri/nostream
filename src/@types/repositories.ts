@@ -90,6 +90,8 @@ export interface IPeeringPaymentRepository {
   /** SELECT ... FOR UPDATE; must run inside a transaction. */
   lockByPeer(pubkey: Pubkey, client: DatabaseClient): Promise<PeeringPayment | undefined>
   save(payment: PeeringPayment, client?: DatabaseClient): Promise<PeeringPayment>
+  /** Updates only the processor-check diagnostics, so a concurrent settlement is not overwritten. */
+  recordCheck(pubkey: Pubkey, checkedAt: Date, error: string | null, client?: DatabaseClient): Promise<void>
   list(): Promise<PeeringPayment[]>
   /** Active or renewal-pending relationships whose period ends by `before`. */
   findDueForRenewal(before: Date, limit: number, offset: number): Promise<PeeringPayment[]>

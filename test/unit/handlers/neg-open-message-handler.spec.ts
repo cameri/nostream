@@ -136,6 +136,35 @@ describe('NegOpenMessageHandler', () => {
     ])
   })
 
+  it('does not close a replacement NEG-OPEN after a stale billing wait', async () => {
+    const peer = 'a'.repeat(64)
+    let releaseAccess: ((access: unknown) => void) | undefined
+    ;(webSocket as any).getPeerPubkey = () => peer
+    const billing = {
+      getAccess: sandbox.stub().returns(
+        new Promise((resolve) => {
+          releaseAccess = resolve
+        }),
+      ),
+    }
+    handler = new NegOpenMessageHandler(
+      webSocket,
+      eventRepository,
+      () => settings,
+      rateLimiterFactory,
+      requestStats as any,
+      billing as any,
+    )
+
+    const pending = open()
+    await new Promise((resolve) => setImmediate(resolve))
+    sessions.close('sync1')
+    releaseAccess?.({ allowed: false, reason: 'peering payment required' })
+    await pending
+
+    expect(emitted).not.to.have.been.called
+  })
+
   describe('when disabled', () => {
     it('replies NEG-ERR blocked and does not read events', async () => {
       settings = { nip77: { enabled: false } } as Settings
