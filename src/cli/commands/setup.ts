@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto'
 import { intro, outro, confirm, text, isCancel, cancel } from '@clack/prompts'
 
 import { ensureConfigBootstrap } from '../utils/bootstrap'
+import { getUnsafeSecretReason, stripQuotes } from '../utils/env-config'
 import { getProjectPath } from '../utils/paths'
 import { runStart } from './start'
 
@@ -27,36 +28,6 @@ class SetupCancelledError extends Error {
     super('Setup cancelled')
     this.name = 'SetupCancelledError'
   }
-}
-
-const stripQuotes = (value: string): string => {
-  const trimmed = value.trim()
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-    return trimmed.slice(1, -1).trim()
-  }
-  return trimmed
-}
-
-/**
- * Why a secret cannot be written to `.env` and read back unchanged, or undefined when it can. An unquoted `#` starts a
- * comment for the loader, a newline ends the line, a `$` is expanded by Docker Compose, and a quote the loader cannot
- * match changes what it reads.
- */
-const getUnsafeSecretReason = (secret: string): string | undefined => {
-  if (secret.includes('#')) {
-    return 'SECRET cannot contain "#"'
-  }
-  if (/[\r\n]/.test(secret)) {
-    return 'SECRET cannot contain newlines'
-  }
-  if (secret.includes('$')) {
-    // Docker Compose reads the same .env and expands `$NAME`, `${NAME}` and `$$`, which Node's loader leaves alone.
-    return 'SECRET cannot contain "$"'
-  }
-  if (/^["'`]/.test(stripQuotes(secret))) {
-    return 'SECRET cannot start with an unmatched quote'
-  }
-  return undefined
 }
 
 const parseEnvValue = (rawValue: string): string => {
