@@ -94,8 +94,17 @@ export class NegOpenMessageHandler implements IMessageHandler {
         access = await this.peeringBillingService.getAccess(peerPubkey, { recheck: true })
       } catch (error) {
         sessions.endRead(token)
-        logger.error('unable to check peering access for %s: %o', peerPubkey, error)
-        this.reject(sessions, subscriptionId, 'error: unable to check peering access')
+        if (sessions.isCurrent(subscriptionId, token)) {
+          logger.error('unable to check peering access for %s: %o', peerPubkey, error)
+          this.reject(sessions, subscriptionId, 'error: unable to check peering access')
+        }
+        return
+      }
+
+      // A replacement NEG-OPEN may have claimed this id while billing was pending.
+      // The older check must not close the newer session.
+      if (!sessions.isCurrent(subscriptionId, token)) {
+        sessions.endRead(token)
         return
       }
 
