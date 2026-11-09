@@ -109,6 +109,33 @@ describe('NegOpenMessageHandler', () => {
     expect(findReconciliationItems).to.have.been.calledOnceWithExactly({ kinds: [1], limit: 3 }, 101)
   })
 
+  it('rejects a reconciliation from a peer without paid access', async () => {
+    const peer = 'a'.repeat(64)
+    ;(webSocket as any).getPeerPubkey = () => peer
+    const billing = {
+      getAccess: sandbox.stub().resolves({ allowed: false, reason: 'peering payment required' }),
+    }
+    handler = new NegOpenMessageHandler(
+      webSocket,
+      eventRepository,
+      () => settings,
+      rateLimiterFactory,
+      requestStats as any,
+      billing as any,
+    )
+
+    await open()
+
+    expect(billing.getAccess).to.have.been.calledWith(peer, { recheck: true })
+    expect(findReconciliationItems).not.to.have.been.called
+    expect(sessions.getSessionIds()).to.deep.equal([])
+    expect(emitted.firstCall.args[0]).to.deep.equal([
+      MessageType.NEG_ERR,
+      'sync1',
+      'payment-required: peering payment required',
+    ])
+  })
+
   describe('when disabled', () => {
     it('replies NEG-ERR blocked and does not read events', async () => {
       settings = { nip77: { enabled: false } } as Settings

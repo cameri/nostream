@@ -3,7 +3,9 @@ import { Factory } from '../@types/base'
 import { IMessageHandler } from '../@types/message-handlers'
 import { NegOpenMessage, OutgoingMessage } from '../@types/messages'
 import { INegentropySessions } from '../@types/negentropy'
+import { PeeringAccess } from '../@types/peering'
 import { IEventRepository, ReconciliationItem } from '../@types/repositories'
+import { IPeeringBillingService } from '../@types/services'
 import { Settings } from '../@types/settings'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { IRateLimiter } from '../@types/utils'
@@ -31,6 +33,7 @@ export class NegOpenMessageHandler implements IMessageHandler {
     private readonly settings: () => Settings,
     private readonly rateLimiter?: Factory<IRateLimiter>,
     private readonly requestStats?: PeeringRequestStatsStore,
+    private readonly peeringBillingService?: IPeeringBillingService,
   ) {}
 
   public async handleMessage(message: NegOpenMessage): Promise<void> {
@@ -83,6 +86,27 @@ export class NegOpenMessageHandler implements IMessageHandler {
     if (!sessions.isCurrent(subscriptionId, token)) {
       sessions.endRead(token)
       return
+    }
+
+    if (peerPubkey && this.peeringBillingService) {
+      let access: PeeringAccess
+      try {
+        access = await this.peeringBillingService.getAccess(peerPubkey, { recheck: true })
+      } catch (error) {
+        sessions.endRead(token)
+        logger.error('unable to check peering access for %s: %o', peerPubkey, error)
+        this.reject(sessions, subscriptionId, 'error: unable to check peering access')
+        return
+      }
+
+      if (!access.allowed) {
+        sessions.endRead(token)
+        const reason = access.reason?.startsWith('payment-required:')
+          ? access.reason
+          : `payment-required: ${access.reason ?? 'peering payment required; request the kind 402 peering invoice'}`
+        this.reject(sessions, subscriptionId, reason)
+        return
+      }
     }
 
     if (peerPubkey) {

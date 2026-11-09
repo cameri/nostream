@@ -8,6 +8,7 @@ import {
   IReportRepository,
   IUserRepository,
 } from '../@types/repositories'
+import { IPeeringBillingService } from '../@types/services'
 import { RedisAdapter } from '../adapters/redis-adapter'
 import { getCacheClient } from '../cache/client'
 import { getMasterDbClient } from '../database/client'
@@ -22,6 +23,7 @@ import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handl
 import { UserSubscriptionRepository } from '../repositories/user-subscription-repository'
 import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 import { eventStrategyFactory } from './event-strategy-factory'
+import { createPeeringBillingService } from './peering-billing-service-factory'
 import { rateLimiterFactory } from './rate-limiter-factory'
 import { createSettings } from './settings-factory'
 import { wotGraphServiceFactory } from './wot-graph-service-factory'
@@ -48,6 +50,14 @@ export const getPeerRequestStatsStore = (): PeeringRequestStatsStore => {
     peerRequestStatsStore = new PeeringRequestStatsStore(getCache())
   }
   return peerRequestStatsStore
+}
+
+let peeringBillingService: IPeeringBillingService | undefined = undefined
+export const getPeeringBillingService = (): IPeeringBillingService => {
+  if (!peeringBillingService) {
+    peeringBillingService = createPeeringBillingService()
+  }
+  return peeringBillingService
 }
 
 export const messageHandlerFactory =
@@ -91,6 +101,7 @@ export const messageHandlerFactory =
           inviteCodeRepository,
           rateLimiterFactory,
           getPeerRequestStatsStore(),
+          getPeeringBillingService(),
         )
       case MessageType.CLOSE:
         return new UnsubscribeMessageHandler(adapter)
@@ -101,6 +112,7 @@ export const messageHandlerFactory =
           createSettings,
           rateLimiterFactory,
           getPeerRequestStatsStore(),
+          getPeeringBillingService(),
         )
       case MessageType.AUTH:
         return new AuthMessageHandler(adapter, createSettings)
@@ -111,6 +123,7 @@ export const messageHandlerFactory =
           createSettings,
           rateLimiterFactory,
           getPeerRequestStatsStore(),
+          getPeeringBillingService(),
         )
       case MessageType.NEG_MSG:
         return new NegMsgMessageHandler(adapter, createSettings)
