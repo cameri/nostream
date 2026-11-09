@@ -425,16 +425,18 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     //    nothing about the rows beyond it, whether the bound came from the client's `limit` or
     //    from the backend's own page cap, and a skipped row spends a page slot just as a match
     //    does (which is why `rows`, not `matched`, decides this);
-    // 3. **no further match** was found — `more` stayed false, which is only meaningful once 1
-    //    and 2 hold, because the loop keeps asking past deleted, expired, withheld and
-    //    non-matching rows until it sees a match, the genuine end, or the page cap.
+    // 3. **no further match** was found — the `more` branch below is where this one lives: a
+    //    further match ends the read with `more` set, so the code that can reach the hint is the
+    //    code where none was found. It is only meaningful once 1 and 2 hold, because the loop
+    //    keeps asking past deleted, expired, withheld and non-matching rows until it sees a
+    //    match, the genuine end, or the page cap.
     //
     // Where any of the three cannot be established the relay sends no completeness hint: an
     // absent hint is honest and a wrong one is not. `more` needs one further **match** beyond
     // the delivered window, `auth` is unaffected, and `finish` is never sent beside `auth`
     // because a withheld event falsifies it.
     let page_full = probe.is_some_and(|probe| rows >= probe.min(MAX_PAGE_ROWS));
-    let finish = !failed && !more && !page_full;
+    let proven = !failed && !page_full;
 
     let mut hints = Vec::new();
 
@@ -445,7 +447,7 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     if hint_eligible {
         if more {
             hints.push(EOSE_HINT_MORE.to_owned());
-        } else if finish && !trimmed {
+        } else if proven && !trimmed {
             hints.push(EOSE_HINT_FINISH.to_owned());
         }
     }
