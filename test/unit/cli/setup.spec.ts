@@ -5,7 +5,7 @@ import path from 'path'
 import sinon from 'sinon'
 import { parseEnv } from 'util'
 
-const setupCommand: typeof import('../../../dist/src/cli/commands/setup.js') = require('../../../dist/src/cli/commands/setup.js')
+const setupCommand: typeof import('../../../src/cli/commands/setup') = require('../../../src/cli/commands/setup')
 
 describe('runSetup', () => {
   const originalCwd = process.cwd()
