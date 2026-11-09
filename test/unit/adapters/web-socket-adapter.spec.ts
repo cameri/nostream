@@ -216,6 +216,20 @@ describe('WebSocketAdapter', () => {
       expect(client.send).to.have.been.calledWith(closedMessage('sub-1'))
     })
 
+    it('keeps the subscription open when access becomes free', async () => {
+      adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+      adapter.setSubscriptionExpiry(
+        'sub-1',
+        new Date('2026-11-09T12:00:01.000Z'),
+        sandbox.stub().resolves(null),
+      )
+
+      await clock.tickAsync(1000)
+
+      expect(adapter.getSubscriptions().has('sub-1')).to.be.true
+      expect(client.send).not.to.have.been.calledWith(closedMessage('sub-1'))
+    })
+
     it('clears the timer when the subscription is closed', async () => {
       const check = sandbox.stub().resolves(undefined)
       adapter.onSubscribed('sub-1', [{ kinds: [1] }])

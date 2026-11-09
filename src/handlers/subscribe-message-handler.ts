@@ -139,8 +139,15 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
 
     if (peeringAccess?.periodEnd) {
       this.webSocket.setSubscriptionExpiry(subscriptionId, peeringAccess.periodEnd, async () => {
-        const latest = await this.peeringBillingService!.getAccess(peerPubkey!)
-        return latest.allowed ? (latest.periodEnd ?? undefined) : undefined
+        // A renewal may have been paid after the last maintenance poll but before
+        // this period ended. Recheck the pending invoice before closing the feed.
+        const latest = await this.peeringBillingService!.getAccess(peerPubkey!, { recheck: true })
+        if (!latest.allowed) {
+          return false
+        }
+
+        // Free peering has no expiry; keep the feed open and stop the timer.
+        return latest.periodEnd ?? null
       })
     }
 
