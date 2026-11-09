@@ -193,8 +193,10 @@ peering:
   #       windowSeconds: 3600
   scopes: []
   # Terms for peering, reusing the NIP-11 fee-object shape. `period` is in
-  # seconds. An empty list means settlement-free peering.
-  # Example: [{ amount: 1000, unit: msats, period: 2592000 }]
+  # seconds. An empty list means settlement-free peering. One positive term
+  # makes this a paid feed: payments must be enabled, and a paid msats amount
+  # must be a whole number of satoshis.
+  # Example: [{ amount: 21000, unit: msats, period: 2592000 }]
   terms: []
   # Peering peers trusted by their relay pubkey (hex or npub), never by URL
   # alone. A connection that proves one of these keys with NIP-42 AUTH is
