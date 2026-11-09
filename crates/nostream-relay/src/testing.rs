@@ -21,7 +21,7 @@ use nostream_config::settings::{
     RateLimiterSettings, Settings,
 };
 use nostream_core::clock::Clock;
-use nostream_core::filter::is_generic_tag_query;
+use nostream_core::filter::{has_empty_tag_criterion, is_generic_tag_query};
 use nostream_core::{Event, EventId, Filter, Kind, Pubkey};
 use nostream_storage::MAX_PAGE_ROWS;
 use nostream_storage::StorageError;
@@ -389,13 +389,25 @@ impl InMemoryEventRepository {
     }
 }
 
-/// Whether a filter carries a generic tag criterion that is the empty string — the one criterion
-/// a tag index built from non-empty values cannot answer.
-fn queries_an_empty_tag_value(filter: &Filter) -> bool {
-    filter
-        .tags
-        .iter()
-        .any(|(key, criteria)| is_generic_tag_query(key) && criteria.iter().any(String::is_empty))
+/// The filter a tag index built from non-empty values answers: the empty criteria removed from
+/// every generic tag family, or `None` when a family is left with no criterion — the one shape
+/// that selects nothing.
+fn without_empty_tag_criteria(filter: &Filter) -> Option<Filter> {
+    let mut stripped = filter.clone();
+
+    for (key, criteria) in &mut stripped.tags {
+        if !is_generic_tag_query(key) {
+            continue;
+        }
+
+        criteria.retain(|criterion| !criterion.is_empty());
+
+        if criteria.is_empty() {
+            return None;
+        }
+    }
+
+    Some(stripped)
 }
 
 impl EventRepository for InMemoryEventRepository {
@@ -568,13 +580,25 @@ impl EventRepository for InMemoryEventRepository {
                 .clone();
 
             for filter in filters {
-                // A tag index that holds no empty value cannot answer a criterion that is one, so
-                // the filter selects nothing — the whole filter, not just that family, because
-                // both shipped backends seek that index for it and their matchers refuse the
-                // non-empty values it does hold.
-                if empty_tag_index && queries_an_empty_tag_value(filter) {
-                    continue;
-                }
+                // An index built from non-empty values cannot answer the criterion `""`, but both
+                // shipped backends still answer the rest of that filter: LMDB skips an empty tag
+                // value and compares the remaining criteria
+                // (`crates/nostream-storage/src/lmdb/events.rs:1621-1626`), and Postgres binds
+                // every criterion left into one `tag_value = ANY(…)`
+                // (`crates/nostream-storage/src/postgres/sql.rs:338-354`). So the double matches
+                // the stripped filter — and a family the strip leaves with no criterion selects
+                // nothing, which is also what both answer for `{"#d": [""]}`. Dropping the whole
+                // filter, as this did, answered none of the rows both answer for
+                // `{"#d": ["", "post-1"]}`.
+                let stripped = if empty_tag_index && has_empty_tag_criterion(filter) {
+                    match without_empty_tag_criteria(filter) {
+                        Some(stripped) => Some(stripped),
+                        None => continue,
+                    }
+                } else {
+                    None
+                };
+                let filter = stripped.as_ref().unwrap_or(filter);
 
                 let bound = filter.limit.unwrap_or(u64::MAX).min(page_bound);
                 let mut taken = 0u64;
@@ -1888,6 +1912,64 @@ mod tests {
             1,
             "one row, because the second filter's first match was the first filter's row"
         );
+    }
+
+    #[tokio::test]
+    async fn an_index_without_an_empty_value_answers_the_rest_of_the_filter() {
+        // Both backends keep the non-empty criteria of the family and compare those: LMDB skips
+        // the empty tag value and matches the others (`lmdb/events.rs:1621-1626`), and Postgres
+        // binds everything left into one `tag_value = ANY(…)` (`postgres/sql.rs:338-354`). So
+        // `{"#d": ["", "post-1"]}` answers the `post-1` row, and `{"#d": [""]}` answers nothing.
+        // The double used to drop the whole filter, which for the mixed one answered none of the
+        // rows both backends answer.
+        let events = InMemoryEventRepository::new();
+        events.declare_no_empty_tag_values();
+
+        for (index, d) in ["", "post-1"].into_iter().enumerate() {
+            let event = Event {
+                id: EventId::from_byte_array([index as u8 + 1; 32]),
+                pubkey: Pubkey::from_byte_array([7; 32]),
+                created_at: index as i64 + 1,
+                kind: Kind(30_023),
+                tags: vec![vec!["d".to_owned(), d.to_owned()]],
+                content: d.to_owned(),
+                sig: Signature::from_byte_array([0; 64]),
+            };
+            events
+                .create(&EventRecord::from_event(&event))
+                .await
+                .unwrap();
+        }
+
+        let family = |criteria: &[&str]| Filter {
+            tags: BTreeMap::from([(
+                "#d".to_owned(),
+                criteria
+                    .iter()
+                    .map(|criterion| (*criterion).to_owned())
+                    .collect(),
+            )]),
+            ..Filter::default()
+        };
+
+        let mixed = [family(&["", "post-1"])];
+        let rows = nostream_storage::repositories::collect_records(
+            events.find_by_filters(&mixed).await.unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1, "the `post-1` criterion is still answered");
+        assert_eq!(rows[0].event.content, "post-1");
+
+        let empty = [family(&[""])];
+        let rows = nostream_storage::repositories::collect_records(
+            events.find_by_filters(&empty).await.unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert!(rows.is_empty(), "no index entry holds `\"\"`: {rows:?}");
     }
 
     #[tokio::test]

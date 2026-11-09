@@ -1361,7 +1361,10 @@ async fn eose_hints_are_absent_when_the_page_was_full_at_enumeration() {
 /// empty value, so the read yields nothing. With no row yielded there is no refusal and no short
 /// page to see, so before this round the relay finished over a stored article it never sent. The
 /// second request is the same fixture's ordinary `#d` filter, which still finishes: the
-/// suppression is the empty criterion's and not a blanket refusal of tag filters.
+/// suppression is the empty criterion's and not a blanket refusal of tag filters. The third is
+/// the mixed one — the index answers `post-1` and cannot answer `""`, so that row is delivered
+/// and `finish` is still withheld, because the `["d", ""]` row the matcher accepts was never
+/// enumerated.
 #[tokio::test]
 async fn eose_hints_are_absent_for_an_empty_tag_criterion() {
     let fixture = Fixture::new(settings());
@@ -1407,6 +1410,22 @@ async fn eose_hints_are_absent_for_an_empty_tag_criterion() {
         "the named row is delivered: {frames:?}"
     );
     assert_eq!(frames[1], r#"["EOSE","s2",["finish"]]"#, "{frames:?}");
+
+    client
+        .send(r##"["REQ","s3",{"#d":["","post-1"],"limit":5}]"##)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert!(
+        frames[0].starts_with(r#"["EVENT","s3","#) && frames[0].contains("named d"),
+        "the `post-1` row answers the criterion: {frames:?}"
+    );
+    assert!(
+        !frames[0].contains("empty d"),
+        "the empty value is not a row the index can answer: {frames:?}"
+    );
+    assert_eq!(frames[1], r#"["EOSE","s3"]"#, "{frames:?}");
 }
 
 /// `auth` and the completeness hint compose: a withheld match falsifies `finish` even where the
