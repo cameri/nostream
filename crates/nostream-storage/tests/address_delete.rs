@@ -140,3 +140,47 @@ async fn delete_by_address_reaches_a_reported_row() {
 
     assert_eq!(deleted, 1, "the delete reaches the row the read cannot");
 }
+
+/// The request's own `created_at` is the authorisation window, so the comparison is inside the
+/// delete: a row newer than the request survives, and one no newer than it goes. Both rows sit
+/// under the same author and kind, one address apart, so only the bound decides.
+#[tokio::test]
+async fn delete_by_address_keeps_a_row_newer_than_the_request() {
+    let (_directory, backend) = open_store().await;
+    let author = addressable(7, "kept", 1_010);
+    let at_the_bound = addressable(7, "gone", 1_000);
+    backend.create(&author).await.expect("the store creates");
+    backend
+        .create(&at_the_bound)
+        .await
+        .expect("the store creates");
+
+    assert_eq!(
+        backend
+            .delete_by_address(&author.event.pubkey, Kind(30_023), "kept", 1_000)
+            .await
+            .expect("the store deletes"),
+        0,
+        "a replacement newer than the request is not its to delete"
+    );
+    assert_eq!(
+        backend
+            .delete_by_address(&at_the_bound.event.pubkey, Kind(30_023), "gone", 1_000)
+            .await
+            .expect("the store deletes"),
+        1,
+        "a row at exactly the request's created_at is deleted"
+    );
+
+    assert_eq!(
+        backend
+            .count_by_filters(&[Filter {
+                authors: Some(vec![author.event.pubkey.to_string()]),
+                ..Default::default()
+            }])
+            .await
+            .expect("a read"),
+        1,
+        "only the newer row is left"
+    );
+}
