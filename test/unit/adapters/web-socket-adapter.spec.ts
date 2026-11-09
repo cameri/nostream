@@ -216,6 +216,25 @@ describe('WebSocketAdapter', () => {
       expect(client.send).to.have.been.calledWith(closedMessage('sub-1'))
     })
 
+    it('closes with an error reason when the expiry check fails', async () => {
+      adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+      adapter.setSubscriptionExpiry(
+        'sub-1',
+        new Date('2026-11-09T12:00:01.000Z'),
+        sandbox.stub().rejects(new Error('db down')),
+      )
+
+      await clock.tickAsync(1000)
+
+      expect(adapter.getSubscriptions().has('sub-1')).to.be.false
+      const closed = client.send
+        .getCalls()
+        .map((call: any) => JSON.parse(call.args[0]))
+        .find((message: any) => message[0] === 'CLOSED')
+      expect(closed).to.deep.equal(['CLOSED', 'sub-1', 'error: unable to check peering access'])
+      expect(client.send).not.to.have.been.calledWith(closedMessage('sub-1'))
+    })
+
     it('keeps the subscription open when access becomes free', async () => {
       adapter.onSubscribed('sub-1', [{ kinds: [1] }])
       adapter.setSubscriptionExpiry(
