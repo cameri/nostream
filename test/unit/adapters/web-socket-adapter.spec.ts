@@ -188,6 +188,89 @@ describe('WebSocketAdapter', () => {
     })
   })
 
+  describe('setSubscriptionExpiry', () => {
+    let clock: Sinon.SinonFakeTimers
+
+    beforeEach(() => {
+      clock = Sinon.useFakeTimers({ now: new Date('2026-11-09T12:00:00.000Z') })
+    })
+
+    afterEach(() => {
+      clock.restore()
+    })
+
+    const closedMessage = (subscriptionId: string) =>
+      JSON.stringify(['CLOSED', subscriptionId, 'payment-required: peering access expired'])
+
+    it('closes the subscription when paid access ends', async () => {
+      adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+      adapter.setSubscriptionExpiry(
+        'sub-1',
+        new Date('2026-11-09T12:00:01.000Z'),
+        sandbox.stub().resolves(undefined),
+      )
+
+      await clock.tickAsync(1000)
+
+      expect(adapter.getSubscriptions().has('sub-1')).to.be.false
+      expect(client.send).to.have.been.calledWith(closedMessage('sub-1'))
+    })
+
+    it('clears the timer when the subscription is closed', async () => {
+      const check = sandbox.stub().resolves(undefined)
+      adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+      adapter.setSubscriptionExpiry('sub-1', new Date('2026-11-09T12:00:01.000Z'), check)
+      adapter.onUnsubscribed('sub-1')
+
+      await clock.tickAsync(1000)
+
+      expect(check).not.to.have.been.called
+    })
+
+    it('clears the timer when the subscription id is reused', async () => {
+      const check = sandbox.stub().resolves(undefined)
+      adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+      adapter.setSubscriptionExpiry('sub-1', new Date('2026-11-09T12:00:01.000Z'), check)
+      adapter.onSubscribed('sub-1', [{ kinds: [2] }])
+
+      await clock.tickAsync(1000)
+
+      expect(check).not.to.have.been.called
+      expect(adapter.getSubscriptions().get('sub-1')).to.deep.equal([{ kinds: [2] }])
+    })
+
+    it('does not close a reused subscription when an old expiry check resolves late', async () => {
+      let releaseCheck: ((periodEnd: Date | undefined) => void) | undefined
+      const check = () =>
+        new Promise<Date | undefined>((resolve) => {
+          releaseCheck = resolve
+        })
+      adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+      adapter.setSubscriptionExpiry('sub-1', new Date('2026-11-09T12:00:00.000Z'), check)
+
+      clock.tick(1)
+      expect(releaseCheck).to.be.a('function')
+      adapter.onSubscribed('sub-1', [{ kinds: [2] }])
+      releaseCheck?.(undefined)
+      await clock.tickAsync(0)
+
+      expect(adapter.getSubscriptions().get('sub-1')).to.deep.equal([{ kinds: [2] }])
+      expect(client.send).not.to.have.been.calledWith(closedMessage('sub-1'))
+    })
+
+    it('clears all timers when the socket closes', async () => {
+      const check = sandbox.stub().resolves(undefined)
+      adapter.onSubscribed('sub-1', [{ kinds: [1] }])
+      adapter.setSubscriptionExpiry('sub-1', new Date('2026-11-09T12:00:01.000Z'), check)
+      const closeCall = client.on.getCalls().find((call: any) => call.args[0] === 'close')
+      closeCall.args[1]()
+
+      await clock.tickAsync(1000)
+
+      expect(check).not.to.have.been.called
+    })
+  })
+
   describe('onBroadcast', () => {
     it('emits broadcast event on the WebSocket server adapter', () => {
       const emitSpy = sandbox.spy(webSocketServer, 'emit')
