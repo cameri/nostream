@@ -1280,11 +1280,17 @@ async fn eose_hints_are_absent_when_the_stream_failed() {
     assert_eq!(frames, vec![r#"["EOSE","s1"]"#.to_owned()], "{frames:?}");
 }
 
-/// A row the backend selected and could not read spends a page slot without a record. The page
-/// comes back one row short of the probe, so `page_full` is `false` and `finish` would otherwise
-/// claim that every matching event had been sent over a slot that never yielded one. The case is
+/// A row the backend selected and could not read spends a page slot without a record. The case is
 /// real on LMDB, where a replacement hard-deletes the row it supersedes between the page and the
 /// batch that would have read it.
+///
+/// This is the page that **never filled**, which is the case the marker exists for: two rows
+/// against a probe of four (`limit: 3`), so `page_full` is `false` and the only thing withholding
+/// `finish` is `vanished`. The read cannot tell whether the lost key was deleted — where `finish`
+/// would still be honest over the current set — or replaced, where the new version was never
+/// enumerated and `finish` would be false, which is why it declines rather than argues. Its pair
+/// is `eose_hints_are_absent_when_the_page_was_full_at_enumeration`, where `page_full` carries the
+/// suppression and `!vanished` could be removed without failing anything.
 ///
 /// The other direction is `eose_hints_finish_when_the_limit_was_not_reached`: an honest short
 /// page still proves `finish`, so the suppression is the marker's and not the read's.
@@ -1312,6 +1318,91 @@ async fn eose_hints_are_absent_when_a_selected_row_vanished() {
         "the survivor is still delivered: {frames:?}"
     );
     assert_eq!(frames[1], r#"["EOSE","s1"]"#, "{frames:?}");
+}
+
+/// The same vanished slot in a page that **was** full at enumeration: `limit: 1` probes two, two
+/// rows are stored, and one of them vanishes. The marker is counted as a row, so `rows` reaches
+/// two and `page_full` is what withholds `finish` — removing `!vanished` would not fail this
+/// test, and its purpose is the pair with
+/// `eose_hints_are_absent_when_a_selected_row_vanished`: each names the mechanism carrying it, so
+/// neither `rows += 1` nor `!vanished` can be dropped as redundant on the other's evidence.
+#[tokio::test]
+async fn eose_hints_are_absent_when_the_page_was_full_at_enumeration() {
+    let fixture = Fixture::new(settings());
+    let survivor = signed_event(&CLIENT_SECRET, 1, vec![], "note 0", NOW_SECS);
+    let vanished = signed_event(&CLIENT_SECRET, 1, vec![], "note 1", NOW_SECS);
+    fixture.seed_event(survivor).await;
+    fixture.seed_event(vanished.clone()).await;
+    fixture.events.vanish(vanished.id);
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":1}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(
+        frames.len(),
+        2,
+        "one row was spent without a record: {frames:?}"
+    );
+    assert!(
+        frames[0].starts_with(r#"["EVENT","s1","#),
+        "the survivor is still delivered: {frames:?}"
+    );
+    assert_eq!(frames[1], r#"["EOSE","s1"]"#, "{frames:?}");
+}
+
+/// A tag criterion that is the empty string is one `Filter::matches` accepts and the tag index
+/// cannot answer: `#d: [""]` matches a stored `["d", ""]`, while both shipped backends index no
+/// empty value, so the read yields nothing. With no row yielded there is no refusal and no short
+/// page to see, so before this round the relay finished over a stored article it never sent. The
+/// second request is the same fixture's ordinary `#d` filter, which still finishes: the
+/// suppression is the empty criterion's and not a blanket refusal of tag filters.
+#[tokio::test]
+async fn eose_hints_are_absent_for_an_empty_tag_criterion() {
+    let fixture = Fixture::new(settings());
+    fixture
+        .seed_event(signed_event(
+            &CLIENT_SECRET,
+            30_023,
+            vec![vec!["d", ""]],
+            "empty d",
+            NOW_SECS,
+        ))
+        .await;
+    fixture
+        .seed_event(signed_event(
+            &CLIENT_SECRET,
+            30_023,
+            vec![vec!["d", "post-1"]],
+            "named d",
+            NOW_SECS,
+        ))
+        .await;
+    fixture.events.declare_no_empty_tag_values();
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r##"["REQ","s1",{"#d":[""],"limit":5}]"##).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(
+        frames,
+        vec![r#"["EOSE","s1"]"#.to_owned()],
+        "the index cannot answer `\"\"`, so nothing proves completion: {frames:?}"
+    );
+
+    client
+        .send(r##"["REQ","s2",{"#d":["post-1"],"limit":5}]"##)
+        .await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 2, "{frames:?}");
+    assert!(
+        frames[0].starts_with(r#"["EVENT","s2","#),
+        "the named row is delivered: {frames:?}"
+    );
+    assert_eq!(frames[1], r#"["EOSE","s2",["finish"]]"#, "{frames:?}");
 }
 
 /// `auth` and the completeness hint compose: a withheld match falsifies `finish` even where the

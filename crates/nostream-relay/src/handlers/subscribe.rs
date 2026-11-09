@@ -21,14 +21,14 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use nostream_core::expiration;
-use nostream_core::filter::{count_filter_values, normalise_subscription};
+use nostream_core::filter::{count_filter_values, is_generic_tag_query, normalise_subscription};
 use nostream_core::messages::{
     EOSE_HINT_AUTH, EOSE_HINT_FINISH, EOSE_HINT_MORE, EoseMessage, OutgoingEventMessage,
     RelayMessage, SubscribeMessage,
 };
 use nostream_core::nip42;
 use nostream_core::{Filter, Kind};
-use nostream_storage::repositories::{SearchRule, StreamedEvent};
+use nostream_storage::repositories::{EmptyTagRule, SearchRule, StreamedEvent};
 
 use crate::connection::InFlightRead;
 use crate::error::RelayError;
@@ -424,12 +424,15 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
             }
             Ok(StreamedEvent::Vanished) => {
                 // The backend selected this slot and the key was gone when it read the value, so
-                // the slot is spent without a record. It counts as a row, exactly as a skipped
-                // row does, and it sets `vanished` on its own: `page_full` compares the rows the
-                // read *yielded* against the probe, so a page that lost a key arrives short of it
-                // and reads as innocent, and where no probe was built `page_full` is `false`
-                // outright. The marker is the one signal in the read that says a selected slot
-                // produced nothing, so `finish` is withheld on it rather than argued about.
+                // the slot is spent without a record. It counts as a row, exactly as a skipped row
+                // does, so a page that was full at enumeration is full by count and `page_full`
+                // withholds on its own. What the count cannot carry is the page that **never
+                // filled**: fewer rows than the probe, so `page_full` is false, and a slot that
+                // was a match when the page was enumerated produced nothing when it was read. That
+                // slot may have been deleted — `finish` would still be true over the current set —
+                // or replaced, in which case the new version was never enumerated and `finish` is
+                // false, and the read cannot tell the two apart, so it declines rather than
+                // argues.
                 rows += 1;
                 vanished = true;
             }
@@ -446,8 +449,8 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
 
     // The rule, in one place, so the next reader does not have to re-derive it. `finish` claims
     // that every stored event matching the subscription's filters has been sent (`67.md`
-    // §"Specification"), and this read can fail to establish that four ways, so `finish` needs
-    // all four:
+    // §"Specification"), and this read can fail to establish that six ways, so `finish` needs
+    // all six:
     //
     // 1. the stream ended **cleanly** — after a storage error, how far the read got is unknown;
     // 2. the page was **not full** — a page that yielded `min(probe, page_bound())` rows says
@@ -455,28 +458,40 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     //    from the backend's own page cap, and a skipped row spends a page slot just as a match
     //    does (which is why `rows`, not `matched`, decides this);
     // 3. **no page slot was spent without its row** — a backend reports a slot it selected and
-    //    then could not read as `StreamedEvent::Vanished`, and that slot is a row the read was
-    //    promised. The count of yielded rows cannot carry that on its own: `page_full` compares
-    //    that count against the probe, so a page that lost a key to a concurrent replacement
-    //    arrives short of it and reads as innocent, and where no probe was built `page_full` is
-    //    `false` by construction. The marker withholds `finish` directly, rather than relying on
-    //    the arithmetic a vanished row happens to disturb;
-    // 4. the set the backend enumerated is the set this relay would have — no row it yielded was
-    //    refused by `Filter::matches`, and no filter carrying `search` was answered by a
-    //    predicate other than that matcher. Both are needed and neither implies the other: a
-    //    refusal is the direction a probe can see (`study` yields `studies`, which the matcher
-    //    refuses), while a row the matcher *would* accept and the backend never yields
-    //    (`abcdef` inside `xxabcdefyy`) leaves no trace at all. See `EventRepository::search_rule`.
-    // 5. **no further match** was found — the `more` branch below is where this one lives: a
-    //    further match ends the read with `more` set, so the code that can reach the hint is the
-    //    code where none was found. It is only meaningful once 1 and 2 hold, because the loop
-    //    keeps asking past deleted, expired, withheld and non-matching rows until it sees a
-    //    match, the genuine end, or the page cap.
+    //    then could not read as `StreamedEvent::Vanished`, and that slot is counted as a row, so
+    //    a page that was full at enumeration is full by count and item 2 withholds on its own.
+    //    The marker's own work is the page that **never filled**: fewer rows than the probe, so
+    //    `page_full` is false, and a slot that was a match when the page was enumerated produced
+    //    nothing when it was read. That slot may have been deleted — `finish` would still be
+    //    true over the current set — or replaced, in which case the new version was never
+    //    enumerated and `finish` is false, and the read cannot tell the two apart, so it
+    //    declines rather than argues;
+    // 4. **no yielded row was refused** — the backend selected a row `Filter::matches` refuses,
+    //    which proves the two predicates disagree, so a short page proves nothing about the rows
+    //    the backend never yielded;
+    // 5. **no `search` filter was answered by another predicate** — Postgres prefilters with
+    //    `to_tsvector`, and a row the matcher *would* accept and the backend never yields
+    //    (`abcdef` inside `xxabcdefyy`) leaves no trace at all, so the backend declares its rule
+    //    rather than the read probing for it. See `EventRepository::search_rule`;
+    // 6. **no tag criterion that is the empty string was read from an index without one** — the
+    //    matcher accepts a `["d", ""]` tag, an index of non-empty values selects nothing for
+    //    the criterion `""`, and nothing is yielded to refuse, so like item 5 the enumeration
+    //    could not answer a criterion the matcher accepts and no probe shows it. See
+    //    `EventRepository::empty_tag_rule`.
     //
-    // Where any of the four cannot be established the relay sends no completeness hint: an
-    // absent hint is honest and a wrong one is not. `more` needs one further **match** beyond
-    // the delivered window, `auth` is unaffected, and `finish` is never sent beside `auth`
-    // because a withheld event falsifies it.
+    // Items 4 and 5 are both needed and neither implies the other: a refusal is the direction a
+    // probe can see (`study` yields `studies`, which the matcher refuses), while a row the
+    // matcher would accept and the backend never yields leaves no trace at all.
+    //
+    // Beyond the six, `more` needs one further **match** beyond the delivered window: that branch
+    // ends the read with `more` set, so the code that can reach the hint is the code where none
+    // was found. It is only meaningful once items 1 and 2 hold, because the loop keeps asking
+    // past deleted, expired, withheld and non-matching rows until it sees a match, the genuine
+    // end, or the page cap.
+    //
+    // Where any of the six cannot be established the relay sends no completeness hint: an absent
+    // hint is honest and a wrong one is not. `auth` is unaffected, and `finish` is never sent
+    // beside `auth` because a withheld event falsifies it.
     let page_bound = context.stores.events.page_bound();
     let page_full = probe.is_some_and(|probe| rows >= probe.min(page_bound));
     let search_rule = context.stores.events.search_rule();
@@ -487,7 +502,17 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
             .is_some_and(|search| !search.trim().is_empty())
     });
     let search_agrees = search_rule == SearchRule::SubstringTerms || !searched;
-    let proven = !failed && !page_full && !vanished && !refused && search_agrees;
+    // A tag criterion that is the empty string is one `Filter::matches` accepts and a tag index
+    // built from non-empty values cannot answer: nothing is yielded, so neither a refusal nor a
+    // short page shows it, and the enumeration could not answer a criterion the matcher accepts.
+    let empty_tag_query = filters.iter().any(|filter| {
+        filter.tags.iter().any(|(key, criteria)| {
+            is_generic_tag_query(key) && criteria.iter().any(String::is_empty)
+        })
+    });
+    let tag_agrees = context.stores.events.empty_tag_rule() == EmptyTagRule::AnswersEmptyCriterion
+        || !empty_tag_query;
+    let proven = !failed && !page_full && !vanished && !refused && search_agrees && tag_agrees;
 
     let mut hints = Vec::new();
 

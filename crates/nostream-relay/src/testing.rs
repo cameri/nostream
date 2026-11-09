@@ -21,15 +21,16 @@ use nostream_config::settings::{
     RateLimiterSettings, Settings,
 };
 use nostream_core::clock::Clock;
+use nostream_core::filter::is_generic_tag_query;
 use nostream_core::{Event, EventId, Filter, Kind, Pubkey};
 use nostream_storage::MAX_PAGE_ROWS;
 use nostream_storage::StorageError;
 use nostream_storage::repositories::{
-    ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobStatus, EventPurgeCounts, EventRecord,
-    EventRepository, EventRetentionOptions, FieldUpdate, InviteCode, InviteCodeRepository,
-    NewReport, Nip05Verification, Nip05VerificationRepository, QueryStream, ReconciliationItem,
-    Report, ReportRepository, SearchRule, StorageFuture, StreamedEvent, User, UserPatch,
-    UserRepository,
+    ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobStatus, EmptyTagRule,
+    EventPurgeCounts, EventRecord, EventRepository, EventRetentionOptions, FieldUpdate, InviteCode,
+    InviteCodeRepository, NewReport, Nip05Verification, Nip05VerificationRepository, QueryStream,
+    ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture, StreamedEvent, User,
+    UserPatch, UserRepository,
 };
 use tokio::sync::Notify;
 
@@ -158,6 +159,10 @@ pub struct InMemoryEventRepository {
     fail_reads: AtomicBool,
     page_bound: std::sync::atomic::AtomicU64,
     search_rule: Mutex<Option<SearchRule>>,
+    /// When set, the double models a backend whose tag index holds no entry for an empty value:
+    /// a filter carrying a generic tag criterion of `""` selects nothing, and `empty_tag_rule`
+    /// declares it. LMDB and Postgres are both that backend.
+    empty_tag_index: AtomicBool,
     /// Rows this double yields for **any** filter: what a backend whose `search` predicate is not
     /// `Filter::matches` looks like from the handler's side, which is the case no honest filter
     /// can produce.
@@ -263,6 +268,13 @@ impl InMemoryEventRepository {
     /// default.
     pub fn declare_page_bound(&self, bound: u64) {
         self.page_bound.store(bound, Ordering::SeqCst);
+    }
+
+    /// Declares the tag index this double answers from, the way LMDB and Postgres do: no entry
+    /// for an empty value, so a filter carrying a generic tag criterion of `""` selects nothing
+    /// even from a row that holds one.
+    pub fn declare_no_empty_tag_values(&self) {
+        self.empty_tag_index.store(true, Ordering::SeqCst);
     }
 
     /// Makes every read wait for a permit. Grant one with `Semaphore::add_permits` to let a
@@ -375,6 +387,15 @@ impl InMemoryEventRepository {
 
         deleted
     }
+}
+
+/// Whether a filter carries a generic tag criterion that is the empty string — the one criterion
+/// a tag index built from non-empty values cannot answer.
+fn queries_an_empty_tag_value(filter: &Filter) -> bool {
+    filter
+        .tags
+        .iter()
+        .any(|(key, criteria)| is_generic_tag_query(key) && criteria.iter().any(String::is_empty))
 }
 
 impl EventRepository for InMemoryEventRepository {
@@ -491,6 +512,16 @@ impl EventRepository for InMemoryEventRepository {
             .unwrap_or(SearchRule::SubstringTerms)
     }
 
+    /// The double's filter path *is* `Filter::matches`, so it answers the empty criterion; a test
+    /// that models an indexed backend declares the other rule with
+    /// [`InMemoryEventRepository::declare_no_empty_tag_values`].
+    fn empty_tag_rule(&self) -> EmptyTagRule {
+        match self.empty_tag_index.load(Ordering::SeqCst) {
+            true => EmptyTagRule::IndexesNoEmptyValue,
+            false => EmptyTagRule::AnswersEmptyCriterion,
+        }
+    }
+
     fn find_by_filters<'a>(
         &'a self,
         filters: &'a [Filter],
@@ -502,6 +533,7 @@ impl EventRepository for InMemoryEventRepository {
             .clone();
         let per_item = self.gate_per_item.load(std::sync::atomic::Ordering::SeqCst);
         let failing = self.fail_reads.load(Ordering::SeqCst);
+        let empty_tag_index = self.empty_tag_index.load(Ordering::SeqCst);
 
         Box::pin(async move {
             if failing {
@@ -536,6 +568,14 @@ impl EventRepository for InMemoryEventRepository {
                 .clone();
 
             for filter in filters {
+                // A tag index that holds no empty value cannot answer a criterion that is one, so
+                // the filter selects nothing — the whole filter, not just that family, because
+                // both shipped backends seek that index for it and their matchers refuse the
+                // non-empty values it does hold.
+                if empty_tag_index && queries_an_empty_tag_value(filter) {
+                    continue;
+                }
+
                 let bound = filter.limit.unwrap_or(u64::MAX).min(page_bound);
                 let mut taken = 0u64;
 
