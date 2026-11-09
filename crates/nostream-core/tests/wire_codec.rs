@@ -93,10 +93,35 @@ fn event_frame_is_the_verb_the_id_and_the_event_in_wire_order() {
 fn eose_frame_is_the_verb_and_the_subscription() {
     assert_eq!(
         RelayMessage::Eose(EoseMessage {
-            subscription_id: "subscriptionId".to_owned()
+            subscription_id: "subscriptionId".to_owned(),
+            hints: Vec::new(),
         })
         .to_text(),
         r#"["EOSE","subscriptionId"]"#
+    );
+}
+
+/// NIP-67's third element: an array of hint strings, in the order the builder pushed them.
+#[test]
+fn eose_frame_carries_the_hints_as_a_third_element() {
+    assert_eq!(
+        RelayMessage::Eose(EoseMessage {
+            subscription_id: "subscriptionId".to_owned(),
+            hints: vec![
+                nostream_core::messages::EOSE_HINT_AUTH.to_owned(),
+                nostream_core::messages::EOSE_HINT_FINISH.to_owned(),
+            ],
+        })
+        .to_text(),
+        r#"["EOSE","subscriptionId",["auth","finish"]]"#
+    );
+    assert_eq!(
+        RelayMessage::Eose(EoseMessage {
+            subscription_id: "subscriptionId".to_owned(),
+            hints: vec![nostream_core::messages::EOSE_HINT_MORE.to_owned()],
+        })
+        .to_text(),
+        r#"["EOSE","subscriptionId",["more"]]"#
     );
 }
 

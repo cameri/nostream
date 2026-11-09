@@ -22,7 +22,10 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use nostream_core::expiration;
 use nostream_core::filter::{count_filter_values, normalise_subscription};
-use nostream_core::messages::{EoseMessage, OutgoingEventMessage, RelayMessage, SubscribeMessage};
+use nostream_core::messages::{
+    EOSE_HINT_AUTH, EOSE_HINT_FINISH, EOSE_HINT_MORE, EoseMessage, OutgoingEventMessage,
+    RelayMessage, SubscribeMessage,
+};
 use nostream_core::nip42;
 use nostream_core::{Filter, Kind};
 
@@ -238,6 +241,12 @@ async fn mint_invite_code(
 ///
 /// The read is already in flight when this runs: it is registered before the invite mint, so
 /// a `CLOSE` that landed during the mint has set its cancellation.
+///
+/// The `EOSE` may carry NIP-67's third element (`67.md` §"Specification"), and only from the
+/// two causes that make the two-element form misleading: the read guard withheld a matching
+/// event (`auth`), or a single-filter subscription's `limit` decided the answer
+/// (`finish`/`more`). A read with neither cause keeps `["EOSE", <id>]`, which is what makes
+/// every recorded session's EOSE byte-identical to the capture's.
 async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &HandlerContext) {
     let subscription_id = read.subscription_id().to_owned();
 
@@ -248,7 +257,38 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
         return;
     }
 
-    let stream = match context.stores.events.find_by_filters(filters).await {
+    // NIP-67 can only be answered exactly for a single filter carrying a `limit`: a
+    // multi-filter union is deduplicated after each filter's own limit, so "did this
+    // subscription's cap cut the result" has no cheap exact answer there — and `more` is
+    // optional in the NIP for exactly that reason.
+    let hint_eligible = filters.len() == 1 && filters[0].limit.is_some();
+    let limit = if hint_eligible {
+        filters[0].limit
+    } else {
+        None
+    };
+
+    // The probe: ask storage for one more row than the client's cap, so the `(limit + 1)`th
+    // matching row is the one that says `more` without being sent. `u64::MAX` saturates, which
+    // admits nothing beyond the maximum and so cannot hide a row. The backends already honour
+    // `limit`; the in-memory double does not, and the loop below drops the extra row either way.
+    let storage_filters: Vec<Filter> = match limit {
+        Some(limit) => filters
+            .iter()
+            .map(|filter| Filter {
+                limit: Some(limit.saturating_add(1)),
+                ..filter.clone()
+            })
+            .collect(),
+        None => filters.to_vec(),
+    };
+
+    let stream = match context
+        .stores
+        .events
+        .find_by_filters(&storage_filters)
+        .await
+    {
         Ok(stream) => stream,
         Err(error) => {
             tracing::error!(error = %error, "unable to stream events");
@@ -262,6 +302,13 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
     let now = context.now_secs();
     let matches_any =
         |event: &nostream_core::Event| filters.iter().any(|filter| filter.matches(event));
+
+    // `trimmed`: the guard withheld a matching, unexpired event this read would otherwise have
+    // delivered. `more`: the cap cut the result. `delivered`: matching rows inside the cap, in
+    // stream order — a deleted, expired or non-matching row is not one of them.
+    let mut trimmed = false;
+    let mut more = false;
+    let mut matched = 0u64;
 
     loop {
         if *read.cancellation().borrow() {
@@ -316,14 +363,29 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
 
                 let event = record.event;
 
+                if expiration::is_expired_event(&event, now) || !matches_any(&event) {
+                    continue;
+                }
+
+                // The `(limit + 1)`th matching row is beyond the cap, so nothing after it can
+                // change the answer: it sets `more` and ends the read undelivered.
+                if let Some(limit) = limit
+                    && matched >= limit
+                {
+                    more = true;
+                    break;
+                }
+
+                matched += 1;
+
                 // The guard is the crate's one definition of "may this socket read this
                 // event"; it is asked per event, as the capture's
                 // `createReadAuthorizationGuard` is, so an AUTH that lands mid-read applies to
-                // the rest of the stream.
-                if expiration::is_expired_event(&event, now)
-                    || !context.read_authorization_guard().allows(&event)
-                    || !matches_any(&event)
-                {
+                // the rest of the stream. A withheld row still occupied a place inside the
+                // cap, which is why the counter moves before the guard is asked.
+                if !context.read_authorization_guard().allows(&event) {
+                    trimmed = true;
+
                     continue;
                 }
 
@@ -343,9 +405,27 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
 
     context.connection.end_read(read);
 
-    context
-        .sink
-        .send(&RelayMessage::Eose(EoseMessage { subscription_id }));
+    // `auth` first, then the completeness hint. `finish` is never sent beside `auth`: `67.md`
+    // defines `finish` as "every stored event matching the subscription's filters" has been
+    // sent, and a withheld event makes that false even though the NIP's example shows the pair.
+    let mut hints = Vec::new();
+
+    if trimmed {
+        hints.push(EOSE_HINT_AUTH.to_owned());
+    }
+
+    if hint_eligible {
+        if more {
+            hints.push(EOSE_HINT_MORE.to_owned());
+        } else if !trimmed {
+            hints.push(EOSE_HINT_FINISH.to_owned());
+        }
+    }
+
+    context.sink.send(&RelayMessage::Eose(EoseMessage {
+        subscription_id,
+        hints,
+    }));
 }
 
 /// `canSubscribe` (`:258-301`): six reasons, the capture's strings — including

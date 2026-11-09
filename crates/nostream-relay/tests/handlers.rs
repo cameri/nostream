@@ -1032,6 +1032,85 @@ async fn a_restricted_read_delivers_only_to_the_author_or_a_p_tagged_reader() {
     assert_eq!(frames[1], r#"["EOSE","mine"]"#);
 }
 
+// ---------------------------------------------------------------------------------------
+// NIP-67 EOSE hints
+// ---------------------------------------------------------------------------------------
+
+/// `count` stored notes by the client's key, so a `limit` can sit above or below the count.
+async fn seed_notes(fixture: &Fixture, count: usize) {
+    for index in 0..count {
+        fixture
+            .seed_event(signed_event(
+                &CLIENT_SECRET,
+                1,
+                vec![],
+                &format!("note {index}"),
+                NOW_SECS,
+            ))
+            .await;
+    }
+}
+
+/// Every frame but the last is an `EVENT` for the given subscription.
+fn events_then_eose(frames: &[String]) -> bool {
+    let (last, events) = frames.split_last().expect("an EOSE at least");
+
+    events
+        .iter()
+        .all(|frame| frame.starts_with(r#"["EVENT","s1","#))
+        && last.starts_with(r#"["EOSE","s1""#)
+}
+
+/// Reading without a limit is the case the client's legacy heuristic is exact for, so the relay
+/// adds nothing (`67.md` §"Specification": the third element is optional, and its absence is not
+/// a claim). This is also the shape the sixteen recorded sessions pin.
+#[tokio::test]
+async fn eose_hints_are_absent_without_a_limit() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 2).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1]}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 3, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[2], r#"["EOSE","s1"]"#);
+}
+
+/// The cap was not reached: every matching stored event has been sent.
+#[tokio::test]
+async fn eose_hints_finish_when_the_limit_was_not_reached() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 2).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":3}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 3, "{frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[2], r#"["EOSE","s1",["finish"]]"#);
+}
+
+/// The cap was reached: the probe row exists, is not sent, and ends the read.
+#[tokio::test]
+async fn eose_hints_more_when_the_limit_was_reached() {
+    let fixture = Fixture::new(settings());
+    seed_notes(&fixture, 3).await;
+    let server = start(fixture).await;
+    let (mut client, _challenge) = server.connect().await;
+
+    client.send(r#"["REQ","s1",{"kinds":[1],"limit":2}]"#).await;
+    let frames = client.read_until_eose().await;
+
+    assert_eq!(frames.len(), 3, "exactly the limit's events: {frames:?}");
+    assert!(events_then_eose(&frames), "{frames:?}");
+    assert_eq!(frames[2], r#"["EOSE","s1",["more"]]"#);
+}
+
 #[tokio::test]
 async fn a_close_aborts_an_in_flight_read_without_a_frame() {
     let stored = signed_event(&CLIENT_SECRET, 1, vec![], "stored", NOW_SECS);
