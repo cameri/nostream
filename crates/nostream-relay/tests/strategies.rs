@@ -442,6 +442,94 @@ async fn delete_returns_an_error_when_the_create_fails() {
     assert_eq!(frames(&mut sink), Vec::<String>::new());
 }
 
+// --- NIP-09 `a` tags (09.md §"Deletion Request") -----------------------------------------
+
+/// A kind-30023 row carrying `d`, under [`other_event_id`] so it cannot be confused with the
+/// request.
+fn addressable_row(d: Option<&str>, created_at: i64) -> Event {
+    Event {
+        id: other_event_id(),
+        created_at,
+        ..event(
+            30_023,
+            d.map(|value| vec![tag(&["d", value])]).unwrap_or_default(),
+            "a long-form post",
+        )
+    }
+}
+
+/// A kind-5 request naming `30023:<pubkey>:<d>`.
+fn address_delete_event(address: &str) -> Event {
+    event(5, vec![tag(&["a", address])], "")
+}
+
+#[tokio::test]
+async fn delete_soft_deletes_an_addressable_event_named_by_an_a_tag() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let (context, mut sink) = socket(&fixture);
+    let event = address_delete_event(&format!("30023:{}:post-1", author()));
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.deletes(), vec![(author(), vec![target.id])]);
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+#[tokio::test]
+async fn delete_ignores_an_a_tag_naming_another_authors_address() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let (context, mut sink) = socket(&fixture);
+    // The address names `author()`, but the request is signed by somebody else.
+    let mut event = address_delete_event(&format!("30023:{}:post-1", author()));
+    event.pubkey = Pubkey::from_byte_array([0x44; 32]);
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.deletes(), Vec::new());
+    assert!(fixture.events.live_events().contains(&target));
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+#[tokio::test]
+async fn delete_leaves_an_addressable_event_newer_than_the_request() {
+    let fixture = Fixture::new(settings());
+    let target = addressable_row(Some("post-1"), NOW_SECS + 10);
+    fixture.seed_event(target.clone()).await;
+
+    let (context, mut sink) = socket(&fixture);
+    let event = address_delete_event(&format!("30023:{}:post-1", author()));
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.deletes(), Vec::new());
+    assert!(fixture.events.live_events().contains(&target));
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+#[tokio::test]
+async fn delete_matches_an_empty_d_identifier() {
+    let fixture = Fixture::new(settings());
+    // A row with no `d` tag is the one stored under the address's empty `d`.
+    let target = addressable_row(None, NOW_SECS);
+    fixture.seed_event(target.clone()).await;
+
+    let (context, mut sink) = socket(&fixture);
+    let event = address_delete_event(&format!("30023:{}:", author()));
+
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.deletes(), vec![(author(), vec![target.id])]);
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
 // ---------------------------------------------------------------------------
 // dvm_job_request — `dvm-job-request-event-strategy.spec.ts`
 // ---------------------------------------------------------------------------
