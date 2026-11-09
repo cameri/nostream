@@ -878,17 +878,45 @@ is a defect, and §10 is the same record in table form.
     whose tags are `a`-only deletes nothing. The rewrite either implements
     addressable-event deletion or records the omission deliberately — but §5 and the
     §7 row now say so, and Phase 2 must not inherit the silence.
-    - **Status:** done in this job — an `a` tag is handed to `EventRepository::delete_by_address`,
-      which resolves the address and soft-deletes it in **one** storage operation: LMDB walks the
-      author-and-kind prefix of `events_by_author` (one index range, no read page, so a narrow
-      address is never found by scanning a page that sorts it out of view) and Postgres runs one
-      `UPDATE … WHERE`; the request's `created_at` is compared inside that transaction, so a
-      replacement cannot land between a lookup and the delete, and the author-equality and
-      addressable-kind rules still gate the tag before it is read. Records with an actionable
-      NIP-56 report are reachable too, because the delete no longer goes through the read path
-      that withholds them. `strategies::delete_resolves_and_deletes_an_address_in_one_operation`,
-      `delete_by_address_reaches_a_row_past_the_page_bound`,
-      `delete_by_address_reaches_a_reported_row` and four more (§10).
+    - **Status:** done in this job — an `a` tag is handed to
+      `EventRepository::delete_by_addresses`, which resolves each address and soft-deletes the
+      batch in **one** storage operation:
+      - **LMDB** probes the `replaceable` point index every production path writes
+        (`upsert`/`upsert_many`), so an address costs one lookup and one row decode — measured
+        0.0395 ms against 144 ms for the author-kind walk this replaced at 5 000 rows of the kind
+        — and applies the remaining predicates (not deleted, `created_at` not after the request's,
+        not kind 62, the row's own author and kind, the `d` value) to the one row the index names.
+      - **Postgres** runs one `UPDATE … WHERE (event_kind, event_deduplication->>0) IN (…)`, the
+        row-value form, so a batch cannot pair one address's kind with another's identifier.
+      - The request's `created_at` is compared inside that transaction, so a replacement cannot
+        land between a lookup and the delete; the author-equality and addressable-kind rules gate
+        the tag before it is read; and records with an actionable NIP-56 report are reachable,
+        because the delete does not go through the read path that withholds them.
+      - **The `d` is `Event::d_tag_value()`** — one derivation in `nostream-core`, used by the
+        addressable strategy, the import path, the LMDB delete and the relay's double, so the
+        column Postgres matches and the value LMDB compares cannot drift apart.
+      - **One request names at most 100 distinct addresses** (`delete.rs`'s
+        `MAX_ADDRESSES_PER_REQUEST`), and a request naming more is refused with
+        `["OK",<id>,false,"invalid: …"]` before anything is deleted or stored. The number is
+        derived, not felt: `maxPayloadSize` 524 288 admits ≈6 096 `a` tags and nothing else caps a
+        tag list, one address is ~0.04 ms of one write transaction, and kind 5 is limited to 30
+        events/min per free key — so 30 × 100 ≈ 3 000 address-deletes/min (~0.2 % of the single
+        LMDB writer), where 30 × 6 096 would be ≈7.3 s of writer time per minute from one free key.
+        A refusal changes nothing, so the client can retry with the addresses split across
+        requests; a partial delete answered `true` would claim deletions that did not happen.
+      - **Postgres's arm has never been executed.** No command in this repository runs it: the
+        capture has no such operation, so neither parity target can replay it, and
+        `tests/address_delete.rs` is `#![cfg(feature = "lmdb")]`. What would close it: a
+        hand-written case in `tests/parity.rs` (the target that CI runs against
+        `postgres:16-alpine`) seeding one row at the bound and one newer, or a Postgres-parameterised
+        `address_delete.rs`.
+      - Tests: `strategies::delete_names_each_distinct_address_once`,
+        `delete_refuses_a_request_naming_too_many_addresses`, `delete_admits_a_cap_sized_batch`,
+        `delete_resolves_and_deletes_an_address_in_one_operation`,
+        `delete_by_addresses_reaches_a_row_past_the_page_bound`,
+        `delete_by_addresses_reaches_a_reported_row`,
+        `delete_by_addresses_uses_the_first_d_tag`,
+        `delete_by_addresses_keeps_a_row_newer_than_the_request` (§10).
 
 ## 10. Phase 2: the advertisement and the harness map
 
