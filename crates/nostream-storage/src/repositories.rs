@@ -453,6 +453,28 @@ pub enum SearchRule {
     },
 }
 
+/// Whether a backend's tag index can answer a criterion that is the empty string.
+///
+/// [`nostream_core::Filter::matches`] compares a tag value to the criterion with `==`, so the
+/// criterion `""` accepts a tag stored as `["d", ""]`. A backend that answers tag criteria from
+/// an index of non-empty values holds no entry for the empty one, and then the read selects
+/// nothing while the matcher would have accepted every such row — a short page that proves
+/// nothing about the rows it never enumerated. Each variant names the rule, as [`SearchRule`]'s
+/// do, so an implementor has to read what it is asserting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmptyTagRule {
+    /// A criterion that is the empty string selects what [`nostream_core::Filter::matches`]
+    /// selects. The in-memory backends' tag predicate *is* that matcher, so a completeness claim
+    /// over such a read is one the relay can check.
+    AnswersEmptyCriterion,
+    /// The tag index holds no entry for an empty value, so the criterion `""` selects nothing
+    /// however many rows carry `["d", ""]`. LMDB: `tag_entries` writes a key only when the value
+    /// is non-empty (`crates/nostream-storage/src/lmdb/encoding.rs:387`). Postgres: the
+    /// `event_tags` trigger inserts a row only where `tag_value <> ''`
+    /// (`migrations/20240108130100_add_event_tags_table.sql:24`).
+    IndexesNoEmptyValue,
+}
+
 /// Event storage (`src/@types/repositories.ts` `IEventRepository`).
 pub trait EventRepository: Send + Sync {
     /// Inserts one event, returning the affected row count (0 on a duplicate `event_id`).
@@ -536,6 +558,18 @@ pub trait EventRepository: Send + Sync {
     /// enumerated the set.
     fn search_rule(&self) -> SearchRule {
         SearchRule::SubstringTerms
+    }
+
+    /// Whether a tag criterion that is the empty string can be answered from this backend's tag
+    /// index (see [`EmptyTagRule`]).
+    ///
+    /// Defaults to [`EmptyTagRule::AnswersEmptyCriterion`], which is what a backend that filters
+    /// with [`nostream_core::Filter::matches`] answers — its tag predicate *is* that matcher. A
+    /// backend that answers tag criteria from an index of non-empty values overrides this, and a
+    /// caller that must claim completeness over such a read reads it rather than assuming the
+    /// criterion enumerated the set.
+    fn empty_tag_rule(&self) -> EmptyTagRule {
+        EmptyTagRule::AnswersEmptyCriterion
     }
 
     /// Streams the live `(created_at, event_id)` pairs a NIP-77 reconciliation compares.

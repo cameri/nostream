@@ -28,7 +28,7 @@ use crate::backend::LmdbEnv;
 use crate::error::StorageError;
 use crate::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
-    DvmJobRepository, DvmJobUpdate, EventPurgeCounts, EventRecord, EventRepository,
+    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventPurgeCounts, EventRecord, EventRepository,
     EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
     NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
@@ -368,6 +368,13 @@ impl EventRepository for LmdbBackend {
             self.read(move |txn, databases| events::count(txn, databases, &filters, &gates, now))
                 .await
         })
+    }
+
+    /// LMDB's tag index holds no empty value: `encoding::tag_entries` writes a key only when the
+    /// value is non-empty (`encoding.rs:387`), so the criterion `""` — which `Filter::matches`
+    /// accepts — selects nothing.
+    fn empty_tag_rule(&self) -> EmptyTagRule {
+        EmptyTagRule::IndexesNoEmptyValue
     }
 
     fn find_reconciliation_items<'a>(

@@ -9,7 +9,7 @@ use super::{
 use crate::error::StorageError;
 use crate::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
-    DvmJobRepository, DvmJobUpdate, EventPurgeCounts, EventRecord, EventRepository,
+    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventPurgeCounts, EventRecord, EventRepository,
     EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
     NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
@@ -79,6 +79,14 @@ impl EventRepository for PostgresBackend {
             },
             None => SearchRule::SubstringTerms,
         }
+    }
+
+    /// Postgres answers a tag criterion from `event_tags` (`sql.rs:347-354`), and that table
+    /// holds no empty value: its trigger inserts a row only where `tag_value <> ''`
+    /// (`migrations/20240108130100_add_event_tags_table.sql:24`), so `tag_value = ANY('{""}')`
+    /// matches nothing while `Filter::matches` accepts `["d", ""]`.
+    fn empty_tag_rule(&self) -> EmptyTagRule {
+        EmptyTagRule::IndexesNoEmptyValue
     }
 
     fn delete_by_addresses<'a>(
