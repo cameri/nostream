@@ -9,6 +9,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -108,11 +109,130 @@ async fn relay(
     format!("ws://127.0.0.1:{port}")
 }
 
+/// What a [`strict_relay`] read: the verbs, in order, and whether it had to drop the reply.
+#[derive(Default)]
+struct Seen {
+    verbs: Mutex<Vec<&'static str>>,
+    dropped: AtomicBool,
+}
+
+impl Seen {
+    fn verbs(&self) -> Vec<&'static str> {
+        self.verbs.lock().expect("the record").clone()
+    }
+
+    fn dropped(&self) -> bool {
+        self.dropped.load(Ordering::SeqCst)
+    }
+}
+
+/// A websocket relay that registers a `REQ` and answers the `EVENT` at once.
+///
+/// A kind-23195 reply is ephemeral, so a relay live-forwards it to the subscriptions already
+/// registered on the connection and stores nothing. This double behaves that way: it answers
+/// from its `EVENT` arm only when a `REQ` has registered a subscription, and otherwise drops
+/// the reply and closes — so a client that publishes the request first never reads one.
+async fn strict_relay(payload: serde_json::Value) -> (String, Arc<Seen>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let port = listener.local_addr().expect("local addr").port();
+    let seen = Arc::new(Seen::default());
+    let record = Arc::clone(&seen);
+
+    tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept");
+        let mut socket = tokio_tungstenite::accept_async(socket)
+            .await
+            .expect("the handshake");
+        let mut subscription: Option<String> = None;
+
+        while let Some(Ok(Message::Text(frame))) = socket.next().await {
+            let frame: serde_json::Value = serde_json::from_str(&frame).expect("a frame");
+            let parts = frame.as_array().expect("a frame array");
+
+            match parts.first().and_then(serde_json::Value::as_str) {
+                Some("REQ") => {
+                    record.verbs.lock().expect("the record").push("REQ");
+                    subscription = Some(parts[1].as_str().expect("the subscription").to_owned());
+                }
+                Some("EVENT") => {
+                    record.verbs.lock().expect("the record").push("EVENT");
+                    let Some(subscription) = subscription.as_deref() else {
+                        record.dropped.store(true, Ordering::SeqCst);
+                        break;
+                    };
+                    let request: Event =
+                        serde_json::from_value(parts[1].clone()).expect("the request event");
+                    let content = nip04::encrypt(
+                        &WALLET_SECRET,
+                        &request.pubkey,
+                        &payload.to_string(),
+                        &[3u8; 16],
+                    )
+                    .expect("the wallet encrypts its reply");
+
+                    let mut reply = Event {
+                        id: EventId::from_byte_array([0; 32]),
+                        pubkey: request.pubkey,
+                        created_at: chrono::Utc::now().timestamp(),
+                        kind: Kind(23_195),
+                        tags: vec![
+                            vec!["e".to_owned(), request.id.to_string()],
+                            vec!["p".to_owned(), request.pubkey.to_string()],
+                        ],
+                        content,
+                        sig: Signature::from_byte_array([0; 64]),
+                    };
+                    sign_event(&WALLET_SECRET, &mut reply).expect("the wallet signs its reply");
+
+                    let _ = socket
+                        .send(Message::Text(
+                            json!(["EVENT", subscription, reply]).to_string().into(),
+                        ))
+                        .await;
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        // The client reads until the socket closes; closing here makes a reply that was never
+        // sent fail the request instead of waiting for the transport's own deadline.
+        let _ = socket.close(None).await;
+    });
+
+    (format!("ws://127.0.0.1:{port}"), seen)
+}
+
 fn make_invoice() -> Nip47Request {
     Nip47Request {
         method: "make_invoice".to_owned(),
         params: json!({ "amount": 1_000, "description": "admission" }),
     }
+}
+
+/// A wallet answers the moment it decrypts the request, so its reply can be published while
+/// the client is still setting up. The reply is ephemeral and live-forwarded only to
+/// registered subscriptions, so the `REQ` has to reach the relay before the `EVENT`.
+#[tokio::test]
+async fn a_reply_published_the_moment_the_wallet_sees_the_event_is_received() {
+    let invoice = json!({ "invoice": "lnbc1", "payment_hash": "ab" });
+    let (relay, seen) = strict_relay(json!({
+        "result_type": "make_invoice",
+        "result": invoice.clone(),
+        "error": null,
+    }))
+    .await;
+
+    let transport = NwcRelayTransport::new(&nwc_url(&relay)).expect("the url parses");
+    let reply = transport.request(&make_invoice()).await;
+
+    assert_eq!(seen.verbs(), vec!["REQ", "EVENT"]);
+    assert!(
+        !seen.dropped(),
+        "the relay dropped the reply: no subscription was registered when the EVENT arrived"
+    );
+    let response = reply.expect("the reply");
+    assert_eq!(response.result, invoice);
 }
 
 #[tokio::test]
