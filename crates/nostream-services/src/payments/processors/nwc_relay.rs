@@ -145,7 +145,11 @@ impl Nip47Transport for NwcRelayTransport {
             });
             let request_frame = serde_json::json!(["REQ", subscription, subscription_filter]);
 
-            for frame in [event_frame, request_frame] {
+            // The subscription registers before the request it asks about: a kind-23195 reply
+            // is ephemeral, so the relay live-forwards it only to subscriptions already
+            // registered and stores nothing. Publishing the `EVENT` first would lose a wallet's
+            // immediate reply rather than delay it.
+            for frame in [request_frame, event_frame] {
                 socket
                     .send(Message::Text(frame.to_string().into()))
                     .await
