@@ -612,6 +612,184 @@ async fn a_restricted_read_is_judged_against_the_authenticated_set_at_each_event
 }
 
 // ---------------------------------------------------------------------------------------
+// Expiry on the stored read (NIP-40)
+// ---------------------------------------------------------------------------------------
+
+/// How far the clock moves between the two records: past the second one's expiration
+/// (`NOW_SECS + 5`) and not onto the inclusive instant, which the boundary test pins.
+const EXPIRY_ADVANCE_MS: u64 = 10_000;
+
+/// The gate releases one record at a time, so the clock moves after the first record has been
+/// judged and before the second one is — the same instrument the mid-read `AUTH` test uses.
+#[tokio::test]
+async fn an_event_that_expires_while_earlier_records_are_still_being_read_is_not_delivered() {
+    let fixture = Fixture::new(settings());
+    let gate = fixture.events.gate_reads_per_item();
+
+    // The first record's expiration is an hour ahead, so it is unexpired at both instants this
+    // test reaches: a read of milliseconds where seconds belong would withhold it too.
+    let first_expiration = (NOW_SECS + 3_600).to_string();
+    let second_expiration = (NOW_SECS + 5).to_string();
+    let first = signed_event(
+        &CLIENT_SECRET,
+        1,
+        vec![vec!["expiration", first_expiration.as_str()]],
+        "first",
+        NOW_SECS,
+    );
+    let second = signed_event(
+        &CLIENT_SECRET,
+        1,
+        vec![vec!["expiration", second_expiration.as_str()]],
+        "second",
+        NOW_SECS,
+    );
+    // Seeding takes the event by value, so each frame is attributed by the id read here.
+    let first_id = first.id.to_string();
+    let second_id = second.id.to_string();
+
+    fixture.seed_event(first).await;
+    fixture.seed_event(second).await;
+
+    let (sink, mut frames) = FrameSink::channel(1024 * 1024, None);
+    let connection = connection();
+    let clock = Arc::new(TestClock::new(NOW_MS));
+    let context =
+        Arc::new(fixture.context(clock.clone(), relay_keys(), Arc::clone(&connection), sink));
+
+    let reading = tokio::spawn({
+        let context = Arc::clone(&context);
+
+        async move {
+            let continuation = nostream_relay::handlers::subscribe::begin(
+                SubscribeMessage {
+                    subscription_id: "expiry".to_owned(),
+                    filters: vec![Filter::default()],
+                },
+                &context,
+            )
+            .expect("the REQ registers its subscription");
+
+            continuation.await;
+        }
+    });
+
+    for _ in 0..100 {
+        if connection.read_in_flight("expiry") {
+            break;
+        }
+
+        tokio::task::yield_now().await;
+    }
+
+    assert!(connection.read_in_flight("expiry"), "the read is in flight");
+
+    // The first record passes while the clock is still at `NOW_SECS`, below both expirations.
+    gate.add_permits(1);
+
+    let mut collected = Vec::new();
+    for _ in 0..100 {
+        if let Ok(frame) = frames.try_recv() {
+            collected.push(frame);
+            break;
+        }
+
+        tokio::task::yield_now().await;
+    }
+
+    assert_eq!(
+        collected.len(),
+        1,
+        "the first record arrived: {collected:?}"
+    );
+    assert!(
+        collected[0].starts_with(r#"["EVENT","expiry","#) && collected[0].contains(&first_id),
+        "the first record's frame: {}",
+        collected[0]
+    );
+
+    // The clock moves past the second record's expiration before the only permit that lets that
+    // record reach the expiry check, so the check runs after the move by construction.
+    clock.advance(EXPIRY_ADVANCE_MS);
+    gate.add_permits(1);
+    reading.await.expect("the read finishes");
+
+    while let Ok(frame) = frames.try_recv() {
+        collected.push(frame);
+    }
+
+    assert_eq!(collected.len(), 2, "{collected:?}");
+    assert!(
+        collected[0].starts_with(r#"["EVENT","expiry","#) && collected[0].contains(&first_id),
+        "the first record's frame: {}",
+        collected[0]
+    );
+    assert_eq!(collected[1], r#"["EOSE","expiry"]"#);
+    assert!(
+        !collected.iter().any(|frame| frame.contains(&second_id)),
+        "the record that expired during the read was delivered: {collected:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_event_expired_when_the_read_starts_is_not_delivered() {
+    // No gate: the clock never moves here, so the subject is the comparison, not the interleave.
+    // An expiration exactly at the instant the read starts is expired (`expiration <= now`,
+    // `expiration.rs:52`), which a per-record read comparing strictly would deliver.
+    let fixture = Fixture::new(settings());
+    let expired_at = NOW_SECS.to_string();
+    let kept = signed_event(&CLIENT_SECRET, 1, vec![], "kept", NOW_SECS);
+    let expired = signed_event(
+        &CLIENT_SECRET,
+        1,
+        vec![vec!["expiration", expired_at.as_str()]],
+        "expired",
+        NOW_SECS,
+    );
+    let kept_id = kept.id.to_string();
+    let expired_id = expired.id.to_string();
+
+    fixture.seed_event(kept).await;
+    fixture.seed_event(expired).await;
+
+    let (sink, mut frames) = FrameSink::channel(1024 * 1024, None);
+    let connection = connection();
+    let context = Arc::new(fixture.context(
+        Arc::new(TestClock::new(NOW_MS)),
+        relay_keys(),
+        Arc::clone(&connection),
+        sink,
+    ));
+
+    nostream_relay::handlers::subscribe::begin(
+        SubscribeMessage {
+            subscription_id: "boundary".to_owned(),
+            filters: vec![Filter::default()],
+        },
+        &context,
+    )
+    .expect("the REQ registers its subscription")
+    .await;
+
+    let mut collected = Vec::new();
+    while let Ok(frame) = frames.try_recv() {
+        collected.push(frame);
+    }
+
+    assert_eq!(collected.len(), 2, "{collected:?}");
+    assert!(
+        collected[0].starts_with(r#"["EVENT","boundary","#) && collected[0].contains(&kept_id),
+        "the unexpired record's frame: {}",
+        collected[0]
+    );
+    assert_eq!(collected[1], r#"["EOSE","boundary"]"#);
+    assert!(
+        !collected.iter().any(|frame| frame.contains(&expired_id)),
+        "the record expired at the read's start was delivered: {collected:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
 // Handler dispatch order
 // ---------------------------------------------------------------------------------------
 
