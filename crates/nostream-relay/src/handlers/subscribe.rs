@@ -303,7 +303,6 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
 
     futures_util::pin_mut!(stream);
 
-    let now = context.now_secs();
     let matches_any =
         |event: &nostream_core::Event| filters.iter().any(|filter| filter.matches(event));
 
@@ -378,7 +377,9 @@ async fn fetch_and_send(mut read: InFlightRead, filters: &[Filter], context: &Ha
                 }
                 let event = record.event;
 
-                if expiration::is_expired_event(&event, now) {
+                // The clock is asked when the record is judged, not once before the loop, so a
+                // record that expires while earlier ones are still being read is not delivered.
+                if expiration::is_expired_event(&event, context.now_secs()) {
                     continue;
                 }
 
