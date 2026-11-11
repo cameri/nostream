@@ -102,10 +102,13 @@ change with it, and `SEARCH_INDEX_VERSION` (D5) is what makes every existing sto
 ## D3 — The index narrows candidates and the body decides
 
 A row matches a search when every distinct query term is one of the tokens of its `content` — never
-of a tag (`lmdb/search.rs:177-215`). The walk takes the postings of the first distinct query term,
-probes each other term's exact key for the same id before decoding anything, and then asks
-`Matcher::matches`, whose one body decode answers both the tag families and the search verdict
-(`lmdb/search.rs:327-363`). A stale or truncated posting therefore cannot produce a false positive,
+of a tag (`lmdb/search.rs:177-215`). The walk narrows in three stages: the **prefix range** of the
+first distinct query term (which necessarily also visits longer terms sharing its bytes), then
+**term identity** — a posting whose term slice is not the walked term's bytes is skipped before
+anything else — then each other term's exact key for the same id, and finally `Matcher::matches`,
+whose one body decode answers both the tag families and the search verdict (`lmdb/search.rs:334-368`).
+Without the identity stage a row whose content holds both `cat` and `cats` reaches the keeper twice
+for a query of `cat`: a count over-reports and a limited page can spend two slots on one row. A stale or truncated posting therefore cannot produce a false positive,
 and completeness is the write path's (D1). A query whose tokens are empty — a punctuation-only
 query, which `plainto_tsquery` turns into an empty tsquery — selects nothing and takes no walk.
 
