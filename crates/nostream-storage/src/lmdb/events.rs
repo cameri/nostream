@@ -933,17 +933,12 @@ fn count_matches_bounded(
         return Ok(0);
     }
     let plan = plan(filter, databases);
-    // A search's keys prove no tag family, so the matcher tests the tag criteria from the body.
     let matcher = Matcher::with_terms(
         filter,
         gates,
         now,
         true,
-        if terms.is_some() {
-            None
-        } else {
-            plan.tag.map(|(name, _)| name)
-        },
+        plan.tag.map(|(name, _)| name),
         terms.map(<[String]>::to_vec),
     );
     // A filter whose terms resolve is counted from the term index — the same walk the page
@@ -1123,21 +1118,9 @@ fn branch(
     let plan = plan(filter, databases);
     // A `tags` range is built from the family's own criteria, so every key in it satisfies that
     // family: the matcher skips it and no body is decoded for it. A search proves no family —
-    // the term index selects a row by its content — so its matcher tests every tag criterion,
-    // and this call only decides which of the two the plan has proved; the matcher resolves the
-    // terms itself.
-    let searched = search::query_terms(filter, gates)?.is_some();
-    let matcher = Matcher::new(
-        filter,
-        gates,
-        now,
-        live,
-        if searched {
-            None
-        } else {
-            plan.tag.map(|(name, _)| name)
-        },
-    )?;
+    // the term index selects a row by its content — and the matcher drops the proof itself when
+    // it carries terms.
+    let matcher = Matcher::new(filter, gates, now, live, plan.tag.map(|(name, _)| name))?;
     // The router every read method shares: a filter whose search resolves is answered from the
     // term index, and `plan` is not consulted for it. A count's limited path arrives here too
     // (`count`), so the rows it counts are the ones this page returns.
@@ -1559,7 +1542,9 @@ pub(crate) struct Matcher<'a> {
     gates: &'a Gates,
     now: i64,
     live: bool,
-    /// The tag family the index range that selected the row has already proved, if any.
+    /// The tag family the index range that selected the row has already proved, if any. A
+    /// searched filter's keys prove none — the term index selects a row by its content — so a
+    /// matcher carrying terms never sees one, whatever the caller's plan says.
     proven: Option<&'a str>,
     /// The filter's resolved search terms, `None` when it is not a search.
     terms: Option<Vec<String>>,
@@ -1587,6 +1572,11 @@ impl<'a> Matcher<'a> {
 
     /// A matcher for a read that has already resolved this filter's terms — a count deciding a
     /// row against an earlier filter, or a reconciliation batch — so they are not re-resolved.
+    ///
+    /// `proven` is the family the caller's plan proved, and it is dropped when the filter is a
+    /// search: a searched filter is answered from `events_by_term`, whose keys say nothing about
+    /// any tag family, so every tag criterion has to be tested from the body. Deciding that here
+    /// is what keeps the page, the count and the reconciliation stream from each restating it.
     pub(crate) fn with_terms(
         filter: &'a Filter,
         gates: &'a Gates,
@@ -1600,7 +1590,7 @@ impl<'a> Matcher<'a> {
             gates,
             now,
             live,
-            proven,
+            proven: if terms.is_some() { None } else { proven },
             terms,
         }
     }
@@ -2086,11 +2076,7 @@ fn scan_batch(
         gates,
         now,
         true,
-        if terms.is_some() {
-            None
-        } else {
-            plan.tag.map(|(name, _)| name)
-        },
+        plan.tag.map(|(name, _)| name),
         terms,
     );
     if plan.path == AccessPath::Ids {

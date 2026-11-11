@@ -1868,6 +1868,43 @@ async fn a_count_applies_the_search_predicate() {
         2,
         "and the count is the count of the other criteria's rows"
     );
+
+    // A searched filter is counted from the term index, whose keys prove no tag family, so its
+    // tag criteria are the body's: the tagged row alone is counted, not every row the term
+    // index proposes.
+    let (_tagged_directory, tagged) = open_store().await;
+    let tagged_row = event_with_tags(
+        53,
+        1,
+        1_700_000_300,
+        "matchterm",
+        vec![vec!["t".to_owned(), "alpha".to_owned()]],
+    );
+    let untagged_row = event_with_content(54, 1, 1_700_000_400, "matchterm");
+    tagged
+        .create_many(&[tagged_row, untagged_row])
+        .await
+        .expect("the tagged corpus stores");
+    let tagged_filter = Filter {
+        tags: BTreeMap::from([("#t".to_owned(), vec!["alpha".to_owned()])]),
+        ..search("matchterm")
+    };
+    assert_eq!(
+        tagged
+            .count_by_filters(&[search("matchterm")])
+            .await
+            .expect("the search's count"),
+        2,
+        "both rows carry the term"
+    );
+    assert_eq!(
+        tagged
+            .count_by_filters(&[tagged_filter])
+            .await
+            .expect("the counted filter"),
+        1,
+        "the tagged row alone: the untagged row carrying the term is not counted"
+    );
 }
 
 #[tokio::test]
