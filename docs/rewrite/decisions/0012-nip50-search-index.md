@@ -73,6 +73,13 @@ dot, which is not alphanumeric — so `İx` is the two tokens `i` and `x` here, 
 runs were taken from the original text and each run lowered afterwards. It is what the write path
 indexes, what the read path resolves queries with and what the verdict compares, so the index and
 the predicate cannot disagree about a token.
+**What that changes for real content.** A body containing a dotted `İ` (Turkish `İstanbul`, say)
+now indexes as the two keys `i` and `stanbul` where the split-then-lower order produced the single
+key `i`+U+0307+`stanbul` — one term became two, so a query for `stanbul` starts matching a body it
+did not match before, and the store that indexed the old way answers differently until it rebuilds
+(D5). No existing criterion observes this: the fixture's corpus has no such character, and every
+test of the rule would pass under either order were it not pinned explicitly.
+
 Against Postgres' `simple` configuration it reproduces the no-stemmer, no-stop-list part — `the` is
 an ordinary token and `study` does not match `studies` — and it loses the parser's classes (URLs,
 e-mails, hosts) and any CJK segmentation. **On the fixture's 483-event corpus the two select the
