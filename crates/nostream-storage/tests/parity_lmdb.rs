@@ -19,34 +19,43 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
 
 use common::{Repos, fixture, settings_from_fixture};
+use heed::Database;
+use heed::types::Bytes;
+use nostream_config::Settings;
 use nostream_core::{Event, EventId, Filter, Kind, Pubkey, Signature};
 use nostream_storage::LmdbBackend;
 use nostream_storage::StorageError;
+use nostream_storage::lmdb::{SEARCH_INDEX_DB, SEARCH_INDEX_MARKER, SEARCH_INDEX_VERSION};
 use nostream_storage::repositories::{
     CreateInviteCodeOptions, DeliveryLogFilters, DvmJobStatus, EventRecord, EventRepository,
     EventRetentionOptions, FieldUpdate, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, InvoiceUnit, NewDeliveryLogEntry, NewReport, Nip05Verification,
     NotificationDeliveryLogRepository, NotificationDeliveryStatus, NotificationOutboxRepository,
-    NotificationTargetType, ReconciliationItem, ReportType, UserRepository, collect_records,
+    NotificationTargetType, ReconciliationItem, ReportType, SearchRule, UserRepository,
+    collect_records,
 };
 
 mod common;
 
-/// The entries this arm cannot replay, fixed by index: 21 is `search` (NIP-50 is out of scope),
-/// 48 and 50 are `user.tos_accepted_at` (raw SQL, no seam form), and 112 and 115 are the two
-/// `transaction` groups the capture rolled back — a seam with no rollback cannot reproduce them.
+/// The entries this arm cannot replay, fixed by index: 48 and 50 are `user.tos_accepted_at` (raw
+/// SQL, no seam form), and 112 and 115 are the two `transaction` groups the capture rolled back —
+/// a seam with no rollback cannot reproduce them.
 /// The two groups it committed (111, 117) are replayed: their nested ops in order leave exactly
 /// the state the commit left, which is why entries after 111 observe its rows.
-// shortcut: five fixture entries are excluded by index and the count is a constant; upgrade
+///
+/// Entry 21 — the one filter carrying `search` — is replayed now: the LMDB store answers NIP-50
+/// from its own term index (`lmdb/search.rs`), which reproduces the capture's token predicate and
+/// its recorded order on this corpus, so the exclusion has nothing left to stand on.
+// shortcut: four fixture entries are excluded by index and the count is a constant; upgrade
 // when the capture gains an entry, which fails the count assertion and forces this list to be
 // re-derived rather than quietly skipped.
-const EXCLUDED: [usize; 5] = [21, 48, 50, 112, 115];
+const EXCLUDED: [usize; 4] = [48, 50, 112, 115];
 
 /// The entries that are replayed; `EXCLUDED.len() + REPLAYED` is the fixture's entry count.
-const REPLAYED: usize = 113;
+const REPLAYED: usize = 114;
 
 /// The exclusion list as the marker line prints it.
-const EXCLUDED_MARKER: &str = "21,48,50,112,115";
+const EXCLUDED_MARKER: &str = "48,50,112,115";
 
 /// Replays a transaction group the capture committed. The group's comparison is the aggregate
 /// `{failed: false, results: [...]}`, and running its nested ops in order through the seam
@@ -94,6 +103,120 @@ fn event(secret: u8, kind: u64, created_at: i64) -> EventRecord {
     EventRecord::from_event(&event)
 }
 
+/// A signed event of the given kind and creation time, carrying `content`.
+fn event_with_content(secret: u8, kind: u64, created_at: i64, content: &str) -> EventRecord {
+    event_with_tags(secret, kind, created_at, content, Vec::new())
+}
+
+/// [`event_with_content`], carrying `tags`.
+fn event_with_tags(
+    secret: u8,
+    kind: u64,
+    created_at: i64,
+    content: &str,
+    tags: Vec<Vec<String>>,
+) -> EventRecord {
+    let mut event = Event {
+        id: EventId::from_byte_array([0; 32]),
+        pubkey: Pubkey::from_byte_array([0; 32]),
+        created_at,
+        kind: Kind(kind),
+        tags,
+        content: content.to_owned(),
+        sig: Signature::from_byte_array([0; 64]),
+    };
+    nostream_core::crypto::sign_event(&[secret; 32], &mut event).expect("the event signs");
+    EventRecord::from_event(&event)
+}
+
+/// The filter a search test sends.
+fn search(query: &str) -> Filter {
+    Filter {
+        search: Some(query.to_owned()),
+        ..Filter::default()
+    }
+}
+
+/// The ids of the records a read returned, in the order it returned them.
+fn ids_of(records: &[EventRecord]) -> Vec<EventId> {
+    records.iter().map(|record| record.event.id).collect()
+}
+
+/// One store on a temporary directory, with `settings` as its gates.
+async fn open_with(settings: Settings) -> (tempfile::TempDir, LmdbBackend) {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let backend = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens")
+        .with_settings(Arc::new(settings));
+    (directory, backend)
+}
+
+/// The fixture's settings with one override replaced.
+fn settings_with(path: &str, value: Value) -> Settings {
+    let mut fixture = fixture();
+    fixture["settings"]["overrides"]
+        .as_object_mut()
+        .expect("the fixture's overrides are an object")
+        .insert(path.to_owned(), value);
+    settings_from_fixture(&fixture)
+}
+
+/// The records one filter's page returns, in the page's order.
+async fn rows_of(backend: &LmdbBackend, filter: &Filter) -> Vec<EventRecord> {
+    collect_records(
+        backend
+            .find_by_filters(std::slice::from_ref(filter))
+            .await
+            .expect("the page"),
+    )
+    .await
+    .expect("the stream")
+}
+
+/// The term index and the `meta` database, opened by name: `Databases` is crate-private.
+fn named_databases(
+    env: &heed::Env,
+    rtxn: &heed::RoTxn<'_>,
+) -> (Database<Bytes, Bytes>, Database<Bytes, Bytes>) {
+    let index = env
+        .open_database::<Bytes, Bytes>(rtxn, Some(SEARCH_INDEX_DB))
+        .expect("the index opens")
+        .expect("the index database exists");
+    let meta = env
+        .open_database::<Bytes, Bytes>(rtxn, Some("meta"))
+        .expect("meta opens")
+        .expect("the meta database exists");
+    (index, meta)
+}
+
+/// How many `events_by_term` keys begin with `term`.
+fn index_keys(backend: &LmdbBackend, term: &str) -> usize {
+    let env = backend.env();
+    let rtxn = env.read_txn().expect("a read transaction");
+    let (index, _) = named_databases(env, &rtxn);
+    index
+        .prefix_iter(&rtxn, term.as_bytes())
+        .expect("the index reads")
+        .count()
+}
+
+/// The ids a page returned, ascending, so a caller can compare a set before it compares an
+/// order.
+fn sorted_ids(records: &[EventRecord]) -> Vec<EventId> {
+    let mut ids = ids_of(records);
+    ids.sort();
+    ids
+}
+
+/// The set `page` returned, and that it is in ascending `event_id` order.
+fn assert_set_in_id_order(page: &[EventRecord], expected: &[&EventRecord], what: &str) {
+    let mut wanted: Vec<EventId> = expected.iter().map(|record| record.event.id).collect();
+    wanted.sort();
+    assert_eq!(sorted_ids(page), wanted, "{what}: the set");
+    assert_eq!(ids_of(page), sorted_ids(page), "{what}: ascending event_id");
+}
+
 fn one_entry(outbox_id: Option<String>) -> NewDeliveryLogEntry {
     NewDeliveryLogEntry {
         outbox_id,
@@ -138,7 +261,6 @@ async fn the_typescript_script_replays_with_an_empty_diff() {
         "the fixture's entry count is the one the exclusion list was written against"
     );
     for (index, name) in [
-        (21, "events.find_by_filters"),
         (48, "user.tos_accepted_at"),
         (50, "user.tos_accepted_at"),
         (112, "transaction"),
@@ -151,15 +273,14 @@ async fn the_typescript_script_replays_with_an_empty_diff() {
         );
     }
     // Each entry is excluded exactly when the seam has no form for it: a transaction group
-    // the capture rolled back, the two raw-SQL probes, and the one filter carrying `search`.
+    // the capture rolled back, or one of the two raw-SQL probes. A filter carrying `search` is
+    // no longer one of them — the store answers it from its term index.
     for (index, op) in script.iter().enumerate() {
         let name = op["op"].as_str().expect("an op name");
         let excluded_kind = match name {
             "transaction" => op["result"]["compare"]["failed"] != Value::Bool(false),
             "user.tos_accepted_at" => true,
-            _ => op["request"]["filters"]
-                .as_array()
-                .is_some_and(|filters| filters.iter().any(|filter| filter.get("search").is_some())),
+            _ => false,
         };
         assert_eq!(
             EXCLUDED.contains(&index),
@@ -1353,29 +1474,754 @@ async fn creating_a_job_that_exists_is_refused() {
     );
 }
 
-/// A non-empty `search` with the NIP-50 gate on is refused by every query method, the
-/// reconciliation stream included: this backend cannot search, and returning a broader filter's
-/// rows would answer a question it did not ask.
-#[tokio::test]
-async fn reconciliation_refuses_a_search_the_gate_enables() {
-    let (_directory, backend) = open_store().await;
-    let filter = Filter {
-        search: Some("nostr".to_owned()),
-        ..Filter::default()
-    };
+// ---------------------------------------------------------------------------------------
+// NIP-50: the term index, the tokeniser and the rank, over a real store.
+// ---------------------------------------------------------------------------------------
 
-    let error = backend
-        .find_reconciliation_items(&filter)
+/// The four rows the capture recorded for `{"search":"bitcoin lightning"}`, in its order — the
+/// Postgres `ts_rank` order, which this store's proximity rank reproduces on this corpus.
+const RECORDED_SEARCH_IDS: [&str; 4] = [
+    "5454369c2445e12b001b51e5e48cf6722072ecdb187453c028cac8a12040633a",
+    "c004000000000000000000000000000000000000000000000000000000000000",
+    "cb41289d08a5784a73b7bac2bf97620f5c927487d0c5a029ba81f840fe21fa36",
+    "9ae1fef4857bb0174e8fb1221f8da1da6705ebef42e143de7a8f8fe965ba9ee3",
+];
+
+/// A search over the fixture's corpus returns the capture's four rows, in the capture's order,
+/// and not the fifth row the relay's substring matcher would select (`bitcoininveniice`).
+#[tokio::test]
+async fn a_search_returns_the_recorded_rows_in_rank_order() {
+    let fixture = fixture();
+    let (_directory, backend) = open_store().await;
+    let corpus: Vec<EventRecord> = fixture["corpus"]
+        .as_array()
+        .expect("corpus")
+        .iter()
+        .map(common::event_record)
+        .collect();
+    backend
+        .create_many(&corpus)
         .await
-        .err()
-        .expect("the refusal");
-    assert!(
-        matches!(
-            error,
-            StorageError::NotImplemented {
-                module: "storage::lmdb::nip50_search"
-            }
+        .expect("the corpus inserts");
+
+    let page = rows_of(&backend, &search("bitcoin lightning")).await;
+    let ids: Vec<String> = page
+        .iter()
+        .map(|record| record.event.id.to_string())
+        .collect();
+    assert_eq!(
+        ids, RECORDED_SEARCH_IDS,
+        "R3, R5, R6: the recorded rows in rank order"
+    );
+}
+
+#[tokio::test]
+async fn a_search_that_matches_nothing_yields_no_rows() {
+    let (_directory, backend) = open_store().await;
+    backend
+        .create_many(&[event_with_content(90, 1, 1_700_000_000, "bitcoin")])
+        .await
+        .expect("the event stores");
+
+    let page = rows_of(&backend, &search("bitcoin zzznotpresent")).await;
+    assert!(page.is_empty(), "a term no body carries selects nothing");
+}
+
+#[tokio::test]
+async fn a_search_applies_every_criterion_it_is_combined_with() {
+    let (_directory, backend) = open_store().await;
+    let e1 = event_with_tags(
+        1,
+        1,
+        1_700_000_100,
+        "commonterm",
+        vec![vec!["t".to_owned(), "alpha".to_owned()]],
+    );
+    let e2 = event_with_content(2, 0, 1_700_000_200, "commonterm");
+    let e3 = event_with_content(1, 1, 1_700_000_300, "commonterm");
+    let e4 = event_with_content(3, 1, 1_700_000_400, "commonterm");
+    let e5 = event_with_content(1, 1, 1_700_000_500, "commonterm");
+    backend
+        .create_many(&[e1.clone(), e2.clone(), e3.clone(), e4.clone(), e5.clone()])
+        .await
+        .expect("the events store");
+    nostream_storage::repositories::ReportRepository::create(
+        &backend,
+        &NewReport {
+            event_id: EventId::from_byte_array([44; 32]),
+            reporter_pubkey: Pubkey::from_byte_array([45; 32]),
+            reported_pubkey: Some(e4.event.pubkey),
+            reported_event_id: Some(e4.event.id),
+            report_type: ReportType::Spam,
+            weight: 1.0,
+            actionable: true,
+        },
+    )
+    .await
+    .expect("the report stores");
+
+    let cases = [
+        (
+            Filter {
+                kinds: Some(vec![Kind(1)]),
+                ..search("commonterm")
+            },
+            vec![&e1, &e3, &e5],
+            "kinds",
         ),
-        "a search the gate enables is NotImplemented, got {error:?}"
+        (
+            search("commonterm"),
+            vec![&e1, &e2, &e3, &e5],
+            "search alone",
+        ),
+        (
+            Filter {
+                ids: Some(vec![e2.event.id.to_string()]),
+                ..search("commonterm")
+            },
+            vec![&e2],
+            "ids",
+        ),
+        (
+            Filter {
+                authors: Some(vec![e2.event.pubkey.to_string()]),
+                ..search("commonterm")
+            },
+            vec![&e2],
+            "authors",
+        ),
+        (
+            Filter {
+                since: Some(1_700_000_200),
+                ..search("commonterm")
+            },
+            vec![&e2, &e3, &e5],
+            "since",
+        ),
+        (
+            Filter {
+                until: Some(1_700_000_200),
+                ..search("commonterm")
+            },
+            vec![&e1, &e2],
+            "until",
+        ),
+        (
+            Filter {
+                tags: BTreeMap::from([("#t".to_owned(), vec!["alpha".to_owned()])]),
+                ..search("commonterm")
+            },
+            vec![&e1],
+            "#t",
+        ),
+    ];
+    for (filter, expected, what) in cases {
+        let page = rows_of(&backend, &filter).await;
+        assert_set_in_id_order(&page, &expected, what);
+    }
+}
+
+#[tokio::test]
+async fn a_search_orders_by_proximity_then_event_id() {
+    let (_directory, backend) = open_store().await;
+    let adjacent_one = event_with_content(10, 1, 1_700_000_000, "bitcoin lightning");
+    let adjacent_two = event_with_content(11, 1, 1_700_000_000, "lightning bitcoin");
+    let adjacent_three = event_with_content(12, 1, 1_700_000_000, "lightning bitcoin");
+    let spread = event_with_content(13, 1, 1_700_000_000, "bitcoin x y lightning");
+    backend
+        .create_many(&[
+            spread.clone(),
+            adjacent_three.clone(),
+            adjacent_one.clone(),
+            adjacent_two.clone(),
+        ])
+        .await
+        .expect("the events store");
+
+    let mut tied = [adjacent_one, adjacent_two, adjacent_three];
+    tied.sort_by_key(|record| record.event.id);
+    for query in ["bitcoin lightning", "Bitcoin LIGHTNING"] {
+        let page = rows_of(&backend, &search(query)).await;
+        let expected = [&tied[0], &tied[1], &tied[2], &spread];
+        assert_eq!(
+            ids_of(&page),
+            expected
+                .iter()
+                .map(|record| record.event.id)
+                .collect::<Vec<_>>(),
+            "{query}: three span-2 rows in id order, then the span-4 row"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_search_finds_a_term_at_the_end_of_a_large_content() {
+    let (_directory, backend) = open_store().await;
+    let long = format!("{} needle", "a".repeat(200_000));
+    let long_run = event_with_content(20, 1, 1_700_000_000, &long);
+    let hundred = event_with_content(21, 1, 1_700_000_000, &"b".repeat(100));
+    let first = format!("{}x", "c".repeat(64));
+    let second = format!("{}y", "c".repeat(64));
+    let shared_one = event_with_content(22, 1, 1_700_000_000, &first);
+    let shared_two = event_with_content(23, 1, 1_700_000_000, &second);
+    backend
+        .create_many(&[
+            long_run.clone(),
+            hundred.clone(),
+            shared_one.clone(),
+            shared_two.clone(),
+        ])
+        .await
+        .expect("the events store");
+
+    for (query, expected, what) in [
+        (
+            "needle".to_owned(),
+            &long_run,
+            "a token after a 200 000-character run is found",
+        ),
+        (
+            "b".repeat(100),
+            &hundred,
+            "a term longer than the key cap is found",
+        ),
+        (
+            first.clone(),
+            &shared_one,
+            "the first of two tokens sharing 64 bytes",
+        ),
+        (
+            second.clone(),
+            &shared_two,
+            "the second of two tokens sharing 64 bytes",
+        ),
+    ] {
+        let page = rows_of(&backend, &search(&query)).await;
+        assert_eq!(ids_of(&page), vec![expected.event.id], "{what}");
+    }
+}
+
+#[tokio::test]
+async fn the_term_index_follows_create_replace_and_retention() {
+    let (_directory, backend) = open_store().await;
+
+    let alpha = event_with_content(30, 1, 1_700_000_000, "uniquealpha");
+    EventRepository::create(&backend, &alpha)
+        .await
+        .expect("the event stores");
+    assert_eq!(
+        ids_of(&rows_of(&backend, &search("uniquealpha")).await),
+        vec![alpha.event.id]
+    );
+    assert_eq!(index_keys(&backend, "uniquealpha"), 1, "one posting");
+
+    let beta = event_with_content(31, 0, 1_700_000_000, "uniquebeta");
+    assert_eq!(
+        EventRepository::upsert(&backend, &beta)
+            .await
+            .expect("the upsert"),
+        1
+    );
+    let gamma = event_with_content(31, 0, 1_700_000_100, "uniquegamma");
+    assert_eq!(
+        EventRepository::upsert(&backend, &gamma)
+            .await
+            .expect("the replacement"),
+        1
+    );
+    assert!(rows_of(&backend, &search("uniquebeta")).await.is_empty());
+    assert_eq!(
+        index_keys(&backend, "uniquebeta"),
+        0,
+        "the replaced row's postings left"
+    );
+    assert_eq!(
+        ids_of(&rows_of(&backend, &search("uniquegamma")).await),
+        vec![gamma.event.id]
+    );
+    assert_eq!(index_keys(&backend, "uniquegamma"), 1);
+
+    let delta = event_with_content(32, 1, 1_700_000_000, "uniquedelta")
+        .with_expires_at(Utc::now().timestamp() - 1);
+    backend
+        .create_many(std::slice::from_ref(&delta))
+        .await
+        .expect("the event stores");
+    let counts = backend
+        .delete_expired_and_retained(&EventRetentionOptions {
+            max_days: Some(1),
+            kind_whitelist: None,
+            pubkey_whitelist: None,
+        })
+        .await
+        .expect("the retention pass");
+    assert_eq!(counts.expired, 1);
+    assert!(rows_of(&backend, &search("uniquedelta")).await.is_empty());
+    assert_eq!(
+        index_keys(&backend, "uniquedelta"),
+        0,
+        "the retained row's postings left"
+    );
+
+    let token = event_with_content(33, 1, 1_700_000_000, "uniquetoken");
+    EventRepository::create(&backend, &token)
+        .await
+        .expect("the event stores");
+    assert_eq!(
+        backend
+            .delete_by_pubkey_and_ids(&token.event.pubkey, &[token.event.id])
+            .await
+            .expect("the soft delete"),
+        1
+    );
+    assert_eq!(
+        ids_of(&rows_of(&backend, &search("uniquetoken")).await),
+        vec![token.event.id],
+        "a soft-deleted row is still found, as `find_by_filters` reads it"
+    );
+    assert_eq!(
+        index_keys(&backend, "uniquetoken"),
+        1,
+        "the soft delete rewrites the value, not the terms"
+    );
+}
+
+#[tokio::test]
+async fn a_search_page_honours_the_limit() {
+    let (_directory, backend) = open_store().await;
+    let records: Vec<EventRecord> = (0..5)
+        .map(|step| event_with_content(40 + step, 1, 1_700_000_000 + i64::from(step), "commonterm"))
+        .collect();
+    backend
+        .create_many(&records)
+        .await
+        .expect("the events store");
+    let mut by_id = sorted_ids(&records);
+
+    let page = rows_of(&backend, &search("commonterm")).await;
+    assert_eq!(ids_of(&page), by_id, "no limit: every row, in id order");
+
+    let empty = rows_of(
+        &backend,
+        &Filter {
+            limit: Some(0),
+            ..search("commonterm")
+        },
+    )
+    .await;
+    assert!(empty.is_empty(), "limit 0 yields no rows");
+
+    by_id.truncate(2);
+    let two = rows_of(
+        &backend,
+        &Filter {
+            limit: Some(2),
+            ..search("commonterm")
+        },
+    )
+    .await;
+    assert_eq!(ids_of(&two), by_id, "limit 2: the two best by (rank, id)");
+}
+
+#[tokio::test]
+async fn a_count_applies_the_search_predicate() {
+    let (directory, backend) = open_with(settings_from_fixture(&fixture())).await;
+    let live = event_with_content(50, 1, 1_700_000_000, "matchterm");
+    let deleted = event_with_content(51, 1, 1_700_000_100, "matchterm more");
+    let other = event_with_content(52, 1, 1_700_000_200, "otherthing");
+    backend
+        .create_many(&[live, deleted.clone(), other])
+        .await
+        .expect("the events store");
+    backend
+        .delete_by_pubkey_and_ids(&deleted.event.pubkey, &[deleted.event.id])
+        .await
+        .expect("the soft delete");
+
+    assert_eq!(
+        backend
+            .count_by_filters(&[search("matchterm")])
+            .await
+            .expect("the count"),
+        1,
+        "the live match is counted, the soft-deleted one is not"
+    );
+    drop(backend);
+
+    let reopened = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store reopens")
+        .with_settings(Arc::new(settings_with("nip50.enabled", json!(false))));
+    assert_eq!(
+        reopened
+            .count_by_filters(&[search("matchterm")])
+            .await
+            .expect("the gate-off count"),
+        2,
+        "with the gate off the field is ignored, as Postgres ignores it"
+    );
+    assert_eq!(
+        reopened
+            .count_by_filters(&[Filter::default()])
+            .await
+            .expect("the unfiltered count"),
+        2,
+        "and the count is the count of the other criteria's rows"
+    );
+}
+
+#[tokio::test]
+async fn a_limited_count_counts_the_rank_page() {
+    let (_directory, backend) = open_store().await;
+    let spread: Vec<EventRecord> = (1..=4)
+        .map(|step| {
+            event_with_content(
+                60 + step,
+                1,
+                1_700_000_000 + i64::from(step),
+                "alpha x y z beta",
+            )
+        })
+        .collect();
+    let m5 = event_with_content(70, 1, 1_700_000_500, "alpha beta");
+    let m6 = event_with_content(71, 1, 1_700_000_600, "alpha beta");
+    let mut all = spread.clone();
+    all.push(m5.clone());
+    all.push(m6.clone());
+    backend.create_many(&all).await.expect("the events store");
+
+    let limited = Filter {
+        limit: Some(2),
+        ..search("alpha beta")
+    };
+    let page = rows_of(&backend, &limited).await;
+    let mut best = vec![m5.event.id, m6.event.id];
+    best.sort();
+    assert_eq!(ids_of(&page), best, "the rank-best two, not the newest two");
+
+    let mut first_filter = [spread[0].event.id, spread[1].event.id];
+    first_filter.sort();
+    let total = backend
+        .count_by_filters(&[
+            Filter {
+                ids: Some(first_filter.iter().map(ToString::to_string).collect()),
+                ..Filter::default()
+            },
+            limited,
+        ])
+        .await
+        .expect("the count");
+    assert_eq!(
+        total, 4,
+        "the limited branch contributes its rank page's two rows"
+    );
+}
+
+/// A search is applied by the reconciliation stream too, and its rows arrive oldest first: the
+/// stream keeps its created-at order and its batches, and the matcher refuses the rest.
+#[tokio::test]
+async fn reconciliation_applies_the_search_predicate() {
+    let (_directory, backend) = open_store().await;
+    let earlier = event_with_content(70, 1, 1_700_000_000, "reachableterm");
+    let between = event_with_content(71, 1, 1_700_000_050, "unrelated");
+    let later = event_with_content(72, 1, 1_700_000_100, "reachableterm again");
+    backend
+        .create_many(&[later, earlier.clone(), between])
+        .await
+        .expect("the events store");
+
+    let items = common::collect(
+        backend
+            .find_reconciliation_items(&search("reachableterm"))
+            .await
+            .expect("the stream"),
+    )
+    .await
+    .expect("the items");
+
+    assert_eq!(
+        items.len(),
+        2,
+        "only the two rows whose bodies carry the term"
+    );
+    assert_eq!(
+        items.iter().map(|item| item.created_at).collect::<Vec<_>>(),
+        vec![1_700_000_000, 1_700_000_100],
+        "oldest first, as the stream promises"
+    );
+    assert_eq!(items[0].event_id, earlier.event.id);
+}
+
+#[tokio::test]
+async fn a_blank_search_is_ignored_and_a_tokenless_query_selects_nothing() {
+    let (_directory, backend) = open_store().await;
+    let the_cat = event_with_content(80, 1, 1_700_000_000, "the cat");
+    let a_cat = event_with_content(81, 1, 1_700_000_100, "a cat");
+    let bitcoin = event_with_content(82, 1, 1_700_000_200, "bitcoin");
+    backend
+        .create_many(&[the_cat.clone(), a_cat, bitcoin.clone()])
+        .await
+        .expect("the events store");
+
+    for blank in ["", "   "] {
+        assert_eq!(
+            rows_of(&backend, &search(blank)).await.len(),
+            3,
+            "{blank:?} is not a search, so every row of the other criteria arrives"
+        );
+    }
+    assert!(
+        rows_of(&backend, &search("!!!")).await.is_empty(),
+        "a query whose every character is punctuation has no token, so it selects nothing"
+    );
+    assert_eq!(
+        ids_of(&rows_of(&backend, &search("the")).await),
+        vec![the_cat.event.id],
+        "`simple` has no stop list, so `the` is an ordinary token"
+    );
+
+    let padded = format!("{} bitcoin", ".".repeat(250));
+    assert!(
+        rows_of(&backend, &search(&padded)).await.is_empty(),
+        "the 256-character cut leaves `bitco`, which is not the token `bitcoin`"
+    );
+    assert_eq!(
+        ids_of(&rows_of(&backend, &search("bitcoin")).await),
+        vec![bitcoin.event.id],
+        "and the unprefixed query still finds it"
+    );
+}
+
+#[tokio::test]
+async fn a_search_never_matches_a_tag_value() {
+    let (_directory, backend) = open_store().await;
+    let record = event_with_tags(
+        85,
+        1,
+        1_700_000_000,
+        "hello world",
+        vec![vec!["t".to_owned(), "bitcoin".to_owned()]],
+    );
+    backend
+        .create_many(std::slice::from_ref(&record))
+        .await
+        .expect("the event stores");
+
+    assert!(
+        rows_of(&backend, &search("bitcoin")).await.is_empty(),
+        "the index is built from `content`, so a tag value is never a posting"
+    );
+    assert_eq!(
+        ids_of(&rows_of(&backend, &search("hello")).await),
+        vec![record.event.id]
+    );
+}
+
+#[tokio::test]
+async fn a_search_under_a_language_the_index_cannot_reproduce_is_refused() {
+    let (directory, backend) = open_with(settings_with("nip50.language", json!("english"))).await;
+    let record = event_with_content(90, 1, 1_700_000_000, "study");
+    backend
+        .create_many(std::slice::from_ref(&record))
+        .await
+        .expect("the event stores");
+
+    let filter = search("study");
+    let page = backend.find_by_filters(std::slice::from_ref(&filter)).await;
+    let count = backend
+        .count_by_filters(std::slice::from_ref(&filter))
+        .await;
+    let reconciliation = backend.find_reconciliation_items(&filter).await;
+
+    for error in [
+        page.err().unwrap_or_else(|| panic!("the page is refused")),
+        count
+            .err()
+            .unwrap_or_else(|| panic!("the count is refused")),
+        reconciliation
+            .err()
+            .expect("the stream is refused, not its items"),
+    ] {
+        assert!(
+            matches!(error, StorageError::InvalidArgument { .. }),
+            "a language the index cannot reproduce is InvalidArgument, got {error:?}"
+        );
+        assert!(
+            error.to_string().contains("simple"),
+            "the message names the configuration: {error}"
+        );
+    }
+    drop(backend);
+
+    let reopened = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store reopens")
+        .with_settings(Arc::new(settings_from_fixture(&fixture())));
+    assert!(
+        rows_of(&reopened, &search("studies")).await.is_empty(),
+        "`simple` has no stemmer, so `studies` does not find `study`"
+    );
+    assert_eq!(
+        ids_of(&rows_of(&reopened, &search("study")).await),
+        vec![record.event.id]
+    );
+}
+
+#[tokio::test]
+async fn the_search_rule_names_the_simple_configuration_when_the_gate_is_on() {
+    let (_directory, enabled) = open_with(settings_from_fixture(&fixture())).await;
+    assert_eq!(
+        enabled.search_rule(),
+        SearchRule::ToTsvector {
+            language: "simple".to_owned()
+        },
+        "the declared rule is the rule the term index applies"
+    );
+
+    let directory = tempfile::tempdir().expect("tempdir");
+    let bare = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+    assert_eq!(
+        bare.search_rule(),
+        SearchRule::SubstringTerms,
+        "with the gate off no predicate is applied, and the relay's matcher is what decides"
+    );
+}
+
+#[tokio::test]
+async fn a_store_whose_index_was_maintained_with_the_gate_off_answers_the_search_when_it_is_on() {
+    let (directory, backend) = open_with(settings_with("nip50.enabled", json!(false))).await;
+    let record = event_with_content(95, 1, 1_700_000_000, "latentterm");
+    backend
+        .create_many(std::slice::from_ref(&record))
+        .await
+        .expect("the event stores");
+    drop(backend);
+
+    let reopened = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store reopens")
+        .with_settings(Arc::new(settings_from_fixture(&fixture())));
+    assert_eq!(
+        ids_of(&rows_of(&reopened, &search("latentterm")).await),
+        vec![record.event.id],
+        "the write path indexes whether or not the read gate is on"
+    );
+}
+
+/// Three events whose contents are one distinctive token each, the store the two rebuild tests
+/// start from, with the index forgotten the way a store written before it existed has none.
+async fn store_without_an_index() -> (tempfile::TempDir, Vec<EventRecord>) {
+    let (directory, backend) = open_with(settings_from_fixture(&fixture())).await;
+    let records: Vec<EventRecord> = ["rebuiltalpha", "rebuiltbeta", "rebuiltgamma"]
+        .iter()
+        .enumerate()
+        .map(|(step, content)| event_with_content(100 + step as u8, 1, 1_700_000_000, content))
+        .collect();
+    backend
+        .create_many(&records)
+        .await
+        .expect("the events store");
+    {
+        let env = backend.env();
+        let rtxn = env.read_txn().expect("a read transaction");
+        let (index, meta) = named_databases(env, &rtxn);
+        drop(rtxn);
+        let mut wtxn = env.write_txn().expect("a write transaction");
+        index.clear(&mut wtxn).expect("the index clears");
+        meta.delete(&mut wtxn, SEARCH_INDEX_MARKER)
+            .expect("the marker clears");
+        wtxn.commit().expect("the commit");
+    }
+    drop(backend);
+    (directory, records)
+}
+
+#[tokio::test]
+async fn a_store_written_without_the_index_is_rebuilt_on_open() {
+    let (directory, records) = store_without_an_index().await;
+    let reopened = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store reopens")
+        .with_settings(Arc::new(settings_from_fixture(&fixture())));
+
+    {
+        let env = reopened.env();
+        let rtxn = env.read_txn().expect("a read transaction");
+        let (index, meta) = named_databases(env, &rtxn);
+        assert_eq!(
+            index.len(&rtxn).expect("the index's length"),
+            3,
+            "the index is populated before the first search, not lazily by it"
+        );
+        assert_eq!(
+            meta.get(&rtxn, SEARCH_INDEX_MARKER)
+                .expect("the marker reads"),
+            Some(&[SEARCH_INDEX_VERSION][..]),
+            "and the marker records the rebuild"
+        );
+    }
+    assert_eq!(
+        ids_of(&rows_of(&reopened, &search("rebuiltalpha")).await),
+        vec![records[0].event.id]
+    );
+}
+
+#[tokio::test]
+async fn an_index_from_an_older_tokenizer_is_rebuilt_on_open() {
+    let (directory, records) = store_without_an_index().await;
+    {
+        let env = {
+            let backend = LmdbBackend::open(directory.path())
+                .await
+                .expect("the store opens");
+            backend.env().clone()
+        };
+        let rtxn = env.read_txn().expect("a read transaction");
+        let (index, meta) = named_databases(&env, &rtxn);
+        drop(rtxn);
+        let mut wtxn = env.write_txn().expect("a write transaction");
+        meta.put(&mut wtxn, SEARCH_INDEX_MARKER, &[SEARCH_INDEX_VERSION + 1])
+            .expect("the stale marker");
+        let mut ghost = b"ghostterm".to_vec();
+        ghost.extend([0u8; 32]);
+        index
+            .put(&mut wtxn, &ghost, &[])
+            .expect("the stale posting");
+        wtxn.commit().expect("the commit");
+    }
+
+    let reopened = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store reopens")
+        .with_settings(Arc::new(settings_from_fixture(&fixture())));
+    {
+        let env = reopened.env();
+        let rtxn = env.read_txn().expect("a read transaction");
+        let (index, meta) = named_databases(env, &rtxn);
+        assert_eq!(
+            meta.get(&rtxn, SEARCH_INDEX_MARKER)
+                .expect("the marker reads"),
+            Some(&[SEARCH_INDEX_VERSION][..]),
+            "the rebuild repaired the marker before the first search"
+        );
+        assert_eq!(
+            index.len(&rtxn).expect("the index's length"),
+            3,
+            "the index was replaced, not extended: an add-only rebuild would read 4"
+        );
+        assert_eq!(
+            index
+                .prefix_iter(&rtxn, b"ghostterm")
+                .expect("the index reads")
+                .count(),
+            0,
+            "the posting no current row carries is gone"
+        );
+    }
+    assert_eq!(
+        ids_of(&rows_of(&reopened, &search("rebuiltbeta")).await),
+        vec![records[1].event.id]
     );
 }
