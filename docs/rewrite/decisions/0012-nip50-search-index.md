@@ -235,6 +235,34 @@ has one more true answer.
 - The capture's `ts_rank` values are still recorded only as an order in the fixture. No arm here
   proves the two rank *numbers* agree, and none claims it.
 
+## How this record was reviewed, and what was lost
+
+The spec this record implements was attacked twice by an adversarial pass before any code was
+written. **The second pass's report was destroyed**, and this note exists so the loss is visible
+where the obligations live rather than only in a conversation: a later job was written against the
+same file name in the same folder and overwrote it, and the first pass survives only because it
+had been renamed.
+
+**Pass one** (18 criteria red at base, 4 green, 0 undecidable) found nine holes: a criterion whose
+literal wording broke a correct build, `C7` checking answers instead of the index, `C16` never
+asserting population *before* the first search, `C17` unable to distinguish a marker written first,
+`C4` pinning two of seven filter combinations, unpinned test commands that pass when they match no
+test, two database names, long-token truncation, and an unresolved `Matcher` seam.
+
+**Pass two** (20 red, 2 green, 0 undecidable) found the class that matters most here — implementations
+that are *nearly* right and fail nothing: a rebuild that adds keys without clearing (this record's
+D6 needs the clear-before-write, and the spec's stale-key criterion is what forced it); a router
+placed in `page` only, which a limited count bypasses; a language refusal implemented on the find
+path and not the count path; plus the rank heap's **polarity** (a `Reverse` min-heap evicts the
+best row when it caps, so D4's order needed the opposite type), `C5`'s arithmetic (three span-2
+rows, not two), and `heed`'s real `open_database` arity, which the criteria had written wrong.
+
+Every finding from both passes is folded into the spec the build was written against; what is lost
+is the report, not the requirements. The lesson is recorded here rather than in a process note
+because it is a record-keeping obligation of this sequence: **an adversarial report is an artifact
+of the decision, so it is written to a path that names its subject and its pass**, not to a shared
+`spec-redteam.md` that the next design will overwrite.
+
 ## What would overturn this record
 
 Any one of: a verified Postgres-compatible ranker (D4), an index that must carry tag keys or decide
