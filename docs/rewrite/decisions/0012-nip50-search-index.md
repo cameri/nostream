@@ -67,7 +67,7 @@ record.
 ## D2 — One hand-rolled tokeniser, `search::terms`
 
 Unicode lowercase of the whole text, **then** maximal runs of `char::is_alphanumeric()`, duplicates
-dropped (`lmdb/search.rs:108-144`). The order is part of the rule, not an implementation detail: a
+dropped (`lmdb/search.rs:109-145`). The order is part of the rule, not an implementation detail: a
 case mapping can turn one character into several, and `İ` (U+0130) lowers to `i` plus a combining
 dot, which is not alphanumeric — so `İx` is the two tokens `i` and `x` here, and one token if the
 runs were taken from the original text and each run lowered afterwards. It is what the write path
@@ -106,7 +106,7 @@ of a tag (`lmdb/search.rs:177-215`). The walk narrows in three stages: the **pre
 first distinct query term (which necessarily also visits longer terms sharing its bytes), then
 **term identity** — a posting whose term slice is not the walked term's bytes is skipped before
 anything else — then each other term's exact key for the same id, and finally `Matcher::matches`,
-whose one body decode answers both the tag families and the search verdict (`lmdb/search.rs:334-368`).
+whose one body decode answers both the tag families and the search verdict (`lmdb/search.rs:323-382`).
 Without the identity stage a row whose content holds both `cat` and `cats` reaches the keeper twice
 for a query of `cat`: a count over-reports and a limited page can spend two slots on one row. A stale or truncated posting therefore cannot produce a false positive,
 and completeness is the write path's (D1). A query whose tokens are empty — a punctuation-only
@@ -124,7 +124,7 @@ trigger, not a separate decision.
 
 For a body that holds every term, the rank is the smallest window of consecutive tokens covering all
 of them; the page is ordered by rank ascending, then `event_id` ascending, and keeps its own heap
-because that order is not the index's key order (`lmdb/search.rs:171-215`, `:251-315`).
+because that order is not the index's key order (`lmdb/search.rs:177-215`, `:257-321`).
 
 **The fixture recorded `ts_rank`'s order and this differs.** It reproduces that order on this corpus
 — spans 2, 2, 2, 4 for the four rows — which is **not** a claim of `ts_rank` parity: `ts_rank` also
@@ -180,7 +180,7 @@ differently. The clear would become a delta, and the marker would have to record
 ## D6 — The rebuild runs on open, in batches of 1000, and its cost is paid once
 
 `LmdbBackend::open` rebuilds when D5 says stale: it walks `events_by_created_at`, indexes
-`SEARCH_REINDEX_BATCH = 1000` rows per write transaction (`lmdb/search.rs:52`, `:378-443`), and logs
+`SEARCH_REINDEX_BATCH = 1000` rows per write transaction (`lmdb/search.rs:52`, `:391-456`), and logs
 one line before and one after, with the row count, the key count and the elapsed milliseconds, so a
 slow first open is visible rather than mysterious. A fresh store writes the marker and indexes
 nothing.
