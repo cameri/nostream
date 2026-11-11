@@ -32,8 +32,8 @@ use crate::repositories::{
     EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
     NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, StorageFuture, StreamedEvent, User,
-    UserPatch, UserRepository,
+    QueryStream, ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture,
+    StreamedEvent, User, UserPatch, UserRepository,
 };
 
 /// The fixed map size every environment is opened with: `Env::resize` is `unsafe` and this
@@ -79,8 +79,9 @@ pub(crate) const STREAM_BATCH_ITEMS: usize = 256;
 pub(crate) const STREAM_BATCH_KEYS: usize = 256;
 
 /// The settings gates the capture reads per query. The LMDB backend records only whether
-/// NIP-50 is on: it has no search implementation (ADR 0011, "Oracle: two arms, one executor" —
-/// entry 21, out of scope, not a permitted failure).
+/// NIP-50 is on: the gate selects the token rule `events::search_matches` applies (ADR 0011,
+/// D11), and `nip50.language` and `maxQueryLength` are Postgres query-shaping values it does not
+/// carry.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Gates {
     pub(crate) nip50: bool,
@@ -368,6 +369,17 @@ impl EventRepository for LmdbBackend {
             self.read(move |txn, databases| events::count(txn, databases, &filters, &gates, now))
                 .await
         })
+    }
+
+    /// LMDB answers a searched filter with the token rule (`events::search_matches`) when the
+    /// NIP-50 gate is on, and with no text predicate at all when it is off — in which case the
+    /// relay's own matcher is what decides, which is `SubstringTerms`.
+    fn search_rule(&self) -> SearchRule {
+        if self.gates().nip50 {
+            SearchRule::TokenTerms
+        } else {
+            SearchRule::SubstringTerms
+        }
     }
 
     /// LMDB's tag index holds no empty value: `encoding::tag_entries` writes a key only when the

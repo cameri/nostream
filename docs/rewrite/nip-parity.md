@@ -1001,7 +1001,7 @@ no relay-side test reaches them.
 | 43 | `core/nip43.rs`; `relay/strategies/{join,leave,invite}_request.rs` | `session invite-mint` |
 | 44 | `core/nip44.rs` | `divergent: nip44_parity::produces_the_canonical_payload_from_the_nip44_spec_test_vector` *(nostream-core)* |
 | 45 | `relay/handlers/count.rs`; `core/messages.rs` | `session count-disabled`, `measured-session` |
-| 50 | `core/filter.rs`; `storage/postgres/sql.rs` | `vectors-only: nip_vectors::nip50_a_search_filter_is_served_only_when_enabled` |
+| 50 | `core/filter.rs`; `storage/postgres/sql.rs`; `storage/lmdb/events.rs` | `vectors-only: nip_vectors::nip50_a_search_filter_is_served_only_when_enabled`; `vectors-only: parity_lmdb::the_typescript_script_replays_with_an_empty_diff` (fixture entry 21: the token rule's four rows, page order) |
 | 56 | `core/nip56.rs`; `relay/strategies/report.rs`; `relay/hidden_content.rs` | `session hidden-report` |
 | 59 | `relay/strategies/gift_wrap.rs`; `core/event.rs` | `session event-rejections`, step 3 |
 | 62 | `relay/strategies/vanish.rs` | `vectors-only: strategies::vanish_soft_deletes_the_other_events_and_stores_the_request` |
@@ -1017,7 +1017,8 @@ no relay-side test reaches them.
 Two limits of the map, stated so a later reader does not take it for more than it is.
 **NIP-50's ranking** is not in it: `ts_rank` lives in the SQL backend and needs Postgres,
 so ranking stays with the `#[ignore]`d `parity` target while the vector above pins the
-matcher's accept-and-drop behaviour. **The census is a different oracle**: it maps 658
-TypeScript unit cases to Rust tests and is untouched here, because a NIP with a vector
-and no TypeScript case has nothing to map, and hand-adding one fails `ts_case_parity` by
-design.
+matcher's accept-and-drop behaviour. The LMDB arm replays entry 21 in the store's page
+order and ranks nothing; the capture's recorded order is `#1110`'s. **The census is a
+different oracle**: it maps 658 TypeScript unit cases to Rust tests and is untouched here,
+because a NIP with a vector and no TypeScript case has nothing to map, and hand-adding one
+fails `ts_case_parity` by design.

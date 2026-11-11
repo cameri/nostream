@@ -27,26 +27,47 @@ use nostream_storage::repositories::{
     EventRetentionOptions, FieldUpdate, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, InvoiceUnit, NewDeliveryLogEntry, NewReport, Nip05Verification,
     NotificationDeliveryLogRepository, NotificationDeliveryStatus, NotificationOutboxRepository,
-    NotificationTargetType, ReconciliationItem, ReportType, UserRepository, collect_records,
+    NotificationTargetType, ReconciliationItem, ReportType, SearchRule, UserRepository,
+    collect_records,
 };
 
 mod common;
 
-/// The entries this arm cannot replay, fixed by index: 21 is `search` (NIP-50 is out of scope),
-/// 48 and 50 are `user.tos_accepted_at` (raw SQL, no seam form), and 112 and 115 are the two
-/// `transaction` groups the capture rolled back — a seam with no rollback cannot reproduce them.
-/// The two groups it committed (111, 117) are replayed: their nested ops in order leave exactly
-/// the state the commit left, which is why entries after 111 observe its rows.
-// shortcut: five fixture entries are excluded by index and the count is a constant; upgrade
+/// The entries this arm cannot replay, fixed by index: 48 and 50 are `user.tos_accepted_at`
+/// (raw SQL, no seam form), and 112 and 115 are the two `transaction` groups the capture rolled
+/// back — a seam with no rollback cannot reproduce them. The two groups it committed (111, 117)
+/// are replayed: their nested ops in order leave exactly the state the commit left, which is why
+/// entries after 111 observe its rows. Entry 21, the one filter carrying `search`, is replayed
+/// against the token rule the backend applies.
+// shortcut: four fixture entries are excluded by index and the count is a constant; upgrade
 // when the capture gains an entry, which fails the count assertion and forces this list to be
 // re-derived rather than quietly skipped.
-const EXCLUDED: [usize; 5] = [21, 48, 50, 112, 115];
+const EXCLUDED: [usize; 4] = [48, 50, 112, 115];
 
 /// The entries that are replayed; `EXCLUDED.len() + REPLAYED` is the fixture's entry count.
-const REPLAYED: usize = 113;
+const REPLAYED: usize = 114;
 
 /// The exclusion list as the marker line prints it.
-const EXCLUDED_MARKER: &str = "21,48,50,112,115";
+const EXCLUDED_MARKER: &str = "48,50,112,115";
+
+/// The fixture entry carrying a NIP-50 `search`: the capture recorded its rows from Postgres in
+/// `ts_rank` order, which this backend does not reproduce, so the test re-sorts them into the
+/// page order a filter without a `limit` produces.
+const SEARCHED_ENTRY: usize = 21;
+
+/// The ids entry 21 records, in page order (`created_at` ascending): the token rule's whole
+/// answer over the fixture corpus. The substring rule adds [`NOT_SEARCHED_ID`], which is why
+/// this backend applies the token rule.
+const SEARCHED_IDS: [&str; 4] = [
+    "5454369c2445e12b001b51e5e48cf6722072ecdb187453c028cac8a12040633a",
+    "9ae1fef4857bb0174e8fb1221f8da1da6705ebef42e143de7a8f8fe965ba9ee3",
+    "cb41289d08a5784a73b7bac2bf97620f5c927487d0c5a029ba81f840fe21fa36",
+    "c004000000000000000000000000000000000000000000000000000000000000",
+];
+
+/// The row the substring rule returns for entry 21 and the token rule refuses: its content
+/// carries `bitcoininveniice` and `#LightningNetwork`, and neither run is a query term.
+const NOT_SEARCHED_ID: &str = "f8ef979358ca737fcff947314572c83bb9725dc2695590575390c8b42a5c4939";
 
 /// Replays a transaction group the capture committed. The group's comparison is the aggregate
 /// `{failed: false, results: [...]}`, and running its nested ops in order through the seam
@@ -66,6 +87,29 @@ async fn run_committed_transaction(
         results.push(result);
     }
     json!({ "failed": false, "results": results })
+}
+
+/// The value one entry is compared with: the capture's own `result.compare`, except for the
+/// searched entry, whose recorded rows are re-sorted into the page order this backend produces
+/// (no `limit`, so `created_at` ascending, the id ascending on a tie). The rows are the
+/// fixture's and the sort is the test's, never the implementation's: the capture recorded
+/// `ts_rank` order, which this backend does not reproduce, and the fixture stays the capture's
+/// answer.
+fn expected_result(index: usize, op: &Value) -> Value {
+    let mut compare = op["result"]["compare"].clone();
+    if index != SEARCHED_ENTRY {
+        return compare;
+    }
+    let rows = compare["rows"]
+        .as_array_mut()
+        .expect("the searched entry's rows");
+    rows.sort_by(|left, right| {
+        left[1]
+            .as_i64()
+            .cmp(&right[1].as_i64())
+            .then_with(|| left[0].as_str().cmp(&right[0].as_str()))
+    });
+    compare
 }
 
 /// One store on a temporary directory, with the fixture's settings gates.
@@ -92,6 +136,83 @@ fn event(secret: u8, kind: u64, created_at: i64) -> EventRecord {
     };
     nostream_core::crypto::sign_event(&[secret; 32], &mut event).expect("the event signs");
     EventRecord::from_event(&event)
+}
+
+/// A signed event of the given kind, creation time, content and tags, by the key `secret`.
+fn signed(secret: u8, kind: u64, created_at: i64, content: &str, tags: &[&[&str]]) -> EventRecord {
+    let mut event = Event {
+        id: EventId::from_byte_array([0; 32]),
+        pubkey: Pubkey::from_byte_array([0; 32]),
+        created_at,
+        kind: Kind(kind),
+        tags: tags
+            .iter()
+            .map(|tag| tag.iter().map(|value| (*value).to_owned()).collect())
+            .collect(),
+        content: content.to_owned(),
+        sig: Signature::from_byte_array([0; 64]),
+    };
+    nostream_core::crypto::sign_event(&[secret; 32], &mut event).expect("the event signs");
+    EventRecord::from_event(&event)
+}
+
+/// A filter as the store's own types read it — the wire's `search`, `kinds`, `#t` and the rest.
+fn wire(value: Value) -> Filter {
+    serde_json::from_value(value).expect("the filter parses")
+}
+
+/// The rows a filter returns, in page order.
+async fn page(backend: &LmdbBackend, filter: Filter) -> Vec<EventRecord> {
+    collect_records(
+        backend
+            .find_by_filters(std::slice::from_ref(&filter))
+            .await
+            .expect("the read answers"),
+    )
+    .await
+    .expect("the stream drains")
+}
+
+/// The ids a page returns, in its order.
+fn ids(rows: &[EventRecord]) -> Vec<String> {
+    rows.iter()
+        .map(|record| record.event.id.to_string())
+        .collect()
+}
+
+/// The compared shape of a page's rows.
+fn rows(page: &[EventRecord]) -> Vec<Value> {
+    page.iter().map(common::event_row).collect()
+}
+
+/// The live rows a filter counts.
+async fn counted(backend: &LmdbBackend, filter: Filter) -> u64 {
+    backend
+        .count_by_filters(std::slice::from_ref(&filter))
+        .await
+        .expect("the count answers")
+}
+
+/// C3's five events, in the order that criterion numbers them: two authors (the keys 71 and
+/// 72), both kinds, and a row carrying the tag `#t=alpha` with a content that lacks the term.
+fn combined_events() -> Vec<EventRecord> {
+    vec![
+        signed(71, 1, 100, "commonterm", &[&["t", "alpha"]]),
+        signed(72, 0, 200, "commonterm extra", &[]),
+        signed(71, 1, 300, "COMMONTERM", &[]),
+        signed(72, 0, 400, "commonterm", &[]),
+        signed(71, 1, 500, "otherterm", &[&["t", "alpha"]]),
+    ]
+}
+
+/// A gate-on store holding `events`.
+async fn store_with(events: &[EventRecord]) -> (tempfile::TempDir, LmdbBackend) {
+    let (directory, backend) = open_store().await;
+    backend
+        .create_many(events)
+        .await
+        .expect("the corpus inserts");
+    (directory, backend)
 }
 
 fn one_entry(outbox_id: Option<String>) -> NewDeliveryLogEntry {
@@ -138,7 +259,6 @@ async fn the_typescript_script_replays_with_an_empty_diff() {
         "the fixture's entry count is the one the exclusion list was written against"
     );
     for (index, name) in [
-        (21, "events.find_by_filters"),
         (48, "user.tos_accepted_at"),
         (50, "user.tos_accepted_at"),
         (112, "transaction"),
@@ -150,16 +270,14 @@ async fn the_typescript_script_replays_with_an_empty_diff() {
             "entry {index} is not what the exclusion list says it is"
         );
     }
-    // Each entry is excluded exactly when the seam has no form for it: a transaction group
-    // the capture rolled back, the two raw-SQL probes, and the one filter carrying `search`.
+    // Each entry is excluded exactly when the seam has no form for it: a transaction group the
+    // capture rolled back, or one of the two raw-SQL probes. A filter carrying `search` is run.
     for (index, op) in script.iter().enumerate() {
         let name = op["op"].as_str().expect("an op name");
         let excluded_kind = match name {
             "transaction" => op["result"]["compare"]["failed"] != Value::Bool(false),
             "user.tos_accepted_at" => true,
-            _ => op["request"]["filters"]
-                .as_array()
-                .is_some_and(|filters| filters.iter().any(|filter| filter.get("search").is_some())),
+            _ => false,
         };
         assert_eq!(
             EXCLUDED.contains(&index),
@@ -195,9 +313,26 @@ async fn the_typescript_script_replays_with_an_empty_diff() {
                 .unwrap_or_else(|error| panic!("op {index} ({name}) failed: {error}"))
         };
         assert_eq!(
-            actual, op["result"]["compare"],
+            actual,
+            expected_result(index, op),
             "op {index} ({name}) differs from the TypeScript capture"
         );
+        if index == SEARCHED_ENTRY {
+            let ids: Vec<&str> = actual["rows"]
+                .as_array()
+                .expect("the searched entry's rows")
+                .iter()
+                .map(|row| row[0].as_str().expect("an id"))
+                .collect();
+            assert_eq!(
+                ids, SEARCHED_IDS,
+                "the token rule's four rows, in page order"
+            );
+            assert!(
+                !ids.contains(&NOT_SEARCHED_ID),
+                "the row the substring rule adds is refused"
+            );
+        }
         replayed += 1;
     }
     assert_eq!(replayed, REPLAYED);
@@ -1353,29 +1488,389 @@ async fn creating_a_job_that_exists_is_refused() {
     );
 }
 
-/// A non-empty `search` with the NIP-50 gate on is refused by every query method, the
-/// reconciliation stream included: this backend cannot search, and returning a broader filter's
-/// rows would answer a question it did not ask.
+/// The rule is the token rule: lowercase both strings, split each into maximal runs of
+/// alphanumeric characters, and require every query term to equal one of the content's runs.
+/// That is not `Filter::matches`'s substring rule (which accepts `abcdef` inside
+/// `xxabcdefyy`), not Postgres' stemming one (`study` selects `studies` under `english`), and
+/// a tag carrying a term is never enough.
 #[tokio::test]
-async fn reconciliation_refuses_a_search_the_gate_enables() {
+async fn a_search_rule_is_lowercase_alphanumeric_tokens() {
     let (_directory, backend) = open_store().await;
-    let filter = Filter {
-        search: Some("nostr".to_owned()),
-        ..Filter::default()
-    };
-
-    let error = backend
-        .find_reconciliation_items(&filter)
+    let events = vec![
+        signed(61, 1, 100, "xxabcdefyy", &[]),
+        signed(62, 1, 200, "studies", &[]),
+        signed(63, 1, 300, "MIXED Case", &[]),
+        signed(64, 1, 400, "the word the", &[]),
+        signed(65, 1, 500, "theory other", &[]),
+        signed(66, 1, 600, "bitcoin lightning both", &[]),
+        signed(67, 1, 700, "only bitcoin", &[]),
+        signed(68, 1, 800, "plain", &[&["t", "needle"]]),
+    ];
+    backend
+        .create_many(&events)
         .await
-        .err()
-        .expect("the refusal");
+        .expect("the corpus inserts");
+
     assert!(
-        matches!(
-            error,
-            StorageError::NotImplemented {
-                module: "storage::lmdb::nip50_search"
-            }
-        ),
-        "a search the gate enables is NotImplemented, got {error:?}"
+        page(&backend, wire(json!({"search": "abcdef"})))
+            .await
+            .is_empty(),
+        "`xxabcdefyy` is one token, so `abcdef` matches nothing"
+    );
+    assert!(
+        page(&backend, wire(json!({"search": "study"})))
+            .await
+            .is_empty(),
+        "no stemming: `studies` is another token"
+    );
+    assert_eq!(
+        ids(&page(&backend, wire(json!({"search": "mixed case"}))).await),
+        ids(&events[2..3]),
+        "both strings lowercase, so the mixed-case content matches"
+    );
+    assert_eq!(
+        ids(&page(&backend, wire(json!({"search": "the"}))).await),
+        ids(&events[3..4]),
+        "`the` matches the word and not `theory` or `other`"
+    );
+    assert_eq!(
+        ids(&page(&backend, wire(json!({"search": "bitcoin lightning"}))).await),
+        ids(&events[5..6]),
+        "both terms must be runs of the content"
+    );
+    assert!(
+        page(&backend, wire(json!({"search": "needle"})))
+            .await
+            .is_empty(),
+        "a tag carrying the term is never enough"
+    );
+    assert!(
+        page(&backend, wire(json!({"search": "!!!"})))
+            .await
+            .is_empty(),
+        "a query with no alphanumeric run matches nothing"
+    );
+    assert_eq!(
+        backend.search_rule(),
+        SearchRule::TokenTerms,
+        "the declared rule is the one applied"
+    );
+}
+
+/// A search narrows together with every criterion it is combined with, `#t` included: the tag
+/// index proves that family for the keys it selects, and a verdict placed behind that proof
+/// would be skipped — E5 carries `alpha` and not the term.
+#[tokio::test]
+async fn a_search_combines_with_every_other_criterion() {
+    let events = combined_events();
+    let (_directory, backend) = store_with(&events).await;
+    let [e1, e2, e3, e4, _] = &events[..] else {
+        panic!("the corpus is five events")
+    };
+    let (a1, a2) = (e1.event.pubkey.to_string(), e2.event.pubkey.to_string());
+    assert_ne!(a1, a2, "the corpus has two authors");
+
+    assert_eq!(
+        ids(&page(&backend, wire(json!({"search": "commonterm"}))).await),
+        ids(&events[..4]),
+        "the query alone selects E1–E4"
+    );
+    assert_eq!(
+        ids(&page(
+            &backend,
+            wire(json!({"search": "commonterm", "kinds": [1]}))
+        )
+        .await),
+        ids(&[e1.clone(), e3.clone()]),
+        "kind 1 narrows the search to E1 and E3"
+    );
+    assert_eq!(
+        ids(&page(
+            &backend,
+            wire(json!({"search": "commonterm", "ids": [e2.event.id.to_string()]}))
+        )
+        .await),
+        ids(std::slice::from_ref(e2)),
+        "an id narrows the search to E2"
+    );
+    assert_eq!(
+        ids(&page(
+            &backend,
+            wire(json!({"search": "commonterm", "authors": [a2]}))
+        )
+        .await),
+        ids(&[e2.clone(), e4.clone()]),
+        "an author narrows the search to E2 and E4"
+    );
+    assert_eq!(
+        ids(&page(
+            &backend,
+            wire(json!({"search": "commonterm", "since": 300}))
+        )
+        .await),
+        ids(&[e3.clone(), e4.clone()]),
+        "`since` is inclusive and narrows the search to E3 and E4"
+    );
+    assert_eq!(
+        ids(&page(
+            &backend,
+            wire(json!({"search": "commonterm", "since": 200}))
+        )
+        .await),
+        ids(&events[1..4]),
+        "an event exactly at the bound is returned"
+    );
+    assert_eq!(
+        ids(&page(
+            &backend,
+            wire(json!({"search": "commonterm", "until": 200}))
+        )
+        .await),
+        ids(&events[..2]),
+        "`until` is inclusive and narrows the search to E1 and E2"
+    );
+    assert_eq!(
+        ids(&page(
+            &backend,
+            wire(json!({"search": "commonterm", "#t": ["alpha"]}))
+        )
+        .await),
+        ids(std::slice::from_ref(e1)),
+        "the tag family narrows the search to E1: a `proven` family skips the tag check, not \
+         the search verdict, and E5 carries the tag and not the term"
+    );
+}
+
+/// A searched page is bounded like any other — the default 500, `limit`, and `limit: 0` — while
+/// a count with no limit counts every match. A limit-bearing read applies the predicate too, so
+/// the page is the best *matches*, not the best rows.
+#[tokio::test]
+async fn a_search_page_is_bounded_by_the_default_limit_but_a_count_is_not() {
+    let (_directory, backend) = open_store().await;
+    let events: Vec<EventRecord> = (0..501i64)
+        .map(|index| signed(80, 1, 1_700_000_000 + index, "needle", &[]))
+        .collect();
+    backend
+        .create_many(&events)
+        .await
+        .expect("the corpus inserts");
+
+    let bounded = page(&backend, wire(json!({"search": "needle"}))).await;
+    assert_eq!(bounded.len(), 500, "the default page holds 500 rows");
+    assert_eq!(
+        bounded.first().map(|record| record.event.created_at),
+        Some(1_700_000_000),
+        "without a limit the page is the oldest matches first"
+    );
+    assert_eq!(
+        bounded.last().map(|record| record.event.created_at),
+        Some(1_700_000_499),
+        "the 501st match is past the page"
+    );
+    assert_eq!(
+        counted(&backend, wire(json!({"search": "needle"}))).await,
+        501,
+        "a count is not page-bounded"
+    );
+
+    let newest = page(&backend, wire(json!({"search": "needle", "limit": 3}))).await;
+    assert_eq!(
+        newest
+            .iter()
+            .map(|record| record.event.created_at)
+            .collect::<Vec<_>>(),
+        vec![1_700_000_500, 1_700_000_499, 1_700_000_498],
+        "a limit makes the page the newest matches first"
+    );
+    assert!(
+        page(&backend, wire(json!({"search": "needle", "limit": 0})))
+            .await
+            .is_empty(),
+        "a zero limit returns no rows"
+    );
+
+    let events = combined_events();
+    let (_second_directory, backend) = store_with(&events).await;
+    assert_eq!(
+        ids(&page(&backend, wire(json!({"search": "commonterm", "limit": 2}))).await),
+        ids(&[events[3].clone(), events[2].clone()]),
+        "the limit truncates the matches: E4 then E3, newest first"
+    );
+    assert_eq!(
+        ids(&page(&backend, wire(json!({"limit": 2}))).await),
+        ids(&[events[4].clone(), events[3].clone()]),
+        "without the search the page is the newest rows: E5 then E4"
+    );
+}
+
+/// A count applies the search predicate, with every criterion it combines with, and a count
+/// with a `limit` counts the limited page.
+#[tokio::test]
+async fn a_count_applies_the_search_predicate() {
+    let events = combined_events();
+    let (_directory, backend) = store_with(&events).await;
+
+    assert_eq!(
+        counted(&backend, wire(json!({"search": "commonterm"}))).await,
+        4,
+        "E1–E4"
+    );
+    assert_eq!(
+        counted(
+            &backend,
+            wire(json!({"search": "commonterm", "kinds": [1]}))
+        )
+        .await,
+        2,
+        "E1 and E3"
+    );
+    assert_eq!(
+        counted(
+            &backend,
+            wire(json!({"search": "commonterm", "#t": ["alpha"]}))
+        )
+        .await,
+        1,
+        "E1"
+    );
+    assert_eq!(
+        counted(&backend, wire(json!({"search": "commonterm", "limit": 3}))).await,
+        3,
+        "a limited count counts a page of that size"
+    );
+}
+
+/// A reconciliation applies the search predicate and yields its matches oldest first, and the
+/// old refusal is gone: no read returns `NotImplemented` for a search the gate enables.
+#[tokio::test]
+async fn a_reconciliation_applies_the_search_predicate() {
+    let events = combined_events();
+    let (_directory, backend) = store_with(&events).await;
+
+    let filter = wire(json!({"search": "commonterm"}));
+    let items = common::collect(
+        backend
+            .find_reconciliation_items(&filter)
+            .await
+            .expect("the filter is admitted"),
+    )
+    .await
+    .expect("the stream drains");
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.event_id.to_string())
+            .collect::<Vec<_>>(),
+        ids(&events[..4]),
+        "E1–E4, oldest first"
+    );
+
+    let tagged = wire(json!({"search": "commonterm", "#t": ["alpha"]}));
+    let items = common::collect(
+        backend
+            .find_reconciliation_items(&tagged)
+            .await
+            .expect("the filter is admitted"),
+    )
+    .await
+    .expect("the stream drains");
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.event_id.to_string())
+            .collect::<Vec<_>>(),
+        ids(&events[..1]),
+        "the tag family narrows it to E1"
+    );
+    assert_eq!(
+        items.len() as u64,
+        counted(&backend, tagged).await,
+        "the stream's length is the count over the same filter"
+    );
+}
+
+/// With the NIP-50 gate off a search is not a predicate, so the read is the read without it;
+/// with the gate on the same corpus applies it. One test, two halves: the gate-off half keeps
+/// the change from leaking past the gate, and the gate-on half is what fails without it.
+#[tokio::test]
+async fn a_search_the_gate_disables_is_ignored() {
+    let events = combined_events();
+    let (_on_directory, on) = store_with(&events).await;
+    let off_directory = tempfile::tempdir().expect("tempdir");
+    let off = LmdbBackend::open(off_directory.path())
+        .await
+        .expect("a store without settings opens");
+    off.create_many(&events).await.expect("the corpus inserts");
+
+    assert_eq!(
+        rows(&page(&off, wire(json!({"search": "commonterm", "kinds": [1]}))).await),
+        rows(&page(&off, wire(json!({"kinds": [1]}))).await),
+        "with the gate off a search changes nothing"
+    );
+    assert_eq!(
+        counted(&off, wire(json!({"search": "commonterm", "kinds": [1]}))).await,
+        counted(&off, wire(json!({"kinds": [1]}))).await,
+        "with the gate off a search counts nothing differently"
+    );
+    assert_eq!(
+        off.search_rule(),
+        SearchRule::SubstringTerms,
+        "with the gate off the backend declares the default rule"
+    );
+
+    assert_eq!(
+        ids(&page(&on, wire(json!({"search": "commonterm", "kinds": [1]}))).await),
+        ids(&[events[0].clone(), events[2].clone()]),
+        "with the gate on the predicate is applied: E1 and E3"
+    );
+    assert_eq!(
+        ids(&page(&on, wire(json!({"kinds": [1]}))).await),
+        ids(&[events[0].clone(), events[2].clone(), events[4].clone()]),
+        "and E5 is the row the predicate removes"
+    );
+    assert_eq!(
+        on.search_rule(),
+        SearchRule::TokenTerms,
+        "with the gate on the backend declares the token rule"
+    );
+}
+
+/// A blank query is not a search — Postgres' `is_search`, not the core matcher's
+/// whitespace-only branch — and a non-blank one is. One test, two halves: the blank half fails
+/// if the core matcher's rule is applied to a whitespace query, and the non-blank half fails if
+/// the field is ignored for every query.
+#[tokio::test]
+async fn a_blank_search_is_not_a_search() {
+    let events = combined_events();
+    let (_directory, backend) = store_with(&events).await;
+    let kinds_only = page(&backend, wire(json!({"kinds": [1]}))).await;
+
+    for blank in ["", "   "] {
+        let filter = Filter {
+            search: Some(blank.to_owned()),
+            kinds: Some(vec![Kind(1)]),
+            ..Filter::default()
+        };
+        assert_eq!(
+            rows(&page(&backend, filter.clone()).await),
+            rows(&kinds_only),
+            "the blank query {blank:?} is ignored"
+        );
+        assert_eq!(
+            counted(&backend, filter).await,
+            counted(&backend, wire(json!({"kinds": [1]}))).await,
+            "the blank query {blank:?} counts what its other criteria count"
+        );
+    }
+
+    assert_eq!(
+        ids(&page(&backend, wire(json!({"search": "commonterm"}))).await),
+        ids(&events[..4]),
+        "a non-blank query selects E1–E4"
+    );
+    assert_eq!(
+        ids(&page(&backend, wire(json!({}))).await),
+        ids(&events),
+        "and the same filter without it selects all five"
     );
 }

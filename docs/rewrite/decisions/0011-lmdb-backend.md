@@ -12,10 +12,11 @@ exists to provide had a name, a settings value and no code. This job adds it: th
 store, the metadata tail, and the nine repository traits implemented over heed 0.20.5,
 with the same integration test the Postgres backend passes replayed against it.
 
-`spec.md` records ten decisions (D1–D10) with their reasons and their measurements. This
-document keeps the parts a later reader needs to judge the code: where the state lives, how
-a value is shaped, what the seam does not offer, which schema it implements, and what the oracle
-therefore measures.
+`spec.md` records ten decisions (D1–D10) with their reasons and their measurements. Job 028's
+spec adds three more (D11–D13) for the NIP-50 search this document now records; its own
+reasoning is in `.factory/jobs/028-nip50-fts/spec.md`. This document keeps the parts a later
+reader needs to judge the code: where the state lives, how a value is shaped, what the seam does
+not offer, which schema it implements, and what the oracle therefore measures.
 
 ## The backend is a feature of the crate, not a crate
 
@@ -314,6 +315,42 @@ Both consequences — nine repositories of ten, and a `first_seen` stored but ne
 stated in `lib.rs`'s "does not own" paragraph, which is where a reader of the crate meets them
 first.
 
+## NIP-50 search is a scan-time token filter (D11–D13)
+
+`Filter::search` is answered by one predicate in the filter evaluation — `search_matches` in
+`lmdb/events.rs` — applied to each candidate the existing scan already offers. There is no
+index, no rank and no store migration (D11): the query is a set of lowercase alphanumeric runs,
+every one of them must equal a run of the content, and tags are never read. `plan` therefore
+seeks one of the indexes it always did; the verdict narrows what it finds.
+
+The rule is the token rule because the capture's own recording says so. Fixture entry 21 is
+`{"search": "bitcoin lightning"}` with four rows recorded from Postgres, and over the fixture's
+483-event corpus the capture's in-memory substring rule selects five. The token rule selects
+exactly the recorded four: the fifth row carries `bitcoininveniice` and `#LightningNetwork`,
+whose runs match neither term, and `#LightningNetwork` is a tag besides. So the relay's matcher
+(`nostream_core::Filter::matches`) keeps its substring rule, and this backend applies the
+word-boundary half of `plainto_tsquery` — the half without stemming and without a language:
+`study` selects no row for `studies` under either rule, and `abcdef` selects none for
+`xxabcdefyy`.
+
+The answer's **set** is that rule's set and its **order** is the store's page order — newest
+first with a `limit`, oldest first without, the id ascending on a tie (D12). The capture recorded
+the four rows in `ts_rank` order, which this backend does not reproduce. That is deliberate, not
+hopeless: the four carry each term once, so no term frequency separates them, while a
+minimum-cover-span rank with an `event_id` tie-break does reproduce the recorded sequence
+exactly (spans 2, 2, 2, 4). That rank is `#1110`'s, and this job implements no rank at all; the
+parity arm compares the set by re-sorting the capture's own recorded rows into page order in the
+test, and leaves the fixture JSON untouched.
+
+The predicate applies only with the NIP-50 gate on and a non-blank query — Postgres' `is_search`
+halves — and a query with no alphanumeric run selects nothing, as `plainto_tsquery`'s empty
+query matches no row. With the gate off, or a blank query, the field is ignored exactly as
+Postgres ignores it (D13). The page stays `page_limit`'s bound (the filter's `limit` or 500,
+clamped to 5 000) and a count with no `limit` counts every match. `nip50.language` and
+`nip50.maxQueryLength` remain Postgres query-shaping values and are not carried, and
+`search_rule()` declares `TokenTerms` with the gate on and the default `SubstringTerms` with it
+off — the declaration the relay reads before it claims completeness over a searched read.
+
 ## Oracle: two arms, one executor
 
 The fixture is the capture's recording and both backends are compared against the same
@@ -324,13 +361,19 @@ Postgres can reach: raw SQL on `users.tos_accepted_at` and the serializable `tra
 groups.
 
 `tests/parity_lmdb.rs` opens a store on a `tempfile::TempDir`, inserts the fixture's
-483-event corpus and replays **113 of 118** entries. The five it does not replay:
+483-event corpus and replays **114 of 118** entries. The four it does not replay:
 
 |index|op|why the seam cannot run it|
 |---|---|---|
-|21|`events.find_by_filters` with `search`|NIP-50 is out of scope; the backend answers `NotImplemented`|
 |48, 50|`user.tos_accepted_at`|raw SQL against `backend.master()`, no seam form|
 |112, 115|`transaction`|the capture **rolled these back**; reproducing a rollback needs a transaction type this job deliberately does not add|
+
+Entry 21, the one filter carrying `search`, is replayed against the token rule. Its comparison
+is the rule's four rows in the store's page order rather than the capture's `ts_rank` sequence
+(D12): the test re-sorts the fixture's own recorded rows (`created_at` ascending, the id
+ascending on a tie), asserts the ids in that order, and asserts that the row the substring rule
+would add — `f8ef9793…` — is absent. The fixture stays the capture's answer, and the divergence
+is the order, which is stated rather than papered over.
 
 The other two `transaction` groups, 111 and 117, **committed** in the capture and are
 replayed: running their nested ops in order through the seam leaves exactly the state the
@@ -341,7 +384,7 @@ cannot pass. What the transaction decision leaves unmeasured is rollback: the ar
 committed groups' effects, not that two calls can fail together.
 
 The target asserts every exclusion against the fixture — an entry is excluded exactly when
-its op is one of the five above — so the list cannot grow without the diff showing it.
+its op is one of the four above — so the list cannot grow without the diff showing it.
 
 ## Consequences
 

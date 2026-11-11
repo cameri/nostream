@@ -451,6 +451,13 @@ pub enum SearchRule {
         /// The regconfig the predicate is evaluated under (`nip50.language`, `simple` by default).
         language: String,
     },
+    /// The LMDB backend's rule: lowercase both strings, split each into maximal runs of
+    /// alphanumeric characters, and require every query term to equal one of the content's runs.
+    /// The word-boundary half of the tsquery above with no stemmer and no language, and
+    /// explicitly **not** [`nostream_core::Filter::matches`]'s substring rule: `study` selects no
+    /// row for `studies`, and `abcdef` selects none for the content `xxabcdefyy`. Tags are never
+    /// read, so a tag carrying a term is not a match.
+    TokenTerms,
 }
 
 /// Whether a backend's tag index can answer a criterion that is the empty string.
@@ -554,10 +561,10 @@ pub trait EventRepository: Send + Sync {
     /// The matching rule this backend applies to a filter that carries `search` (NIP-50).
     ///
     /// Defaults to [`SearchRule::SubstringTerms`], which is what a backend that filters with
-    /// [`nostream_core::Filter::matches`] applies — LMDB's filter path *is* that matcher. A
-    /// backend whose own predicate answers the filter overrides this, and a caller that must
-    /// claim completeness over such a read reads it rather than assuming the relay's matcher
-    /// enumerated the set.
+    /// [`nostream_core::Filter::matches`] applies. A backend whose own predicate answers the
+    /// filter overrides this — LMDB's is the token rule with the gate on and no text predicate
+    /// with it off — and a caller that must claim completeness over such a read reads this
+    /// rather than assuming the relay's matcher enumerated the set.
     fn search_rule(&self) -> SearchRule {
         SearchRule::SubstringTerms
     }

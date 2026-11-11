@@ -888,7 +888,7 @@ fn count_matches_bounded(
     now: i64,
     cap: usize,
 ) -> Result<u64, StorageError> {
-    if !admits(filter, gates)? {
+    if !admits(filter) {
         return Ok(0);
     }
     let plan = plan(filter, databases);
@@ -1021,22 +1021,13 @@ fn count_limit(limit: u64) -> usize {
     usize::try_from(limit.min(MAX_PAGE_KEYS as u64)).unwrap_or(MAX_PAGE_KEYS)
 }
 
-/// The refusals and short-circuits every read applies before it seeks an index.
+/// The short-circuits every read applies before it seeks an index.
 ///
 /// `true` means the filter can match rows; `false` means a criterion family is present but
-/// empty, which is the capture's `1 = 0`.
-fn admits(filter: &Filter, gates: &Gates) -> Result<bool, StorageError> {
-    if gates.nip50
-        && filter
-            .search
-            .as_deref()
-            .is_some_and(|search| !search.trim().is_empty())
-    {
-        return Err(StorageError::NotImplemented {
-            module: "storage::lmdb::nip50_search",
-        });
-    }
-    Ok(!(filter.ids.as_ref().is_some_and(|ids| ids.is_empty())
+/// empty, which is the capture's `1 = 0`. A `search` is not a refusal here: it is a predicate
+/// the matcher applies, with the gate on and a non-blank query.
+fn admits(filter: &Filter) -> bool {
+    !(filter.ids.as_ref().is_some_and(|ids| ids.is_empty())
         || filter
             .authors
             .as_ref()
@@ -1044,7 +1035,35 @@ fn admits(filter: &Filter, gates: &Gates) -> Result<bool, StorageError> {
         || filter
             .tags
             .iter()
-            .any(|(key, criteria)| generic_tag_name(key).is_some() && criteria.is_empty())))
+            .any(|(key, criteria)| generic_tag_name(key).is_some() && criteria.is_empty()))
+}
+
+/// The rule this backend answers a `search` with: lowercase both strings, split each into
+/// maximal runs of alphanumeric characters, and require every query term to equal one of the
+/// content's runs. A query with no run matches nothing, and tags are never read.
+///
+/// It is the word-boundary half of the capture's `plainto_tsquery`, without stemming and without
+/// a language, and not [`nostream_core::Filter::matches`]'s substring rule: `study` selects no
+/// row for `studies`, and `abcdef` selects none for the content `xxabcdefyy`.
+fn search_matches(content: &str, query: &str) -> bool {
+    let query = query.to_lowercase();
+    let terms: Vec<&str> = tokens(&query).collect();
+    if terms.is_empty() {
+        return false;
+    }
+    let content = content.to_lowercase();
+    // shortcut: the content is split again for every query term rather than collected into a
+    // set, so a multi-term query scans the content once per term and no row allocates a token
+    // list; upgrade when a measured scan is dominated by that rescan.
+    terms
+        .iter()
+        .all(|term| tokens(&content).any(|token| token == *term))
+}
+
+/// The maximal runs of alphanumeric characters a string reduces to.
+fn tokens(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty())
 }
 
 /// One filter's page: the best `limit` keys it matches, ordered as the capture's branch is.
@@ -1065,7 +1084,7 @@ fn branch(
     live: bool,
     limit: usize,
 ) -> Result<Vec<(i64, EventId)>, StorageError> {
-    if !admits(filter, gates)? {
+    if !admits(filter) {
         return Ok(Vec::new());
     }
 
@@ -1544,12 +1563,37 @@ impl Matcher<'_> {
         if self.gates.nip56 && self.reported(txn, databases, id, &header.pubkey)? {
             return Ok(None);
         }
-        if self.carries_other_tag_criteria()
-            && !tag_criteria_match(&self.filter.tags, &rows::decode_event(value)?, self.proven)
-        {
-            return Ok(None);
+        let search = self.search_query();
+        let unproven_tags = self.carries_other_tag_criteria();
+        if search.is_some() || unproven_tags {
+            // One decode answers both: the content for the search verdict and the tags for a
+            // family the key's index has not proved. The verdict runs whether or not the index
+            // proved a family, because a `{search, "#t": …}` filter is planned from the tags
+            // index — which suppresses the tag check, not the search.
+            let record = rows::decode_event(value)?;
+            if let Some(query) = search
+                && !search_matches(&record.event.content, query)
+            {
+                return Ok(None);
+            }
+            if unproven_tags && !tag_criteria_match(&self.filter.tags, &record, self.proven) {
+                return Ok(None);
+            }
         }
         Ok(Some(header))
+    }
+
+    /// The query this row's content has to satisfy: the NIP-50 gate is on and `search` is
+    /// non-blank, the two halves of Postgres' `is_search`. A blank or absent field is not a
+    /// search, and neither is any field at all with the gate off.
+    fn search_query(&self) -> Option<&str> {
+        if !self.gates.nip50 {
+            return None;
+        }
+        self.filter
+            .search
+            .as_deref()
+            .filter(|search| !search.trim().is_empty())
     }
 
     /// Whether the filter carries a tag family the row's key has not already proved. A row the
@@ -1791,9 +1835,9 @@ pub(crate) struct ReconciliationStream {
 }
 
 impl ReconciliationStream {
-    /// Builds the stream for one filter, or refuses it as every other read does: a non-empty
-    /// `search` with the NIP-50 gate on is [`StorageError::NotImplemented`], and a criterion
-    /// family that is present but empty selects nothing (the capture's `1 = 0`).
+    /// Builds the stream for one filter. A criterion family that is present but empty selects
+    /// nothing (the capture's `1 = 0`), and a non-blank `search` with the gate on is one more
+    /// predicate the batch scan applies — never a refusal.
     pub(crate) fn new(
         env: Env,
         databases: Databases,
@@ -1801,7 +1845,7 @@ impl ReconciliationStream {
         gates: Gates,
         now: i64,
     ) -> Result<Self, StorageError> {
-        let admitted = admits(filter, &gates)?;
+        let admitted = admits(filter);
         let range_count = if admitted {
             stream_plan(filter, &databases).ranges.len()
         } else {
