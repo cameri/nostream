@@ -22,6 +22,7 @@ use tokio::task::JoinHandle;
 
 use super::encoding::{self, EventHeader};
 use super::rows;
+use super::search;
 use super::{
     DEFAULT_FILTER_LIMIT, Databases, Gates, MAX_PAGE_KEYS, RETENTION_BATCH_SIZE,
     STREAM_BATCH_ITEMS, STREAM_BATCH_KEYS,
@@ -244,6 +245,7 @@ fn write_event(
             .events_expiring
             .put(txn, &encoding::time_key(expires_at, &id), &[])?;
     }
+    search::index_event(txn, databases, record)?;
     Ok(())
 }
 
@@ -293,6 +295,7 @@ fn hard_delete(
             .tags
             .delete(txn, &encoding::tag_key(name, value, created_at, &id)?)?;
     }
+    search::remove_event(txn, databases, record)?;
     if let Some(deduplication) = &record.event_deduplication
         && encoding::replaceable_kind(kind)
     {
@@ -769,7 +772,12 @@ pub(crate) fn page(
             }
         }
     }
-    sort_page(&mut union, filters[0].limit.is_some());
+    // A one-filter search read arrives in the ranker's order, and `sort_page` would replace it
+    // with the created-at order; every other read sorts as it did.
+    let searched = filters.len() == 1 && search::query_terms(&filters[0], gates)?.is_some();
+    if !searched {
+        sort_page(&mut union, filters[0].limit.is_some());
+    }
     Ok(union)
 }
 
@@ -811,8 +819,17 @@ pub(crate) fn count(
                 fresh
             }
             None => {
-                let fresh = count_matches(txn, databases, filter, &counted, gates, now)?;
-                counted.predicates.push(filter);
+                let terms = search::query_terms(filter, gates)?;
+                let fresh = count_matches(
+                    txn,
+                    databases,
+                    filter,
+                    &counted,
+                    gates,
+                    now,
+                    terms.as_deref(),
+                )?;
+                counted.predicates.push(CountedFilter { filter, terms });
                 fresh
             }
         };
@@ -826,7 +843,14 @@ struct Counted<'a> {
     /// The ids of every earlier filter that had a limit: its whole page.
     pages: Vec<HashSet<EventId>>,
     /// Every earlier filter without a limit, whose page is every row its predicate matches.
-    predicates: Vec<&'a Filter>,
+    predicates: Vec<CountedFilter<'a>>,
+}
+
+/// An earlier filter of a count, with the terms its search resolved to — resolved once when the
+/// filter was recorded, so deciding a later row does not re-tokenise the query.
+struct CountedFilter<'a> {
+    filter: &'a Filter,
+    terms: Option<Vec<String>>,
 }
 
 /// Whether the count already holds `id`, so counting it again would count the row twice.
@@ -841,14 +865,19 @@ fn already_counted(
     if counted.pages.iter().any(|page| page.contains(id)) {
         return Ok(true);
     }
-    for filter in &counted.predicates {
-        let matcher = Matcher {
-            filter,
+    //
+    // shortcut: each earlier predicate's resolved terms are cloned per row, because the matcher
+    // owns the list it carries; upgrade when a count over a large store is dominated by that
+    // allocation, which needs the matcher to borrow a list the read owns.
+    for earlier in &counted.predicates {
+        let matcher = Matcher::with_terms(
+            earlier.filter,
             gates,
             now,
-            live: true,
-            proven: None,
-        };
+            true,
+            None,
+            earlier.terms.clone(),
+        );
         if matcher.matches(txn, databases, id)?.is_some() {
             return Ok(true);
         }
@@ -873,12 +902,23 @@ fn count_matches(
     counted: &Counted<'_>,
     gates: &Gates,
     now: i64,
+    terms: Option<&[String]>,
 ) -> Result<u64, StorageError> {
-    count_matches_bounded(txn, databases, filter, counted, gates, now, MAX_PAGE_KEYS)
+    count_matches_bounded(
+        txn,
+        databases,
+        filter,
+        counted,
+        gates,
+        now,
+        terms,
+        MAX_PAGE_KEYS,
+    )
 }
 
 /// [`count_matches`], with the number of ids the walk may hold given explicitly, so a test can
 /// compare the bounded walk against an unbounded one over one corpus.
+#[allow(clippy::too_many_arguments)]
 fn count_matches_bounded(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -886,19 +926,38 @@ fn count_matches_bounded(
     counted: &Counted<'_>,
     gates: &Gates,
     now: i64,
+    terms: Option<&[String]>,
     cap: usize,
 ) -> Result<u64, StorageError> {
-    if !admits(filter, gates)? {
+    if !admits(filter)? {
         return Ok(0);
     }
     let plan = plan(filter, databases);
-    let matcher = Matcher {
+    // A search's keys prove no tag family, so the matcher tests the tag criteria from the body.
+    let matcher = Matcher::with_terms(
         filter,
         gates,
         now,
-        live: true,
-        proven: plan.tag.map(|(name, _)| name),
-    };
+        true,
+        if terms.is_some() {
+            None
+        } else {
+            plan.tag.map(|(name, _)| name)
+        },
+        terms.map(<[String]>::to_vec),
+    );
+    // A filter whose terms resolve is counted from the term index — the same walk the page
+    // takes, with no page to stop at — so the count's predicate is the read's predicate.
+    if let Some(terms) = terms {
+        let mut total = 0;
+        search::walk(txn, databases, &matcher, terms, |id, _, _| {
+            if !already_counted(txn, databases, counted, gates, now, &id)? {
+                total += 1;
+            }
+            Ok(())
+        })?;
+        return Ok(total);
+    }
     // A single exact criterion names one key per row, so only a second criterion or a `#g`
     // prefix can walk one row twice, and only then is the id set paid for.
     //
@@ -1021,21 +1080,13 @@ fn count_limit(limit: u64) -> usize {
     usize::try_from(limit.min(MAX_PAGE_KEYS as u64)).unwrap_or(MAX_PAGE_KEYS)
 }
 
-/// The refusals and short-circuits every read applies before it seeks an index.
+/// The short-circuits every read applies before it seeks an index.
 ///
 /// `true` means the filter can match rows; `false` means a criterion family is present but
-/// empty, which is the capture's `1 = 0`.
-fn admits(filter: &Filter, gates: &Gates) -> Result<bool, StorageError> {
-    if gates.nip50
-        && filter
-            .search
-            .as_deref()
-            .is_some_and(|search| !search.trim().is_empty())
-    {
-        return Err(StorageError::NotImplemented {
-            module: "storage::lmdb::nip50_search",
-        });
-    }
+/// empty, which is the capture's `1 = 0`. A `search` is not one of them: whether it is a search
+/// at all, and what it asks for, is [`search::query_terms`]'s answer, and the terms it resolves
+/// are the search walk's (or, when they resolve to nothing, a page with no rows).
+fn admits(filter: &Filter) -> Result<bool, StorageError> {
     Ok(!(filter.ids.as_ref().is_some_and(|ids| ids.is_empty())
         || filter
             .authors
@@ -1065,20 +1116,34 @@ fn branch(
     live: bool,
     limit: usize,
 ) -> Result<Vec<(i64, EventId)>, StorageError> {
-    if !admits(filter, gates)? {
+    if !admits(filter)? {
         return Ok(Vec::new());
     }
 
     let plan = plan(filter, databases);
     // A `tags` range is built from the family's own criteria, so every key in it satisfies that
-    // family: the matcher skips it and no body is decoded for it.
-    let matcher = Matcher {
+    // family: the matcher skips it and no body is decoded for it. A search proves no family —
+    // the term index selects a row by its content — so its matcher tests every tag criterion,
+    // and this call only decides which of the two the plan has proved; the matcher resolves the
+    // terms itself.
+    let searched = search::query_terms(filter, gates)?.is_some();
+    let matcher = Matcher::new(
         filter,
         gates,
         now,
         live,
-        proven: plan.tag.map(|(name, _)| name),
-    };
+        if searched {
+            None
+        } else {
+            plan.tag.map(|(name, _)| name)
+        },
+    )?;
+    // The router every read method shares: a filter whose search resolves is answered from the
+    // term index, and `plan` is not consulted for it. A count's limited path arrives here too
+    // (`count`), so the rows it counts are the ones this page returns.
+    if let Some(terms) = matcher.terms() {
+        return search::page(txn, databases, &matcher, terms, limit);
+    }
     let descending = filter.limit.is_some();
     let mut page = Page::new(descending);
     for range in &plan.ranges {
@@ -1480,27 +1545,86 @@ fn candidate(
     Ok(Some((rows::event_header(value)?.created_at, id)))
 }
 
+/// What one row answers a filter: the header every caller reads, and the rank a search's page
+/// orders by — `Some` exactly when the matcher carries search terms and the row's body holds
+/// them all.
+pub(crate) struct Verdict {
+    pub(crate) header: EventHeader,
+    pub(crate) rank: Option<u32>,
+}
+
 /// One filter's criteria, evaluated against a stored event.
-struct Matcher<'a> {
+pub(crate) struct Matcher<'a> {
     filter: &'a Filter,
     gates: &'a Gates,
     now: i64,
     live: bool,
     /// The tag family the index range that selected the row has already proved, if any.
     proven: Option<&'a str>,
+    /// The filter's resolved search terms, `None` when it is not a search.
+    terms: Option<Vec<String>>,
 }
 
-impl Matcher<'_> {
-    fn matches(
+impl<'a> Matcher<'a> {
+    /// The matcher every read path builds: resolves the filter's search terms once, so the
+    /// language refusal reaches every read method rather than only the one that walks the page.
+    pub(crate) fn new(
+        filter: &'a Filter,
+        gates: &'a Gates,
+        now: i64,
+        live: bool,
+        proven: Option<&'a str>,
+    ) -> Result<Self, StorageError> {
+        Ok(Self::with_terms(
+            filter,
+            gates,
+            now,
+            live,
+            proven,
+            search::query_terms(filter, gates)?,
+        ))
+    }
+
+    /// A matcher for a read that has already resolved this filter's terms — a count deciding a
+    /// row against an earlier filter, or a reconciliation batch — so they are not re-resolved.
+    pub(crate) fn with_terms(
+        filter: &'a Filter,
+        gates: &'a Gates,
+        now: i64,
+        live: bool,
+        proven: Option<&'a str>,
+        terms: Option<Vec<String>>,
+    ) -> Self {
+        Self {
+            filter,
+            gates,
+            now,
+            live,
+            proven,
+            terms,
+        }
+    }
+
+    /// The search terms this matcher carries, `None` when the filter is not a search.
+    pub(crate) fn terms(&self) -> Option<&[String]> {
+        self.terms.as_deref()
+    }
+
+    pub(crate) fn matches(
         &self,
         txn: &RoTxn<'_>,
         databases: &Databases,
         id: &EventId,
-    ) -> Result<Option<EventHeader>, StorageError> {
+    ) -> Result<Option<Verdict>, StorageError> {
         let Some(value) = databases.events.get(txn, id.as_bytes())? else {
             return Ok(None);
         };
         let header = rows::event_header(value)?;
+        // A search whose query held no token selects nothing: it refuses every row rather than
+        // falling through to "no terms, no restriction".
+        if self.terms.as_deref().is_some_and(<[String]>::is_empty) {
+            return Ok(None);
+        }
 
         if self.live
             && (header.deleted
@@ -1544,12 +1668,25 @@ impl Matcher<'_> {
         if self.gates.nip56 && self.reported(txn, databases, id, &header.pubkey)? {
             return Ok(None);
         }
-        if self.carries_other_tag_criteria()
-            && !tag_criteria_match(&self.filter.tags, &rows::decode_event(value)?, self.proven)
-        {
-            return Ok(None);
+        // The tag families and the search verdict share one decode: a searched row that also
+        // carries tag criteria pays for its body once, and a row that needs neither reads only
+        // the header.
+        let mut rank = None;
+        if self.carries_other_tag_criteria() || self.terms.is_some() {
+            let record = rows::decode_event(value)?;
+            if self.carries_other_tag_criteria()
+                && !tag_criteria_match(&self.filter.tags, &record, self.proven)
+            {
+                return Ok(None);
+            }
+            if let Some(terms) = &self.terms {
+                match search::verdict(&record.event.content, terms) {
+                    Some(found) => rank = Some(found),
+                    None => return Ok(None),
+                }
+            }
         }
-        Ok(Some(header))
+        Ok(Some(Verdict { header, rank }))
     }
 
     /// Whether the filter carries a tag family the row's key has not already proved. A row the
@@ -1783,6 +1920,8 @@ pub(crate) struct ReconciliationStream {
     filter: Filter,
     gates: Gates,
     now: i64,
+    /// The filter's resolved search terms, kept so no batch re-resolves or re-refuses.
+    terms: Option<Vec<String>>,
     range_count: usize,
     position: Position,
     pending: Option<PendingBatch>,
@@ -1791,9 +1930,10 @@ pub(crate) struct ReconciliationStream {
 }
 
 impl ReconciliationStream {
-    /// Builds the stream for one filter, or refuses it as every other read does: a non-empty
-    /// `search` with the NIP-50 gate on is [`StorageError::NotImplemented`], and a criterion
-    /// family that is present but empty selects nothing (the capture's `1 = 0`).
+    /// Builds the stream for one filter, or refuses it as every other read does: a `search`
+    /// under a language the index cannot reproduce is refused by this call rather than yielded
+    /// as a stream item, and a criterion family that is present but empty selects nothing (the
+    /// capture's `1 = 0`).
     pub(crate) fn new(
         env: Env,
         databases: Databases,
@@ -1801,7 +1941,12 @@ impl ReconciliationStream {
         gates: Gates,
         now: i64,
     ) -> Result<Self, StorageError> {
-        let admitted = admits(filter, &gates)?;
+        let admitted = admits(filter)?;
+        // Resolved once, before the stream exists, so the refusal is this call's error and
+        // every batch reuses the list rather than re-resolving it.
+        let terms = Matcher::new(filter, &gates, now, true, None)?
+            .terms()
+            .map(<[String]>::to_vec);
         let range_count = if admitted {
             stream_plan(filter, &databases).ranges.len()
         } else {
@@ -1813,6 +1958,7 @@ impl ReconciliationStream {
             filter: filter.clone(),
             gates,
             now,
+            terms,
             range_count,
             position: Position::new(),
             pending: None,
@@ -1862,6 +2008,7 @@ impl Stream for ReconciliationStream {
             let filter = this.filter.clone();
             let gates = this.gates;
             let now = this.now;
+            let terms = this.terms.clone();
             let mut position = std::mem::replace(&mut this.position, Position::new());
             let exhausted = position.index >= this.range_count;
             if exhausted {
@@ -1876,6 +2023,7 @@ impl Stream for ReconciliationStream {
                     &filter,
                     &gates,
                     now,
+                    terms,
                     &mut position,
                 )?;
                 Ok((items, position))
@@ -1922,22 +2070,29 @@ fn stream_plan<'a>(filter: &'a Filter, databases: &Databases) -> Plan<'a> {
 /// The key cap is what keeps one poll short however few of the keys it walks match: every
 /// transaction a stream opens is closed by the poll that opened it, so no read pins a page while
 /// the writer works.
+#[allow(clippy::too_many_arguments)]
 fn scan_batch(
     txn: &RoTxn<'_>,
     databases: &Databases,
     filter: &Filter,
     gates: &Gates,
     now: i64,
+    terms: Option<Vec<String>>,
     position: &mut Position,
 ) -> Result<Vec<ReconciliationItem>, StorageError> {
     let plan = stream_plan(filter, databases);
-    let matcher = Matcher {
+    let matcher = Matcher::with_terms(
         filter,
         gates,
         now,
-        live: true,
-        proven: plan.tag.map(|(name, _)| name),
-    };
+        true,
+        if terms.is_some() {
+            None
+        } else {
+            plan.tag.map(|(name, _)| name)
+        },
+        terms,
+    );
     if plan.path == AccessPath::Ids {
         return scan_ids(txn, databases, &matcher, &plan, position);
     }
@@ -2608,6 +2763,7 @@ mod tests {
             &filter,
             &Gates::default(),
             0,
+            None,
             &mut position,
         )
         .expect("the batch");
@@ -2652,6 +2808,7 @@ mod tests {
             &filter,
             &Gates::default(),
             0,
+            None,
             &mut position,
         )
         .expect("the batch");
@@ -2673,6 +2830,7 @@ mod tests {
                     &filter,
                     &Gates::default(),
                     0,
+                    None,
                     &mut position,
                 )
                 .expect("the batch"),
@@ -2856,6 +3014,7 @@ mod tests {
             &filter,
             &Gates::default(),
             0,
+            None,
             &mut position,
         )
         .expect("the batch");
@@ -3261,6 +3420,7 @@ mod tests {
                 &counted,
                 &Gates::default(),
                 0,
+                None,
                 MAX_PAGE_KEYS,
             )
             .expect("the bounded count");
@@ -3273,6 +3433,7 @@ mod tests {
                 &counted,
                 &Gates::default(),
                 0,
+                None,
                 usize::MAX,
             )
             .expect("the unbounded count");
@@ -3355,19 +3516,14 @@ mod tests {
         databases: &Databases,
         filter: &Filter,
     ) -> Vec<(i64, EventId)> {
-        let matcher = Matcher {
-            filter,
-            gates: &Gates::default(),
-            now: 0,
-            live: false,
-            proven: None,
-        };
+        let gates = Gates::default();
+        let matcher = Matcher::with_terms(filter, &gates, 0, false, None, None);
         let mut page = Vec::new();
         for entry in databases.events.iter(txn).expect("the store") {
             let (key, _) = entry.expect("a row");
             let id = encoding::event_id_from(key).expect("an event id");
-            if let Some(header) = matcher.matches(txn, databases, &id).expect("a match") {
-                page.push((header.created_at, id));
+            if let Some(verdict) = matcher.matches(txn, databases, &id).expect("a match") {
+                page.push((verdict.header.created_at, id));
             }
         }
         sort_page(&mut page, filter.limit.is_some());
@@ -3382,20 +3538,15 @@ mod tests {
         databases: &Databases,
         filter: &Filter,
     ) -> Vec<ReconciliationItem> {
-        let matcher = Matcher {
-            filter,
-            gates: &Gates::default(),
-            now: 0,
-            live: true,
-            proven: None,
-        };
+        let gates = Gates::default();
+        let matcher = Matcher::with_terms(filter, &gates, 0, true, None, None);
         let mut items = Vec::new();
         for entry in databases.events.iter(txn).expect("the store") {
             let (key, _) = entry.expect("a row");
             let id = encoding::event_id_from(key).expect("an event id");
-            if let Some(header) = matcher.matches(txn, databases, &id).expect("a match") {
+            if let Some(verdict) = matcher.matches(txn, databases, &id).expect("a match") {
                 items.push(ReconciliationItem {
-                    created_at: header.created_at,
+                    created_at: verdict.header.created_at,
                     event_id: id,
                 });
             }
@@ -3979,6 +4130,7 @@ mod tests {
                 &filter,
                 &Gates::default(),
                 0,
+                None,
                 &mut position,
             )
             .expect("the batch");
@@ -4003,6 +4155,7 @@ mod tests {
                         &filter,
                         &Gates::default(),
                         0,
+                        None,
                         &mut position,
                     )
                     .expect("the batch"),

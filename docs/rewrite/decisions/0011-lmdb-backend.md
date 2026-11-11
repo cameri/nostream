@@ -49,7 +49,7 @@ author — inside the same read transaction that already holds the event row, in
 second store read per candidate. An embedded SQL store would have needed a second
 dependency and could still tear against the LMDB file.
 
-The price is recorded with the decision: 29 named databases maintained by hand, `DISTINCT`
+The price is recorded with the decision: 30 named databases maintained by hand, `DISTINCT`
 and `OFFSET` become cursor walks (`BTreeSet` for `find_actionable_targets`, a skip count for
 `find_pending_invoices`), and the columns' `CHECK` and foreign-key constraints move into
 Rust (§ Constraints move into Rust, below).
@@ -173,7 +173,7 @@ transaction outlives a poll, and a dropped stream pins no pages.
 
 `Env::resize` is `unsafe` and this crate has one audited `unsafe` call, so the map is
 preallocated at `LMDB_MAP_SIZE = 64 GiB` and never grown (D6). The same single
-`#[allow(unsafe_code)]` open sets `LMDB_MAX_DBS = 64` (the 29 named databases, comfortably
+`#[allow(unsafe_code)]` open sets `LMDB_MAX_DBS = 64` (the 30 named databases, comfortably
 inside) and `LMDB_MAX_READERS = 512`.
 
 Because the map never grows, its approach has to be visible before the first failed write:
@@ -215,6 +215,7 @@ The index is chosen from the filter, and which ranges can stop early follows fro
 | `authors` + `kinds` | `events_by_author`, one range per whole-pubkey criterion and kind, and one whole-tail range per prefix criterion | when every criterion is a whole pubkey, so a range is one `pubkey ‖ kind ‖ created_at` run; a prefix range spans every kind |
 | `authors` alone | `events_by_created_at` | yes — see below |
 | a `#` + letter criterion | `tags`, one range per criterion | for an exact value; a `#g` prefix spans values, so its range runs whole |
+| `search` with the NIP-50 gate on | `events_by_term`, one range per posting of the first distinct query term (D11) | never: a term's postings run in id order and the page is ordered by rank, so the page's own heap bounds it |
 | anything else | `events_by_created_at` | yes |
 
 Every hex criterion's bounds are widened to the field they name — 32 bytes for an id or a
@@ -260,6 +261,91 @@ Two consequences of the same bound:
   two shapes hold the set, whose population is one id per row its matcher accepts: a single exact
   criterion names one key per row. The tags index has no order that visits each row once, which
   is why the cap trades a slot past it for a body decode.
+
+## NIP-50 search: a term index, a tokeniser and a rank (D11–D17)
+
+The capture answers `Filter::search` on Postgres with `to_tsvector @@ plainto_tsquery` and
+orders by `ts_rank` (`postgres/sql.rs`); its in-memory matcher uses lowercase substrings
+instead, and the repository records that the two rules contain neither the other
+(`repositories.rs`, `SearchRule`). The fixture's entry 21 is the Postgres answer — four rows —
+and applying the substring rule to the same corpus selects a fifth, whose content carries
+`bitcoininveniice`, `bitcoinisland` and `#LightningNetwork`. This store therefore does not
+reuse the relay matcher: it reproduces the token predicate, and declares what it reproduces.
+
+**D11 — the index is a thirtieth database, `events_by_term`, keyed `term ‖ event_id`.** The
+key is one token of the event's `content` (truncated to 64 bytes on a `char` boundary, below)
+followed by the 32-byte id, and the value is empty, as every other index database's is. A
+term's postings are therefore one byte range in id order: seekable, and stable to walk. The
+index is maintained by `write_event` and `hard_delete`, the only two functions that add or
+remove an `events` row, so `create`, `upsert`/`upsert_many` (which hard-deletes the superseded
+row and writes the new one in one transaction) and `delete_expired_and_retained` all reach it;
+a soft delete rewrites the value and leaves the terms, because the content did not change.
+It is maintained **whether or not the NIP-50 gate is on**: the gate is a read gate, so a store
+written with the feature off answers a search the moment it is turned on, with no rebuild.
+
+**D12 — one hand-rolled tokeniser, `search::terms`.** Unicode lowercase, then maximal runs of
+`char::is_alphanumeric()`, duplicates dropped. It is what the write path indexes, what the read
+path resolves queries with and what the verdict compares, so the index and the predicate cannot
+disagree about a token. Against Postgres' `simple` configuration it reproduces the no-stemmer,
+no-stop-list part (`the` is an ordinary token; `study` does not match `studies`) and loses the
+parser's classes — URLs, e-mails, hosts — and any CJK segmentation; on this corpus the two
+select the same four rows, and no claim beyond that is made. No dependency is added: no crate
+reproduces Postgres' parser, and this environment cannot verify one against Postgres. A token
+is cut to `SEARCH_TERM_MAX_LEN = 64` bytes for the key, which can only merge two keys, never
+split one: a shortened key *proposes* a candidate and the body decides (D13).
+
+**D13 — the index narrows candidates and the body decides.** A row matches a search when every
+distinct query term is one of the tokens of its `content` — never of a tag. The walk takes the
+postings of the first distinct query term, probes each other term's exact key for the same id
+before decoding anything, and then asks `Matcher::matches`, whose one body decode answers both
+the tag families and the search verdict. A stale or truncated posting therefore cannot produce
+a false positive, and completeness is the write path's (D11). A query whose tokens are empty
+(a punctuation-only query, which `plainto_tsquery` turns into an empty tsquery) selects
+nothing and takes no walk.
+
+**D14 — the rank is the smallest cover span, and a tie breaks by `event_id`.** For a body that
+holds every term, the rank is the smallest window of consecutive tokens covering all of them;
+the page is ordered by rank ascending, then `event_id` ascending, and keeps its own heap because
+that order is not the index's key order. It reproduces the fixture's recorded order on this
+corpus — spans 2, 2, 2, 4 for the four rows — which is **not** a claim of `ts_rank` parity:
+`ts_rank` also weights term frequency and document length, the four recorded rows tie on
+frequency, and no Postgres is reachable here to compare values. A `limit` no longer truncates by
+`created_at` for such a read, and **a limited count counts that rank page** while Postgres'
+limited branch orders by `created_at DESC`; the two agree on the branch's size and can disagree
+on its set, which only a count over more than one filter can see. That divergence is deliberate:
+`branch` is the one router, so the rows a limited count counts are the rows the read returns.
+
+**D15 — a missing or stale index is rebuilt on open, and never silently.** `meta` carries
+`search-index-version`, whose byte is `SEARCH_INDEX_VERSION = 1`. `LmdbBackend::open` reads it
+in the transaction that creates the databases; when it matches, nothing else happens. When it is
+absent or different, the index is **rebuilt, not extended**: `events_by_term` is cleared in the
+rebuild's first write transaction, then the rows are indexed in batches of
+`SEARCH_REINDEX_BATCH = 1000` — one write transaction each — and the marker is written last, so
+an interrupted rebuild runs again on the next open. An add-only rebuild would keep every key a
+previous tokeniser wrote and the body verdict would mask those postings forever. The open logs
+one line before and one after the rebuild, with the row count, the key count and the elapsed
+milliseconds, so a slow first open is visible. A fresh store writes the marker and indexes
+nothing; no store can answer a search from an index that was never built.
+
+**D16 — gate off, blank, and tokenless queries follow Postgres.** With the NIP-50 gate off, or
+a `search` that trims to empty, every read behaves exactly as it does without the field: this is
+`is_search`'s own rule (`postgres/sql.rs`), and it matters because the COUNT handler forwards
+`search` to a backend with the gate off. A query whose every character is punctuation is a
+search that selects nothing, not a blank one. The core matcher disagrees on the whitespace-only
+case (`Filter::matches` matches nothing for `"   "`); the spec follows Postgres, because the two
+backends' agreement is the property under test, and this paragraph is where a reader meets that
+as a choice rather than a defect.
+
+**D17 — only `simple` is answered, and the declaration says so.** An LMDB gate carries the
+NIP-50 query length and whether `nip50.language` is the `simple` configuration the index
+reproduces. When a search is answered under any other language the read returns
+`InvalidArgument` naming `simple`, from `find_by_filters`, `count_by_filters` and
+`find_reconciliation_items` alike; answering with simple-token semantics under `english` would
+be a silent divergence from a stemmed Postgres predicate, which is the defect class this job
+removes. `LmdbBackend::search_rule` declares `SearchRule::ToTsvector { language: "simple" }`
+when the gate is on and `SubstringTerms` when it is off, matching Postgres' shape, so the relay
+withholds a `finish` hint over a searched read instead of claiming a completeness the
+enumeration cannot establish.
 
 ## Constraints move into Rust
 
@@ -324,13 +410,17 @@ Postgres can reach: raw SQL on `users.tos_accepted_at` and the serializable `tra
 groups.
 
 `tests/parity_lmdb.rs` opens a store on a `tempfile::TempDir`, inserts the fixture's
-483-event corpus and replays **113 of 118** entries. The five it does not replay:
+483-event corpus and replays **114 of 118** entries. The four it does not replay:
 
 |index|op|why the seam cannot run it|
 |---|---|---|
-|21|`events.find_by_filters` with `search`|NIP-50 is out of scope; the backend answers `NotImplemented`|
 |48, 50|`user.tos_accepted_at`|raw SQL against `backend.master()`, no seam form|
 |112, 115|`transaction`|the capture **rolled these back**; reproducing a rollback needs a transaction type this job deliberately does not add|
+
+Entry 21 — the one filter carrying `search` — **is** replayed, from the term index (D11–D17
+below): its four rows and their order are the capture's, and the marker line reads
+`LMDB_PARITY_COMPLETE replayed=114 excluded=48,50,112,115`. It was excluded while the backend
+refused the query; the refusal is gone with this job.
 
 The other two `transaction` groups, 111 and 117, **committed** in the capture and are
 replayed: running their nested ops in order through the seam leaves exactly the state the
@@ -341,13 +431,13 @@ cannot pass. What the transaction decision leaves unmeasured is rollback: the ar
 committed groups' effects, not that two calls can fail together.
 
 The target asserts every exclusion against the fixture — an entry is excluded exactly when
-its op is one of the five above — so the list cannot grow without the diff showing it.
+its op is one of the four above — so the list cannot grow without the diff showing it.
 
 ## Consequences
 
 - One environment, one write transaction, one error taxonomy; no second dependency, and no
   tear between two files.
-- 29 named databases and their key encodings are maintained by hand; `DISTINCT`/`OFFSET`
+- 30 named databases and their key encodings are maintained by hand; `DISTINCT`/`OFFSET`
   became cursor walks; two `CHECK`/foreign-key constraints became Rust code.
 - Postgres remains the reference: every query path is written against `sql.rs`'s predicates
   and orderings, and the shared executor is what proves it.
