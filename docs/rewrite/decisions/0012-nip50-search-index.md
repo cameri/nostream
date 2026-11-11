@@ -178,6 +178,14 @@ million on this machine. It is the open cost a store written before the index ex
 the marker makes the second open a read of one key, and a store written by this binary maintains the
 index as it writes (D1), so it never rebuilds.
 
+**It blocks inside `open`, not in the background.** The rebuild runs on the caller's `open` (on a
+blocking-pool thread that `open` awaits), so the first open after an upgrade returns late by that
+duration rather than starting a daemon that answers searches eventually: a store of 20 000 events
+opens about 1.4 s late, 100 000 about 7 s, a million about 70 s on this host. For any store where
+that delay is unacceptable on a restart, the answer is an incremental or offline rebuild (below) and
+not a background build that answers from a half-built index — the number is here so that decision is
+taken in advance rather than discovered during one.
+
 **Alternatives rejected:** a background build after `open` returns — the store would answer searches
 from a half-built index, which is the state D5's ordering exists to prevent. A per-row lazy build on
 first search — the same defect, with the first search paying for it invisibly.
