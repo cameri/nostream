@@ -102,7 +102,7 @@ change with it, and `SEARCH_INDEX_VERSION` (D5) is what makes every existing sto
 ## D3 — The index narrows candidates and the body decides
 
 A row matches a search when every distinct query term is one of the tokens of its `content` — never
-of a tag (`lmdb/search.rs:177-215`). The walk narrows in three stages: the **prefix range** of the
+of a tag (`lmdb/search.rs:177-221`). The walk narrows in three stages: the **prefix range** of the
 first distinct query term (which necessarily also visits longer terms sharing its bytes), then
 **term identity** — a posting whose term slice is not the walked term's bytes is skipped before
 anything else — then each other term's exact key for the same id, and finally `Matcher::matches`,
@@ -124,7 +124,7 @@ trigger, not a separate decision.
 
 For a body that holds every term, the rank is the smallest window of consecutive tokens covering all
 of them; the page is ordered by rank ascending, then `event_id` ascending, and keeps its own heap
-because that order is not the index's key order (`lmdb/search.rs:177-215`, `:257-321`).
+because that order is not the index's key order (`lmdb/search.rs:177-221`, `:257-321`).
 
 **The fixture recorded `ts_rank`'s order and this differs.** It reproduces that order on this corpus
 — spans 2, 2, 2, 4 for the four rows — which is **not** a claim of `ts_rank` parity: `ts_rank` also
