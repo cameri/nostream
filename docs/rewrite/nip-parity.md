@@ -1018,7 +1018,7 @@ Two limits of the map, stated so a later reader does not take it for more than i
 **NIP-50's ranking** is split twice over. The SQL backend's `ts_rank` needs Postgres, so its
 *values* stay with the `#[ignore]`d `parity` target, while the vector above pins the matcher's
 accept-and-drop behaviour. The embedded store does not use `ts_rank`: it ranks by the smallest
-cover span, then `event_id` (`storage/lmdb/search.rs`, ADR 0011 D14), and the `parity_lmdb`
+cover span, then `event_id` (`storage/lmdb/search.rs`, ADR 0012 D4), and the `parity_lmdb`
 arm pins the order it produces on the captured corpus — through entry 21, which is replayed
 now, and through `a_search_returns_the_recorded_rows_in_rank_order`. What neither arm
 establishes is that the two rank *numbers* agree; the fixture records an order, not values. **The census is a different oracle**: it maps 658

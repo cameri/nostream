@@ -10,9 +10,10 @@
 //! The index narrows candidates; it never decides. A query term finds the postings its key
 //! holds, and the row's own body answers whether the term is *the* token or merely shares the
 //! key — two tokens that share their first [`SEARCH_TERM_MAX_LEN`] bytes are one key and two
-//! verdicts. `docs/rewrite/decisions/0011-lmdb-backend.md` records the decisions (D11–D17): the
-//! index's shape, the tokeniser, the candidate-then-body predicate, the ranker and its
-//! divergence from `ts_rank`, the marker and rebuild, the gate-off rules, and the language guard.
+//! verdicts. `docs/rewrite/decisions/0012-nip50-search-index.md` records the decisions (D1–D8):
+//! the index's shape, the tokeniser, the candidate-then-body predicate, the ranker and its
+//! divergence from `ts_rank`, the marker, the rebuild on open, the gate-off rules, and the
+//! language guard. ADR 0011 keeps the store these live in.
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
