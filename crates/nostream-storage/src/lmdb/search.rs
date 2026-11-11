@@ -324,12 +324,18 @@ pub(crate) fn page(
 /// rank, to `keep`.
 ///
 /// The first term's range is the candidate list because a term's postings are one contiguous
-/// range in id order, and the other terms are probed by exact key before any body is decoded.
-/// The verdict is the row's own (`Matcher::matches`), so the walk narrows and the body decides.
+/// range in id order. The range narrows by prefix: a key is `term ‖ event_id`, so the bounds
+/// [`term_range`] builds admit every posting whose term begins with the first term's bytes —
+/// `cats` sorts inside `cat`'s range. The walk then enforces term identity, comparing each
+/// posting's own term bytes to the first term's, before the other terms are probed by exact key
+/// and before any body is decoded. The verdict is the row's own (`Matcher::matches`): the walk
+/// narrows by prefix and enforces identity, and the body decides.
 ///
 /// shortcut: the walk is bounded by the first query term's postings, not by the rarest term —
 /// there are no statistics to choose one; upgrade when the benchmark rig can measure a corpus
 /// and a stored document frequency, or an intersection of two ranges, is worth the second index.
+/// The breadth #1112 measures remains: a prefix range still visits every longer token's postings
+/// to reject them.
 pub(crate) fn walk<F>(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -343,11 +349,18 @@ where
     let Some((first, others)) = terms.split_first() else {
         return Ok(());
     };
+    let first_bytes = term_bytes(first);
     let (low, high) = term_range(first);
     let bounds = encoding::bounds(&low, &high);
     'postings: for entry in databases.events_by_term.range(txn, &bounds)? {
         let (key, _) = entry?;
         let id = posting_id(key)?;
+        // The range is a prefix range, so a posting for a longer token that starts with the
+        // first term's bytes sorts inside it; only a posting whose own term is that term is a
+        // candidate. A key carries its term before the 32-byte id tail.
+        if key.get(..key.len() - 32) != Some(first_bytes) {
+            continue;
+        }
         for other in others {
             if databases
                 .events_by_term

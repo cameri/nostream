@@ -1823,6 +1823,86 @@ async fn a_search_page_honours_the_limit() {
     assert_eq!(ids_of(&two), by_id, "limit 2: the two best by (rank, id)");
 }
 
+/// A key is the whole term a row wrote, so `cats` sorts inside `cat`'s index range but is not a
+/// `cat` posting: the walk compares the posting's own term before it accepts the row.
+#[tokio::test]
+async fn a_search_counts_a_row_once_though_a_longer_token_shares_its_prefix() {
+    let (_directory, backend) = open_store().await;
+    let both = event_with_content(80, 1, 1_700_000_000, "cat cats");
+    backend
+        .create_many(std::slice::from_ref(&both))
+        .await
+        .expect("the event stores");
+
+    let page = rows_of(&backend, &search("cat")).await;
+    assert_eq!(
+        ids_of(&page),
+        vec![both.event.id],
+        "one row for the id, not one per posting"
+    );
+    assert_eq!(
+        backend
+            .count_by_filters(&[search("cat")])
+            .await
+            .expect("the count"),
+        1,
+        "and the id is counted once"
+    );
+}
+
+/// The prefix range's other half: a longer token's posting must not be accepted as the shorter
+/// term, and the longer token is still found by its own term.
+#[tokio::test]
+async fn a_search_does_not_match_a_longer_token_that_shares_its_prefix() {
+    let (_directory, backend) = open_store().await;
+    let longer = event_with_content(81, 1, 1_700_000_000, "cats");
+    backend
+        .create_many(std::slice::from_ref(&longer))
+        .await
+        .expect("the event stores");
+
+    assert!(
+        rows_of(&backend, &search("cat")).await.is_empty(),
+        "`cats` has `cat`'s index prefix and not its token"
+    );
+    assert_eq!(
+        ids_of(&rows_of(&backend, &search("cats")).await),
+        vec![longer.event.id],
+        "the longer token is found by its own term"
+    );
+}
+
+/// A duplicate posting takes a slot in the limited heap and evicts a distinct row before the
+/// search page's union removes the duplicate, so a `limit: 2` page must still hold both rows.
+/// The duplicated row has to be the id-smaller one for the eviction to happen — at equal rank
+/// the heap drops the larger id — so the construction asserts that.
+#[tokio::test]
+async fn a_limited_search_page_holds_a_distinct_row_per_slot() {
+    let (_directory, backend) = open_store().await;
+    let both = event_with_content(83, 1, 1_700_000_000, "cat cats");
+    let short = event_with_content(82, 1, 1_700_000_100, "cat");
+    backend
+        .create_many(&[both.clone(), short.clone()])
+        .await
+        .expect("the events store");
+    assert!(
+        both.event.id < short.event.id,
+        "the duplicated row's id sorts first, so its second posting is the heap's worst entry"
+    );
+
+    let page = rows_of(
+        &backend,
+        &Filter {
+            limit: Some(2),
+            ..search("cat")
+        },
+    )
+    .await;
+    let mut expected = vec![both.event.id, short.event.id];
+    expected.sort();
+    assert_eq!(ids_of(&page), expected, "two slots, two distinct rows");
+}
+
 #[tokio::test]
 async fn a_count_applies_the_search_predicate() {
     let (directory, backend) = open_with(settings_from_fixture(&fixture())).await;
