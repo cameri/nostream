@@ -105,8 +105,8 @@ fn posting_id(key: &[u8]) -> Result<EventId, StorageError> {
     encoding::event_id_from(id)
 }
 
-/// The tokens one text is searched by: the text lowercased by Unicode case mapping, split into
-/// maximal runs of [`char::is_alphanumeric`] characters, duplicates dropped.
+/// The tokens one text is searched by: the text lowercased by Unicode case mapping, then split
+/// into maximal runs of [`char::is_alphanumeric`] characters, duplicates dropped.
 ///
 /// One statement of the rule, called by the write path that indexes a body and the read path
 /// that asks whether a row carries a query's terms, so the index cannot disagree with the
@@ -122,19 +122,23 @@ pub(crate) fn terms(text: &str) -> Vec<String> {
     terms
 }
 
-/// The maximal alphanumeric runs of `text`, lowercased, in the order they occur.
+/// The maximal alphanumeric runs of `text`'s lowercase, in the order they occur.
+///
+/// The lowercase comes first, by Unicode case mapping, because a mapping can turn one character
+/// into several: `İ` lowers to `i` and a combining dot, which is not alphanumeric, so `İx` is two
+/// tokens here and one if the runs were taken from the original text.
 fn tokens(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut run = String::new();
-    for character in text.chars() {
+    for character in text.to_lowercase().chars() {
         if character.is_alphanumeric() {
             run.push(character);
         } else if !run.is_empty() {
-            tokens.push(std::mem::take(&mut run).to_lowercase());
+            tokens.push(std::mem::take(&mut run));
         }
     }
     if !run.is_empty() {
-        tokens.push(run.to_lowercase());
+        tokens.push(run);
     }
     tokens
 }
@@ -553,6 +557,10 @@ mod tests {
         assert_eq!(terms("study"), vec!["study"]);
         assert_eq!(terms("studies"), vec!["studies"]);
         assert_ne!(terms("study"), terms("studies"));
+        // R3's order is lowercase, then split: `İ` (U+0130) lowers to `i` plus a combining dot,
+        // which is not alphanumeric, so the run ends between it and the `x`. Splitting first and
+        // lowercasing each run yields the one token `i̇x`.
+        assert_eq!(terms("\u{130}x"), vec!["i", "x"]);
     }
 
     #[test]

@@ -66,9 +66,13 @@ record.
 
 ## D2 — One hand-rolled tokeniser, `search::terms`
 
-Unicode lowercase, then maximal runs of `char::is_alphanumeric()`, duplicates dropped
-(`lmdb/search.rs:113-139`). It is what the write path indexes, what the read path resolves queries
-with and what the verdict compares, so the index and the predicate cannot disagree about a token.
+Unicode lowercase of the whole text, **then** maximal runs of `char::is_alphanumeric()`, duplicates
+dropped (`lmdb/search.rs:108-144`). The order is part of the rule, not an implementation detail: a
+case mapping can turn one character into several, and `İ` (U+0130) lowers to `i` plus a combining
+dot, which is not alphanumeric — so `İx` is the two tokens `i` and `x` here, and one token if the
+runs were taken from the original text and each run lowered afterwards. It is what the write path
+indexes, what the read path resolves queries with and what the verdict compares, so the index and
+the predicate cannot disagree about a token.
 Against Postgres' `simple` configuration it reproduces the no-stemmer, no-stop-list part — `the` is
 an ordinary token and `study` does not match `studies` — and it loses the parser's classes (URLs,
 e-mails, hosts) and any CJK segmentation. **On the fixture's 483-event corpus the two select the
