@@ -23,8 +23,8 @@ is that reader's to reopen.
 ## D1 — A thirtieth named database, `events_by_term`, keyed `term ‖ event_id`
 
 `Databases` gains one field and `Databases::create` one line
-(`crates/nostream-storage/src/lmdb/mod.rs:140`, `:185`), so the environment holds 30 named databases
-under `LMDB_MAX_DBS = 64` (`:53`). The key is one token of the event's `content` — truncated to 64
+(`crates/nostream-storage/src/lmdb/mod.rs:141`, `:186`), so the environment holds 30 named databases
+under `LMDB_MAX_DBS = 64` (`:54`). The key is one token of the event's `content` — truncated to 64
 bytes on a `char` boundary (D2) — followed by the row's 32-byte id, and the value is empty, as every
 other index database's is (`crates/nostream-storage/src/lmdb/search.rs:64-94`). A term's postings
 are therefore one contiguous byte range in id order, seekable as `term .. term ‖ 0xff×32`, and the
@@ -151,8 +151,8 @@ become `ts_rank`'s, and the divergence above goes with a contract change, not a 
 ## D5 — `meta` carries `search-index-version`, and "stale" means absent or different
 
 `meta` holds `SEARCH_INDEX_MARKER = b"search-index-version"` whose one-byte value is
-`SEARCH_INDEX_VERSION = 1` (`lmdb/search.rs:34-39`). `LmdbBackend::open` reads it in the transaction
-that creates the databases (`lmdb/mod.rs:221-232`); when it matches, nothing else happens.
+`SEARCH_INDEX_VERSION = 1` (`lmdb/search.rs:33-41`). `LmdbBackend::open` reads it in the transaction
+that creates the databases (`lmdb/mod.rs:257-263`); when it matches, nothing else happens.
 
 **Stale** is the marker being absent — a store written by a binary that had no index — or holding
 another byte — an index a previous tokeniser built. Both are replaced, not extended: `events_by_term`
@@ -177,7 +177,7 @@ differently. The clear would become a delta, and the marker would have to record
 ## D6 — The rebuild runs on open, in batches of 1000, and its cost is paid once
 
 `LmdbBackend::open` rebuilds when D5 says stale: it walks `events_by_created_at`, indexes
-`SEARCH_REINDEX_BATCH = 1000` rows per write transaction (`lmdb/search.rs:50`, `:372-437`), and logs
+`SEARCH_REINDEX_BATCH = 1000` rows per write transaction (`lmdb/search.rs:52`, `:378-443`), and logs
 one line before and one after, with the row count, the key count and the elapsed milliseconds, so a
 slow first open is visible rather than mysterious. A fresh store writes the marker and indexes
 nothing.
@@ -227,7 +227,7 @@ returns `InvalidArgument` naming `simple`, from `find_by_filters`, `count_by_fil
 `find_reconciliation_items` alike; answering with simple-token semantics under `english` would be a
 silent divergence from a stemmed Postgres predicate, which is the defect class this job removes.
 `LmdbBackend::search_rule` declares `SearchRule::ToTsvector { language: "simple" }` when the gate is
-on and `SubstringTerms` when it is off (`lmdb/mod.rs:416-425`), matching Postgres' shape, so the
+on and `SubstringTerms` when it is off (`lmdb/mod.rs:453-461`), matching Postgres' shape, so the
 relay withholds a `finish` hint over a searched read instead of claiming a completeness the
 enumeration cannot establish.
 
@@ -281,6 +281,16 @@ failure modes. With no second writer to justify it, the lock is the whole answer
 **What would overturn it:** more than one process opening one store — a sidecar, a CLI against a
 live store, or a relay started twice on one volume. The sentinel above, or a directory lock the
 operating system drops when its holder dies, then stops being optional.
+
+**A second handle in the same process.** The lock closes the case the static stage found — two `open`
+calls rebuilding at once — but it is taken by `open`, not by writers. A second `LmdbBackend` over the
+same path (same heed `Env`) that *writes* while the first is inside its rebuild can therefore have its
+postings swept by the rebuild's clear after the rebuild's scan snapshot was taken, and the marker then
+describes an index missing them. Nothing in production opens a store twice today, and the window needs
+a write to land inside a rebuild, so this is recorded rather than fixed here: **the contract is one
+handle per store per process, and a rebuild must not overlap writes.** Closing it properly means the
+rebuild taking the write path's own lock or indexing from a snapshot that later writers cannot
+invalidate, and it needs its own failing test.
 
 ## Consequences
 
