@@ -162,6 +162,11 @@ export const getUnsafeSecretReason = (secret: string): string | undefined => {
   if (/^["'`]/.test(stripQuotes(secret))) {
     return 'SECRET cannot start with an unmatched quote'
   }
+  const trimmed = secret.trim()
+  if (stripQuotes(trimmed) !== trimmed && stripQuotes(trimmed).includes(trimmed[0])) {
+    // The loader ends a quoted value at the first closing quote, so a quote inside would cut the secret short.
+    return 'SECRET cannot contain the quote it is wrapped in'
+  }
   return undefined
 }
 
@@ -176,10 +181,6 @@ export const validateEnvPair = (key: string, value: string): string | undefined 
 
   if (BOOLEAN_KEYS.has(key)) {
     return validateBoolean(key, value)
-  }
-
-  if (key === 'SECRET') {
-    return getUnsafeSecretReason(value)
   }
 
   return undefined
