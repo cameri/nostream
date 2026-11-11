@@ -239,6 +239,49 @@ is not on this branch.
 first. The tokeniser becomes an analyser (D2), the marker's version moves (D5), and `search_rule`
 has one more true answer.
 
+## D9 — The rebuild is serialised per store path, within a process
+
+Two `LmdbBackend::open` calls on one store, run at the same time, used to rebuild the index twice,
+and the second rebuild is the dangerous one: the first writes the marker after its last batch, so a
+caller that starts while that first rebuild is still committing batches clears an index the first is
+filling and then writes a marker over a partly refilled one. The marker is the whole of D5's state,
+so any open inside that window would skip the rebuild and serve an incomplete index with no error
+anywhere. **Measured** at `a21b622`, with a store of 1 500 rows whose index and marker were cleared,
+two concurrent opens recorded
+`[(Batch,1000),(Batch,1000),(Batch,1500),(Batch,1500),(Marker,1500),(Marker,1500)]` — four batches
+and two markers where one rebuild writes two and one.
+
+`open` therefore holds one `std::sync::Mutex` per store path across the marker read, its comparison
+and the whole rebuild (`lmdb/mod.rs`, `INDEX_REBUILDS`), and releases it before the usage read. It is
+per path rather than one process-wide lock, because a single lock would hold one store's cold start
+against every other store's open and buy nothing; it is a `std::sync::Mutex` taken inside the
+`spawn_blocking` closure, so nothing holds it across an `await`; and nothing else in the crate takes
+it, so there is no ordering to get wrong. An entry is kept after use because the map is bounded by
+the number of distinct store paths a process opens, which is the number of stores it owns.
+
+**Within a process is the whole of the contract**, and the protection one would assume is not there:
+heed's process-wide `OPENED_ENV` cache keys an environment by canonical path and hands a second open
+of the same directory the same `Env` (`heed-0.20.5/src/env.rs:40`, `:254-262`), so LMDB's
+one-environment-per-path rule never sees the second caller and nothing below this decision
+arbitrates the two.
+
+**A second process opening the same directory is outside this contract.** LMDB serialises write
+transactions between processes but not this read-modify-write: two processes can each read an absent
+marker and each rebuild. One process owns one environment, which is the deployment shape this store
+has, and fencing a second one needs a protocol the store does not carry.
+
+**The rejected sentinel.** The design that would cover a second process is an `IN_PROGRESS` value
+written to `search-index-version` by the rebuild's first write transaction — the one that clears the
+index — and compared-and-set at the end, so a reader that finds `IN_PROGRESS` waits or refuses
+instead of rebuilding. It is rejected because it needs a crash-recovery rule the store does not
+have: a process killed mid-rebuild leaves `IN_PROGRESS` behind, and telling a dead writer from a
+live one takes a lease with a timestamp and a boot identity, which is a second decision with its own
+failure modes. With no second writer to justify it, the lock is the whole answer.
+
+**What would overturn it:** more than one process opening one store — a sidecar, a CLI against a
+live store, or a relay started twice on one volume. The sentinel above, or a directory lock the
+operating system drops when its holder dies, then stops being optional.
+
 ## Consequences
 
 - One more named database, its key shape and its marker are maintained by hand; the environment
@@ -253,6 +296,9 @@ has one more true answer.
   open-time rebuild of about a second per 20 000 rows (measured above), once.
 - The capture's `ts_rank` values are still recorded only as an order in the fixture. No arm here
   proves the two rank *numbers* agree, and none claims it.
+- Two opens of one store serialise on a lock per store path, so a store's index is rebuilt once
+  however many callers open it at the same time; a second **process** on one store is unsupported
+  and would need D9's rejected sentinel.
 
 ## How this record was reviewed, and what was lost
 
@@ -286,5 +332,6 @@ of the decision, so it is written to a path that names its subject and its pass*
 
 Any one of: a verified Postgres-compatible ranker (D4), an index that must carry tag keys or decide
 alone (D1, D3), a tokeniser that has to stem or segment another script (D2), an incremental rebuild
-(D5, D6), or an operator corpus where the open-time rebuild is unacceptable (D6). Each is a store
-format or open-cost change, and each belongs to a new record in this sequence.
+(D5, D6), an operator corpus where the open-time rebuild is unacceptable (D6), or a second process
+opening one store (D9). Each is a store format, open-cost or concurrency-contract change, and each
+belongs to a new record in this sequence.

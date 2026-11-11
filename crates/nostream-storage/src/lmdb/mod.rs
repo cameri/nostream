@@ -18,8 +18,9 @@ mod users;
 
 pub use search::{SEARCH_INDEX_DB, SEARCH_INDEX_MARKER, SEARCH_INDEX_VERSION};
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use chrono::Utc;
 use heed::types::Bytes;
@@ -197,6 +198,28 @@ pub struct MapUsage {
     pub used_bytes: u64,
 }
 
+/// One lock per store path, held by [`LmdbBackend::open`] across the marker read, its comparison
+/// and the whole rebuild, so two opens of one store cannot both decide the index is stale.
+///
+/// Per path rather than one process-wide lock, because a single lock would hold one store's cold
+/// start against every other store's open and buy nothing. An entry is created per store path and
+/// left in place after use: the map is bounded by the number of distinct store paths a process
+/// opens, which is the number of stores it owns, so it is not a leak.
+///
+/// `LazyLock` rather than a `const` initialiser because `HashMap::new` is not a `const fn` on this
+/// toolchain; it is the standard library's only way to hold a map in a `static`.
+static INDEX_REBUILDS: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// The lock that serialises index rebuilds at `path`, keyed by the canonical path heed itself
+/// keys its own environment cache by, so two spellings of one directory share one lock.
+fn rebuild_lock(path: &Path) -> Arc<Mutex<()>> {
+    let mut locks = INDEX_REBUILDS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    Arc::clone(locks.entry(path.to_path_buf()).or_default())
+}
+
 /// An embedded LMDB event store with its metadata tail, built from the root a caller supplies.
 #[derive(Debug, Clone)]
 pub struct LmdbBackend {
@@ -211,6 +234,10 @@ impl LmdbBackend {
     /// The usage it reports is what the map's approach to [`LMDB_MAP_SIZE`] is read from: the
     /// store never grows, so an operator sees it coming here rather than at the first failed
     /// write.
+    ///
+    /// Two opens of one store serialise on the per-path rebuild lock across the marker read and
+    /// any rebuild, so one store's index is rebuilt once however many callers open it at the
+    /// same time; the comparison below is only sound while nothing else moves the marker.
     pub async fn open(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let root = root.into();
         // The same rule `data_dir` answers, from the same constant.
@@ -218,6 +245,15 @@ impl LmdbBackend {
         let opened = tokio::task::spawn_blocking(move || {
             let environment = LmdbEnv::open(&path, LMDB_MAP_SIZE)?;
             let handle = environment.env().clone();
+            #[cfg(test)]
+            rendezvous::await_partner(handle.path());
+            // A `std::sync::Mutex` taken here and dropped before the usage read: the whole of it
+            // runs on this blocking thread, so nothing holds it across an await, and no other
+            // code takes it, so it orders against nothing else.
+            let rebuilding = rebuild_lock(handle.path());
+            let rebuilding = rebuilding
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let mut transaction = handle.write_txn()?;
             let databases = Databases::create(&handle, &mut transaction)?;
             let marker = databases
@@ -230,6 +266,7 @@ impl LmdbBackend {
             if marker.as_deref() != Some(&[search::SEARCH_INDEX_VERSION][..]) {
                 search::rebuild(&handle, &databases)?;
             }
+            drop(rebuilding);
             let used_bytes = handle.non_free_pages_size()?;
             Ok::<_, StorageError>((environment, databases, used_bytes))
         })
@@ -1008,6 +1045,60 @@ impl NotificationOutboxRepository for LmdbBackend {
             })
             .await
         })
+    }
+}
+
+/// A rendezvous the test that opens one store twice passes through between the environment and
+/// the rebuild lock, so both callers are past `Env::open` before either reads the marker. Nothing
+/// waits unless a test armed the store's path.
+#[cfg(test)]
+pub(crate) mod rendezvous {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Barrier, LazyLock, Mutex};
+
+    struct Armed {
+        barrier: Arc<Barrier>,
+        /// The callers still to arrive; the path is disarmed when the last one does.
+        waiting: usize,
+    }
+
+    static ARMED: LazyLock<Mutex<HashMap<PathBuf, Armed>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    /// Arms `path` so the next `arrivals` opens of it wait for each other before the rebuild lock.
+    pub(crate) fn arm(path: &Path, arrivals: usize) {
+        let mut armed = ARMED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        armed.insert(
+            path.to_path_buf(),
+            Armed {
+                barrier: Arc::new(Barrier::new(arrivals)),
+                waiting: arrivals,
+            },
+        );
+    }
+
+    /// Waits for the other armed opens of `path`. An unarmed path returns at once.
+    pub(crate) fn await_partner(path: &Path) {
+        let (barrier, last) = {
+            let mut armed = ARMED
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some(entry) = armed.get_mut(path) else {
+                return;
+            };
+            entry.waiting -= 1;
+            (Arc::clone(&entry.barrier), entry.waiting == 0)
+        };
+        if last {
+            ARMED
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(path);
+        }
+        barrier.wait();
     }
 }
 

@@ -10,10 +10,11 @@
 //! The index narrows candidates; it never decides. A query term finds the postings its key
 //! holds, and the row's own body answers whether the term is *the* token or merely shares the
 //! key — two tokens that share their first [`SEARCH_TERM_MAX_LEN`] bytes are one key and two
-//! verdicts. `docs/rewrite/decisions/0012-nip50-search-index.md` records the decisions (D1–D8):
+//! verdicts. `docs/rewrite/decisions/0012-nip50-search-index.md` records the decisions (D1–D9):
 //! the index's shape, the tokeniser, the candidate-then-body predicate, the ranker and its
-//! divergence from `ts_rank`, the marker, the rebuild on open, the gate-off rules, and the
-//! language guard. ADR 0011 keeps the store these live in.
+//! divergence from `ts_rank`, the marker, the rebuild on open, the gate-off rules, the language
+//! guard, and the per-store lock that serialises two opens' rebuilds. ADR 0011 keeps the store
+//! these live in.
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -533,6 +534,7 @@ mod tests {
     use super::*;
 
     use crate::LmdbBackend;
+    use crate::lmdb::rendezvous;
     use crate::repositories::EventRepository;
 
     /// A store on a temporary directory, with the NIP-50 gate on.
@@ -578,6 +580,86 @@ mod tests {
         assert_eq!(terms(&first), vec![first.clone()]);
         assert_eq!(verdict(&second, std::slice::from_ref(&first)), None);
         assert_eq!(verdict(&first, std::slice::from_ref(&first)), Some(1));
+    }
+
+    #[tokio::test]
+    async fn two_concurrent_opens_rebuild_the_index_once() {
+        let (directory, backend) = backend().await;
+        // 1 500 rows, so one rebuild is two batches (1 000 then 500) and a second rebuild would
+        // be two more commits and a second marker: the counts tell one rebuild from two.
+        let records: Vec<EventRecord> = (0..1_500)
+            .map(|index| {
+                let mut event = nostream_core::Event {
+                    id: EventId::from_byte_array([0; 32]),
+                    pubkey: nostream_core::Pubkey::from_byte_array([0; 32]),
+                    created_at: 1_700_000_000 + index as i64,
+                    kind: nostream_core::Kind(1),
+                    tags: Vec::new(),
+                    content: format!("token{index}"),
+                    sig: nostream_core::Signature::from_byte_array([0; 64]),
+                };
+                nostream_core::crypto::sign_event(&[3; 32], &mut event).expect("the event signs");
+                EventRecord::from_event(&event)
+            })
+            .collect();
+        backend
+            .create_many(&records)
+            .await
+            .expect("the events store");
+
+        let path = backend.env().path().to_path_buf();
+        probes::reset(&path);
+        // The C16 way: clear the index and delete the marker, so the next open rebuilds.
+        {
+            let env = backend.env();
+            let read = env.read_txn().expect("a read transaction");
+            let index = env
+                .open_database::<heed::types::Bytes, heed::types::Bytes>(
+                    &read,
+                    Some(SEARCH_INDEX_DB),
+                )
+                .expect("the index opens")
+                .expect("the index exists");
+            let meta = env
+                .open_database::<heed::types::Bytes, heed::types::Bytes>(&read, Some("meta"))
+                .expect("meta opens")
+                .expect("meta exists");
+            drop(read);
+            let mut write = env.write_txn().expect("a write transaction");
+            index.clear(&mut write).expect("the index clears");
+            meta.delete(&mut write, SEARCH_INDEX_MARKER)
+                .expect("the marker clears");
+            write.commit().expect("the commit");
+        }
+        drop(backend);
+
+        // Both opens are past `Env::open` before either reads the marker, so the second is not
+        // merely late — it is inside the window an unserialised read-modify-write loses.
+        rendezvous::arm(&path, 2);
+        let (first, second) = tokio::join!(
+            LmdbBackend::open(directory.path()),
+            LmdbBackend::open(directory.path())
+        );
+        let first = first.expect("the first store opens");
+        let second = second.expect("the second store opens");
+
+        let steps = probes::events(&path);
+        let batches = steps
+            .iter()
+            .filter(|(step, _)| *step == probes::Step::Batch)
+            .count();
+        let markers = steps
+            .iter()
+            .filter(|(step, _)| *step == probes::Step::Marker)
+            .count();
+        assert_eq!(batches, 2, "one rebuild writes two batches: {steps:?}");
+        assert_eq!(markers, 1, "and one marker: {steps:?}");
+        assert_eq!(
+            steps.last(),
+            Some(&(probes::Step::Marker, 1_500)),
+            "the marker carries the whole store, written after the batches"
+        );
+        drop((first, second));
     }
 
     #[tokio::test]

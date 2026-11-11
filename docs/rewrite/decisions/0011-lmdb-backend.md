@@ -273,7 +273,7 @@ table above are facts of the store's shape.
 Everything a reader would otherwise look for here — why an index rather than a scan-time filter,
 the tokeniser and what it loses against Postgres' `simple`, the cover-span rank and its divergence
 from `ts_rank`, the marker and what stale means, the batched rebuild and the open cost it adds, and
-what would overturn any of it — is **ADR 0012 (`0012-nip50-search-index.md`, D1–D8)**. It is a
+what would overturn any of it — is **ADR 0012 (`0012-nip50-search-index.md`, D1–D9)**. It is a
 separate number because those are decisions about the store's on-disk format and its open cost, not
 about the shape of a query.
 
