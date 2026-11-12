@@ -22,14 +22,14 @@ jobs:
       # RELEASE_PAT is the environment secret this job already hands to the
       # action for its API calls; the push needs the same credential.
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3.7.0
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4.3.0
 
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v3.9.1
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -41,7 +41,7 @@ jobs:
       - run: git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Create Release Pull Request or Publish
-        uses: changesets/action@v1
+        uses: changesets/action@v1.9.0
         with:
           version: pnpm run changeset:version
           publish: pnpm run changeset:publish
