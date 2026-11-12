@@ -116,6 +116,16 @@ fresh before its first read: every table `rows: 0`, the zero checksum, `after: "
 the refusal of a store that is not this tool's stays what it should be — a judgement about rows
 that appeared without one, not about a crash.
 
+Two refusals guard the target, and they are the same judgement from two sides. A store that holds
+rows and carries no manifest is not this tool's: copying over it would leave the displaced rows'
+index entries behind, and verify reads the primary databases only, so the run refuses before it
+reads anything. A manifest that records progress — a row counted, a cursor moved, a table
+finished — is only meaningful beside the store that progress went into, so the run opens that
+store read-only first and refuses a missing one instead of creating it; a copy over an empty
+store would skip the tables already counted and exit 0 against a store missing every row the
+manifest claims. A manifest with no progress cannot have written a row, so a fresh store beside
+it is honest and the run starts one.
+
 ## The command surface (D6)
 
 `nostream-cli migrate pg-to-lmdb` takes `--target <DIR>`, `--batch-size <N>` and `--verify`,
