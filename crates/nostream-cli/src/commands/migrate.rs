@@ -640,31 +640,42 @@ fn describe_source() -> Result<String, CliError> {
     }
 }
 
-/// Whether `uri` is a URL sqlx can dial: `scheme://`, with either an authority or a query that
-/// names the host.
+/// Whether `uri` is a Postgres URL with a host to dial.
 ///
-/// Only the *shape* is judged. A refused string is one with no `://` at all, because sqlx treats
-/// it as a URL with no base: the opaque path becomes the database name and the host falls back to
-/// localhost, so the copy dials the wrong server and echoes the string - credentials and all - in
-/// the failure. Everything sqlx can dial is left alone, including the socket forms
-/// `postgres:///?host=/var/run/postgresql` and `postgres:///?hostaddr=127.0.0.1`, whose
-/// authority is empty by design.
+/// The gate exists because sqlx reads a string with no base as a URL whose opaque path is the
+/// database name and whose host is `localhost`: the copy would dial a server nobody named and
+/// then echo the string back in the failure. So this refuses three shapes sqlx happily dials -
+/// `postgres://`, `postgres:////` and `postgres:///db`, all `localhost` to sqlx - because a
+/// cutover that guesses which server to copy from is worse than one that stops and says so.
+/// That divergence is deliberate and pinned by a test.
 ///
-/// Deliberately stricter than sqlx here, in the one direction that matters: `postgres:/`,
-/// `postgres://` and `postgres:////` all parse to `host=localhost`, and a cutover that guesses
-/// which server to copy from is worse than one that stops and says so.
+/// Everything else a Postgres URL can be is left alone: `postgres://` and `postgresql://` in
+/// either case, an authority with userinfo, an IPv6 literal, a port, a path, a query; and the
+/// socket forms `postgres:///?host=/var/run/postgresql` and `postgres:///?hostaddr=127.0.0.1`,
+/// whose authority is empty by design. A `?` inside a `#` fragment is not a query, because sqlx
+/// ignores the fragment - `postgres://#?host=/sock` has no host at all.
 fn is_url_with_host(uri: &str) -> bool {
     let Some((scheme, rest)) = uri.split_once("://") else {
         return false;
     };
-    if scheme.is_empty() {
+    // Only a Postgres scheme. A libpq keyword string can contain `://` by accident
+    // (`password=ab://cd`), and sqlx would read `password=ab` as the scheme and `cd` as the host.
+    if !scheme.eq_ignore_ascii_case("postgres") && !scheme.eq_ignore_ascii_case("postgresql") {
         return false;
     }
-    // The authority ends at the first `/`, `?` or `#`; everything after it is path and query.
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    // Everything after `#` is a fragment: sqlx ignores it, so a `?` inside one is not a query.
+    let rest = rest.split('#').next().unwrap_or_default();
+    // The authority ends at the first `/` or `?`; everything after it is path and query.
+    let authority = rest.split(['/', '?']).next().unwrap_or_default();
     let host = authority
         .rsplit_once('@')
         .map_or(authority, |(_userinfo, host)| host);
+    // `user@:5432` is an empty host with a port: sqlx refuses it, and so does this.
+    let host = if host.starts_with('[') {
+        host.split_once(']').map_or("", |(inner, _rest)| inner)
+    } else {
+        host.split(':').next().unwrap_or_default()
+    };
     if !host.is_empty() {
         return true;
     }

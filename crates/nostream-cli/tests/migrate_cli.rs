@@ -2286,6 +2286,124 @@ fn a_uri_that_would_default_to_localhost_is_refused() {
     }
 }
 
+// A `?` after a `#` is inside the fragment, which sqlx ignores: `postgres://#?host=/sock` has no
+// host and no query, so the check must refuse it rather than accept it on the strength of a
+// parameter the parser never reads - otherwise it dials localhost without saying so.
+#[test]
+fn a_query_inside_a_fragment_is_not_a_host() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env("DB_URI", "postgres://#?host=/var/run/postgresql&dbname=x")
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("is not a URL with a host"),
+        "a fragment is not a query: {stderr}"
+    );
+}
+
+// A libpq keyword string can contain `://` by accident, and sqlx reads `password=ab` as the
+// scheme and `cd` as the host. Only the two Postgres schemes are a URL to this check.
+#[test]
+fn a_non_postgres_scheme_is_refused() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    for uri in [
+        "password=ab://cd",
+        "mysql://127.0.0.1:1/d",
+        "http://127.0.0.1:1/d",
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+            .args(["migrate", "pg-to-lmdb", "--target"])
+            .arg(directory.path())
+            .env_clear()
+            .env("DB_URI", uri)
+            .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+            .output()
+            .expect("the binary runs");
+
+        assert_eq!(output.status.code(), Some(1), "{uri}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("is not a URL with a host"),
+            "{uri} is not a Postgres URL: {stderr}"
+        );
+    }
+}
+
+// `user@:5432` carries no host, only a port: sqlx reports `empty host` and dials nothing, so the
+// gate refuses it rather than counting the port as an authority.
+#[test]
+fn a_port_without_a_host_is_refused() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env("DB_URI", "postgres://user@:5432/db")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("is not a URL with a host"),
+        "a port is not a host: {stderr}"
+    );
+}
+
+// An IPv6 literal is bracketed, and the brackets are what separate it from the port.
+#[test]
+fn an_ipv6_literal_is_dialled() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env("DB_URI", "postgres://[::1]:1/d")
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("is not a URL with a host"),
+        "an IPv6 literal is a host: {stderr}"
+    );
+}
+
+// The other spelling sqlx accepts is `postgresql://`, and it must keep working.
+#[test]
+fn a_postgresql_url_is_dialled() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env("DB_URI", "postgresql://127.0.0.1:1/d")
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("is not a URL with a host"),
+        "postgresql:// is a Postgres URL: {stderr}"
+    );
+    assert!(
+        stderr.contains("Connection refused"),
+        "the host in it is dialled: {stderr}"
+    );
+}
+
 // The refusal judges the shape only. sqlx dials a URL whose authority is empty when the query
 // names the host, and both of these reached the server before the refusal existed: `?host=` opens
 // a Unix socket, `?hostaddr=` dials the address given. A rule that read only the authority refused
