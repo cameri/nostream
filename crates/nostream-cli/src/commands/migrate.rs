@@ -649,7 +649,7 @@ fn describe_source() -> Result<String, CliError> {
 /// cutover that guesses which server to copy from is worse than one that stops and says so.
 /// That divergence is deliberate and pinned by a test.
 ///
-/// Everything else a Postgres URL can be is left alone: `postgres://` and `postgresql://` in
+/// Everything else a Postgres URL can be is left alone: the `postgres` and `postgresql` schemes in
 /// either case, an authority with userinfo, an IPv6 literal, a port, a path, a query; and the
 /// socket forms `postgres:///?host=/var/run/postgresql` and `postgres:///?hostaddr=127.0.0.1`,
 /// whose authority is empty by design. A `?` inside a `#` fragment is not a query, because sqlx
