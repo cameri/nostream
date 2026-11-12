@@ -10,6 +10,7 @@
 mod events;
 mod invoices;
 mod metadata;
+mod migration;
 mod notifications;
 mod repository;
 mod rows;
