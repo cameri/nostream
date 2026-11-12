@@ -63,14 +63,36 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             return verify_with(&target, &options, out).await;
         }
 
+        let existing = read_manifest(&options.target)?;
+
         // A complete manifest is verified rather than copied, and the source is never opened:
         // a finished migration must not need Postgres to still be reachable.
-        if read_manifest(&options.target)?.is_some_and(|manifest| manifest.complete()) {
+        if existing
+            .as_ref()
+            .is_some_and(|manifest| manifest.complete())
+        {
             if !store_present(&options) {
                 return no_store(&options, out);
             }
             let target = open_existing_target(&options.target).await?;
             return verify_with(&target, &options, out).await;
+        }
+
+        // R7: a manifest that records progress is only meaningful beside the store the progress
+        // went into. `open_target` below would create a missing store, and the copy would then
+        // skip the tables already counted and the rows already summed — exit 0 against a store
+        // missing every row the manifest claims. The read-only opener answers that case and
+        // creates nothing; the handle is dropped before the writable open, because heed refuses
+        // a second open of one path with different options.
+        if existing
+            .as_ref()
+            .is_some_and(|manifest| manifest.records_progress())
+            && LmdbBackend::open_existing(&options.target).await.is_err()
+        {
+            return Err(CliError::Migrate(format!(
+                "No store at {}",
+                store_path(&options).display()
+            )));
         }
 
         let source = PostgresBackend::from_env()
@@ -288,6 +310,16 @@ impl Manifest {
                 .map(|table| (table.name().to_owned(), TableEntry::default()))
                 .collect(),
         }
+    }
+
+    /// Whether the manifest records that a run did anything: a row written, a cursor moved, or
+    /// a table finished. A manifest that records none of that cannot have written a row (R7),
+    /// so a fresh store beside it is honest; one that records progress is only meaningful
+    /// beside the store the progress went into.
+    fn records_progress(&self) -> bool {
+        self.tables
+            .values()
+            .any(|entry| entry.rows != 0 || !entry.after.is_empty() || entry.complete)
     }
 
     /// This table's entry, as the empty one when the manifest carries none.

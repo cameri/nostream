@@ -316,6 +316,27 @@ fn manifest_bytes(directory: &std::path::Path) -> Vec<u8> {
     std::fs::read(directory.join("migration-manifest.json")).expect("the manifest is written")
 }
 
+/// The manifest of the shape R6 writes: nine entries, `rows: 0`, the zero checksum, `after: ""`,
+/// and `complete` as the caller asks.
+fn write_manifest_fixture(directory: &std::path::Path, complete: bool) {
+    let manifest = json!({
+        "format": 1,
+        "not_migrated": MigratedTable::NOT_MIGRATED,
+        "tables": MigratedTable::ALL
+            .iter()
+            .map(|table| (
+                table.name().to_owned(),
+                json!({"rows": 0, "checksum": "0".repeat(64), "after": "", "complete": complete}),
+            ))
+            .collect::<BTreeMap<_, _>>(),
+    });
+    std::fs::write(
+        directory.join("migration-manifest.json"),
+        serde_json::to_vec(&manifest).expect("the fixture manifest serialises"),
+    )
+    .expect("the fixture manifest is written");
+}
+
 fn manifest(directory: &std::path::Path) -> Value {
     serde_json::from_slice(&manifest_bytes(directory)).expect("the manifest is JSON")
 }
@@ -1501,22 +1522,7 @@ async fn a_zero_batch_is_refused_instead_of_looping() {
 #[test]
 fn verify_refuses_a_manifest_without_a_store_instead_of_creating_one() {
     let directory = tempfile::tempdir().expect("a temporary directory");
-    let manifest = json!({
-        "format": 1,
-        "not_migrated": MigratedTable::NOT_MIGRATED,
-        "tables": MigratedTable::ALL
-            .iter()
-            .map(|table| (
-                table.name().to_owned(),
-                json!({"rows": 0, "checksum": "0".repeat(64), "after": "", "complete": true}),
-            ))
-            .collect::<BTreeMap<_, _>>(),
-    });
-    std::fs::write(
-        directory.path().join("migration-manifest.json"),
-        serde_json::to_vec(&manifest).expect("the fixture manifest serialises"),
-    )
-    .expect("the fixture manifest is written");
+    write_manifest_fixture(directory.path(), true);
     let store = directory.path().join("lmdb");
 
     for verify in [true, false] {
@@ -1680,6 +1686,130 @@ async fn a_migrated_job_writes_the_status_index_its_finder_reads() {
         submitted_prefix, completed_prefix,
         "the status leads the key, after the timestamp part"
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// AC18: a manifest that records progress over a missing store.
+// ---------------------------------------------------------------------------------------
+
+// The first half needs the binary's stderr and `run` builds a runtime of its own, so this is a
+// plain test with a runtime it owns.
+#[test]
+fn a_manifest_that_records_progress_over_a_missing_store_is_refused() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
+
+    // Half one: a copy at --batch-size 2 that stops after its first batch, then its store gone.
+    let partial = tempfile::tempdir().expect("a temporary directory");
+    let partial_options = options(partial.path(), 2);
+    let error = runtime.block_on(async {
+        let target = LmdbBackend::open(partial.path())
+            .await
+            .expect("the store opens");
+        migrate::migrate_with(
+            &StubSource::failing_at(source_rows(), 1),
+            &target,
+            &partial_options,
+            &mut Vec::new(),
+        )
+        .await
+    });
+    assert!(
+        matches!(error, Err(nostream_cli::CliError::Migrate(_))),
+        "the stub fails the second read_batch"
+    );
+    let manifest: Value = serde_json::from_slice(&manifest_bytes(partial.path()))
+        .expect("the partial run's manifest parses");
+    let dvm = &manifest["tables"]["dvm_jobs"];
+    assert_eq!(dvm["rows"], 2, "the first batch is recorded");
+    assert!(
+        !dvm["after"].as_str().expect("a hex cursor").is_empty(),
+        "and so is its cursor"
+    );
+    let store = partial.path().join("lmdb");
+    std::fs::remove_dir_all(&store).expect("the store is removed");
+    assert!(!store.exists());
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(partial.path())
+        .args(["--batch-size", "2"])
+        .env_clear()
+        .output()
+        .expect("the binary runs");
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Migration failed:"), "got: {stderr}");
+    assert!(
+        stderr.contains(&store.display().to_string()),
+        "the line names <target>/lmdb: {stderr}"
+    );
+    assert!(!store.exists(), "the refused run created nothing");
+
+    // Half two: the manifest R6 writes, with no progress in it, over an empty directory.
+    let fresh = tempfile::tempdir().expect("a temporary directory");
+    write_manifest_fixture(fresh.path(), false);
+    let fresh_store = fresh.path().join("lmdb");
+
+    // `run` takes the copy path rather than the guard: a source it cannot parse fails it, not a
+    // store, and it creates nothing. The URL is unparsable so no dial is attempted.
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(fresh.path())
+        .env_clear()
+        .env("DB_URI", "not-a-url")
+        .output()
+        .expect("the binary runs");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "there is no database to read"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("No store"),
+        "a zero-progress manifest is not refused: {stderr}"
+    );
+    assert!(
+        !stderr.contains(&fresh_store.display().to_string()),
+        "the failure is not about the store: {stderr}"
+    );
+    assert!(!fresh_store.exists());
+
+    // And the copy that run would have driven completes over the same target.
+    let copy = options(fresh.path(), 2);
+    let (counts, complete) = runtime.block_on(async {
+        let target = LmdbBackend::open(fresh.path())
+            .await
+            .expect("the store opens");
+        let output = migrate::migrate_with(
+            &StubSource::new(source_rows()),
+            &target,
+            &copy,
+            &mut Vec::new(),
+        )
+        .await
+        .expect("the copy succeeds");
+        assert_eq!(output.exit_code, 0);
+        let mut counts = Vec::new();
+        for table in MigratedTable::ALL {
+            counts.push(scan_all(&target, table).await.len());
+        }
+        let manifest: Value = serde_json::from_slice(&manifest_bytes(fresh.path()))
+            .expect("the finished manifest parses");
+        let complete = manifest["tables"]
+            .as_object()
+            .expect("the tables object")
+            .values()
+            .all(|entry| entry["complete"] == true);
+        (counts, complete)
+    });
+    for count in counts {
+        assert_eq!(count, 3, "nine tables at three rows");
+    }
+    assert!(complete, "every table is complete");
 }
 
 /// The process boundary the two failure tests above stop at: `main` prints
