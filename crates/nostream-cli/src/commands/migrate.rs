@@ -619,17 +619,26 @@ fn describe_source() -> Result<String, CliError> {
     }
 }
 
-/// A connection URI with the password dropped, so an error can name the source without printing
-/// a credential into a terminal's scrollback.
+/// A connection URI with its credentials dropped, so an error can name the source without
+/// printing a password into a terminal's scrollback or a captured log.
+///
+/// Two places a URI can carry one are removed: the password in the userinfo, and the whole query
+/// string, which may hold `?password=`. Matching credential-shaped keys instead would miss a
+/// percent-encoded name, and a description exists to identify the source, which host and
+/// database already do.
 fn without_password(uri: &str) -> String {
     let Some((scheme, rest)) = uri.split_once("://") else {
         return uri.to_owned();
     };
-    let Some((userinfo, after)) = rest.rsplit_once('@') else {
-        return uri.to_owned();
-    };
-    let user = userinfo.split(':').next().unwrap_or(userinfo);
-    format!("{scheme}://{user}@{after}")
+    let (rest, _query) = rest.split_once('?').unwrap_or((rest, ""));
+    let rest = rest.split('#').next().unwrap_or(rest);
+    match rest.rsplit_once('@') {
+        Some((userinfo, after)) => {
+            let user = userinfo.split(':').next().unwrap_or(userinfo);
+            format!("{scheme}://{user}@{after}")
+        }
+        None => format!("{scheme}://{rest}"),
+    }
 }
 
 /// Reads one row before the copy, so an unreachable source is reported as the source it is -

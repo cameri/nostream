@@ -2170,6 +2170,35 @@ fn an_unreachable_source_is_named_without_its_password() {
     );
 }
 
+// A URI can carry the password in a query parameter instead of the userinfo, and the description
+// is printed into an error that reaches stderr and any captured log.
+#[test]
+fn a_query_string_password_is_not_printed() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env(
+            "DB_URI",
+            "postgres://127.0.0.1:1/nostream?password=secret&sslmode=require",
+        )
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("127.0.0.1:1/nostream"),
+        "the failure still names the source: {stderr}"
+    );
+    assert!(
+        !stderr.contains("secret"),
+        "the query-string password is not printed: {stderr}"
+    );
+}
+
 // AC20: the remedy is in the command's own help, not only in the behaviour.
 #[test]
 fn the_help_names_the_resume_and_the_restart() {
