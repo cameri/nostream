@@ -2214,6 +2214,8 @@ fn an_unreachable_source_fails_in_seconds_at_the_default_timeout() {
         .arg(directory.path())
         .env_clear()
         .env("DB_URI", "postgres://127.0.0.1:1/nostream")
+        // The value the shipped `.env.example` carries: the probe must cap it, not inherit it.
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "60000")
         .output()
         .expect("the binary runs");
 
@@ -2225,8 +2227,12 @@ fn an_unreachable_source_fails_in_seconds_at_the_default_timeout() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("127.0.0.1:1/nostream"),
+        stderr.contains("could not read the source at postgres://127.0.0.1:1/nostream"),
         "the failure names the source: {stderr}"
+    );
+    assert!(
+        !stderr.contains("pool timed out"),
+        "the driver's reason is what prints, not the pool's acquire message: {stderr}"
     );
 }
 
@@ -2314,11 +2320,12 @@ fn a_target_that_is_a_file_is_refused() {
     assert!(stderr.contains("is not a directory"), "{stderr}");
 }
 
-// A URI can be schemeless - libpq accepts `postgres:alice:secret@host:5432/db` - and the
-// redaction used to return any string without `://` untouched, so that shape printed the
-// password. The three removals now run before the scheme test.
+// sqlx parses a schemeless string as a URL with no base: the opaque path becomes the database
+// name and the host falls back to localhost, so the copy would dial the wrong server and a
+// failure would echo the credentials back as a database name. The shape is refused before
+// anything is dialled - which is stronger than redacting it.
 #[test]
-fn a_schemeless_source_uri_is_redacted() {
+fn a_schemeless_source_uri_is_refused() {
     let directory = tempfile::tempdir().expect("a temporary directory");
     let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
         .args(["migrate", "pg-to-lmdb", "--target"])
@@ -2332,11 +2339,11 @@ fn a_schemeless_source_uri_is_redacted() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("secret"),
-        "the password is not printed: {stderr}"
+        stderr.contains("is not a URL with a host"),
+        "the refusal names the shape: {stderr}"
     );
     assert!(
-        stderr.contains("127.0.0.1:1/nostream"),
-        "the host and database are still named: {stderr}"
+        !stderr.contains("secret"),
+        "the password is not printed: {stderr}"
     );
 }

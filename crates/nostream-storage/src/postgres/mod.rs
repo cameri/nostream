@@ -22,8 +22,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use nostream_config::Settings;
-use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions};
-use sqlx::{Postgres, Transaction};
+use sqlx::postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions};
+use sqlx::{Connection, Postgres, Transaction};
 
 use crate::error::StorageError;
 
@@ -212,10 +212,29 @@ impl PostgresBackend {
     /// The migration copies from the master and nothing else, so a replica that is offline
     /// during a cutover must not be able to stop it: `from_env` dials both and fails when the
     /// replica is down, which is right for the relay and wrong for a one-shot copy. The copy's
-    /// own probe is what waits for the source, and `MIGRATION_CONNECT_BUDGET_MS` is the default
+    /// own probe is what waits for the source, and `MIGRATION_CONNECT_CAP_MS` is the default
     /// it waits with.
     pub fn master_only_from_env() -> Result<Self, StorageError> {
         Self::master_only_from_lookup(&|name| env::var(name).ok())
+    }
+
+    /// Dials the master once, inside `budget`, and answers the driver's own error.
+    ///
+    /// A probe through the pool cannot report the reason: sqlx retries a refused socket until
+    /// the pool's acquire timeout, so an operator reads `pool timed out while waiting for an
+    /// open connection` and never learns that the port refused, the password is wrong or the
+    /// database does not exist. One direct attempt answers with the driver's message, and the
+    /// budget is what stops a black-holed host becoming a minute of silence.
+    pub async fn probe_master_from_env(budget: Duration) -> Result<(), StorageError> {
+        let lookup = |name: &str| env::var(name).ok();
+        let options = utc(master_options(&lookup)?);
+        match tokio::time::timeout(budget, PgConnection::connect_with(&options)).await {
+            Ok(Ok(_connection)) => Ok(()),
+            Ok(Err(error)) => Err(error.into()),
+            Err(_) => Err(StorageError::InvalidArgument {
+                message: "the source did not answer within the connect budget",
+            }),
+        }
     }
 
     fn master_only_from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
@@ -224,7 +243,7 @@ impl PostgresBackend {
     {
         let master = master_options(lookup)?;
         // Nothing dials here. The run's first read is its probe, and the probe is what bounds
-        // the wait (`MIGRATION_CONNECT_BUDGET_MS`), so an unreachable source is reported in
+        // the wait (`MIGRATION_CONNECT_CAP_MS`), so an unreachable source is reported in
         // seconds rather than at the pool's sixty-second acquire timeout.
         let master = lazy_pool(utc(master), &pool_bounds(lookup, ""));
         Ok(Self {
@@ -306,11 +325,14 @@ async fn connected_pool(
     Ok(pool_options(bounds).connect_with(options).await?)
 }
 
-/// The default budget, in milliseconds, for the migration's first probe of the source.
+/// The cap, in milliseconds, on the migration's first direct connection to the source.
 ///
-/// Not a ceiling: `DB_ACQUIRE_CONNECTION_TIMEOUT` overrides it outright, and once the probe has
-/// answered, later batches wait on the pool's own acquire timeout like any other query.
-pub const MIGRATION_CONNECT_BUDGET_MS: u64 = 10_000;
+/// A ceiling, not a default: the probe waits for the smaller of this and
+/// `DB_ACQUIRE_CONNECTION_TIMEOUT`, which the shipped `.env.example` sets to 60 000 - a probe
+/// that inherited that would be a minute of silence on a mistyped host. Later batches wait on
+/// the pool's own acquire timeout like any other query, so this bounds the probe and nothing
+/// else.
+pub const MIGRATION_CONNECT_CAP_MS: u64 = 10_000;
 
 /// The master connection options: `DB_URI` when set, else the capture's `DB_*` parts.
 pub(crate) fn master_options<F>(lookup: &F) -> Result<PgConnectOptions, StorageError>

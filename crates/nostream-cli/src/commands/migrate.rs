@@ -92,12 +92,18 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         // copy whatever that happens to hold, and one whose host is down would report the
         // pool's acquire timeout a minute later instead of the database it could not reach.
         let described = describe_source()?;
-        // Master only: the copy reads the master and nothing else, so a replica that is down
-        // during a cutover must not be able to stop it.
+        // One direct attempt first, bounded: the pool retries a refused socket until its
+        // acquire timeout, so only a direct connection answers with the reason. Then the
+        // master-only backend, because the copy reads the master and nothing else and a
+        // replica that is down during a cutover must not stop it.
+        PostgresBackend::probe_master_from_env(probe_budget())
+            .await
+            .map_err(|error| {
+                CliError::Migrate(format!("could not read the source at {described}: {error}"))
+            })?;
         let source = PostgresBackend::master_only_from_env().map_err(|error| {
             CliError::Migrate(format!("could not read the source at {described}: {error}"))
         })?;
-        probe_source(&source, &described).await?;
         let target = open_target(&options.target).await?;
         migrate_with(&source, &target, &options, out).await
     })
@@ -605,6 +611,17 @@ fn describe_source() -> Result<String, CliError> {
         .ok()
         .filter(|uri| !uri.trim().is_empty())
     {
+        // sqlx parses a schemeless string as a URL with no base: the opaque path becomes the
+        // database name and the host falls back to localhost. The copy would dial the wrong
+        // server, and a failure echoes the database name - which for a libpq-style string is
+        // the credentials. The shape is refused before anything is dialled.
+        if !is_url_with_host(&uri) {
+            return Err(CliError::Migrate(format!(
+                "DB_URI is not a URL with a host ({}): use postgres://user:password@host:5432/\
+                 database",
+                without_credentials(&uri)
+            )));
+        }
         return Ok(format!("{} (from DB_URI)", without_credentials(&uri)));
     }
     match std::env::var("DB_HOST") {
@@ -619,6 +636,22 @@ fn describe_source() -> Result<String, CliError> {
                 .to_owned(),
         )),
     }
+}
+
+/// Whether `uri` is `scheme://host[:port][/path]` with a host to dial.
+fn is_url_with_host(uri: &str) -> bool {
+    let Some((scheme, rest)) = uri.split_once("://") else {
+        return false;
+    };
+    if scheme.is_empty() {
+        return false;
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_userinfo, host)| host);
+    let host = host.split(':').next().unwrap_or_default();
+    !host.is_empty()
 }
 
 /// A connection URI with its credentials dropped, so an error can name the source without
@@ -647,26 +680,19 @@ fn without_credentials(uri: &str) -> String {
     }
 }
 
-/// Reads one row before the copy, so an unreachable source is reported as the source it is -
-/// named by its setting, host and database - rather than as a pool acquire timeout.
-async fn probe_source(source: &PostgresBackend, described: &str) -> Result<(), CliError> {
-    let budget = std::env::var("DB_ACQUIRE_CONNECTION_TIMEOUT")
+/// The wait the source's first connection gets.
+///
+/// `DB_ACQUIRE_CONNECTION_TIMEOUT` is what the shipped `.env.example` sets, and a probe that
+/// inherited it would be a minute of silence on a mistyped host: the budget is that setting
+/// capped at `MIGRATION_CONNECT_CAP_MS`, so the ceiling holds whatever the pool is told.
+fn probe_budget() -> Duration {
+    let cap = Duration::from_millis(nostream_storage::postgres::MIGRATION_CONNECT_CAP_MS);
+    std::env::var("DB_ACQUIRE_CONNECTION_TIMEOUT")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_millis)
-        .unwrap_or(Duration::from_millis(
-            nostream_storage::postgres::MIGRATION_CONNECT_BUDGET_MS,
-        ));
-    match tokio::time::timeout(budget, source.read_batch(MigratedTable::ALL[0], None, 1)).await {
-        Ok(Ok(_)) => Ok(()),
-        Ok(Err(error)) => Err(CliError::Migrate(format!(
-            "could not read the source at {described}: {error}"
-        ))),
-        Err(_) => Err(CliError::Migrate(format!(
-            "could not read the source at {described}: no connection within {} s",
-            budget.as_secs()
-        ))),
-    }
+        .unwrap_or(cap)
+        .min(cap)
 }
 
 /// Refuses a target another local user could write to or redirect.

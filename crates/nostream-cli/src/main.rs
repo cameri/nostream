@@ -99,6 +99,10 @@ enum MigrateCommand {
     /// The source is Postgres from `DB_URI`, else the `DB_*` parts. The target is a store root:
     /// the environment is `<DIR>/lmdb` and the manifest `<DIR>/migration-manifest.json`.
     ///
+    /// The first connection to the source is bounded at ten seconds whatever
+    /// `DB_ACQUIRE_CONNECTION_TIMEOUT` says: a mistyped host is reported at once with the
+    /// driver's reason, not after the pool's minute.
+    ///
     /// A re-run resumes where the manifest says the last one stopped. Deleting
     /// `<DIR>/migration-manifest.json` does not restart a half-filled store: a store that holds
     /// rows and no manifest is refused, so starting over takes a fresh `--target`, or the
