@@ -1,6 +1,7 @@
 //! Backend selection and the LMDB environment. Mirrors `src/utils/event-store.ts` (the
 //! selection half) and the storage boundary in `src/@types/adapters.ts`.
 
+#[cfg(feature = "lmdb")]
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
