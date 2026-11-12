@@ -289,8 +289,8 @@ impl LmdbBackend {
     /// must not open it here first.
     pub async fn open_existing(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let root = root.into();
-        // The same rule `data_dir` answers, from the same constant.
-        let path = root.join(crate::backend::LMDB_DIR);
+        // One home for the shape, shared with the writable opener and the CLI.
+        let path = crate::backend::store_dir(&root);
         let opened = tokio::task::spawn_blocking(move || {
             let environment = LmdbEnv::open_existing(&path, LMDB_MAP_SIZE)?;
             let handle = environment.env().clone();

@@ -205,12 +205,15 @@ impl PostgresBackend {
         Self::with_pools(utc(master), bounds, replica).await
     }
 
-    /// Connects the master pool only, reading none of the replica settings.
+    /// Builds the master pool only, reading none of the replica settings, and **does not dial**:
+    /// the first query is what connects. `Ok` says the settings parse, not that the server is
+    /// reachable.
     ///
     /// The migration copies from the master and nothing else, so a replica that is offline
-    /// during a cutover must not be able to stop it: `from_env` dials the replica when
-    /// `READ_REPLICA_ENABLED=true` and fails if it cannot, which is right for the relay and
-    /// wrong for a one-shot copy.
+    /// during a cutover must not be able to stop it: `from_env` dials both and fails when the
+    /// replica is down, which is right for the relay and wrong for a one-shot copy. The copy's
+    /// own probe is what waits for the source, and `MIGRATION_CONNECT_BUDGET_MS` is the default
+    /// it waits with.
     pub fn master_only_from_env() -> Result<Self, StorageError> {
         Self::master_only_from_lookup(&|name| env::var(name).ok())
     }
@@ -303,7 +306,10 @@ async fn connected_pool(
     Ok(pool_options(bounds).connect_with(options).await?)
 }
 
-/// The longest a migration waits for the source to answer, in milliseconds.
+/// The default budget, in milliseconds, for the migration's first probe of the source.
+///
+/// Not a ceiling: `DB_ACQUIRE_CONNECTION_TIMEOUT` overrides it outright, and once the probe has
+/// answered, later batches wait on the pool's own acquire timeout like any other query.
 pub const MIGRATION_CONNECT_BUDGET_MS: u64 = 10_000;
 
 /// The master connection options: `DB_URI` when set, else the capture's `DB_*` parts.
