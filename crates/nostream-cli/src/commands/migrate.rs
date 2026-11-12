@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -670,6 +670,20 @@ async fn probe_source(source: &PostgresBackend, described: &str) -> Result<(), C
 /// opened. A target that does not exist yet is left alone: `open_target` creates it under the
 /// operator's own umask.
 fn refuse_unsafe_target(options: &MigrateOptions) -> Result<(), CliError> {
+    refuse_unsafe_target_for(options, effective_uid())
+}
+
+/// The effective uid of this process, from `/proc/self/status`.
+///
+/// `std::fs` exposes a file's owner but not the caller's, and reading it here costs no
+/// dependency: this crate runs on Linux, where the kernel publishes it in one line.
+fn effective_uid() -> Option<u32> {
+    let status = fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find(|line| line.starts_with("Uid:"))?;
+    line.split_whitespace().nth(2)?.parse().ok()
+}
+
+fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Result<(), CliError> {
     for path in [&options.target, &store_path(options)] {
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
@@ -682,6 +696,21 @@ fn refuse_unsafe_target(options: &MigrateOptions) -> Result<(), CliError> {
             return Err(CliError::Migrate(format!(
                 "{} is a symlink: the target must be the directory the copy lands in",
                 path.display()
+            )));
+        }
+        // The owner matters as much as the mode. A directory another user owns can be
+        // replaced by its owner between this check and the open, whatever its bits say, so a
+        // copy running as root over a predictable path in a shared directory would follow the
+        // replacement into files the other user can read. `None` means /proc could not say, and
+        // then the mode check is what stands.
+        if let Some(caller) = caller
+            && metadata.uid() != caller
+        {
+            return Err(CliError::Migrate(format!(
+                "{} is owned by uid {}, not by the user running the copy ({caller}): the target \
+                 must be a directory that user owns",
+                path.display(),
+                metadata.uid()
             )));
         }
         if !metadata.is_dir() {
@@ -828,6 +857,28 @@ fn write_failed(error: std::io::Error) -> CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The directory's owner decides whether it can be swapped for another one, and it is
+    /// checked against the caller rather than the mode. Measured as if a different uid were
+    /// running, because a directory this process owns cannot be made to belong to another user
+    /// without root.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn a_target_owned_by_another_user_is_refused() {
+        let directory = tempfile::tempdir().expect("a temporary directory");
+        let options = MigrateOptions {
+            target: directory.path().to_path_buf(),
+            batch_size: 1_000,
+            verify: false,
+        };
+        let error = refuse_unsafe_target_for(&options, Some(0))
+            .expect_err("uid 0 does not own this directory");
+        assert!(error.to_string().contains("is owned by uid"), "{error}");
+        assert!(
+            refuse_unsafe_target_for(&options, effective_uid()).is_ok(),
+            "the user who owns it is allowed, and /proc names them"
+        );
+    }
 
     /// The resume path's store check and the writable open that follows it run in one process,
     /// so the check must not open the store: heed keeps an environment registered for the life

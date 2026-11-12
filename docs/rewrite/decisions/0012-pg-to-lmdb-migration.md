@@ -145,10 +145,14 @@ and the `DB_*` parts rather than copying whatever a local server happens to hold
 cannot be reached is reported as the database it could not read — host and database, password
 dropped — instead of as the pool's acquire timeout a minute later.
 
-A target that is a symlink, or writable by group or other, is refused before anything is
-opened: the copy writes the dataset into `<target>/lmdb`, so a writable target lets another
-local user pre-place the store and read what lands in it, and a link sends the copy somewhere
-the operator did not name. The target the run writes into is printed with the summary.
+A target that is a symlink, writable by group or other, or owned by another user, is refused
+before anything is opened: the copy writes the dataset into `<target>/lmdb`, so a writable
+target lets another local user pre-place the store and read what lands in it, an owner can
+replace the directory between the check and the open whatever its bits say, and a link sends
+the copy somewhere the operator did not name. The owner is compared with the process's
+effective uid, read from `/proc/self/status`, because `std::fs` exposes the file's owner but
+not the caller's and the alternative was a dependency for one integer. The target the run
+writes into is printed with the summary.
 
 `nostream-cli migrate pg-to-lmdb` takes `--target <DIR>`, `--batch-size <N>` and `--verify`,
 and nothing else. `--target` is required with no default: a default of the working directory
