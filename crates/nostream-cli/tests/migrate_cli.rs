@@ -818,6 +818,107 @@ async fn verify_rejects_a_missing_manifest_with_a_message_and_exit_1() {
 }
 
 // ---------------------------------------------------------------------------------------
+// AC17: a crash between the first batch's commit and its manifest write.
+// ---------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_crash_between_the_first_batch_and_the_manifest_write_resumes_to_the_clean_manifest() {
+    let table = MigratedTable::ALL[0];
+
+    // The uninterrupted run: the manifest and the counts a resume has to land on.
+    let clean = tempfile::tempdir().expect("a temporary directory");
+    let clean_store = LmdbBackend::open(clean.path())
+        .await
+        .expect("the store opens");
+    migrate::migrate_with(
+        &StubSource::new(source_rows()),
+        &clean_store,
+        &options(clean.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect("the clean copy succeeds");
+    let clean_manifest = manifest_bytes(clean.path());
+    let mut clean_counts = Vec::new();
+    for table in MigratedTable::ALL {
+        clean_counts.push(scan_all(&clean_store, table).await.len());
+    }
+    drop(clean_store);
+
+    // The crash state, reproduced rather than killed: the fresh manifest R6 writes before its
+    // first batch, then that batch's rows, and nothing else. A source that fails on its first
+    // read leaves exactly that manifest behind, and its entries are asserted below.
+    let crashed = tempfile::tempdir().expect("a temporary directory");
+    let store = LmdbBackend::open(crashed.path())
+        .await
+        .expect("the store opens");
+    let options = options(crashed.path(), 1_000);
+    let error = migrate::migrate_with(
+        &StubSource::failing_at(source_rows(), 0),
+        &store,
+        &options,
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("the first read fails");
+    assert!(
+        matches!(error, nostream_cli::CliError::Migrate(_)),
+        "a source failure is the variant `main` reports as `Migration failed:`"
+    );
+
+    let fresh = manifest_bytes(crashed.path());
+    let fresh: Value = serde_json::from_slice(&fresh).expect("the fresh manifest is json");
+    assert_eq!(fresh["format"], 1);
+    assert_eq!(
+        fresh["not_migrated"],
+        json!(["event_tags", "user_subscriptions"])
+    );
+    let tables = fresh["tables"].as_object().expect("the tables object");
+    assert_eq!(tables.len(), 9, "one entry per table");
+    for entry in tables.values() {
+        assert_eq!(entry["rows"], 0);
+        assert_eq!(entry["checksum"], "0".repeat(64));
+        assert_eq!(entry["after"], "");
+        assert_eq!(entry["complete"], false);
+    }
+
+    let source = StubSource::new(source_rows());
+    let first = MigrationSource::read_batch(&source, table, None, 200)
+        .await
+        .expect("the first batch reads");
+    assert!(!first.is_empty(), "the first table has rows");
+    store
+        .write_batch(&first)
+        .await
+        .expect("the first batch is stored");
+
+    // The resume replays that batch from the fresh manifest's own cursor.
+    let resumed = StubSource::new(source_rows());
+    let output = migrate::migrate_with(&resumed, &store, &options, &mut Vec::new())
+        .await
+        .expect("the resume succeeds");
+    assert_eq!(output.exit_code, 0);
+    assert_eq!(
+        resumed.calls().first(),
+        Some(&(table, None)),
+        "the resume starts at the fresh manifest's empty cursor"
+    );
+    for (table, count) in MigratedTable::ALL.iter().zip(clean_counts) {
+        assert_eq!(
+            scan_all(&store, *table).await.len(),
+            count,
+            "{} count",
+            table.name()
+        );
+    }
+    assert_eq!(
+        manifest_bytes(crashed.path()),
+        clean_manifest,
+        "the resume lands on the uninterrupted run's manifest"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
 // AC7: the run's own measurement.
 // ---------------------------------------------------------------------------------------
 

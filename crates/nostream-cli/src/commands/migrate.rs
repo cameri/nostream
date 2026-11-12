@@ -111,6 +111,12 @@ pub async fn migrate_with(
         )));
     }
 
+    // R6: written before the first `read_batch`, so a store this tool has begun to fill always
+    // carries a manifest and a crash after the first batch resumes rather than being refused.
+    if existing.is_none() {
+        write_manifest(&options.target, &manifest)?;
+    }
+
     if manifest.complete() {
         return verify_with(target, options, out).await;
     }
