@@ -141,8 +141,13 @@ reads only the target.
 
 Verify creates nothing, in the store or beside it. It requires `<target>/lmdb/data.mdb` to be a
 file before it opens anything, and opens through `LmdbBackend::open_existing`: a read-only
-environment, no `create_dir_all`, every database opened by name rather than created. The
-ordinary opener would answer a verify of a store that is not there with a fresh empty
+environment, no `create_dir_all`, every database opened by name rather than created. That
+opener commits the read transaction it opens those handles in, because heed publishes a
+database handle only once its opening transaction has committed: a dropped read transaction
+leaves the handles unusable, and the next transaction on them answers `Invalid argument` —
+which a fresh process, having no earlier committed open to inherit them from, hits on its
+first read. Every in-process test misses it, because the store was opened writable first.
+The ordinary opener would answer a verify of a store that is not there with a fresh empty
 environment and nine short tables — a check that reports corruption it caused. heed's
 process-global registry answers `BadOpenOptions` for a second open of one path with different
 options, so a caller already holding the root writable drops that handle first.

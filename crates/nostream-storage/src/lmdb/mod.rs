@@ -294,6 +294,11 @@ impl LmdbBackend {
             let handle = environment.env().clone();
             let transaction = handle.read_txn()?;
             let databases = Databases::open(&handle, &transaction)?;
+            // heed only publishes the database handles a transaction opened once that
+            // transaction commits; a dropped read transaction leaves them unusable, and a
+            // fresh process - which has no earlier committed open to inherit them from -
+            // answers `Invalid argument` on its first read.
+            transaction.commit()?;
             Ok::<_, StorageError>((environment, databases))
         })
         .await

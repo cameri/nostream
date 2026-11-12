@@ -1835,3 +1835,57 @@ fn a_failed_run_reports_migration_failed_and_exits_1() {
         "the failure is reported as one: {stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// A process that never opened the store verifies it.
+// ---------------------------------------------------------------------------------------
+
+// Every other verify test runs in the process that opened the store writable, where heed's
+// process-global registry already holds valid database handles, so a read-only opener that
+// never commits its read transaction looks fine. The binary is the only way to get a process
+// that has never opened the store, which is the shape a real `--verify` runs in.
+#[test]
+fn the_binary_verifies_a_store_this_process_wrote() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
+
+    let exit_code = runtime.block_on(async {
+        let target = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+        let output = migrate::migrate_with(
+            &StubSource::new(source_rows()),
+            &target,
+            &options(directory.path(), 1_000),
+            &mut Vec::new(),
+        )
+        .await
+        .expect("the copy succeeds");
+        output.exit_code
+    });
+    assert_eq!(exit_code, 0, "the copy completes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .arg("--verify")
+        .env("DB_URI", "not-a-url")
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+        .output()
+        .expect("the binary runs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "a fresh process verifies what the store holds: stdout {stdout} stderr {stderr}"
+    );
+    assert!(
+        stdout.starts_with("Verified 9 tables, "),
+        "the verify reports its work: {stdout}"
+    );
+}
