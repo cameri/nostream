@@ -77,24 +77,7 @@ impl LmdbEnv {
             path: path.clone(),
             source,
         })?;
-
-        // # Safety: the preconditions on `LmdbEnv` above, each marked upheld or relied-on:
-        // no env flags (LMDB's locking runs), transactions never escape the closure they are
-        // opened in, and heed's per-process dedup turns a second open into the same Env or
-        // BadOpenOptions. The network-filesystem precondition rests on the operator passing a
-        // local path; see the list above.
-        #[allow(unsafe_code)]
-        let env = unsafe {
-            EnvOpenOptions::new()
-                .map_size(map_size)
-                .max_dbs(LMDB_MAX_DBS)
-                .max_readers(LMDB_MAX_READERS)
-                .open(&path)
-        }
-        .map_err(|source| StorageError::OpenLmdb {
-            path: path.clone(),
-            source,
-        })?;
+        let env = Self::open_with(&path, map_size, EnvFlags::empty())?;
         Ok(Self { env, path })
     }
 
@@ -104,29 +87,40 @@ impl LmdbEnv {
     /// heed's error rather than a new file. `READ_ONLY` takes no write lock, and this
     /// constructor opens no transaction of its own.
     ///
-    /// heed's process-global registry answers `Error::BadOpenOptions` for a second open of one
-    /// path with different options, so a caller that already holds this path writable must
-    /// drop that handle first.
+    /// heed answers `Error::BadOpenOptions` for a second open of one path with different
+    /// options, and its registry holds the environment process-wide, so dropping a handle does
+    /// not free the path: a caller that already opened this path writable cannot then open it
+    /// read-only, or the other way round, and a caller that needs the writable one afterwards
+    /// must not open it here first.
     pub fn open_existing(path: impl Into<PathBuf>, map_size: usize) -> Result<Self, StorageError> {
         let path = path.into();
+        let env = Self::open_with(&path, map_size, EnvFlags::READ_ONLY)?;
+        Ok(Self { env, path })
+    }
 
-        // # Safety: the preconditions on `LmdbEnv` above, each marked upheld or relied-on, and
-        // `READ_ONLY` makes the write half of them vacuous: no transaction is opened here at
-        // all.
+    /// The one place this crate opens an environment, so the `unsafe` precondition list above
+    /// is answered once and `open` and `open_existing` cannot drift apart.
+    fn open_with(path: &Path, map_size: usize, flags: EnvFlags) -> Result<Env, StorageError> {
+        // # Safety: the preconditions on `LmdbEnv` above, each marked upheld or relied-on:
+        // no env flags beyond `READ_ONLY` when the caller passes it (LMDB's locking runs, and
+        // the write half of the list is vacuous), transactions never escape the closure they
+        // are opened in, and heed's per-process dedup turns a second open into the same Env or
+        // BadOpenOptions. The network-filesystem precondition rests on the operator passing a
+        // local path; see the list above.
         #[allow(unsafe_code)]
         let env = unsafe {
             EnvOpenOptions::new()
                 .map_size(map_size)
                 .max_dbs(LMDB_MAX_DBS)
                 .max_readers(LMDB_MAX_READERS)
-                .flags(EnvFlags::READ_ONLY)
-                .open(&path)
+                .flags(flags)
+                .open(path)
         }
         .map_err(|source| StorageError::OpenLmdb {
-            path: path.clone(),
+            path: path.to_path_buf(),
             source,
         })?;
-        Ok(Self { env, path })
+        Ok(env)
     }
 
     /// The environment handle, for the repository implementations.

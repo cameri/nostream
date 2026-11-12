@@ -865,10 +865,6 @@ fn verify_creates_nothing_and_rejects_a_target_with_no_store_or_no_manifest() {
         for table in MigratedTable::ALL {
             counts.push(scan_all(&target, table).await.len());
         }
-        // R8: heed answers `BadOpenOptions` for a second open of one path with different
-        // options, so the writable handle is dropped before the verify opens the store
-        // read-only.
-        drop(target);
         (usage, counts)
     });
     std::fs::remove_file(directory.path().join("migration-manifest.json"))
@@ -1492,6 +1488,41 @@ async fn a_manifest_that_does_not_name_the_nine_tables_is_refused() {
         3,
         "the seeded rows are untouched"
     );
+
+    // Nine names, one of them swapped for a name that is not a table. A check that counted the
+    // entries would accept this, so the refusal has to be about which names they are.
+    let mut tables = serde_json::Map::new();
+    for table in MigratedTable::ALL.iter().skip(1) {
+        tables.insert(
+            table.name().to_owned(),
+            json!({"rows": 0, "checksum": "0".repeat(64), "after": "", "complete": false}),
+        );
+    }
+    tables.insert(
+        "not_a_table".to_owned(),
+        json!({"rows": 0, "checksum": "0".repeat(64), "after": "", "complete": false}),
+    );
+    let fixture =
+        json!({"format": 1, "not_migrated": MigratedTable::NOT_MIGRATED, "tables": tables});
+    std::fs::write(
+        &manifest,
+        serde_json::to_vec(&fixture).expect("the fixture serialises"),
+    )
+    .expect("the fixture manifest is written");
+    let error = migrate::migrate_with(
+        &StubSource::new(source_rows()),
+        &target,
+        &options(directory.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("one swapped name is refused even though the count is right");
+    let message = error.to_string();
+    assert!(message.contains("not_a_table"), "{message}");
+    assert!(
+        message.contains(MigratedTable::ALL[0].name()),
+        "the refusal names the table that is missing: {message}"
+    );
 }
 
 #[tokio::test]
@@ -1887,5 +1918,39 @@ fn the_binary_verifies_a_store_this_process_wrote() {
     assert!(
         stdout.starts_with("Verified 9 tables, "),
         "the verify reports its work: {stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// The checksum is the number the document says it is.
+// ---------------------------------------------------------------------------------------
+
+// D4 states the row sum as the sum of `SHA-256(len32 ‖ key ‖ canonical)` per row, modulo 2^256,
+// and the value exists so an independent checker can be written from that sentence. This
+// literal was computed outside this crate from a single `events` row's bytes on exactly that
+// framing, so a missing length prefix or a different order fails here instead of passing every
+// criterion: the unit tests pin `sum_words`, not `add`.
+#[tokio::test]
+async fn the_row_checksum_matches_an_independent_computation() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+    let source = StubSource::new(vec![MigrationRow::Event(event_record(1, "golden"))]);
+    migrate::migrate_with(
+        &source,
+        &target,
+        &options(directory.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect("the copy succeeds");
+
+    let written = manifest(directory.path());
+    let events = &written["tables"][MigratedTable::Events.name()];
+    assert_eq!(events["rows"], 1, "one row was copied");
+    assert_eq!(
+        events["checksum"], "d81f052af7bfeb879aca5d630db8730d7168d6ca5cb2f5fc59f1a1c749150fbe",
+        "the checksum an independent checker computes for this row"
     );
 }

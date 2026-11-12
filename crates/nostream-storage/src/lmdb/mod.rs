@@ -283,8 +283,10 @@ impl LmdbBackend {
     /// missing database is an error.
     ///
     /// heed's process-global registry answers `BadOpenOptions` for a second open of one path
-    /// with different options, so a caller that already holds this root writable must drop that
-    /// handle first.
+    /// with different options, and it keeps the environment registered for the life of the
+    /// process, so dropping a handle does not free the path: a process that holds this root
+    /// writable cannot also open it read-only, and one that needs the writable root afterwards
+    /// must not open it here first.
     pub async fn open_existing(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let root = root.into();
         // The same rule `data_dir` answers, from the same constant.

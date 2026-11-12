@@ -139,18 +139,23 @@ the manifest lives under it. `--batch-size` defaults to 1 000, the import's defa
 minimum is 1: a batch of zero would never advance a cursor. `--verify` copies nothing and
 reads only the target.
 
-Verify creates nothing, in the store or beside it. It requires `<target>/lmdb/data.mdb` to be a
-file before it opens anything, and opens through `LmdbBackend::open_existing`: a read-only
+Verify creates no store and no manifest: it requires `<target>/lmdb/data.mdb` to be a file
+before it opens anything, and opens through `LmdbBackend::open_existing`: a read-only
 environment, no `create_dir_all`, every database opened by name rather than created. That
 opener commits the read transaction it opens those handles in, because heed publishes a
 database handle only once its opening transaction has committed: a dropped read transaction
 leaves the handles unusable, and the next transaction on them answers `Invalid argument` —
 which a fresh process, having no earlier committed open to inherit them from, hits on its
 first read. Every in-process test misses it, because the store was opened writable first.
-The ordinary opener would answer a verify of a store that is not there with a fresh empty
+LMDB's read-only open is not entirely a read: it recreates `lock.mdb` beside an existing
+`data.mdb` (measured), and a target directory it cannot create that file in is refused. The
+ordinary opener would answer a verify of a store that is not there with a fresh empty
 environment and nine short tables — a check that reports corruption it caused. heed's
 process-global registry answers `BadOpenOptions` for a second open of one path with different
-options, so a caller already holding the root writable drops that handle first.
+options, and it holds the environment process-wide, so dropping a handle does not free the
+path. That is why the resume check asks whether `data.mdb` is there instead of opening the
+store read-only first: the writable open that follows would otherwise refuse the one case the
+check exists to allow.
 
 Exit codes are the CLI's own, from `CLI.md`: 0 on success, 2 for a usage error, 1 for every
 other failure, which is written to stderr as `Migration failed: {message}`. That message

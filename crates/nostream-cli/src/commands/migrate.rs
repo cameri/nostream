@@ -50,9 +50,11 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
     runtime.block_on(async move {
         if options.verify {
             // Both answered before anything is opened, so a verify of a directory that holds no
-            // store leaves it exactly as it found it. The store is asked about first: R8's
-            // missing store is `data.mdb`'s absence, which is also what a directory that never
-            // held a migration looks like.
+            // store is refused rather than given a fresh empty one. The store is asked about by
+            // its file for the same reason: R8's missing store is `data.mdb`'s absence, and a
+            // directory that never held a migration looks exactly like it. Verify creates no
+            // store and no manifest; LMDB's read-only open still recreates `lock.mdb` beside an
+            // existing `data.mdb`, which is the one thing it writes.
             if !store_present(&options) {
                 return no_store(&options, out);
             }
@@ -78,23 +80,10 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             return verify_with(&target, &options, out).await;
         }
 
-        // R7: a manifest that records progress is only meaningful beside the store the progress
-        // went into. `open_target` below would create a missing store, and the copy would then
-        // skip the tables already counted and the rows already summed — exit 0 against a store
-        // missing every row the manifest claims. The read-only opener answers that case and
-        // creates nothing; the handle is dropped before the writable open, because heed refuses
-        // a second open of one path with different options.
-        if existing
-            .as_ref()
-            .is_some_and(|manifest| manifest.records_progress())
-            && LmdbBackend::open_existing(&options.target).await.is_err()
-        {
-            return Err(CliError::Migrate(format!(
-                "No store at {}",
-                store_path(&options).display()
-            )));
-        }
-
+        // R7's store requirement, answered before the source is dialled so a missing store is
+        // reported rather than a database error. The writable open below follows it in this
+        // process, which is why the check must not open the store itself.
+        check_resume_store(existing.as_ref(), &options)?;
         let source = PostgresBackend::from_env()
             .await
             .map_err(|error| CliError::Migrate(error.to_string()))?;
@@ -596,6 +585,31 @@ fn refuse_zero_batch(options: &MigrateOptions) -> Result<(), CliError> {
     Ok(())
 }
 
+/// The store requirement R7 puts on a resume.
+///
+/// A manifest that records progress is only meaningful beside the store the progress went into:
+/// the writable open that follows this check creates a missing store, and the copy would then
+/// skip the tables already counted and the rows already summed, exiting 0 against a store
+/// missing every row the manifest claims.
+///
+/// The question is asked by the store's file and not by opening it. A read-only open registers
+/// the environment with heed process-wide, and the writable open of the same path in the same
+/// process then answers `BadOpenOptions` — so a probe here would make a resume fail exactly
+/// when its store is present. `tests::the_resume_check_leaves_the_store_openable` drives both
+/// steps for that reason.
+fn check_resume_store(
+    existing: Option<&Manifest>,
+    options: &MigrateOptions,
+) -> Result<(), CliError> {
+    if existing.is_some_and(|manifest| manifest.records_progress()) && !store_present(options) {
+        return Err(CliError::Migrate(format!(
+            "No store at {}",
+            store_path(options).display()
+        )));
+    }
+    Ok(())
+}
+
 /// Opens the store a copy writes, creating it when it is not there.
 async fn open_target(root: &Path) -> Result<LmdbBackend, CliError> {
     LmdbBackend::open(root)
@@ -636,6 +650,33 @@ fn write_failed(error: std::io::Error) -> CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The resume path's store check and the writable open that follows it run in one process,
+    /// so the check must not open the store: heed keeps an environment registered for the life
+    /// of the process, and a read-only open there makes the writable one answer
+    /// `BadOpenOptions` — a resume failing exactly when its store is present. Nothing but both
+    /// steps together can see it.
+    #[tokio::test]
+    #[allow(clippy::expect_used, clippy::unwrap_used)]
+    async fn the_resume_check_leaves_the_store_openable() {
+        let directory = tempfile::tempdir().expect("a temporary directory");
+        LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+        let mut manifest = Manifest::fresh();
+        manifest.entry(MigratedTable::Events).rows = 1;
+        let options = MigrateOptions {
+            target: directory.path().to_path_buf(),
+            batch_size: 1_000,
+            verify: false,
+        };
+
+        check_resume_store(Some(&manifest), &options)
+            .expect("the store the manifest needs is there");
+        open_target(&options.target)
+            .await
+            .expect("the writable open after the check succeeds");
+    }
 
     /// The documented checksum is the sum modulo 2^256, so a wrap in the least significant
     /// limb carries into the one above it. Adding the four words independently — which is
