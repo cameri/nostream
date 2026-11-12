@@ -308,11 +308,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # Both steps call `gh`. The install clones over anonymous git, which
+      # works but is rate-limited; the verify resolves tags, which is a API
+      # call either way. One token for the job rather than one per step.
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4.4.0
       - name: Install gh-actions-lock
         run: gh extension install github/gh-actions-lock --pin v0.4.1
       - name: Verify the lockfile against the workflows
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: gh actions-lock --verify
