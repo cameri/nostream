@@ -22,7 +22,7 @@ import {
   validateSettings,
   withSettingsWriteLock,
 } from '../../../src/utils/settings-config'
-import { getSettingsWriteLockPath } from '../../../src/utils/settings-paths'
+import { getSettingsFilePath, getSettingsWriteLockPath } from '../../../src/utils/settings-paths'
 import { toBech32 } from '../../../src/utils/transform'
 import {
   getGuidedSettingCategory,
@@ -1064,10 +1064,32 @@ describe('settings write lock', () => {
       yaml.dump({ ...defaults, info: { ...defaults.info, name: 'restored-from-backup' } }),
     )
 
-    const restored = await restoreSettingsBackup(filename)
+    const lockPath = getSettingsWriteLockPath()
+    const settingsPath = getSettingsFilePath()
+    const renameSync = fs.renameSync.bind(fs)
+    let lockHeldDuringWrite = false
 
-    expect(restored.info?.name).to.equal('restored-from-backup')
-    expect(loadUserSettings().info?.name).to.equal('restored-from-backup')
-    expect(fs.existsSync(getSettingsWriteLockPath())).to.equal(false)
+    // saveSettings() swaps the new document into place with renameSync(). Seeing
+    // the lock during that call proves restoreSettingsBackup() still holds it;
+    // the test would fail if the lock were removed from the restore path.
+    const renameStub = Sinon.stub(fs, 'renameSync').callsFake((from, to) => {
+      if (to === settingsPath) {
+        lockHeldDuringWrite = fs.existsSync(lockPath)
+      }
+
+      return renameSync(from, to)
+    })
+
+    try {
+      const restored = await restoreSettingsBackup(filename)
+
+      expect(restored.info?.name).to.equal('restored-from-backup')
+      expect(loadUserSettings().info?.name).to.equal('restored-from-backup')
+    } finally {
+      renameStub.restore()
+    }
+
+    expect(lockHeldDuringWrite).to.equal(true)
+    expect(fs.existsSync(lockPath)).to.equal(false)
   })
 })
