@@ -84,6 +84,7 @@ pub async fn migrate_with(
     options: &MigrateOptions,
     out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
+    refuse_zero_batch(options)?;
     let existing = read_manifest(&options.target)?;
     let mut manifest = existing.clone().unwrap_or_else(Manifest::fresh);
 
@@ -177,6 +178,7 @@ pub async fn verify_with(
     options: &MigrateOptions,
     out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
+    refuse_zero_batch(options)?;
     let Some(manifest) = read_manifest(&options.target)? else {
         return no_manifest(&options.target, out);
     };
@@ -435,6 +437,15 @@ async fn first_occupied_table(
         }
     }
     Ok(None)
+}
+
+/// A batch of zero never advances a cursor. The parser refuses it, and these two entry points are
+/// public, so they refuse it themselves rather than loop.
+fn refuse_zero_batch(options: &MigrateOptions) -> Result<(), CliError> {
+    if options.batch_size == 0 {
+        return Err(CliError::Migrate("--batch-size must be at least 1".to_owned()));
+    }
+    Ok(())
 }
 
 /// Opens the store a run reads or writes.

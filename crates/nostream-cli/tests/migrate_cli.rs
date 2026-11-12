@@ -1214,6 +1214,31 @@ async fn a_manifest_of_another_format_is_refused_before_anything_is_written() {
     assert!(error.to_string().contains("format 2"), "{error}");
 }
 
+#[tokio::test]
+async fn a_zero_batch_is_refused_instead_of_looping() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+
+    let source = StubSource::new(source_rows());
+    let error = migrate::migrate_with(
+        &source,
+        &target,
+        &options(directory.path(), 0),
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("a batch of zero is refused");
+    assert!(error.to_string().contains("--batch-size"), "{error}");
+    assert_eq!(source.calls().len(), 0, "nothing was read");
+
+    let error = migrate::verify_with(&target, &options(directory.path(), 0), &mut Vec::new())
+        .await
+        .expect_err("a batch of zero is refused by verify too");
+    assert!(error.to_string().contains("--batch-size"), "{error}");
+}
+
 /// The process boundary the two failure tests above stop at: `main` prints
 /// `Migration failed: {message}` and exits 1. No source is reachable here, so the run fails on
 /// the way to the copy, which is the same arm.
