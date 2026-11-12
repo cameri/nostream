@@ -11,6 +11,7 @@ mod encoding;
 mod events;
 mod invoices;
 mod metadata;
+mod migration;
 mod notifications;
 mod rows;
 mod users;

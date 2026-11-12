@@ -83,6 +83,25 @@ pub(crate) fn nip05_upsert(
     Ok(1)
 }
 
+/// Writes one verification row and its pending-check entry as the source carries them.
+///
+/// [`nip05_upsert`] keeps a stored `created_at` and stamps `updated_at`; a migrated row arrives
+/// with both of its own, so this puts the row it is given and its own index entry.
+pub(super) fn nip05_write(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+    verification: &Nip05Verification,
+) -> Result<(), StorageError> {
+    let value = rows::encode("nip05_verifications", verification)?;
+    databases
+        .nip05
+        .put(txn, &nip05_key(&verification.pubkey), &value)?;
+    databases
+        .nip05_by_last_checked_at
+        .put(txn, &nip05_pending_key(verification), &[])?;
+    Ok(())
+}
+
 /// `Nip05VerificationRepository::find_pending_verifications`: rows last checked before the
 /// cutoff with fewer than `max_failures`, oldest check first.
 pub(crate) fn nip05_find_pending(
@@ -162,7 +181,7 @@ pub(crate) fn invite_find_by_code(
     rows::decode("invite_codes", value).map(Some)
 }
 
-fn invite_write(
+pub(super) fn invite_write(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
     invite: &InviteCode,
@@ -346,7 +365,7 @@ pub(crate) fn dvm_find_by_id(
     rows::decode("dvm_jobs", value).map(Some)
 }
 
-fn dvm_write(
+pub(super) fn dvm_write(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
     job: &DvmJob,
@@ -549,7 +568,28 @@ fn next_report_id(txn: &mut RwTxn<'_>, databases: &Databases) -> Result<i32, Sto
     })
 }
 
-fn report_write(
+/// Raises the `reports.id` sequence to `id`, so a report the migration carried across cannot be
+/// allocated again by a later `create`.
+///
+/// Never lowers it: a batch that carries no report passes `0` and leaves the sequence alone.
+pub(super) fn raise_report_sequence(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+    id: i32,
+) -> Result<(), StorageError> {
+    let wanted = u64::try_from(id).unwrap_or(0);
+    let current: u64 = match databases.meta.get(txn, REPORT_SEQUENCE)? {
+        Some(value) => rows::decode("meta", value)?,
+        None => 0,
+    };
+    if wanted > current {
+        let value = rows::encode("meta", &wanted)?;
+        databases.meta.put(txn, REPORT_SEQUENCE, &value)?;
+    }
+    Ok(())
+}
+
+pub(super) fn report_write(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
     report: &Report,
