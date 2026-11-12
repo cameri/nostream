@@ -387,9 +387,16 @@ fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(CliError::Migrate(format!("{}: {error}", path.display()))),
     };
-    serde_json::from_slice(&bytes)
-        .map(Some)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))
+    let manifest: Manifest = serde_json::from_slice(&bytes)
+        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+    if manifest.format != MANIFEST_FORMAT {
+        return Err(CliError::Migrate(format!(
+            "{}: manifest format {} is not supported; this tool reads and writes {MANIFEST_FORMAT}",
+            path.display(),
+            manifest.format
+        )));
+    }
+    Ok(Some(manifest))
 }
 
 /// Replaces the manifest through a temporary file, so a reader never sees a half-written one.

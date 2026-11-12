@@ -1164,6 +1164,56 @@ async fn a_target_with_rows_and_no_manifest_is_refused() {
     );
 }
 
+// ---------------------------------------------------------------------------------------
+// A manifest of another format, a batch of zero, and a verify with no store.
+// ---------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_manifest_of_another_format_is_refused_before_anything_is_written() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+    std::fs::write(
+        directory.path().join("migration-manifest.json"),
+        br#"{"format":2,"not_migrated":[],"tables":{}}"#,
+    )
+    .expect("the fixture manifest is written");
+    let usage = target
+        .map_usage()
+        .await
+        .expect("the usage reads")
+        .used_bytes;
+
+    let source = StubSource::new(source_rows());
+    let error = migrate::migrate_with(
+        &source,
+        &target,
+        &options(directory.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("format 2 is refused");
+    let message = error.to_string();
+    assert!(message.contains("migration-manifest.json"), "{message}");
+    assert!(message.contains("format 2"), "{message}");
+    assert_eq!(source.calls().len(), 0, "nothing was read");
+    assert_eq!(
+        target
+            .map_usage()
+            .await
+            .expect("the usage reads")
+            .used_bytes,
+        usage,
+        "nothing was written"
+    );
+
+    let error = migrate::verify_with(&target, &options(directory.path(), 1_000), &mut Vec::new())
+        .await
+        .expect_err("format 2 is refused by verify too");
+    assert!(error.to_string().contains("format 2"), "{error}");
+}
+
 /// The process boundary the two failure tests above stop at: `main` prints
 /// `Migration failed: {message}` and exits 1. No source is reachable here, so the run fails on
 /// the way to the copy, which is the same arm.
