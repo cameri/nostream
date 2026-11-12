@@ -55,3 +55,7 @@ coverage-report/
 
 # Rust
 /target/
+
+# A migration target is the dataset: `--target .` writes it here, and this repository is public.
+/lmdb/
+/migration-manifest.json

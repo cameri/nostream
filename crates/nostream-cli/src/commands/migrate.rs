@@ -11,7 +11,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io;
 use std::io::Write;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -48,6 +50,8 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         .map_err(|error| CliError::Config(format!("tokio runtime: {error}")))?;
 
     runtime.block_on(async move {
+        refuse_unsafe_target(&options)?;
+
         if options.verify {
             // Both answered before anything is opened, so a verify of a directory that holds no
             // store is refused rather than given a fresh empty one. The store is asked about by
@@ -216,6 +220,9 @@ pub async fn migrate_with(
     let rate = events.saturating_mul(1_000) / ms.max(1);
     writeln!(out, "Migrated {total} rows in {ms} ms").map_err(write_failed)?;
     writeln!(out, "Events throughput: {rate} events/s").map_err(write_failed)?;
+    // Where the copy landed: a target that was redirected or mistyped is visible here rather
+    // than as a store the operator cannot find.
+    writeln!(out, "Store: {}", store_path(options).display()).map_err(write_failed)?;
 
     Ok(CommandOutput::default())
 }
@@ -518,18 +525,40 @@ fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
 }
 
 /// Replaces the manifest through a temporary file, so a reader never sees a half-written one.
+///
+/// The file is created exclusively and written 0600, and both halves are load-bearing. The
+/// manifest records the last key written per table, and for `invite_codes` that key is the
+/// invite code itself - a bearer credential NIP-43 accepts - so the manifest must not be the
+/// world-readable copy of it; the store's own files are heed's 0600. Creating exclusively
+/// refuses an entry already at the temporary path, which is how a planted symlink would
+/// otherwise redirect the write and be renamed into place.
 fn write_manifest(target: &Path, manifest: &Manifest) -> Result<(), CliError> {
     let path = manifest_path(target);
     let temporary = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(manifest)
         .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
 
+    match fs::remove_file(&temporary) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(CliError::Migrate(format!(
+                "{}: {error}",
+                temporary.display()
+            )));
+        }
+    }
+
     // The rename is the commit point, so it needs both halves of the durability it implies:
     // the bytes on disk before the name moves, and the directory entry durable after it.
     // Without the file sync, a power loss can leave the new name pointing at a truncated
     // manifest; `read_manifest` then refuses it, and the nonempty-target rule refuses to
     // migrate over the store it describes, so the operator's only way forward is a discard.
-    let mut file = fs::File::create(&temporary)
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&temporary)
         .map_err(|error| CliError::Migrate(format!("{}: {error}", temporary.display())))?;
     file.write_all(&bytes)
         .and_then(|()| file.sync_all())
@@ -552,6 +581,41 @@ fn sync_directory_of(path: &Path) -> Result<(), CliError> {
     directory
         .sync_all()
         .map_err(|error| CliError::Migrate(format!("{}: {error}", parent.display())))
+}
+
+/// Refuses a target another local user could write to or redirect.
+///
+/// The copy writes the whole dataset into `<target>/lmdb`, so a group- or world-writable target
+/// lets another local user pre-place the store and read what lands in it, and a symlinked target
+/// sends the copy somewhere the operator did not name. Both are refused before anything is
+/// opened. A target that does not exist yet is left alone: `open_target` creates it under the
+/// operator's own umask.
+fn refuse_unsafe_target(options: &MigrateOptions) -> Result<(), CliError> {
+    for path in [&options.target, &store_path(options)] {
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(CliError::Migrate(format!("{}: {error}", path.display())));
+            }
+        };
+        if metadata.file_type().is_symlink() {
+            return Err(CliError::Migrate(format!(
+                "{} is a symlink: the target must be the directory the copy lands in",
+                path.display()
+            )));
+        }
+        let mode = metadata.permissions().mode();
+        if mode & 0o022 != 0 {
+            return Err(CliError::Migrate(format!(
+                "{} is writable by group or other ({:04o}): the target must be a directory only \
+                 its owner can write to",
+                path.display(),
+                mode & 0o7777
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// The line and exit code a verify answers when the target has no manifest.

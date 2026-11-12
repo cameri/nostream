@@ -110,6 +110,10 @@ temporary file, synced before the rename, and the directory synced after it. Bot
 load-bearing: a rename is durable only when the directory entry is on disk, and a manifest
 that survives as a name pointing at a truncated file is worse than a missing one, because
 `read_manifest` refuses it and the target refusal below then blocks the store it describes.
+The manifest is written 0600 and through an exclusively created temporary file: it records the
+last key written per table, and for `invite_codes` that key is the invite code itself — a bearer
+credential NIP-43 accepts — so a world-readable manifest would hand one out, and a planted link
+at the temporary path must not be written through and renamed into place.
 A crash between the two therefore replays at most one batch,
 which is harmless because every write in it is a put of the source's own key and value: the
 same rows produce the same count and the same sum, so the merged entry is unchanged.
@@ -134,6 +138,11 @@ to. A manifest with no progress cannot have written a row, so a fresh store besi
 it is honest and the run starts one.
 
 ## The command surface (D6)
+
+A target that is a symlink, or writable by group or other, is refused before anything is
+opened: the copy writes the dataset into `<target>/lmdb`, so a writable target lets another
+local user pre-place the store and read what lands in it, and a link sends the copy somewhere
+the operator did not name. The target the run writes into is printed with the summary.
 
 `nostream-cli migrate pg-to-lmdb` takes `--target <DIR>`, `--batch-size <N>` and `--verify`,
 and nothing else. `--target` is required with no default: a default of the working directory
@@ -205,8 +214,8 @@ Both stores are documented preconditions of a run, printed in the command's help
 must be stopped on both.
 
 The reason is that nothing in this repository proves a second process may hold the LMDB
-environment. LMDB's lock file would let one in, and heed opens with no environment flags, so
-the locking protocol is active — but the daemon opens no backend of its own today, so
+environment. LMDB's lock file would let one in, and heed opens with no flags beyond the
+verify opener's `READ_ONLY`, so the locking protocol is active — but the daemon opens no backend of its own today, so
 sharing is untested rather than known-safe. The tool takes no lock of its own: a lock that
 nothing else honours is worse than a documented precondition, because an operator would read
 it as protection.

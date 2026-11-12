@@ -1032,11 +1032,12 @@ fn indexed_event(index: u64) -> MigrationRow {
 }
 
 /// The two summary lines, parsed.
-fn summary(text: &str) -> (u64, u64, u64) {
+fn summary(text: &str) -> (u64, u64, u64, String) {
     let mut lines = text.lines();
     let first = lines.next().expect("the rows line");
     let second = lines.next().expect("the throughput line");
-    assert_eq!(lines.next(), None, "exactly two summary lines");
+    let third = lines.next().expect("the store line");
+    assert_eq!(lines.next(), None, "exactly three summary lines");
 
     let (rows_text, rest) = first
         .strip_prefix("Migrated ")
@@ -1048,10 +1049,16 @@ fn summary(text: &str) -> (u64, u64, u64) {
         .and_then(|rest| rest.strip_suffix(" events/s"))
         .expect("the throughput line's shape");
 
+    let store = third
+        .strip_prefix("Store: ")
+        .expect("the store line's shape")
+        .to_owned();
+
     (
         rows_text.parse().expect("a row count"),
         ms_text.parse().expect("a millisecond count"),
         rate_text.parse().expect("a rate"),
+        store,
     )
 }
 
@@ -1095,7 +1102,12 @@ async fn the_run_prints_a_rate_consistent_with_its_own_events_and_milliseconds()
     migrate::migrate_with(&StubSource::new(rows), &target, &options, &mut out)
         .await
         .expect("the copy succeeds");
-    let (rows, ms, rate) = summary(&output_text(out));
+    let (rows, ms, rate, store) = summary(&output_text(out));
+    assert_eq!(
+        store,
+        directory.path().join("lmdb").display().to_string(),
+        "the summary names where the copy landed"
+    );
 
     assert_eq!(rows, 1_000);
     assert!(
@@ -1998,4 +2010,100 @@ async fn a_manifest_that_counts_rows_over_a_store_without_them_is_refused() {
     let message = error.to_string();
     assert!(message.contains("counts 5 rows"), "{message}");
     assert!(message.contains(MigratedTable::Events.name()), "{message}");
+}
+
+// ---------------------------------------------------------------------------------------
+// The target and the manifest are not readable by anyone else.
+// ---------------------------------------------------------------------------------------
+
+// The manifest records the last key written per table, and for `invite_codes` that key is the
+// invite code itself - a bearer credential NIP-43 accepts. The store's files are heed's 0600, so
+// the manifest was the world-readable copy of it. The planted link is the second half: a
+// temporary path that already exists must not be written through and renamed into place.
+#[tokio::test]
+async fn the_manifest_is_private_and_its_temporary_path_is_not_followed() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+    let victim = directory.path().join("victim");
+    std::fs::write(&victim, b"not the manifest").expect("the victim file is written");
+    let temporary = directory.path().join("migration-manifest.json.tmp");
+    std::os::unix::fs::symlink(&victim, &temporary).expect("the link is planted");
+
+    migrate::migrate_with(
+        &StubSource::new(vec![MigrationRow::Event(event_record(1, "golden"))]),
+        &target,
+        &options(directory.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect("the copy succeeds");
+
+    assert_eq!(
+        std::fs::read(&victim).expect("the victim still reads"),
+        b"not the manifest",
+        "the planted link's target is untouched"
+    );
+    let manifest = std::fs::symlink_metadata(directory.path().join("migration-manifest.json"))
+        .expect("the manifest exists");
+    assert!(
+        !manifest.file_type().is_symlink(),
+        "the manifest is a file, not the link"
+    );
+    assert_eq!(
+        manifest.permissions().mode() & 0o777,
+        0o600,
+        "the manifest is readable by its owner alone"
+    );
+}
+
+// A group- or world-writable target lets another local user pre-place the store and read what
+// lands in it, so the copy refuses before opening anything.
+#[test]
+fn a_group_writable_target_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o777))
+        .expect("the target is made world-writable");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env("DB_URI", "not-a-url")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("writable by group or other"),
+        "the refusal says why: {stderr}"
+    );
+}
+
+// A symlinked target sends the copy somewhere the operator did not name.
+#[test]
+fn a_symlinked_target_is_refused() {
+    let root = tempfile::tempdir().expect("a temporary directory");
+    let real = root.path().join("real");
+    std::fs::create_dir(&real).expect("the real directory is made");
+    let link = root.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).expect("the link is planted");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(&link)
+        .env_clear()
+        .env("DB_URI", "not-a-url")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("is a symlink"), "{stderr}");
 }
