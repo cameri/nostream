@@ -88,7 +88,7 @@ resolver 3:
 | `nostream-relay` | connections, wire protocol, handlers, rate limiters, live dispatch, NIP-77 engine (the acceptor lives in `nostreamd`) |
 | `nostream-services` | payment processors and the invoice lifecycle, operator notifications, the web-of-trust graph, Tor, the scheduler and its workers, event import, NIP-66 monitors (#865) |
 | `nostream-admin` | admin API and auth |
-| `nostream-cli` | operator command line (`nostream-cli config validate`, `nostream-cli import`) |
+| `nostream-cli` | operator command line (`nostream-cli config validate`, `nostream-cli import`, `nostream-cli migrate pg-to-lmdb`) |
 | `nostreamd` | the daemon binary: runtime, telemetry, signals, the services composition root and the worker supervisor |
 
 - Every crate manifest repeats `version.workspace = true`, `edition.workspace = true`,
