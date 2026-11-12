@@ -1954,3 +1954,48 @@ async fn the_row_checksum_matches_an_independent_computation() {
         "the checksum an independent checker computes for this row"
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// A manifest that counts rows must find them in the store beside it.
+// ---------------------------------------------------------------------------------------
+
+// Asking about the store by its file tells a missing store from a present one, not a store the
+// run wrote from one that lost its tables: a `data.mdb` can be there with none of the nine
+// tables in it, and the copy would then add the remaining rows to a table that never held the
+// ones the manifest counts, reporting success over a store missing them.
+#[tokio::test]
+async fn a_manifest_that_counts_rows_over_a_store_without_them_is_refused() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+
+    let mut tables = serde_json::Map::new();
+    for table in MigratedTable::ALL {
+        let entry = if table.name() == MigratedTable::Events.name() {
+            json!({"rows": 5, "checksum": "ab".repeat(32), "after": "", "complete": false})
+        } else {
+            json!({"rows": 0, "checksum": "0".repeat(64), "after": "", "complete": false})
+        };
+        tables.insert(table.name().to_owned(), entry);
+    }
+    let fixture =
+        json!({"format": 1, "not_migrated": MigratedTable::NOT_MIGRATED, "tables": tables});
+    std::fs::write(
+        directory.path().join("migration-manifest.json"),
+        serde_json::to_vec(&fixture).expect("the fixture serialises"),
+    )
+    .expect("the fixture manifest is written");
+
+    let error = migrate::migrate_with(
+        &StubSource::new(source_rows()),
+        &target,
+        &options(directory.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("a store that never held the counted rows is refused");
+    let message = error.to_string();
+    assert!(message.contains("counts 5 rows"), "{message}");
+    assert!(message.contains(MigratedTable::Events.name()), "{message}");
+}

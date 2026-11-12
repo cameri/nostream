@@ -52,9 +52,11 @@ pub fn data_dir(root: &Path, backend: EventStoreBackend) -> Option<PathBuf> {
 ///   location before this environment is wired into settings.
 /// - **`NO_LOCK` requires self-managed concurrency; a broken lock file means
 ///   synchronization issues and possible UB** — split responsibility. The code guarantees
-///   its half: no env flags are passed (`EnvOpenOptions::new()` only), so `NO_LOCK` is
-///   never in play and this crate never reads, writes or removes the lock file. The
-///   operator must supply the rest: the data directory's lock file must not be broken.
+///   its half: the only flag it passes is `READ_ONLY`, for the verify opener, so `NO_LOCK`
+///   is never in play and LMDB's own locking runs. The lock file belongs to LMDB: this crate
+///   never reads, writes or removes it, and a read-only open recreates a missing `lock.mdb`
+///   beside `data.mdb`. The operator must supply the rest: the data directory's lock file
+///   must not be broken.
 /// - **One `map_size` per path for the life of the process** — upheld by heed + propagated:
 ///   heed's per-process `OPENED_ENV` registry returns the same `Env` for a second open with
 ///   equal options and `Error::BadOpenOptions` when they differ, and `open` surfaces that

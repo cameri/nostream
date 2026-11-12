@@ -1088,6 +1088,54 @@ mod tests {
         }
     }
 
+    /// A report the migration carried across must not be allocated again: the batch raises the
+    /// `reports.next_id` sequence past the largest id it wrote, so the next `create` continues
+    /// from there instead of colliding with a migrated row.
+    #[tokio::test]
+    async fn a_migrated_report_raises_the_sequence_the_next_create_uses() {
+        use crate::migration::{MigrationRow, MigrationTarget};
+        use crate::repositories::{NewReport, Report, ReportRepository, ReportType};
+
+        let directory = tempfile::tempdir().expect("tempdir");
+        let backend = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+        let migrated = Report {
+            id: 7,
+            event_id: nostream_core::EventId::from_byte_array([21; 32]),
+            reporter_pubkey: nostream_core::Pubkey::from_byte_array([22; 32]),
+            reported_pubkey: None,
+            reported_event_id: None,
+            report_type: ReportType::Spam,
+            weight: 1.0,
+            actionable: true,
+            created_at: chrono::Utc::now(),
+        };
+        MigrationTarget::write_batch(&backend, &[MigrationRow::Report(migrated)])
+            .await
+            .expect("the batch writes");
+
+        let created = ReportRepository::create(
+            &backend,
+            &NewReport {
+                event_id: nostream_core::EventId::from_byte_array([23; 32]),
+                reporter_pubkey: nostream_core::Pubkey::from_byte_array([24; 32]),
+                reported_pubkey: None,
+                reported_event_id: None,
+                report_type: ReportType::Spam,
+                weight: 1.0,
+                actionable: true,
+            },
+        )
+        .await
+        .expect("the report is created");
+
+        assert_eq!(
+            created.id, 8,
+            "the sequence continues past the migrated report"
+        );
+    }
+
     #[tokio::test]
     async fn the_store_reports_how_much_of_its_map_it_uses() {
         // The map never grows (LMDB_MAP_SIZE), so the approach to it is what an operator has to

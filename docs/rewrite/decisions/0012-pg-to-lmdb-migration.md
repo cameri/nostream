@@ -124,10 +124,13 @@ Two refusals guard the target, and they are the same judgement from two sides. A
 rows and carries no manifest is not this tool's: copying over it would leave the displaced rows'
 index entries behind, and verify reads the primary databases only, so the run refuses before it
 reads anything. A manifest that records progress — a row counted, a cursor moved, a table
-finished — is only meaningful beside the store that progress went into, so the run opens that
-store read-only first and refuses a missing one instead of creating it; a copy over an empty
-store would skip the tables already counted and exit 0 against a store missing every row the
-manifest claims. A manifest with no progress cannot have written a row, so a fresh store beside
+finished — is only meaningful beside the store that progress went into, so the run requires
+`data.mdb` to be a file there and refuses a missing one instead of creating it; a copy over an
+empty store would skip the tables already counted and exit 0 against a store missing every row
+the manifest claims. The file test cannot tell a store the run wrote from a truncated one that
+still has a `data.mdb`, so a second refusal covers that shape: a table the manifest counts rows
+for must hold at least one row, or the store beside the manifest is not the one the run wrote
+to. A manifest with no progress cannot have written a row, so a fresh store beside
 it is honest and the run starts one.
 
 ## The command surface (D6)

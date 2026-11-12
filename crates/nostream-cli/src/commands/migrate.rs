@@ -122,6 +122,32 @@ pub async fn migrate_with(
         )));
     }
 
+    // The same premise from the other side: a manifest that counts rows must find them. Asking
+    // about the store by its file tells a missing store from a present one, not a store this run
+    // wrote from one truncated, or written by something else, that still has a `data.mdb`. The
+    // copy would then add the remaining rows to a table that never held the ones the manifest
+    // counts, and report success over a store missing them; verify would catch it, but only if
+    // someone runs it. One row tells an empty table, and only counted tables are read.
+    if let Some(recorded) = &existing {
+        for table in MigratedTable::ALL {
+            let counted = recorded.get(table).rows;
+            if counted == 0 {
+                continue;
+            }
+            let held = target
+                .scan_batch(table, None, 1)
+                .await
+                .map_err(|error| table_failed(table, &error))?;
+            if held.is_empty() {
+                return Err(CliError::Migrate(format!(
+                    "{} counts {counted} rows and the store holds none: the store beside the \
+                     manifest is not the one the run wrote to",
+                    table.name()
+                )));
+            }
+        }
+    }
+
     // R6: written before the first `read_batch`, so a store this tool has begun to fill always
     // carries a manifest and a crash after the first batch resumes rather than being refused.
     if existing.is_none() {
