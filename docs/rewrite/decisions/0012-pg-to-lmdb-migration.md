@@ -110,6 +110,12 @@ temporary file and a rename. A crash between the two therefore replays at most o
 which is harmless because every write in it is a put of the source's own key and value: the
 same rows produce the same count and the same sum, so the merged entry is unchanged.
 
+For the first batch that replay has nothing to fall back on, so the run writes the manifest
+fresh before its first read: every table `rows: 0`, the zero checksum, `after: ""`,
+`complete: false`. A store this tool has begun to fill therefore always carries a manifest, and
+the refusal of a store that is not this tool's stays what it should be — a judgement about rows
+that appeared without one, not about a crash.
+
 ## The command surface (D6)
 
 `nostream-cli migrate pg-to-lmdb` takes `--target <DIR>`, `--batch-size <N>` and `--verify`,
@@ -118,6 +124,14 @@ would let a mistyped run write a store where none was meant, and verify needs it
 the manifest lives under it. `--batch-size` defaults to 1 000, the import's default, and its
 minimum is 1: a batch of zero would never advance a cursor. `--verify` copies nothing and
 reads only the target.
+
+Verify creates nothing, in the store or beside it. It requires `<target>/lmdb/data.mdb` to be a
+file before it opens anything, and opens through `LmdbBackend::open_existing`: a read-only
+environment, no `create_dir_all`, every database opened by name rather than created. The
+ordinary opener would answer a verify of a store that is not there with a fresh empty
+environment and nine short tables — a check that reports corruption it caused. heed's
+process-global registry answers `BadOpenOptions` for a second open of one path with different
+options, so a caller already holding the root writable drops that handle first.
 
 Exit codes are the CLI's own, from `CLI.md`: 0 on success, 2 for a usage error, 1 for every
 other failure, which is written to stderr as `Migration failed: {message}`. That message
