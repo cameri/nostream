@@ -191,7 +191,11 @@ impl Databases {
             dvm_jobs_by_status_created_at: open_named(env, txn, "dvm_jobs_by_status_created_at")?,
             reports: open_named(env, txn, "reports")?,
             reports_by_event_id: open_named(env, txn, "reports_by_event_id")?,
-            reports_actionable_by_created_at: open_named(env, txn, "reports_actionable_by_created_at")?,
+            reports_actionable_by_created_at: open_named(
+                env,
+                txn,
+                "reports_actionable_by_created_at",
+            )?,
             reports_actionable_event: open_named(env, txn, "reports_actionable_event")?,
             reports_actionable_pubkey: open_named(env, txn, "reports_actionable_pubkey")?,
             outbox: open_named(env, txn, "notification_outbox")?,

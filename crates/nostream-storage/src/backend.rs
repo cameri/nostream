@@ -103,10 +103,7 @@ impl LmdbEnv {
     /// heed's process-global registry answers `Error::BadOpenOptions` for a second open of one
     /// path with different options, so a caller that already holds this path writable must
     /// drop that handle first.
-    pub fn open_existing(
-        path: impl Into<PathBuf>,
-        map_size: usize,
-    ) -> Result<Self, StorageError> {
+    pub fn open_existing(path: impl Into<PathBuf>, map_size: usize) -> Result<Self, StorageError> {
         let path = path.into();
 
         // # Safety: the preconditions on `LmdbEnv` above, each marked upheld or relied-on, and

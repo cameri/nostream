@@ -825,7 +825,11 @@ fn verify_creates_nothing_and_rejects_a_target_with_no_store_or_no_manifest() {
         )
         .await
         .expect("the copy succeeds");
-        let usage = target.map_usage().await.expect("the usage reads").used_bytes;
+        let usage = target
+            .map_usage()
+            .await
+            .expect("the usage reads")
+            .used_bytes;
         let mut counts = Vec::new();
         for table in MigratedTable::ALL {
             counts.push(scan_all(&target, table).await.len());
