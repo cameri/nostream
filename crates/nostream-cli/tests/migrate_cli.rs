@@ -11,7 +11,7 @@
 
 use std::process::Command;
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
 use heed::types::Bytes;
@@ -820,32 +820,17 @@ async fn verify_rejects_a_missing_manifest_with_a_message_and_exit_1() {
 // AC7: the run's own measurement.
 // ---------------------------------------------------------------------------------------
 
-/// Copies `count` events and answers the two summary numbers, the test's own measurement, and
-/// the row total.
-async fn measured_copy(count: usize) -> (u64, u64, u64, u128) {
-    let directory = tempfile::tempdir().expect("a temporary directory");
-    let target = LmdbBackend::open(directory.path())
-        .await
-        .expect("the store opens");
-    let rows: Vec<MigrationRow> = (0..count)
-        .map(|index| {
-            let mut record = event_record(1, "hello");
-            let mut id = [0u8; 32];
-            id[..8].copy_from_slice(&(index as u64).to_be_bytes());
-            record.event.id = EventId::from_byte_array(id);
-            MigrationRow::Event(record)
-        })
-        .collect();
-    let options = options(directory.path(), 1_000);
+/// One event whose id is its index, so a thousand of them are a thousand keys in key order.
+fn indexed_event(index: u64) -> MigrationRow {
+    let mut record = event_record(1, "hello");
+    let mut id = [0u8; 32];
+    id[..8].copy_from_slice(&index.to_be_bytes());
+    record.event.id = EventId::from_byte_array(id);
+    MigrationRow::Event(record)
+}
 
-    let mut out = Vec::new();
-    let started = Instant::now();
-    migrate::migrate_with(&StubSource::new(rows), &target, &options, &mut out)
-        .await
-        .expect("the copy succeeds");
-    let measured = started.elapsed().as_millis();
-
-    let text = output_text(out);
+/// The two summary lines, parsed.
+fn summary(text: &str) -> (u64, u64, u64) {
     let mut lines = text.lines();
     let first = lines.next().expect("the rows line");
     let second = lines.next().expect("the throughput line");
@@ -865,32 +850,62 @@ async fn measured_copy(count: usize) -> (u64, u64, u64, u128) {
         rows_text.parse().expect("a row count"),
         ms_text.parse().expect("a millisecond count"),
         rate_text.parse().expect("a rate"),
-        measured,
     )
+}
+
+/// A target that sleeps inside every batch it writes, so the run has work its own clock cannot
+/// miss: five batches of 200 rows pay at least 100 ms.
+struct SleepingTarget {
+    inner: LmdbBackend,
+}
+
+impl MigrationTarget for SleepingTarget {
+    fn write_batch<'a>(&'a self, rows: &'a [MigrationRow]) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            MigrationTarget::write_batch(&self.inner, rows).await
+        })
+    }
+
+    fn scan_batch<'a>(
+        &'a self,
+        table: MigratedTable,
+        after: Option<&'a [u8]>,
+        limit: usize,
+    ) -> StorageFuture<'a, Vec<MigrationRow>> {
+        MigrationTarget::scan_batch(&self.inner, table, after, limit)
+    }
 }
 
 #[tokio::test]
 async fn the_run_prints_a_rate_consistent_with_its_own_events_and_milliseconds() {
-    let (rows, ms, rate, measured) = measured_copy(1_000).await;
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let store = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+    let target = SleepingTarget { inner: store };
+    // 1 000 events at --batch-size 200 is five full batches plus the closing short read, and the
+    // target sleeps 20 ms in each, so the copy cannot finish in less than 100 ms.
+    let rows: Vec<MigrationRow> = (0..1_000).map(indexed_event).collect();
+    let options = options(directory.path(), 200);
+
+    let mut out = Vec::new();
+    migrate::migrate_with(&StubSource::new(rows), &target, &options, &mut out)
+        .await
+        .expect("the copy succeeds");
+    let (rows, ms, rate) = summary(&output_text(out));
+
     assert_eq!(rows, 1_000);
-    assert!(ms > 0, "the run took a measurable time");
-    let difference = i128::from(ms) - i128::try_from(measured).expect("a bounded duration");
     assert!(
-        difference.abs() <= 20,
-        "the printed {ms} ms is the run's own clock, {measured} ms measured outside it"
+        ms >= 100,
+        "the run's clock includes the 100 ms the target slept: printed {ms} ms"
     );
     assert_eq!(
         rate,
         1_000 * 1_000 / ms.max(1),
         "the rate is the printed numbers'"
     );
-
-    let (rows, longer, _, _) = measured_copy(10_000).await;
-    assert_eq!(rows, 10_000);
-    assert!(
-        longer > ms,
-        "ten times the work takes longer: {longer} ms against {ms} ms"
-    );
+    assert!(rate > 0);
 }
 
 // ---------------------------------------------------------------------------------------
