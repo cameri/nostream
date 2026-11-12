@@ -47,11 +47,28 @@ impl MigrationSource for PostgresBackend {
 }
 
 /// How a table's unique key is bound as a keyset cursor.
+///
+/// Each variant is the *column's* type, read from `migrations/`, not the shape the key looks
+/// like: `invoices.id` began as a `uuid` and was changed to `text`
+/// (`migrations/20230205004400_change_invoice_id_to_string.sql:1`), so a `::uuid` cast against
+/// it is rejected by the server on the second page. The table below is the audit.
+///
+/// | table | column | type |
+/// |---|---|---|
+/// | `dvm_jobs` | `id` | `bytea` |
+/// | `events` | `event_id` | `bytea` |
+/// | `invite_codes` | `code` | `varchar(64)` |
+/// | `invoices` | `id` | `text` |
+/// | `nip05_verifications` | `pubkey` | `bytea` |
+/// | `notification_delivery_log` | `id` | `uuid` |
+/// | `notification_outbox` | `id` | `uuid` |
+/// | `reports` | `id` | `serial` (`i32`) |
+/// | `users` | `pubkey` | `bytea` |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Cursor {
     /// A `bytea` key: the row's key bytes are the column's value.
     Bytes,
-    /// A `uuid` key: the row's key bytes are its canonical text.
+    /// A `uuid` key: the row's key bytes are its canonical text, cast back to the column's type.
     Uuid,
     /// A `text`/`varchar` key: the row's key bytes are the column's value.
     Text,
@@ -73,7 +90,8 @@ fn statement(
         MigratedTable::DvmJobs => (DVM_COLUMNS, "id", Cursor::Bytes),
         MigratedTable::Events => (EVENT_COLUMNS, "event_id", Cursor::Bytes),
         MigratedTable::InviteCodes => (INVITE_COLUMNS, "code", Cursor::Text),
-        MigratedTable::Invoices => (INVOICE_COLUMNS, "id", Cursor::Uuid),
+        // `text`, not `uuid`: `20230205004400_change_invoice_id_to_string.sql` altered it.
+        MigratedTable::Invoices => (INVOICE_COLUMNS, "id", Cursor::Text),
         MigratedTable::Nip05Verifications => (NIP05_COLUMNS, "pubkey", Cursor::Bytes),
         MigratedTable::NotificationDeliveryLog => (DELIVERY_LOG_COLUMNS, "id", Cursor::Uuid),
         MigratedTable::NotificationOutbox => (OUTBOX_COLUMNS, "id", Cursor::Uuid),
@@ -183,4 +201,84 @@ fn user(row: &PgRow) -> Result<MigrationRow, StorageError> {
         user: rows::user(row)?,
         tos_accepted_at: tos_accepted_at.map(crate::records::utc_from_naive),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    /// The statement one table composes when paging from `after`.
+    fn sql(table: MigratedTable, after: Option<&[u8]>) -> String {
+        statement(table, after, 2)
+            .expect("the statement composes")
+            .0
+    }
+
+    #[test]
+    fn the_first_page_of_every_table_binds_no_cursor() {
+        for table in MigratedTable::ALL {
+            let text = sql(table, None);
+            assert!(
+                !text.contains("WHERE"),
+                "{} pages from the first row: {text}",
+                table.name()
+            );
+            assert!(
+                text.ends_with("LIMIT $1"),
+                "{} binds its limit first: {text}",
+                table.name()
+            );
+        }
+    }
+
+    /// `invoices.id` was a `uuid` until `20230205004400_change_invoice_id_to_string.sql` made it
+    /// `text`; a `::uuid` cast on the cursor makes the second page a server-side type error.
+    #[test]
+    fn the_uuid_cursor_is_the_two_tables_the_schema_makes_uuid() {
+        let uuid = b"00000000-0000-4000-8000-000000000001";
+
+        let invoices = sql(MigratedTable::Invoices, Some(uuid));
+        assert!(invoices.contains("id > $1"), "{invoices}");
+        assert!(
+            !invoices.contains("::uuid"),
+            "invoices.id is text: {invoices}"
+        );
+
+        for table in [
+            MigratedTable::NotificationDeliveryLog,
+            MigratedTable::NotificationOutbox,
+        ] {
+            let text = sql(table, Some(uuid));
+            assert!(
+                text.contains("id > $1::uuid"),
+                "{} pages on a uuid column: {text}",
+                table.name()
+            );
+        }
+    }
+
+    #[test]
+    fn every_cursor_is_the_tables_own_key() {
+        assert!(sql(MigratedTable::Events, Some(&[7; 32])).contains("event_id > $1"));
+        assert!(sql(MigratedTable::Users, Some(&[7; 32])).contains("pubkey > $1"));
+        assert!(sql(MigratedTable::Nip05Verifications, Some(&[7; 32])).contains("pubkey > $1"));
+        assert!(sql(MigratedTable::DvmJobs, Some(&[0; 32])).contains("id > $1"));
+        assert!(sql(MigratedTable::InviteCodes, Some(b"code-1")).contains("code > $1"));
+        assert!(sql(MigratedTable::Reports, Some(&[0x80, 0x00, 0x00, 0x02])).contains("id > $1"));
+    }
+
+    #[test]
+    fn a_reports_cursor_is_undone_before_it_is_bound() {
+        assert_eq!(
+            int32_key(MigratedTable::Reports, &[0x80, 0x00, 0x00, 0x02]).unwrap(),
+            2
+        );
+        assert_eq!(
+            int32_key(MigratedTable::Reports, &[0x7f, 0xff, 0xff, 0xfd]).unwrap(),
+            -3
+        );
+        assert!(int32_key(MigratedTable::Reports, &[0x80]).is_err());
+    }
 }

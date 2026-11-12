@@ -143,9 +143,11 @@ async fn source_count(pool: &PgPool, table: MigratedTable) -> i64 {
         .expect("a count")
 }
 
-#[tokio::test]
-#[ignore = "needs PARITY_ADMIN_URL; the Rust Checks job sets it"]
-async fn a_seeded_source_copies_into_an_lmdb_store_that_matches_it() {
+/// A fresh scratch database with the schema applied.
+///
+/// The targets that use it run with `--test-threads=1` (CI and `scripts/storage-parity.sh`), so
+/// two of them never drop the database under each other.
+async fn scratch() -> PostgresBackend {
     let admin = PgPool::connect(&admin_url())
         .await
         .expect("the administrative database is reachable");
@@ -165,6 +167,13 @@ async fn a_seeded_source_copies_into_an_lmdb_store_that_matches_it() {
         .await
         .expect("the scratch database is reachable");
     source.migrate().await.expect("the schema migrates");
+    source
+}
+
+#[tokio::test]
+#[ignore = "needs PARITY_ADMIN_URL; the Rust Checks job sets it"]
+async fn a_seeded_source_copies_into_an_lmdb_store_that_matches_it() {
+    let source = scratch().await;
     seed(&source).await;
 
     let directory = tempfile::tempdir().expect("a temporary directory");
@@ -201,6 +210,87 @@ async fn a_seeded_source_copies_into_an_lmdb_store_that_matches_it() {
             "{} holds one row per source row after a second pass",
             table.name()
         );
+    }
+}
+
+/// Three rows at a batch size of two makes the second page real, which is the statement a wrong
+/// cursor type rejects: `invoices.id` is `text` since
+/// `migrations/20230205004400_change_invoice_id_to_string.sql` (so `id > $1::uuid` is a
+/// server-side type error), and the two notification tables' `id`s are `uuid`. Every page is read
+/// through the seam's own reader, so the assertion is on the SQL that reader composes.
+#[tokio::test]
+#[ignore = "needs PARITY_ADMIN_URL; the Rust Checks job sets it"]
+async fn every_text_and_uuid_cursor_pages_over_its_own_column_type() {
+    let source = scratch().await;
+    let pool = source.master();
+
+    for seed in 1..=3u8 {
+        let outbox_id = format!("40000000-0000-4000-8000-00000000000{seed}");
+        sqlx::query(
+            "INSERT INTO invoices (id, pubkey, bolt11, amount_requested, unit, status) \
+             VALUES ($1, $2, $3, 1000, 'msats', 'completed')",
+        )
+        .bind(format!("30000000-0000-4000-8000-00000000000{seed}"))
+        .bind(vec![4u8; 32])
+        .bind(format!("lnbc1page{seed}"))
+        .execute(pool)
+        .await
+        .expect("the invoice inserts");
+
+        sqlx::query(
+            "INSERT INTO notification_outbox (id, event_type, payload) \
+             VALUES ($1::uuid, 'invoice.paid', $2)",
+        )
+        .bind(&outbox_id)
+        .bind(serde_json::json!({ "seed": seed }))
+        .execute(pool)
+        .await
+        .expect("the outbox row inserts");
+
+        sqlx::query(
+            "INSERT INTO notification_delivery_log (id, outbox_id, event_type, target_id, \
+             target_type, status, attempt_number) \
+             VALUES ($1::uuid, $2::uuid, 'invoice.paid', 'telegram:7175022', 'telegram', \
+             'success', 1)",
+        )
+        .bind(format!("50000000-0000-4000-8000-00000000000{seed}"))
+        .bind(&outbox_id)
+        .execute(pool)
+        .await
+        .expect("the delivery-log row inserts");
+    }
+
+    for table in [
+        MigratedTable::Invoices,
+        MigratedTable::NotificationDeliveryLog,
+        MigratedTable::NotificationOutbox,
+    ] {
+        let first = MigrationSource::read_batch(&source, table, None, BATCH)
+            .await
+            .expect("the first page reads");
+        assert_eq!(first.len(), BATCH, "{} has a first page", table.name());
+        let cursor = first.last().expect("a row").key();
+
+        let second = MigrationSource::read_batch(&source, table, Some(&cursor), BATCH)
+            .await
+            .expect("the cursor binds as the column's own type");
+        assert_eq!(
+            second.len(),
+            1,
+            "{} pages past its first batch",
+            table.name()
+        );
+        assert!(
+            second[0].key() > cursor,
+            "{} pages in key order",
+            table.name()
+        );
+
+        let after = second.last().expect("a row").key();
+        let third = MigrationSource::read_batch(&source, table, Some(&after), BATCH)
+            .await
+            .expect("the third page reads");
+        assert!(third.is_empty(), "{} is exhausted", table.name());
     }
 }
 
