@@ -2263,6 +2263,29 @@ fn a_keyword_value_source_uri_is_refused_without_echoing_it() {
     );
 }
 
+// The check is stricter than sqlx in one direction only: `postgres:////` parses in sqlx to
+// `host=localhost`, and a cutover must not guess which server to copy from.
+#[test]
+fn a_uri_that_would_default_to_localhost_is_refused() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    for uri in ["postgres:/", "postgres://", "postgres:////"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+            .args(["migrate", "pg-to-lmdb", "--target"])
+            .arg(directory.path())
+            .env_clear()
+            .env("DB_URI", uri)
+            .output()
+            .expect("the binary runs");
+
+        assert_eq!(output.status.code(), Some(1), "{uri}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("is not a URL with a host"),
+            "{uri} is refused rather than sent to localhost: {stderr}"
+        );
+    }
+}
+
 // The refusal judges the shape only. sqlx dials a URL whose authority is empty when the query
 // names the host, and both of these reached the server before the refusal existed: `?host=` opens
 // a Unix socket, `?hostaddr=` dials the address given. A rule that read only the authority refused

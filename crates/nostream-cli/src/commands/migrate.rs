@@ -649,6 +649,10 @@ fn describe_source() -> Result<String, CliError> {
 /// the failure. Everything sqlx can dial is left alone, including the socket forms
 /// `postgres:///?host=/var/run/postgresql` and `postgres:///?hostaddr=127.0.0.1`, whose
 /// authority is empty by design.
+///
+/// Deliberately stricter than sqlx here, in the one direction that matters: `postgres:/`,
+/// `postgres://` and `postgres:////` all parse to `host=localhost`, and a cutover that guesses
+/// which server to copy from is worse than one that stops and says so.
 fn is_url_with_host(uri: &str) -> bool {
     let Some((scheme, rest)) = uri.split_once("://") else {
         return false;
