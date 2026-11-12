@@ -179,9 +179,10 @@ path. That is why the resume check asks whether `data.mdb` is there instead of o
 store read-only first: the writable open that follows would otherwise refuse the one case the
 check exists to allow.
 
-A re-run resumes wherever the manifest says the last one stopped; deleting
-`<target>/migration-manifest.json` starts a new copy, and the command's help and its refusal of
-a store the manifest counts rows for both say so.
+A re-run resumes wherever the manifest says the last one stopped. Deleting
+`<target>/migration-manifest.json` does not restart a half-filled store — a store that holds rows
+and no manifest is refused — so starting over takes a fresh `--target`, or the manifest and the
+store removed together; the command's help and its refusals say so.
 
 Exit codes are the CLI's own, from `CLI.md`: 0 on success, 2 for a usage error, 1 for every
 other failure, which is written to stderr as `Migration failed: {message}`. That message

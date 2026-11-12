@@ -211,17 +211,24 @@ impl PostgresBackend {
     /// during a cutover must not be able to stop it: `from_env` dials the replica when
     /// `READ_REPLICA_ENABLED=true` and fails if it cannot, which is right for the relay and
     /// wrong for a one-shot copy.
-    pub async fn master_only_from_env() -> Result<Self, StorageError> {
-        Self::master_only_from_lookup(&|name| env::var(name).ok()).await
+    pub fn master_only_from_env() -> Result<Self, StorageError> {
+        Self::master_only_from_lookup(&|name| env::var(name).ok())
     }
 
-    async fn master_only_from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
+    fn master_only_from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
     where
         F: Fn(&str) -> Option<String> + Sync,
     {
         let master = master_options(lookup)?;
-        let bounds = pool_bounds(lookup, "");
-        Self::with_pools(utc(master), bounds, None).await
+        // Nothing dials here. The run's first read is its probe, and the probe is what bounds
+        // the wait (`MIGRATION_CONNECT_BUDGET_MS`), so an unreachable source is reported in
+        // seconds rather than at the pool's sixty-second acquire timeout.
+        let master = lazy_pool(utc(master), &pool_bounds(lookup, ""));
+        Ok(Self {
+            master: master.clone(),
+            reader: master,
+            settings: None,
+        })
     }
 
     /// Opens the master pool and, only when a replica is configured, a second one; otherwise
@@ -295,6 +302,9 @@ async fn connected_pool(
 ) -> Result<PgPool, StorageError> {
     Ok(pool_options(bounds).connect_with(options).await?)
 }
+
+/// The longest a migration waits for the source to answer, in milliseconds.
+pub const MIGRATION_CONNECT_BUDGET_MS: u64 = 10_000;
 
 /// The master connection options: `DB_URI` when set, else the capture's `DB_*` parts.
 pub(crate) fn master_options<F>(lookup: &F) -> Result<PgConnectOptions, StorageError>
@@ -493,13 +503,9 @@ mod tests {
             "{error}"
         );
 
-        let error = PostgresBackend::master_only_from_lookup(&env)
-            .await
-            .expect_err("nothing listens on port 1");
-        assert!(
-            !matches!(error, StorageError::InvalidArgument { .. }),
-            "the replica settings are never read: {error}"
-        );
+        let backend = PostgresBackend::master_only_from_lookup(&env)
+            .expect("the replica settings are never read, and nothing dials here");
+        drop(backend);
     }
 
     #[test]

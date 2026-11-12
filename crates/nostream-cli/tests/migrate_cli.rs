@@ -1794,7 +1794,7 @@ fn a_manifest_that_records_progress_over_a_missing_store_is_refused() {
     );
     assert!(!store.exists(), "the refused run created nothing");
     assert!(
-        stderr.contains("start a new copy"),
+        stderr.contains("a fresh --target"),
         "the refusal names the remedy: {stderr}"
     );
 
@@ -2203,6 +2203,33 @@ fn a_query_string_password_is_not_printed() {
     );
 }
 
+// AC19 on the clock, not on a shortened timeout: the pool used to dial eagerly and spend its
+// sixty-second acquire timeout before the probe could report anything.
+#[test]
+fn an_unreachable_source_fails_in_seconds_at_the_default_timeout() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let started = std::time::Instant::now();
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env("DB_URI", "postgres://127.0.0.1:1/nostream")
+        .output()
+        .expect("the binary runs");
+
+    let elapsed = started.elapsed();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        elapsed < std::time::Duration::from_secs(25),
+        "a refused source is reported in seconds, not at the pool's minute: {elapsed:?}"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("127.0.0.1:1/nostream"),
+        "the failure names the source: {stderr}"
+    );
+}
+
 // AC20: the remedy is in the command's own help, not only in the behaviour.
 #[test]
 fn the_help_names_the_resume_and_the_restart() {
@@ -2285,4 +2312,31 @@ fn a_target_that_is_a_file_is_refused() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("is not a directory"), "{stderr}");
+}
+
+// A URI can be schemeless - libpq accepts `postgres:alice:secret@host:5432/db` - and the
+// redaction used to return any string without `://` untouched, so that shape printed the
+// password. The three removals now run before the scheme test.
+#[test]
+fn a_schemeless_source_uri_is_redacted() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env("DB_URI", "postgres:alice:secret@127.0.0.1:1/nostream")
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("secret"),
+        "the password is not printed: {stderr}"
+    );
+    assert!(
+        stderr.contains("127.0.0.1:1/nostream"),
+        "the host and database are still named: {stderr}"
+    );
 }

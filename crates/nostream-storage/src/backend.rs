@@ -23,8 +23,6 @@ pub const LMDB_DIR: &str = "lmdb";
 /// it: another name would be a different environment to every existing reader of the path.
 pub const LMDB_DATA_FILE: &str = "data.mdb";
 
-/// Resolves the data directory under `root` for one backend. A backend that keeps its data
-/// somewhere other than a directory of its own answers `None`.
 /// The store directory inside `root`: `<root>/lmdb`.
 ///
 /// One home for the shape, so the openers, the CLI's target check and its messages cannot
@@ -43,9 +41,11 @@ pub fn store_exists(root: &Path) -> bool {
     store_file(root).is_file()
 }
 
+/// Resolves the data directory under `root` for one backend. A backend that keeps its data
+/// somewhere other than a directory of its own answers `None`.
 pub fn data_dir(root: &Path, backend: EventStoreBackend) -> Option<PathBuf> {
     match backend {
-        EventStoreBackend::Lmdb => Some(root.join(LMDB_DIR)),
+        EventStoreBackend::Lmdb => Some(store_dir(root)),
         EventStoreBackend::Postgres => None,
     }
 }

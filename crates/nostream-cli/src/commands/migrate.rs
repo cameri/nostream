@@ -94,11 +94,9 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         let described = describe_source()?;
         // Master only: the copy reads the master and nothing else, so a replica that is down
         // during a cutover must not be able to stop it.
-        let source = PostgresBackend::master_only_from_env()
-            .await
-            .map_err(|error| {
-                CliError::Migrate(format!("could not read the source at {described}: {error}"))
-            })?;
+        let source = PostgresBackend::master_only_from_env().map_err(|error| {
+            CliError::Migrate(format!("could not read the source at {described}: {error}"))
+        })?;
         probe_source(&source, &described).await?;
         let target = open_target(&options.target).await?;
         migrate_with(&source, &target, &options, out).await
@@ -626,20 +624,27 @@ fn describe_source() -> Result<String, CliError> {
 /// A connection URI with its credentials dropped, so an error can name the source without
 /// printing a password - or a role - into a terminal's scrollback or a captured log.
 ///
-/// Three things go: the userinfo, the query string and the fragment. The userinfo because the
-/// message exists to name the host and database, and a role is neither; the query because it can
-/// carry `?password=`, and matching credential-shaped keys would miss a percent-encoded name.
-/// When a permission error is the problem, the server's own message names the role.
+/// The query string and the fragment go first, because either can carry `?password=` and
+/// neither is part of what identifies the source. Then everything up to the last `@`, which is
+/// the userinfo in a URL and the credentials in a schemeless string of the shape libpq accepts
+/// (`postgres:alice:secret@host:5432/db`) - the scheme test comes after both, so a string with
+/// no `://` is redacted too. Matching credential-shaped keys instead would miss a
+/// percent-encoded name, and when a permission error is the problem the server's own message
+/// names the role.
 fn without_credentials(uri: &str) -> String {
-    let Some((scheme, rest)) = uri.split_once("://") else {
-        return uri.to_owned();
+    let uri = uri.split('?').next().unwrap_or(uri);
+    let uri = uri.split('#').next().unwrap_or(uri);
+    let (scheme, rest) = match uri.split_once("://") {
+        Some((scheme, rest)) => (Some(scheme), rest),
+        None => (None, uri),
     };
-    let rest = rest.split('?').next().unwrap_or(rest);
-    let rest = rest.split('#').next().unwrap_or(rest);
     let rest = rest
         .rsplit_once('@')
         .map_or(rest, |(_userinfo, after)| after);
-    format!("{scheme}://{rest}")
+    match scheme {
+        Some(scheme) => format!("{scheme}://{rest}"),
+        None => rest.to_owned(),
+    }
 }
 
 /// Reads one row before the copy, so an unreachable source is reported as the source it is -
@@ -649,7 +654,9 @@ async fn probe_source(source: &PostgresBackend, described: &str) -> Result<(), C
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_millis)
-        .unwrap_or(Duration::from_secs(15));
+        .unwrap_or(Duration::from_millis(
+            nostream_storage::postgres::MIGRATION_CONNECT_BUDGET_MS,
+        ));
     match tokio::time::timeout(budget, source.read_batch(MigratedTable::ALL[0], None, 1)).await {
         Ok(Ok(_)) => Ok(()),
         Ok(Err(error)) => Err(CliError::Migrate(format!(
@@ -730,6 +737,40 @@ fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Re
             )));
         }
     }
+    // The data file itself, which `is_file()` and LMDB both follow: a link there would let the
+    // copy read or write through it, and heed creates `lock.mdb` beside whatever it resolves to.
+    // A predicate over the file's own metadata is the only way to see that.
+    let store = nostream_storage::backend::store_file(&options.target);
+    match fs::symlink_metadata(&store) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                return Err(CliError::Migrate(format!(
+                    "{} is a symlink: the store's data file must be a regular file",
+                    store.display()
+                )));
+            }
+            if !metadata.is_file() {
+                return Err(CliError::Migrate(format!(
+                    "{} is not a regular file: the store's data file must be one",
+                    store.display()
+                )));
+            }
+            if let Some(caller) = caller
+                && metadata.uid() != caller
+            {
+                return Err(CliError::Migrate(format!(
+                    "{} is owned by uid {}, not by the user running the copy ({caller})",
+                    store.display(),
+                    metadata.uid()
+                )));
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(CliError::Migrate(format!("{}: {error}", store.display())));
+        }
+    }
+
     Ok(())
 }
 
@@ -744,7 +785,14 @@ fn no_manifest(target: &Path, out: &mut dyn Write) -> Result<CommandOutput, CliE
 
 /// The line and exit code a verify answers when the target has a manifest but no store.
 fn no_store(options: &MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
-    writeln!(out, "No store at {}", store_path(options).display()).map_err(write_failed)?;
+    writeln!(
+        out,
+        "No store at {}: a re-run resumes once the store is back. To start over, use a fresh \
+         --target, or remove {} and the store together",
+        store_path(options).display(),
+        manifest_path(&options.target).display()
+    )
+    .map_err(write_failed)?;
     Ok(CommandOutput {
         lines: Vec::new(),
         exit_code: 1,
@@ -809,7 +857,7 @@ fn check_resume_store(
     if existing.is_some_and(|manifest| manifest.records_progress()) && !store_present(options) {
         return Err(CliError::Migrate(format!(
             "No store at {}: the manifest records progress, so a re-run resumes once the store is \
-             back; delete {} to start a new copy",
+             back. To start over, use a fresh --target, or remove {} and the store together",
             store_path(options).display(),
             manifest_path(&options.target).display()
         )));
@@ -857,6 +905,30 @@ fn write_failed(error: std::io::Error) -> CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A link where the data file belongs is followed by `is_file()` and by LMDB both, so the
+    /// copy would read or write through it and heed would put `lock.mdb` beside the link's
+    /// target. The predicate over the file's own metadata is what AC18 asks for.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn a_symlinked_data_file_is_refused() {
+        let directory = tempfile::tempdir().expect("a temporary directory");
+        let store = directory.path().join("lmdb");
+        fs::create_dir(&store).expect("the store directory is made");
+        let elsewhere = directory.path().join("elsewhere");
+        fs::write(&elsewhere, b"not a store").expect("the target file is written");
+        std::os::unix::fs::symlink(&elsewhere, store.join("data.mdb"))
+            .expect("the link is planted");
+
+        let options = MigrateOptions {
+            target: directory.path().to_path_buf(),
+            batch_size: 1_000,
+            verify: true,
+        };
+        let error = refuse_unsafe_target_for(&options, effective_uid())
+            .expect_err("a linked data file is refused");
+        assert!(error.to_string().contains("is a symlink"), "{error}");
+    }
 
     /// The directory's owner decides whether it can be swapped for another one, and it is
     /// checked against the caller rather than the mode. Measured as if a different uid were
