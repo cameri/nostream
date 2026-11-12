@@ -84,10 +84,23 @@ pub async fn migrate_with(
     options: &MigrateOptions,
     out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
-    let mut manifest = match read_manifest(&options.target)? {
-        Some(manifest) => manifest,
-        None => Manifest::fresh(),
-    };
+    let existing = read_manifest(&options.target)?;
+    let mut manifest = existing.clone().unwrap_or_else(Manifest::fresh);
+
+    // A store that already holds rows and carries no manifest is not this tool's. Copying over
+    // one leaves the displaced rows' index entries behind — a completed invoice keeps its
+    // `invoices_pending` entry — and verify scans the primary databases only, so it could never
+    // report them (R7).
+    if existing.is_none()
+        && let Some(table) = first_occupied_table(target).await?
+    {
+        return Err(CliError::Migrate(format!(
+            "{} already holds rows ({}): an empty target, or one that carries a manifest, is required",
+            options.target.display(),
+            table.name()
+        )));
+    }
+
     if manifest.complete() {
         return verify_with(target, options, out).await;
     }
@@ -398,6 +411,23 @@ fn no_manifest(target: &Path, out: &mut dyn Write) -> Result<CommandOutput, CliE
         lines: Vec::new(),
         exit_code: 1,
     })
+}
+
+/// The first table of a manifest-less target that already holds a row, if any: one row read per
+/// table, which is the probe R7 asks for.
+async fn first_occupied_table(
+    target: &dyn MigrationTarget,
+) -> Result<Option<MigratedTable>, CliError> {
+    for table in MigratedTable::ALL {
+        let rows = target
+            .scan_batch(table, None, 1)
+            .await
+            .map_err(|error| table_failed(table, &error))?;
+        if !rows.is_empty() {
+            return Ok(Some(table));
+        }
+    }
+    Ok(None)
 }
 
 /// Opens the store a run reads or writes.

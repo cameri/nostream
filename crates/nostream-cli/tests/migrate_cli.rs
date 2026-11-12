@@ -1069,6 +1069,86 @@ async fn a_refused_row_stops_the_run_and_keeps_the_resume_point() {
     );
 }
 
+// ---------------------------------------------------------------------------------------
+// AC16: a target that already holds rows and carries no manifest.
+// ---------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_target_with_rows_and_no_manifest_is_refused() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+
+    // Three rows in one table, through the seam's own write, and no manifest anywhere.
+    let seeded: Vec<MigrationRow> = (1..=3)
+        .map(|seed| MigrationRow::Event(event_record(seed, "seeded")))
+        .collect();
+    assert_eq!(
+        target.write_batch(&seeded).await.expect("the seed writes"),
+        3
+    );
+    let manifest = directory.path().join("migration-manifest.json");
+    assert!(!manifest.exists(), "the seed writes no manifest");
+
+    let source = StubSource::new(source_rows());
+    let error = migrate::migrate_with(
+        &source,
+        &target,
+        &options(directory.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("a target with rows and no manifest is refused");
+    assert!(
+        matches!(error, nostream_cli::CliError::Migrate(_)),
+        "a migration failure is the variant `main` prints as `Migration failed:` and exits 1 for"
+    );
+    let message = error.to_string();
+    assert!(message.contains("already holds rows"), "{message}");
+    assert!(
+        message.contains(&directory.path().display().to_string()),
+        "the message names the target: {message}"
+    );
+    assert_eq!(source.calls().len(), 0, "nothing was read");
+    assert_eq!(
+        scan_all(&target, MigratedTable::Events).await.len(),
+        3,
+        "the seeded rows are untouched"
+    );
+    for table in MigratedTable::ALL {
+        if table == MigratedTable::Events {
+            continue;
+        }
+        assert_eq!(
+            scan_all(&target, table).await.len(),
+            0,
+            "{} is untouched",
+            table.name()
+        );
+    }
+    assert!(!manifest.exists(), "no manifest was written");
+
+    // The control: the same source into an empty directory proceeds.
+    let empty = tempfile::tempdir().expect("a temporary directory");
+    let clean = LmdbBackend::open(empty.path())
+        .await
+        .expect("the store opens");
+    let output = migrate::migrate_with(
+        &StubSource::new(source_rows()),
+        &clean,
+        &options(empty.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect("an empty target proceeds");
+    assert_eq!(output.exit_code, 0);
+    assert!(
+        empty.path().join("migration-manifest.json").exists(),
+        "the control run wrote its manifest"
+    );
+}
+
 /// The process boundary the two failure tests above stop at: `main` prints
 /// `Migration failed: {message}` and exits 1. No source is reachable here, so the run fails on
 /// the way to the copy, which is the same arm.
