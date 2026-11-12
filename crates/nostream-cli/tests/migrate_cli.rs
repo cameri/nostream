@@ -2203,8 +2203,10 @@ fn a_query_string_password_is_not_printed() {
     );
 }
 
-// AC19 on the clock, not on a shortened timeout: the pool used to dial eagerly and spend its
-// sixty-second acquire timeout before the probe could report anything.
+// The probe reports the driver's own reason at once. This test proves the *message* and that the
+// fast path is taken at the shipped timeout; it cannot see the cap, because a refused port
+// answers in milliseconds whatever the bound is - the cap is what turns a black-holed host into
+// ten seconds, and `#1122` carries that measurement. Inverting the cap leaves this test green.
 #[test]
 fn an_unreachable_source_fails_in_seconds_at_the_default_timeout() {
     let directory = tempfile::tempdir().expect("a temporary directory");
@@ -2233,6 +2235,87 @@ fn an_unreachable_source_fails_in_seconds_at_the_default_timeout() {
     assert!(
         !stderr.contains("pool timed out"),
         "the driver's reason is what prints, not the pool's acquire message: {stderr}"
+    );
+}
+
+// A libpq keyword string has no userinfo to strip, so an echo of what was set would print the
+// password. The refusal names the shape and nothing else.
+#[test]
+fn a_keyword_value_source_uri_is_refused_without_echoing_it() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env("DB_URI", "host=127.0.0.1 port=1 user=alice password=s3cret")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("is not a URL with a host"),
+        "the refusal names the shape: {stderr}"
+    );
+    assert!(
+        !stderr.contains("s3cret"),
+        "nothing of the value is echoed: {stderr}"
+    );
+}
+
+// The refusal judges the shape only. sqlx dials a URL whose authority is empty when the query
+// names the host, and both of these reached the server before the refusal existed: `?host=` opens
+// a Unix socket, `?hostaddr=` dials the address given. A rule that read only the authority refused
+// them, so a relay whose Postgres listens on a socket could no longer be migrated at all.
+#[test]
+fn a_socket_source_uri_is_not_refused() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        // A socket that does not exist here: the point is the shape, not the connection.
+        .env(
+            "DB_URI",
+            "postgres:///?host=/var/run/postgresql&dbname=nostream",
+        )
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("is not a URL with a host"),
+        "a socket source is dialled, not refused: {stderr}"
+    );
+}
+
+#[test]
+fn a_hostaddr_source_uri_is_dialled() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        // Port 1 is refused: the failure has to come from the dial, not from the shape check.
+        .env(
+            "DB_URI",
+            "postgres:///?hostaddr=127.0.0.1&port=1&dbname=nostream",
+        )
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("is not a URL with a host"),
+        "a hostaddr source is dialled, not refused: {stderr}"
+    );
+    assert!(
+        stderr.contains("Connection refused"),
+        "the address in the query is the one dialled: {stderr}"
     );
 }
 

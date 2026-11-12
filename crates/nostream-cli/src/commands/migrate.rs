@@ -616,11 +616,13 @@ fn describe_source() -> Result<String, CliError> {
         // server, and a failure echoes the database name - which for a libpq-style string is
         // the credentials. The shape is refused before anything is dialled.
         if !is_url_with_host(&uri) {
-            return Err(CliError::Migrate(format!(
-                "DB_URI is not a URL with a host ({}): use postgres://user:password@host:5432/\
-                 database",
-                without_credentials(&uri)
-            )));
+            // The value is not echoed: a libpq keyword string (`host=… password=…`) has no
+            // userinfo to strip, so any echo of what was set would print it.
+            return Err(CliError::Migrate(
+                "DB_URI is not a URL with a host: use postgres://user:password@host:5432/database, \
+                 or postgres:///?host=/var/run/postgresql for a socket"
+                    .into(),
+            ));
         }
         return Ok(format!("{} (from DB_URI)", without_credentials(&uri)));
     }
@@ -638,7 +640,15 @@ fn describe_source() -> Result<String, CliError> {
     }
 }
 
-/// Whether `uri` is `scheme://host[:port][/path]` with a host to dial.
+/// Whether `uri` is a URL sqlx can dial: `scheme://`, with either an authority or a query that
+/// names the host.
+///
+/// Only the *shape* is judged. A refused string is one with no `://` at all, because sqlx treats
+/// it as a URL with no base: the opaque path becomes the database name and the host falls back to
+/// localhost, so the copy dials the wrong server and echoes the string - credentials and all - in
+/// the failure. Everything sqlx can dial is left alone, including the socket forms
+/// `postgres:///?host=/var/run/postgresql` and `postgres:///?hostaddr=127.0.0.1`, whose
+/// authority is empty by design.
 fn is_url_with_host(uri: &str) -> bool {
     let Some((scheme, rest)) = uri.split_once("://") else {
         return false;
@@ -646,12 +656,23 @@ fn is_url_with_host(uri: &str) -> bool {
     if scheme.is_empty() {
         return false;
     }
+    // The authority ends at the first `/`, `?` or `#`; everything after it is path and query.
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
     let host = authority
         .rsplit_once('@')
         .map_or(authority, |(_userinfo, host)| host);
-    let host = host.split(':').next().unwrap_or_default();
-    !host.is_empty()
+    if !host.is_empty() {
+        return true;
+    }
+    // The socket forms carry no authority: the host is a query parameter.
+    rest.split_once('?').is_some_and(|(_path, query)| {
+        query.split('&').any(|pair| {
+            matches!(
+                pair.split('=').next().unwrap_or_default(),
+                "host" | "hostaddr"
+            )
+        })
+    })
 }
 
 /// A connection URI with its credentials dropped, so an error can name the source without
