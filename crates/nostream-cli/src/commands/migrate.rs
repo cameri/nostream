@@ -390,9 +390,7 @@ impl RowSum {
         hasher.update(&canonical);
         let digest = hasher.finalize();
         let (words, _) = digest.as_chunks::<8>();
-        for (limb, word) in self.0.iter_mut().zip(words) {
-            *limb = limb.wrapping_add(u64::from_be_bytes(*word));
-        }
+        sum_words(&mut self.0, words);
         Ok(())
     }
 
@@ -420,6 +418,24 @@ impl RowSum {
             *word = limb.to_be_bytes();
         }
         hex::encode(bytes)
+    }
+}
+
+/// Adds four big-endian words into a 256-bit limb sum, modulo 2^256.
+///
+/// The manifest documents the checksum as the sum of the row digests modulo 2^256
+/// (`docs/rewrite/decisions/0012-pg-to-lmdb-migration.md`). Adding the four words
+/// independently is a different number whenever a limb wraps, and an independent checker
+/// written from the documentation would compute a checksum this tool calls wrong, so the
+/// carry has to cross the word boundary. Limb 3 is the least significant — `to_hex` writes
+/// limb 0 first — so the carry runs from index 3 up to 0, and the carry out of the top limb
+/// is dropped, which is what makes the result the sum modulo 2^256.
+fn sum_words(limbs: &mut [u64; 4], words: &[[u8; 8]]) {
+    let mut carry = 0u128;
+    for (index, word) in words.iter().enumerate().rev() {
+        let sum = u128::from(limbs[index]) + u128::from(u64::from_be_bytes(*word)) + carry;
+        limbs[index] = sum as u64;
+        carry = sum >> 64;
     }
 }
 
@@ -492,10 +508,35 @@ fn write_manifest(target: &Path, manifest: &Manifest) -> Result<(), CliError> {
     let temporary = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(manifest)
         .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
-    fs::write(&temporary, &bytes)
+
+    // The rename is the commit point, so it needs both halves of the durability it implies:
+    // the bytes on disk before the name moves, and the directory entry durable after it.
+    // Without the file sync, a power loss can leave the new name pointing at a truncated
+    // manifest; `read_manifest` then refuses it, and the nonempty-target rule refuses to
+    // migrate over the store it describes, so the operator's only way forward is a discard.
+    let mut file = fs::File::create(&temporary)
         .map_err(|error| CliError::Migrate(format!("{}: {error}", temporary.display())))?;
+    file.write_all(&bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|error| CliError::Migrate(format!("{}: {error}", temporary.display())))?;
+    drop(file);
+
     fs::rename(&temporary, &path)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))
+        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+    sync_directory_of(&path)
+}
+
+/// Makes a rename inside a directory durable.
+///
+/// A rename changes the directory, not the file, and an unsynced directory can lose that
+/// entry on power loss even though the file's own content was synced.
+fn sync_directory_of(path: &Path) -> Result<(), CliError> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let directory = fs::File::open(parent)
+        .map_err(|error| CliError::Migrate(format!("{}: {error}", parent.display())))?;
+    directory
+        .sync_all()
+        .map_err(|error| CliError::Migrate(format!("{}: {error}", parent.display())))
 }
 
 /// The line and exit code a verify answers when the target has no manifest.
@@ -590,4 +631,51 @@ fn decode_key(text: &str) -> Result<Option<Vec<u8>>, CliError> {
 /// A write failure is an error, not a success with nothing delivered.
 fn write_failed(error: std::io::Error) -> CliError {
     CliError::Migrate(format!("unable to write the migration's output: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The documented checksum is the sum modulo 2^256, so a wrap in the least significant
+    /// limb carries into the one above it. Adding the four words independently — which is
+    /// what this replaced — gives a different number whenever a limb wraps, and a checker
+    /// written from the documentation would then disagree with the tool.
+    #[test]
+    fn a_wrapped_limb_carries_into_the_next_one() {
+        let mut limbs = [0u64, 0, 0, u64::MAX];
+        let words = [[0u8; 8], [0u8; 8], [0u8; 8], 1u64.to_be_bytes()];
+
+        sum_words(&mut limbs, &words);
+
+        assert_eq!(
+            limbs,
+            [0, 0, 1, 0],
+            "the carry left the least significant limb"
+        );
+    }
+
+    /// The carry out of the most significant limb is dropped, which is the `modulo 2^256` in
+    /// the documented definition: four saturated limbs plus one sum to zero, not to a carry.
+    #[test]
+    fn the_carry_out_of_the_top_limb_is_dropped() {
+        let mut limbs = [u64::MAX, u64::MAX, u64::MAX, u64::MAX];
+        let words = [[0u8; 8], [0u8; 8], [0u8; 8], 1u64.to_be_bytes()];
+
+        sum_words(&mut limbs, &words);
+
+        assert_eq!(limbs, [0, 0, 0, 0], "the sum wraps at 2^256");
+    }
+
+    /// Limb 0 is the most significant, because `to_hex` writes it first; a word added into
+    /// it must land there and not at the other end.
+    #[test]
+    fn the_first_word_is_the_most_significant_limb() {
+        let mut limbs = [0u64; 4];
+        let words = [1u64.to_be_bytes(), [0u8; 8], [0u8; 8], [0u8; 8]];
+
+        sum_words(&mut limbs, &words);
+
+        assert_eq!(limbs, [1, 0, 0, 0]);
+    }
 }

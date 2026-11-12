@@ -106,7 +106,11 @@ count and the sum from the entry.
 
 The store commit and the manifest write cannot share a transaction through the public
 surface, so the batch is committed first and the manifest is replaced atomically second — a
-temporary file and a rename. A crash between the two therefore replays at most one batch,
+temporary file, synced before the rename, and the directory synced after it. Both syncs are
+load-bearing: a rename is durable only when the directory entry is on disk, and a manifest
+that survives as a name pointing at a truncated file is worse than a missing one, because
+`read_manifest` refuses it and the target refusal below then blocks the store it describes.
+A crash between the two therefore replays at most one batch,
 which is harmless because every write in it is a put of the source's own key and value: the
 same rows produce the same count and the same sum, so the merged entry is unchanged.
 

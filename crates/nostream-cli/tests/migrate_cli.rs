@@ -1822,6 +1822,9 @@ fn a_failed_run_reports_migration_failed_and_exits_1() {
         .args(["migrate", "pg-to-lmdb", "--target"])
         .arg(directory.path())
         .env("DB_URI", "postgres://127.0.0.1:1/nostream")
+        // Nothing listens on port 1, so the failure is immediate; without this the pool still
+        // retries to the 60 s acquire timeout, and this one test would be a minute of every run.
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
         .output()
         .expect("the binary runs");
 
