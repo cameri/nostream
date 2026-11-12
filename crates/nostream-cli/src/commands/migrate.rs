@@ -871,8 +871,14 @@ mod tests {
             batch_size: 1_000,
             verify: false,
         };
-        let error = refuse_unsafe_target_for(&options, Some(0))
-            .expect_err("uid 0 does not own this directory");
+        // Not uid 0 by assumption: a suite running as root creates a root-owned tempdir, and
+        // the refusal then has nothing to refuse.
+        let owner = std::fs::symlink_metadata(directory.path())
+            .expect("the directory's metadata")
+            .uid();
+        let other = if owner == 0 { 1 } else { 0 };
+        let error = refuse_unsafe_target_for(&options, Some(other))
+            .expect_err("a uid that does not own this directory is refused");
         assert!(error.to_string().contains("is owned by uid"), "{error}");
         assert!(
             refuse_unsafe_target_for(&options, effective_uid()).is_ok(),
