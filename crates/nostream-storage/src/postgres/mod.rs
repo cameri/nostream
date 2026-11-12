@@ -205,6 +205,25 @@ impl PostgresBackend {
         Self::with_pools(utc(master), bounds, replica).await
     }
 
+    /// Connects the master pool only, reading none of the replica settings.
+    ///
+    /// The migration copies from the master and nothing else, so a replica that is offline
+    /// during a cutover must not be able to stop it: `from_env` dials the replica when
+    /// `READ_REPLICA_ENABLED=true` and fails if it cannot, which is right for the relay and
+    /// wrong for a one-shot copy.
+    pub async fn master_only_from_env() -> Result<Self, StorageError> {
+        Self::master_only_from_lookup(&|name| env::var(name).ok()).await
+    }
+
+    async fn master_only_from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
+    where
+        F: Fn(&str) -> Option<String> + Sync,
+    {
+        let master = master_options(lookup)?;
+        let bounds = pool_bounds(lookup, "");
+        Self::with_pools(utc(master), bounds, None).await
+    }
+
     /// Opens the master pool and, only when a replica is configured, a second one; otherwise
     /// the reader is the master pool, as `src/database/client.ts:97-100` returns it.
     async fn with_pools(
@@ -454,6 +473,33 @@ mod tests {
     fn a_bad_port_is_an_invalid_argument() {
         let error = master_parts(&lookup(&[("DB_PORT", "eighty")])).expect_err("a bad port");
         assert!(matches!(error, StorageError::InvalidArgument { .. }));
+    }
+
+    /// A replica that is offline, or misconfigured, must not be able to stop a one-shot copy
+    /// that reads the master alone.
+    #[tokio::test]
+    async fn a_master_only_backend_reads_none_of_the_replica_settings() {
+        let env = lookup(&[
+            ("DB_URI", "postgres://127.0.0.1:1/nostream"),
+            ("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000"),
+            ("READ_REPLICA_ENABLED", "true"),
+            ("READ_REPLICAS", "0"),
+        ]);
+        let error = PostgresBackend::from_lookup(&env)
+            .await
+            .expect_err("a zero replica count is refused before any dial");
+        assert!(
+            matches!(error, StorageError::InvalidArgument { .. }),
+            "{error}"
+        );
+
+        let error = PostgresBackend::master_only_from_lookup(&env)
+            .await
+            .expect_err("nothing listens on port 1");
+        assert!(
+            !matches!(error, StorageError::InvalidArgument { .. }),
+            "the replica settings are never read: {error}"
+        );
     }
 
     #[test]

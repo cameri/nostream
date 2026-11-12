@@ -2218,8 +2218,8 @@ fn the_help_names_the_resume_and_the_restart() {
         "the help says a re-run resumes: {help}"
     );
     assert!(
-        help.contains("starts a new copy"),
-        "and how to start over: {help}"
+        help.contains("fresh `--target`"),
+        "and what starting over actually takes: {help}"
     );
     assert!(
         help.contains("relay must be stopped"),

@@ -92,9 +92,13 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         // copy whatever that happens to hold, and one whose host is down would report the
         // pool's acquire timeout a minute later instead of the database it could not reach.
         let described = describe_source()?;
-        let source = PostgresBackend::from_env().await.map_err(|error| {
-            CliError::Migrate(format!("could not read the source at {described}: {error}"))
-        })?;
+        // Master only: the copy reads the master and nothing else, so a replica that is down
+        // during a cutover must not be able to stop it.
+        let source = PostgresBackend::master_only_from_env()
+            .await
+            .map_err(|error| {
+                CliError::Migrate(format!("could not read the source at {described}: {error}"))
+            })?;
         probe_source(&source, &described).await?;
         let target = open_target(&options.target).await?;
         migrate_with(&source, &target, &options, out).await

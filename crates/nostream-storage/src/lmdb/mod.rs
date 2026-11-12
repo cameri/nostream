@@ -1136,6 +1136,24 @@ mod tests {
         );
     }
 
+    /// The store directory holds the whole dataset, so it is the owner's alone: heed writes the
+    /// files 0600, and a directory the umask left group-writable would both widen the audience
+    /// and be refused by the migration's own target check on the next run.
+    #[tokio::test]
+    async fn the_store_directory_is_the_owners_alone() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().expect("tempdir");
+        let root = directory.path().join("store");
+        LmdbBackend::open(&root).await.expect("the store opens");
+        let mode = std::fs::metadata(crate::backend::store_dir(&root))
+            .expect("the store directory exists")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700, "group and other have no access");
+    }
+
     #[tokio::test]
     async fn the_store_reports_how_much_of_its_map_it_uses() {
         // The map never grows (LMDB_MAP_SIZE), so the approach to it is what an operator has to

@@ -1,6 +1,7 @@
 //! Backend selection and the LMDB environment. Mirrors `src/utils/event-store.ts` (the
 //! selection half) and the storage boundary in `src/@types/adapters.ts`.
 
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
 use nostream_core::EventStoreBackend;
@@ -93,10 +94,18 @@ impl LmdbEnv {
     /// for the backend's named databases and its reader slots.
     pub fn open(path: impl Into<PathBuf>, map_size: usize) -> Result<Self, StorageError> {
         let path = path.into();
-        std::fs::create_dir_all(&path).map_err(|source| StorageError::CreateDirectory {
-            path: path.clone(),
-            source,
-        })?;
+        // 0700, not the umask's answer: the directory holds a relay's whole dataset, and on a
+        // host whose umask is 002 `create_dir_all` leaves it group-writable, which is both a
+        // wider audience than the store's own 0600 files and something the migration's target
+        // check refuses on the next run.
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&path)
+            .map_err(|source| StorageError::CreateDirectory {
+                path: path.clone(),
+                source,
+            })?;
         let env = Self::open_with(&path, map_size, EnvFlags::empty())?;
         Ok(Self { env, path })
     }

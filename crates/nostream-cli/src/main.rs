@@ -99,10 +99,11 @@ enum MigrateCommand {
     /// The source is Postgres from `DB_URI`, else the `DB_*` parts. The target is a store root:
     /// the environment is `<DIR>/lmdb` and the manifest `<DIR>/migration-manifest.json`.
     ///
-    /// A re-run resumes where the manifest says the last one stopped; deleting
-    /// `<DIR>/migration-manifest.json` starts a new copy. Nothing may write to either store
-    /// while a run is in progress, so the relay must be stopped on both before the first batch
-    /// is read.
+    /// A re-run resumes where the manifest says the last one stopped. Deleting
+    /// `<DIR>/migration-manifest.json` does not restart a half-filled store: a store that holds
+    /// rows and no manifest is refused, so starting over takes a fresh `--target`, or the
+    /// manifest and the store removed together. Nothing may write to either store while a run
+    /// is in progress, so the relay must be stopped on both before the first batch is read.
     PgToLmdb {
         /// The store root (the environment lives under `<DIR>/lmdb`).
         #[arg(long, value_name = "DIR")]
