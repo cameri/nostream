@@ -1,6 +1,7 @@
 #!/bin/sh
-# The storage-parity oracle: the 37 sqlx migrations, the differential 51-method replay and the
-# unmodified TypeScript relay's Cucumber suite, all against databases this script creates.
+# The storage-parity oracle: the 37 sqlx migrations, the differential 51-method replay, the
+# Postgres-to-LMDB migration and the unmodified TypeScript relay's Cucumber suite, all against
+# databases this script creates.
 #
 # Usage: scripts/storage-parity.sh
 #
@@ -285,6 +286,11 @@ echo "== behavioural parity"
     cargo test -p nostream-storage --test parity -- --ignored --test-threads=1 \
     || fail "the parity target failed"
 
+echo "== the Postgres-to-LMDB migration"
+./scripts/rust.sh env PARITY_ADMIN_URL="$admin_url" \
+    cargo test -p nostream-storage --test migration_pg -- --ignored --test-threads=1 \
+    || fail "the migration target failed"
+
 echo "== lmdb behavioural parity (no database)"
 ./scripts/rust.sh cargo test -p nostream-storage --test parity_lmdb -- --nocapture \
     || fail "the lmdb parity target failed"
@@ -317,4 +323,4 @@ NODE_OPTIONS=--no-experimental-strip-types \
     "$CUCUMBER_BIN" --format summary \
     || fail "the cucumber suite failed"
 
-echo "== storage-parity: all four steps passed"
+echo "== storage-parity: all steps passed"

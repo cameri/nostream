@@ -36,17 +36,19 @@ cargo test --workspace --all-features
 cargo build --workspace --all-features --release
 ```
 
-CI additionally runs the two database-backed storage tests ("Storage parity against Postgres")
+CI additionally runs the three database-backed storage tests ("Storage parity against Postgres")
 against a `postgres:16-alpine` service, and they are `#[ignore]`d so a checkout without a database still passes
 `cargo test --workspace`:
 
 ```
-cargo test -p nostream-storage --test migrations --test parity -- --ignored --test-threads=1
+cargo test -p nostream-storage --test migrations --test parity --test migration_pg \
+  -- --ignored --test-threads=1
 ```
 
 `PARITY_ADMIN_URL` names the administrative database (CI sets
 `postgres://postgres:postgres@localhost:5432/postgres`); the targets create, migrate and
-drop their own scratch databases. `scripts/storage-parity.sh` runs both plus the
+drop their own scratch databases — `migration_pg` seeds one and copies it into a temporary LMDB
+store. `scripts/storage-parity.sh` runs all three plus the
 TypeScript Cucumber suite against the sqlx-migrated schema — the complete local oracle. The
 LMDB arm of that oracle needs no database: `cargo test -p nostream-storage --test parity_lmdb
 -- --nocapture` replays the same fixture on a temporary store and runs inside the fifth
