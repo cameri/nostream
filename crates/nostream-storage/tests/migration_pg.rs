@@ -216,8 +216,9 @@ async fn a_seeded_source_copies_into_an_lmdb_store_that_matches_it() {
 /// Three rows at a batch size of two makes the second page real, which is the statement a wrong
 /// cursor type rejects: `invoices.id` is `text` since
 /// `migrations/20230205004400_change_invoice_id_to_string.sql` (so `id > $1::uuid` is a
-/// server-side type error), and the two notification tables' `id`s are `uuid`. Every page is read
-/// through the seam's own reader, so the assertion is on the SQL that reader composes.
+/// server-side type error), `invite_codes.code` is a `varchar(64)` that takes the same text bind,
+/// and the two notification tables' `id`s are `uuid`. Every page is read through the seam's own
+/// reader, so the assertion is on the SQL that reader composes.
 #[tokio::test]
 #[ignore = "needs PARITY_ADMIN_URL; the Rust Checks job sets it"]
 async fn every_text_and_uuid_cursor_pages_over_its_own_column_type() {
@@ -258,9 +259,16 @@ async fn every_text_and_uuid_cursor_pages_over_its_own_column_type() {
         .execute(pool)
         .await
         .expect("the delivery-log row inserts");
+
+        sqlx::query("INSERT INTO invite_codes (code) VALUES ($1)")
+            .bind(format!("invite-{seed}"))
+            .execute(pool)
+            .await
+            .expect("the invite code inserts");
     }
 
     for table in [
+        MigratedTable::InviteCodes,
         MigratedTable::Invoices,
         MigratedTable::NotificationDeliveryLog,
         MigratedTable::NotificationOutbox,
