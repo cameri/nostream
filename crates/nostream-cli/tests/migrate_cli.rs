@@ -2168,6 +2168,10 @@ fn an_unreachable_source_is_named_without_its_password() {
         !stderr.contains("secret"),
         "the password is not printed: {stderr}"
     );
+    assert!(
+        !stderr.contains("alice"),
+        "the role is not printed either, only the host and database: {stderr}"
+    );
 }
 
 // A URI can carry the password in a query parameter instead of the userinfo, and the description

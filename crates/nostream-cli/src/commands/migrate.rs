@@ -603,7 +603,7 @@ fn describe_source() -> Result<String, CliError> {
         .ok()
         .filter(|uri| !uri.trim().is_empty())
     {
-        return Ok(format!("{} (from DB_URI)", without_password(&uri)));
+        return Ok(format!("{} (from DB_URI)", without_credentials(&uri)));
     }
     match std::env::var("DB_HOST") {
         Ok(host) => Ok(format!(
@@ -620,25 +620,22 @@ fn describe_source() -> Result<String, CliError> {
 }
 
 /// A connection URI with its credentials dropped, so an error can name the source without
-/// printing a password into a terminal's scrollback or a captured log.
+/// printing a password - or a role - into a terminal's scrollback or a captured log.
 ///
-/// Two places a URI can carry one are removed: the password in the userinfo, and the whole query
-/// string, which may hold `?password=`. Matching credential-shaped keys instead would miss a
-/// percent-encoded name, and a description exists to identify the source, which host and
-/// database already do.
-fn without_password(uri: &str) -> String {
+/// Three things go: the userinfo, the query string and the fragment. The userinfo because the
+/// message exists to name the host and database, and a role is neither; the query because it can
+/// carry `?password=`, and matching credential-shaped keys would miss a percent-encoded name.
+/// When a permission error is the problem, the server's own message names the role.
+fn without_credentials(uri: &str) -> String {
     let Some((scheme, rest)) = uri.split_once("://") else {
         return uri.to_owned();
     };
-    let (rest, _query) = rest.split_once('?').unwrap_or((rest, ""));
+    let rest = rest.split('?').next().unwrap_or(rest);
     let rest = rest.split('#').next().unwrap_or(rest);
-    match rest.rsplit_once('@') {
-        Some((userinfo, after)) => {
-            let user = userinfo.split(':').next().unwrap_or(userinfo);
-            format!("{scheme}://{user}@{after}")
-        }
-        None => format!("{scheme}://{rest}"),
-    }
+    let rest = rest
+        .rsplit_once('@')
+        .map_or(rest, |(_userinfo, after)| after);
+    format!("{scheme}://{rest}")
 }
 
 /// Reads one row before the copy, so an unreachable source is reported as the source it is -
