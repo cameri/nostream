@@ -9,6 +9,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use std::collections::BTreeMap;
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -1237,6 +1238,51 @@ async fn a_zero_batch_is_refused_instead_of_looping() {
         .await
         .expect_err("a batch of zero is refused by verify too");
     assert!(error.to_string().contains("--batch-size"), "{error}");
+}
+
+#[test]
+fn verify_refuses_a_manifest_without_a_store_instead_of_creating_one() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let manifest = json!({
+        "format": 1,
+        "not_migrated": MigratedTable::NOT_MIGRATED,
+        "tables": MigratedTable::ALL
+            .iter()
+            .map(|table| (
+                table.name().to_owned(),
+                json!({"rows": 0, "checksum": "0".repeat(64), "after": "", "complete": true}),
+            ))
+            .collect::<BTreeMap<_, _>>(),
+    });
+    std::fs::write(
+        directory.path().join("migration-manifest.json"),
+        serde_json::to_vec(&manifest).expect("the fixture manifest serialises"),
+    )
+    .expect("the fixture manifest is written");
+    let store = directory.path().join("lmdb");
+
+    for verify in [true, false] {
+        let mut out = Vec::new();
+        let output = migrate::run(
+            MigrateOptions {
+                verify,
+                ..options(directory.path(), 1_000)
+            },
+            &mut out,
+        )
+        .expect("a missing store is an answer, not a failure");
+        assert_eq!(output.exit_code, 1);
+        let text = output_text(out);
+        assert!(text.contains("No store at"), "{text}");
+        assert!(
+            text.contains(&store.display().to_string()),
+            "the line names the store: {text}"
+        );
+        assert!(
+            !store.exists(),
+            "verify created no store (verify = {verify})"
+        );
+    }
 }
 
 /// The process boundary the two failure tests above stop at: `main` prints

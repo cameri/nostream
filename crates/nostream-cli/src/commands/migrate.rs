@@ -15,6 +15,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use nostream_storage::backend::LMDB_DIR;
 use nostream_storage::migration::{MigratedTable, MigrationRow, MigrationSource, MigrationTarget};
 use nostream_storage::{LmdbBackend, PostgresBackend};
 use sha2::{Digest, Sha256};
@@ -53,6 +54,11 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             if read_manifest(&options.target)?.is_none() {
                 return no_manifest(&options.target, out);
             }
+            // A verify reads, so it may not create the store: opening one that is absent would
+            // write a fresh environment and then report every table as short.
+            if !store_present(&options) {
+                return no_store(&options, out);
+            }
             let target = open_target(&options.target).await?;
             return verify_with(&target, &options, out).await;
         }
@@ -60,6 +66,9 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         // A complete manifest is verified rather than copied, and the source is never opened:
         // a finished migration must not need Postgres to still be reachable.
         if read_manifest(&options.target)?.is_some_and(|manifest| manifest.complete()) {
+            if !store_present(&options) {
+                return no_store(&options, out);
+            }
             let target = open_target(&options.target).await?;
             return verify_with(&target, &options, out).await;
         }
@@ -422,6 +431,25 @@ fn no_manifest(target: &Path, out: &mut dyn Write) -> Result<CommandOutput, CliE
     })
 }
 
+/// The line and exit code a verify answers when the target has a manifest but no store.
+fn no_store(options: &MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
+    writeln!(out, "No store at {}", store_path(options).display()).map_err(write_failed)?;
+    Ok(CommandOutput {
+        lines: Vec::new(),
+        exit_code: 1,
+    })
+}
+
+/// The store's directory under a target root: the environment `LmdbBackend::open` would create.
+fn store_path(options: &MigrateOptions) -> PathBuf {
+    options.target.join(LMDB_DIR)
+}
+
+/// Whether the target already holds an LMDB environment.
+fn store_present(options: &MigrateOptions) -> bool {
+    store_path(options).exists()
+}
+
 /// The first table of a manifest-less target that already holds a row, if any: one row read per
 /// table, which is the probe R7 asks for.
 async fn first_occupied_table(
@@ -443,7 +471,9 @@ async fn first_occupied_table(
 /// public, so they refuse it themselves rather than loop.
 fn refuse_zero_batch(options: &MigrateOptions) -> Result<(), CliError> {
     if options.batch_size == 0 {
-        return Err(CliError::Migrate("--batch-size must be at least 1".to_owned()));
+        return Err(CliError::Migrate(
+            "--batch-size must be at least 1".to_owned(),
+        ));
     }
     Ok(())
 }
