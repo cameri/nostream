@@ -24,6 +24,24 @@ pub const LMDB_DATA_FILE: &str = "data.mdb";
 
 /// Resolves the data directory under `root` for one backend. A backend that keeps its data
 /// somewhere other than a directory of its own answers `None`.
+/// The store directory inside `root`: `<root>/lmdb`.
+///
+/// One home for the shape, so the openers, the CLI's target check and its messages cannot
+/// disagree about where the store is.
+pub fn store_dir(root: &Path) -> PathBuf {
+    root.join(LMDB_DIR)
+}
+
+/// The `data.mdb` of the store in `root`, whether or not it is there.
+pub fn store_file(root: &Path) -> PathBuf {
+    store_dir(root).join(LMDB_DATA_FILE)
+}
+
+/// Whether `root` holds a store this crate opened: `data.mdb` is a file.
+pub fn store_exists(root: &Path) -> bool {
+    store_file(root).is_file()
+}
+
 pub fn data_dir(root: &Path, backend: EventStoreBackend) -> Option<PathBuf> {
     match backend {
         EventStoreBackend::Lmdb => Some(root.join(LMDB_DIR)),

@@ -1105,8 +1105,11 @@ async fn the_run_prints_a_rate_consistent_with_its_own_events_and_milliseconds()
     let (rows, ms, rate, store) = summary(&output_text(out));
     assert_eq!(
         store,
-        directory.path().join("lmdb").display().to_string(),
-        "the summary names where the copy landed"
+        std::fs::canonicalize(directory.path().join("lmdb"))
+            .expect("the store exists")
+            .display()
+            .to_string(),
+        "the summary names the canonical store the copy landed in"
     );
 
     assert_eq!(rows, 1_000);
@@ -1790,6 +1793,10 @@ fn a_manifest_that_records_progress_over_a_missing_store_is_refused() {
         "the line names <target>/lmdb: {stderr}"
     );
     assert!(!store.exists(), "the refused run created nothing");
+    assert!(
+        stderr.contains("start a new copy"),
+        "the refusal names the remedy: {stderr}"
+    );
 
     // Half two: the manifest R6 writes, with no progress in it, over an empty directory.
     let fresh = tempfile::tempdir().expect("a temporary directory");
@@ -2106,4 +2113,143 @@ fn a_symlinked_target_is_refused() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("is a symlink"), "{stderr}");
+}
+
+// ---------------------------------------------------------------------------------------
+// AC19: the source is named, and an unconfigured one fails at once.
+// ---------------------------------------------------------------------------------------
+
+// `from_env` falls back to `postgres@localhost:5432/postgres` when nothing is set, so a run with
+// no `DB_URI` dials whatever local server is listening and copies it, and when nothing is
+// listening it waits out the pool's acquire timeout.
+#[test]
+fn an_unconfigured_source_is_refused_at_once() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let started = std::time::Instant::now();
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("DB_URI"), "the refusal names it: {stderr}");
+    assert!(stderr.contains("DB_HOST"), "and the parts: {stderr}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "the refusal does not wait out the pool: {:?}",
+        started.elapsed()
+    );
+}
+
+// An unreachable host is reported as the database it could not read, with the password dropped.
+#[test]
+fn an_unreachable_source_is_named_without_its_password() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(directory.path())
+        .env_clear()
+        .env("DB_URI", "postgres://alice:secret@127.0.0.1:1/nostream")
+        .env("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("127.0.0.1:1/nostream"),
+        "the failure names the host and database it resolved to: {stderr}"
+    );
+    assert!(stderr.contains("DB_URI"), "and the setting: {stderr}");
+    assert!(
+        !stderr.contains("secret"),
+        "the password is not printed: {stderr}"
+    );
+}
+
+// AC20: the remedy is in the command's own help, not only in the behaviour.
+#[test]
+fn the_help_names_the_resume_and_the_restart() {
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--help"])
+        .output()
+        .expect("the binary runs");
+
+    assert!(output.status.success(), "{}", output.status);
+    let help = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        help.contains("resumes"),
+        "the help says a re-run resumes: {help}"
+    );
+    assert!(
+        help.contains("starts a new copy"),
+        "and how to start over: {help}"
+    );
+    assert!(
+        help.contains("relay must be stopped"),
+        "and that the relay must be stopped: {help}"
+    );
+}
+
+// AC7: the summary names the store the copy landed in, so a path that went through a link is
+// visible as the real one rather than echoed back as the argument.
+#[tokio::test]
+async fn the_summary_names_the_canonical_store_not_the_argument() {
+    let root = tempfile::tempdir().expect("a temporary directory");
+    let real = root.path().join("real");
+    std::fs::create_dir(&real).expect("the real directory is made");
+    let link = root.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).expect("the link is planted");
+    let argument = link.join("store");
+    std::fs::create_dir(&argument).expect("the target is made through the link");
+
+    let target = LmdbBackend::open(&argument).await.expect("the store opens");
+    let mut out = Vec::new();
+    migrate::migrate_with(
+        &StubSource::new(vec![MigrationRow::Event(event_record(1, "golden"))]),
+        &target,
+        &options(&argument, 1_000),
+        &mut out,
+    )
+    .await
+    .expect("the copy succeeds");
+
+    let (_, _, _, store) = summary(&output_text(out));
+    assert_ne!(
+        store,
+        argument.join("lmdb").display().to_string(),
+        "the argument went through a link, so it is not what is reported"
+    );
+    assert_eq!(
+        store,
+        std::fs::canonicalize(real.join("store").join("lmdb"))
+            .expect("the store exists")
+            .display()
+            .to_string(),
+        "the summary names the real store"
+    );
+}
+
+// U4: a `--target` that is a file is named as one, rather than reported as the operating
+// system's `Not a directory (os error 20)` from a path the operator never wrote.
+#[test]
+fn a_target_that_is_a_file_is_refused() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let file = directory.path().join("not-a-dir");
+    std::fs::write(&file, b"x").expect("the file is written");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(&file)
+        .env_clear()
+        .env("DB_URI", "not-a-url")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("is not a directory"), "{stderr}");
 }

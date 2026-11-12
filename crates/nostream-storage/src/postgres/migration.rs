@@ -145,14 +145,13 @@ fn text(table: MigratedTable, after: &[u8]) -> Result<String, StorageError> {
         })
 }
 
-/// One cursor as the `i32` `reports.id` holds, undoing the key's sign flip.
+/// One cursor as the `i32` `reports.id` holds, through the shared key codec.
 fn int32_key(table: MigratedTable, after: &[u8]) -> Result<i32, StorageError> {
-    let bytes: [u8; 4] = after.try_into().map_err(|_| StorageError::InvalidRow {
+    crate::keys::i32_from_key(after).ok_or_else(|| StorageError::InvalidRow {
         table: table.name(),
         column: "key",
         value: format!("{} bytes are not a reports key", after.len()),
-    })?;
-    Ok((u32::from_be_bytes(bytes) ^ (1 << 31)) as i32)
+    })
 }
 
 /// One page of rows, through the decoder the backend already has for that table.

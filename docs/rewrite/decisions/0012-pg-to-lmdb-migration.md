@@ -139,6 +139,12 @@ it is honest and the run starts one.
 
 ## The command surface (D6)
 
+The source is named before it is dialled. With nothing configured, `PostgresBackend::from_env`
+falls back to `postgres@localhost:5432/postgres`, so the run refuses at once and names `DB_URI`
+and the `DB_*` parts rather than copying whatever a local server happens to hold; a source that
+cannot be reached is reported as the database it could not read — host and database, password
+dropped — instead of as the pool's acquire timeout a minute later.
+
 A target that is a symlink, or writable by group or other, is refused before anything is
 opened: the copy writes the dataset into `<target>/lmdb`, so a writable target lets another
 local user pre-place the store and read what lands in it, and a link sends the copy somewhere
@@ -168,6 +174,10 @@ options, and it holds the environment process-wide, so dropping a handle does no
 path. That is why the resume check asks whether `data.mdb` is there instead of opening the
 store read-only first: the writable open that follows would otherwise refuse the one case the
 check exists to allow.
+
+A re-run resumes wherever the manifest says the last one stopped; deleting
+`<target>/migration-manifest.json` starts a new copy, and the command's help and its refusal of
+a store the manifest counts rows for both say so.
 
 Exit codes are the CLI's own, from `CLI.md`: 0 on success, 2 for a usage error, 1 for every
 other failure, which is written to stderr as `Migration failed: {message}`. That message

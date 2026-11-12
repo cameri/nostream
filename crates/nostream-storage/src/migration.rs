@@ -252,18 +252,9 @@ pub trait MigrationTarget: Send + Sync {
     ) -> StorageFuture<'a, Vec<MigrationRow>>;
 }
 
-/// The instant at the microsecond precision every PostgreSQL `timestamp` column has.
-///
-/// The store's value codec truncates the same way (`lmdb::encoding::micros`); this module
-/// restates it because it has to compile with no driver.
-fn micros(value: DateTime<Utc>) -> DateTime<Utc> {
-    DateTime::<Utc>::from_timestamp_micros(value.timestamp_micros()).unwrap_or(value)
-}
+use crate::keys::micros;
 
-/// The `reports.id` key: an `i32` ordered by its bytes, the sign bit flipped so a negative value
-/// sorts before zero.
-///
-/// The store's `lmdb::encoding::i32_key`, restated for the same reason as [`micros`].
+/// The `reports.id` key, in the one home the key codecs share (`crate::keys`).
 fn report_key(id: i32) -> [u8; 4] {
-    ((id as u32) ^ (1 << 31)).to_be_bytes()
+    crate::keys::i32_key(id)
 }

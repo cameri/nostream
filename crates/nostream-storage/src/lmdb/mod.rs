@@ -245,8 +245,8 @@ impl LmdbBackend {
     /// write.
     pub async fn open(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let root = root.into();
-        // The same rule `data_dir` answers, from the same constant.
-        let path = root.join(crate::backend::LMDB_DIR);
+        // The same shape `data_dir` answers, from the one home for it.
+        let path = crate::backend::store_dir(&root);
         let opened = tokio::task::spawn_blocking(move || {
             let environment = LmdbEnv::open(&path, LMDB_MAP_SIZE)?;
             let handle = environment.env().clone();

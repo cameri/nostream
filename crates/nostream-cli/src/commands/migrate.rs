@@ -17,7 +17,6 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use nostream_storage::backend::{LMDB_DATA_FILE, LMDB_DIR};
 use nostream_storage::migration::{MigratedTable, MigrationRow, MigrationSource, MigrationTarget};
 use nostream_storage::{LmdbBackend, PostgresBackend};
 use sha2::{Digest, Sha256};
@@ -88,9 +87,15 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         // reported rather than a database error. The writable open below follows it in this
         // process, which is why the check must not open the store itself.
         check_resume_store(existing.as_ref(), &options)?;
-        let source = PostgresBackend::from_env()
-            .await
-            .map_err(|error| CliError::Migrate(error.to_string()))?;
+        // The source is named before it is dialled and probed before the copy: a run whose
+        // `DB_URI` is unset would otherwise resolve to `postgres@localhost:5432/postgres` and
+        // copy whatever that happens to hold, and one whose host is down would report the
+        // pool's acquire timeout a minute later instead of the database it could not reach.
+        let described = describe_source()?;
+        let source = PostgresBackend::from_env().await.map_err(|error| {
+            CliError::Migrate(format!("could not read the source at {described}: {error}"))
+        })?;
+        probe_source(&source, &described).await?;
         let target = open_target(&options.target).await?;
         migrate_with(&source, &target, &options, out).await
     })
@@ -222,7 +227,14 @@ pub async fn migrate_with(
     writeln!(out, "Events throughput: {rate} events/s").map_err(write_failed)?;
     // Where the copy landed: a target that was redirected or mistyped is visible here rather
     // than as a store the operator cannot find.
-    writeln!(out, "Store: {}", store_path(options).display()).map_err(write_failed)?;
+    writeln!(
+        out,
+        "Store: {}",
+        fs::canonicalize(store_path(options))
+            .unwrap_or_else(|_| store_path(options))
+            .display()
+    )
+    .map_err(write_failed)?;
 
     Ok(CommandOutput::default())
 }
@@ -583,6 +595,63 @@ fn sync_directory_of(path: &Path) -> Result<(), CliError> {
         .map_err(|error| CliError::Migrate(format!("{}: {error}", parent.display())))
 }
 
+/// The source the run reads, as the setting that named it: `db.internal:5432/nostream (from
+/// DB_URI)`. An unconfigured source is refused here, because `from_env` would otherwise fall
+/// back to a local server's `postgres` database and copy whatever it holds.
+fn describe_source() -> Result<String, CliError> {
+    if let Some(uri) = std::env::var("DB_URI")
+        .ok()
+        .filter(|uri| !uri.trim().is_empty())
+    {
+        return Ok(format!("{} (from DB_URI)", without_password(&uri)));
+    }
+    match std::env::var("DB_HOST") {
+        Ok(host) => Ok(format!(
+            "{host}:{port}/{database} (from DB_HOST, DB_NAME)",
+            port = std::env::var("DB_PORT").unwrap_or_else(|_| "5432".to_owned()),
+            database = std::env::var("DB_NAME").unwrap_or_else(|_| "postgres".to_owned()),
+        )),
+        Err(_) => Err(CliError::Migrate(
+            "no source is configured: set DB_URI (for example \
+             postgres://user:pass@host:5432/nostream), or DB_HOST and DB_NAME. Nothing was read."
+                .to_owned(),
+        )),
+    }
+}
+
+/// A connection URI with the password dropped, so an error can name the source without printing
+/// a credential into a terminal's scrollback.
+fn without_password(uri: &str) -> String {
+    let Some((scheme, rest)) = uri.split_once("://") else {
+        return uri.to_owned();
+    };
+    let Some((userinfo, after)) = rest.rsplit_once('@') else {
+        return uri.to_owned();
+    };
+    let user = userinfo.split(':').next().unwrap_or(userinfo);
+    format!("{scheme}://{user}@{after}")
+}
+
+/// Reads one row before the copy, so an unreachable source is reported as the source it is -
+/// named by its setting, host and database - rather than as a pool acquire timeout.
+async fn probe_source(source: &PostgresBackend, described: &str) -> Result<(), CliError> {
+    let budget = std::env::var("DB_ACQUIRE_CONNECTION_TIMEOUT")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(Duration::from_secs(15));
+    match tokio::time::timeout(budget, source.read_batch(MigratedTable::ALL[0], None, 1)).await {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(error)) => Err(CliError::Migrate(format!(
+            "could not read the source at {described}: {error}"
+        ))),
+        Err(_) => Err(CliError::Migrate(format!(
+            "could not read the source at {described}: no connection within {} s",
+            budget.as_secs()
+        ))),
+    }
+}
+
 /// Refuses a target another local user could write to or redirect.
 ///
 /// The copy writes the whole dataset into `<target>/lmdb`, so a group- or world-writable target
@@ -602,6 +671,13 @@ fn refuse_unsafe_target(options: &MigrateOptions) -> Result<(), CliError> {
         if metadata.file_type().is_symlink() {
             return Err(CliError::Migrate(format!(
                 "{} is a symlink: the target must be the directory the copy lands in",
+                path.display()
+            )));
+        }
+        if !metadata.is_dir() {
+            return Err(CliError::Migrate(format!(
+                "{} is not a directory: --target takes the store root, and the environment is \
+                 created under it",
                 path.display()
             )));
         }
@@ -638,13 +714,13 @@ fn no_store(options: &MigrateOptions, out: &mut dyn Write) -> Result<CommandOutp
 
 /// The store's directory under a target root: the environment `LmdbBackend::open` would create.
 fn store_path(options: &MigrateOptions) -> PathBuf {
-    options.target.join(LMDB_DIR)
+    nostream_storage::backend::store_dir(&options.target)
 }
 
 /// Whether the target already holds an LMDB environment, asked the way R8 asks it: `<target>/
 /// lmdb/data.mdb` is a file. A directory alone is not a store, and neither is a lock file.
 fn store_present(options: &MigrateOptions) -> bool {
-    store_path(options).join(LMDB_DATA_FILE).is_file()
+    nostream_storage::backend::store_exists(&options.target)
 }
 
 /// The first table of a manifest-less target that already holds a row, if any: one row read per
@@ -693,8 +769,10 @@ fn check_resume_store(
 ) -> Result<(), CliError> {
     if existing.is_some_and(|manifest| manifest.records_progress()) && !store_present(options) {
         return Err(CliError::Migrate(format!(
-            "No store at {}",
-            store_path(options).display()
+            "No store at {}: the manifest records progress, so a re-run resumes once the store is \
+             back; delete {} to start a new copy",
+            store_path(options).display(),
+            manifest_path(&options.target).display()
         )));
     }
     Ok(())

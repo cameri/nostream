@@ -34,6 +34,7 @@
 pub mod backend;
 pub mod error;
 pub mod event_store;
+mod keys;
 #[cfg(feature = "lmdb")]
 pub mod lmdb;
 pub mod migration;

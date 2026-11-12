@@ -94,13 +94,15 @@ enum ConfigCommand {
 
 #[derive(Debug, Subcommand)]
 enum MigrateCommand {
-    /// Copy every table from Postgres into an LMDB store.
+    /// Copy every table from Postgres into an LMDB store, with the relay stopped.
     ///
     /// The source is Postgres from `DB_URI`, else the `DB_*` parts. The target is a store root:
     /// the environment is `<DIR>/lmdb` and the manifest `<DIR>/migration-manifest.json`.
     ///
-    /// Nothing may write to either store while a run is in progress, so
-    /// the relay must be stopped on both before the first batch is read.
+    /// A re-run resumes where the manifest says the last one stopped; deleting
+    /// `<DIR>/migration-manifest.json` starts a new copy. Nothing may write to either store
+    /// while a run is in progress, so the relay must be stopped on both before the first batch
+    /// is read.
     PgToLmdb {
         /// The store root (the environment lives under `<DIR>/lmdb`).
         #[arg(long, value_name = "DIR")]
