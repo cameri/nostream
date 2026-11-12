@@ -9,7 +9,7 @@
 //! crash between them replays one batch: every write is a put of the source's own key and
 //! value, so the replay is idempotent and the merged entry is unchanged.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -396,6 +396,15 @@ fn manifest_path(target: &Path) -> PathBuf {
     target.join(MANIFEST_FILE)
 }
 
+/// A comma-separated list, or `none`, for a refusal that names what it found.
+fn named_list(names: &[&str]) -> String {
+    if names.is_empty() {
+        "none".to_owned()
+    } else {
+        names.join(", ")
+    }
+}
+
 /// The manifest at the target, or `None` when there is none.
 fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
     let path = manifest_path(target);
@@ -411,6 +420,32 @@ fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
             "{}: manifest format {} is not supported; this tool reads and writes {MANIFEST_FORMAT}",
             path.display(),
             manifest.format
+        )));
+    }
+
+    // A manifest is this tool's only when it describes all nine tables and the two it leaves
+    // alone. `Manifest::get` answers an empty entry for a table the file does not name, so a
+    // partial file would restart every table at `rows: 0` over a store of unknown contents and
+    // skip R7's refusal entirely.
+    let named: BTreeSet<&str> = manifest.tables.keys().map(String::as_str).collect();
+    let expected: BTreeSet<&str> = MigratedTable::ALL.iter().map(|table| table.name()).collect();
+    if named != expected {
+        let missing: Vec<&str> = expected.difference(&named).copied().collect();
+        let unknown: Vec<&str> = named.difference(&expected).copied().collect();
+        return Err(CliError::Migrate(format!(
+            "{}: the manifest does not name this tool's nine tables (missing: {}; unknown: {})",
+            path.display(),
+            named_list(&missing),
+            named_list(&unknown)
+        )));
+    }
+    if manifest.not_migrated != MigratedTable::NOT_MIGRATED {
+        let named: Vec<&str> = manifest.not_migrated.iter().map(String::as_str).collect();
+        return Err(CliError::Migrate(format!(
+            "{}: the manifest's not_migrated is not the two tables this tool leaves alone (it \
+             names: {})",
+            path.display(),
+            named_list(&named)
         )));
     }
     Ok(Some(manifest))

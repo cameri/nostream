@@ -1390,6 +1390,80 @@ async fn a_manifest_of_another_format_is_refused_before_anything_is_written() {
 }
 
 #[tokio::test]
+async fn a_manifest_that_does_not_name_the_nine_tables_is_refused() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+    // A store with three rows already in it: a partial manifest must not let a copy restart
+    // every table at `rows: 0` over them, which is what R7's refusal exists to prevent.
+    let seeded: Vec<MigrationRow> = (1..=3)
+        .map(|seed| MigrationRow::Event(event_record(seed, "seeded")))
+        .collect();
+    assert_eq!(
+        target.write_batch(&seeded).await.expect("the seed writes"),
+        3
+    );
+    let manifest = directory.path().join("migration-manifest.json");
+
+    std::fs::write(&manifest, br#"{"format":1,"not_migrated":[],"tables":{}}"#)
+        .expect("the fixture manifest is written");
+    let source = StubSource::new(source_rows());
+    let error = migrate::migrate_with(
+        &source,
+        &target,
+        &options(directory.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("a manifest that names no tables is refused");
+    let message = error.to_string();
+    assert!(message.contains("nine tables"), "got: {message}");
+    for table in MigratedTable::ALL {
+        assert!(
+            message.contains(table.name()),
+            "the refusal names {}: {message}",
+            table.name()
+        );
+    }
+    assert_eq!(source.calls().len(), 0, "nothing was read");
+    assert_eq!(
+        scan_all(&target, MigratedTable::Events).await.len(),
+        3,
+        "the seeded rows are untouched"
+    );
+
+    // The nine tables, and a `not_migrated` that is not this tool's.
+    let mut tables = serde_json::Map::new();
+    for table in MigratedTable::ALL {
+        tables.insert(
+            table.name().to_owned(),
+            json!({"rows": 0, "checksum": "0".repeat(64), "after": "", "complete": false}),
+        );
+    }
+    let fixture = json!({"format": 1, "not_migrated": ["event_tags"], "tables": tables});
+    std::fs::write(
+        &manifest,
+        serde_json::to_vec(&fixture).expect("the fixture serialises"),
+    )
+    .expect("the fixture manifest is written");
+    let error = migrate::migrate_with(
+        &StubSource::new(source_rows()),
+        &target,
+        &options(directory.path(), 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("the wrong not_migrated list is refused");
+    assert!(error.to_string().contains("not_migrated"), "{error}");
+    assert_eq!(
+        scan_all(&target, MigratedTable::Events).await.len(),
+        3,
+        "the seeded rows are untouched"
+    );
+}
+
+#[tokio::test]
 async fn a_zero_batch_is_refused_instead_of_looping() {
     let directory = tempfile::tempdir().expect("a temporary directory");
     let target = LmdbBackend::open(directory.path())
