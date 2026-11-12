@@ -1,4 +1,10 @@
 #!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
+# `git worktree add` never runs `prepare`, so a worktree arrives with neither
+# .husky/_ nor node_modules and the source below kills the commit before any
+# gate can run. Run what this checkout can run, and never block on what it
+# cannot: a checkout without dependencies has no gates to fail.
+[ -d node_modules ] || exit 0
+_root=$(dirname -- "$0")
+[ -f "$_root/_/husky.sh" ] && . "$_root/_/husky.sh"
 
 pnpm exec commitlint --edit "${1}"
