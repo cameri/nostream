@@ -935,10 +935,15 @@ async fn a_migrated_event_keeps_first_seen_deduplication_and_its_deleted_state()
         rows_of(&rows, MigratedTable::Events)
     );
 
-    // The store's filter read carries the rows' own state: `page` builds its page with
-    // `live: false`, so a soft-deleted or expired row comes back rather than disappearing, and
+    // The criterion's split is the store's own: `lmdb/events.rs:775-807` builds a filter page with
+    // `live: false`, so a soft-deleted or expired row is readable by filter, and
     // `count_by_filters` is the read that applies the live predicate (ADR 0011 D4, pinned by
-    // `parity_lmdb::a_soft_deleted_event_is_readable_by_filter_and_excluded_from_count`).
+    // `parity_lmdb::a_soft_deleted_event_is_readable_by_filter_and_excluded_from_count`). The
+    // count is the half that proves B and C are stored *and* marked.
+    //
+    // A copy that read its **source** through `find_by_filters` would lose B and C instead: the
+    // Postgres composer adds `deleted_at IS NULL AND (expires_at IS NULL OR expires_at > $now)`
+    // (`postgres/sql.rs:265`), which is why the seam's reader has no filter at all.
     let filters = [Filter {
         limit: Some(10),
         ..Filter::default()
