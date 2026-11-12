@@ -12,6 +12,7 @@ import {
   setByPath,
   validatePathAgainstDefaults,
   validateSettings,
+  withSettingsWriteLock,
 } from '../../utils/settings-config'
 import {
   isWriteProtectedSettingsPath,
@@ -50,27 +51,43 @@ export class PatchAdminSettingsController implements IController {
       return
     }
 
-    const userSettings = loadUserSettings() as unknown as Record<string, unknown>
-    const nextUserSettings = changes.reduce(
-      (settings, change) => setByPath(settings, change.path, change.value),
-      userSettings,
-    )
-    const merged = loadMergedSettings() as unknown as Record<string, unknown>
-    const mergedNext = changes.reduce(
-      (settings, change) => setByPath(settings, change.path, getByPath(nextUserSettings, change.path)),
-      merged,
-    )
-    const validationIssues = validateSettings(mergedNext as unknown as Settings)
+    // Every writer of settings.yaml takes this lock. Reading inside it is what
+    // stops an ordinary settings save from writing a document read before a
+    // moderation ban was applied, which would silently undo the ban.
+    const outcome = await withSettingsWriteLock<
+      | { ok: true; nextUserSettings: Record<string, unknown> }
+      | { ok: false; issues: Array<{ path: string; message: string }> }
+    >(() => {
+      const userSettings = loadUserSettings() as unknown as Record<string, unknown>
+      const nextUserSettings = changes.reduce(
+        (settings, change) => setByPath(settings, change.path, change.value),
+        userSettings,
+      )
+      const merged = loadMergedSettings() as unknown as Record<string, unknown>
+      const mergedNext = changes.reduce(
+        (settings, change) => setByPath(settings, change.path, getByPath(nextUserSettings, change.path)),
+        merged,
+      )
+      const validationIssues = validateSettings(mergedNext as unknown as Settings)
 
-    if (validationIssues.length > 0) {
+      if (validationIssues.length > 0) {
+        return { ok: false as const, issues: validationIssues }
+      }
+
+      saveSettings(nextUserSettings as unknown as Settings)
+
+      return { ok: true as const, nextUserSettings }
+    })
+
+    if ('issues' in outcome) {
       response
         .status(400)
         .setHeader('content-type', 'application/json')
-        .send({ error: 'Validation failed', issues: validationIssues })
+        .send({ error: 'Validation failed', issues: outcome.issues })
       return
     }
 
-    saveSettings(nextUserSettings as unknown as Settings)
+    const nextUserSettings = outcome.nextUserSettings
     const updatedChanges = changes.map(({ path }) => ({
       path,
       value: redactSettingsValue(path, getByPath(nextUserSettings, path)),

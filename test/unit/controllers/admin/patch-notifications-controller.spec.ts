@@ -47,6 +47,7 @@ describe('PatchAdminNotificationsController', () => {
       send: sandbox.stub().returnsThis(),
     }
 
+    sandbox.stub(settingsConfig, 'withSettingsWriteLock').callsFake(async (operation: () => unknown) => operation())
     sandbox.stub(settingsConfig, 'loadMergedSettings').returns(baseMergedSettings as any)
     sandbox.stub(settingsConfig, 'loadUserSettings').returns({ admin: { notifications: baseNotifications } } as any)
     sandbox.stub(settingsConfig, 'saveSettings')
@@ -128,6 +129,30 @@ describe('PatchAdminNotificationsController', () => {
       Sinon.match.object,
     )
     expect(response.send.firstCall.args[0].ok).to.equal(true)
+  })
+
+  it('reads and saves inside the settings write lock', async () => {
+    const order: string[] = []
+    ;(settingsConfig.withSettingsWriteLock as Sinon.SinonStub).callsFake(async (operation: () => unknown) => {
+      order.push('lock:enter')
+      try {
+        return operation()
+      } finally {
+        order.push('lock:exit')
+      }
+    })
+    ;(settingsConfig.loadUserSettings as Sinon.SinonStub).callsFake(() => {
+      order.push('read')
+      return { admin: { notifications: baseNotifications } }
+    })
+    ;(settingsConfig.saveSettings as Sinon.SinonStub).callsFake(() => {
+      order.push('save')
+    })
+
+    const controller = new PatchAdminNotificationsController(outboxRepository as any)
+    await controller.handleRequest({ body: { enabled: true }, ip: '127.0.0.1' } as any, response as any)
+
+    expect(order).to.deep.equal(['lock:enter', 'read', 'save', 'lock:exit'])
   })
 
   it('still returns 200 when outbox enqueue fails', async () => {

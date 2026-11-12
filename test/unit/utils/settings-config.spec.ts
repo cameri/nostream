@@ -3,10 +3,14 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import Sinon from 'sinon'
+import yaml from 'js-yaml'
 
 import {
   ensureSettingsExists,
+  getSettingsBackupDir,
   loadUserSettings,
+  restoreSettingsBackup,
+  saveSettings,
   toCategoryLabel,
   getByPath,
   getTopLevelSettingCategories,
@@ -1047,5 +1051,23 @@ describe('settings write lock', () => {
 
     expect(error?.message).to.equal('Timed out waiting for settings write lock')
     expect(fs.existsSync(lockPath)).to.equal(true)
+  })
+
+  it('restores a backup while holding the settings write lock', async () => {
+    const backupDir = getSettingsBackupDir()
+    fs.mkdirSync(backupDir, { recursive: true })
+    const filename = 'settings.2026-11-02T12-00-00-000Z.yaml'
+    const defaults = loadDefaults()
+
+    fs.writeFileSync(
+      path.join(backupDir, filename),
+      yaml.dump({ ...defaults, info: { ...defaults.info, name: 'restored-from-backup' } }),
+    )
+
+    const restored = await restoreSettingsBackup(filename)
+
+    expect(restored.info?.name).to.equal('restored-from-backup')
+    expect(loadUserSettings().info?.name).to.equal('restored-from-backup')
+    expect(fs.existsSync(getSettingsWriteLockPath())).to.equal(false)
   })
 })

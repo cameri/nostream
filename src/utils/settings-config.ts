@@ -585,24 +585,26 @@ export const listSettingsBackups = (): SettingsBackupInfo[] => {
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
-export const restoreSettingsBackup = (filename: string): Settings => {
+export const restoreSettingsBackup = async (filename: string): Promise<Settings> => {
   if (!isSafeBackupFilename(filename)) {
     throw new Error('Invalid backup filename')
   }
 
-  const backupPath = join(getSettingsBackupDir(), filename)
-  if (!fs.existsSync(backupPath)) {
-    throw new Error('Backup not found')
-  }
+  return withSettingsWriteLock(() => {
+    const backupPath = join(getSettingsBackupDir(), filename)
+    if (!fs.existsSync(backupPath)) {
+      throw new Error('Backup not found')
+    }
 
-  const restored = yaml.load(fs.readFileSync(backupPath, 'utf-8')) as Settings
-  const issues = validateSettings(mergeDeepRight(loadDefaults(), restored) as Settings)
-  if (issues.length > 0) {
-    throw new Error(`Backup failed validation: ${issues.map((issue) => issue.path).join(', ')}`)
-  }
+    const restored = yaml.load(fs.readFileSync(backupPath, 'utf-8')) as Settings
+    const issues = validateSettings(mergeDeepRight(loadDefaults(), restored) as Settings)
+    if (issues.length > 0) {
+      throw new Error(`Backup failed validation: ${issues.map((issue) => issue.path).join(', ')}`)
+    }
 
-  saveSettings(restored)
-  return restored
+    saveSettings(restored)
+    return restored
+  })
 }
 
 export const getTopLevelSettingCategories = (): string[] => {
