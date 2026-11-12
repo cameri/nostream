@@ -166,6 +166,54 @@ impl Databases {
             meta: env.create_database(txn, Some("meta"))?,
         })
     }
+    /// Opens every database by name, refusing a store that lacks one.
+    ///
+    /// The migration tool's verify reads a store it did not create, so `create_database` is
+    /// wrong there: a missing database must be an error rather than a new one.
+    fn open(env: &Env, txn: &RoTxn<'_>) -> Result<Self, StorageError> {
+        Ok(Self {
+            events: open_named(env, txn, "events")?,
+            events_by_created_at: open_named(env, txn, "events_by_created_at")?,
+            events_by_author: open_named(env, txn, "events_by_author")?,
+            events_deleted: open_named(env, txn, "events_deleted")?,
+            events_expiring: open_named(env, txn, "events_expiring")?,
+            replaceable: open_named(env, txn, "replaceable")?,
+            tags: open_named(env, txn, "tags")?,
+            users: open_named(env, txn, "users")?,
+            invoices: open_named(env, txn, "invoices")?,
+            invoices_pending: open_named(env, txn, "invoices_pending")?,
+            nip05: open_named(env, txn, "nip05_verifications")?,
+            nip05_by_last_checked_at: open_named(env, txn, "nip05_by_last_checked_at")?,
+            invite_codes: open_named(env, txn, "invite_codes")?,
+            invite_codes_by_created_at: open_named(env, txn, "invite_codes_by_created_at")?,
+            invite_codes_by_expires_at: open_named(env, txn, "invite_codes_by_expires_at")?,
+            dvm_jobs: open_named(env, txn, "dvm_jobs")?,
+            dvm_jobs_by_status_created_at: open_named(env, txn, "dvm_jobs_by_status_created_at")?,
+            reports: open_named(env, txn, "reports")?,
+            reports_by_event_id: open_named(env, txn, "reports_by_event_id")?,
+            reports_actionable_by_created_at: open_named(env, txn, "reports_actionable_by_created_at")?,
+            reports_actionable_event: open_named(env, txn, "reports_actionable_event")?,
+            reports_actionable_pubkey: open_named(env, txn, "reports_actionable_pubkey")?,
+            outbox: open_named(env, txn, "notification_outbox")?,
+            outbox_by_status_created_at: open_named(env, txn, "outbox_by_status_created_at")?,
+            outbox_by_status_updated_at: open_named(env, txn, "outbox_by_status_updated_at")?,
+            notification_delivery_log: open_named(env, txn, "notification_delivery_log")?,
+            delivery_log_by_created_at: open_named(env, txn, "delivery_log_by_created_at")?,
+            delivery_log_by_outbox: open_named(env, txn, "delivery_log_by_outbox")?,
+            meta: open_named(env, txn, "meta")?,
+        })
+    }
+}
+
+/// One named database of an existing environment, or [`StorageError::MissingDatabase`] when the
+/// store does not hold it.
+fn open_named(
+    env: &Env,
+    txn: &RoTxn<'_>,
+    name: &'static str,
+) -> Result<Database<Bytes, Bytes>, StorageError> {
+    env.open_database(txn, Some(name))?
+        .ok_or(StorageError::MissingDatabase { name })
 }
 
 /// How much of the fixed map one store has used (`Env::non_free_pages_size`).
@@ -214,6 +262,43 @@ impl LmdbBackend {
             used_bytes,
             used_percent = used_bytes as f64 / LMDB_MAP_SIZE as f64 * 100.0,
             "the lmdb store is open"
+        );
+
+        Ok(Self {
+            env: environment.env().clone(),
+            databases,
+            settings: None,
+        })
+    }
+
+    /// Opens the existing store under `<root>/lmdb` for reading only, and creates nothing.
+    ///
+    /// The migration tool's verify path uses this instead of [`open`](Self::open): that one
+    /// `create_dir_all`s and `create_database`s, so verifying a store that is not there answers
+    /// with a fresh empty environment and every table short. Here a missing environment or a
+    /// missing database is an error.
+    ///
+    /// heed's process-global registry answers `BadOpenOptions` for a second open of one path
+    /// with different options, so a caller that already holds this root writable must drop that
+    /// handle first.
+    pub async fn open_existing(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
+        let root = root.into();
+        // The same rule `data_dir` answers, from the same constant.
+        let path = root.join(crate::backend::LMDB_DIR);
+        let opened = tokio::task::spawn_blocking(move || {
+            let environment = LmdbEnv::open_existing(&path, LMDB_MAP_SIZE)?;
+            let handle = environment.env().clone();
+            let transaction = handle.read_txn()?;
+            let databases = Databases::open(&handle, &transaction)?;
+            Ok::<_, StorageError>((environment, databases))
+        })
+        .await
+        .map_err(|_| StorageError::LmdbTaskCancelled)??;
+        let (environment, databases) = opened;
+
+        tracing::info!(
+            path = %environment.path().display(),
+            "the lmdb store is open for reading"
         );
 
         Ok(Self {

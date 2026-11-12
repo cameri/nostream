@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use nostream_core::EventStoreBackend;
 
 #[cfg(feature = "lmdb")]
-use heed::{Env, EnvOpenOptions};
+use heed::{Env, EnvFlags, EnvOpenOptions};
 
 #[cfg(feature = "lmdb")]
 use crate::error::StorageError;
@@ -85,6 +85,40 @@ impl LmdbEnv {
                 .map_size(map_size)
                 .max_dbs(LMDB_MAX_DBS)
                 .max_readers(LMDB_MAX_READERS)
+                .open(&path)
+        }
+        .map_err(|source| StorageError::OpenLmdb {
+            path: path.clone(),
+            source,
+        })?;
+        Ok(Self { env, path })
+    }
+
+    /// Opens an existing LMDB environment at `path` read-only, and creates nothing.
+    ///
+    /// The directory is not made and the file is not created: a path with no environment is
+    /// heed's error rather than a new file. `READ_ONLY` takes no write lock, and this
+    /// constructor opens no transaction of its own.
+    ///
+    /// heed's process-global registry answers `Error::BadOpenOptions` for a second open of one
+    /// path with different options, so a caller that already holds this path writable must
+    /// drop that handle first.
+    pub fn open_existing(
+        path: impl Into<PathBuf>,
+        map_size: usize,
+    ) -> Result<Self, StorageError> {
+        let path = path.into();
+
+        // # Safety: the preconditions on `LmdbEnv` above, each marked upheld or relied-on, and
+        // `READ_ONLY` makes the write half of them vacuous: no transaction is opened here at
+        // all.
+        #[allow(unsafe_code)]
+        let env = unsafe {
+            EnvOpenOptions::new()
+                .map_size(map_size)
+                .max_dbs(LMDB_MAX_DBS)
+                .max_readers(LMDB_MAX_READERS)
+                .flags(EnvFlags::READ_ONLY)
                 .open(&path)
         }
         .map_err(|source| StorageError::OpenLmdb {
