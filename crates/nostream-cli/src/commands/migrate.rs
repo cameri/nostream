@@ -428,7 +428,10 @@ fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
     // partial file would restart every table at `rows: 0` over a store of unknown contents and
     // skip R7's refusal entirely.
     let named: BTreeSet<&str> = manifest.tables.keys().map(String::as_str).collect();
-    let expected: BTreeSet<&str> = MigratedTable::ALL.iter().map(|table| table.name()).collect();
+    let expected: BTreeSet<&str> = MigratedTable::ALL
+        .iter()
+        .map(|table| table.name())
+        .collect();
     if named != expected {
         let missing: Vec<&str> = expected.difference(&named).copied().collect();
         let unknown: Vec<&str> = named.difference(&expected).copied().collect();
