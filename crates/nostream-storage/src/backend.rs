@@ -18,6 +18,10 @@ use crate::lmdb::{LMDB_MAX_DBS, LMDB_MAX_READERS};
 /// database it replaces.
 pub const LMDB_DIR: &str = "lmdb";
 
+/// The file heed keeps an environment's data in, under [`LMDB_DIR`]. The store never changes
+/// it: another name would be a different environment to every existing reader of the path.
+pub const LMDB_DATA_FILE: &str = "data.mdb";
+
 /// Resolves the data directory under `root` for one backend. A backend that keeps its data
 /// somewhere other than a directory of its own answers `None`.
 pub fn data_dir(root: &Path, backend: EventStoreBackend) -> Option<PathBuf> {

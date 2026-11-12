@@ -15,7 +15,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use nostream_storage::backend::LMDB_DIR;
+use nostream_storage::backend::{LMDB_DATA_FILE, LMDB_DIR};
 use nostream_storage::migration::{MigratedTable, MigrationRow, MigrationSource, MigrationTarget};
 use nostream_storage::{LmdbBackend, PostgresBackend};
 use sha2::{Digest, Sha256};
@@ -454,11 +454,8 @@ fn store_path(options: &MigrateOptions) -> PathBuf {
 /// Whether the target already holds an LMDB environment, asked the way R8 asks it: `<target>/
 /// lmdb/data.mdb` is a file. A directory alone is not a store, and neither is a lock file.
 fn store_present(options: &MigrateOptions) -> bool {
-    store_path(options).join(DATA_FILE).is_file()
+    store_path(options).join(LMDB_DATA_FILE).is_file()
 }
-
-/// The data file heed creates inside an environment's directory.
-const DATA_FILE: &str = "data.mdb";
 
 /// The first table of a manifest-less target that already holds a row, if any: one row read per
 /// table, which is the probe R7 asks for.
