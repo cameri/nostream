@@ -333,7 +333,7 @@ fn time_key(seconds: i64, id: EventId) -> Vec<u8> {
 }
 
 /// Every key in one named database, through the public environment handle.
-fn database_keys(backend: &LmdbBackend, name: &str) -> Vec<Vec<u8>> {
+fn database_entries(backend: &LmdbBackend, name: &str) -> Vec<(Vec<u8>, Vec<u8>)> {
     let txn = backend.env().read_txn().expect("a read transaction");
     let database = backend
         .env()
@@ -343,7 +343,17 @@ fn database_keys(backend: &LmdbBackend, name: &str) -> Vec<Vec<u8>> {
     database
         .iter(&txn)
         .expect("the database iterates")
-        .map(|entry| entry.expect("a stored entry").0.to_vec())
+        .map(|entry| {
+            let (key, value) = entry.expect("a stored entry");
+            (key.to_vec(), value.to_vec())
+        })
+        .collect()
+}
+
+fn database_keys(backend: &LmdbBackend, name: &str) -> Vec<Vec<u8>> {
+    database_entries(backend, name)
+        .into_iter()
+        .map(|(key, _)| key)
         .collect()
 }
 
@@ -1531,6 +1541,145 @@ fn verify_refuses_a_manifest_without_a_store_instead_of_creating_one() {
             "verify created no store (verify = {verify})"
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// The seam's index writes, asserted where the store keeps them.
+// ---------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_migrated_replaceable_event_writes_the_pointer_its_kind_index_is_keyed_by() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+
+    let mut record = event_record(7, "the first value");
+    record.event.kind = Kind(10000);
+    // A stored, empty deduplication list: the author and kind alone, with no `d` element.
+    record.event_deduplication = Some(Vec::new());
+    target
+        .write_batch(&[MigrationRow::Event(record.clone())])
+        .await
+        .expect("the event writes");
+
+    let entries = database_entries(&target, "replaceable");
+    assert_eq!(entries.len(), 1, "one pointer for the author and kind");
+    let (key, value) = &entries[0];
+    assert_eq!(
+        value.as_slice(),
+        record.event.id.as_bytes(),
+        "the pointer carries the event id"
+    );
+    assert_eq!(
+        key.len(),
+        36,
+        "pubkey ++ kind, with no deduplication element"
+    );
+    assert_eq!(&key[..32], record.event.pubkey.as_bytes());
+
+    // A second event of the same author and kind replaces the pointer at the same key, so the
+    // key is the author and kind rather than the id.
+    let mut second = record.clone();
+    second.event.id = event_id(9);
+    target
+        .write_batch(&[MigrationRow::Event(second.clone())])
+        .await
+        .expect("the replacement writes");
+    let entries = database_entries(&target, "replaceable");
+    assert_eq!(entries.len(), 1, "one pointer per author and kind");
+    assert_eq!(entries[0].0, *key, "the same key");
+    assert_eq!(entries[0].1.as_slice(), second.event.id.as_bytes());
+}
+
+#[tokio::test]
+async fn a_migrated_delivery_without_an_outbox_id_stores_no_outbox_pointer() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+
+    let mut orphan = delivery_log(1);
+    orphan.outbox_id = None;
+    let linked = delivery_log(2);
+    target
+        .write_batch(&[
+            MigrationRow::DeliveryLogEntry(orphan.clone()),
+            MigrationRow::DeliveryLogEntry(linked.clone()),
+        ])
+        .await
+        .expect("the rows write");
+
+    let rows = scan_all(&target, MigratedTable::NotificationDeliveryLog).await;
+    let stored = rows
+        .iter()
+        .find_map(|row| match row {
+            MigrationRow::DeliveryLogEntry(entry) if entry.id == orphan.id => Some(entry),
+            _ => None,
+        })
+        .expect("the row without an outbox id is stored");
+    assert_eq!(stored.outbox_id, None, "the NULL outbox id survives");
+    assert_eq!(stored.event_type, orphan.event_type);
+
+    let pointers = database_entries(&target, "delivery_log_by_outbox");
+    assert_eq!(pointers.len(), 1, "only the row with an outbox id has one");
+    assert!(
+        pointers[0]
+            .0
+            .windows(linked.id.len())
+            .any(|window| window == linked.id.as_bytes()),
+        "the pointer names the linked row"
+    );
+}
+
+#[tokio::test]
+async fn a_migrated_job_writes_the_status_index_its_finder_reads() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = LmdbBackend::open(directory.path())
+        .await
+        .expect("the store opens");
+
+    // Same `created_at`, one status apart, so the keys can differ only in the status.
+    let mut submitted = dvm_job(3);
+    submitted.status = DvmJobStatus::Submitted;
+    submitted.created_at = at(5);
+    let mut completed = dvm_job(4);
+    completed.created_at = at(5);
+    for job in [&submitted, &completed] {
+        target
+            .write_batch(&[MigrationRow::DvmJob(job.clone())])
+            .await
+            .expect("the job writes");
+    }
+
+    let entries = database_entries(&target, "dvm_jobs_by_status_created_at");
+    assert_eq!(entries.len(), 2, "one pointer per job");
+    let pointer_for = |job: &DvmJob| {
+        entries
+            .iter()
+            .find(|(key, _)| key.ends_with(job.id.as_bytes()))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .expect("a pointer for the job")
+    };
+    for job in [&submitted, &completed] {
+        let (_, value) = pointer_for(job);
+        assert!(value.is_empty(), "a status pointer carries no value");
+    }
+
+    // Both jobs have the same `created_at`, so the bytes before the id are the status: they
+    // differ, and the finder's status prefix is what the writer put there.
+    let submitted_prefix = {
+        let (key, _) = pointer_for(&submitted);
+        key[..key.len() - 32].to_vec()
+    };
+    let completed_prefix = {
+        let (key, _) = pointer_for(&completed);
+        key[..key.len() - 32].to_vec()
+    };
+    assert_ne!(
+        submitted_prefix, completed_prefix,
+        "the status leads the key, after the timestamp part"
+    );
 }
 
 /// The process boundary the two failure tests above stop at: `main` prints
