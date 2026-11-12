@@ -41,11 +41,11 @@ jobs:
       # 1.1.1 has run on the tag ref — so the build is exactly the released
       # commit, even if main has advanced by the time the job starts.
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3.7.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4.3.0
 
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v3.9.1
         with:
           node-version-file: .nvmrc
           cache: pnpm
