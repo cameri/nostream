@@ -300,24 +300,6 @@ impl MigrationSource for StubSource {
     }
 }
 
-/// A target a verify must never touch: every method panics.
-struct UntouchedTarget;
-
-impl MigrationTarget for UntouchedTarget {
-    fn write_batch<'a>(&'a self, _rows: &'a [MigrationRow]) -> StorageFuture<'a, u64> {
-        panic!("verify must not write to the store")
-    }
-
-    fn scan_batch<'a>(
-        &'a self,
-        _table: MigratedTable,
-        _after: Option<&'a [u8]>,
-        _limit: usize,
-    ) -> StorageFuture<'a, Vec<MigrationRow>> {
-        panic!("verify must answer a missing manifest before it scans")
-    }
-}
-
 // ---------------------------------------------------------------------------------------
 // Helpers.
 // ---------------------------------------------------------------------------------------
@@ -782,20 +764,91 @@ async fn verify_accepts_the_runs_own_target_and_rejects_a_changed_row() {
 // AC6: no manifest.
 // ---------------------------------------------------------------------------------------
 
-#[tokio::test]
-async fn verify_rejects_a_missing_manifest_with_a_message_and_exit_1() {
+/// The directory's entries with their kind, sorted by name: what a verify must leave as it found
+/// it.
+fn entries(path: &std::path::Path) -> Vec<(String, bool)> {
+    let mut entries: Vec<(String, bool)> = std::fs::read_dir(path)
+        .expect("the directory reads")
+        .map(|entry| {
+            let entry = entry.expect("an entry reads");
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                entry.file_type().expect("the entry's type").is_dir(),
+            )
+        })
+        .collect();
+    entries.sort();
+    entries
+}
+
+// `run` builds a runtime of its own, so this test cannot be a `#[tokio::test]`: the async half
+// is driven by a runtime this test owns, and the two `run` calls happen outside any `block_on`.
+#[test]
+fn verify_creates_nothing_and_rejects_a_target_with_no_store_or_no_manifest() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
     let directory = tempfile::tempdir().expect("a temporary directory");
-    let options = MigrateOptions {
-        verify: true,
-        ..options(directory.path(), 1_000)
-    };
+
+    // Half one: a target with no store. The listing is the same afterwards.
+    let before = entries(directory.path());
+    let mut out = Vec::new();
+    let output = migrate::run(
+        MigrateOptions {
+            verify: true,
+            ..options(directory.path(), 1_000)
+        },
+        &mut out,
+    )
+    .expect("a missing store is an answer, not a failure");
+    assert_eq!(output.exit_code, 1);
+    let text = output_text(out);
+    assert!(text.contains("No store at"), "got: {text}");
+    assert!(
+        text.contains(&directory.path().join("lmdb").display().to_string()),
+        "the line names the store it looked for: {text}"
+    );
+    assert_eq!(entries(directory.path()), before, "verify created nothing");
+
+    // Half two: a store a copy filled, and whose manifest has since been removed.
+    let copy = options(directory.path(), 1_000);
+    let (usage, counts) = runtime.block_on(async {
+        let target = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+        migrate::migrate_with(
+            &StubSource::new(source_rows()),
+            &target,
+            &copy,
+            &mut Vec::new(),
+        )
+        .await
+        .expect("the copy succeeds");
+        let usage = target.map_usage().await.expect("the usage reads").used_bytes;
+        let mut counts = Vec::new();
+        for table in MigratedTable::ALL {
+            counts.push(scan_all(&target, table).await.len());
+        }
+        // R8: heed answers `BadOpenOptions` for a second open of one path with different
+        // options, so the writable handle is dropped before the verify opens the store
+        // read-only.
+        drop(target);
+        (usage, counts)
+    });
+    std::fs::remove_file(directory.path().join("migration-manifest.json"))
+        .expect("the manifest is removed");
 
     let mut out = Vec::new();
-    let output = migrate::verify_with(&UntouchedTarget, &options, &mut out)
-        .await
-        .expect("a missing manifest is an answer, not a failure");
+    let output = migrate::run(
+        MigrateOptions {
+            verify: true,
+            ..options(directory.path(), 1_000)
+        },
+        &mut out,
+    )
+    .expect("a missing manifest is an answer, not a failure");
     assert_eq!(output.exit_code, 1);
-
     let text = output_text(out);
     assert!(text.contains("No manifest at"), "got: {text}");
     assert!(
@@ -806,15 +859,31 @@ async fn verify_rejects_a_missing_manifest_with_a_message_and_exit_1() {
                 .display()
                 .to_string()
         ),
-        "the line names the path it looked for: {text}"
+        "the line names the manifest it looked for: {text}"
     );
-    assert_eq!(
-        std::fs::read_dir(directory.path())
-            .expect("the directory reads")
-            .count(),
-        0,
-        "verify created nothing"
-    );
+
+    runtime.block_on(async {
+        let reopened = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store reopens");
+        for (table, count) in MigratedTable::ALL.iter().zip(counts) {
+            assert_eq!(
+                scan_all(&reopened, *table).await.len(),
+                count,
+                "{} is unchanged",
+                table.name()
+            );
+        }
+        assert_eq!(
+            reopened
+                .map_usage()
+                .await
+                .expect("the usage reads")
+                .used_bytes,
+            usage,
+            "the store's bytes are unchanged"
+        );
+    });
 }
 
 // ---------------------------------------------------------------------------------------

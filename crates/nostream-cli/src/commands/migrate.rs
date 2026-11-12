@@ -49,17 +49,17 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
 
     runtime.block_on(async move {
         if options.verify {
-            // Answered before the store is opened, so a verify of a directory that holds no
-            // manifest leaves it exactly as it found it.
-            if read_manifest(&options.target)?.is_none() {
-                return no_manifest(&options.target, out);
-            }
-            // A verify reads, so it may not create the store: opening one that is absent would
-            // write a fresh environment and then report every table as short.
+            // Both answered before anything is opened, so a verify of a directory that holds no
+            // store leaves it exactly as it found it. The store is asked about first: R8's
+            // missing store is `data.mdb`'s absence, which is also what a directory that never
+            // held a migration looks like.
             if !store_present(&options) {
                 return no_store(&options, out);
             }
-            let target = open_target(&options.target).await?;
+            if read_manifest(&options.target)?.is_none() {
+                return no_manifest(&options.target, out);
+            }
+            let target = open_existing_target(&options.target).await?;
             return verify_with(&target, &options, out).await;
         }
 
@@ -69,7 +69,7 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             if !store_present(&options) {
                 return no_store(&options, out);
             }
-            let target = open_target(&options.target).await?;
+            let target = open_existing_target(&options.target).await?;
             return verify_with(&target, &options, out).await;
         }
 
@@ -451,10 +451,14 @@ fn store_path(options: &MigrateOptions) -> PathBuf {
     options.target.join(LMDB_DIR)
 }
 
-/// Whether the target already holds an LMDB environment.
+/// Whether the target already holds an LMDB environment, asked the way R8 asks it: `<target>/
+/// lmdb/data.mdb` is a file. A directory alone is not a store, and neither is a lock file.
 fn store_present(options: &MigrateOptions) -> bool {
-    store_path(options).exists()
+    store_path(options).join(DATA_FILE).is_file()
 }
+
+/// The data file heed creates inside an environment's directory.
+const DATA_FILE: &str = "data.mdb";
 
 /// The first table of a manifest-less target that already holds a row, if any: one row read per
 /// table, which is the probe R7 asks for.
@@ -484,9 +488,16 @@ fn refuse_zero_batch(options: &MigrateOptions) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Opens the store a run reads or writes.
+/// Opens the store a copy writes, creating it when it is not there.
 async fn open_target(root: &Path) -> Result<LmdbBackend, CliError> {
     LmdbBackend::open(root)
+        .await
+        .map_err(|error| CliError::Migrate(error.to_string()))
+}
+
+/// Opens the store a verify reads, read-only and creating nothing (R8).
+async fn open_existing_target(root: &Path) -> Result<LmdbBackend, CliError> {
+    LmdbBackend::open_existing(root)
         .await
         .map_err(|error| CliError::Migrate(error.to_string()))
 }
