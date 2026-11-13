@@ -53,11 +53,7 @@ pub(crate) fn invalid(table: &'static str, message: String) -> StorageError {
     }
 }
 
-/// The instant a row carries, truncated to the microsecond precision every PostgreSQL
-/// `timestamp` column has, so a value written by either backend reads back the same.
-pub(crate) fn micros(value: DateTime<Utc>) -> DateTime<Utc> {
-    DateTime::<Utc>::from_timestamp_micros(value.timestamp_micros()).unwrap_or(value)
-}
+pub(crate) use crate::keys::{i32_key, micros};
 
 /// An `i64` ordered by its bytes: the sign bit is flipped so a negative value sorts before
 /// zero rather than after every positive one.
@@ -71,15 +67,11 @@ pub(crate) fn i64_from_key(bytes: &[u8]) -> Result<i64, StorageError> {
     Ok((raw ^ (1 << 63)) as i64)
 }
 
-/// An `i32` ordered by its bytes, sign-flipped for the same reason as [`i64_key`].
-pub(crate) fn i32_key(value: i32) -> [u8; 4] {
-    ((value as u32) ^ (1 << 31)).to_be_bytes()
-}
-
-/// The inverse of [`i32_key`].
+/// The inverse of [`i32_key`]. The arithmetic lives in `crate::keys` with the forward one; the
+/// error is this module's, so the message an operator sees is unchanged.
 pub(crate) fn i32_from_key(bytes: &[u8]) -> Result<i32, StorageError> {
-    let raw = u32::from_be_bytes(fixed::<4>("events", bytes)?);
-    Ok((raw ^ (1 << 31)) as i32)
+    crate::keys::i32_from_key(bytes)
+        .ok_or_else(|| invalid("events", format!("4 bytes expected, {} found", bytes.len())))
 }
 
 fn fixed<const N: usize>(table: &'static str, bytes: &[u8]) -> Result<[u8; N], StorageError> {

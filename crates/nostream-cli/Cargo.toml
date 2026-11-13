@@ -14,16 +14,21 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 anyhow = { workspace = true }
+hex.workspace = true
 nostream-config.workspace = true
 nostream-core.workspace = true
 nostream-services.workspace = true
 nostream-storage.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+chrono.workspace = true
+heed.workspace = true
 tempfile.workspace = true
 
 [lints]

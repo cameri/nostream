@@ -1244,13 +1244,18 @@ name = "nostream-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
+ "heed",
+ "hex",
  "nostream-config",
  "nostream-core",
  "nostream-services",
  "nostream-storage",
+ "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror",
  "tokio",

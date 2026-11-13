@@ -152,6 +152,31 @@ pub(crate) fn append(
     Ok(())
 }
 
+/// Writes one delivery-log row exactly as the source carries it.
+///
+/// [`append`] mints the id and the timestamp and checks the outbox foreign key; a migrated row
+/// arrives with its own id, its own `created_at` and an outbox row that is in the source. The
+/// value and the two index keys are the same set `append` writes.
+pub(super) fn delivery_write(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+    entry: &DeliveryLogEntry,
+) -> Result<(), StorageError> {
+    let value = rows::encode("notification_delivery_log", entry)?;
+    databases
+        .notification_delivery_log
+        .put(txn, entry.id.as_bytes(), &value)?;
+    databases
+        .delivery_log_by_created_at
+        .put(txn, &delivery_created_key(entry), &[])?;
+    if let Some(outbox_id) = &entry.outbox_id {
+        databases
+            .delivery_log_by_outbox
+            .put(txn, &delivery_outbox_key(outbox_id, entry)?, &[])?;
+    }
+    Ok(())
+}
+
 /// `find_recent`: newest first, optionally filtered by status and event type.
 pub(crate) fn find_recent(
     txn: &RoTxn<'_>,
@@ -288,7 +313,7 @@ fn outbox_load(
 }
 
 /// Writes a message and its two status indexes, removing the entries of the row it replaces.
-fn outbox_write(
+pub(super) fn outbox_write(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
     message: &OutboxMessage,

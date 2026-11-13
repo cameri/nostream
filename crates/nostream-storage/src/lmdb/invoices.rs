@@ -33,7 +33,10 @@ fn pending_key(created_at: DateTime<Utc>, id: &str) -> Vec<u8> {
 }
 
 /// Writes a row and moves its pending entry, when the status or the row changed.
-fn write(
+///
+/// The migration's writer too ([`super::migration`]), with no previous row: it puts the source's
+/// own `amount_paid` and `confirmed_at` and the pending entry the row's status asks for.
+pub(super) fn write(
     txn: &mut RwTxn<'_>,
     databases: &Databases,
     invoice: &Invoice,

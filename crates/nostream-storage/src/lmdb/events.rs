@@ -247,6 +247,39 @@ fn write_event(
     Ok(())
 }
 
+/// Writes one migrated event: every entry [`write_event`] writes, the `replaceable` pointer
+/// [`write_upserted`] writes, and the `events_deleted` entry [`soft_delete`] writes when the row
+/// carries `deleted_at`.
+///
+/// Nothing is stamped, cleared or defaulted: a migrated row keeps the `first_seen`,
+/// `deleted_at`, `expires_at`, `event_deduplication` and `remote_address` the source carries. A
+/// row that arrives soft-deleted or expired never passed through [`soft_delete`], so both tail
+/// entries are this writer's own work.
+pub(super) fn write_migrated(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+    record: &EventRecord,
+) -> Result<(), StorageError> {
+    write_event(txn, databases, record)?;
+    let kind = kind_of(record)?;
+    if encoding::replaceable_kind(kind) {
+        let deduplication = record.deduplication();
+        databases.replaceable.put(
+            txn,
+            &encoding::replaceable_key(&record.event.pubkey, kind, &deduplication)?,
+            record.event.id.as_bytes(),
+        )?;
+    }
+    if let Some(deleted_at) = record.deleted_at {
+        databases.events_deleted.put(
+            txn,
+            &encoding::time_key(deleted_at.timestamp(), &record.event.id),
+            &[],
+        )?;
+    }
+    Ok(())
+}
+
 /// Writes only the `events` value, which is what a soft delete changes.
 fn put_value(
     txn: &mut RwTxn<'_>,
