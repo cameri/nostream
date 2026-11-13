@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::io::Write;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -104,6 +104,7 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         let source = PostgresBackend::master_only_from_env().map_err(|error| {
             CliError::Migrate(format!("could not read the source at {described}: {error}"))
         })?;
+        create_target(&options)?;
         let target = open_target(&options.target).await?;
         migrate_with(&source, &target, &options, out).await
     })
@@ -736,8 +737,8 @@ fn probe_budget() -> Duration {
 /// The copy writes the whole dataset into `<target>/lmdb`, so a group- or world-writable target
 /// lets another local user pre-place the store and read what lands in it, and a symlinked target
 /// sends the copy somewhere the operator did not name. Both are refused before anything is
-/// opened. A target that does not exist yet is left alone: `open_target` creates it under the
-/// operator's own umask.
+/// opened. A target that does not exist yet cannot be judged here, so `create_target` creates it
+/// before the store opens and runs this check again over what is then on disk.
 fn refuse_unsafe_target(options: &MigrateOptions) -> Result<(), CliError> {
     refuse_unsafe_target_for(options, effective_uid())
 }
@@ -799,6 +800,12 @@ fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Re
             )));
         }
     }
+    // The directory that holds the target decides whether the target itself can be replaced.
+    // Write permission on a directory is what allows an entry in it to be renamed away and
+    // another put in its place, and it takes no ownership of the entry to do it, so this is a
+    // mode question rather than a uid one.
+    refuse_swappable_ancestry(&options.target)?;
+
     // The data file itself, which `is_file()` and LMDB both follow: a link there would let the
     // copy read or write through it, and heed creates `lock.mdb` beside whatever it resolves to.
     // A predicate over the file's own metadata is the only way to see that.
@@ -834,6 +841,66 @@ fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Re
     }
 
     Ok(())
+}
+
+/// Refuses an ancestor another user could use to replace the target.
+///
+/// Renaming an entry needs write permission on the directory that holds it, and no ownership of
+/// the entry itself, so a group- or world-writable ancestor lets another user move this target
+/// aside and put their own there before the store opens. The sticky bit is the exception that
+/// makes `/tmp` usable: it refuses the rename of an entry its writer does not own.
+fn refuse_swappable_ancestry(target: &Path) -> Result<(), CliError> {
+    let mut path = match target.parent() {
+        Some(parent) if parent.as_os_str().is_empty() => PathBuf::from("."),
+        Some(parent) => parent.to_path_buf(),
+        None => return Ok(()),
+    };
+
+    loop {
+        // `metadata` follows, not `symlink_metadata`: the question is the directory the kernel
+        // would use, and a linked ancestor stands in for the one it points at.
+        match fs::metadata(&path) {
+            Ok(metadata) => {
+                let mode = metadata.permissions().mode();
+                if mode & 0o022 != 0 && mode & 0o1000 == 0 {
+                    return Err(CliError::Migrate(format!(
+                        "{} is writable by group or other ({:04o}) and has no sticky bit: another \
+                         user could replace {} before the store opens. Put the target under a \
+                         directory only its owner can write to, or under one with the sticky bit",
+                        path.display(),
+                        mode & 0o7777,
+                        target.display()
+                    )));
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(CliError::Migrate(format!("{}: {error}", path.display())));
+            }
+        }
+
+        match path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => path = parent.to_path_buf(),
+            _ => return Ok(()),
+        }
+    }
+}
+
+/// Creates the target when it is missing, then judges what is on disk.
+///
+/// `refuse_unsafe_target` can only judge what exists, and the source is dialled and probed
+/// before the store opens, so a directory another user planted in that window would be adopted
+/// by `create_dir_all` without a word. Creating it here, under the mode the store itself uses,
+/// and checking again closes the window: after this call the target is a directory this process
+/// made, or the run has ended.
+fn create_target(options: &MigrateOptions) -> Result<(), CliError> {
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&options.target)
+        .map_err(|error| CliError::Migrate(format!("{}: {error}", options.target.display())))?;
+
+    refuse_unsafe_target(options)
 }
 
 /// The line and exit code a verify answers when the target has no manifest.
@@ -1017,6 +1084,67 @@ mod tests {
         assert!(
             refuse_unsafe_target_for(&options, effective_uid()).is_ok(),
             "the user who owns it is allowed, and /proc names them"
+        );
+    }
+
+    /// The directory that holds the target decides whether the target can be replaced, and it
+    /// needs no ownership of the target to do it: a rename takes write permission on the holder.
+    /// Without the sticky bit that permission is refused; `/tmp` is exactly this mode plus the
+    /// sticky bit, which is why the bit, and not the mode alone, is the question.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn a_target_under_a_swappable_directory_is_refused() {
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let shared = temporary.path().join("shared");
+        fs::create_dir(&shared).expect("the shared directory is made");
+        let options = MigrateOptions {
+            target: shared.join("target"),
+            batch_size: 1_000,
+            verify: false,
+        };
+
+        fs::set_permissions(&shared, fs::Permissions::from_mode(0o777))
+            .expect("the shared directory is opened");
+        let error = refuse_unsafe_target_for(&options, effective_uid())
+            .expect_err("a target a group or other user can swap is refused");
+        assert!(error.to_string().contains("no sticky bit"), "{error}");
+
+        fs::set_permissions(&shared, fs::Permissions::from_mode(0o1777))
+            .expect("the sticky bit is set");
+        assert!(
+            refuse_unsafe_target_for(&options, effective_uid()).is_ok(),
+            "a sticky holder is the shape /tmp has, and is allowed"
+        );
+    }
+
+    /// The check that runs before the source is dialled can only judge what exists, so the
+    /// target is created and then judged. Both halves are needed: the creation gives the second
+    /// check something to see, and the second check is what refuses a directory another user
+    /// planted while the source was being probed.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn a_missing_target_is_created_and_then_judged() {
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let target = temporary.path().join("nested").join("target");
+        let options = MigrateOptions {
+            target: target.clone(),
+            batch_size: 1_000,
+            verify: false,
+        };
+
+        create_target(&options).expect("a missing target is created");
+
+        let metadata = fs::symlink_metadata(&target).expect("the target exists");
+        assert!(metadata.is_dir(), "the target is a directory");
+        assert_eq!(
+            metadata.permissions().mode() & 0o777,
+            0o700,
+            "the target is private to its owner, whatever the umask says"
+        );
+        assert_eq!(
+            Some(metadata.uid()),
+            effective_uid(),
+            "and it belongs to the user who ran the copy"
         );
     }
 
