@@ -11,7 +11,9 @@ test
 dist
 seeds
 docs
-resources
+# `resources` stays in the context: the config tests read
+# resources/default-settings.yaml at runtime. Only that file is copied into the
+# image; the admin, css and html assets are the TypeScript app's.
 grafana
 prometheus.yaml
 *.md

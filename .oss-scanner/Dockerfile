@@ -16,6 +16,12 @@ WORKDIR /code
 
 COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
 COPY crates ./crates
+# `resources/default-settings.yaml` is read at *runtime* by the config tests, via
+# `CARGO_MANIFEST_DIR/../../resources`, which is `/code/resources` here. `--no-run`
+# compiles those tests without executing them, so a missing file fails the offline
+# audit phase rather than the build. Nothing else under `resources/` is loaded by
+# the Rust workspace; the admin and css assets belong to the TypeScript app.
+COPY resources/default-settings.yaml ./resources/default-settings.yaml
 
 RUN cargo fetch
 
