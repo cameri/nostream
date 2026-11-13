@@ -567,6 +567,68 @@ describe('PaymentsService', () => {
         expect(subscription.currentPeriodEnd).to.deep.equal(new Date(periodEnd.getTime() + 30 * DAY))
       })
 
+      it('does not switch a pubkey from a dearer plan to a cheaper one that somebody paid for it, and credits the money to the plan it has', async () => {
+        const premium = { id: 'premium', amount: 25_000_000n, intervalSeconds: 2_592_000, graceSeconds: 259_200 }
+        settings.returns(plansSettings([plan, premium]))
+        const periodEnd = new Date(Date.now() + 5 * DAY)
+        userSubscriptionRepository.findByPubkey.resolves({
+          pubkey: 'pubkey1234',
+          planId: 'premium',
+          status: 'active',
+          currentPeriodStart: new Date(Date.now() - 25 * DAY),
+          currentPeriodEnd: periodEnd,
+          graceEndsAt: null,
+          cancelAtPeriodEnd: false,
+        })
+
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 5_000_000n }))
+
+        const [subscription] = userSubscriptionRepository.upsert.firstCall.args
+        expect(subscription.planId).to.equal('premium')
+        // the cheaper plan costs a fifth of premium, so it buys a fifth of a premium period: six days
+        expect(subscription.currentPeriodEnd).to.deep.equal(new Date(periodEnd.getTime() + 6 * DAY))
+        expect(userSubscriptionRepository.upsert).to.have.been.calledOnce
+      })
+
+      it('credits what was actually paid, converted to msats, not the price of the plan', async () => {
+        const premium = { id: 'premium', amount: 25_000_000n, intervalSeconds: 2_592_000, graceSeconds: 259_200 }
+        settings.returns(plansSettings([plan, premium]))
+        const periodEnd = new Date(Date.now() + 5 * DAY)
+        userSubscriptionRepository.findByPubkey.resolves({
+          pubkey: 'pubkey1234',
+          planId: 'premium',
+          status: 'active',
+          currentPeriodStart: new Date(Date.now() - 25 * DAY),
+          currentPeriodEnd: periodEnd,
+          graceEndsAt: null,
+          cancelAtPeriodEnd: false,
+        })
+
+        // 10,000 sats = 10,000,000 msats, twice the price of the cheaper plan
+        await service.confirmInvoice(makeCompletedInvoice({ unit: InvoiceUnit.SATS, amountPaid: 10_000n }))
+
+        const [subscription] = userSubscriptionRepository.upsert.firstCall.args
+        expect(subscription.currentPeriodEnd).to.deep.equal(new Date(periodEnd.getTime() + 12 * DAY))
+      })
+
+      it('moves a pubkey up to a dearer plan that somebody paid for it', async () => {
+        const lite = { id: 'lite', amount: 1_000_000n, intervalSeconds: 2_592_000, graceSeconds: 259_200 }
+        settings.returns(plansSettings([lite, plan]))
+        userSubscriptionRepository.findByPubkey.resolves({
+          pubkey: 'pubkey1234',
+          planId: 'lite',
+          status: 'active',
+          currentPeriodStart: new Date(Date.now() - 25 * DAY),
+          currentPeriodEnd: new Date(Date.now() + 5 * DAY),
+          graceEndsAt: null,
+          cancelAtPeriodEnd: false,
+        })
+
+        await service.confirmInvoice(makeCompletedInvoice({ amountPaid: 5_000_000n }))
+
+        expect(userSubscriptionRepository.upsert.firstCall.args[0].planId).to.equal('basic')
+      })
+
       it('does not extend the subscription again for a repeated callback of an invoice that was already confirmed', async () => {
         invoiceRepository.findById.resolves(stubInvoice({ planId: 'basic', confirmedAt: new Date() }))
 
