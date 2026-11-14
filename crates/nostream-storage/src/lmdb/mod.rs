@@ -1,4 +1,4 @@
-//! The LMDB backend: one environment, the 29 named databases, and the nine repository traits.
+//! The LMDB backend: one environment, the 30 named databases, and the nine repository traits.
 //! Mirrors `src/repositories/` through the seam the Postgres backend also implements, and
 //! `docs/rewrite/decisions/0011-lmdb-backend.md` records why each choice below was made.
 //!
@@ -14,10 +14,14 @@ mod metadata;
 mod migration;
 mod notifications;
 mod rows;
+mod search;
 mod users;
 
-use std::path::PathBuf;
-use std::sync::Arc;
+pub use search::{SEARCH_INDEX_DB, SEARCH_INDEX_MARKER, SEARCH_INDEX_VERSION};
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use chrono::Utc;
 use heed::types::Bytes;
@@ -33,8 +37,8 @@ use crate::repositories::{
     EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
     InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
     NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, StorageFuture, StreamedEvent, User,
-    UserPatch, UserRepository,
+    QueryStream, ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture,
+    StreamedEvent, User, UserPatch, UserRepository,
 };
 
 /// The fixed map size every environment is opened with: `Env::resize` is `unsafe` and this
@@ -44,9 +48,9 @@ use crate::repositories::{
 /// approach it, which needs `Env::resize` (a second `unsafe` call) or a refusal at open.
 pub const LMDB_MAP_SIZE: usize = 64 << 30;
 
-/// The number of named databases the environment reserves, comfortably above the 29 it opens.
+/// The number of named databases the environment reserves, comfortably above the 30 it opens.
 ///
-/// shortcut: 29 databases open under a reserve of 64; upgrade when a tenth repository or a new
+/// shortcut: 30 databases open under a reserve of 64; upgrade when a tenth repository or a new
 /// query path crosses that reserve, which moves this value and every store's reopen path.
 pub const LMDB_MAX_DBS: u32 = 64;
 
@@ -79,13 +83,29 @@ pub(crate) const STREAM_BATCH_ITEMS: usize = 256;
 /// [`STREAM_BATCH_ITEMS`], so the transaction never spans a whole range.
 pub(crate) const STREAM_BATCH_KEYS: usize = 256;
 
-/// The settings gates the capture reads per query. The LMDB backend records only whether
-/// NIP-50 is on: it has no search implementation (ADR 0011, "Oracle: two arms, one executor" —
-/// entry 21, out of scope, not a permitted failure).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// The settings gates the capture reads per query.
+///
+/// The NIP-50 pair is what a search has to be answered under: whether the feature is on, how
+/// many characters of the query survive `nip50.maxQueryLength`, and whether `nip50.language` is
+/// the one text-search configuration this store's index reproduces. The language travels as that
+/// flag rather than by name so the struct stays `Copy`, and the refusal's message is static.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Gates {
     pub(crate) nip50: bool,
+    pub(crate) max_query_length: u64,
+    pub(crate) language_simple: bool,
     pub(crate) nip56: bool,
+}
+
+impl Default for Gates {
+    fn default() -> Self {
+        Self {
+            nip50: false,
+            max_query_length: search::DEFAULT_MAX_SEARCH_QUERY_LENGTH,
+            language_simple: true,
+            nip56: false,
+        }
+    }
 }
 
 /// The named databases of one environment.
@@ -119,6 +139,7 @@ pub(crate) struct Databases {
     pub(crate) notification_delivery_log: Database<Bytes, Bytes>,
     pub(crate) delivery_log_by_created_at: Database<Bytes, Bytes>,
     pub(crate) delivery_log_by_outbox: Database<Bytes, Bytes>,
+    pub(crate) events_by_term: Database<Bytes, Bytes>,
     pub(crate) meta: Database<Bytes, Bytes>,
 }
 
@@ -163,6 +184,7 @@ impl Databases {
             delivery_log_by_created_at: env
                 .create_database(txn, Some("delivery_log_by_created_at"))?,
             delivery_log_by_outbox: env.create_database(txn, Some("delivery_log_by_outbox"))?,
+            events_by_term: env.create_database(txn, Some(search::SEARCH_INDEX_DB))?,
             meta: env.create_database(txn, Some("meta"))?,
         })
     }
@@ -229,6 +251,28 @@ pub struct MapUsage {
     pub used_bytes: u64,
 }
 
+/// One lock per store path, held by [`LmdbBackend::open`] across the marker read, its comparison
+/// and the whole rebuild, so two opens of one store cannot both decide the index is stale.
+///
+/// Per path rather than one process-wide lock, because a single lock would hold one store's cold
+/// start against every other store's open and buy nothing. An entry is created per store path and
+/// left in place after use: the map is bounded by the number of distinct store paths a process
+/// opens, which is the number of stores it owns, so it is not a leak.
+///
+/// `LazyLock` rather than a `const` initialiser because `HashMap::new` is not a `const fn` on this
+/// toolchain; it is the standard library's only way to hold a map in a `static`.
+static INDEX_REBUILDS: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// The lock that serialises index rebuilds at `path`, keyed by the canonical path heed itself
+/// keys its own environment cache by, so two spellings of one directory share one lock.
+fn rebuild_lock(path: &Path) -> Arc<Mutex<()>> {
+    let mut locks = INDEX_REBUILDS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    Arc::clone(locks.entry(path.to_path_buf()).or_default())
+}
+
 /// An embedded LMDB event store with its metadata tail, built from the root a caller supplies.
 #[derive(Debug, Clone)]
 pub struct LmdbBackend {
@@ -243,6 +287,10 @@ impl LmdbBackend {
     /// The usage it reports is what the map's approach to [`LMDB_MAP_SIZE`] is read from: the
     /// store never grows, so an operator sees it coming here rather than at the first failed
     /// write.
+    ///
+    /// Two opens of one store serialise on the per-path rebuild lock across the marker read and
+    /// any rebuild, so one store's index is rebuilt once however many callers open it at the
+    /// same time; the comparison below is only sound while nothing else moves the marker.
     pub async fn open(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let root = root.into();
         // One home for the shape, shared with the writable opener and the CLI.
@@ -250,9 +298,28 @@ impl LmdbBackend {
         let opened = tokio::task::spawn_blocking(move || {
             let environment = LmdbEnv::open(&path, LMDB_MAP_SIZE)?;
             let handle = environment.env().clone();
+            #[cfg(test)]
+            rendezvous::await_partner(handle.path());
+            // A `std::sync::Mutex` taken here and dropped before the usage read: the whole of it
+            // runs on this blocking thread, so nothing holds it across an await, and no other
+            // code takes it, so it orders against nothing else.
+            let rebuilding = rebuild_lock(handle.path());
+            let rebuilding = rebuilding
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let mut transaction = handle.write_txn()?;
             let databases = Databases::create(&handle, &mut transaction)?;
+            let marker = databases
+                .meta
+                .get(&transaction, search::SEARCH_INDEX_MARKER)?
+                .map(<[u8]>::to_vec);
             transaction.commit()?;
+            // An index that was never built, or one a previous tokeniser wrote, is replaced
+            // before the store is handed out, so no search can read a half-built index.
+            if marker.as_deref() != Some(&[search::SEARCH_INDEX_VERSION][..]) {
+                search::rebuild(&handle, &databases)?;
+            }
+            drop(rebuilding);
             let used_bytes = handle.non_free_pages_size()?;
             Ok::<_, StorageError>((environment, databases, used_bytes))
         })
@@ -356,6 +423,16 @@ impl LmdbBackend {
                 .nip50
                 .as_ref()
                 .is_some_and(|nip50| nip50.enabled == Some(true)),
+            max_query_length: settings
+                .nip50
+                .as_ref()
+                .and_then(|nip50| nip50.max_query_length)
+                .unwrap_or(search::DEFAULT_MAX_SEARCH_QUERY_LENGTH),
+            language_simple: settings
+                .nip50
+                .as_ref()
+                .and_then(|nip50| nip50.language.as_deref())
+                .is_none_or(|language| language == search::SEARCH_LANGUAGE),
             nip56: settings
                 .nip56
                 .as_ref()
@@ -465,6 +542,19 @@ impl EventRepository for LmdbBackend {
             self.read(move |txn, databases| events::count(txn, databases, &filters, &gates, now))
                 .await
         })
+    }
+
+    /// LMDB answers a searched filter from `events_by_term` under the `simple` tokeniser
+    /// (`search.rs`), which is Postgres' `ToTsvector { language: "simple" }` rule; with the gate
+    /// off no terms resolve, no predicate is applied, and the relay's own matcher is what decides.
+    fn search_rule(&self) -> SearchRule {
+        if self.gates().nip50 {
+            SearchRule::ToTsvector {
+                language: search::SEARCH_LANGUAGE.to_owned(),
+            }
+        } else {
+            SearchRule::SubstringTerms
+        }
     }
 
     /// LMDB's tag index holds no empty value: `encoding::tag_entries` writes a key only when the
@@ -1055,6 +1145,60 @@ impl NotificationOutboxRepository for LmdbBackend {
     }
 }
 
+/// A rendezvous the test that opens one store twice passes through between the environment and
+/// the rebuild lock, so both callers are past `Env::open` before either reads the marker. Nothing
+/// waits unless a test armed the store's path.
+#[cfg(test)]
+pub(crate) mod rendezvous {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Barrier, LazyLock, Mutex};
+
+    struct Armed {
+        barrier: Arc<Barrier>,
+        /// The callers still to arrive; the path is disarmed when the last one does.
+        waiting: usize,
+    }
+
+    static ARMED: LazyLock<Mutex<HashMap<PathBuf, Armed>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    /// Arms `path` so the next `arrivals` opens of it wait for each other before the rebuild lock.
+    pub(crate) fn arm(path: &Path, arrivals: usize) {
+        let mut armed = ARMED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        armed.insert(
+            path.to_path_buf(),
+            Armed {
+                barrier: Arc::new(Barrier::new(arrivals)),
+                waiting: arrivals,
+            },
+        );
+    }
+
+    /// Waits for the other armed opens of `path`. An unarmed path returns at once.
+    pub(crate) fn await_partner(path: &Path) {
+        let (barrier, last) = {
+            let mut armed = ARMED
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some(entry) = armed.get_mut(path) else {
+                return;
+            };
+            entry.waiting -= 1;
+            (Arc::clone(&entry.barrier), entry.waiting == 0)
+        };
+        if last {
+            ARMED
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(path);
+        }
+        barrier.wait();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -1164,7 +1308,7 @@ mod tests {
             .expect("the store opens");
         let usage = backend.map_usage().await.expect("the usage");
         assert_eq!(usage.map_size, LMDB_MAP_SIZE);
-        assert!(usage.used_bytes > 0, "the 29 databases occupy pages");
+        assert!(usage.used_bytes > 0, "the 30 databases occupy pages");
         assert!(usage.used_bytes <= LMDB_MAP_SIZE as u64);
     }
 
@@ -1181,7 +1325,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_named_database_past_the_maximum_is_refused() {
-        // The environment reserves LMDB_MAX_DBS handles; the 29 the backend opens leave the
+        // The environment reserves LMDB_MAX_DBS handles; the 30 the backend opens leave the
         // rest free, and the 65th creation has to fail rather than silently succeed.
         let directory = tempfile::tempdir().expect("tempdir");
         let backend = LmdbBackend::open(directory.path())

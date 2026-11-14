@@ -49,7 +49,7 @@ author — inside the same read transaction that already holds the event row, in
 second store read per candidate. An embedded SQL store would have needed a second
 dependency and could still tear against the LMDB file.
 
-The price is recorded with the decision: 29 named databases maintained by hand, `DISTINCT`
+The price is recorded with the decision: 30 named databases maintained by hand, `DISTINCT`
 and `OFFSET` become cursor walks (`BTreeSet` for `find_actionable_targets`, a skip count for
 `find_pending_invoices`), and the columns' `CHECK` and foreign-key constraints move into
 Rust (§ Constraints move into Rust, below).
@@ -173,7 +173,7 @@ transaction outlives a poll, and a dropped stream pins no pages.
 
 `Env::resize` is `unsafe` and this crate has one audited `unsafe` call, so the map is
 preallocated at `LMDB_MAP_SIZE = 64 GiB` and never grown (D6). The same single
-`#[allow(unsafe_code)]` open sets `LMDB_MAX_DBS = 64` (the 29 named databases, comfortably
+`#[allow(unsafe_code)]` open sets `LMDB_MAX_DBS = 64` (the 30 named databases, comfortably
 inside) and `LMDB_MAX_READERS = 512`.
 
 Because the map never grows, its approach has to be visible before the first failed write:
@@ -215,6 +215,7 @@ The index is chosen from the filter, and which ranges can stop early follows fro
 | `authors` + `kinds` | `events_by_author`, one range per whole-pubkey criterion and kind, and one whole-tail range per prefix criterion | when every criterion is a whole pubkey, so a range is one `pubkey ‖ kind ‖ created_at` run; a prefix range spans every kind |
 | `authors` alone | `events_by_created_at` | yes — see below |
 | a `#` + letter criterion | `tags`, one range per criterion | for an exact value; a `#g` prefix spans values, so its range runs whole |
+| `search` with the NIP-50 gate on | `events_by_term`, one range per posting of the first distinct query term (ADR 0012, D1) | never: a term's postings run in id order and the page is ordered by rank, so the page's own heap bounds it |
 | anything else | `events_by_created_at` | yes |
 
 Every hex criterion's bounds are widened to the field they name — 32 bytes for an id or a
@@ -260,6 +261,21 @@ Two consequences of the same bound:
   two shapes hold the set, whose population is one id per row its matcher accepts: a single exact
   criterion names one key per row. The tags index has no order that visits each row once, which
   is why the cap trades a slot past it for a body decode.
+
+## NIP-50 search is a database of this store; its contract is ADR 0012
+
+The store answers `Filter::search` from a thirtieth named database, `events_by_term`, keyed
+`term ‖ event_id` with an empty value, maintained by `write_event` and `hard_delete` and rebuilt on
+open when the `meta` marker `search-index-version` is stale. That is all this record needs to keep
+about it, because the database count, the `LMDB_MAX_DBS` headroom and the `search` row of the index
+table above are facts of the store's shape.
+
+Everything a reader would otherwise look for here — why an index rather than a scan-time filter,
+the tokeniser and what it loses against Postgres' `simple`, the cover-span rank and its divergence
+from `ts_rank`, the marker and what stale means, the batched rebuild and the open cost it adds, and
+what would overturn any of it — is **ADR 0012 (`0012-nip50-search-index.md`, D1–D9)**. It is a
+separate number because those are decisions about the store's on-disk format and its open cost, not
+about the shape of a query.
 
 ## Constraints move into Rust
 
@@ -324,13 +340,17 @@ Postgres can reach: raw SQL on `users.tos_accepted_at` and the serializable `tra
 groups.
 
 `tests/parity_lmdb.rs` opens a store on a `tempfile::TempDir`, inserts the fixture's
-483-event corpus and replays **113 of 118** entries. The five it does not replay:
+483-event corpus and replays **114 of 118** entries. The four it does not replay:
 
 |index|op|why the seam cannot run it|
 |---|---|---|
-|21|`events.find_by_filters` with `search`|NIP-50 is out of scope; the backend answers `NotImplemented`|
 |48, 50|`user.tos_accepted_at`|raw SQL against `backend.master()`, no seam form|
 |112, 115|`transaction`|the capture **rolled these back**; reproducing a rollback needs a transaction type this job deliberately does not add|
+
+Entry 21 — the one filter carrying `search` — **is** replayed, from the term index (ADR 0012,
+D1–D4): its four rows and their order are the capture's, and the marker line reads
+`LMDB_PARITY_COMPLETE replayed=114 excluded=48,50,112,115`. It was excluded while the backend
+refused the query; the refusal is gone with job 028.
 
 The other two `transaction` groups, 111 and 117, **committed** in the capture and are
 replayed: running their nested ops in order through the seam leaves exactly the state the
@@ -341,13 +361,13 @@ cannot pass. What the transaction decision leaves unmeasured is rollback: the ar
 committed groups' effects, not that two calls can fail together.
 
 The target asserts every exclusion against the fixture — an entry is excluded exactly when
-its op is one of the five above — so the list cannot grow without the diff showing it.
+its op is one of the four above — so the list cannot grow without the diff showing it.
 
 ## Consequences
 
 - One environment, one write transaction, one error taxonomy; no second dependency, and no
   tear between two files.
-- 29 named databases and their key encodings are maintained by hand; `DISTINCT`/`OFFSET`
+- 30 named databases and their key encodings are maintained by hand; `DISTINCT`/`OFFSET`
   became cursor walks; two `CHECK`/foreign-key constraints became Rust code.
 - Postgres remains the reference: every query path is written against `sql.rs`'s predicates
   and orderings, and the shared executor is what proves it.
