@@ -33,13 +33,17 @@ trait, so a defect in either backend is in scope.
    must not degrade the process for the rest: no unbounded allocation, no panic
    that ends the process, no work on the accept loop that a client controls.
 2. **Integrity of stored events.** No event may be stored without a valid
-   signature over its own id, and no stored event may be deleted or replaced
-   without a newer, valid replacement from the same key.
+   signature over its own id; a replaceable or addressable event may be replaced
+   only by a newer event from the same key; and an event may be removed only by a
+   signed deletion request from that same key, or by the relay's own expiry and
+   retention pass. A deletion and an expiry are not replacements — a check that
+   expects the store to put something in their place reports supported relay
+   behaviour as a defect.
 3. **Isolation between users.** A filter must not return events a client is not
    entitled to under the protocol, writes gated behind NIP-42 must not be accepted
    without it, and admin auth must not be bypassable.
-4. **Host resources.** A rebuild, a query, or an index write may not become
-   unbounded or quadratic because of client input.
+4. **Host resources.** A web-of-trust graph rebuild, a query, or an index write
+   may not become unbounded or quadratic because of client input.
 
 ## Severity guidance
 
@@ -72,10 +76,15 @@ trait, so a defect in either backend is in scope.
 
 ## Notes that help triage
 
-- The LMDB index is **derived**: every key rebuilds from the events table, and a
-  version marker forces a rebuild when the shape changes. A key shape that makes
-  a valid event unindexable is a correctness bug, not a vulnerability, unless it
-  lets a client force the rebuild on every request.
+- The LMDB index is **derived**, but nothing rebuilds it. Its rows are written in
+  the same transaction as the event, so it cannot drift from the events on a
+  crash, and rebuilding it means re-importing an export into a fresh store —
+  there is no online repair path. The row format carries a version byte, and
+  `check_version` **rejects** a row written by another version
+  (`unsupported format version N`) rather than converting or rebuilding it, so a
+  format change is an operator step, not a self-healing one. A key shape that
+  makes a valid event unindexable is a correctness bug, not a vulnerability,
+  unless it makes one client's write cost unbounded work.
 - Per-connection caps and rate limits exist. A cap that is too high is low
   severity unless the work behind it can be reached without cost.
 - A malformed client message that aborts the process is high; one that closes
