@@ -1,0 +1,151 @@
+{
+  "backend": "lmdb",
+  "event_count_read_back": 50000,
+  "events": 50000,
+  "seed": 7,
+  "shapes": [
+    {
+      "count": 98,
+      "rows": 49000,
+      "shape": "create_many"
+    },
+    {
+      "count": 1000,
+      "rows": 1000,
+      "shape": "create"
+    },
+    {
+      "count": 200,
+      "rows": 200,
+      "shape": "by_id"
+    },
+    {
+      "count": 200,
+      "rows": 16000,
+      "shape": "author_kind"
+    },
+    {
+      "count": 200,
+      "rows": 100000,
+      "shape": "kind_since"
+    },
+    {
+      "count": 200,
+      "rows": 20000,
+      "shape": "tag"
+    },
+    {
+      "count": 50,
+      "rows": 40000,
+      "shape": "count"
+    }
+  ],
+  "volatile": {
+    "machine": {
+      "arch": "x86_64",
+      "cpu_count": 4,
+      "cpu_model": "Intel(R) Core(TM) i7-10700T CPU @ 2.00GHz",
+      "load_1min": 43.34,
+      "os": "linux",
+      "profile": "release"
+    },
+    "store": {
+      "bytes_per_event": 1883,
+      "data_bytes": 94191616
+    },
+    "timings": {
+      "author_kind": {
+        "ops": 200,
+        "p50_us": 320,
+        "p95_us": 435,
+        "p99_us": 552,
+        "per_second": 3610
+      },
+      "by_id": {
+        "ops": 200,
+        "p50_us": 20,
+        "p95_us": 23,
+        "p99_us": 71,
+        "per_second": 46674
+      },
+      "count": {
+        "ops": 50,
+        "p50_us": 7,
+        "p95_us": 12,
+        "p99_us": 18426,
+        "per_second": 2654
+      },
+      "create": {
+        "ops": 1000,
+        "p50_us": 3923,
+        "p95_us": 4686,
+        "p99_us": 5419,
+        "per_second": 254
+      },
+      "create_many": {
+        "ops": 98,
+        "p50_us": 27293,
+        "p95_us": 39467,
+        "p99_us": 48502,
+        "per_second": 35
+      },
+      "kind_since": {
+        "ops": 200,
+        "p50_us": 1481,
+        "p95_us": 1697,
+        "p99_us": 2312,
+        "per_second": 663
+      },
+      "read_back": {
+        "ops": 1,
+        "p50_us": 19174,
+        "p95_us": 19174,
+        "p99_us": 19174,
+        "per_second": 52
+      },
+      "tag": {
+        "ops": 200,
+        "p50_us": 272,
+        "p95_us": 335,
+        "p99_us": 426,
+        "per_second": 3594
+      }
+    }
+  },
+  "workload": {
+    "concurrency": 1,
+    "corpus": {
+      "authors": 200,
+      "content_len": 256,
+      "created_at_anchor_unix": 1700000000,
+      "created_at_window_secs": 2592000,
+      "kind_cycle": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        7,
+        7
+      ],
+      "tag_value_count": 20
+    },
+    "reads": {
+      "counts": 50,
+      "iterations": 200,
+      "limits": {
+        "author_kind": 100,
+        "by_id": 1,
+        "kind_since": 500,
+        "tag": 100
+      }
+    },
+    "writes": {
+      "create_many_batch": 500,
+      "ingest_events": 1000
+    }
+  }
+}
