@@ -132,6 +132,26 @@ pub struct TorClient {
     buffer: String,
 }
 
+/// Escapes a value for a quoted string on the control port.
+///
+/// The protocol frames each command on CRLF and quotes the values it accepts, so a password pasted
+/// into `AUTHENTICATE "..."` unescaped does three different wrong things: `\` and `"` end or split
+/// the value, and a raw CRLF ends the command and lets the rest of the password run as another one.
+/// Both are escaped the way the protocol's C-style quoting expects.
+fn escape_tor_quoted_string(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\r' => escaped.push_str("\\r"),
+            '\n' => escaped.push_str("\\n"),
+            _ => escaped.push(character),
+        }
+    }
+    escaped
+}
+
 impl TorClient {
     /// Connects and authenticates (`createTorClient` + `connect`,
     /// `src/tor/client.ts:33-56`).
@@ -144,8 +164,11 @@ impl TorClient {
             buffer: String::new(),
         };
 
+        // `TOR_PASSWORD` is operator input: it may hold a quote, a backslash or a CRLF, and each of
+        // those changes the command rather than the password if it is pasted in raw.
+        let quoted_password = escape_tor_quoted_string(password);
         let reply = client
-            .send_command(&format!("AUTHENTICATE \"{password}\""))
+            .send_command(&format!("AUTHENTICATE \"{quoted_password}\""))
             .await?;
 
         if !reply.starts_with("250") {
@@ -459,7 +482,9 @@ async fn write_private_key(path: &Path, key: &str) -> std::io::Result<()> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-    use super::{ONION_KEY_FILE, ONION_KEY_TEMP_FILE, write_private_key};
+    use super::{
+        ONION_KEY_FILE, ONION_KEY_TEMP_FILE, TorClient, escape_tor_quoted_string, write_private_key,
+    };
 
     #[tokio::test]
     async fn the_key_is_staged_and_renamed_without_leaving_the_temp_file() {
@@ -537,5 +562,61 @@ mod tests {
 
         assert!(write_private_key(&path, "ED25519-V3:secret").await.is_err());
         assert!(!path.exists());
+    }
+
+    /// The value has to survive the quoting the protocol uses: a raw `"` would end it, a raw `\`
+    /// would escape whatever follows, and a raw CRLF would end the command and make the rest of
+    /// the password a second one.
+    #[test]
+    fn a_quoted_string_escapes_what_would_end_it() {
+        assert_eq!(escape_tor_quoted_string(""), "");
+        assert_eq!(escape_tor_quoted_string("plain"), "plain");
+        assert_eq!(escape_tor_quoted_string(r#"pa"ss"#), r#"pa\"ss"#);
+        assert_eq!(escape_tor_quoted_string(r"pa\ss"), r"pa\\ss");
+        assert_eq!(
+            escape_tor_quoted_string("back\\slash and \"quotes\""),
+            "back\\\\slash and \\\"quotes\\\""
+        );
+        assert_eq!(escape_tor_quoted_string("a\r\nQUIT"), r"a\r\nQUIT");
+    }
+
+    /// The command on the wire, not the helper's return value: a control-port double answers the
+    /// handshake and the test compares the exact bytes that arrived.
+    #[tokio::test]
+    async fn connect_escapes_the_password_on_the_wire() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback port");
+        let port = listener.local_addr().expect("the bound address").port();
+
+        let control_port = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("the client connects");
+            let mut command = Vec::new();
+            let mut byte = [0u8; 1];
+            loop {
+                let read = socket.read(&mut byte).await.expect("the command arrives");
+                assert_eq!(read, 1, "the control port closed mid-command");
+                command.push(byte[0]);
+                if command.ends_with(b"\r\n") {
+                    break;
+                }
+            }
+            socket.write_all(b"250 OK\r\n").await.expect("reply");
+            String::from_utf8(command).expect("the command is utf-8")
+        });
+
+        let client = TorClient::connect("127.0.0.1", port, "pa\"ss\\word")
+            .await
+            .expect("the doubled connects and authenticates");
+        drop(client);
+
+        assert_eq!(
+            control_port.await.expect("the double finishes"),
+            "AUTHENTICATE \"pa\\\"ss\\\\word\"\r\n",
+            "the password is quoted once, with its own quote and backslash escaped"
+        );
     }
 }

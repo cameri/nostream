@@ -11,6 +11,7 @@ mod encoding;
 mod events;
 mod invoices;
 mod metadata;
+mod migration;
 mod notifications;
 mod rows;
 mod users;
@@ -165,6 +166,58 @@ impl Databases {
             meta: env.create_database(txn, Some("meta"))?,
         })
     }
+    /// Opens every database by name, refusing a store that lacks one.
+    ///
+    /// The migration tool's verify reads a store it did not create, so `create_database` is
+    /// wrong there: a missing database must be an error rather than a new one.
+    fn open(env: &Env, txn: &RoTxn<'_>) -> Result<Self, StorageError> {
+        Ok(Self {
+            events: open_named(env, txn, "events")?,
+            events_by_created_at: open_named(env, txn, "events_by_created_at")?,
+            events_by_author: open_named(env, txn, "events_by_author")?,
+            events_deleted: open_named(env, txn, "events_deleted")?,
+            events_expiring: open_named(env, txn, "events_expiring")?,
+            replaceable: open_named(env, txn, "replaceable")?,
+            tags: open_named(env, txn, "tags")?,
+            users: open_named(env, txn, "users")?,
+            invoices: open_named(env, txn, "invoices")?,
+            invoices_pending: open_named(env, txn, "invoices_pending")?,
+            nip05: open_named(env, txn, "nip05_verifications")?,
+            nip05_by_last_checked_at: open_named(env, txn, "nip05_by_last_checked_at")?,
+            invite_codes: open_named(env, txn, "invite_codes")?,
+            invite_codes_by_created_at: open_named(env, txn, "invite_codes_by_created_at")?,
+            invite_codes_by_expires_at: open_named(env, txn, "invite_codes_by_expires_at")?,
+            dvm_jobs: open_named(env, txn, "dvm_jobs")?,
+            dvm_jobs_by_status_created_at: open_named(env, txn, "dvm_jobs_by_status_created_at")?,
+            reports: open_named(env, txn, "reports")?,
+            reports_by_event_id: open_named(env, txn, "reports_by_event_id")?,
+            reports_actionable_by_created_at: open_named(
+                env,
+                txn,
+                "reports_actionable_by_created_at",
+            )?,
+            reports_actionable_event: open_named(env, txn, "reports_actionable_event")?,
+            reports_actionable_pubkey: open_named(env, txn, "reports_actionable_pubkey")?,
+            outbox: open_named(env, txn, "notification_outbox")?,
+            outbox_by_status_created_at: open_named(env, txn, "outbox_by_status_created_at")?,
+            outbox_by_status_updated_at: open_named(env, txn, "outbox_by_status_updated_at")?,
+            notification_delivery_log: open_named(env, txn, "notification_delivery_log")?,
+            delivery_log_by_created_at: open_named(env, txn, "delivery_log_by_created_at")?,
+            delivery_log_by_outbox: open_named(env, txn, "delivery_log_by_outbox")?,
+            meta: open_named(env, txn, "meta")?,
+        })
+    }
+}
+
+/// One named database of an existing environment, or [`StorageError::MissingDatabase`] when the
+/// store does not hold it.
+fn open_named(
+    env: &Env,
+    txn: &RoTxn<'_>,
+    name: &'static str,
+) -> Result<Database<Bytes, Bytes>, StorageError> {
+    env.open_database(txn, Some(name))?
+        .ok_or(StorageError::MissingDatabase { name })
 }
 
 /// How much of the fixed map one store has used (`Env::non_free_pages_size`).
@@ -192,8 +245,8 @@ impl LmdbBackend {
     /// write.
     pub async fn open(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let root = root.into();
-        // The same rule `data_dir` answers, from the same constant.
-        let path = root.join(crate::backend::LMDB_DIR);
+        // One home for the shape, shared with the writable opener and the CLI.
+        let path = crate::backend::store_dir(&root);
         let opened = tokio::task::spawn_blocking(move || {
             let environment = LmdbEnv::open(&path, LMDB_MAP_SIZE)?;
             let handle = environment.env().clone();
@@ -213,6 +266,50 @@ impl LmdbBackend {
             used_bytes,
             used_percent = used_bytes as f64 / LMDB_MAP_SIZE as f64 * 100.0,
             "the lmdb store is open"
+        );
+
+        Ok(Self {
+            env: environment.env().clone(),
+            databases,
+            settings: None,
+        })
+    }
+
+    /// Opens the existing store under `<root>/lmdb` for reading only, and creates nothing.
+    ///
+    /// The migration tool's verify path uses this instead of [`open`](Self::open): that one
+    /// `create_dir_all`s and `create_database`s, so verifying a store that is not there answers
+    /// with a fresh empty environment and every table short. Here a missing environment or a
+    /// missing database is an error.
+    ///
+    /// heed's process-global registry answers `BadOpenOptions` for a second open of one path
+    /// with different options, and it keeps the environment registered for the life of the
+    /// process, so dropping a handle does not free the path: a process that holds this root
+    /// writable cannot also open it read-only, and one that needs the writable root afterwards
+    /// must not open it here first.
+    pub async fn open_existing(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
+        let root = root.into();
+        // One home for the shape, shared with the writable opener and the CLI.
+        let path = crate::backend::store_dir(&root);
+        let opened = tokio::task::spawn_blocking(move || {
+            let environment = LmdbEnv::open_existing(&path, LMDB_MAP_SIZE)?;
+            let handle = environment.env().clone();
+            let transaction = handle.read_txn()?;
+            let databases = Databases::open(&handle, &transaction)?;
+            // heed only publishes the database handles a transaction opened once that
+            // transaction commits; a dropped read transaction leaves them unusable, and a
+            // fresh process - which has no earlier committed open to inherit them from -
+            // answers `Invalid argument` on its first read.
+            transaction.commit()?;
+            Ok::<_, StorageError>((environment, databases))
+        })
+        .await
+        .map_err(|_| StorageError::LmdbTaskCancelled)??;
+        let (environment, databases) = opened;
+
+        tracing::info!(
+            path = %environment.path().display(),
+            "the lmdb store is open for reading"
         );
 
         Ok(Self {
@@ -989,6 +1086,72 @@ mod tests {
                 .expect("the database opens");
             assert!(database.is_some(), "{name} exists");
         }
+    }
+
+    /// A report the migration carried across must not be allocated again: the batch raises the
+    /// `reports.next_id` sequence past the largest id it wrote, so the next `create` continues
+    /// from there instead of colliding with a migrated row.
+    #[tokio::test]
+    async fn a_migrated_report_raises_the_sequence_the_next_create_uses() {
+        use crate::migration::{MigrationRow, MigrationTarget};
+        use crate::repositories::{NewReport, Report, ReportRepository, ReportType};
+
+        let directory = tempfile::tempdir().expect("tempdir");
+        let backend = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+        let migrated = Report {
+            id: 7,
+            event_id: nostream_core::EventId::from_byte_array([21; 32]),
+            reporter_pubkey: nostream_core::Pubkey::from_byte_array([22; 32]),
+            reported_pubkey: None,
+            reported_event_id: None,
+            report_type: ReportType::Spam,
+            weight: 1.0,
+            actionable: true,
+            created_at: chrono::Utc::now(),
+        };
+        MigrationTarget::write_batch(&backend, &[MigrationRow::Report(migrated)])
+            .await
+            .expect("the batch writes");
+
+        let created = ReportRepository::create(
+            &backend,
+            &NewReport {
+                event_id: nostream_core::EventId::from_byte_array([23; 32]),
+                reporter_pubkey: nostream_core::Pubkey::from_byte_array([24; 32]),
+                reported_pubkey: None,
+                reported_event_id: None,
+                report_type: ReportType::Spam,
+                weight: 1.0,
+                actionable: true,
+            },
+        )
+        .await
+        .expect("the report is created");
+
+        assert_eq!(
+            created.id, 8,
+            "the sequence continues past the migrated report"
+        );
+    }
+
+    /// The store directory holds the whole dataset, so it is the owner's alone: heed writes the
+    /// files 0600, and a directory the umask left group-writable would both widen the audience
+    /// and be refused by the migration's own target check on the next run.
+    #[tokio::test]
+    async fn the_store_directory_is_the_owners_alone() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().expect("tempdir");
+        let root = directory.path().join("store");
+        LmdbBackend::open(&root).await.expect("the store opens");
+        let mode = std::fs::metadata(crate::backend::store_dir(&root))
+            .expect("the store directory exists")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700, "group and other have no access");
     }
 
     #[tokio::test]

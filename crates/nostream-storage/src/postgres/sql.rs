@@ -11,7 +11,7 @@ use super::{DEFAULT_FILTER_LIMIT, DEFAULT_TS_CONFIG};
 use crate::error::StorageError;
 
 /// The columns one stored event row is read from.
-const EVENT_COLUMNS: &str = "events.id::text AS id, events.event_id, events.event_pubkey, \
+pub(super) const EVENT_COLUMNS: &str = "events.id::text AS id, events.event_id, events.event_pubkey, \
 events.event_kind, events.event_created_at, events.event_content, events.event_tags, \
 events.event_signature, events.first_seen, events.deleted_at, events.event_deduplication, \
 host(events.remote_address) AS remote_address, events.expires_at";

@@ -13,10 +13,10 @@ use crate::repositories::{
     NewDeliveryLogEntry, OutboxMessage, OutboxPayload, OutboxStatus,
 };
 
-const OUTBOX_COLUMNS: &str = "id::text AS id, event_type, payload, status, attempt_count, \
+pub(super) const OUTBOX_COLUMNS: &str = "id::text AS id, event_type, payload, status, attempt_count, \
 available_at, last_error, delivered_at, created_at, updated_at";
 
-const DELIVERY_LOG_COLUMNS: &str = "id::text AS id, outbox_id::text AS outbox_id, event_type, \
+pub(super) const DELIVERY_LOG_COLUMNS: &str = "id::text AS id, outbox_id::text AS outbox_id, event_type, \
 target_id, target_type, status, attempt_number, error_snippet, created_at";
 
 /// `append`: one delivery attempt, timestamped now.

@@ -53,6 +53,13 @@ pub enum StorageError {
     #[error("lmdb operation failed: {0}")]
     Lmdb(#[from] heed::Error),
 
+    /// A named database a caller required is absent from the environment. The migration
+    /// tool's verify opens a store it did not create, so a missing database is an error rather
+    /// than a new one.
+    #[cfg(feature = "lmdb")]
+    #[error("the store has no {name} database")]
+    MissingDatabase { name: &'static str },
+
     /// An LMDB environment could not be opened at the requested path.
     #[cfg(feature = "lmdb")]
     #[error("failed to open the lmdb environment at {path}: {source}")]

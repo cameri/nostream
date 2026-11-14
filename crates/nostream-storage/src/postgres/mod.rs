@@ -10,6 +10,7 @@
 mod events;
 mod invoices;
 mod metadata;
+mod migration;
 mod notifications;
 mod repository;
 mod rows;
@@ -21,8 +22,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use nostream_config::Settings;
-use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions};
-use sqlx::{Postgres, Transaction};
+use sqlx::postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions};
+use sqlx::{Connection, Postgres, Transaction};
 
 use crate::error::StorageError;
 
@@ -204,6 +205,54 @@ impl PostgresBackend {
         Self::with_pools(utc(master), bounds, replica).await
     }
 
+    /// Builds the master pool only, reading none of the replica settings, and **does not dial**:
+    /// the first query is what connects. `Ok` says the settings parse, not that the server is
+    /// reachable.
+    ///
+    /// The migration copies from the master and nothing else, so a replica that is offline
+    /// during a cutover must not be able to stop it: `from_env` dials both and fails when the
+    /// replica is down, which is right for the relay and wrong for a one-shot copy. The copy's
+    /// own probe is what waits for the source, and `MIGRATION_CONNECT_CAP_MS` is the default
+    /// it waits with.
+    pub fn master_only_from_env() -> Result<Self, StorageError> {
+        Self::master_only_from_lookup(&|name| env::var(name).ok())
+    }
+
+    /// Dials the master once, inside `budget`, and answers the driver's own error.
+    ///
+    /// A probe through the pool cannot report the reason: sqlx retries a refused socket until
+    /// the pool's acquire timeout, so an operator reads `pool timed out while waiting for an
+    /// open connection` and never learns that the port refused, the password is wrong or the
+    /// database does not exist. One direct attempt answers with the driver's message, and the
+    /// budget is what stops a black-holed host becoming a minute of silence.
+    pub async fn probe_master_from_env(budget: Duration) -> Result<(), StorageError> {
+        let lookup = |name: &str| env::var(name).ok();
+        let options = utc(master_options(&lookup)?);
+        match tokio::time::timeout(budget, PgConnection::connect_with(&options)).await {
+            Ok(Ok(_connection)) => Ok(()),
+            Ok(Err(error)) => Err(error.into()),
+            Err(_) => Err(StorageError::InvalidArgument {
+                message: "the source did not answer within the connect budget",
+            }),
+        }
+    }
+
+    fn master_only_from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
+    where
+        F: Fn(&str) -> Option<String> + Sync,
+    {
+        let master = master_options(lookup)?;
+        // Nothing dials here. The run's first read is its probe, and the probe is what bounds
+        // the wait (`MIGRATION_CONNECT_CAP_MS`), so an unreachable source is reported in
+        // seconds rather than at the pool's sixty-second acquire timeout.
+        let master = lazy_pool(utc(master), &pool_bounds(lookup, ""));
+        Ok(Self {
+            master: master.clone(),
+            reader: master,
+            settings: None,
+        })
+    }
+
     /// Opens the master pool and, only when a replica is configured, a second one; otherwise
     /// the reader is the master pool, as `src/database/client.ts:97-100` returns it.
     async fn with_pools(
@@ -275,6 +324,15 @@ async fn connected_pool(
 ) -> Result<PgPool, StorageError> {
     Ok(pool_options(bounds).connect_with(options).await?)
 }
+
+/// The cap, in milliseconds, on the migration's first direct connection to the source.
+///
+/// A ceiling, not a default: the probe waits for the smaller of this and
+/// `DB_ACQUIRE_CONNECTION_TIMEOUT`, which the shipped `.env.example` sets to 60 000 - a probe
+/// that inherited that would be a minute of silence on a mistyped host. Later batches wait on
+/// the pool's own acquire timeout like any other query, so this bounds the probe and nothing
+/// else.
+pub const MIGRATION_CONNECT_CAP_MS: u64 = 10_000;
 
 /// The master connection options: `DB_URI` when set, else the capture's `DB_*` parts.
 pub(crate) fn master_options<F>(lookup: &F) -> Result<PgConnectOptions, StorageError>
@@ -453,6 +511,29 @@ mod tests {
     fn a_bad_port_is_an_invalid_argument() {
         let error = master_parts(&lookup(&[("DB_PORT", "eighty")])).expect_err("a bad port");
         assert!(matches!(error, StorageError::InvalidArgument { .. }));
+    }
+
+    /// A replica that is offline, or misconfigured, must not be able to stop a one-shot copy
+    /// that reads the master alone.
+    #[tokio::test]
+    async fn a_master_only_backend_reads_none_of_the_replica_settings() {
+        let env = lookup(&[
+            ("DB_URI", "postgres://127.0.0.1:1/nostream"),
+            ("DB_ACQUIRE_CONNECTION_TIMEOUT", "1000"),
+            ("READ_REPLICA_ENABLED", "true"),
+            ("READ_REPLICAS", "0"),
+        ]);
+        let error = PostgresBackend::from_lookup(&env)
+            .await
+            .expect_err("a zero replica count is refused before any dial");
+        assert!(
+            matches!(error, StorageError::InvalidArgument { .. }),
+            "{error}"
+        );
+
+        let backend = PostgresBackend::master_only_from_lookup(&env)
+            .expect("the replica settings are never read, and nothing dials here");
+        drop(backend);
     }
 
     #[test]

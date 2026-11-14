@@ -273,12 +273,12 @@ jobs:
           -D clippy::todo -D clippy::unimplemented -D clippy::panic
       - name: Tests
         run: cargo test --workspace --all-features
-      # The two database-backed storage targets create and migrate their own scratch
-      # databases; the Cucumber half of the harness stays in scripts/storage-parity.sh.
+      # The database-backed storage targets create and migrate their own scratch databases; the
+      # Cucumber half of the harness stays in scripts/storage-parity.sh.
       - name: Storage parity against Postgres
         env:
           PARITY_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
-        run: cargo test -p nostream-storage --test migrations --test parity -- --ignored --test-threads=1
+        run: cargo test -p nostream-storage --test migrations --test parity --test migration_pg -- --ignored --test-threads=1
       - name: Storage builds without the Postgres driver
         run: cargo check -p nostream-storage --no-default-features --all-targets
       - name: Release build

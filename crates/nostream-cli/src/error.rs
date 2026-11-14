@@ -16,4 +16,9 @@ pub enum CliError {
     /// The import could not run: a bad argument, a missing file or a storage failure.
     #[error("{0}")]
     Import(String),
+
+    /// The migration could not run: a refused row, an unusable manifest or a store that would
+    /// not open.
+    #[error("{0}")]
+    Migrate(String),
 }
