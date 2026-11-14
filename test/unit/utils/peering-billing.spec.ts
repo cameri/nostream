@@ -59,6 +59,14 @@ describe('resolvePaidPeeringTerm', () => {
     )
   })
 
+  it('rejects an amount whose satoshi value exceeds Number.MAX_SAFE_INTEGER', () => {
+    // 100,000,000 BTC = 10^16 sats, above Number.MAX_SAFE_INTEGER. The processor
+    // adapters convert msats to sats with Number(), so this must fail closed.
+    expect(() =>
+      resolvePaidPeeringTerm(withTerms([{ amount: 100_000_000, unit: 'btc', period: 60 }])),
+    ).to.throw(InvalidPeeringTermError)
+  })
+
   it('rejects an invalid period', () => {
     expect(() => resolvePaidPeeringTerm(withTerms([{ amount: 1000, unit: 'msats', period: 0 }]))).to.throw(
       InvalidPeeringTermError,

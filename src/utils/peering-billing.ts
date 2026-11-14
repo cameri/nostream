@@ -86,6 +86,13 @@ export const resolvePaidPeeringTerm = (settings: Settings): PeeringTermSnapshot 
       throw new InvalidPeeringTermError('peering term amount must be a whole number of satoshis')
     }
 
+    // Processor adapters convert msats to sats with Number(). Reject a term that
+    // would cross Number.MAX_SAFE_INTEGER sats, or the invoice would be created
+    // for a rounded amount that no longer matches the stored term.
+    if (amountMsats / 1000n > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new InvalidPeeringTermError('peering term amount is too large for the payment processors')
+    }
+
     if (!(typeof term.period === 'number' && Number.isSafeInteger(term.period) && term.period > 0)) {
       throw new InvalidPeeringTermError('peering term period must be a positive number of seconds')
     }

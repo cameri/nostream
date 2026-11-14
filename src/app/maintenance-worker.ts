@@ -187,12 +187,38 @@ export class MaintenanceWorker implements IRunnable {
       return
     }
 
-    const invoices = await this.paymentsService.getPendingInvoices(this.pendingInvoiceOffset)
-    logger('found %d pending invoices from offset %d', invoices.length, this.pendingInvoiceOffset)
+    // A paid peering invoice is marked completed before settlement runs. If that
+    // settlement rolled back, confirmed_at is still null and the invoice is no
+    // longer in the pending page. Pick those up first so a paid peer is never
+    // stranded between "completed" and "settled".
+    const retryablePeering = await this.paymentsService.getUnconfirmedPeeringInvoices(
+      PENDING_INVOICE_PAGE_SIZE,
+    )
+    const pending = await this.paymentsService.getPendingInvoices(this.pendingInvoiceOffset)
+    logger(
+      'found %d pending invoice(s) from offset %d and %d unconfirmed peering invoice(s)',
+      pending.length,
+      this.pendingInvoiceOffset,
+      retryablePeering.length,
+    )
 
     // A short page means we reached the end, so start over next pass.
     this.pendingInvoiceOffset =
-      invoices.length < PENDING_INVOICE_PAGE_SIZE ? 0 : this.pendingInvoiceOffset + PENDING_INVOICE_PAGE_SIZE
+      pending.length < PENDING_INVOICE_PAGE_SIZE ? 0 : this.pendingInvoiceOffset + PENDING_INVOICE_PAGE_SIZE
+
+    // A retryable peering invoice is completed, not pending, so the two lists do
+    // not normally overlap. Deduplicate anyway so a future query change cannot
+    // settle the same invoice twice in one pass.
+    const seen = new Set<string>()
+    const invoices = [...retryablePeering, ...pending].filter((invoice) => {
+      if (seen.has(invoice.id)) {
+        return false
+      }
+
+      seen.add(invoice.id)
+      return true
+    })
+
     const delay = () => delayMs(100 + Math.floor(Math.random() * 10))
 
     let successful = 0
@@ -211,16 +237,25 @@ export class MaintenanceWorker implements IRunnable {
 
         await this.paymentsService.updateInvoiceStatus({ id, status })
 
-        if (
-          invoice.status !== updatedInvoice.status &&
-          updatedInvoice.status == InvoiceStatus.COMPLETED &&
-          updatedInvoice.confirmedAt
-        ) {
+        const needsConfirmation =
+          updatedInvoice.status === InvoiceStatus.COMPLETED &&
+          updatedInvoice.confirmedAt &&
+          (invoice.status !== updatedInvoice.status || invoice.confirmedAt == null)
+
+        if (needsConfirmation) {
           logger('confirming invoice %s & notifying %s', invoice.id, invoice.pubkey)
+
+          // The processor may report a real paid amount for a peering invoice
+          // (underpayment or overpayment). Preserve it; fall back to the
+          // requested amount only when the processor does not report one.
+          const amountPaid =
+            typeof updatedInvoice.amountPaid === 'bigint'
+              ? updatedInvoice.amountPaid
+              : invoice.amountRequested
 
           const update = pipe(
             mergeDeepLeft(updatedInvoice),
-            mergeDeepLeft({ amountPaid: invoice.amountRequested }),
+            mergeDeepLeft({ amountPaid }),
           )(invoice)
 
           await Promise.all([

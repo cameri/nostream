@@ -9,7 +9,7 @@ chai.use(chaiAsPromised)
 import * as eventUtils from '../../../src/utils/event'
 import { Invoice, InvoicePurpose, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
 import { OperatorNotificationEventType } from '../../../src/@types/operator-notifications'
-import { PaymentsService } from '../../../src/services/payments-service'
+import { PENDING_INVOICE_PAGE_SIZE, PaymentsService } from '../../../src/services/payments-service'
 
 const { expect } = chai
 
@@ -65,6 +65,7 @@ describe('PaymentsService', () => {
     invoiceRepository = {
       findById: sandbox.stub().resolves(undefined),
       findPendingInvoices: sandbox.stub(),
+      findUnconfirmedPeeringInvoices: sandbox.stub().resolves([]),
       upsert: sandbox.stub().resolves(),
       updateStatus: sandbox.stub(),
       confirmInvoice: sandbox.stub().resolves(),
@@ -139,6 +140,26 @@ describe('PaymentsService', () => {
     })
   })
 
+
+  describe('getUnconfirmedPeeringInvoices', () => {
+    it('returns completed peering invoices that never settled', async () => {
+      const invoices = [stubInvoice({ confirmedAt: null })]
+      invoiceRepository.findUnconfirmedPeeringInvoices.resolves(invoices)
+
+      const result = await service.getUnconfirmedPeeringInvoices()
+
+      expect(result).to.deep.equal(invoices)
+      expect(invoiceRepository.findUnconfirmedPeeringInvoices).to.have.been.calledOnceWithExactly(
+        PENDING_INVOICE_PAGE_SIZE,
+      )
+    })
+
+    it('re-throws repository errors', async () => {
+      invoiceRepository.findUnconfirmedPeeringInvoices.rejects(new Error('db error'))
+
+      await expect(service.getUnconfirmedPeeringInvoices()).to.be.rejectedWith('db error')
+    })
+  })
 
   describe('getInvoiceFromPaymentsProcessor', () => {
     it('passes a string invoice ID directly to the payments processor', async () => {
@@ -878,6 +899,41 @@ describe('PaymentsService', () => {
       expect(result.id).to.equal('peering-inv')
     })
 
+    it('rejects a zero-amount peering invoice before calling the processor', async () => {
+      await expect(peeringService.createPeeringInvoice('peer', 0n, 'peering', 2592000)).to.be.rejectedWith(
+        'positive whole number of satoshis',
+      )
+      expect(paymentsProcessor.createInvoice).not.to.have.been.called
+    })
+
+    it('rejects a sub-satoshi peering invoice before calling the processor', async () => {
+      await expect(peeringService.createPeeringInvoice('peer', 1500n, 'peering', 2592000)).to.be.rejectedWith(
+        'positive whole number of satoshis',
+      )
+      expect(paymentsProcessor.createInvoice).not.to.have.been.called
+    })
+
+    it('rejects a peering invoice too large for the processor conversion', async () => {
+      await expect(
+        peeringService.createPeeringInvoice('peer', 10n ** 19n, 'peering', 2592000),
+      ).to.be.rejectedWith('too large for the payment processors')
+      expect(paymentsProcessor.createInvoice).not.to.have.been.called
+    })
+
+    it('rejects a negative peering invoice before calling the processor', async () => {
+      await expect(peeringService.createPeeringInvoice('peer', -1000n, 'peering', 2592000)).to.be.rejectedWith(
+        'positive whole number of satoshis',
+      )
+      expect(paymentsProcessor.createInvoice).not.to.have.been.called
+    })
+
+    it('rejects a peering invoice with no period before calling the processor', async () => {
+      await expect(peeringService.createPeeringInvoice('peer', 21000n, 'peering', 0)).to.be.rejectedWith(
+        'positive number of seconds',
+      )
+      expect(paymentsProcessor.createInvoice).not.to.have.been.called
+    })
+
     it('applies a paid period and clears the open invoice pointers', async () => {
       settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
       invoiceRepository.findById.resolves(
@@ -916,6 +972,39 @@ describe('PaymentsService', () => {
       expect(mockTrx.commit).to.have.been.calledOnce
     })
 
+    it('grants exactly one term for an overpayment and keeps the full amount on the receipt', async () => {
+      settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+          unit: InvoiceUnit.MSATS,
+        }),
+      )
+      peeringPaymentRepository.lockByPeer.resolves(peeringRow({ currentInvoiceId: 'invoice-id' }))
+
+      await peeringService.confirmInvoice(makeCompletedInvoice({ amountPaid: 42000n }))
+
+      expect(invoiceRepository.confirmInvoice).to.have.been.calledWith(
+        'invoice-id',
+        42000n,
+        Sinon.match.instanceOf(Date),
+        mockTrx,
+      )
+      expect(peeringPaymentRepository.save).to.have.been.calledWith(
+        Sinon.match({
+          status: 'active',
+          lastSettledInvoiceId: 'invoice-id',
+        }),
+        mockTrx,
+      )
+      expect(invoiceRepository.updatePeriod).to.have.been.calledOnce
+
+      const [, periodStart, periodEnd] = invoiceRepository.updatePeriod.firstCall.args
+      expect((periodEnd as Date).getTime() - (periodStart as Date).getTime()).to.equal(2592000 * 1000)
+    })
+
     it('does not grant a second period for a duplicate callback', async () => {
       settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
       invoiceRepository.findById.resolves(
@@ -933,6 +1022,28 @@ describe('PaymentsService', () => {
       expect(invoiceRepository.updatePeriod).not.to.have.been.called
       expect(notificationOutboxRepository.enqueue).not.to.have.been.called
       expect(mockTrx.commit).to.have.been.calledOnce
+    })
+
+    it('settles the same invoice only once across two callbacks', async () => {
+      settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
+      let stored = stubInvoice({
+        purpose: InvoicePurpose.PEERING,
+        termAmountMsats: 21000n,
+        termPeriodSeconds: 2592000,
+        unit: InvoiceUnit.MSATS,
+      })
+      invoiceRepository.findById.callsFake(async () => stored)
+      invoiceRepository.confirmInvoice.callsFake(async () => {
+        stored = { ...stored, confirmedAt: new Date() }
+      })
+      peeringPaymentRepository.lockByPeer.resolves(peeringRow())
+
+      await peeringService.confirmInvoice(makeCompletedInvoice())
+      await peeringService.confirmInvoice(makeCompletedInvoice())
+
+      expect(peeringPaymentRepository.lockByPeer).to.have.been.calledOnce
+      expect(peeringPaymentRepository.save).to.have.been.calledOnce
+      expect(invoiceRepository.updatePeriod).to.have.been.calledOnce
     })
 
     it('records an underpayment without activating access', async () => {

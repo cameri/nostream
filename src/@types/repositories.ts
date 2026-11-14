@@ -75,6 +75,12 @@ export interface IInvoiceRepository {
   confirmInvoice(invoiceId: string, amountReceived: bigint, confirmedAt: Date, client?: DatabaseClient): Promise<void>
   updatePeriod(invoiceId: string, periodStart: Date, periodEnd: Date, client?: DatabaseClient): Promise<void>
   findPendingInvoices(offset?: number, limit?: number, client?: DatabaseClient): Promise<Invoice[]>
+  /**
+   * Completed peering invoices whose settlement never committed, oldest first.
+   * `confirmed_at` stays null when the settlement transaction rolls back, so the
+   * maintenance worker can retry them instead of stranding a paid peer.
+   */
+  findUnconfirmedPeeringInvoices(limit?: number, client?: DatabaseClient): Promise<Invoice[]>
 }
 
 export interface IPeeringPaymentRepository {

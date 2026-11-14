@@ -91,8 +91,12 @@ export class NodelessCallbackController implements IController {
       return
     }
 
-    invoice.amountPaid = invoice.amountRequested
-    updatedInvoice.amountPaid = invoice.amountRequested
+    if (typeof invoice.amountPaid !== 'bigint') {
+      invoice.amountPaid = invoice.amountRequested
+    }
+    if (typeof updatedInvoice.amountPaid !== 'bigint') {
+      updatedInvoice.amountPaid = invoice.amountPaid
+    }
 
     try {
       await this.paymentsService.confirmInvoice(invoice)

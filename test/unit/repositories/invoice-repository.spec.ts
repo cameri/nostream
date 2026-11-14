@@ -5,7 +5,7 @@ import sinonChai from 'sinon-chai'
 import chaiAsPromised from 'chai-as-promised'
 
 import { DatabaseClient } from '../../../src/@types/base'
-import { Invoice, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
+import { Invoice, InvoicePurpose, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
 import { IInvoiceRepository } from '../../../src/@types/repositories'
 import { InvoiceRepository } from '../../../src/repositories/invoice-repository'
 
@@ -215,6 +215,54 @@ describe('InvoiceRepository', () => {
       await repository.findPendingInvoices(0, 10, client)
 
       expect(whereStub).to.have.been.calledWith('status', InvoiceStatus.PENDING)
+    })
+  })
+
+  describe('.findUnconfirmedPeeringInvoices', () => {
+    function makeClient(results: any[]) {
+      const selectStub = sandbox.stub().resolves(results)
+      const limitStub = sandbox.stub().returns({ select: selectStub })
+      const orderByStub = sandbox.stub().returns({ limit: limitStub })
+      const whereNullStub = sandbox.stub().returns({ orderBy: orderByStub })
+      const whereStub = sandbox.stub().returns({ whereNull: whereNullStub })
+      return {
+        client: sandbox.stub().returns({ where: whereStub }) as unknown as DatabaseClient,
+        whereStub,
+        whereNullStub,
+        orderByStub,
+        limitStub,
+      }
+    }
+
+    it('returns completed peering invoices with no confirmation', async () => {
+      const peeringRow = {
+        ...dbInvoiceRow,
+        purpose: InvoicePurpose.PEERING,
+        status: InvoiceStatus.COMPLETED,
+        confirmed_at: null,
+      }
+      const { client } = makeClient([peeringRow])
+
+      const result = await repository.findUnconfirmedPeeringInvoices(10, client)
+
+      expect(result).to.have.length(1)
+      expect(result[0].id).to.equal('test-invoice-id')
+      expect(result[0].purpose).to.equal(InvoicePurpose.PEERING)
+      expect(result[0].confirmedAt).to.equal(null)
+    })
+
+    it('filters by peering purpose, completed status and a null confirmation', async () => {
+      const { client, whereStub, whereNullStub, orderByStub, limitStub } = makeClient([])
+
+      await repository.findUnconfirmedPeeringInvoices(25, client)
+
+      expect(whereStub).to.have.been.calledWith({
+        purpose: InvoicePurpose.PEERING,
+        status: InvoiceStatus.COMPLETED,
+      })
+      expect(whereNullStub).to.have.been.calledWith('confirmed_at')
+      expect(orderByStub).to.have.been.calledWith('created_at', 'asc')
+      expect(limitStub).to.have.been.calledWith(25)
     })
   })
 

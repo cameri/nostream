@@ -1,6 +1,6 @@
 import { always, applySpec, head, ifElse, is, isNil, map, omit, pipe, prop, propSatisfies, toString } from 'ramda'
 
-import { DBInvoice, Invoice, InvoiceStatus } from '../@types/invoice'
+import { DBInvoice, Invoice, InvoicePurpose, InvoiceStatus } from '../@types/invoice'
 import { fromDBInvoice, toBuffer } from '../utils/transform'
 import { createLogger } from '../factories/logger-factory'
 import { DatabaseClient } from '../@types/base'
@@ -62,6 +62,26 @@ export class InvoiceRepository implements IInvoiceRepository {
       .where('status', InvoiceStatus.PENDING)
       .orderBy('created_at', 'asc')
       .offset(offset)
+      .limit(limit)
+      .select()
+
+    return dbInvoices.map(fromDBInvoice)
+  }
+
+  public async findUnconfirmedPeeringInvoices(
+    limit = 10,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<Invoice[]> {
+    // The status is committed before settlement runs, so a rolled-back
+    // settlement leaves a completed invoice with no confirmed_at. The worker
+    // must be able to find those and try the settlement again.
+    const dbInvoices = await client<DBInvoice>('invoices')
+      .where({
+        purpose: InvoicePurpose.PEERING,
+        status: InvoiceStatus.COMPLETED,
+      })
+      .whereNull('confirmed_at')
+      .orderBy('created_at', 'asc')
       .limit(limit)
       .select()
 

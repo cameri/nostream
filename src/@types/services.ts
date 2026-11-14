@@ -50,6 +50,8 @@ export interface IPaymentsService {
   /** Publishes only when no unexpired kind 402 event for this invoice exists. */
   ensurePeeringInvoiceNotification(invoice: Invoice): Promise<void>
   getPendingInvoices(offset?: number): Promise<Invoice[]>
+  /** Completed peering invoices whose settlement did not commit, for retry. */
+  getUnconfirmedPeeringInvoices(limit?: number): Promise<Invoice[]>
 }
 
 export interface ISubscriptionService {

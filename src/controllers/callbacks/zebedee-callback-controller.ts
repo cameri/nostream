@@ -56,9 +56,13 @@ export class ZebedeeCallbackController implements IController {
       return
     }
 
-    invoice.amountPaid = invoice.amountRequested
+    if (typeof invoice.amountPaid !== 'bigint') {
+      invoice.amountPaid = invoice.amountRequested
+    }
     invoice.status = updatedInvoice.status
-    updatedInvoice.amountPaid = invoice.amountRequested
+    if (typeof updatedInvoice.amountPaid !== 'bigint') {
+      updatedInvoice.amountPaid = invoice.amountPaid
+    }
 
     try {
       await this.paymentsService.confirmInvoice({
@@ -66,7 +70,7 @@ export class ZebedeeCallbackController implements IController {
         pubkey: invoice.pubkey,
         status: invoice.status,
         confirmedAt: invoice.confirmedAt,
-        amountPaid: invoice.amountRequested,
+        amountPaid: invoice.amountPaid,
       })
       await this.paymentsService.sendInvoiceUpdateNotification(updatedInvoice)
     } catch (error) {

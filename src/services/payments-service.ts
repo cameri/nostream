@@ -22,7 +22,11 @@ import { PeeringPaymentStatus } from '../@types/peering'
 import { Transaction } from '../database/transaction'
 import { applyPayment, findSubscriptionPlan } from '../utils/subscription'
 import { resolveInvoiceExpiry } from '../utils/invoice'
-import { PEERING_INVOICE_TAG, peeringPeriodEnd } from '../utils/peering-billing'
+import {
+  InvalidPeeringTermError,
+  PEERING_INVOICE_TAG,
+  peeringPeriodEnd,
+} from '../utils/peering-billing'
 
 const logger = createLogger('payments-service')
 
@@ -48,6 +52,17 @@ export class PaymentsService implements IPaymentsService {
       return await this.invoiceRepository.findPendingInvoices(offset, PENDING_INVOICE_PAGE_SIZE)
     } catch (error) {
       logger.error('Unable to get pending invoices.', error)
+
+      throw error
+    }
+  }
+
+  public async getUnconfirmedPeeringInvoices(limit = PENDING_INVOICE_PAGE_SIZE): Promise<Invoice[]> {
+    logger('get unconfirmed peering invoices')
+    try {
+      return await this.invoiceRepository.findUnconfirmedPeeringInvoices(limit)
+    } catch (error) {
+      logger.error('Unable to get unconfirmed peering invoices.', error)
 
       throw error
     }
@@ -156,6 +171,22 @@ export class PaymentsService implements IPaymentsService {
     client?: DatabaseTransaction,
   ): Promise<Invoice> {
     logger('create peering invoice for %s for %s msats', pubkey, amountMsats.toString())
+
+    // The boundary repeats the term validator's checks: a caller that skips
+    // resolvePaidPeeringTerm must not persist a term settlement will reject.
+    if (amountMsats <= 0n || amountMsats % 1000n !== 0n) {
+      throw new InvalidPeeringTermError(
+        'peering invoice amount must be a positive whole number of satoshis',
+      )
+    }
+
+    if (amountMsats / 1000n > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new InvalidPeeringTermError('peering invoice amount is too large for the payment processors')
+    }
+
+    if (!Number.isSafeInteger(termPeriodSeconds) || termPeriodSeconds <= 0) {
+      throw new InvalidPeeringTermError('peering invoice period must be a positive number of seconds')
+    }
 
     const transaction = client ? undefined : new Transaction(this.dbClient)
     if (transaction) {
@@ -424,6 +455,8 @@ export class PaymentsService implements IPaymentsService {
       return { activated: false, reason: 'underpaid' }
     }
 
+    // Overpayments are not credited to the peer row. The invoice's amount_paid
+    // is the receipt; an operator can refund the surplus out of band.
     // Paying early extends from the current period end; paying after a lapse starts now.
     const stillRunning = payment.periodEnd instanceof Date && payment.periodEnd.getTime() > confirmedAt.getTime()
     const periodStart = stillRunning ? (payment.periodEnd as Date) : confirmedAt

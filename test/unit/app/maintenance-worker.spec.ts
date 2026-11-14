@@ -5,11 +5,12 @@ import chaiAsPromised from 'chai-as-promised'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
-import { InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
+import { InvoicePurpose, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
 import { Nip05Verification } from '../../../src/@types/nip05'
 import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../../../src/@types/services'
 import { Settings } from '../../../src/@types/settings'
 import { applyReverificationOutcome, MaintenanceWorker } from '../../../src/app/maintenance-worker'
+import { PENDING_INVOICE_PAGE_SIZE } from '../../../src/services/payments-service'
 import * as metricsTelemetry from '../../../src/telemetry/metrics'
 import * as misc from '../../../src/utils/misc'
 import * as nip05Utils from '../../../src/utils/nip05'
@@ -84,6 +85,7 @@ describe('MaintenanceWorker', () => {
 
     paymentsService = {
       getPendingInvoices: sandbox.stub().resolves([]),
+      getUnconfirmedPeeringInvoices: sandbox.stub().resolves([]),
       getInvoiceFromPaymentsProcessor: sandbox.stub(),
       updateInvoiceStatus: sandbox.stub().resolves(),
       confirmInvoice: sandbox.stub().resolves(),
@@ -487,6 +489,90 @@ describe('MaintenanceWorker', () => {
       const [confirmArg] = paymentsService.confirmInvoice.firstCall.args
       expect(confirmArg).to.include({ id: 'inv-1', status: InvoiceStatus.COMPLETED })
       expect(confirmArg.amountPaid).to.equal(pendingInvoice.amountRequested)
+    })
+
+    it('confirms a completed peering invoice that was never settled', async () => {
+      const confirmedAt = new Date()
+      const completedUnconfirmed = {
+        ...pendingInvoice,
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt: null,
+        purpose: InvoicePurpose.PEERING,
+      }
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getUnconfirmedPeeringInvoices.resolves([completedUnconfirmed])
+      paymentsService.getPendingInvoices.resolves([])
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+        id: 'inv-1',
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt,
+      })
+
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.getUnconfirmedPeeringInvoices).to.have.been.calledOnceWithExactly(
+        PENDING_INVOICE_PAGE_SIZE,
+      )
+      expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnceWithExactly({
+        id: 'inv-1',
+        status: InvoiceStatus.COMPLETED,
+      })
+      expect(paymentsService.confirmInvoice).to.have.been.calledOnce
+
+      const [confirmArg] = paymentsService.confirmInvoice.firstCall.args
+      expect(confirmArg).to.include({
+        id: 'inv-1',
+        status: InvoiceStatus.COMPLETED,
+        purpose: InvoicePurpose.PEERING,
+      })
+    })
+
+    it('uses the paid amount reported by the processor', async () => {
+      const confirmedAt = new Date()
+      const completedUnconfirmed = {
+        ...pendingInvoice,
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt: null,
+        purpose: InvoicePurpose.PEERING,
+        amountRequested: 1000n,
+      }
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getUnconfirmedPeeringInvoices.resolves([completedUnconfirmed])
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+        id: 'inv-1',
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt,
+        amountPaid: 1500n,
+      })
+
+      await (worker as any).onSchedule()
+
+      const [confirmArg] = paymentsService.confirmInvoice.firstCall.args
+      expect(confirmArg.amountPaid).to.equal(1500n)
+    })
+
+    it('retries a failed peering settlement on the next pass', async () => {
+      const confirmedAt = new Date()
+      const completedUnconfirmed = {
+        ...pendingInvoice,
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt: null,
+        purpose: InvoicePurpose.PEERING,
+      }
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getUnconfirmedPeeringInvoices.resolves([completedUnconfirmed])
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+        id: 'inv-1',
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt,
+      })
+      paymentsService.confirmInvoice.onFirstCall().rejects(new Error('settlement failed'))
+      paymentsService.confirmInvoice.onSecondCall().resolves()
+
+      await (worker as any).onSchedule()
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.confirmInvoice).to.have.been.calledTwice
     })
 
     it('continues processing remaining invoices when one throws', async () => {
