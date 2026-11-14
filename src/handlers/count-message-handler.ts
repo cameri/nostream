@@ -4,7 +4,9 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import { Factory } from '../@types/base'
 import { IMessageHandler } from '../@types/message-handlers'
 import { CountMessage } from '../@types/messages'
+import { PeeringAccess } from '../@types/peering'
 import { IEventRepository } from '../@types/repositories'
+import { IPeeringBillingService } from '../@types/services'
 import { Settings } from '../@types/settings'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { IRateLimiter } from '../@types/utils'
@@ -26,6 +28,7 @@ export class CountMessageHandler implements IMessageHandler {
     private readonly settings: () => Settings,
     private readonly rateLimiter?: Factory<IRateLimiter>,
     private readonly requestStats?: PeeringRequestStatsStore,
+    private readonly peeringBillingService?: IPeeringBillingService,
   ) {}
 
   public async handleMessage(message: CountMessage): Promise<void> {
@@ -51,6 +54,28 @@ export class CountMessageHandler implements IMessageHandler {
       }
 
       void this.requestStats?.recordRequest(peerPubkey, 'COUNT')
+    }
+
+    if (peerPubkey && this.peeringBillingService) {
+      let access: PeeringAccess
+      try {
+        access = await this.peeringBillingService.getAccess(peerPubkey, { recheck: true })
+      } catch (error) {
+        debug('unable to check peering access for %s: %o', peerPubkey, error)
+        this.webSocket.emit(
+          WebSocketAdapterEvent.Message,
+          createClosedMessage(queryId, 'error: unable to check peering access'),
+        )
+        return
+      }
+
+      if (!access.allowed) {
+        const reason = access.reason?.startsWith('payment-required:')
+          ? access.reason
+          : `payment-required: ${access.reason ?? 'peering payment required; request the kind 402 peering invoice'}`
+        this.webSocket.emit(WebSocketAdapterEvent.Message, createClosedMessage(queryId, reason))
+        return
+      }
     }
 
     // Some clients send the same filter more than once. Bound the raw list

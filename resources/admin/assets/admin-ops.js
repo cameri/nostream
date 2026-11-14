@@ -118,6 +118,16 @@
     return `${Math.round(seconds / 86400)}d`
   }
 
+  const peeringBillingBadge = (billing) => {
+    if (!billing?.status) {
+      return '<span class="status-badge"><span class="status-led" aria-hidden="true"></span>Not billed</span>'
+    }
+
+    const status = String(billing.status)
+    const degraded = status === 'lapsed' || status === 'unpaid'
+    return `<span class="status-badge${degraded ? ' status-degraded' : ''}"><span class="status-led" aria-hidden="true"></span>${escapeHtml(status)}</span>`
+  }
+
   const peeringSignalBadge = (row) => {
     if (!row.configured || !row.enabled) {
       return '<span class="status-badge"><span class="status-led" aria-hidden="true"></span>Disabled</span>'
@@ -145,7 +155,7 @@
   const renderPeering = (rows) => {
     if (!Array.isArray(rows) || !rows.length) {
       elements.peeringBody.innerHTML =
-        '<tr><td colspan="8" class="admin-muted small">No peering peers configured.</td></tr>'
+        '<tr><td colspan="10" class="admin-muted small">No peering peers configured.</td></tr>'
       return
     }
 
@@ -158,6 +168,8 @@
         return `<tr>
           <td><code class="small" title="${escapeAttr(title)}">${escapeHtml(shortPubkey(row.pubkey))}</code></td>
           <td class="small">${escapeHtml(row.relayUrl)}</td>
+          <td>${peeringBillingBadge(row.billing)}</td>
+          <td class="small">${escapeHtml(formatTime(row.billing?.periodEnd))}</td>
           <td class="small">${escapeHtml(formatTime(state?.lastReconciledAt))}</td>
           <td>${escapeHtml(formatLag(state?.lagSeconds))}</td>
           <td>${escapeHtml(state?.missingEvents ?? '—')}</td>

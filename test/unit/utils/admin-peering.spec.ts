@@ -92,4 +92,77 @@ describe('admin peering rows', () => {
       eventsServed: 7,
     })
   })
+
+  it('attaches paid peering billing state by peer pubkey', () => {
+    const periodEnd = new Date('2026-12-01T00:00:00.000Z')
+    const rows = mergePeeringRows(
+      {
+        peering: {
+          enabled: true,
+          peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
+        },
+      } as Settings,
+      [state()],
+      undefined,
+      [],
+      [
+        {
+          peerPubkey: 'a'.repeat(64),
+          direction: 'sell',
+          status: 'active',
+          currentInvoiceId: null,
+          renewalInvoiceId: null,
+          periodStart: new Date('2026-11-01T00:00:00.000Z'),
+          periodEnd,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+          lastSettledInvoiceId: 'inv-1',
+          lastSettledAt: new Date('2026-11-01T00:00:00.000Z'),
+          lastCheckedAt: null,
+          lastError: null,
+          createdAt: new Date('2026-11-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-11-01T00:00:00.000Z'),
+        } as any,
+      ],
+    )
+
+    expect(rows[0].billing).to.include({
+      status: 'active',
+      termAmountMsats: 21000n,
+      termPeriodSeconds: 2592000,
+    })
+    expect(rows[0].billing?.periodEnd).to.equal(periodEnd)
+  })
+
+  it('shows a billing row for a peer removed from settings', () => {
+    const rows = mergePeeringRows(
+      {} as Settings,
+      [],
+      undefined,
+      [],
+      [
+        {
+          peerPubkey: 'b'.repeat(64),
+          direction: 'sell',
+          status: 'lapsed',
+          currentInvoiceId: null,
+          renewalInvoiceId: null,
+          periodStart: null,
+          periodEnd: null,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+          lastSettledInvoiceId: null,
+          lastSettledAt: null,
+          lastCheckedAt: null,
+          lastError: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as any,
+      ],
+    )
+
+    expect(rows).to.have.length(1)
+    expect(rows[0]).to.include({ configured: false, enabled: false })
+    expect(rows[0].billing?.status).to.equal('lapsed')
+  })
 })

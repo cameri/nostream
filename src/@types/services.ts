@@ -1,6 +1,7 @@
-import { Pubkey } from './base'
+import { DatabaseTransaction, Pubkey } from './base'
 import { Invoice } from './invoice'
 import { NotificationOutboxPayload } from './notification-outbox'
+import { PeeringAccess } from './peering'
 
 export interface IMaintenanceService {
   clearOldEvents(): Promise<void>
@@ -37,7 +38,32 @@ export interface IPaymentsService {
   sendInvoiceUpdateNotification(invoice: Invoice): Promise<void>
   /** Tells the subscriber, with a kind 402 event, that their renewal invoice can be paid. */
   sendRenewalNotification(invoice: Invoice): Promise<void>
+  /** Creates a peering invoice outside the admission/user flow. */
+  createPeeringInvoice(
+    pubkey: Pubkey,
+    amountMsats: bigint,
+    description: string,
+    termPeriodSeconds: number,
+    client?: DatabaseTransaction,
+  ): Promise<Invoice>
+  /** Publishes a peering invoice as a signed, p-tagged kind 402 event. */
+  sendPeeringInvoiceNotification(invoice: Invoice): Promise<void>
+  /** Publishes only when no unexpired kind 402 event for this invoice exists. */
+  ensurePeeringInvoiceNotification(invoice: Invoice): Promise<void>
   getPendingInvoices(offset?: number): Promise<Invoice[]>
+  /** Completed peering invoices whose settlement did not commit, for retry. */
+  getUnconfirmedPeeringInvoices(limit?: number, offset?: number): Promise<Invoice[]>
+}
+
+export interface IPeeringBillingService {
+  /** Access decision for a configured peer's feed. Optionally rechecks a pending invoice first. */
+  getAccess(peerPubkey: Pubkey, options?: { now?: Date; recheck?: boolean }): Promise<PeeringAccess>
+  /** Returns a usable invoice, creating or reissuing one when needed. */
+  ensureInvoice(peerPubkey: Pubkey, options?: { now?: Date; renewal?: boolean }): Promise<Invoice | undefined>
+  /** Renewal window, period end/lapse, and invoice expiry bookkeeping. */
+  processLifecycle(now?: Date): Promise<number>
+  /** Clears a pointer and updates status after the processor confirms an invoice expired. */
+  handleInvoiceExpired(invoice: Invoice): Promise<void>
 }
 
 export interface ISubscriptionService {
