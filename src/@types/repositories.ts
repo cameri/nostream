@@ -80,7 +80,7 @@ export interface IInvoiceRepository {
    * `confirmed_at` stays null when the settlement transaction rolls back, so the
    * maintenance worker can retry them instead of stranding a paid peer.
    */
-  findUnconfirmedPeeringInvoices(limit?: number, client?: DatabaseClient): Promise<Invoice[]>
+  findUnconfirmedPeeringInvoices(limit?: number, offset?: number, client?: DatabaseClient): Promise<Invoice[]>
 }
 
 export interface IPeeringPaymentRepository {

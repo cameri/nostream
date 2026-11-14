@@ -94,6 +94,11 @@ export class MaintenanceWorker implements IRunnable {
    * ten invoices that never resolve starve everything behind them.
    */
   private pendingInvoiceOffset = 0
+  /**
+   * Where the next retry scan starts. A page of invoices that keep failing must
+   * not starve the ones behind them.
+   */
+  private retryPeeringInvoiceOffset = 0
 
   public constructor(
     private readonly process: NodeJS.Process,
@@ -191,20 +196,27 @@ export class MaintenanceWorker implements IRunnable {
     // settlement rolled back, confirmed_at is still null and the invoice is no
     // longer in the pending page. Pick those up first so a paid peer is never
     // stranded between "completed" and "settled".
+    const retryOffset = this.retryPeeringInvoiceOffset
     const retryablePeering = await this.paymentsService.getUnconfirmedPeeringInvoices(
       PENDING_INVOICE_PAGE_SIZE,
+      retryOffset,
     )
     const pending = await this.paymentsService.getPendingInvoices(this.pendingInvoiceOffset)
     logger(
-      'found %d pending invoice(s) from offset %d and %d unconfirmed peering invoice(s)',
+      'found %d pending invoice(s) from offset %d and %d unconfirmed peering invoice(s) from offset %d',
       pending.length,
       this.pendingInvoiceOffset,
       retryablePeering.length,
+      retryOffset,
     )
 
-    // A short page means we reached the end, so start over next pass.
+    // A short page means we reached the end, so start over next pass. A full
+    // page advances the retry cursor so the same failing invoices cannot starve
+    // the ones behind them.
     this.pendingInvoiceOffset =
       pending.length < PENDING_INVOICE_PAGE_SIZE ? 0 : this.pendingInvoiceOffset + PENDING_INVOICE_PAGE_SIZE
+    this.retryPeeringInvoiceOffset =
+      retryablePeering.length < PENDING_INVOICE_PAGE_SIZE ? 0 : retryOffset + PENDING_INVOICE_PAGE_SIZE
 
     // A retryable peering invoice is completed, not pending, so the two lists do
     // not normally overlap. Deduplicate anyway so a future query change cannot
@@ -267,7 +279,9 @@ export class MaintenanceWorker implements IRunnable {
         }
         successful++
       } catch (error) {
-        if (isNotFoundError(error) && isExpiredInvoice(invoice)) {
+        // Only a pending invoice has no settled period to protect. A completed
+        // invoice may be a peering settlement that rolled back; never expire it.
+        if (invoice.status === InvoiceStatus.PENDING && isNotFoundError(error) && isExpiredInvoice(invoice)) {
           logger('marking expired invoice %s after payment processor returned 404', invoice.id)
           await this.paymentsService.updateInvoiceStatus({
             id: invoice.id,

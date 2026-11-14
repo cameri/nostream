@@ -512,6 +512,7 @@ describe('MaintenanceWorker', () => {
 
       expect(paymentsService.getUnconfirmedPeeringInvoices).to.have.been.calledOnceWithExactly(
         PENDING_INVOICE_PAGE_SIZE,
+        0,
       )
       expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnceWithExactly({
         id: 'inv-1',
@@ -573,6 +574,62 @@ describe('MaintenanceWorker', () => {
       await (worker as any).onSchedule()
 
       expect(paymentsService.confirmInvoice).to.have.been.calledTwice
+    })
+
+    it('advances the retry cursor past a full page of failing peering invoices', async () => {
+      settingsState.payments = { enabled: true } as any
+      const fullPage = Array.from({ length: PENDING_INVOICE_PAGE_SIZE }, (_, i) => ({
+        ...pendingInvoice,
+        id: `peering-${i}`,
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt: null,
+        purpose: InvoicePurpose.PEERING,
+      }))
+      paymentsService.getUnconfirmedPeeringInvoices.resolves(fullPage)
+      paymentsService.getPendingInvoices.resolves([])
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+        id: 'peering-0',
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt: new Date(),
+      })
+      paymentsService.confirmInvoice.rejects(new Error('settlement failed'))
+
+      await (worker as any).onSchedule()
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.getUnconfirmedPeeringInvoices.getCall(0).args[1]).to.equal(0)
+      expect(paymentsService.getUnconfirmedPeeringInvoices.getCall(1).args[1]).to.equal(
+        PENDING_INVOICE_PAGE_SIZE,
+      )
+    })
+
+    it('resets the retry cursor after a short page', async () => {
+      settingsState.payments = { enabled: true } as any
+      const fullPage = Array.from({ length: PENDING_INVOICE_PAGE_SIZE }, (_, i) => ({
+        ...pendingInvoice,
+        id: `peering-${i}`,
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt: null,
+        purpose: InvoicePurpose.PEERING,
+      }))
+      paymentsService.getUnconfirmedPeeringInvoices.onFirstCall().resolves(fullPage)
+      paymentsService.getUnconfirmedPeeringInvoices.onSecondCall().resolves([fullPage[0]])
+      paymentsService.getUnconfirmedPeeringInvoices.onThirdCall().resolves([])
+      paymentsService.getPendingInvoices.resolves([])
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+        id: 'peering-0',
+        status: InvoiceStatus.PENDING,
+      })
+
+      await (worker as any).onSchedule()
+      await (worker as any).onSchedule()
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.getUnconfirmedPeeringInvoices.getCall(0).args[1]).to.equal(0)
+      expect(paymentsService.getUnconfirmedPeeringInvoices.getCall(1).args[1]).to.equal(
+        PENDING_INVOICE_PAGE_SIZE,
+      )
+      expect(paymentsService.getUnconfirmedPeeringInvoices.getCall(2).args[1]).to.equal(0)
     })
 
     it('continues processing remaining invoices when one throws', async () => {
@@ -665,6 +722,23 @@ describe('MaintenanceWorker', () => {
         id: expiredInvoice.id,
         status: InvoiceStatus.EXPIRED,
       })
+    })
+
+    it('does not expire a completed peering invoice when the processor returns 404', async () => {
+      const completedUnconfirmed = {
+        ...pendingInvoice,
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt: null,
+        purpose: InvoicePurpose.PEERING,
+        expiresAt: new Date(Date.now() - 60000),
+      }
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getUnconfirmedPeeringInvoices.resolves([completedUnconfirmed])
+      paymentsService.getInvoiceFromPaymentsProcessor.rejects({ response: { status: 404 } })
+
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.updateInvoiceStatus).not.to.have.been.called
     })
 
     it('keeps an expired pending invoice pending when the processor lookup fails without 404', async () => {

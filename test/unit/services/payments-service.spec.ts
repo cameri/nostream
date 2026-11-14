@@ -151,6 +151,18 @@ describe('PaymentsService', () => {
       expect(result).to.deep.equal(invoices)
       expect(invoiceRepository.findUnconfirmedPeeringInvoices).to.have.been.calledOnceWithExactly(
         PENDING_INVOICE_PAGE_SIZE,
+        0,
+      )
+    })
+
+    it('passes the retry offset through', async () => {
+      invoiceRepository.findUnconfirmedPeeringInvoices.resolves([stubInvoice()])
+
+      await service.getUnconfirmedPeeringInvoices(PENDING_INVOICE_PAGE_SIZE, 20)
+
+      expect(invoiceRepository.findUnconfirmedPeeringInvoices).to.have.been.calledOnceWithExactly(
+        PENDING_INVOICE_PAGE_SIZE,
+        20,
       )
     })
 
@@ -1197,9 +1209,35 @@ describe('PaymentsService', () => {
       expect(mockTrx.commit).to.have.been.calledOnce
     })
 
+    it('starts a first period at settlement time, not the receipt timestamp', async () => {
+      const clock = Sinon.useFakeTimers({ now: new Date('2026-11-14T12:00:00.000Z') })
+      const receiptTime = new Date('2026-11-14T11:58:00.000Z')
+      settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 60,
+        }),
+      )
+      peeringPaymentRepository.lockByPeer.resolves(peeringRow({ periodEnd: null }))
+
+      try {
+        await peeringService.confirmInvoice(makeCompletedInvoice({ confirmedAt: receiptTime }))
+
+        const [, periodStart, periodEnd] = invoiceRepository.updatePeriod.firstCall.args
+        expect(periodStart).to.deep.equal(new Date('2026-11-14T12:00:00.000Z'))
+        expect((periodEnd as Date).getTime()).to.equal(
+          (periodStart as Date).getTime() + 60 * 1000,
+        )
+      } finally {
+        clock.restore()
+      }
+    })
+
     it('extends a running period from its existing end', async () => {
-      const existingPeriodEnd = new Date('2026-11-20T00:00:00.000Z')
-      const confirmedAt = new Date('2026-11-09T12:00:00.000Z')
+      const existingPeriodEnd = new Date(Date.now() + 5 * 86_400_000)
+      const confirmedAt = new Date(Date.now() - 86_400_000)
       settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
       invoiceRepository.findById.resolves(
         stubInvoice({

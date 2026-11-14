@@ -222,7 +222,8 @@ describe('InvoiceRepository', () => {
     function makeClient(results: any[]) {
       const selectStub = sandbox.stub().resolves(results)
       const limitStub = sandbox.stub().returns({ select: selectStub })
-      const orderByStub = sandbox.stub().returns({ limit: limitStub })
+      const offsetStub = sandbox.stub().returns({ limit: limitStub })
+      const orderByStub = sandbox.stub().returns({ offset: offsetStub })
       const whereNullStub = sandbox.stub().returns({ orderBy: orderByStub })
       const whereStub = sandbox.stub().returns({ whereNull: whereNullStub })
       return {
@@ -230,6 +231,7 @@ describe('InvoiceRepository', () => {
         whereStub,
         whereNullStub,
         orderByStub,
+        offsetStub,
         limitStub,
       }
     }
@@ -243,7 +245,7 @@ describe('InvoiceRepository', () => {
       }
       const { client } = makeClient([peeringRow])
 
-      const result = await repository.findUnconfirmedPeeringInvoices(10, client)
+      const result = await repository.findUnconfirmedPeeringInvoices(10, 0, client)
 
       expect(result).to.have.length(1)
       expect(result[0].id).to.equal('test-invoice-id')
@@ -252,9 +254,9 @@ describe('InvoiceRepository', () => {
     })
 
     it('filters by peering purpose, completed status and a null confirmation', async () => {
-      const { client, whereStub, whereNullStub, orderByStub, limitStub } = makeClient([])
+      const { client, whereStub, whereNullStub, orderByStub, offsetStub, limitStub } = makeClient([])
 
-      await repository.findUnconfirmedPeeringInvoices(25, client)
+      await repository.findUnconfirmedPeeringInvoices(25, 5, client)
 
       expect(whereStub).to.have.been.calledWith({
         purpose: InvoicePurpose.PEERING,
@@ -262,6 +264,7 @@ describe('InvoiceRepository', () => {
       })
       expect(whereNullStub).to.have.been.calledWith('confirmed_at')
       expect(orderByStub).to.have.been.calledWith('created_at', 'asc')
+      expect(offsetStub).to.have.been.calledWith(5)
       expect(limitStub).to.have.been.calledWith(25)
     })
   })

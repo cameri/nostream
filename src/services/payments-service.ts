@@ -57,10 +57,13 @@ export class PaymentsService implements IPaymentsService {
     }
   }
 
-  public async getUnconfirmedPeeringInvoices(limit = PENDING_INVOICE_PAGE_SIZE): Promise<Invoice[]> {
-    logger('get unconfirmed peering invoices')
+  public async getUnconfirmedPeeringInvoices(
+    limit = PENDING_INVOICE_PAGE_SIZE,
+    offset = 0,
+  ): Promise<Invoice[]> {
+    logger('get unconfirmed peering invoices from offset %d', offset)
     try {
-      return await this.invoiceRepository.findUnconfirmedPeeringInvoices(limit)
+      return await this.invoiceRepository.findUnconfirmedPeeringInvoices(limit, offset)
     } catch (error) {
       logger.error('Unable to get unconfirmed peering invoices.', error)
 
@@ -436,7 +439,10 @@ export class PaymentsService implements IPaymentsService {
       return { activated: true, duplicate: true }
     }
 
-    const confirmedAt = invoice.confirmedAt as Date
+    // The invoice's confirmedAt is the receipt timestamp. It is not reliable as a
+    // payment time: LNbits, for example, fills it from the invoice creation time.
+    // The access window starts when this relay actually grants it.
+    const settledAt = new Date()
 
     if (amountPaidMsat < termAmountMsats) {
       logger(
@@ -449,7 +455,7 @@ export class PaymentsService implements IPaymentsService {
       await this.peeringPaymentRepository.save(
         {
           ...payment,
-          lastCheckedAt: confirmedAt,
+          lastCheckedAt: settledAt,
           lastError: `underpaid: received ${amountPaidMsat.toString()} of ${termAmountMsats.toString()} msats`,
         },
         client,
@@ -461,8 +467,8 @@ export class PaymentsService implements IPaymentsService {
     // Overpayments are not credited to the peer row. The invoice's amount_paid
     // is the receipt; an operator can refund the surplus out of band.
     // Paying early extends from the current period end; paying after a lapse starts now.
-    const stillRunning = payment.periodEnd instanceof Date && payment.periodEnd.getTime() > confirmedAt.getTime()
-    const periodStart = stillRunning ? (payment.periodEnd as Date) : confirmedAt
+    const stillRunning = payment.periodEnd instanceof Date && payment.periodEnd.getTime() > settledAt.getTime()
+    const periodStart = stillRunning ? (payment.periodEnd as Date) : settledAt
     const periodEnd = peeringPeriodEnd(periodStart, termPeriodSeconds)
 
     await this.peeringPaymentRepository.save(
@@ -474,8 +480,8 @@ export class PaymentsService implements IPaymentsService {
         periodStart,
         periodEnd,
         lastSettledInvoiceId: invoice.id,
-        lastSettledAt: confirmedAt,
-        lastCheckedAt: confirmedAt,
+        lastSettledAt: settledAt,
+        lastCheckedAt: settledAt,
         lastError: null,
       },
       client,

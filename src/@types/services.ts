@@ -51,7 +51,7 @@ export interface IPaymentsService {
   ensurePeeringInvoiceNotification(invoice: Invoice): Promise<void>
   getPendingInvoices(offset?: number): Promise<Invoice[]>
   /** Completed peering invoices whose settlement did not commit, for retry. */
-  getUnconfirmedPeeringInvoices(limit?: number): Promise<Invoice[]>
+  getUnconfirmedPeeringInvoices(limit?: number, offset?: number): Promise<Invoice[]>
 }
 
 export interface ISubscriptionService {

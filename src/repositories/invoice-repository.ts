@@ -70,11 +70,13 @@ export class InvoiceRepository implements IInvoiceRepository {
 
   public async findUnconfirmedPeeringInvoices(
     limit = 10,
+    offset = 0,
     client: DatabaseClient = this.dbClient,
   ): Promise<Invoice[]> {
     // The status is committed before settlement runs, so a rolled-back
     // settlement leaves a completed invoice with no confirmed_at. The worker
-    // must be able to find those and try the settlement again.
+    // must be able to find those and try the settlement again. Offset advances
+    // the scan past invoices that keep failing so later ones are not starved.
     const dbInvoices = await client<DBInvoice>('invoices')
       .where({
         purpose: InvoicePurpose.PEERING,
@@ -82,6 +84,7 @@ export class InvoiceRepository implements IInvoiceRepository {
       })
       .whereNull('confirmed_at')
       .orderBy('created_at', 'asc')
+      .offset(offset)
       .limit(limit)
       .select()
 
