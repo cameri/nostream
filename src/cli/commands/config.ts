@@ -11,6 +11,7 @@ import {
   toCategoryLabel,
   validatePathAgainstDefaults,
   validateSettings,
+  withSettingsWriteLock,
 } from '../../utils/settings-config'
 import {
   isSecretEnvKey,
@@ -128,25 +129,38 @@ export const runConfigSet = async (
     return 1
   }
 
-  const settings = loadUserSettings() as unknown as Record<string, unknown>
-  const next = setByPath(settings, path, parseTypedValue(rawValue, valueType))
+  // Read and write under the settings-file lock so a CLI update cannot clobber
+  // a moderation ban written by a running relay in between.
+  const outcome = await withSettingsWriteLock<
+    | { ok: true }
+    | { ok: false; validationIssues: Array<{ path: string; message: string }> }
+  >(() => {
+    const settings = loadUserSettings() as unknown as Record<string, unknown>
+    const next = setByPath(settings, path, parseTypedValue(rawValue, valueType))
 
-  if (options.validate !== false) {
-    const merged = loadMergedSettings() as unknown as Record<string, unknown>
-    const mergedNext = setByPath(merged, path, getByPath(next, path))
-    const validationIssues = validateSettings(mergedNext as any)
+    if (options.validate !== false) {
+      const merged = loadMergedSettings() as unknown as Record<string, unknown>
+      const mergedNext = setByPath(merged, path, getByPath(next, path))
+      const validationIssues = validateSettings(mergedNext as any)
 
-    if (validationIssues.length > 0) {
-      logError('Config update rejected by validation:')
-      for (const issue of validationIssues) {
-        logError(`- ${issue.path}: ${issue.message}`)
+      if (validationIssues.length > 0) {
+        return { ok: false as const, validationIssues }
       }
-
-      return 1
     }
-  }
 
-  saveSettings(next as any)
+    saveSettings(next as any)
+
+    return { ok: true as const }
+  })
+
+  if ('validationIssues' in outcome) {
+    logError('Config update rejected by validation:')
+    for (const issue of outcome.validationIssues) {
+      logError(`- ${issue.path}: ${issue.message}`)
+    }
+
+    return 1
+  }
 
   logInfo(`Updated ${path}`)
 
