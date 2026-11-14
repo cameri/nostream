@@ -1,0 +1,24 @@
+# The independent reviewer for this repository.
+#
+# It replaces greptile, which the factory's static stage used until its CLI was
+# priced off the plan: a $30 tier the OSS allowance does not cover, an API key
+# that came back revoked, and a diff cap that rejected a 1,454-line branch.
+# CodeRabbit's free tier covers public repositories, which is what this one is.
+#
+# `base_branches` is the line that matters: auto review runs on the default
+# branch already, and the rewrite lands its work on `rewrite/main`, so every
+# factory pull request targets a branch CodeRabbit would otherwise skip. Its
+# own default of 5 reviewed commits is too low for a job with fix rounds, so it
+# is raised rather than disabled.
+language: en-CA
+reviews:
+  profile: chill
+  high_level_summary: true
+  review_status: true
+  sequence_diagrams: false
+  poem: false
+  auto_review:
+    enabled: true
+    base_branches:
+      - "^rewrite/main$"
+    auto_pause_after_reviewed_commits: 20
