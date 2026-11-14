@@ -19,7 +19,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
@@ -81,6 +81,10 @@ const TAG_LIMIT: u64 = 100;
 /// across repeats, which is the only way a reader can tell a measurement from a lucky one.
 const DEFAULT_REPEATS: u64 = 1;
 
+/// The artifact's layout version: bumped when a field's meaning or position changes, so a reader
+/// can tell which shape of document it holds.
+const ARTIFACT_SCHEMA: u64 = 1;
+
 /// The corpus ceiling a run may not cross without `--allow-large-corpus`. A 1M-event corpus is
 /// about 1.9 GB of `data.mdb` at the rate this rig measures, so the default refusal is what
 /// keeps a mistyped `--events` from filling a measuring host's disk.
@@ -136,8 +140,10 @@ impl Backend {
                   failed check, with the artifact written either way; 2 a usage error, a refusal, \
                   or a failure that stopped the run.\n\n\
                   --repeats N runs the measured phases N times, each against a fresh store (a \
-                  --store directory gets one repeat-<n> subdirectory per run), and the artifact \
-                  carries the spread across the repeats. The Postgres arm drops and recreates the \
+                  --store directory gets one repeat-<n> subdirectory per run, and every one of \
+                  those directories is refused if it already holds a store); the artifact carries \
+                  the band across the repeats, and a single repeat is one point reported three \
+                  times. The Postgres arm drops and recreates the \
                   scratch database named above on the server PARITY_ADMIN_URL points at, so run it \
                   only where that name is expendable."
 )]
@@ -146,8 +152,8 @@ struct Arguments {
     #[arg(long, value_enum)]
     backend: Backend,
 
-    /// The corpus size: at least 1000, and at most 200000 without --allow-large-corpus. The
-    /// ingest phase takes the last 1000 events of it.
+    /// The corpus size: at least 1001 — the ingest phase takes the last 1000 events and the bulk
+    /// phase needs one more — and at most 200000 without --allow-large-corpus.
     #[arg(long)]
     events: u64,
 
@@ -155,7 +161,9 @@ struct Arguments {
     #[arg(long, default_value_t = DEFAULT_SEED)]
     seed: u64,
 
-    /// How many times to run the measured phases; above 1 the artifact carries the spread.
+    /// How many times to run the measured phases, each against a fresh store. Above 1 the
+    /// artifact carries the band across the repeats; a single repeat is one point, reported
+    /// three times.
     #[arg(long, default_value_t = DEFAULT_REPEATS)]
     repeats: u64,
 
@@ -168,8 +176,8 @@ struct Arguments {
     #[arg(long)]
     verify: bool,
 
-    /// The store root for --backend lmdb; it must not already hold a store, and a fresh
-    /// temporary directory is used when absent.
+    /// The store root for --backend lmdb; it must not already hold a store at any directory the
+    /// repeats would open, and a fresh temporary directory is used when absent.
     #[arg(long)]
     store: Option<PathBuf>,
 
@@ -282,6 +290,40 @@ impl Band {
     }
 }
 
+/// One shape's spread across repeats: the same nearest-rank rule applied to the per-run rates and
+/// to the per-run percentiles, so the number the cutover gate reads carries a band too.
+struct ShapeBands {
+    per_second: Band,
+    rows_per_second: Band,
+    p50_us: Band,
+    p95_us: Band,
+    p99_us: Band,
+}
+
+impl ShapeBands {
+    fn from_timings(timings: &[Timing]) -> Self {
+        let values = |pick: fn(&Timing) -> u64| -> Vec<u64> { timings.iter().map(pick).collect() };
+        Self {
+            per_second: Band::from_values(&values(|timing| timing.per_second)),
+            rows_per_second: Band::from_values(&values(|timing| timing.rows_per_second)),
+            p50_us: Band::from_values(&values(|timing| timing.p50_us)),
+            p95_us: Band::from_values(&values(|timing| timing.p95_us)),
+            p99_us: Band::from_values(&values(|timing| timing.p99_us)),
+        }
+    }
+
+    /// The five bands with the names the artifact gives them, in the order the document prints.
+    fn named(&self) -> [(&'static str, &Band); 5] {
+        [
+            ("per_second", &self.per_second),
+            ("rows_per_second", &self.rows_per_second),
+            ("p50_us", &self.p50_us),
+            ("p95_us", &self.p95_us),
+            ("p99_us", &self.p99_us),
+        ]
+    }
+}
+
 /// The percentile the sample list carries: nearest rank over the sorted samples, index
 /// `ceil(p/100 * n) - 1` clamped into the list, in whole microseconds.
 fn nearest_rank(sorted: &[u64], p: u64) -> u64 {
@@ -309,7 +351,7 @@ struct Report {
     event_count_read_back: u64,
     shapes: Vec<ShapeCounts>,
     timings: BTreeMap<String, Timing>,
-    bands: BTreeMap<String, (Band, Band)>,
+    bands: BTreeMap<String, ShapeBands>,
     /// Every repeat's shapes, so verification can check they agree with the first.
     repeat_shapes: Vec<Vec<ShapeCounts>>,
 }
@@ -366,8 +408,15 @@ async fn run() -> Fallible<ExitCode> {
     let arguments = Arguments::parse();
     let plan = Plan::resolve(&arguments)?;
 
+    let store_note = match &plan.store {
+        Store::Temporary => "a temporary directory".to_owned(),
+        Store::Given(path) if plan.repeats == 1 => path.display().to_string(),
+        Store::Given(path) => {
+            format!("{} (one repeat-<n> per repeat)", path.display())
+        }
+    };
     eprintln!(
-        "measuring {}: {} events at seed {}, {} repeat{}, artifact {}",
+        "measuring {}: {} events at seed {}, {} repeat{}, store {store_note}, artifact {}",
         plan.backend.name(),
         plan.events,
         plan.seed,
@@ -379,8 +428,14 @@ async fn run() -> Fallible<ExitCode> {
     let mut first: Option<Run> = None;
     let mut rest: Vec<Run> = Vec::new();
     let mut store_size = None;
+    let mut loads: Vec<f64> = Vec::new();
 
     for repeat in 0..plan.repeats {
+        // Sampled before each repeat, so the artifact can say what the host looked like for
+        // every run rather than only for the last one.
+        if let Some(load) = load_1min() {
+            loads.push(load);
+        }
         let (root, _temporary) = store_root(&plan, repeat)?;
         let store: Arc<dyn EventRepository> = match plan.backend {
             Backend::Lmdb => Arc::new(LmdbBackend::open(&root).await?),
@@ -400,7 +455,9 @@ async fn run() -> Fallible<ExitCode> {
         };
         let measured = measure(store.as_ref(), plan.events, plan.seed, &label).await?;
 
-        if plan.backend == Backend::Lmdb {
+        // The repeats write the same corpus, so the first repeat's store stands for all of them;
+        // taking it here keeps this block and `timings` describing the same run.
+        if plan.backend == Backend::Lmdb && store_size.is_none() {
             let data_bytes = std::fs::metadata(store_file(&root))?.len();
             store_size = Some(StoreSize {
                 data_bytes,
@@ -417,7 +474,7 @@ async fn run() -> Fallible<ExitCode> {
 
     let first = first.ok_or_else(|| refusal("--repeats must be at least 1"))?;
     let report = Report::new(plan.backend, plan.seed, plan.events, first, rest);
-    let artifact = report.artifact(volatile_json(&report, store_size.as_ref()));
+    let artifact = report.artifact(volatile_json(&report, store_size.as_ref(), &loads));
 
     let text = format!("{}\n", serde_json::to_string_pretty(&artifact)?);
     std::fs::write(&plan.out, text)
@@ -448,8 +505,35 @@ fn plural(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
-/// The root one repeat opens its store under: a fresh temporary directory each time, and one
-/// subdirectory per repeat under a `--store` root when the phases run more than once.
+/// The root one repeat opens its store under. The refusal in `given_store` and the open in
+/// `store_root` both call this, so they cannot disagree about which directory a run writes to.
+fn repeat_root(path: &Path, repeat: u64, repeats: u64) -> PathBuf {
+    if repeats == 1 {
+        path.to_path_buf()
+    } else {
+        path.join(format!("repeat-{repeat}"))
+    }
+}
+
+/// Takes a `--store` root after refusing every directory the repeats would open into. A store left
+/// by an earlier run is the one thing this flag cannot detect for the operator, and a repeat run
+/// writes under `repeat-<n>`, so each of those roots is checked and the message names the one
+/// that was found.
+fn given_store(path: &Path, repeats: u64) -> Fallible<Store> {
+    for repeat in 0..repeats {
+        let root = repeat_root(path, repeat, repeats);
+        if store_exists(&root) {
+            return Err(refusal(format!(
+                "--store {} already holds a store: {} exists. Choose another --store or remove it",
+                path.display(),
+                store_file(&root).display()
+            )));
+        }
+    }
+    Ok(Store::Given(path.to_path_buf()))
+}
+
+/// The root one repeat opens, with the temporary directory that keeps it alive when there is one.
 fn store_root(plan: &Plan, repeat: u64) -> Fallible<(PathBuf, Option<tempfile::TempDir>)> {
     match &plan.store {
         Store::Temporary => {
@@ -457,8 +541,7 @@ fn store_root(plan: &Plan, repeat: u64) -> Fallible<(PathBuf, Option<tempfile::T
             let root = directory.path().to_path_buf();
             Ok((root, Some(directory)))
         }
-        Store::Given(path) if plan.repeats == 1 => Ok((path.clone(), None)),
-        Store::Given(path) => Ok((path.join(format!("repeat-{repeat}")), None)),
+        Store::Given(path) => Ok((repeat_root(path, repeat, plan.repeats), None)),
     }
 }
 
@@ -471,11 +554,15 @@ impl Plan {
             ));
         }
 
-        if arguments.events < INGEST_EVENTS {
+        // The bulk phase is what is left after the ingest reserve, so a corpus of exactly the
+        // reserve would leave `create_many` no call to time and the shape's zero-row checks could
+        // never pass. One event above the reserve is the smallest run that measures everything.
+        if arguments.events <= INGEST_EVENTS {
             return Err(refusal(format!(
-                "--events {} is below the minimum of {INGEST_EVENTS}: the ingest phase measures \
-                 the last {INGEST_EVENTS} events",
-                arguments.events
+                "--events {} is below the minimum of {}: the ingest phase measures the last \
+                 {INGEST_EVENTS} events and the bulk phase needs at least one more to load",
+                arguments.events,
+                INGEST_EVENTS + 1
             )));
         }
 
@@ -531,17 +618,7 @@ impl Plan {
         };
 
         let store = match &arguments.store {
-            Some(path) => {
-                if store_exists(path) {
-                    return Err(refusal(format!(
-                        "--store {} already holds a store: {} exists. Choose another --store or \
-                         remove it",
-                        path.display(),
-                        store_file(path).display()
-                    )));
-                }
-                Store::Given(path.clone())
-            }
+            Some(path) => given_store(path, arguments.repeats)?,
             None => Store::Temporary,
         };
 
@@ -940,6 +1017,7 @@ async fn measure(
     });
 
     // 3. Read the whole corpus back once, which is what the unbounded count costs.
+    let reads_started = Instant::now();
     let started = Instant::now();
     let event_count_read_back = store.count_by_filters(&[Filter::default()]).await?;
     timings.insert(
@@ -971,6 +1049,10 @@ async fn measure(
         count: COUNT_ITERATIONS,
         rows,
     });
+    eprintln!(
+        "{label}read back and ran the five read shapes in {} ms",
+        reads_started.elapsed().as_millis()
+    );
 
     Ok(Run {
         event_count_read_back,
@@ -1009,15 +1091,15 @@ impl Report {
         let repeat_count = 1 + rest.len() as u64;
 
         let mut timings = BTreeMap::new();
-        let mut rates: BTreeMap<&'static str, (Vec<u64>, Vec<u64>)> = BTreeMap::new();
+        let mut per_repeat: BTreeMap<&'static str, Vec<Timing>> = BTreeMap::new();
         let mut repeat_shapes = Vec::new();
 
         for run in std::iter::once(&first).chain(rest.iter()) {
             for (name, samples) in &run.timings {
-                let timing = Timing::from_samples(samples);
-                let entry = rates.entry(name).or_default();
-                entry.0.push(timing.per_second);
-                entry.1.push(timing.rows_per_second);
+                per_repeat
+                    .entry(name)
+                    .or_default()
+                    .push(Timing::from_samples(samples));
             }
             repeat_shapes.push(run.shapes.clone());
         }
@@ -1025,17 +1107,9 @@ impl Report {
             timings.insert((*name).to_owned(), Timing::from_samples(samples));
         }
 
-        let bands = rates
+        let bands = per_repeat
             .into_iter()
-            .map(|(name, (per_second, rows_per_second))| {
-                (
-                    name.to_owned(),
-                    (
-                        Band::from_values(&per_second),
-                        Band::from_values(&rows_per_second),
-                    ),
-                )
-            })
+            .map(|(name, timings)| (name.to_owned(), ShapeBands::from_timings(&timings)))
             .collect();
 
         Self {
@@ -1064,6 +1138,7 @@ impl Report {
             })
             .collect();
         json!({
+            "schema": ARTIFACT_SCHEMA,
             "backend": self.backend,
             "seed": self.seed,
             "events": self.events,
@@ -1107,7 +1182,7 @@ fn workload_json(repeat_count: u64) -> Value {
 
 /// Everything that can differ between two runs: the host, the store's size, the timings and the
 /// spread across repeats.
-fn volatile_json(report: &Report, store: Option<&StoreSize>) -> Value {
+fn volatile_json(report: &Report, store: Option<&StoreSize>, loads: &[f64]) -> Value {
     let mut timings = Map::new();
     for (name, timing) in &report.timings {
         timings.insert(
@@ -1124,22 +1199,19 @@ fn volatile_json(report: &Report, store: Option<&StoreSize>) -> Value {
     }
 
     let mut repeats = Map::new();
-    for (name, (per_second, rows_per_second)) in &report.bands {
-        repeats.insert(
-            name.clone(),
-            json!({
-                "per_second": {
-                    "median": per_second.median,
-                    "p10": per_second.p10,
-                    "p90": per_second.p90,
-                },
-                "rows_per_second": {
-                    "median": rows_per_second.median,
-                    "p10": rows_per_second.p10,
-                    "p90": rows_per_second.p90,
-                },
-            }),
-        );
+    for (name, bands) in &report.bands {
+        let mut entry = Map::new();
+        for (metric, band) in bands.named() {
+            entry.insert(
+                metric.to_owned(),
+                json!({
+                    "median": band.median,
+                    "p10": band.p10,
+                    "p90": band.p90,
+                }),
+            );
+        }
+        repeats.insert(name.clone(), Value::Object(entry));
     }
 
     json!({
@@ -1149,7 +1221,8 @@ fn volatile_json(report: &Report, store: Option<&StoreSize>) -> Value {
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,
             "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
-            "load_1min": load_1min(),
+            "load_1min": loads.first().copied(),
+            "load_1min_by_repeat": loads,
         },
         "store": match store {
             Some(size) => json!({
@@ -1350,11 +1423,8 @@ fn verify(report: &Report) -> Vec<VerifyFailure> {
         );
     }
 
-    for (name, (per_second, rows_per_second)) in &report.bands {
-        for (metric, band) in [
-            ("per_second", per_second),
-            ("rows_per_second", rows_per_second),
-        ] {
+    for (name, bands) in &report.bands {
+        for (metric, band) in bands.named() {
             let ordered = band.p10 <= band.median && band.median <= band.p90;
             if !ordered {
                 failures.push(VerifyFailure::new(
@@ -1424,20 +1494,20 @@ mod tests {
         let bands = timings
             .keys()
             .map(|name| {
+                let band = |median: u64| Band {
+                    median,
+                    p10: median / 2,
+                    p90: median + 1,
+                };
                 (
                     name.clone(),
-                    (
-                        Band {
-                            median: 1_000,
-                            p10: 900,
-                            p90: 1_100,
-                        },
-                        Band {
-                            median: 2_000,
-                            p10: 1_800,
-                            p90: 2_200,
-                        },
-                    ),
+                    ShapeBands {
+                        per_second: band(1_000),
+                        rows_per_second: band(2_000),
+                        p50_us: band(10),
+                        p95_us: band(20),
+                        p99_us: band(30),
+                    },
                 )
             })
             .collect();
@@ -1513,6 +1583,91 @@ mod tests {
         assert_eq!((band.p10, band.median, band.p90), (10, 20, 30));
         let band = Band::from_values(&[42]);
         assert_eq!((band.p10, band.median, band.p90), (42, 42, 42));
+    }
+
+    #[test]
+    fn shape_bands_carry_the_percentiles_and_both_rates() {
+        let timings: Vec<Timing> = [10, 20, 30]
+            .into_iter()
+            .map(|p95| Timing {
+                ops: 1,
+                p50_us: p95 - 5,
+                p95_us: p95,
+                p99_us: p95 + 5,
+                per_second: p95 * 100,
+                rows_per_second: p95 * 200,
+            })
+            .collect();
+        let bands = ShapeBands::from_timings(&timings);
+        assert_eq!(
+            (bands.p95_us.p10, bands.p95_us.median, bands.p95_us.p90),
+            (10, 20, 30)
+        );
+        assert_eq!(bands.p50_us.median, 15);
+        assert_eq!(bands.p99_us.p90, 35);
+        assert_eq!(bands.per_second.median, 2_000);
+        assert_eq!(bands.rows_per_second.p90, 6_000);
+    }
+
+    #[test]
+    fn a_repeat_run_refuses_a_store_left_by_an_earlier_run() {
+        let directory = tempfile::tempdir().ok().expect("a temporary directory");
+        let root = repeat_root(directory.path(), 1, 2);
+        std::fs::create_dir_all(root.join("lmdb"))
+            .ok()
+            .expect("a store dir");
+        std::fs::write(store_file(&root), b"")
+            .ok()
+            .expect("a store file");
+
+        // One run writes to the root itself, which holds no store, so it is not refused.
+        assert!(given_store(directory.path(), 1).is_ok());
+        // Two repeats open `repeat-1`, which does: the refusal names the directory it found.
+        let error = given_store(directory.path(), 2)
+            .err()
+            .expect("a refusal")
+            .to_string();
+        assert!(error.contains("--store"), "{error}");
+        assert!(error.contains("repeat-1"), "{error}");
+        assert!(
+            error.contains(&store_file(&root).display().to_string()),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_single_run_refuses_a_populated_store() {
+        let directory = tempfile::tempdir().ok().expect("a temporary directory");
+        std::fs::create_dir_all(directory.path().join("lmdb"))
+            .ok()
+            .expect("a store dir");
+        std::fs::write(store_file(directory.path()), b"")
+            .ok()
+            .expect("a store file");
+        assert!(given_store(directory.path(), 1).is_err());
+    }
+
+    #[test]
+    fn the_smallest_accepted_corpus_leaves_a_bulk_load() {
+        let directory = tempfile::tempdir().ok().expect("a temporary directory");
+        let arguments = |events| Arguments {
+            backend: Backend::Lmdb,
+            events,
+            seed: DEFAULT_SEED,
+            repeats: 1,
+            out: directory.path().join("artifact.json"),
+            verify: false,
+            store: None,
+            allow_large_corpus: false,
+            allow_busy_host: true,
+        };
+
+        let error = Plan::resolve(&arguments(1_000))
+            .err()
+            .expect("a refusal")
+            .to_string();
+        assert!(error.contains("below the minimum of 1001"), "{error}");
+        assert!(Plan::resolve(&arguments(1_001)).is_ok());
     }
 
     #[test]
@@ -1600,13 +1755,22 @@ mod tests {
     #[test]
     fn verify_rejects_a_band_out_of_order() {
         let mut report = valid_report();
-        let (per_second, _) = report.bands.get_mut("count").expect("a count band");
+        let count = report.bands.get_mut("count").expect("a count band");
         // The median above the ninetieth percentile, while the tenth stays below it: only the
         // middle clause of the ordering catches this, so the test pins that clause too.
-        per_second.median = per_second.p90 + 1;
+        count.per_second.median = count.per_second.p90 + 1;
         let failures = verify(&report);
         assert_eq!(failures.len(), 1, "one failure, not {}", failures.len());
         assert_eq!(failures[0].field, "volatile.repeats[count].per_second");
+
+        // The percentile bands are checked by the same rule: the p95 band is the one the gate
+        // reads, so it is the one this pins.
+        let mut report = valid_report();
+        let count = report.bands.get_mut("count").expect("a count band");
+        count.p95_us.median = count.p95_us.p90 + 1;
+        let failures = verify(&report);
+        assert_eq!(failures.len(), 1, "one failure, not {}", failures.len());
+        assert_eq!(failures[0].field, "volatile.repeats[count].p95_us");
     }
 
     #[test]
