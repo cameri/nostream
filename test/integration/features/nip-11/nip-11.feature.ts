@@ -97,12 +97,18 @@ Then('the peering object matches the configured peering settings', function(this
       { kinds: [1, 6], window_seconds: 3600 },
       { kinds: [3], since: 1700000000 },
     ],
-    terms: [{ amount: 1000, unit: 'msats', period: 2592000 }],
+    terms: [],
   })
 })
 
-const peeringIssuesFor = (peering: unknown) =>
-  validateSettings({ ...createSettings(), peering } as Settings).filter((issue) => issue.path.startsWith('peering'))
+const peeringIssuesFor = (peering: unknown) => {
+  const settings = createSettings()
+  return validateSettings({
+    ...settings,
+    payments: { ...settings.payments, enabled: true, processor: 'lnbits' },
+    peering,
+  } as Settings).filter((issue) => issue.path.startsWith('peering'))
+}
 
 When('peering settings are validated with a complete configuration', function(this: World<Record<string, any>>) {
   this.parameters.peeringValidationIssues = peeringIssuesFor({

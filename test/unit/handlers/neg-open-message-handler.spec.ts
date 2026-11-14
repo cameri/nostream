@@ -109,6 +109,67 @@ describe('NegOpenMessageHandler', () => {
     expect(findReconciliationItems).to.have.been.calledOnceWithExactly({ kinds: [1], limit: 3 }, 101)
   })
 
+  it('rejects a reconciliation from a peer without paid access', async () => {
+    const peer = 'a'.repeat(64)
+    ;(webSocket as any).getPeerPubkey = () => peer
+    const billing = {
+      getAccess: sandbox.stub().resolves({ allowed: false, reason: 'peering payment required' }),
+    }
+    handler = new NegOpenMessageHandler(
+      webSocket,
+      eventRepository,
+      () => settings,
+      rateLimiterFactory,
+      requestStats as any,
+      billing as any,
+    )
+
+    await open()
+
+    expect(billing.getAccess).to.have.been.calledWith(peer, { recheck: true })
+    expect(findReconciliationItems).not.to.have.been.called
+    expect(sessions.getSessionIds()).to.deep.equal([])
+    expect(emitted.firstCall.args[0]).to.deep.equal([
+      MessageType.NEG_ERR,
+      'sync1',
+      'payment-required: peering payment required',
+    ])
+  })
+
+  it('does not close a replacement NEG-OPEN after a stale billing wait', async () => {
+    const peer = 'a'.repeat(64)
+    let releaseAccess: ((access: unknown) => void) | undefined
+    let markGetAccessCalled: (() => void) | undefined
+    const getAccessCalled = new Promise<void>((resolve) => {
+      markGetAccessCalled = resolve
+    })
+    ;(webSocket as any).getPeerPubkey = () => peer
+    const billing = {
+      getAccess: sandbox.stub().callsFake(() => {
+        markGetAccessCalled?.()
+        return new Promise((resolve) => {
+          releaseAccess = resolve
+        })
+      }),
+    }
+    handler = new NegOpenMessageHandler(
+      webSocket,
+      eventRepository,
+      () => settings,
+      rateLimiterFactory,
+      requestStats as any,
+      billing as any,
+    )
+
+    const pending = open()
+    await getAccessCalled
+    sessions.close('sync1')
+    releaseAccess?.({ allowed: false, reason: 'peering payment required' })
+    await pending
+
+    expect(emitted).not.to.have.been.called
+  })
+
   describe('when disabled', () => {
     it('replies NEG-ERR blocked and does not read events', async () => {
       settings = { nip77: { enabled: false } } as Settings

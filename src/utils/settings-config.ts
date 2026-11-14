@@ -959,6 +959,14 @@ const validatePeeringTerms = (terms: unknown, issues: ValidationIssue[]): void =
 
     if (typeof term.unit !== 'string' || !term.unit.trim()) {
       issues.push({ path: `${prefix}.unit`, message: 'unit must be a non-empty string' })
+    } else if (typeof term.amount === 'number' && term.amount > 0) {
+      const unit = term.unit.trim().toLowerCase()
+      if (!['msats', 'sats', 'btc'].includes(unit)) {
+        issues.push({ path: `${prefix}.unit`, message: 'paid terms must use msats, sats or btc' })
+      } else if (unit === 'msats' && term.amount % 1000 !== 0) {
+        // Processors such as LNbits and OpenNode truncate msats to whole sats.
+        issues.push({ path: `${prefix}.amount`, message: 'paid msat terms must be a whole number of satoshis' })
+      }
     }
 
     if (!(typeof term.period === 'number' && Number.isSafeInteger(term.period) && term.period > 0)) {
@@ -1077,6 +1085,26 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
   validatePeeringScopes(peering.scopes, issues)
   validatePeeringTerms(peering.terms, issues)
   validatePeeringPeers(peering.peers, issues)
+
+  const paidTerms = Array.isArray(peering.terms)
+    ? peering.terms.filter(
+        (term) => isPlainObject(term) && typeof term.amount === 'number' && term.amount > 0,
+      )
+    : []
+
+  if (paidTerms.length > 1) {
+    issues.push({
+      path: 'peering.terms',
+      message: 'only one paid peering term is supported',
+    })
+  }
+
+  if (paidTerms.length > 0 && settings.payments?.enabled !== true) {
+    issues.push({
+      path: 'peering.terms',
+      message: 'payments must be enabled to charge for peering',
+    })
+  }
 
   if (!enabled) {
     return

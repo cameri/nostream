@@ -78,6 +78,9 @@ export class OpenNodeCallbackController implements IController {
 
     const statusMap: Record<string, InvoiceStatus> = {
       expired: InvoiceStatus.EXPIRED,
+      // A refund only expires the invoice. Removing the paid peering period is a
+      // lifecycle policy and is deliberately not automatic here; the peer row is
+      // left untouched so an operator can decide whether to revoke access.
       refunded: InvoiceStatus.EXPIRED,
       unpaid: InvoiceStatus.PENDING,
       processing: InvoiceStatus.PENDING,
@@ -112,7 +115,9 @@ export class OpenNodeCallbackController implements IController {
     if (!updatedInvoice.confirmedAt) {
       updatedInvoice.confirmedAt = new Date()
     }
-    updatedInvoice.amountPaid = updatedInvoice.amountRequested
+    if (typeof updatedInvoice.amountPaid !== 'bigint') {
+      updatedInvoice.amountPaid = updatedInvoice.amountRequested
+    }
 
     try {
       await this.paymentsService.confirmInvoice({
