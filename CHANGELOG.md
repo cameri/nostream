@@ -1,5 +1,13 @@
 # nostream
 
+## 3.15.3
+
+### Patch Changes
+
+- [#1130](https://github.com/cameri/nostream/pull/1130) [`ef017e5`](https://github.com/cameri/nostream/commit/ef017e5e34b5e4a4371c3aa9e77faef58d93a9fb) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore(deps): bump astro from 7.4.4 to 7.4.7
+
+- [#1092](https://github.com/cameri/nostream/pull/1092) [`508d8c1`](https://github.com/cameri/nostream/commit/508d8c10bbb659bba7aaa5408a349af6937047f4) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(payments): a payment for a cheaper plan no longer downgrades a pubkey whose dearer plan is still running
+
 ## 3.15.2
 
 ### Patch Changes
