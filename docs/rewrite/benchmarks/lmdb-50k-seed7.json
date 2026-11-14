@@ -21,12 +21,12 @@
     },
     {
       "count": 200,
-      "rows": 16000,
+      "rows": 20000,
       "shape": "author_kind"
     },
     {
       "count": 200,
-      "rows": 100000,
+      "rows": 99602,
       "shape": "kind_since"
     },
     {
@@ -36,7 +36,7 @@
     },
     {
       "count": 50,
-      "rows": 40000,
+      "rows": 1020000,
       "shape": "count"
     }
   ],
@@ -45,70 +45,176 @@
       "arch": "x86_64",
       "cpu_count": 4,
       "cpu_model": "Intel(R) Core(TM) i7-10700T CPU @ 2.00GHz",
-      "load_1min": 43.34,
+      "load_1min": 43.92,
       "os": "linux",
       "profile": "release"
     },
+    "repeats": {
+      "author_kind": {
+        "per_second": {
+          "median": 2943,
+          "p10": 2729,
+          "p90": 3131
+        },
+        "rows_per_second": {
+          "median": 294334,
+          "p10": 272966,
+          "p90": 313116
+        }
+      },
+      "by_id": {
+        "per_second": {
+          "median": 39131,
+          "p10": 37757,
+          "p90": 47653
+        },
+        "rows_per_second": {
+          "median": 39131,
+          "p10": 37757,
+          "p90": 47653
+        }
+      },
+      "count": {
+        "per_second": {
+          "median": 98,
+          "p10": 94,
+          "p90": 105
+        },
+        "rows_per_second": {
+          "median": 2012445,
+          "p10": 1922779,
+          "p90": 2142195
+        }
+      },
+      "create": {
+        "per_second": {
+          "median": 243,
+          "p10": 85,
+          "p90": 270
+        },
+        "rows_per_second": {
+          "median": 243,
+          "p10": 85,
+          "p90": 270
+        }
+      },
+      "create_many": {
+        "per_second": {
+          "median": 20,
+          "p10": 16,
+          "p90": 44
+        },
+        "rows_per_second": {
+          "median": 10009,
+          "p10": 8345,
+          "p90": 22483
+        }
+      },
+      "kind_since": {
+        "per_second": {
+          "median": 678,
+          "p10": 651,
+          "p90": 700
+        },
+        "rows_per_second": {
+          "median": 338042,
+          "p10": 324696,
+          "p90": 348817
+        }
+      },
+      "read_back": {
+        "per_second": {
+          "median": 48,
+          "p10": 36,
+          "p90": 52
+        },
+        "rows_per_second": {
+          "median": 2433800,
+          "p10": 1802711,
+          "p90": 2649287
+        }
+      },
+      "tag": {
+        "per_second": {
+          "median": 3315,
+          "p10": 3308,
+          "p90": 3447
+        },
+        "rows_per_second": {
+          "median": 331543,
+          "p10": 330846,
+          "p90": 344750
+        }
+      }
+    },
     "store": {
-      "bytes_per_event": 1883,
-      "data_bytes": 94191616
+      "bytes_per_event": 1889,
+      "data_bytes": 94490624
     },
     "timings": {
       "author_kind": {
         "ops": 200,
-        "p50_us": 320,
-        "p95_us": 435,
-        "p99_us": 552,
-        "per_second": 3610
+        "p50_us": 332,
+        "p95_us": 395,
+        "p99_us": 416,
+        "per_second": 2943,
+        "rows_per_second": 294334
       },
       "by_id": {
         "ops": 200,
-        "p50_us": 20,
-        "p95_us": 23,
-        "p99_us": 71,
-        "per_second": 46674
+        "p50_us": 22,
+        "p95_us": 53,
+        "p99_us": 64,
+        "per_second": 37757,
+        "rows_per_second": 37757
       },
       "count": {
         "ops": 50,
-        "p50_us": 7,
-        "p95_us": 12,
-        "p99_us": 18426,
-        "per_second": 2654
+        "p50_us": 9564,
+        "p95_us": 19514,
+        "p99_us": 21805,
+        "per_second": 94,
+        "rows_per_second": 1922779
       },
       "create": {
         "ops": 1000,
-        "p50_us": 3923,
-        "p95_us": 4686,
-        "p99_us": 5419,
-        "per_second": 254
+        "p50_us": 3726,
+        "p95_us": 6475,
+        "p99_us": 8192,
+        "per_second": 243,
+        "rows_per_second": 243
       },
       "create_many": {
         "ops": 98,
-        "p50_us": 27293,
-        "p95_us": 39467,
-        "p99_us": 48502,
-        "per_second": 35
+        "p50_us": 41717,
+        "p95_us": 100578,
+        "p99_us": 1097356,
+        "per_second": 16,
+        "rows_per_second": 8345
       },
       "kind_since": {
         "ops": 200,
-        "p50_us": 1481,
-        "p95_us": 1697,
-        "p99_us": 2312,
-        "per_second": 663
+        "p50_us": 1439,
+        "p95_us": 2092,
+        "p99_us": 2319,
+        "per_second": 651,
+        "rows_per_second": 324696
       },
       "read_back": {
         "ops": 1,
-        "p50_us": 19174,
-        "p95_us": 19174,
-        "p99_us": 19174,
-        "per_second": 52
+        "p50_us": 20544,
+        "p95_us": 20544,
+        "p99_us": 20544,
+        "per_second": 48,
+        "rows_per_second": 2433800
       },
       "tag": {
         "ops": 200,
         "p50_us": 272,
-        "p95_us": 335,
-        "p99_us": 426,
-        "per_second": 3594
+        "p95_us": 425,
+        "p99_us": 478,
+        "per_second": 3447,
+        "rows_per_second": 344750
       }
     }
   },
@@ -143,6 +249,7 @@
         "tag": 100
       }
     },
+    "repeats": 3,
     "writes": {
       "create_many_batch": 500,
       "ingest_events": 1000
