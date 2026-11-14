@@ -286,6 +286,10 @@ jobs:
         env:
           PARITY_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: cargo run -p nostream-storage --example bench -- --backend postgres --events 2000 --seed 7 --verify --out /tmp/bench-postgres.json
+      # `cargo test --workspace` builds an example target and never runs its tests, so the rig's
+      # own tests need a command that does. They carry the rules `--verify` asserts.
+      - name: Benchmark harness unit tests
+        run: cargo test -p nostream-storage --all-features --example bench
       - name: Storage builds without the Postgres driver
         run: cargo check -p nostream-storage --no-default-features --all-targets
       - name: Release build

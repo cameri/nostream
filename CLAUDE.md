@@ -36,9 +36,9 @@ cargo test --workspace --all-features
 cargo build --workspace --all-features --release
 ```
 
-CI additionally runs the three database-backed storage tests ("Storage parity against Postgres")
-against a `postgres:16-alpine` service, and they are `#[ignore]`d so a checkout without a database still passes
-`cargo test --workspace`:
+CI additionally runs four database- and example-backed checks. Three are the storage tests
+("Storage parity against Postgres"), against a `postgres:16-alpine` service; they are `#[ignore]`d
+so a checkout without a database still passes `cargo test --workspace`:
 
 ```
 cargo test -p nostream-storage --test migrations --test parity --test migration_pg \
@@ -48,8 +48,21 @@ cargo test -p nostream-storage --test migrations --test parity --test migration_
 `PARITY_ADMIN_URL` names the administrative database (CI sets
 `postgres://postgres:postgres@localhost:5432/postgres`); the targets create, migrate and
 drop their own scratch databases — `migration_pg` seeds one and copies it into a temporary LMDB
-store. `scripts/storage-parity.sh` runs all three plus the
-TypeScript Cucumber suite against the sqlx-migrated schema — the complete local oracle. The
+store. The fourth is the benchmark rig's Postgres arm ("Benchmark harness against Postgres"):
+it runs `crates/nostream-storage/examples/bench.rs` against a scratch database and proves the path
+and `--verify`, and its numbers are cited nowhere.
+
+The rig's own unit tests need their own command, because `cargo test --workspace` only *builds* an
+example target. CI runs it as "Benchmark harness unit tests", and so must you when you touch the
+rig:
+
+```
+cargo test -p nostream-storage --all-features --example bench
+```
+
+`scripts/storage-parity.sh` runs the three storage targets plus the
+TypeScript Cucumber suite against the sqlx-migrated schema — the local parity oracle. It does not
+run the benchmark rig, which is a measurement and not a parity check. The
 LMDB arm of that oracle needs no database: `cargo test -p nostream-storage --test parity_lmdb
 -- --nocapture` replays the same fixture on a temporary store and runs inside the fifth
 validation command above.
