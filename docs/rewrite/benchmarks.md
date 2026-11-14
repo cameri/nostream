@@ -78,9 +78,9 @@ store.
 
 Every figure is the artifact's integer printed as-is, except the three `p95` columns, which are
 `volatile.repeats.<shape>.p95_us` in milliseconds under the same one-decimal rounding as the
-table above. All five bands are in the artifact — `p50_us`, `p95_us` and `p99_us` beside the two rates —
-because the cutover gate reads a p95, and a band on the rates alone would leave the number it
-compares without one.
+table above. All five bands are in the artifact — `p50_us`, `p95_us` and `p99_us` beside the two
+rates — because the cutover gate reads a p95, and a band on the rates alone would leave the number
+it compares without one.
 
 **What a band is.** Each band is the nearest-rank percentile of the shape's per-repeat values:
 sort the `n` values ascending and take the one at position `ceil(p ÷ 100 × n)` — the first value
@@ -179,10 +179,9 @@ band spans 248 to 253 — which is what makes the write rows worth reading as a 
 host on this day. `create_many`'s band is the widest of them: one repeat loaded at 34 batches per
 second where the other two reached 48, and its `p95` band runs from 29.6 to 37.3 ms around a
 median of 30.4. That is one repeat's writes waiting on the host's disk rather than the same wait
-landing in all three. A repeat can stall altogether — one earlier run of this same
-command on this host had a single repeat's ingest take an order of magnitude longer than the other
-two, and its `create` band was several times as wide as this one's — so the band, and not one
-run's number, is what the tables above are for.
+landing in all three. A repeat on a shared host can stall outright, and nothing in the rig
+prevents it, so the band — and not one run's number — is what the tables above are for. A run
+whose band is wider than this one's is a reading of a busier host, not of a slower store.
 
 The cost being timed for the writes is LMDB's synchronous commit, which waits on a shared host's
 disk; `create_many` also copies the batch and writes its indexes, and this rig does not separate
@@ -196,10 +195,11 @@ temporary directory. The harness's default ceiling is what keeps a mistyped corp
 disk: a run above it is refused before the store is touched, with the projected store size printed
 in bytes and `--allow-large-corpus` named as the override.
 
-The gate's 1M and 10M corpora (#868) were not measured here, and disk space is not the reason:
-the projections below put the 1M corpus inside the 8.6 GB this host had free, and only the 10M
-corpus outside it. They are #868's runs because they are the gate's corpora, and this job's scope
-is the recorded one; the cost of the `count` shape, which scans its whole match set per iteration,
+The gate's 1M and 10M corpora (#868) were not measured here. Disk space rules the 10M corpus out
+on this host — the projection below is more than twice the 8.6 GB the run recorded free — and does
+not rule the 1M corpus out, whose projection fits inside it: 1M is #868's run because it is the
+gate's corpus and this job's scope is the recorded one, and it needs `--allow-large-corpus`
+wherever it runs. The cost of the `count` shape, which scans its whole match set per iteration,
 grows with the corpus and belongs in that run's budget too.
 
 projection: 1M events (#868) x 1889.8 bytes/event = 1889800000 bytes
@@ -245,13 +245,19 @@ This document carries evidence, not a pass/fail. The gate is #868: REQ p95 withi
 Postgres implementation and ingest ≥ 1×, at the 1M and 10M corpora (#868). That p95 comparison
 reads the band, not one run: the artifact carries `p95_us` per shape across repeats so the median
 and the width are both available, and a single run's p95 inside a band as wide as `read_back`'s
-above cannot decide a margin of one and a half on its own. The board's 50 000 events/s figure is a
-target tracked in #864, not a measurement, and nothing here is compared with it. No ratio, floor
-or comparison against another backend appears in this document.
+above cannot decide a margin of one and a half on its own. #868's rule does not say which statistic
+of the band the ratio applies to, and a band that straddles the threshold — one repeat inside the
+margin, another outside it — is exactly the case that rule has to settle; this document measures
+and does not decide it. The board's 50 000 events/s figure is a target tracked in #864, not a
+measurement, and nothing here is compared with it. No ratio, floor or comparison against another
+backend appears in this document.
 
-The artifact's `schema` integer is its layout version: the block above is schema 1, and a field
-whose meaning or position changes takes the next number so a consumer can tell which shape of
-document it holds.
+The artifact's `schema` integer is its layout version: the artifact this document reads — the
+committed `docs/rewrite/benchmarks/lmdb-50k-seed7.json` — is schema 1, and a field whose meaning
+or position changes takes the next number, so a consumer can tell which shape of document it holds.
+A consumer that meets an unknown value should refuse the artifact and name the version it found,
+the way `crates/nostream-storage/src/lmdb/encoding.rs:184-193` refuses a value written by a
+different row format rather than reading it as if it were this one.
 
 ### D9 The deliberate exclusions, and where the workload is defined
 
@@ -264,15 +270,28 @@ in the tables above, and a result from a changed workload is not comparable with
 
 Not measured, and why:
 
-- **Replaceable kinds and `upsert`.** Kinds 0, 3, 41 and 10000–19999 reach `upsert`
-  (`crates/nostream-storage/src/repositories.rs:494`), because the relay replaces the current
-  version of such an event rather than appending another. The corpus holds kinds 1 and 7 only, so
-  the rig times the append path; adding `upsert` would change what a corpus row means, not just
-  add a shape.
+- **Replaceable kinds and `upsert`.** Kinds 0, 3, 41, 10000–19999 and 30000–39999 reach `upsert`
+  (`crates/nostream-storage/src/repositories.rs:494`) — the parameterized replaceable range
+  through `crates/nostream-relay/src/strategies/parameterized_replaceable.rs:35`, reached from
+  `strategies/mod.rs:102-103` — because the relay replaces the current version of such an event
+  rather than appending another. Ephemeral kinds 20000–29999 are the other half, never stored at
+  all: the relay acknowledges and broadcasts them with no repository call
+  (`strategies/ephemeral.rs`, `crates/nostream-core/src/event.rs:247-250`). The corpus holds kinds
+  1 and 7 only, so the rig times the append path, and every stored kind it lacks travels a
+  different repository call; adding one would change what a corpus row means, not just add a
+  shape.
 - **Retention and purge.** `delete_expired_and_retained` and the reconciliation scans are separate
   calls over the same tables, and a corpus written in one sweep measures none of them.
-- **NIP-50 `search`.** Not on the base this rig builds against, and a full-text scan is a
-  different access path from the five filter shapes in D3.
+- **NIP-50 `search`.** It is on the base — `Filter.search` is
+  `crates/nostream-core/src/filter.rs:67`, Postgres builds `ts_rank`/`plainto_tsquery` over it
+  (`postgres/sql.rs:225-231`), and the LMDB arm answers `StorageError::NotImplemented` for it
+  (`lmdb/events.rs:1061-1072`, ADR 0011's `:331`). What keeps it out of the tables is the gate:
+  both arms honour `search` only with `nip50.enabled`, and the harness opens either backend without
+  settings (`LmdbBackend::open`, `PostgresBackend::connect`), so with the gate off a filter carrying
+  `search` is measured as the plain filter underneath it, the query silently dropped. A `search` row
+  added to this rig as it stands would therefore time a filtered read and call it a search; a
+  Postgres-only row would be one-sided, since the LMDB arm cannot answer one at all. A real search
+  benchmark starts by opening the store with the gate on, and that is its own job.
 - **Transactions.** The Postgres arm pays for serializable transaction groups the LMDB arm does
   not have; the rig times repository calls, not the grouping above them.
 - **Concurrency above one.** One writer, one reader, `concurrency: 1`: no concurrent readers, no
