@@ -274,12 +274,19 @@ Not measured, and why:
   (`crates/nostream-storage/src/repositories.rs:494`) — the parameterized replaceable range
   through `crates/nostream-relay/src/strategies/parameterized_replaceable.rs:35`, reached from
   `strategies/mod.rs:102-103` — because the relay replaces the current version of such an event
-  rather than appending another. Ephemeral kinds 20000–29999 are the other half, never stored at
-  all: the relay acknowledges and broadcasts them with no repository call
-  (`strategies/ephemeral.rs`, `crates/nostream-core/src/event.rs:247-250`). The corpus holds kinds
-  1 and 7 only, so the rig times the append path, and every stored kind it lacks travels a
-  different repository call; adding one would change what a corpus row means, not just add a
-  shape.
+  rather than appending another. Ephemeral kinds 20000–29999 are never stored at all
+  (`crates/nostream-core/src/event.rs:247-250`) and reach no repository call — except 28934, 28935
+  and 28936, which the invites and users arms claim before the ephemeral arm is reached
+  (`strategies/mod.rs:90-96`), and which the rig does not exercise: 28934 spends an invite and
+  admits the user (`join_request.rs:100`, `:118`), 28936 revokes the admission
+  (`leave_request.rs:91`), and a client-published 28935 is refused without touching a store
+  (`invite_request.rs:33-38`). The rig times the default arm's append, and the arms that re-enter
+  `create` — delete, gift wrap, DVM job request, group, report, timestamp and vanish, beside the
+  default arm itself (`strategies/default.rs:36`, `delete.rs:105`, `gift_wrap.rs:38`,
+  `dvm_job_request.rs:30`, `group.rs:37`, `report.rs:35`, `timestamp.rs:40`, `vanish.rs:37`) — are
+  the same call with a different row, so a corpus using them measures what the `create` shape
+  measures. Only the replaceable families need `upsert`, which the rig does not call; adding one
+  would change what a corpus row means, not just add a shape.
 - **Retention and purge.** `delete_expired_and_retained` and the reconciliation scans are separate
   calls over the same tables, and a corpus written in one sweep measures none of them.
 - **NIP-50 `search`.** It is on the base — `Filter.search` is
