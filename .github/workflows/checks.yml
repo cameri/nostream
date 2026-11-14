@@ -279,6 +279,13 @@ jobs:
         env:
           PARITY_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: cargo test -p nostream-storage --test migrations --test parity --test migration_pg -- --ignored --test-threads=1
+      # The benchmark rig's Postgres column: the same workload and the same `--verify` the LMDB
+      # arm runs, against the scratch database it drops and recreates. The dev profile is
+      # deliberate — this proves the path and the counts, and its timings are cited nowhere.
+      - name: Benchmark harness against Postgres
+        env:
+          PARITY_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: cargo run -p nostream-storage --example bench -- --backend postgres --events 2000 --seed 7 --verify --out /tmp/bench-postgres.json
       - name: Storage builds without the Postgres driver
         run: cargo check -p nostream-storage --no-default-features --all-targets
       - name: Release build
