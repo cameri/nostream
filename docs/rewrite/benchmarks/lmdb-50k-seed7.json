@@ -2,6 +2,7 @@
   "backend": "lmdb",
   "event_count_read_back": 50000,
   "events": 50000,
+  "schema": 1,
   "seed": 7,
   "shapes": [
     {
@@ -45,105 +46,230 @@
       "arch": "x86_64",
       "cpu_count": 4,
       "cpu_model": "Intel(R) Core(TM) i7-10700T CPU @ 2.00GHz",
-      "load_1min": 43.92,
+      "load_1min": 43.32,
+      "load_1min_by_repeat": [
+        43.32,
+        43.27,
+        43.25
+      ],
       "os": "linux",
       "profile": "release"
     },
     "repeats": {
       "author_kind": {
+        "p50_us": {
+          "median": 291,
+          "p10": 289,
+          "p90": 320
+        },
+        "p95_us": {
+          "median": 313,
+          "p10": 308,
+          "p90": 435
+        },
+        "p99_us": {
+          "median": 353,
+          "p10": 339,
+          "p90": 499
+        },
         "per_second": {
-          "median": 2943,
-          "p10": 2729,
-          "p90": 3131
+          "median": 3408,
+          "p10": 2940,
+          "p90": 3424
         },
         "rows_per_second": {
-          "median": 294334,
-          "p10": 272966,
-          "p90": 313116
+          "median": 340802,
+          "p10": 294061,
+          "p90": 342483
         }
       },
       "by_id": {
+        "p50_us": {
+          "median": 19,
+          "p10": 19,
+          "p90": 23
+        },
+        "p95_us": {
+          "median": 25,
+          "p10": 25,
+          "p90": 28
+        },
+        "p99_us": {
+          "median": 34,
+          "p10": 31,
+          "p90": 152
+        },
         "per_second": {
-          "median": 39131,
-          "p10": 37757,
-          "p90": 47653
+          "median": 43047,
+          "p10": 41614,
+          "p90": 46500
         },
         "rows_per_second": {
-          "median": 39131,
-          "p10": 37757,
-          "p90": 47653
+          "median": 43047,
+          "p10": 41614,
+          "p90": 46500
         }
       },
       "count": {
+        "p50_us": {
+          "median": 9381,
+          "p10": 9206,
+          "p90": 9732
+        },
+        "p95_us": {
+          "median": 18358,
+          "p10": 17250,
+          "p90": 19570
+        },
+        "p99_us": {
+          "median": 19103,
+          "p10": 18524,
+          "p90": 21493
+        },
         "per_second": {
-          "median": 98,
-          "p10": 94,
-          "p90": 105
+          "median": 102,
+          "p10": 101,
+          "p90": 107
         },
         "rows_per_second": {
-          "median": 2012445,
-          "p10": 1922779,
-          "p90": 2142195
+          "median": 2100528,
+          "p10": 2061001,
+          "p90": 2198669
         }
       },
       "create": {
+        "p50_us": {
+          "median": 3980,
+          "p10": 3954,
+          "p90": 3985
+        },
+        "p95_us": {
+          "median": 4717,
+          "p10": 4632,
+          "p90": 4941
+        },
+        "p99_us": {
+          "median": 5534,
+          "p10": 5013,
+          "p90": 6389
+        },
         "per_second": {
-          "median": 243,
-          "p10": 85,
-          "p90": 270
+          "median": 251,
+          "p10": 248,
+          "p90": 253
         },
         "rows_per_second": {
-          "median": 243,
-          "p10": 85,
-          "p90": 270
+          "median": 251,
+          "p10": 248,
+          "p90": 253
         }
       },
       "create_many": {
+        "p50_us": {
+          "median": 19640,
+          "p10": 18796,
+          "p90": 29611
+        },
+        "p95_us": {
+          "median": 30449,
+          "p10": 29637,
+          "p90": 37269
+        },
+        "p99_us": {
+          "median": 35338,
+          "p10": 32829,
+          "p90": 41430
+        },
         "per_second": {
-          "median": 20,
-          "p10": 16,
-          "p90": 44
+          "median": 48,
+          "p10": 34,
+          "p90": 48
         },
         "rows_per_second": {
-          "median": 10009,
-          "p10": 8345,
-          "p90": 22483
+          "median": 24416,
+          "p10": 17277,
+          "p90": 24435
         }
       },
       "kind_since": {
+        "p50_us": {
+          "median": 1377,
+          "p10": 1350,
+          "p90": 1439
+        },
+        "p95_us": {
+          "median": 1585,
+          "p10": 1460,
+          "p90": 1595
+        },
+        "p99_us": {
+          "median": 1703,
+          "p10": 1601,
+          "p90": 1724
+        },
         "per_second": {
-          "median": 678,
-          "p10": 651,
-          "p90": 700
+          "median": 716,
+          "p10": 690,
+          "p90": 736
         },
         "rows_per_second": {
-          "median": 338042,
-          "p10": 324696,
-          "p90": 348817
+          "median": 356779,
+          "p10": 343923,
+          "p90": 366841
         }
       },
       "read_back": {
+        "p50_us": {
+          "median": 21900,
+          "p10": 18789,
+          "p90": 48073
+        },
+        "p95_us": {
+          "median": 21900,
+          "p10": 18789,
+          "p90": 48073
+        },
+        "p99_us": {
+          "median": 21900,
+          "p10": 18789,
+          "p90": 48073
+        },
         "per_second": {
-          "median": 48,
-          "p10": 36,
-          "p90": 52
+          "median": 45,
+          "p10": 20,
+          "p90": 53
         },
         "rows_per_second": {
-          "median": 2433800,
-          "p10": 1802711,
-          "p90": 2649287
+          "median": 2283105,
+          "p10": 1040084,
+          "p90": 2661131
         }
       },
       "tag": {
+        "p50_us": {
+          "median": 286,
+          "p10": 265,
+          "p90": 308
+        },
+        "p95_us": {
+          "median": 328,
+          "p10": 301,
+          "p90": 406
+        },
+        "p99_us": {
+          "median": 362,
+          "p10": 349,
+          "p90": 557
+        },
         "per_second": {
-          "median": 3315,
-          "p10": 3308,
-          "p90": 3447
+          "median": 3438,
+          "p10": 3116,
+          "p90": 3707
         },
         "rows_per_second": {
-          "median": 331543,
-          "p10": 330846,
-          "p90": 344750
+          "median": 343855,
+          "p10": 311623,
+          "p90": 370727
         }
       }
     },
@@ -154,67 +280,67 @@
     "timings": {
       "author_kind": {
         "ops": 200,
-        "p50_us": 332,
-        "p95_us": 395,
-        "p99_us": 416,
-        "per_second": 2943,
-        "rows_per_second": 294334
+        "p50_us": 291,
+        "p95_us": 308,
+        "p99_us": 339,
+        "per_second": 3408,
+        "rows_per_second": 340802
       },
       "by_id": {
         "ops": 200,
-        "p50_us": 22,
-        "p95_us": 53,
-        "p99_us": 64,
-        "per_second": 37757,
-        "rows_per_second": 37757
+        "p50_us": 19,
+        "p95_us": 25,
+        "p99_us": 34,
+        "per_second": 46500,
+        "rows_per_second": 46500
       },
       "count": {
         "ops": 50,
-        "p50_us": 9564,
-        "p95_us": 19514,
-        "p99_us": 21805,
-        "per_second": 94,
-        "rows_per_second": 1922779
+        "p50_us": 9206,
+        "p95_us": 17250,
+        "p99_us": 18524,
+        "per_second": 107,
+        "rows_per_second": 2198669
       },
       "create": {
         "ops": 1000,
-        "p50_us": 3726,
-        "p95_us": 6475,
-        "p99_us": 8192,
-        "per_second": 243,
-        "rows_per_second": 243
+        "p50_us": 3954,
+        "p95_us": 4717,
+        "p99_us": 5534,
+        "per_second": 251,
+        "rows_per_second": 251
       },
       "create_many": {
         "ops": 98,
-        "p50_us": 41717,
-        "p95_us": 100578,
-        "p99_us": 1097356,
-        "per_second": 16,
-        "rows_per_second": 8345
+        "p50_us": 29611,
+        "p95_us": 37269,
+        "p99_us": 41430,
+        "per_second": 34,
+        "rows_per_second": 17277
       },
       "kind_since": {
         "ops": 200,
-        "p50_us": 1439,
-        "p95_us": 2092,
-        "p99_us": 2319,
-        "per_second": 651,
-        "rows_per_second": 324696
+        "p50_us": 1350,
+        "p95_us": 1460,
+        "p99_us": 1601,
+        "per_second": 736,
+        "rows_per_second": 366841
       },
       "read_back": {
         "ops": 1,
-        "p50_us": 20544,
-        "p95_us": 20544,
-        "p99_us": 20544,
-        "per_second": 48,
-        "rows_per_second": 2433800
+        "p50_us": 21900,
+        "p95_us": 21900,
+        "p99_us": 21900,
+        "per_second": 45,
+        "rows_per_second": 2283105
       },
       "tag": {
         "ops": 200,
-        "p50_us": 272,
-        "p95_us": 425,
-        "p99_us": 478,
-        "per_second": 3447,
-        "rows_per_second": 344750
+        "p50_us": 265,
+        "p95_us": 301,
+        "p99_us": 349,
+        "per_second": 3707,
+        "rows_per_second": 370727
       }
     }
   },

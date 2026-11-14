@@ -19,39 +19,43 @@ which needs a database this host does not have, and the TypeScript/Postgres colu
 |---|---|
 | Date | 2026-11-14 |
 | Machine | 4 CPUs, `Intel(R) Core(TM) i7-10700T CPU @ 2.00GHz` |
-| Load average, one minute | 43.92 |
-| Free disk at run time | 12 GB (`df -h /`) |
+| Load average, one minute | 43.32 (`volatile.machine.load_1min`, the first repeat's) |
+| Free disk at run time | 8.6 GB (`df -h /`) |
 | Profile | `release` |
 | Repeats | 3 (`workload.repeats`) |
-| Command | `cargo run --release -p nostream-storage --example bench -- --backend lmdb --events 50000 --seed 7 --repeats 3 --verify --out /tmp/bench-lmdb-1.json` |
+| Command | `cargo run --release -p nostream-storage --example bench -- --backend lmdb --events 50000 --seed 7 --repeats 3 --verify --out /tmp/bench-lmdb-3.json` |
 | Artifact | `docs/rewrite/benchmarks/lmdb-50k-seed7.json` |
 
 The machine, the load average and the store's size are `volatile.machine` and `volatile.store`
 in that artifact. This host is shared: the load figure is other tenants' work on four cores, and
 the three repeats below measure what that does to the numbers rather than leaving it to a
-sentence.
+sentence. The load is sampled before every repeat, not once: `load_1min_by_repeat` holds `43.32`,
+`43.27` and `43.25`, so the one-minute figure above is the first of three readings that agree.
 
 ## The LMDB numbers
 
 **Within one run.** One row per shape, from the artifact's `shapes` and the first repeat's
 `volatile.timings`.
 
-| shape | count | rows | p50 (ms) | p95 (ms) | p99 (ms) |
-|---|---|---|---|---|---|
-| `create_many` | 98 | 49000 | 41.7 | 100.6 | 1097.4 |
-| `create` | 1000 | 1000 | 3.7 | 6.5 | 8.2 |
-| `by_id` | 200 | 200 | 0.0 | 0.1 | 0.1 |
-| `author_kind` | 200 | 20000 | 0.3 | 0.4 | 0.4 |
-| `kind_since` | 200 | 99602 | 1.4 | 2.1 | 2.3 |
-| `tag` | 200 | 20000 | 0.3 | 0.4 | 0.5 |
-| `count` | 50 | 1020000 | 9.6 | 19.5 | 21.8 |
-| `read_back` | 1 | 50000 | 20.5 | 20.5 | 20.5 |
+| shape | count | rows | p50 (ms) | p95 (ms) | p99 (ms) | per_second | rows_per_second |
+|---|---|---|---|---|---|---|---|
+| `create_many` | 98 | 49000 | 29.6 | 37.3 | 41.4 | 34 | 17277 |
+| `create` | 1000 | 1000 | 4.0 | 4.7 | 5.5 | 251 | 251 |
+| `by_id` | 200 | 200 | 0.0 | 0.0 | 0.0 | 46500 | 46500 |
+| `author_kind` | 200 | 20000 | 0.3 | 0.3 | 0.3 | 3408 | 340802 |
+| `kind_since` | 200 | 99602 | 1.4 | 1.5 | 1.6 | 736 | 366841 |
+| `tag` | 200 | 20000 | 0.3 | 0.3 | 0.3 | 3707 | 370727 |
+| `count` | 50 | 1020000 | 9.2 | 17.3 | 18.5 | 107 | 2198669 |
+| `read_back` | 1 | 50000 | 21.9 | 21.9 | 21.9 | 45 | 2283105 |
 
-Every column here is the artifact's own integer printed as-is (the `count`, `rows` and `ops`
-numbers), except the three percentile columns, which are the artifact's microsecond integers
-printed in milliseconds with exactly one decimal, rounding half-up: `19 514` µs prints as `19.5`,
-and `0` µs would print as `0.0`. `read_back` carries no `shapes` entry: it is the single
-unbounded count the corpus is read back with, and its `rows` is `event_count_read_back`.
+Every column here is the artifact's own integer printed as-is (the `count`, `rows`, `ops`,
+`per_second` and `rows_per_second` numbers), except the three percentile columns, which are the
+artifact's microsecond integers printed in milliseconds with exactly one decimal, rounding
+half-up: `30 449` µs prints as `30.4`. The cost of that rule is the `by_id` row, whose calls take
+tens of microseconds and print as `0.0`; the artifact's integers are the measurement, and this
+table is a reading of them. `read_back` carries no `shapes` entry: it is the single unbounded
+count the corpus is read back with, and its `rows` is `event_count_read_back`. The rates are the
+first repeat's, like the percentiles.
 
 `count` is one repository call. `rows` is the sum over the shape's calls, which is why
 `kind_since` shows 99602 rows at a limit of 500 — two hundred pages, most of them full — and why
@@ -61,26 +65,36 @@ unbounded count the corpus is read back with, and its `rows` is `event_count_rea
 rig exists to publish: a point estimate from one run of a shared host is not a measurement of the
 store.
 
-| shape | per_second median | p10 | p90 | rows_per_second median | p10 | p90 |
-|---|---|---|---|---|---|---|
-| `create_many` | 20 | 16 | 44 | 10009 | 8345 | 22483 |
-| `create` | 243 | 85 | 270 | 243 | 85 | 270 |
-| `by_id` | 39131 | 37757 | 47653 | 39131 | 37757 | 47653 |
-| `author_kind` | 2943 | 2729 | 3131 | 294334 | 272966 | 313116 |
-| `kind_since` | 678 | 651 | 700 | 338042 | 324696 | 348817 |
-| `tag` | 3315 | 3308 | 3447 | 331543 | 330846 | 344750 |
-| `count` | 98 | 94 | 105 | 2012445 | 1922779 | 2142195 |
-| `read_back` | 48 | 36 | 52 | 2433800 | 1802711 | 2649287 |
+| shape | per_second median | p10 | p90 | rows_per_second median | p10 | p90 | p95 (ms) median | p10 | p90 |
+|---|---|---|---|---|---|---|---|---|---|
+| `create_many` | 48 | 34 | 48 | 24416 | 17277 | 24435 | 30.4 | 29.6 | 37.3 |
+| `create` | 251 | 248 | 253 | 251 | 248 | 253 | 4.7 | 4.6 | 4.9 |
+| `by_id` | 43047 | 41614 | 46500 | 43047 | 41614 | 46500 | 0.0 | 0.0 | 0.0 |
+| `author_kind` | 3408 | 2940 | 3424 | 340802 | 294061 | 342483 | 0.3 | 0.3 | 0.4 |
+| `kind_since` | 716 | 690 | 736 | 356779 | 343923 | 366841 | 1.6 | 1.5 | 1.6 |
+| `tag` | 3438 | 3116 | 3707 | 343855 | 311623 | 370727 | 0.3 | 0.3 | 0.4 |
+| `count` | 102 | 101 | 107 | 2100528 | 2061001 | 2198669 | 18.4 | 17.3 | 19.6 |
+| `read_back` | 45 | 20 | 53 | 2283105 | 1040084 | 2661131 | 21.9 | 18.8 | 48.1 |
 
-Every figure is the artifact's integer printed as-is: `median`, `p10` and `p90` are the
-nearest-rank percentiles over the three repeats' rates, and the rule is the one the within-run
-percentiles use, applied to three numbers instead of hundreds.
+Every figure is the artifact's integer printed as-is, except the three `p95` columns, which are
+`volatile.repeats.<shape>.p95_us` in milliseconds under the same one-decimal rounding as the
+table above. All five bands are in the artifact — `p50_us`, `p95_us` and `p99_us` beside the two rates —
+because the cutover gate reads a p95, and a band on the rates alone would leave the number it
+compares without one.
+
+**What a band is.** Each band is the nearest-rank percentile of the shape's per-repeat values:
+sort the `n` values ascending and take the one at position `ceil(p ÷ 100 × n)` — the first value
+whose position reaches `p` per cent of the samples. With three repeats the tenth percentile is
+the smallest value, the median the middle one and the ninetieth the largest; with two, the median
+is the lower of the two rather than their mean. One repeat is a point, not a band: the artifact
+still carries the three fields, and all three hold that single value, so a one-repeat artifact's
+band is the measurement printed three times and is not evidence of stability.
 
 `per_second` counts operations: one event for `create`, one five-hundred-event batch for
 `create_many`, one filter query for a read shape, one count for `count`. `rows_per_second` counts
 the rows those operations returned. The two differ for `create_many` by its batch size, which is
-why the same column reads 20 operations and 10009 rows, and they coincide for `create` and for
-the read shapes that always return one row per operation.
+why the same column reads 48 operations and 24416 rows, and they coincide for `create` and for the
+read shapes that always return one row per operation.
 
 **The store.**
 
@@ -88,7 +102,10 @@ the read shapes that always return one row per operation.
 |---|---|---|
 | 50000 | 94490624 | 1889.8 |
 
-`events` and `data_bytes` are the artifact's integers as-is; `bytes_per_event` is
+These are `volatile.store`, read from the first repeat's store: the repeats write the same corpus
+in the same order, so the first one's size stands for all three, and taking it there keeps this
+block describing the same repeat as `volatile.timings` and `shapes`. `events` and `data_bytes` are
+the artifact's integers as-is; `bytes_per_event` is
 `data_bytes / events` rounded to one decimal, so it is not the artifact's own truncated integer.
 `data_bytes` is `data.mdb`'s length, which includes pages LMDB allocated and has not reused yet,
 so it overstates live bytes — the safe direction for the disk arithmetic in D5.
@@ -149,13 +166,28 @@ The reads are warm, not cold: the store is written immediately before it is read
 bytes of `data.mdb` fits this host's memory, so a read shape pays the page cache's hit rather
 than its miss. A cold-cache run is a different measurement and this rig does not make one.
 
-The write shapes are not stable between repeats, and the band above is the evidence rather than a
-claim about it: `create`'s per-second rate spans 85 to 270 across the three repeats. The read
-shapes move much less — their bands are a fraction of that width — except `read_back`, which is
-one operation per repeat and so is a single sample each time. The cost being timed for the writes
-is LMDB's synchronous commit, which waits on a shared host's disk, so the write rows are one
-host's measurement under load 43.92 and not a bound. A reader comparing two hosts should compare
-the read shapes first.
+Each repeat writes the whole corpus into a fresh store and reads it with the same corpus-derived
+windows, so a repeat's rate is the same workload under a different moment on the host, and the
+band across repeats is the spread of that moment — not a spread of the workload.
+
+The two rates divide by the time the shape's calls took, added up, not by its median: a shape
+whose few slow calls carry the total has a rate below `1 / p50`, so a reader who recomputes a rate
+from the percentile columns above gets a number the artifact does not record.
+
+On this run the read shapes and `create` agreed closely between repeats — `create`'s per-second
+band spans 248 to 253 — which is what makes the write rows worth reading as a measurement of this
+host on this day. `create_many`'s band is the widest of them: one repeat loaded at 34 batches per
+second where the other two reached 48, and its `p95` band runs from 29.6 to 37.3 ms around a
+median of 30.4. That is one repeat's writes waiting on the host's disk rather than the same wait
+landing in all three. A repeat can stall altogether — one earlier run of this same
+command on this host had a single repeat's ingest take an order of magnitude longer than the other
+two, and its `create` band was several times as wide as this one's — so the band, and not one
+run's number, is what the tables above are for.
+
+The cost being timed for the writes is LMDB's synchronous commit, which waits on a shared host's
+disk; `create_many` also copies the batch and writes its indexes, and this rig does not separate
+the two. The write rows are one host's measurement at load 43.32 and not a bound. A reader
+comparing two hosts should compare the read shapes first.
 
 ### D5 The corpora measured, and the ones that were not
 
@@ -164,14 +196,17 @@ temporary directory. The harness's default ceiling is what keeps a mistyped corp
 disk: a run above it is refused before the store is touched, with the projected store size printed
 in bytes and `--allow-large-corpus` named as the override.
 
-The gate's 1M and 10M corpora (#868) were not measured here: this host had 12 GB free at run
-time, and the store's own measurement projects:
+The gate's 1M and 10M corpora (#868) were not measured here, and disk space is not the reason:
+the projections below put the 1M corpus inside the 8.6 GB this host had free, and only the 10M
+corpus outside it. They are #868's runs because they are the gate's corpora, and this job's scope
+is the recorded one; the cost of the `count` shape, which scans its whole match set per iteration,
+grows with the corpus and belongs in that run's budget too.
 
 projection: 1M events (#868) x 1889.8 bytes/event = 1889800000 bytes
 projection: 10M events (#868) x 1889.8 bytes/event = 18898000000 bytes
 
-Both are projections from this run's bytes per event, not measurements, and the 1M run alone
-(#868) would need the `--allow-large-corpus` override on a host with room for it.
+Both are projections from this run's bytes per event, not measurements, and each would need the
+`--allow-large-corpus` override on a host with room for it.
 
 ### D6 The Rust/Postgres column: not measured in this environment
 
@@ -207,10 +242,45 @@ Docker daemon.
 ### D8 No threshold is asserted
 
 This document carries evidence, not a pass/fail. The gate is #868: REQ p95 within 1.5× of the
-Postgres implementation and ingest ≥ 1×, at the 1M and 10M corpora (#868). The board's
-50 000 events/s figure is a target tracked in #864, not a measurement, and nothing here is
-compared with it. No ratio, floor or comparison against another backend appears in this
-document.
+Postgres implementation and ingest ≥ 1×, at the 1M and 10M corpora (#868). That p95 comparison
+reads the band, not one run: the artifact carries `p95_us` per shape across repeats so the median
+and the width are both available, and a single run's p95 inside a band as wide as `read_back`'s
+above cannot decide a margin of one and a half on its own. The board's 50 000 events/s figure is a
+target tracked in #864, not a measurement, and nothing here is compared with it. No ratio, floor
+or comparison against another backend appears in this document.
+
+The artifact's `schema` integer is its layout version: the block above is schema 1, and a field
+whose meaning or position changes takes the next number so a consumer can tell which shape of
+document it holds.
+
+### D9 The deliberate exclusions, and where the workload is defined
+
+The workload is one shape of the relay's traffic, and what it leaves out was decided rather than
+overlooked. Its definition is the constants at the top of
+`crates/nostream-storage/examples/bench.rs` — one file, and the workload's single definition —
+echoed into the artifact's `workload` object so a published result can be traced back to the
+definition that produced it. A change to any of those constants makes a new workload, not a new row
+in the tables above, and a result from a changed workload is not comparable with this one.
+
+Not measured, and why:
+
+- **Replaceable kinds and `upsert`.** Kinds 0, 3, 41 and 10000–19999 reach `upsert`
+  (`crates/nostream-storage/src/repositories.rs:494`), because the relay replaces the current
+  version of such an event rather than appending another. The corpus holds kinds 1 and 7 only, so
+  the rig times the append path; adding `upsert` would change what a corpus row means, not just
+  add a shape.
+- **Retention and purge.** `delete_expired_and_retained` and the reconciliation scans are separate
+  calls over the same tables, and a corpus written in one sweep measures none of them.
+- **NIP-50 `search`.** Not on the base this rig builds against, and a full-text scan is a
+  different access path from the five filter shapes in D3.
+- **Transactions.** The Postgres arm pays for serializable transaction groups the LMDB arm does
+  not have; the rig times repository calls, not the grouping above them.
+- **Concurrency above one.** One writer, one reader, `concurrency: 1`: no concurrent readers, no
+  subscriber fan-out and no live dispatch. A store's cost under contention is a different figure.
+- **The wire.** Nothing here is a socket round trip (D4).
+
+A later job that adds any of these is measuring a different workload, and should say so where its
+numbers are published instead of comparing them with the tables above.
 
 ## How a run reports itself
 
@@ -222,11 +292,12 @@ The harness's contract is three exit code values, the same ones `--help` states:
 - exit code 2 — a usage error, a refusal, or a failure that stopped the run.
 
 A refusal is answered before the store is opened and prints one line: a corpus below the minimum
-or above the ceiling, a `--out` directory that does not exist, a `--repeats` below one, a store
-directory that already holds one, a Postgres run without `PARITY_ADMIN_URL`, or a running `rustc`
-— a build on the same box distorts the numbers about threefold, so pass `--allow-busy-host` only
-when the measurement is a smoke test. Progress goes to stderr, so stdout never carries anything a
-script would parse.
+— the ingest phase takes the corpus's last thousand events, and the bulk phase needs one more to
+have anything to load — or above the ceiling, a `--out` directory that does not exist, a
+`--repeats` below one, a `--store` directory that already holds a store at any path the repeats
+would open, a Postgres run without `PARITY_ADMIN_URL`, or a running `rustc` — a build on the same
+box distorts the numbers about threefold, so pass `--allow-busy-host` only when the measurement is
+a smoke test. Progress goes to stderr, so stdout never carries anything a script would parse.
 
 ## Context from job 007, not this rig's numbers
 

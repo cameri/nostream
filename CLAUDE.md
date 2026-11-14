@@ -36,7 +36,7 @@ cargo test --workspace --all-features
 cargo build --workspace --all-features --release
 ```
 
-CI additionally runs four database- and example-backed checks. Three are the storage tests
+CI additionally runs five database- and example-backed checks. Three are the storage tests
 ("Storage parity against Postgres"), against a `postgres:16-alpine` service; they are `#[ignore]`d
 so a checkout without a database still passes `cargo test --workspace`:
 
@@ -50,7 +50,7 @@ cargo test -p nostream-storage --test migrations --test parity --test migration_
 drop their own scratch databases — `migration_pg` seeds one and copies it into a temporary LMDB
 store. The fourth is the benchmark rig's Postgres arm ("Benchmark harness against Postgres"):
 it runs `crates/nostream-storage/examples/bench.rs` against a scratch database and proves the path
-and `--verify`, and its numbers are cited nowhere.
+and `--verify`, and its numbers are cited nowhere. The fifth, below, is the rig's own unit tests.
 
 The rig's own unit tests need their own command, because `cargo test --workspace` only *builds* an
 example target. CI runs it as "Benchmark harness unit tests", and so must you when you touch the
