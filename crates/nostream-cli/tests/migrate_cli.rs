@@ -2027,6 +2027,7 @@ async fn a_manifest_that_counts_rows_over_a_store_without_them_is_refused() {
 // invite code itself - a bearer credential NIP-43 accepts. The store's files are heed's 0600, so
 // the manifest was the world-readable copy of it. The planted link is the second half: a
 // temporary path that already exists must not be written through and renamed into place.
+#[cfg(unix)]
 #[tokio::test]
 async fn the_manifest_is_private_and_its_temporary_path_is_not_followed() {
     use std::os::unix::fs::PermissionsExt;
@@ -2069,6 +2070,7 @@ async fn the_manifest_is_private_and_its_temporary_path_is_not_followed() {
 
 // A group- or world-writable target lets another local user pre-place the store and read what
 // lands in it, so the copy refuses before opening anything.
+#[cfg(unix)]
 #[test]
 fn a_group_writable_target_is_refused() {
     use std::os::unix::fs::PermissionsExt;
@@ -2094,6 +2096,7 @@ fn a_group_writable_target_is_refused() {
 }
 
 // A symlinked target sends the copy somewhere the operator did not name.
+#[cfg(unix)]
 #[test]
 fn a_symlinked_target_is_refused() {
     let root = tempfile::tempdir().expect("a temporary directory");
@@ -2486,6 +2489,7 @@ fn the_help_names_the_resume_and_the_restart() {
 
 // AC7: the summary names the store the copy landed in, so a path that went through a link is
 // visible as the real one rather than echoed back as the argument.
+#[cfg(unix)]
 #[tokio::test]
 async fn the_summary_names_the_canonical_store_not_the_argument() {
     let root = tempfile::tempdir().expect("a temporary directory");

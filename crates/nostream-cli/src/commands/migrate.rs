@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -42,6 +43,7 @@ pub struct MigrateOptions {
 }
 
 /// `migrate pg-to-lmdb`: the copy, or the verification pass when `verify` is set.
+#[cfg(unix)]
 pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -107,6 +109,16 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         create_target(&options)?;
         let target = open_target(&options.target).await?;
         migrate_with(&source, &target, &options, out).await
+    })
+}
+
+#[cfg(not(unix))]
+pub fn run(_options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
+    writeln!(out, "migrate pg-to-lmdb is unsupported on this platform")
+        .map_err(|e| CliError::Migrate(e.to_string()))?;
+    Ok(CommandOutput {
+        lines: Vec::new(),
+        exit_code: 1,
     })
 }
 
@@ -575,10 +587,11 @@ fn write_manifest(target: &Path, manifest: &Manifest) -> Result<(), CliError> {
     // Without the file sync, a power loss can leave the new name pointing at a truncated
     // manifest; `read_manifest` then refuses it, and the nonempty-target rule refuses to
     // migrate over the store it describes, so the operator's only way forward is a discard.
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
+    let mut open_options = fs::OpenOptions::new();
+    open_options.write(true).create_new(true);
+    #[cfg(unix)]
+    open_options.mode(0o600);
+    let mut file = open_options
         .open(&temporary)
         .map_err(|error| CliError::Migrate(format!("{}: {error}", temporary.display())))?;
     file.write_all(&bytes)
@@ -739,6 +752,7 @@ fn probe_budget() -> Duration {
 /// sends the copy somewhere the operator did not name. Both are refused before anything is
 /// opened. A target that does not exist yet cannot be judged here, so `create_target` creates it
 /// before the store opens and runs this check again over what is then on disk.
+#[cfg(unix)]
 fn refuse_unsafe_target(options: &MigrateOptions) -> Result<(), CliError> {
     refuse_unsafe_target_for(options, effective_uid())
 }
@@ -747,12 +761,14 @@ fn refuse_unsafe_target(options: &MigrateOptions) -> Result<(), CliError> {
 ///
 /// `std::fs` exposes a file's owner but not the caller's, and reading it here costs no
 /// dependency: this crate runs on Linux, where the kernel publishes it in one line.
+#[cfg(unix)]
 fn effective_uid() -> Option<u32> {
     let status = fs::read_to_string("/proc/self/status").ok()?;
     let line = status.lines().find(|line| line.starts_with("Uid:"))?;
     line.split_whitespace().nth(2)?.parse().ok()
 }
 
+#[cfg(unix)]
 fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Result<(), CliError> {
     for path in [&options.target, &store_path(options)] {
         let metadata = match fs::symlink_metadata(path) {
@@ -1038,6 +1054,7 @@ mod tests {
     /// A link where the data file belongs is followed by `is_file()` and by LMDB both, so the
     /// copy would read or write through it and heed would put `lock.mdb` beside the link's
     /// target. The predicate over the file's own metadata is what AC18 asks for.
+    #[cfg(unix)]
     #[test]
     #[allow(clippy::expect_used)]
     fn a_symlinked_data_file_is_refused() {
@@ -1063,6 +1080,7 @@ mod tests {
     /// checked against the caller rather than the mode. Measured as if a different uid were
     /// running, because a directory this process owns cannot be made to belong to another user
     /// without root.
+    #[cfg(unix)]
     #[test]
     #[allow(clippy::expect_used)]
     fn a_target_owned_by_another_user_is_refused() {
