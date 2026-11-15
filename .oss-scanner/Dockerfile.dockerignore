@@ -1,0 +1,19 @@
+# Replaces the repository's root .dockerignore, which excludes crates/ so the
+# Node image stays small. The Rust workspace is the only thing this image builds,
+# so the context is narrowed the other way round.
+.git
+.github
+target
+node_modules
+website
+src
+test
+dist
+seeds
+docs
+# `resources` stays in the context: the config tests read
+# resources/default-settings.yaml at runtime. Only that file is copied into the
+# image; the admin, css and html assets are the TypeScript app's.
+grafana
+prometheus.yaml
+*.md

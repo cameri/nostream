@@ -14,16 +14,16 @@ use crate::repositories::{
     InviteCode, NewReport, Nip05Verification, Report,
 };
 
-const NIP05_COLUMNS: &str = "pubkey, nip05, domain, is_verified, last_verified_at, \
+pub(super) const NIP05_COLUMNS: &str = "pubkey, nip05, domain, is_verified, last_verified_at, \
 last_checked_at, failure_count, created_at, updated_at";
 
-const INVITE_COLUMNS: &str =
+pub(super) const INVITE_COLUMNS: &str =
     "code, created_by, claimed_by, expires_at, remaining_uses, created_at, updated_at";
 
-const DVM_COLUMNS: &str = "id, requester_pubkey, kind, worker_index, status, result_event_id, \
+pub(super) const DVM_COLUMNS: &str = "id, requester_pubkey, kind, worker_index, status, result_event_id, \
 error, picked_up_at, completed_at, created_at, updated_at";
 
-const REPORT_COLUMNS: &str = "id, event_id, reporter_pubkey, reported_pubkey, \
+pub(super) const REPORT_COLUMNS: &str = "id, event_id, reporter_pubkey, reported_pubkey, \
 reported_event_id, report_type, weight, actionable, created_at";
 
 /// `Nip05VerificationRepository::find_by_pubkey`.

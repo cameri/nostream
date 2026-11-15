@@ -8,7 +8,7 @@ use super::{Arg, Args, EventQuery};
 use crate::error::StorageError;
 use crate::repositories::{Invoice, InvoiceStatus};
 
-const INVOICE_COLUMNS: &str = "id, pubkey, bolt11, amount_requested, amount_paid, unit, status, \
+pub(super) const INVOICE_COLUMNS: &str = "id, pubkey, bolt11, amount_requested, amount_paid, unit, status, \
 description, confirmed_at, expires_at, updated_at, created_at, verify_url";
 
 /// `findById`: one row by primary key.

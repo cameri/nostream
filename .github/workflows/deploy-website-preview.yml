@@ -91,12 +91,12 @@ jobs:
 
       - name: Checkout (for cleanup metadata)
         if: steps.guard.outputs.skip == 'false'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3.7.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4.3.0
         if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
 
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v3.9.1
         if: steps.guard.outputs.skip == 'false' && github.event.action != 'closed'
         with:
           node-version-file: .nvmrc

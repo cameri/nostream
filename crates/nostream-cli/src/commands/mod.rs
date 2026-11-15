@@ -7,6 +7,7 @@ pub mod export;
 pub mod import;
 pub mod info;
 pub mod invite;
+pub mod migrate;
 pub mod seed;
 pub mod setup;
 pub mod start;

@@ -49,6 +49,11 @@ enum Command {
     Info,
     /// Mint and manage invite codes.
     Invite,
+    /// Copy the Postgres store into an LMDB store.
+    Migrate {
+        #[command(subcommand)]
+        command: MigrateCommand,
+    },
     /// Seed the database.
     Seed,
     /// Run the first-time setup flow.
@@ -87,6 +92,40 @@ enum ConfigCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum MigrateCommand {
+    /// Copy every table from Postgres into an LMDB store, with the relay stopped.
+    ///
+    /// The source is Postgres from `DB_URI`, else the `DB_*` parts. The target is a store root:
+    /// the environment is `<DIR>/lmdb` and the manifest `<DIR>/migration-manifest.json`.
+    ///
+    /// The first connection to the source is bounded at ten seconds whatever
+    /// `DB_ACQUIRE_CONNECTION_TIMEOUT` says: a mistyped host is reported at once with the
+    /// driver's reason, not after the pool's minute.
+    ///
+    /// A re-run resumes where the manifest says the last one stopped. Deleting
+    /// `<DIR>/migration-manifest.json` does not restart a half-filled store: a store that holds
+    /// rows and no manifest is refused, so starting over takes a fresh `--target`, or the
+    /// manifest and the store removed together. Nothing may write to either store while a run
+    /// is in progress, so the relay must be stopped on both before the first batch is read.
+    PgToLmdb {
+        /// The store root (the environment lives under `<DIR>/lmdb`).
+        #[arg(long, value_name = "DIR")]
+        target: PathBuf,
+        /// Rows per batch, and the page size verify reads with.
+        #[arg(
+            long,
+            value_name = "N",
+            default_value_t = 1_000,
+            value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+        )]
+        batch_size: usize,
+        /// Verify the store against its manifest and copy nothing.
+        #[arg(long)]
+        verify: bool,
+    },
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -109,6 +148,21 @@ fn main() -> ExitCode {
         }
         Command::Info => commands::info::run().map(|_| CommandOutput::default()),
         Command::Invite => commands::invite::run().map(|_| CommandOutput::default()),
+        Command::Migrate { command } => match command {
+            MigrateCommand::PgToLmdb {
+                target,
+                batch_size,
+                verify,
+            } => {
+                let options = commands::migrate::MigrateOptions {
+                    target,
+                    batch_size,
+                    verify,
+                };
+                let mut stdout = std::io::stdout().lock();
+                commands::migrate::run(options, &mut stdout)
+            }
+        },
         Command::Seed => commands::seed::run().map(|_| CommandOutput::default()),
         Command::Setup => commands::setup::run().map(|_| CommandOutput::default()),
         Command::Start => commands::start::run().map(|_| CommandOutput::default()),
@@ -134,6 +188,10 @@ fn main() -> ExitCode {
         }
         Err(CliError::Import(message)) => {
             eprintln!("Import failed: {message}");
+            ExitCode::from(1)
+        }
+        Err(CliError::Migrate(message)) => {
+            eprintln!("Migration failed: {message}");
             ExitCode::from(1)
         }
     }
