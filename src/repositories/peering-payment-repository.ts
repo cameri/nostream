@@ -62,6 +62,24 @@ export class PeeringPaymentRepository implements IPeeringPaymentRepository {
     return row ? fromDBPeeringPayment(row) : undefined
   }
 
+  public async recordCheck(
+    pubkey: Pubkey,
+    checkedAt: Date,
+    error: string | null,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<void> {
+    await client<DBPeeringPayment>('peering_payments')
+      .update({
+        last_checked_at: checkedAt,
+        last_error: error,
+        updated_at: new Date(),
+      })
+      .where({
+        peer_pubkey: toBuffer(pubkey),
+        direction: PeeringPaymentDirection.SELL,
+      })
+  }
+
   public async save(payment: PeeringPayment, client: DatabaseClient = this.dbClient): Promise<PeeringPayment> {
     const row = toRow(payment)
     const now = new Date()

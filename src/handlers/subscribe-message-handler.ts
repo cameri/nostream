@@ -5,8 +5,10 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import { Factory, Pubkey } from '../@types/base'
 import { Event } from '../@types/event'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
+import { PeeringAccess } from '../@types/peering'
 import { SubscribeMessage } from '../@types/messages'
 import { IEventRepository, IInviteCodeRepository } from '../@types/repositories'
+import { IPeeringBillingService } from '../@types/services'
 import { Settings } from '../@types/settings'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { IRateLimiter } from '../@types/utils'
@@ -25,10 +27,14 @@ import { isNip43InviteRequestFilter, isRelaySelfConsistent } from '../utils/nip4
 import { buildInviteCodeEvent, issueInviteCode } from '../utils/nip43-invites'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
 import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
+import { isPeeringInvoiceRequest, PeeringInvoiceCooldownError } from '../utils/peering-billing'
 import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 import { streamEachAsync, streamEnd, streamFilter, streamMap } from '../utils/stream'
 
 const logger = createLogger('subscribe-message-handler')
+
+/** Keep invoice re-requests from growing the socket's subscription map without bound. */
+const MAX_PEERING_INVOICE_SUBSCRIPTIONS = 1
 
 export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private readonly abortController: AbortController
@@ -43,6 +49,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
     private readonly inviteCodeRepository: IInviteCodeRepository,
     private readonly rateLimiter: Factory<IRateLimiter>,
     private readonly requestStats?: PeeringRequestStatsStore,
+    private readonly peeringBillingService?: IPeeringBillingService,
   ) {
     this.abortController = new AbortController()
   }
@@ -113,11 +120,102 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       return
     }
 
+    let peeringAccess: PeeringAccess | undefined
+    if (peerPubkey && this.peeringBillingService) {
+      const result = await this.enforcePeeringAccess(subscriptionId, filters, peerPubkey)
+      if (this.abortController.signal.aborted || result.rejected) {
+        return
+      }
+      peeringAccess = result.access
+    }
+
+    // A CLOSE may have arrived while billing was pending. Do not register a
+    // subscription the peer has already abandoned.
+    if (this.abortController.signal.aborted) {
+      return
+    }
+
     this.webSocket.emit(WebSocketAdapterEvent.Subscribe, subscriptionId, filters)
+
+    if (peeringAccess?.periodEnd) {
+      this.webSocket.setSubscriptionExpiry(subscriptionId, peeringAccess.periodEnd, async () => {
+        // A renewal may have been paid after the last maintenance poll but before
+        // this period ended. Recheck the pending invoice before closing the feed.
+        const latest = await this.peeringBillingService!.getAccess(peerPubkey!, { recheck: true })
+        if (!latest.allowed) {
+          return false
+        }
+
+        // Free peering has no expiry; keep the feed open and stop the timer.
+        return latest.periodEnd ?? null
+      })
+    }
 
     await this.maybeIssueInviteCode(subscriptionId, filters)
 
     await this.fetchAndSend(subscriptionId, filters)
+  }
+
+  /**
+   * Peers may always ask for their invoice; everything else is a paid feed and
+   * needs a running period. Returns the access window when the feed is allowed.
+   */
+  private async enforcePeeringAccess(
+    subscriptionId: SubscriptionId,
+    filters: SubscriptionFilter[],
+    peerPubkey: Pubkey,
+  ): Promise<{ rejected: boolean; access?: PeeringAccess }> {
+    const isInvoiceRequest = isPeeringInvoiceRequest(filters, peerPubkey)
+
+    if (isInvoiceRequest) {
+      try {
+        await this.peeringBillingService!.ensureInvoice(peerPubkey)
+        return { rejected: false }
+      } catch (error) {
+        if (error instanceof PeeringInvoiceCooldownError) {
+          this.webSocket.emit(
+            WebSocketAdapterEvent.Message,
+            createClosedMessage(
+              subscriptionId,
+              'rate-limited: peering invoice reissue cooling down',
+              String(error.retryAfterSeconds * 1000),
+            ),
+          )
+          return { rejected: true }
+        }
+
+        logger('unable to issue peering invoice for %s: %o', peerPubkey, error)
+        this.webSocket.emit(
+          WebSocketAdapterEvent.Message,
+          createClosedMessage(subscriptionId, 'error: unable to issue peering invoice'),
+        )
+        return { rejected: true }
+      }
+    }
+
+    let access: PeeringAccess
+    try {
+      access = await this.peeringBillingService!.getAccess(peerPubkey, { recheck: true })
+    } catch (error) {
+      logger.error('unable to check peering access for %s: %o', peerPubkey, error)
+      this.webSocket.emit(
+        WebSocketAdapterEvent.Message,
+        createClosedMessage(subscriptionId, 'error: unable to check peering access'),
+      )
+      return { rejected: true }
+    }
+
+    if (access.allowed) {
+      return { rejected: false, access }
+    }
+
+    const reason = access.reason?.startsWith('payment-required:')
+      ? access.reason
+      : `payment-required: ${access.reason ?? 'peering payment required; request the kind 402 peering invoice'}`
+
+    logger('subscription %s with %o rejected for peer %s: %s', subscriptionId, filters, peerPubkey, reason)
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createClosedMessage(subscriptionId, reason))
+    return { rejected: true }
   }
 
   // NIP-43: kind 28935 is never published by a client and never stored. A REQ for
@@ -306,14 +404,33 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
   private canSubscribe(subscriptionId: SubscriptionId, filters: SubscriptionFilter[]): string | undefined {
     const subscriptions = this.webSocket.getSubscriptions()
     const existingSubscription = subscriptions.get(subscriptionId)
-    const subscriptionLimits = subscriptionLimitsFor(this.settings(), this.webSocket.getPeerPubkey() !== undefined)
+    const peerPubkey = this.webSocket.getPeerPubkey()
+    const subscriptionLimits = subscriptionLimitsFor(this.settings(), peerPubkey !== undefined)
+    const isInvoiceRequest = peerPubkey ? isPeeringInvoiceRequest(filters, peerPubkey) : false
 
     if (existingSubscription?.length && equals(filters, existingSubscription)) {
-      return `Duplicate subscription ${subscriptionId}: Ignoring`
+      // Asking for the peering invoice again is how a peer recovers a missed event;
+      // it must not be rejected as a duplicate subscription.
+      if (!isInvoiceRequest) {
+        return `Duplicate subscription ${subscriptionId}: Ignoring`
+      }
+    }
+
+    const invoiceSubscriptions = peerPubkey
+      ? [...subscriptions.values()].filter((current) => isPeeringInvoiceRequest(current, peerPubkey)).length
+      : 0
+    const isNewInvoiceSubscription = isInvoiceRequest && !existingSubscription?.length
+    if (isNewInvoiceSubscription && invoiceSubscriptions >= MAX_PEERING_INVOICE_SUBSCRIPTIONS) {
+      return `Too many peering invoice subscriptions: close the previous invoice subscription before opening another`
     }
 
     const maxSubscriptions = subscriptionLimits?.maxSubscriptions ?? 0
-    if (maxSubscriptions > 0 && !existingSubscription?.length && subscriptions.size + 1 > maxSubscriptions) {
+    if (
+      maxSubscriptions > 0 &&
+      !isInvoiceRequest &&
+      !existingSubscription?.length &&
+      subscriptions.size + 1 > maxSubscriptions
+    ) {
       return `Too many subscriptions: Number of subscriptions must be less than or equal to ${maxSubscriptions}`
     }
 

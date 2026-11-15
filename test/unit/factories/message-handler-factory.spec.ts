@@ -1,4 +1,5 @@
-import { expect } from 'chai'
+import chai from 'chai'
+import sinonChai from 'sinon-chai'
 
 import {
   IDvmJobRepository,
@@ -13,7 +14,7 @@ import { AuthMessageHandler } from '../../../src/handlers/auth-message-handler'
 import { Event } from '../../../src/@types/event'
 import { EventMessageHandler } from '../../../src/handlers/event-message-handler'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
-import { messageHandlerFactory } from '../../../src/factories/message-handler-factory'
+import { messageHandlerFactory, peeringBillingServiceFor } from '../../../src/factories/message-handler-factory'
 import { CountMessageHandler } from '../../../src/handlers/count-message-handler'
 import { NegCloseMessageHandler } from '../../../src/handlers/neg-close-message-handler'
 import { NegMsgMessageHandler } from '../../../src/handlers/neg-msg-message-handler'
@@ -22,6 +23,9 @@ import { SubscribeMessageHandler } from '../../../src/handlers/subscribe-message
 import { UnsubscribeMessageHandler } from '../../../src/handlers/unsubscribe-message-handler'
 import * as cacheModule from '../../../src/cache/client'
 import sinon from 'sinon'
+
+chai.use(sinonChai)
+const { expect } = chai
 
 describe('messageHandlerFactory', () => {
   let event: Event
@@ -126,5 +130,26 @@ describe('messageHandlerFactory', () => {
     message = [] as any
 
     expect(() => factory([message, adapter])).to.throw(Error, 'Unknown message type: undefined')
+  })
+
+  describe('peeringBillingServiceFor', () => {
+    it('does not create billing for an ordinary client', () => {
+      const get = sandbox.stub()
+
+      const result = peeringBillingServiceFor({ getPeerPubkey: () => undefined } as any, get)
+
+      expect(result).to.be.undefined
+      expect(get).not.to.have.been.called
+    })
+
+    it('creates billing for a configured peer', () => {
+      const service = {} as any
+      const get = sandbox.stub().returns(service)
+
+      const result = peeringBillingServiceFor({ getPeerPubkey: () => 'a'.repeat(64) } as any, get)
+
+      expect(result).to.equal(service)
+      expect(get).to.have.been.calledOnce
+    })
   })
 })

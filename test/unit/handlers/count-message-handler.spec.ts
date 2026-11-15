@@ -68,6 +68,32 @@ describe('CountMessageHandler', () => {
       webSocket.on(WebSocketAdapterEvent.Message, webSocketOnMessageStub)
     })
 
+    it('closes a peer count when paid access is not active', async () => {
+      const peer = 'a'.repeat(64)
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      const billing = {
+        getAccess: sandbox.stub().resolves({ allowed: false, reason: 'peering payment required' }),
+      }
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () => ({ nip45: { enabled: true }, limits: { peer: { subscription: { maxFilters: 10 } } } }) as Settings,
+        rateLimiterFactory,
+        requestStats as any,
+        billing as any,
+      )
+
+      await handler.handleMessage([MessageType.COUNT, 'q1', {}] as any)
+
+      expect(billing.getAccess).to.have.been.calledWith(peer, { recheck: true })
+      expect(webSocketOnMessageStub).to.have.been.calledWith([
+        MessageType.CLOSED,
+        'q1',
+        'payment-required: peering payment required',
+      ])
+      expect(eventRepository.countByFilters).not.to.have.been.called
+    })
+
     it('returns COUNT with the result when counting works', async () => {
       const message = [MessageType.COUNT, 'q1', {}] as any
 

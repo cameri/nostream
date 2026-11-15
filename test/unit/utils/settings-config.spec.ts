@@ -113,6 +113,7 @@ describe('settings-config', () => {
           contact: 'test@example.com',
         },
         network: { maxPayloadSize: 1024 },
+        payments: { enabled: true, processor: 'lnbits' },
         peering,
       }) as any
 
@@ -242,6 +243,51 @@ describe('settings-config', () => {
       })
 
       expect(issues.some((issue) => issue.path === 'peering.terms[0].currency')).to.equal(true)
+    })
+
+    it('rejects a paid msat term that is not a whole number of satoshis', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        terms: [{ amount: 1500, unit: 'msats', period: 2592000 }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.terms[0].amount')).to.equal(true)
+    })
+
+    it('rejects a paid term in an unsupported unit', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        terms: [{ amount: 1, unit: 'usd', period: 2592000 }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.terms[0].unit')).to.equal(true)
+    })
+
+    it('rejects more than one paid term', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        terms: [
+          { amount: 21000, unit: 'msats', period: 2592000 },
+          { amount: 42000, unit: 'msats', period: 2592000 },
+        ],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.terms')).to.equal(true)
+      expect(issues.find((issue) => issue.path === 'peering.terms')?.message).to.include('only one paid')
+    })
+
+    it('rejects paid terms while payments are disabled', () => {
+      const issues = validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        network: { maxPayloadSize: 1024 },
+        peering: {
+          ...settlementFreePeering,
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
+        },
+      } as any)
+
+      expect(issues.some((issue) => issue.path === 'peering.terms')).to.equal(true)
+      expect(issues.find((issue) => issue.path === 'peering.terms')?.message).to.include('payments must be enabled')
     })
 
     it('rejects a proof-of-work requirement above the NIP-13 maximum', () => {
@@ -376,8 +422,7 @@ describe('settings-config', () => {
       expect(
         issues.some(
           (issue) =>
-            issue.path === 'info.relay_url' &&
-            issue.message === 'relay_url must use ws, wss, http, or https protocol',
+            issue.path === 'info.relay_url' && issue.message === 'relay_url must use ws, wss, http, or https protocol',
         ),
         `expected ${relay_url} to be rejected for protocol`,
       ).to.equal(true)
@@ -476,7 +521,9 @@ describe('settings-config', () => {
       const settings = baseSettings()
       settings.limits = { event: { rateLimits: [{ period: 0.5, rate: 10 }] } }
 
-      const message = validateSettings(settings).find((issue) => issue.path === 'limits.event.rateLimits[0].period')?.message
+      const message = validateSettings(settings).find(
+        (issue) => issue.path === 'limits.event.rateLimits[0].period',
+      )?.message
       expect(message).to.contain('milliseconds')
     })
 
@@ -858,8 +905,13 @@ describe('settings-config', () => {
 describe('settings-guided-schema', () => {
   it('exports guided categories for admin and CLI use', () => {
     expect(guidedSettingCategories.length).to.be.greaterThan(0)
-    expect(getGuidedSettingCategory('payments')?.settings.some((entry) => entry.path === 'payments.enabled')).to.equal(true)
-    expect(getGuidedSettingField('limits', 'limits.rateLimiter.strategy')?.options).to.deep.equal(['ewma', 'sliding_window'])
+    expect(getGuidedSettingCategory('payments')?.settings.some((entry) => entry.path === 'payments.enabled')).to.equal(
+      true,
+    )
+    expect(getGuidedSettingField('limits', 'limits.rateLimiter.strategy')?.options).to.deep.equal([
+      'ewma',
+      'sliding_window',
+    ])
   })
 
   it('validates guided numeric fields', () => {
