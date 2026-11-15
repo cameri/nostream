@@ -38,7 +38,7 @@ const sendUnauthorized = (response: Response): void => {
 
 export const adminAuthGateMiddleware = async (request: AdminRequest, response: Response, next: NextFunction) => {
   try {
-    if (adminAuthProvider.isRequestAuthenticated(request)) {
+    if (await adminAuthProvider.isRequestAuthenticated(request)) {
       next()
       return
     }
@@ -93,7 +93,7 @@ export const adminAuthGateMiddleware = async (request: AdminRequest, response: R
 
 export const adminAuthMiddleware = async (request: AdminRequest, response: Response, next: NextFunction) => {
   try {
-    if (adminAuthProvider.isRequestAuthenticated(request)) {
+    if (await adminAuthProvider.isRequestAuthenticated(request)) {
       next()
       return
     }

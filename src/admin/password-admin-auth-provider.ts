@@ -1,7 +1,8 @@
 import { Request, Response } from 'express'
 
-import { IAdminAuthProvider } from '../@types/admin'
+import { IAdminAuthProvider, IAdminSessionRevocations } from '../@types/admin'
 import { Settings } from '../@types/settings'
+import { createLogger } from '../factories/logger-factory'
 import { adminLoginBodySchema } from '../schemas/admin-login-schema'
 import { verifyAdminPasswordHash, verifyPlaintextPassword } from '../utils/admin-password'
 import {
@@ -13,7 +14,10 @@ import {
   parseAdminSessionToken,
   resolveAdminSessionTtlSeconds,
 } from '../utils/admin-session'
+import { CacheAdminSessionRevocations } from '../utils/admin-session-revocations'
 import { validateSchema } from '../utils/validation'
+
+const logger = createLogger('password-admin-auth-provider')
 
 export type AdminAuthAuditHook = (event: 'login' | 'logout', request: Request) => void | Promise<void>
 
@@ -21,6 +25,7 @@ export class PasswordAdminAuthProvider implements IAdminAuthProvider {
   public constructor(
     private readonly settings: () => Settings,
     private readonly auditHook?: AdminAuthAuditHook,
+    private readonly sessionRevocations: IAdminSessionRevocations = new CacheAdminSessionRevocations(),
   ) {}
 
   public async handleLogin(request: Request, response: Response): Promise<void> {
@@ -54,20 +59,55 @@ export class PasswordAdminAuthProvider implements IAdminAuthProvider {
     }
   }
 
-  public handleLogout(request: Request, response: Response): void {
+  public async handleLogout(request: Request, response: Response): Promise<void> {
     const currentSettings = this.settings()
+    const clearCookie = buildAdminSessionClearCookieHeader(request, currentSettings)
+    const token = this.getToken(request)
+    const session = token && isValidAdminSessionToken(token) ? parseAdminSessionToken(token) : undefined
+
+    if (session) {
+      // The token is signed, so only a record of its session id can end it before it expires.
+      try {
+        const remainingSeconds = session.expiresAt - Math.floor(Date.now() / 1000)
+        await this.sessionRevocations.revoke(session.sessionId, remainingSeconds + 1)
+      } catch (error) {
+        logger.error('unable to revoke the admin session at logout: %o', error)
+        response
+          .status(500)
+          .setHeader('content-type', 'application/json')
+          .setHeader('Set-Cookie', clearCookie)
+          .send({ error: 'Internal Server Error' })
+        return
+      }
+    }
+
     void this.auditHook?.('logout', request)
 
     response
       .status(200)
       .setHeader('content-type', 'application/json')
-      .setHeader('Set-Cookie', buildAdminSessionClearCookieHeader(request, currentSettings))
+      .setHeader('Set-Cookie', clearCookie)
       .send({ authenticated: false })
   }
 
-  public isRequestAuthenticated(request: Request): boolean {
+  public async isRequestAuthenticated(request: Request): Promise<boolean> {
     const token = this.getToken(request)
-    return token ? isValidAdminSessionToken(token) : false
+    if (!token || !isValidAdminSessionToken(token)) {
+      return false
+    }
+
+    const session = parseAdminSessionToken(token)
+    if (!session) {
+      return false
+    }
+
+    try {
+      return !(await this.sessionRevocations.isRevoked(session.sessionId))
+    } catch (error) {
+      // Without the revocation list a logged-out token cannot be told from a live one.
+      logger.error('unable to check whether the admin session was revoked: %o', error)
+      return false
+    }
   }
 
   public getSessionExpiresAt(request: Request): number | undefined {

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'crypto'
+import { randomBytes, timingSafeEqual } from 'crypto'
 import { IncomingMessage } from 'http'
 
 import { Settings } from '../@types/settings'
@@ -37,41 +37,50 @@ export const buildAdminSessionClearCookieHeader = (request: IncomingMessage, set
   return `admin_session=; Path=${cookiePath}; HttpOnly; SameSite=Strict; Max-Age=0${secure}`
 }
 
+const SESSION_ID_PATTERN = /^[0-9a-f]{32}$/
+
+const signAdminSession = (expiresAt: number, sessionId: string): string =>
+  hmacSha256(deriveFromSecret('admin-session'), `${expiresAt}.${sessionId}`).toString('hex')
+
+/**
+ * A token is `<expiresAt>.<sessionId>.<signature>`. The session id is random and signed with the expiry, so
+ * two logins never share a token and one session can be revoked without ending the others.
+ */
 export const createAdminSessionToken = (expiresAt: number): string => {
-  const signature = hmacSha256(deriveFromSecret('admin-session'), `${expiresAt}`).toString('hex')
-  return `${expiresAt}.${signature}`
+  const sessionId = randomBytes(16).toString('hex')
+  return `${expiresAt}.${sessionId}.${signAdminSession(expiresAt, sessionId)}`
 }
 
-export const parseAdminSessionToken = (token: string): { expiresAt: number } | undefined => {
-  const separatorIndex = token.indexOf('.')
-  if (separatorIndex <= 0) {
+const splitAdminSessionToken = (
+  token: string,
+): { expiresAt: number; sessionId: string; signature: string } | undefined => {
+  const parts = token.split('.')
+  if (parts.length !== 3) {
     return undefined
   }
 
-  const expiresAt = Number(token.slice(0, separatorIndex))
-  if (!Number.isFinite(expiresAt)) {
+  const [expiresAtText, sessionId, signature] = parts
+  const expiresAt = Number(expiresAtText)
+  if (!expiresAtText || !Number.isFinite(expiresAt) || !SESSION_ID_PATTERN.test(sessionId)) {
     return undefined
   }
 
-  return { expiresAt }
+  return { expiresAt, sessionId, signature }
+}
+
+export const parseAdminSessionToken = (token: string): { expiresAt: number; sessionId: string } | undefined => {
+  const parsed = splitAdminSessionToken(token)
+  return parsed ? { expiresAt: parsed.expiresAt, sessionId: parsed.sessionId } : undefined
 }
 
 export const isValidAdminSessionToken = (token: string, nowSeconds = Math.floor(Date.now() / 1000)): boolean => {
-  const separatorIndex = token.indexOf('.')
-  if (separatorIndex <= 0) {
+  const parsed = splitAdminSessionToken(token)
+  if (!parsed || parsed.expiresAt <= nowSeconds || !/^[0-9a-f]+$/.test(parsed.signature)) {
     return false
   }
 
-  const expiresAt = Number(token.slice(0, separatorIndex))
-  const signature = token.slice(separatorIndex + 1)
-
-  if (!Number.isFinite(expiresAt) || expiresAt <= nowSeconds || !/^[0-9a-f]+$/.test(signature)) {
-    return false
-  }
-
-  const expected = hmacSha256(deriveFromSecret('admin-session'), `${expiresAt}`).toString('hex')
-  const expectedBuf = Buffer.from(expected, 'utf8')
-  const actualBuf = Buffer.from(signature, 'utf8')
+  const expectedBuf = Buffer.from(signAdminSession(parsed.expiresAt, parsed.sessionId), 'utf8')
+  const actualBuf = Buffer.from(parsed.signature, 'utf8')
 
   if (expectedBuf.length !== actualBuf.length) {
     return false
@@ -80,7 +89,10 @@ export const isValidAdminSessionToken = (token: string, nowSeconds = Math.floor(
   return timingSafeEqual(expectedBuf, actualBuf)
 }
 
-export const getAdminSessionTokenFromRequest = (authorizationHeader?: string, cookieHeader?: string): string | undefined => {
+export const getAdminSessionTokenFromRequest = (
+  authorizationHeader?: string,
+  cookieHeader?: string,
+): string | undefined => {
   if (authorizationHeader?.startsWith('Bearer ')) {
     const token = authorizationHeader.slice('Bearer '.length).trim()
     return token.length > 0 ? token : undefined

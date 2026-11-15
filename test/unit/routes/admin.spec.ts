@@ -13,6 +13,7 @@ import * as adminRateLimitMiddleware from '../../../src/handlers/request-handler
 import * as rateLimiterMiddleware from '../../../src/handlers/request-handlers/rate-limiter-middleware'
 import * as settingsFactory from '../../../src/factories/settings-factory'
 import { hashAdminPassword } from '../../../src/utils/admin-password'
+import { CacheAdminSessionRevocations } from '../../../src/utils/admin-session-revocations'
 import { getPublicKey, identifyEvent, signEvent } from '../../../src/utils/event'
 import * as nip98Replay from '../../../src/utils/nip98-replay'
 
@@ -29,6 +30,7 @@ describe('admin router', () => {
   let adminLoginRateLimitMiddlewareStub: Sinon.SinonStub
   let claimNip98AuthEventIdStub: Sinon.SinonStub | undefined
   let server: any
+  let revocationStubs: Sinon.SinonStub[] = []
 
   const loadAdminRouter = () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -76,10 +78,7 @@ describe('admin router', () => {
       'createGetAdminNetworkHealthController',
     ).returns({
       handleRequest: async (_request: any, response: any) => {
-        response
-          .status(200)
-          .setHeader('content-type', 'application/json')
-          .send({ snapshot: null })
+        response.status(200).setHeader('content-type', 'application/json').send({ snapshot: null })
       },
     } as any)
     createGetAdminNotificationsControllerStub = Sinon.stub(
@@ -90,7 +89,9 @@ describe('admin router', () => {
         response
           .status(200)
           .setHeader('content-type', 'application/json')
-          .send({ notifications: { enabled: false, targets: [], events: {}, retry: { maxAttempts: 5, baseDelayMs: 1000 } } })
+          .send({
+            notifications: { enabled: false, targets: [], events: {}, retry: { maxAttempts: 5, baseDelayMs: 1000 } },
+          })
       },
     } as any)
     createSettingsStub = Sinon.stub(settingsFactory, 'createSettings').returns(settings as any)
@@ -104,6 +105,16 @@ describe('admin router', () => {
     adminLoginRateLimitMiddlewareStub = Sinon.stub(adminRateLimitMiddleware, 'adminLoginRateLimitMiddleware').callsFake(
       passthrough,
     )
+    // Logout records the session in Redis, which these tests do not run, so an in-memory list stands in for it.
+    const revokedSessions = new Set<string>()
+    revocationStubs = [
+      Sinon.stub(CacheAdminSessionRevocations.prototype, 'revoke').callsFake(async (sessionId: string) => {
+        revokedSessions.add(sessionId)
+      }),
+      Sinon.stub(CacheAdminSessionRevocations.prototype, 'isRevoked').callsFake(async (sessionId: string) =>
+        revokedSessions.has(sessionId),
+      ),
+    ]
     const router = loadAdminRouter()
     const app = express()
     app.use((request, response, next) => {
@@ -120,6 +131,8 @@ describe('admin router', () => {
   }
 
   const stopServer = async () => {
+    revocationStubs.forEach((stub) => stub.restore())
+    revocationStubs = []
     createGetAdminHealthControllerStub?.restore()
     createGetAdminMetricsControllerStub?.restore()
     createGetAdminNetworkHealthControllerStub?.restore()
@@ -306,7 +319,7 @@ describe('admin router', () => {
     const baseUrl = await startServer({ admin: { enabled: true } })
 
     const response = await axios.get(`${baseUrl}/session`, {
-      headers: { cookie: 'admin_session=9999999999.deadbeef' },
+      headers: { cookie: `admin_session=9999999999.${'0'.repeat(32)}.deadbeef` },
       validateStatus: () => true,
     })
 
@@ -364,6 +377,44 @@ describe('admin router', () => {
     expect(rateLimiterMiddlewareStub.callCount).to.equal(4)
     expect(adminLoginRateLimitMiddlewareStub.calledOnce).to.be.true
     expect(adminRateLimitMiddlewareStub.callCount).to.equal(3)
+  })
+
+  it('refuses the session token again once it has been logged out, for the token and not for other sessions', async () => {
+    process.env.ADMIN_PASSWORD = 'correct-password'
+    const baseUrl = await startServer({ admin: { enabled: true, sessionTtlSeconds: 3600 } })
+    const login = async () => {
+      const response = await axios.post(
+        `${baseUrl}/login`,
+        { password: 'correct-password' },
+        { headers: { 'content-type': 'application/json' }, validateStatus: () => true },
+      )
+      return response.headers['set-cookie']?.[0]?.split(';')[0] as string
+    }
+    const sessionStatus = async (cookie: string) =>
+      (await axios.get(`${baseUrl}/session`, { headers: { cookie }, validateStatus: () => true })).status
+
+    const loggedOut = await login()
+    const other = await login()
+    expect(await sessionStatus(loggedOut)).to.equal(200)
+
+    const logoutResponse = await axios.post(
+      `${baseUrl}/logout`,
+      {},
+      { headers: { cookie: loggedOut, 'content-type': 'application/json' }, validateStatus: () => true },
+    )
+
+    expect(logoutResponse.status).to.equal(200)
+    expect(logoutResponse.headers['set-cookie']?.[0]).to.include('Max-Age=0')
+    // The same token, as a retained copy would present it, is no longer accepted by the cookie or by Bearer.
+    expect(await sessionStatus(loggedOut)).to.equal(401)
+    const bearerStatus = (
+      await axios.get(`${baseUrl}/session`, {
+        headers: { authorization: `Bearer ${loggedOut.replace('admin_session=', '')}` },
+        validateStatus: () => true,
+      })
+    ).status
+    expect(bearerStatus).to.equal(401)
+    expect(await sessionStatus(other)).to.equal(200)
   })
 
   it('authenticates with passwordHash from settings', async () => {
