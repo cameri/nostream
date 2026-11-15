@@ -1795,16 +1795,14 @@
       })
       sessionEnded = response.ok
     } catch {
-      // The request did not reach the server, so the session was not ended there.
+      // The request did not reach the server, so nothing was revoked and the cookie was not cleared.
     }
 
-    // The cookie is cleared either way, so return to the login screen, but do not claim a clean sign-out.
     showLogin()
 
     if (!sessionEnded) {
-      showLoginError(
-        'Signed out in this browser, but the server could not end the session. Sign in and sign out again.',
-      )
+      // Neither a retry nor a new sign-in revokes the original token, so do not suggest one.
+      showLoginError('Sign-out could not be confirmed. The session may stay active until it expires.')
     }
   })
 
