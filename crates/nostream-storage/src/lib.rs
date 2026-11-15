@@ -16,20 +16,28 @@
 //! - `src/factories/event-repository-factory.ts`
 //!
 //! What it deliberately does **not** own: the relay handlers that call these traits, the
-//! payments service, the daemon's backend factory and the `nostream-cli migrate pg-to-lmdb`
-//! tool. The cache is not a cache server: no Redis client is added and
-//! `src/cache/client.ts` / `src/adapters/redis-adapter.ts` are not ported — the decision and
-//! what would overturn it are ADR `0010-services-worker-model-and-cache.md`. Both backends are
-//! complete: Postgres against the 37-migration schema, and LMDB against the same column
-//! contract for 9 of the capture's 10 repositories — `user_subscriptions` has a TypeScript
-//! repository and no trait yet, and `events.first_seen` is stored but never indexed
-//! (`docs/rewrite/decisions/0011-lmdb-backend.md`).
+//! payments service, the daemon's backend factory and the tool behind
+//! `nostream-cli migrate pg-to-lmdb`. It owns that tool's seam — [`migration`], the paged source
+//! read and the exact-per-row target write — which exists for that one caller and for no other;
+//! the copy, its manifest and its verification live in the CLI. The cache is not a cache server:
+//! no Redis client is added and `src/cache/client.ts` / `src/adapters/redis-adapter.ts` are not
+//! ported — the decision and what would overturn it are ADR
+//! `0010-services-worker-model-and-cache.md`. Both backends are complete: Postgres against the
+//! 37-migration schema, and LMDB against the same column contract for 9 of the capture's 10
+//! repositories — `user_subscriptions` has a TypeScript repository and no trait yet, and is the
+//! one of those ten the migration does not move (`event_tags` is not moved either: it is the
+//! trigger-maintained index whose LMDB `tags` database the event write path keeps), and
+//! `events.first_seen` is stored but never indexed
+//! (`docs/rewrite/decisions/0011-lmdb-backend.md`,
+//! `docs/rewrite/decisions/0012-pg-to-lmdb-migration.md`).
 
 pub mod backend;
 pub mod error;
 pub mod event_store;
+mod keys;
 #[cfg(feature = "lmdb")]
 pub mod lmdb;
+pub mod migration;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod records;

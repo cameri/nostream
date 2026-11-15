@@ -36,17 +36,19 @@ cargo test --workspace --all-features
 cargo build --workspace --all-features --release
 ```
 
-CI additionally runs the two database-backed storage tests ("Storage parity against Postgres")
+CI additionally runs the three database-backed storage tests ("Storage parity against Postgres")
 against a `postgres:16-alpine` service, and they are `#[ignore]`d so a checkout without a database still passes
 `cargo test --workspace`:
 
 ```
-cargo test -p nostream-storage --test migrations --test parity -- --ignored --test-threads=1
+cargo test -p nostream-storage --test migrations --test parity --test migration_pg \
+  -- --ignored --test-threads=1
 ```
 
 `PARITY_ADMIN_URL` names the administrative database (CI sets
 `postgres://postgres:postgres@localhost:5432/postgres`); the targets create, migrate and
-drop their own scratch databases. `scripts/storage-parity.sh` runs both plus the
+drop their own scratch databases — `migration_pg` seeds one and copies it into a temporary LMDB
+store. `scripts/storage-parity.sh` runs all three plus the
 TypeScript Cucumber suite against the sqlx-migrated schema — the complete local oracle. The
 LMDB arm of that oracle needs no database: `cargo test -p nostream-storage --test parity_lmdb
 -- --nocapture` replays the same fixture on a temporary store and runs inside the fifth
@@ -88,7 +90,7 @@ resolver 3:
 | `nostream-relay` | connections, wire protocol, handlers, rate limiters, live dispatch, NIP-77 engine (the acceptor lives in `nostreamd`) |
 | `nostream-services` | payment processors and the invoice lifecycle, operator notifications, the web-of-trust graph, Tor, the scheduler and its workers, event import, NIP-66 monitors (#865) |
 | `nostream-admin` | admin API and auth |
-| `nostream-cli` | operator command line (`nostream-cli config validate`, `nostream-cli import`) |
+| `nostream-cli` | operator command line (`nostream-cli config validate`, `nostream-cli import`, `nostream-cli migrate pg-to-lmdb`) |
 | `nostreamd` | the daemon binary: runtime, telemetry, signals, the services composition root and the worker supervisor |
 
 - Every crate manifest repeats `version.workspace = true`, `edition.workspace = true`,
