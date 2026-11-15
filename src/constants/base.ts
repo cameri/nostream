@@ -94,6 +94,8 @@ export enum EventTags {
   Deduplication = 'd',
   Expiration = 'expiration',
   Invoice = 'bolt11',
+  /** NIP-12 topic tag, also used to mark peering invoice notifications. */
+  Tag = 't',
   // NIP-03: target event kind on an OpenTimestamps attestation
   Kind = 'k',
   // NIP-25: Reactions

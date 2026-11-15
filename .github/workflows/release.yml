@@ -32,7 +32,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3.7.0
         # Build the code the tag names, not the branch the dispatch was started
         # from. A release event already carries the tag as GITHUB_REF, so the
         # input only overrides it; checking out `main` while pushing the image as

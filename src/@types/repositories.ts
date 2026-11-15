@@ -12,6 +12,7 @@ import {
   NotificationDeliveryStatus,
   OperatorNotificationChannelType,
 } from './operator-notifications'
+import { PeeringPayment } from './peering'
 import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
@@ -72,7 +73,28 @@ export interface IInvoiceRepository {
   upsert(invoice: Partial<Invoice>, client?: DatabaseClient): Promise<number>
   updateStatus(invoice: Pick<Invoice, 'id' | 'status'>, client?: DatabaseClient): Promise<Invoice | undefined>
   confirmInvoice(invoiceId: string, amountReceived: bigint, confirmedAt: Date, client?: DatabaseClient): Promise<void>
+  updatePeriod(invoiceId: string, periodStart: Date, periodEnd: Date, client?: DatabaseClient): Promise<void>
   findPendingInvoices(offset?: number, limit?: number, client?: DatabaseClient): Promise<Invoice[]>
+  /**
+   * Completed peering invoices whose settlement never committed, oldest first.
+   * `confirmed_at` stays null when the settlement transaction rolls back, so the
+   * maintenance worker can retry them instead of stranding a paid peer.
+   */
+  findUnconfirmedPeeringInvoices(limit?: number, offset?: number, client?: DatabaseClient): Promise<Invoice[]>
+}
+
+export interface IPeeringPaymentRepository {
+  findByPeer(pubkey: Pubkey, client?: DatabaseClient): Promise<PeeringPayment | undefined>
+  /** Inserts an unpaid row when one does not exist, so the following lock always finds it. */
+  ensureRow(pubkey: Pubkey, client: DatabaseClient): Promise<void>
+  /** SELECT ... FOR UPDATE; must run inside a transaction. */
+  lockByPeer(pubkey: Pubkey, client: DatabaseClient): Promise<PeeringPayment | undefined>
+  save(payment: PeeringPayment, client?: DatabaseClient): Promise<PeeringPayment>
+  list(): Promise<PeeringPayment[]>
+  /** Active or renewal-pending relationships whose period ends by `before`. */
+  findDueForRenewal(before: Date, limit: number, offset: number): Promise<PeeringPayment[]>
+  /** Active or renewal-pending relationships whose period has ended by `now`. */
+  findPeriodEnded(now: Date, limit: number, offset: number): Promise<PeeringPayment[]>
 }
 
 export interface IUserSubscriptionRepository {

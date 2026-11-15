@@ -130,6 +130,28 @@ describe('PatchAdminNotificationsController', () => {
     expect(response.send.firstCall.args[0].ok).to.equal(true)
   })
 
+  it('accepts the peering notification switches', async () => {
+    const controller = new PatchAdminNotificationsController(outboxRepository as any)
+    await controller.handleRequest(
+      {
+        body: {
+          events: {
+            'peering.invoice.paid': false,
+            'peering.access.lapsed': false,
+          },
+        },
+        ip: '127.0.0.1',
+      } as any,
+      response as any,
+    )
+
+    expect(response.status).to.have.been.calledWith(200)
+
+    const saved = (settingsConfig.saveSettings as Sinon.SinonStub).firstCall.args[0]
+    expect(saved.admin.notifications.events['peering.invoice.paid']).to.equal(false)
+    expect(saved.admin.notifications.events['peering.access.lapsed']).to.equal(false)
+  })
+
   it('still returns 200 when outbox enqueue fails', async () => {
     outboxRepository.enqueue.rejects(new Error('db unavailable'))
     const controller = new PatchAdminNotificationsController(outboxRepository as any)

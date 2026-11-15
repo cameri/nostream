@@ -211,6 +211,116 @@ describe('subscription utils', () => {
       expect(result.graceEndsAt).to.equal(null)
     })
 
+    describe('a payment for a cheaper plan while a dearer plan is running', () => {
+      // premium costs five times basic, over the same 30 days
+      const premium: SubscriptionPlan = { ...plan, id: 'premium', amount: 5_000_000n, graceSeconds: 5 * 86_400 }
+      const running = subscription({
+        planId: 'premium',
+        currentPeriodStart: at(-25 * DAY),
+        currentPeriodEnd: at(5 * DAY),
+        graceEndsAt: at(10 * DAY),
+      })
+      const paidFor = (paid: bigint = plan.amount) =>
+        applyPayment(pubkey, running, plan, NOW, { existingPlan: premium, paidMsat: paid })
+
+      it('keeps the plan the pubkey has, whoever paid', () => {
+        expect(paidFor().planId).to.equal('premium')
+      })
+
+      it('credits what was paid as the share of a premium period it covers, after the running period', () => {
+        // a fifth of the price of premium is a fifth of its 30 days: 6 days
+        expect(paidFor().currentPeriodEnd).to.deep.equal(at(5 * DAY + 6 * DAY))
+      })
+
+      it('credits more for paying more than the price of the cheaper plan', () => {
+        expect(paidFor(2_000_000n).currentPeriodEnd).to.deep.equal(at(5 * DAY + 12 * DAY))
+      })
+
+      it('moves the grace along with the end, by the grace of the plan the pubkey has', () => {
+        expect(paidFor().graceEndsAt).to.deep.equal(at(5 * DAY + 6 * DAY + 5 * DAY))
+      })
+
+      it('leaves the start of the running period where it is', () => {
+        expect(paidFor().currentPeriodStart).to.deep.equal(at(-25 * DAY))
+      })
+
+      it('keeps a pending renewal pending, since its invoice is still payable and a second one must not be issued', () => {
+        const pending = { ...running, status: SubscriptionStatus.RENEWAL_PENDING }
+
+        const result = applyPayment(pubkey, pending, plan, NOW, { existingPlan: premium, paidMsat: plan.amount })
+
+        expect(result.planId).to.equal('premium')
+        expect(result.status).to.equal(SubscriptionStatus.RENEWAL_PENDING)
+      })
+
+      it('keeps an active subscription active', () => {
+        expect(paidFor().status).to.equal(SubscriptionStatus.ACTIVE)
+      })
+
+      it('gives a plan with no grace no grace end', () => {
+        const result = applyPayment(pubkey, running, plan, NOW, {
+          existingPlan: { ...premium, graceSeconds: 0 },
+          paidMsat: plan.amount,
+        })
+
+        expect(result.graceEndsAt).to.equal(null)
+      })
+
+      it('never shortens what the pubkey has', () => {
+        expect(paidFor(0n).currentPeriodEnd).to.deep.equal(running.currentPeriodEnd)
+        expect(paidFor().currentPeriodEnd!.getTime()).to.be.greaterThan(running.currentPeriodEnd!.getTime())
+      })
+
+      it('assumes the price of the plan when it is not told what was paid', () => {
+        const result = applyPayment(pubkey, running, plan, NOW, { existingPlan: premium })
+
+        expect(result.currentPeriodEnd).to.deep.equal(at(5 * DAY + 6 * DAY))
+      })
+
+      it('still switches once the running period has ended, since nothing paid for is taken away', () => {
+        const lapsed = { ...running, status: SubscriptionStatus.PAST_DUE, currentPeriodEnd: at(-DAY) }
+
+        const result = applyPayment(pubkey, lapsed, plan, NOW, { existingPlan: premium, paidMsat: plan.amount })
+
+        expect(result.planId).to.equal('basic')
+        expect(result.currentPeriodStart).to.deep.equal(NOW)
+      })
+
+      it('still switches when the pubkey has no running plan to protect', () => {
+        const result = applyPayment(pubkey, undefined, plan, NOW, { existingPlan: premium, paidMsat: plan.amount })
+
+        expect(result.planId).to.equal('basic')
+      })
+
+      it('still switches when the plan the pubkey had was removed from the settings, since there is nothing to compare', () => {
+        const result = applyPayment(pubkey, running, plan, NOW, { paidMsat: plan.amount })
+
+        expect(result.planId).to.equal('basic')
+      })
+    })
+
+    describe('a payment for a dearer plan, or for the plan the pubkey has', () => {
+      const premium: SubscriptionPlan = { ...plan, id: 'premium', amount: 5_000_000n }
+      const runningBasic = subscription({ currentPeriodStart: at(-25 * DAY), currentPeriodEnd: at(5 * DAY) })
+
+      it('moves up to the dearer plan, which takes nothing away', () => {
+        const result = applyPayment(pubkey, runningBasic, premium, NOW, {
+          existingPlan: plan,
+          paidMsat: premium.amount,
+        })
+
+        expect(result.planId).to.equal('premium')
+        expect(result.currentPeriodStart).to.deep.equal(at(5 * DAY))
+      })
+
+      it('extends the plan the pubkey has from the end of its period', () => {
+        const result = applyPayment(pubkey, runningBasic, plan, NOW, { existingPlan: plan, paidMsat: plan.amount })
+
+        expect(result.planId).to.equal('basic')
+        expect(result.currentPeriodEnd).to.deep.equal(at(35 * DAY))
+      })
+    })
+
     it('uses the paid plan, so a plan change takes effect on payment', () => {
       const premium = { ...plan, id: 'premium', intervalSeconds: 7 * 86_400 }
 

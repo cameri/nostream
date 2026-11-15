@@ -2,6 +2,10 @@ export enum OperatorNotificationEventType {
   ADMISSION_INVOICE_CREATED = 'admission.invoice.created',
   ADMISSION_INVOICE_PAID = 'admission.invoice.paid',
   ADMISSION_INVOICE_FAILED = 'admission.invoice.failed',
+  PEERING_INVOICE_CREATED = 'peering.invoice.created',
+  PEERING_INVOICE_PAID = 'peering.invoice.paid',
+  PEERING_INVOICE_FAILED = 'peering.invoice.failed',
+  PEERING_ACCESS_LAPSED = 'peering.access.lapsed',
   SETTINGS_CHANGED = 'settings.changed',
   RELAY_RESTARTED = 'relay.restarted',
   PROBE_FAILED = 'probe.failed',
@@ -26,6 +30,10 @@ export interface OperatorNotificationEventToggles {
   'admission.invoice.created'?: boolean
   'admission.invoice.paid'?: boolean
   'admission.invoice.failed'?: boolean
+  'peering.invoice.created'?: boolean
+  'peering.invoice.paid'?: boolean
+  'peering.invoice.failed'?: boolean
+  'peering.access.lapsed'?: boolean
   'settings.changed'?: boolean
   'relay.restarted'?: boolean
   'probe.failed'?: boolean
