@@ -94,12 +94,16 @@ export class LNbitsCallbackController implements IController {
       return
     }
 
-    if (storedInvoice.status === InvoiceStatus.COMPLETED) {
+    // A completed invoice without a confirmation is a settlement that rolled
+    // back. Let the redelivery retry it instead of answering 409 forever.
+    if (storedInvoice.status === InvoiceStatus.COMPLETED && storedInvoice.confirmedAt) {
       response.status(409).setHeader('content-type', 'text/plain; charset=utf8').send('Invoice is already marked paid')
       return
     }
 
-    invoice.amountPaid = invoice.amountRequested
+    if (typeof invoice.amountPaid !== 'bigint') {
+      invoice.amountPaid = invoice.amountRequested
+    }
 
     try {
       await this.paymentsService.confirmInvoice(invoice as Invoice)

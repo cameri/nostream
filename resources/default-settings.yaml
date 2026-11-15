@@ -462,6 +462,10 @@ admin:
       admission.invoice.created: true
       admission.invoice.paid: true
       admission.invoice.failed: true
+      peering.invoice.created: true
+      peering.invoice.paid: true
+      peering.invoice.failed: true
+      peering.access.lapsed: true
       settings.changed: true
       relay.restarted: false
       probe.failed: true

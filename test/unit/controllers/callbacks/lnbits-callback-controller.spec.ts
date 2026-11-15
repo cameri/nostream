@@ -260,6 +260,28 @@ describe('LNbitsCallbackController', () => {
       expect(res.send).to.have.been.calledWith('Invoice is already marked paid')
     })
 
+    it('retries a completed invoice that has no confirmation yet', async () => {
+      const invoiceRepository = {
+        findById: sinon.stub().resolves(makeInvoice({ status: InvoiceStatus.COMPLETED, confirmedAt: null })),
+      }
+      const paymentsService = {
+        getInvoiceFromPaymentsProcessor: sinon
+          .stub()
+          .resolves(makeInvoice({ status: InvoiceStatus.COMPLETED, confirmedAt: new Date() })),
+        updateInvoice: sinon.stub().resolves(),
+        confirmInvoice: sinon.stub().resolves(),
+        sendInvoiceUpdateNotification: sinon.stub().resolves(),
+      }
+      const { controller } = makeController({ paymentsService, invoiceRepository })
+      const res = makeRes()
+
+      await controller.handleRequest(makeReq(), res)
+
+      expect(res.status).to.have.been.calledWith(200)
+      expect(res.send).to.have.been.calledWith('OK')
+      expect(paymentsService.confirmInvoice).to.have.been.calledOnce
+    })
+
     it('confirms and notifies when invoice transitions to completed', async () => {
       const paymentsService = {
         getInvoiceFromPaymentsProcessor: sinon.stub().resolves(makeInvoice({ status: InvoiceStatus.COMPLETED })),
