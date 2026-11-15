@@ -1915,12 +1915,36 @@ mod tests {
             .ok()
             .expect("permissions");
 
+        // Whether this user can write there at all, asked of the operating system rather than
+        // assumed: a privileged user can write anywhere, so the refusal is only observable when
+        // an ordinary one cannot.
+        let probe = directory.path().join("probe");
+        let writable_by_this_user = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&probe)
+            .is_ok();
+        let _ = std::fs::remove_file(&probe);
+
         let outcome = Plan::resolve(&arguments_for(out));
         std::fs::set_permissions(directory.path(), writable).ok().expect("permissions");
 
-        // A privileged user can write anywhere, so the refusal is only observable unprivileged.
-        if let Err(error) = outcome {
-            let error = error.to_string();
+        if !writable_by_this_user {
+            let error = outcome
+                .err()
+                .expect("a refusal for a directory this user cannot write")
+                .to_string();
+            assert!(error.contains("--out"), "{error}");
+            assert!(error.contains("cannot be written"), "{error}");
+        }
+
+        // A read-only filesystem refuses the probe even to a privileged user, and `/proc` is one
+        // whose files cannot be created: this half is observable in any environment.
+        if Path::new("/proc").is_dir() {
+            let error = Plan::resolve(&arguments_for(PathBuf::from("/proc/bench-artifact.json")))
+                .err()
+                .expect("a refusal on a filesystem that cannot take a new file")
+                .to_string();
             assert!(error.contains("--out"), "{error}");
             assert!(error.contains("cannot be written"), "{error}");
         }
