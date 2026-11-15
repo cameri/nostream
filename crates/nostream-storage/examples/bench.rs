@@ -82,8 +82,9 @@ const TAG_LIMIT: u64 = 100;
 const DEFAULT_REPEATS: u64 = 1;
 
 /// The artifact's layout version: bumped when a field's meaning or position changes, so a reader
-/// can tell which shape of document it holds.
-const ARTIFACT_SCHEMA: u64 = 1;
+/// can tell which shape of document it holds. Version 2 added `workload.reads.by_id_stride` and
+/// `by_id_offset`, which two otherwise identical read workloads can differ by.
+const ARTIFACT_SCHEMA: u64 = 2;
 
 /// The corpus ceiling a run may not cross without `--allow-large-corpus`. A 1M-event corpus is
 /// about 1.9 GB of `data.mdb` at the rate this rig measures, so the default refusal is what
@@ -354,6 +355,8 @@ struct Report {
     bands: BTreeMap<String, ShapeBands>,
     /// Every repeat's shapes, so verification can check they agree with the first.
     repeat_shapes: Vec<Vec<ShapeCounts>>,
+    /// Every repeat's read-back count, so a short read in a later repeat is caught too.
+    repeat_read_backs: Vec<u64>,
 }
 
 /// One failed integrity check, reported as `verify failed: <field>: expected <x>, got <y>`.
@@ -505,6 +508,27 @@ fn plural(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
+/// Checks that the artifact's directory will take a new file, by creating and removing a sibling
+/// name: the destination itself is never opened, so an artifact already there is left alone.
+fn probe_writable(parent: &Path, out: &Path) -> Fallible<()> {
+    let probe = parent.join(format!(".bench-out-probe-{}", std::process::id()));
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            Ok(())
+        }
+        Err(error) => Err(refusal(format!(
+            "--out {}: {} cannot be written ({error})",
+            out.display(),
+            parent.display()
+        ))),
+    }
+}
+
 /// The root one repeat opens its store under. The refusal in `given_store` and the open in
 /// `store_root` both call this, so they cannot disagree about which directory a run writes to.
 fn repeat_root(path: &Path, repeat: u64, repeats: u64) -> PathBuf {
@@ -598,8 +622,11 @@ impl Plan {
             )));
         }
 
-        // The write happens after the whole measurement, so a mistyped directory has to be a
-        // refusal like any other rather than a failure at the end of a long run.
+        // The write happens after the whole measurement, so a mistyped path has to be a refusal
+        // like any other rather than a failure at the end of a long run. Three things are checked,
+        // because each fails late and expensively otherwise: the parent exists, the destination is
+        // not a directory, and a file can be created in that parent — probed with a sibling name,
+        // since probing the destination itself would truncate an artifact that is already there.
         let parent = match arguments.out.parent() {
             Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
             _ => PathBuf::from("."),
@@ -611,6 +638,13 @@ impl Plan {
                 parent.display()
             )));
         }
+        if arguments.out.is_dir() {
+            return Err(refusal(format!(
+                "--out {} is a directory, and the artifact is one file. Name a file inside it",
+                arguments.out.display()
+            )));
+        }
+        probe_writable(&parent, &arguments.out)?;
 
         let admin_url = match arguments.backend {
             Backend::Postgres => Some(admin_url()?),
@@ -767,8 +801,15 @@ fn until_for(iteration: u64, events: u64) -> i64 {
     CREATED_AT_ANCHOR_UNIX - (iteration as i64) * span / COUNT_ITERATIONS as i64
 }
 
+/// The `by_id` iteration's target id. The seed's only job is to pick a reproducible offset into
+/// the corpus, so this arithmetic is deliberately modular and wraps rather than overflowing: every
+/// `u64` is a legal seed, and one seed must select the same rows in a debug build as in a release
+/// build.
 fn by_id_target(iteration: u64, events: u64, seed: u64) -> u64 {
-    (seed * BY_ID_STRIDE + iteration * BY_ID_STRIDE + BY_ID_OFFSET) % events
+    seed.wrapping_mul(BY_ID_STRIDE)
+        .wrapping_add(iteration.wrapping_mul(BY_ID_STRIDE))
+        .wrapping_add(BY_ID_OFFSET)
+        % events
 }
 
 /// One read shape's filter for one iteration. The workload and the oracle both call this, so a
@@ -1093,6 +1134,7 @@ impl Report {
         let mut timings = BTreeMap::new();
         let mut per_repeat: BTreeMap<&'static str, Vec<Timing>> = BTreeMap::new();
         let mut repeat_shapes = Vec::new();
+        let mut repeat_read_backs = Vec::new();
 
         for run in std::iter::once(&first).chain(rest.iter()) {
             for (name, samples) in &run.timings {
@@ -1102,6 +1144,7 @@ impl Report {
                     .push(Timing::from_samples(samples));
             }
             repeat_shapes.push(run.shapes.clone());
+            repeat_read_backs.push(run.event_count_read_back);
         }
         for (name, samples) in &first.timings {
             timings.insert((*name).to_owned(), Timing::from_samples(samples));
@@ -1122,6 +1165,7 @@ impl Report {
             timings,
             bands,
             repeat_shapes,
+            repeat_read_backs,
         }
     }
 
@@ -1168,6 +1212,8 @@ fn workload_json(repeat_count: u64) -> Value {
         "reads": {
             "iterations": READ_ITERATIONS,
             "counts": COUNT_ITERATIONS,
+            "by_id_stride": BY_ID_STRIDE,
+            "by_id_offset": BY_ID_OFFSET,
             "limits": {
                 "by_id": BY_ID_LIMIT,
                 "author_kind": AUTHOR_KIND_LIMIT,
@@ -1403,24 +1449,17 @@ fn verify(report: &Report) -> Vec<VerifyFailure> {
                 ),
             ));
         }
-        check(
-            &mut failures,
-            format!("volatile.timings[{name}].ops"),
-            timing.ops.max(1),
-            timing.ops,
-        );
-        check(
-            &mut failures,
-            format!("volatile.timings[{name}].per_second"),
-            timing.per_second.max(1),
-            timing.per_second,
-        );
-        check(
-            &mut failures,
-            format!("volatile.timings[{name}].rows_per_second"),
-            timing.rows_per_second.max(1),
-            timing.rows_per_second,
-        );
+        // The shape has to have been called at least once. The rates are derived integers, so a
+        // phase that takes more than a second with few operations in it rounds to zero — that is a
+        // measurement of a slow host, not a failure, and comparing `0.max(1)` against `0` would
+        // reject a correct run.
+        if timing.ops == 0 {
+            failures.push(VerifyFailure::new(
+                format!("volatile.timings[{name}].ops"),
+                "> 0",
+                "0",
+            ));
+        }
     }
 
     for (name, bands) in &report.bands {
@@ -1434,6 +1473,17 @@ fn verify(report: &Report) -> Vec<VerifyFailure> {
                 ));
             }
         }
+    }
+
+    // Index 0 is the first repeat, which `event_count_read_back` above already covers; the rest
+    // are checked here so a short read in any repeat fails the run.
+    for (index, count) in report.repeat_read_backs.iter().enumerate() {
+        check(
+            &mut failures,
+            format!("repeats[{index}].event_count_read_back"),
+            report.events,
+            *count,
+        );
     }
 
     for (index, shapes) in report.repeat_shapes.iter().enumerate().skip(1) {
@@ -1550,6 +1600,7 @@ mod tests {
             repeat_count: 1,
             event_count_read_back: EVENTS,
             repeat_shapes: vec![shapes.clone()],
+            repeat_read_backs: vec![EVENTS],
             shapes,
             timings,
             bands,
@@ -1647,6 +1698,22 @@ mod tests {
         assert!(given_store(directory.path(), 1).is_err());
     }
 
+    /// The command line the `--out` refusal tests resolve, with everything else at its default:
+    /// the busy-host check is off and the store is temporary, so only the destination decides.
+    fn arguments_for(out: PathBuf) -> Arguments {
+        Arguments {
+            backend: Backend::Lmdb,
+            events: 1_001,
+            seed: DEFAULT_SEED,
+            repeats: 1,
+            out,
+            verify: false,
+            store: None,
+            allow_large_corpus: false,
+            allow_busy_host: true,
+        }
+    }
+
     #[test]
     fn the_smallest_accepted_corpus_leaves_a_bulk_load() {
         let directory = tempfile::tempdir().ok().expect("a temporary directory");
@@ -1733,6 +1800,137 @@ mod tests {
             "no shapes[tag].rows failure in {failures:?}",
             failures = failures.len()
         );
+    }
+
+    #[test]
+    fn a_zero_rounded_rate_verifies() {
+        let mut report = valid_report();
+        // A phase that takes over a second with few operations in it rounds its integer rate to
+        // zero: a slow host's measurement, not a failed run.
+        let timing = report.timings.get_mut("create").expect("a create timing");
+        assert!(timing.ops > 0);
+        timing.per_second = 0;
+        timing.rows_per_second = 0;
+        let failures = verify(&report);
+        assert!(failures.is_empty(), "{} failures", failures.len());
+    }
+
+    #[test]
+    fn verify_rejects_a_shape_with_no_operations() {
+        let mut report = valid_report();
+        report
+            .timings
+            .get_mut("create")
+            .expect("a create timing")
+            .ops = 0;
+        let failures = verify(&report);
+        assert_eq!(failures.len(), 1, "one failure, not {}", failures.len());
+        assert_eq!(failures[0].field, "volatile.timings[create].ops");
+        assert_eq!(failures[0].got, "0");
+    }
+
+    #[test]
+    fn verify_rejects_a_read_back_that_disagrees_in_a_repeat() {
+        let mut report = valid_report();
+        // Index 1 is the second repeat; the first is `event_count_read_back`.
+        report.repeat_read_backs.push(EVENTS - 1);
+        let failures = verify(&report);
+        assert_eq!(failures.len(), 1, "one failure, not {}", failures.len());
+        assert_eq!(failures[0].field, "repeats[1].event_count_read_back");
+        assert_eq!(failures[0].expected, EVENTS.to_string());
+    }
+
+    #[test]
+    fn the_by_id_target_is_modular_and_in_range() {
+        // `u64::MAX` is a legal seed, and the arithmetic wraps in both profiles rather than
+        // overflowing in one and panicking in the other.
+        for seed in [7, u64::MAX, u64::MAX / BY_ID_STRIDE + 1] {
+            for iteration in [0, 1, READ_ITERATIONS - 1] {
+                let target = by_id_target(iteration, EVENTS, seed);
+                assert!(target < EVENTS, "seed {seed} iteration {iteration}");
+                assert_eq!(
+                    target,
+                    seed.wrapping_mul(BY_ID_STRIDE)
+                        .wrapping_add(iteration.wrapping_mul(BY_ID_STRIDE))
+                        .wrapping_add(BY_ID_OFFSET)
+                        % EVENTS
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_out_refusal_names_a_directory_destination() {
+        let directory = tempfile::tempdir().ok().expect("a temporary directory");
+        // The destination is a directory: its parent exists, so only this check answers it, and
+        // without it the run fails after the whole measurement.
+        let error = Plan::resolve(&arguments_for(directory.path().to_path_buf()))
+            .err()
+            .expect("a refusal")
+            .to_string();
+        assert!(error.contains("--out"), "{error}");
+        assert!(error.contains("is a directory"), "{error}");
+        assert!(error.contains(&directory.path().display().to_string()), "{error}");
+    }
+
+    #[test]
+    fn the_out_refusal_names_a_missing_parent() {
+        let directory = tempfile::tempdir().ok().expect("a temporary directory");
+        let missing = directory.path().join("absent").join("artifact.json");
+        let error = Plan::resolve(&arguments_for(missing.clone()))
+            .err()
+            .expect("a refusal")
+            .to_string();
+        assert!(error.contains("--out"), "{error}");
+        assert!(error.contains("is not a directory"), "{error}");
+    }
+
+    #[test]
+    fn a_writable_destination_is_not_refused() {
+        let directory = tempfile::tempdir().ok().expect("a temporary directory");
+        let out = directory.path().join("artifact.json");
+        assert!(Plan::resolve(&arguments_for(out)).is_ok());
+        // The probe leaves nothing behind, and it never creates the destination itself.
+        let entries: Vec<_> = std::fs::read_dir(directory.path())
+            .ok()
+            .expect("a directory")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name())
+            .collect();
+        assert!(entries.is_empty(), "left behind: {entries:?}");
+    }
+
+    #[test]
+    fn the_out_refusal_names_a_directory_it_cannot_write() {
+        let directory = tempfile::tempdir().ok().expect("a temporary directory");
+        let out = directory.path().join("artifact.json");
+        let mut permissions = std::fs::metadata(directory.path())
+            .ok()
+            .expect("a directory")
+            .permissions();
+        let writable = permissions.clone();
+        #[cfg(unix)]
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o500);
+        std::fs::set_permissions(directory.path(), permissions)
+            .ok()
+            .expect("permissions");
+
+        let outcome = Plan::resolve(&arguments_for(out));
+        std::fs::set_permissions(directory.path(), writable).ok().expect("permissions");
+
+        // A privileged user can write anywhere, so the refusal is only observable unprivileged.
+        if let Err(error) = outcome {
+            let error = error.to_string();
+            assert!(error.contains("--out"), "{error}");
+            assert!(error.contains("cannot be written"), "{error}");
+        }
+    }
+
+    #[test]
+    fn the_artifact_records_the_by_id_stepping() {
+        let workload = workload_json(1);
+        assert_eq!(workload["reads"]["by_id_stride"], BY_ID_STRIDE);
+        assert_eq!(workload["reads"]["by_id_offset"], BY_ID_OFFSET);
     }
 
     #[test]
