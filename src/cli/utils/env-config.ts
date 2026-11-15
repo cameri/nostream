@@ -145,8 +145,8 @@ export const stripQuotes = (value: string): string => {
 
 /**
  * Why a secret cannot be written to `.env` and read back unchanged, or undefined when it can. An unquoted `#` starts a
- * comment for the loader, a newline ends the line, a `$` is expanded by Docker Compose, and a quote the loader cannot
- * match changes what it reads.
+ * comment for the loader, a newline ends the line, a `$` is expanded by Docker Compose, a quote the loader cannot
+ * match changes what it reads, and a backslash inside double quotes is read as an escape by some loaders.
  */
 export const getUnsafeSecretReason = (secret: string): string | undefined => {
   if (secret.includes('#')) {
@@ -163,6 +163,11 @@ export const getUnsafeSecretReason = (secret: string): string | undefined => {
     return 'SECRET cannot start with an unmatched quote'
   }
   const trimmed = secret.trim()
+  if (trimmed.length > 1 && trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.includes('\\')) {
+    // Node's loader turns `\n` inside double quotes into a newline and Docker Compose expands escapes there too, while
+    // the setup parser keeps a backslash as it is, so the readers would end up with different secrets.
+    return 'SECRET cannot contain a backslash inside double quotes'
+  }
   if (stripQuotes(trimmed) !== trimmed && stripQuotes(trimmed).includes(trimmed[0])) {
     // The loader ends a quoted value at the first closing quote, so a quote inside would cut the secret short.
     return 'SECRET cannot contain the quote it is wrapped in'

@@ -53,6 +53,8 @@ describe('cli env config helpers', () => {
       ['"abc', 'unmatched quote'],
       ['"abc"tail"', 'the quote it is wrapped in'],
       ["'it's'", 'the quote it is wrapped in'],
+      ['"abc\\ndef"', 'backslash inside double quotes'],
+      ['"abc\\\\def"', 'backslash inside double quotes'],
     ]) {
       it(`refuses ${JSON.stringify(value)} and writes nothing`, async () => {
         const error = sinon.stub(output, 'logError')
@@ -64,7 +66,16 @@ describe('cli env config helpers', () => {
       })
     }
 
-    for (const value of ['a=b', "it's-fine", 'with spaces', '"quoted value"', "'quoted'", 'ends-with-==']) {
+    for (const value of [
+      'a=b',
+      "it's-fine",
+      'with spaces',
+      '"quoted value"',
+      "'quoted'",
+      'ends-with-==',
+      'abc\\ndef',
+      "'abc\\ndef'",
+    ]) {
       it(`saves ${JSON.stringify(value)} so that Node reads it back as given`, async () => {
         sinon.stub(output, 'logInfo')
 

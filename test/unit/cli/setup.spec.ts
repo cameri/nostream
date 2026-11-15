@@ -175,6 +175,11 @@ describe('runSetup', () => {
       ['contains a lone "$"', 'cost$', 'SECRET cannot contain "$"'],
       ['starts with an unmatched double quote', '"unterminated', 'SECRET cannot start with an unmatched quote'],
       ['starts with an unmatched single quote', "'unterminated", 'SECRET cannot start with an unmatched quote'],
+      [
+        'has a backslash inside double quotes, which Node reads as an escape',
+        '"abc\\ndef"',
+        'SECRET cannot contain a backslash inside double quotes',
+      ],
     ]
 
     for (const [label, secret, reason] of unsafe) {
