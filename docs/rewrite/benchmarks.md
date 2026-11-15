@@ -174,14 +174,15 @@ The two rates divide by the time the shape's calls took, added up, not by its me
 whose few slow calls carry the total has a rate below `1 / p50`, so a reader who recomputes a rate
 from the percentile columns above gets a number the artifact does not record.
 
-On this run the read shapes and `create` agreed closely between repeats — `create`'s per-second
-band spans 251 to 256 — which is what makes the write rows worth reading as a measurement of this
-host on this day. `create_many`'s band is the widest of them: one repeat loaded at 34 batches per
-second where the other two reached 45, and its `p95` band runs from 30.1 to 31.2 ms around a
-median of 30.6. That is one repeat's writes waiting on the host's disk rather than the same wait
-landing in all three. A repeat on a shared host can stall outright, and nothing in the rig
-prevents it, so the band — and not one run's number — is what the tables above are for. A run
-whose band is wider than this one's is a reading of a busier host, not of a slower store.
+On this run both write shapes agreed closely between repeats — `create`'s per-second band spans 251
+to 256, `create_many`'s 43 to 45, and its `p95` band runs from 30.1 to 31.2 ms around a median of
+30.6 — which is what makes the write rows worth reading as a measurement of this host on this day.
+The widest bands belong to the shapes measured least often: `read_back` is one operation per repeat,
+and `by_id`'s band runs from 36784 to 48732 per second across calls that take a few tens of
+microseconds, so one stalled call moves it. A repeat on a shared host can stall outright, and
+nothing in the rig prevents it, so the band — and not one run's number — is what the tables above
+are for. A run whose band is wider than this one's is a reading of a busier host, not of a slower
+store.
 
 The cost being timed for the writes is LMDB's synchronous commit, which waits on a shared host's
 disk; `create_many` also copies the batch and writes its indexes, and this rig does not separate
