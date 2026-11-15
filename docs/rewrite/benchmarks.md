@@ -19,18 +19,18 @@ which needs a database this host does not have, and the TypeScript/Postgres colu
 |---|---|
 | Date | 2026-11-14 |
 | Machine | 4 CPUs, `Intel(R) Core(TM) i7-10700T CPU @ 2.00GHz` |
-| Load average, one minute | 43.32 (`volatile.machine.load_1min`, the first repeat's) |
-| Free disk at run time | 8.6 GB (`df -h /`) |
+| Load average, one minute | 48.79 (`volatile.machine.load_1min`, the first repeat's) |
+| Free disk at run time | 33 GB (`df -h /`) |
 | Profile | `release` |
 | Repeats | 3 (`workload.repeats`) |
-| Command | `cargo run --release -p nostream-storage --example bench -- --backend lmdb --events 50000 --seed 7 --repeats 3 --verify --out /tmp/bench-lmdb-3.json` |
+| Command | `cargo run --release -p nostream-storage --example bench -- --backend lmdb --events 50000 --seed 7 --repeats 3 --verify --out /tmp/bench-lmdb-1.json` |
 | Artifact | `docs/rewrite/benchmarks/lmdb-50k-seed7.json` |
 
 The machine, the load average and the store's size are `volatile.machine` and `volatile.store`
 in that artifact. This host is shared: the load figure is other tenants' work on four cores, and
 the three repeats below measure what that does to the numbers rather than leaving it to a
-sentence. The load is sampled before every repeat, not once: `load_1min_by_repeat` holds `43.32`,
-`43.27` and `43.25`, so the one-minute figure above is the first of three readings that agree.
+sentence. The load is sampled before every repeat, not once: `load_1min_by_repeat` holds `48.79`,
+`48.73` and `48.69`, so the one-minute figure above is the first of three readings that agree.
 
 ## The LMDB numbers
 
@@ -39,19 +39,19 @@ sentence. The load is sampled before every repeat, not once: `load_1min_by_repea
 
 | shape | count | rows | p50 (ms) | p95 (ms) | p99 (ms) | per_second | rows_per_second |
 |---|---|---|---|---|---|---|---|
-| `create_many` | 98 | 49000 | 29.6 | 37.3 | 41.4 | 34 | 17277 |
-| `create` | 1000 | 1000 | 4.0 | 4.7 | 5.5 | 251 | 251 |
-| `by_id` | 200 | 200 | 0.0 | 0.0 | 0.0 | 46500 | 46500 |
-| `author_kind` | 200 | 20000 | 0.3 | 0.3 | 0.3 | 3408 | 340802 |
-| `kind_since` | 200 | 99602 | 1.4 | 1.5 | 1.6 | 736 | 366841 |
-| `tag` | 200 | 20000 | 0.3 | 0.3 | 0.3 | 3707 | 370727 |
-| `count` | 50 | 1020000 | 9.2 | 17.3 | 18.5 | 107 | 2198669 |
-| `read_back` | 1 | 50000 | 21.9 | 21.9 | 21.9 | 45 | 2283105 |
+| `create_many` | 98 | 49000 | 22.2 | 31.2 | 32.7 | 43 | 21985 |
+| `create` | 1000 | 1000 | 3.8 | 4.6 | 4.9 | 256 | 256 |
+| `by_id` | 200 | 200 | 0.0 | 0.1 | 0.1 | 36784 | 36784 |
+| `author_kind` | 200 | 20000 | 0.3 | 0.4 | 0.5 | 2813 | 281333 |
+| `kind_since` | 200 | 99602 | 1.5 | 1.7 | 2.0 | 660 | 328819 |
+| `tag` | 200 | 20000 | 0.3 | 0.3 | 0.3 | 3531 | 353150 |
+| `count` | 50 | 1020000 | 10.7 | 18.2 | 18.9 | 95 | 1953259 |
+| `read_back` | 1 | 50000 | 20.4 | 20.4 | 20.4 | 48 | 2446902 |
 
 Every column here is the artifact's own integer printed as-is (the `count`, `rows`, `ops`,
 `per_second` and `rows_per_second` numbers), except the three percentile columns, which are the
 artifact's microsecond integers printed in milliseconds with exactly one decimal, rounding
-half-up: `30 449` µs prints as `30.4`. The cost of that rule is the `by_id` row, whose calls take
+half-up: `31 162` µs prints as `31.2`. The cost of that rule is the `by_id` row, whose calls take
 tens of microseconds and print as `0.0`; the artifact's integers are the measurement, and this
 table is a reading of them. `read_back` carries no `shapes` entry: it is the single unbounded
 count the corpus is read back with, and its `rows` is `event_count_read_back`. The rates are the
@@ -67,14 +67,14 @@ store.
 
 | shape | per_second median | p10 | p90 | rows_per_second median | p10 | p90 | p95 (ms) median | p10 | p90 |
 |---|---|---|---|---|---|---|---|---|---|
-| `create_many` | 48 | 34 | 48 | 24416 | 17277 | 24435 | 30.4 | 29.6 | 37.3 |
-| `create` | 251 | 248 | 253 | 251 | 248 | 253 | 4.7 | 4.6 | 4.9 |
-| `by_id` | 43047 | 41614 | 46500 | 43047 | 41614 | 46500 | 0.0 | 0.0 | 0.0 |
-| `author_kind` | 3408 | 2940 | 3424 | 340802 | 294061 | 342483 | 0.3 | 0.3 | 0.4 |
-| `kind_since` | 716 | 690 | 736 | 356779 | 343923 | 366841 | 1.6 | 1.5 | 1.6 |
-| `tag` | 3438 | 3116 | 3707 | 343855 | 311623 | 370727 | 0.3 | 0.3 | 0.4 |
-| `count` | 102 | 101 | 107 | 2100528 | 2061001 | 2198669 | 18.4 | 17.3 | 19.6 |
-| `read_back` | 45 | 20 | 53 | 2283105 | 1040084 | 2661131 | 21.9 | 18.8 | 48.1 |
+| `create_many` | 45 | 43 | 45 | 22673 | 21985 | 22890 | 30.6 | 30.1 | 31.2 |
+| `create` | 254 | 251 | 256 | 254 | 251 | 256 | 4.7 | 4.6 | 4.7 |
+| `by_id` | 37615 | 36784 | 48732 | 37615 | 36784 | 48732 | 0.0 | 0.0 | 0.1 |
+| `author_kind` | 3202 | 2813 | 3344 | 320210 | 281333 | 334476 | 0.3 | 0.3 | 0.4 |
+| `kind_since` | 660 | 659 | 734 | 328819 | 328382 | 365695 | 1.7 | 1.5 | 1.7 |
+| `tag` | 3552 | 3531 | 3679 | 355220 | 353150 | 367944 | 0.3 | 0.3 | 0.3 |
+| `count` | 109 | 95 | 111 | 2229576 | 1953259 | 2275323 | 18.2 | 17.2 | 18.2 |
+| `read_back` | 48 | 21 | 54 | 2446902 | 1084857 | 2703141 | 20.4 | 18.5 | 46.1 |
 
 Every figure is the artifact's integer printed as-is, except the three `p95` columns, which are
 `volatile.repeats.<shape>.p95_us` in milliseconds under the same one-decimal rounding as the
@@ -175,17 +175,17 @@ whose few slow calls carry the total has a rate below `1 / p50`, so a reader who
 from the percentile columns above gets a number the artifact does not record.
 
 On this run the read shapes and `create` agreed closely between repeats — `create`'s per-second
-band spans 248 to 253 — which is what makes the write rows worth reading as a measurement of this
+band spans 251 to 256 — which is what makes the write rows worth reading as a measurement of this
 host on this day. `create_many`'s band is the widest of them: one repeat loaded at 34 batches per
-second where the other two reached 48, and its `p95` band runs from 29.6 to 37.3 ms around a
-median of 30.4. That is one repeat's writes waiting on the host's disk rather than the same wait
+second where the other two reached 45, and its `p95` band runs from 30.1 to 31.2 ms around a
+median of 30.6. That is one repeat's writes waiting on the host's disk rather than the same wait
 landing in all three. A repeat on a shared host can stall outright, and nothing in the rig
 prevents it, so the band — and not one run's number — is what the tables above are for. A run
 whose band is wider than this one's is a reading of a busier host, not of a slower store.
 
 The cost being timed for the writes is LMDB's synchronous commit, which waits on a shared host's
 disk; `create_many` also copies the batch and writes its indexes, and this rig does not separate
-the two. The write rows are one host's measurement at load 43.32 and not a bound. A reader
+the two. The write rows are one host's measurement at load 48.79 and not a bound. A reader
 comparing two hosts should compare the read shapes first.
 
 ### D5 The corpora measured, and the ones that were not
@@ -195,11 +195,10 @@ temporary directory. The harness's default ceiling is what keeps a mistyped corp
 disk: a run above it is refused before the store is touched, with the projected store size printed
 in bytes and `--allow-large-corpus` named as the override.
 
-The gate's 1M and 10M corpora (#868) were not measured here. Disk space rules the 10M corpus out
-on this host — the projection below is more than twice the 8.6 GB the run recorded free — and does
-not rule the 1M corpus out, whose projection fits inside it: 1M is #868's run because it is the
-gate's corpus and this job's scope is the recorded one, and it needs `--allow-large-corpus`
-wherever it runs. The cost of the `count` shape, which scans its whole match set per iteration,
+The gate's 1M and 10M corpora (#868) were not measured here. Disk space rules neither out on this
+host: the 1M projection fits easily inside the 33 GB the run recorded free, and so does the 10M
+one. Both are #868's runs because they are the gate's corpora and this job's scope is the
+recorded one, and each needs `--allow-large-corpus` wherever it runs. The cost of the `count` shape, which scans its whole match set per iteration,
 grows with the corpus and belongs in that run's budget too.
 
 projection: 1M events (#868) x 1889.8 bytes/event = 1889800000 bytes
@@ -253,8 +252,10 @@ measurement, and nothing here is compared with it. No ratio, floor or comparison
 backend appears in this document.
 
 The artifact's `schema` integer is its layout version: the artifact this document reads — the
-committed `docs/rewrite/benchmarks/lmdb-50k-seed7.json` — is schema 1, and a field whose meaning
+committed `docs/rewrite/benchmarks/lmdb-50k-seed7.json` — is schema 2, and a field whose meaning
 or position changes takes the next number, so a consumer can tell which shape of document it holds.
+Version 2 added `workload.reads.by_id_stride` and `workload.reads.by_id_offset`: without them two
+artifacts that step through the corpus differently were the same document.
 A consumer that meets an unknown value should refuse the artifact and name the version it found,
 the way `crates/nostream-storage/src/lmdb/encoding.rs:184-193` refuses a value written by a
 different row format rather than reading it as if it were this one.
