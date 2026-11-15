@@ -4,6 +4,7 @@ import { createPaymentsProcessor } from './payments-processor-factory'
 import { createSettings } from './settings-factory'
 import { InvoiceRepository } from '../repositories/invoice-repository'
 import { PaymentsService } from '../services/payments-service'
+import { PeeringPaymentRepository } from '../repositories/peering-payment-repository'
 import { UserSubscriptionRepository } from '../repositories/user-subscription-repository'
 import { UserRepository } from '../repositories/user-repository'
 import { NotificationOutboxRepository } from '../repositories/notification-outbox-repository'
@@ -26,5 +27,6 @@ export const createPaymentsService = () => {
     createSettings,
     notificationOutboxRepository,
     new UserSubscriptionRepository(dbClient),
+    new PeeringPaymentRepository(dbClient),
   )
 }
