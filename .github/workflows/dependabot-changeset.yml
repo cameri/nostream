@@ -15,7 +15,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3.7.0
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
@@ -29,12 +29,12 @@ jobs:
           echo "title=$(gh pr view --json title --jq '.title')" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v4.3.0
         with:
           version: 10.33.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v4.4.0
         with:
           node-version: '24'
           cache: 'pnpm'
