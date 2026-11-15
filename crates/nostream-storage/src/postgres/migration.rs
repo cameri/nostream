@@ -100,6 +100,7 @@ fn statement(
     };
 
     let mut args = Args::default();
+    let table_name = table.name();
     let filter = match after {
         None => String::new(),
         Some(after) => {
@@ -111,7 +112,9 @@ fn statement(
                 Cursor::Uuid => {
                     let slot = args.push(Arg::Text(text(table, after)?));
                     // An explicit cast: the bound value is text, the column is `uuid`.
-                    format!("{key} > {slot}::uuid")
+                    // The table is qualified so PostgreSQL compares the uuid column directly
+                    // rather than resolving to the output column alias `id::text AS id`.
+                    format!("{table_name}.{key} > {slot}::uuid")
                 }
                 Cursor::Text => {
                     let slot = args.push(Arg::Text(text(table, after)?));
@@ -126,10 +129,15 @@ fn statement(
         }
     };
     let limit_slot = args.push(Arg::BigInt(i64::try_from(limit).unwrap_or(i64::MAX)));
-    let table_name = table.name();
+    let order_by = match cursor {
+        Cursor::Uuid => format!("{table_name}.{key}"),
+        _ => key.to_string(),
+    };
 
     Ok((
-        format!("SELECT {columns} FROM {table_name} {filter} ORDER BY {key} LIMIT {limit_slot}"),
+        format!(
+            "SELECT {columns} FROM {table_name} {filter} ORDER BY {order_by} LIMIT {limit_slot}"
+        ),
         args,
     ))
 }
@@ -250,9 +258,16 @@ mod tests {
             MigratedTable::NotificationOutbox,
         ] {
             let text = sql(table, Some(uuid));
+            let expected_predicate = format!("{}.id > $1::uuid", table.name());
+            let expected_order = format!("ORDER BY {}.id", table.name());
             assert!(
-                text.contains("id > $1::uuid"),
+                text.contains(&expected_predicate),
                 "{} pages on a uuid column: {text}",
+                table.name()
+            );
+            assert!(
+                text.contains(&expected_order),
+                "{} orders by the qualified uuid column: {text}",
                 table.name()
             );
         }
