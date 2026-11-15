@@ -1786,16 +1786,26 @@
   })
 
   logoutButton.addEventListener('click', async () => {
+    let sessionEnded = false
+
     try {
-      await fetch(`${adminBase}/logout`, {
+      const response = await fetch(`${adminBase}/logout`, {
         method: 'POST',
         credentials: 'include',
       })
+      sessionEnded = response.ok
     } catch {
-      // Still return to the login screen if the network request fails.
+      // The request did not reach the server, so the session was not ended there.
     }
 
+    // The cookie is cleared either way, so return to the login screen, but do not claim a clean sign-out.
     showLogin()
+
+    if (!sessionEnded) {
+      showLoginError(
+        'Signed out in this browser, but the server could not end the session. Sign in and sign out again.',
+      )
+    }
   })
 
   copySnapshotButton?.addEventListener('click', () => {

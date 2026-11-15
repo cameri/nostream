@@ -67,4 +67,41 @@ describe('CacheAdminSessionRevocations', () => {
       (error: Error) => expect(error.message).to.equal('redis is down'),
     )
   })
+
+  describe('when the cache never answers', () => {
+    const neverSettles = () => new Promise<never>(() => undefined)
+
+    beforeEach(() => {
+      revocations = new CacheAdminSessionRevocations(() => ({ setKey, hasKey }) as unknown as ICacheAdapter, 10)
+    })
+
+    it('stops waiting for a revocation that is never stored', async () => {
+      setKey.callsFake(neverSettles)
+
+      await revocations.revoke('abc', 60).then(
+        () => expect.fail('revoke should reject'),
+        (error: Error) => expect(error.message).to.match(/timed out after 10 ms/),
+      )
+    })
+
+    it('stops waiting for a revocation check that is never answered', async () => {
+      hasKey.callsFake(neverSettles)
+
+      await revocations.isRevoked('abc').then(
+        () => expect.fail('isRevoked should reject'),
+        (error: Error) => expect(error.message).to.match(/timed out after 10 ms/),
+      )
+    })
+
+    it('rejects when the cache cannot even be created', async () => {
+      revocations = new CacheAdminSessionRevocations(() => {
+        throw new Error('no redis client')
+      }, 10)
+
+      await revocations.isRevoked('abc').then(
+        () => expect.fail('isRevoked should reject'),
+        (error: Error) => expect(error.message).to.equal('no redis client'),
+      )
+    })
+  })
 })
