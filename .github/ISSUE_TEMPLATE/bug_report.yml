@@ -1,0 +1,69 @@
+name: Bug report
+description: Report something that does not work as expected
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Relay version
+      description: Shown in the start-up banner.
+      placeholder: v3.15.3
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - docker compose
+        - standalone
+        - railway
+        - other
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - other
+    validations:
+      required: true
+  - type: input
+    id: nips
+    attributes:
+      label: NIPs involved
+      description: If you know which.
+      placeholder: NIP-42, NIP-77
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The part of the log around the problem.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Run command '...'
+        2. See error
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, settings, anything else that helps.
