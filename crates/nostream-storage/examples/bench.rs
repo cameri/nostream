@@ -1870,7 +1870,10 @@ mod tests {
             .to_string();
         assert!(error.contains("--out"), "{error}");
         assert!(error.contains("is a directory"), "{error}");
-        assert!(error.contains(&directory.path().display().to_string()), "{error}");
+        assert!(
+            error.contains(&directory.path().display().to_string()),
+            "{error}"
+        );
     }
 
     #[test]
@@ -1927,7 +1930,9 @@ mod tests {
         let _ = std::fs::remove_file(&probe);
 
         let outcome = Plan::resolve(&arguments_for(out));
-        std::fs::set_permissions(directory.path(), writable).ok().expect("permissions");
+        std::fs::set_permissions(directory.path(), writable)
+            .ok()
+            .expect("permissions");
 
         if !writable_by_this_user {
             let error = outcome
