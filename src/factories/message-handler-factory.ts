@@ -60,6 +60,17 @@ export const getPeeringBillingService = (): IPeeringBillingService => {
   return peeringBillingService
 }
 
+/**
+ * Only a connection that proved a configured peer identity needs billing. Creating
+ * the billing service eagerly would build a payments processor for every ordinary
+ * REQ/COUNT/NEG-OPEN, which can fail before the handler runs when a payment
+ * provider is misconfigured.
+ */
+export const peeringBillingServiceFor = (
+  adapter: IWebSocketAdapter,
+  get: () => IPeeringBillingService = getPeeringBillingService,
+): IPeeringBillingService | undefined => (adapter.getPeerPubkey?.() ? get() : undefined)
+
 export const messageHandlerFactory =
   (
     eventRepository: IEventRepository,
@@ -101,7 +112,7 @@ export const messageHandlerFactory =
           inviteCodeRepository,
           rateLimiterFactory,
           getPeerRequestStatsStore(),
-          getPeeringBillingService(),
+          peeringBillingServiceFor(adapter),
         )
       case MessageType.CLOSE:
         return new UnsubscribeMessageHandler(adapter)
@@ -112,7 +123,7 @@ export const messageHandlerFactory =
           createSettings,
           rateLimiterFactory,
           getPeerRequestStatsStore(),
-          getPeeringBillingService(),
+          peeringBillingServiceFor(adapter),
         )
       case MessageType.AUTH:
         return new AuthMessageHandler(adapter, createSettings)
@@ -123,7 +134,7 @@ export const messageHandlerFactory =
           createSettings,
           rateLimiterFactory,
           getPeerRequestStatsStore(),
-          getPeeringBillingService(),
+          peeringBillingServiceFor(adapter),
         )
       case MessageType.NEG_MSG:
         return new NegMsgMessageHandler(adapter, createSettings)

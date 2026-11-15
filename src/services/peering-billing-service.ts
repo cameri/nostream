@@ -18,10 +18,15 @@ import {
 
 const logger = createLogger('peering-billing-service')
 
+const SWEEP_PAGE_SIZE = 10
+const SWEEP_MAX_PAGES = 10
+
 const isExpiredAt = (invoice: Invoice, now: Date): boolean =>
   invoice.expiresAt instanceof Date && invoice.expiresAt.getTime() <= now.getTime()
 
 export class PeeringBillingService implements IPeeringBillingService {
+  private readonly cursors = { renewal: 0, ended: 0 }
+
   public constructor(
     private readonly dbClient: DatabaseClient,
     private readonly peeringPaymentRepository: IPeeringPaymentRepository,
@@ -29,6 +34,7 @@ export class PeeringBillingService implements IPeeringBillingService {
     private readonly paymentsService: IPaymentsService,
     private readonly notificationOutboxRepository: INotificationOutboxRepository,
     private readonly settings: () => Settings,
+    private readonly revokePeer?: (pubkey: Pubkey) => void,
   ) {}
 
   public async getAccess(peerPubkey: Pubkey, options: { now?: Date; recheck?: boolean } = {}): Promise<PeeringAccess> {
@@ -300,6 +306,162 @@ export class PeeringBillingService implements IPeeringBillingService {
       )
       return false
     }
+  }
+
+  /**
+   * Ends periods whose paid window has passed, marks each peer lapsed once and
+   * emits the operator alert. A failed processor recheck makes the lapse wait
+   * for the next pass instead of revoking a peer that may have just paid.
+   */
+  public async processLapses(now = new Date()): Promise<number> {
+    let term: PeeringTermSnapshot | undefined
+    try {
+      term = resolvePaidPeeringTerm(this.settings())
+    } catch (error) {
+      logger.error('not processing peering lapses: %o', error)
+      return 0
+    }
+
+    if (!term) {
+      return 0
+    }
+
+    return this.sweep(
+      'ended',
+      (limit, offset) => this.peeringPaymentRepository.findPeriodEnded(now, limit, offset),
+      (payment) => this.handlePeriodEnded(payment.peerPubkey, now),
+    )
+  }
+
+  private async handlePeriodEnded(peerPubkey: Pubkey, now: Date): Promise<boolean> {
+    // A webhook may have been lost; check the open invoice before locking the period.
+    // This is the last check before a lapse, so it bypasses the normal recheck cooldown.
+    const settled = await this.recheckPendingInvoice(peerPubkey, now, true)
+    if (settled) {
+      return true
+    }
+
+    const transaction = new Transaction(this.dbClient)
+    let lapsed = false
+
+    await transaction.begin()
+    try {
+      const payment = await this.peeringPaymentRepository.lockByPeer(peerPubkey, transaction.transaction)
+      if (!payment) {
+        await transaction.rollback()
+        return false
+      }
+
+      const stillRunning = payment.periodEnd instanceof Date && payment.periodEnd.getTime() > now.getTime()
+      if (stillRunning || payment.status === PeeringPaymentStatus.LAPSED) {
+        await transaction.rollback()
+        return false
+      }
+
+      await this.peeringPaymentRepository.save(
+        {
+          ...payment,
+          status: PeeringPaymentStatus.LAPSED,
+          currentInvoiceId: null,
+          renewalInvoiceId: null,
+          lastCheckedAt: now,
+          lastError: null,
+        },
+        transaction.transaction,
+      )
+
+      await this.notificationOutboxRepository.enqueue(
+        OperatorNotificationEventType.PEERING_ACCESS_LAPSED,
+        {
+          pubkey: peerPubkey,
+          periodEnd: payment.periodEnd?.toISOString(),
+        },
+        transaction.transaction,
+      )
+
+      await transaction.commit()
+      lapsed = true
+    } catch (error) {
+      await transaction.rollback()
+      logger.error('unable to lapse peering access for %s: %o', peerPubkey, error)
+      return false
+    }
+
+    logger('peering access lapsed for %s', peerPubkey)
+    try {
+      this.revokePeer?.(peerPubkey)
+    } catch (error) {
+      logger.error('unable to revoke live peering sockets for %s: %o', peerPubkey, error)
+    }
+
+    return lapsed
+  }
+
+  /** Clears a pointer and records the failure after the processor confirms expiry. */
+  public async handleInvoiceExpired(invoice: Invoice): Promise<void> {
+    if (invoice.purpose !== InvoicePurpose.PEERING) {
+      return
+    }
+
+    const payment = await this.peeringPaymentRepository.findByPeer(invoice.pubkey)
+    if (!payment) {
+      return
+    }
+
+    const isCurrent = payment.currentInvoiceId === invoice.id
+    const isRenewal = payment.renewalInvoiceId === invoice.id
+    if (!isCurrent && !isRenewal) {
+      return
+    }
+
+    await this.peeringPaymentRepository.save({
+      ...payment,
+      currentInvoiceId: isCurrent ? null : payment.currentInvoiceId,
+      renewalInvoiceId: isRenewal ? null : payment.renewalInvoiceId,
+      status:
+        isCurrent && payment.status === PeeringPaymentStatus.INVOICED ? PeeringPaymentStatus.UNPAID : payment.status,
+      lastCheckedAt: new Date(),
+    })
+
+    await this.enqueueFailed(invoice, 'expired')
+  }
+
+  private async sweep(
+    name: 'renewal' | 'ended',
+    find: (limit: number, offset: number) => Promise<PeeringPayment[]>,
+    handle: (payment: PeeringPayment) => Promise<boolean>,
+  ): Promise<number> {
+    let changed = 0
+    let skipped = this.cursors[name]
+    let reachedEnd = false
+
+    for (let page = 0; page < SWEEP_MAX_PAGES; page++) {
+      const payments = await find(SWEEP_PAGE_SIZE, skipped)
+
+      for (const payment of payments) {
+        let handled = false
+        try {
+          handled = await handle(payment)
+        } catch (error) {
+          logger.error('unable to process peering lifecycle for %s: %o', payment.peerPubkey, error)
+        }
+
+        if (handled) {
+          changed++
+        } else {
+          skipped++
+        }
+      }
+
+      if (payments.length < SWEEP_PAGE_SIZE) {
+        reachedEnd = true
+        break
+      }
+    }
+
+    this.cursors[name] = reachedEnd ? 0 : skipped
+
+    return changed
   }
 
   private async enqueueFailed(invoice: Invoice, reason: string, client?: DatabaseClient): Promise<void> {
