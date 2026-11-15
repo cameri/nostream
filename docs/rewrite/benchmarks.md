@@ -17,7 +17,7 @@ which needs a database this host does not have, and the TypeScript/Postgres colu
 
 | | |
 |---|---|
-| Date | 2026-11-14 |
+| Date | 2026-11-15 |
 | Machine | 4 CPUs, `Intel(R) Core(TM) i7-10700T CPU @ 2.00GHz` |
 | Load average, one minute | 48.79 (`volatile.machine.load_1min`, the first repeat's) |
 | Free disk at run time | 33 GB (`df -h /`) |
@@ -92,9 +92,10 @@ band is the measurement printed three times and is not evidence of stability.
 
 `per_second` counts operations: one event for `create`, one five-hundred-event batch for
 `create_many`, one filter query for a read shape, one count for `count`. `rows_per_second` counts
-the rows those operations returned. The two differ for `create_many` by its batch size, which is
-why the same column reads 48 operations and 24416 rows, and they coincide for `create` and for the
-read shapes that always return one row per operation.
+the rows those operations returned. The two differ for `create_many` by its batch size: the
+within-run row above reads 43 operations against 21985 rows in the same second, and the band's
+medians differ by the same factor. They coincide for `create` and for the read shapes that always
+return one row per operation.
 
 **The store.**
 
@@ -199,8 +200,9 @@ in bytes and `--allow-large-corpus` named as the override.
 The gate's 1M and 10M corpora (#868) were not measured here. Disk space rules neither out on this
 host: the 1M projection fits easily inside the 33 GB the run recorded free, and so does the 10M
 one. Both are #868's runs because they are the gate's corpora and this job's scope is the
-recorded one, and each needs `--allow-large-corpus` wherever it runs. The cost of the `count` shape, which scans its whole match set per iteration,
-grows with the corpus and belongs in that run's budget too.
+recorded one, and each needs `--allow-large-corpus` wherever it runs. The cost of the `count`
+shape, which scans its whole match set per iteration, grows with the corpus and belongs in that
+run's budget too.
 
 projection: 1M events (#868) x 1889.8 bytes/event = 1889800000 bytes
 projection: 10M events (#868) x 1889.8 bytes/event = 18898000000 bytes
