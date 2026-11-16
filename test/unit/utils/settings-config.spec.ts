@@ -3,10 +3,14 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import Sinon from 'sinon'
+import yaml from 'js-yaml'
 
 import {
   ensureSettingsExists,
+  getSettingsBackupDir,
   loadUserSettings,
+  restoreSettingsBackup,
+  saveSettings,
   toCategoryLabel,
   getByPath,
   getTopLevelSettingCategories,
@@ -18,7 +22,7 @@ import {
   validateSettings,
   withSettingsWriteLock,
 } from '../../../src/utils/settings-config'
-import { getSettingsWriteLockPath } from '../../../src/utils/settings-paths'
+import { getSettingsFilePath, getSettingsWriteLockPath } from '../../../src/utils/settings-paths'
 import { toBech32 } from '../../../src/utils/transform'
 import {
   getGuidedSettingCategory,
@@ -1047,18 +1051,132 @@ describe('settings write lock', () => {
   it('reclaims a lock whose owner pid is gone (ESRCH)', async () => {
     ensureSettingsExists()
     const lockPath = getSettingsWriteLockPath()
-    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n`)
+    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n${os.hostname()}\nowner-token\n`)
     Sinon.stub(process, 'kill').throws(Object.assign(new Error('no such process'), { code: 'ESRCH' }))
 
     expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
     expect(fs.existsSync(lockPath)).to.equal(false)
   })
 
+  it('does not steal a fresh lock from another host even when the pid is gone', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    const acquiredAt = Date.now()
+    // A Docker relay and a host CLI share .nostr but not their PID namespaces.
+    fs.writeFileSync(lockPath, `5\n${acquiredAt}\nrelay-container\nother-token\n`)
+    Sinon.stub(process, 'kill').throws(Object.assign(new Error('no such process'), { code: 'ESRCH' }))
+
+    let now = acquiredAt
+    Sinon.stub(Date, 'now').callsFake(() => now)
+    setTimeout(() => {
+      now = acquiredAt + 31_000
+    }, 10)
+
+    let error: Error | undefined
+    try {
+      await withSettingsWriteLock(() => 'ran')
+    } catch (err) {
+      error = err as Error
+    }
+
+    expect(error?.message).to.equal('Timed out waiting for settings write lock')
+    expect(fs.existsSync(lockPath)).to.equal(true)
+  })
+
+  it('reclaims a lock from another host once its heartbeat stops', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    fs.writeFileSync(lockPath, `5\n${Date.now()}\nrelay-container\nother-token\n`)
+    const old = new Date(Date.now() - 61_000)
+    fs.utimesSync(lockPath, old, old)
+
+    expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
+    expect(fs.existsSync(lockPath)).to.equal(false)
+  })
+
+  const linuxIt = fs.existsSync('/proc/self/stat') ? it : it.skip
+
+  linuxIt('reclaims a lock whose pid was reused after a restart', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    // Same host, same live PID, but a different process start time: a restart
+    // reused the PID while the old lock file stayed on the shared volume.
+    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n${os.hostname()}\nowner-token\n1\n`)
+
+    expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
+    expect(fs.existsSync(lockPath)).to.equal(false)
+  })
+
+  it('does not steal a slow same-host writer with an old heartbeat', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n${os.hostname()}\nowner-token\n`)
+    const old = new Date(Date.now() - 61_000)
+    fs.utimesSync(lockPath, old, old)
+
+    let now = Date.now()
+    Sinon.stub(Date, 'now').callsFake(() => now)
+    setTimeout(() => {
+      now += 31_000
+    }, 10)
+
+    let error: Error | undefined
+    try {
+      await withSettingsWriteLock(() => 'ran')
+    } catch (err) {
+      error = err as Error
+    }
+
+    expect(error?.message).to.equal('Timed out waiting for settings write lock')
+    expect(fs.existsSync(lockPath)).to.equal(true)
+  })
+
+  it('does not remove a lock that was replaced while it was held', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+
+    await withSettingsWriteLock(() => {
+      fs.rmSync(lockPath)
+      fs.writeFileSync(lockPath, `999\n${Date.now()}\n${os.hostname()}\nreplacement-token\n`)
+    })
+
+    expect(fs.existsSync(lockPath)).to.equal(true)
+    expect(fs.readFileSync(lockPath, 'utf-8')).to.contain('replacement-token')
+  })
+
+  it('holds the lock until an async operation settles', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    const first = withSettingsWriteLock(async () => {
+      await held
+      return 'first'
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fs.existsSync(lockPath)).to.equal(true)
+
+    let secondRan = false
+    const second = withSettingsWriteLock(() => {
+      secondRan = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(secondRan).to.equal(false)
+
+    release()
+    expect(await Promise.all([first, second])).to.deep.equal(['first', undefined])
+    expect(secondRan).to.equal(true)
+  })
+
   it('does not steal a live lock when the liveness check fails with EPERM', async () => {
     ensureSettingsExists()
     const lockPath = getSettingsWriteLockPath()
     const acquiredAt = Date.now()
-    fs.writeFileSync(lockPath, `${process.pid}\n${acquiredAt}\n`)
+    fs.writeFileSync(lockPath, `${process.pid}\n${acquiredAt}\n${os.hostname()}\nowner-token\n`)
     Sinon.stub(process, 'kill').throws(Object.assign(new Error('not permitted'), { code: 'EPERM' }))
 
     let now = acquiredAt
@@ -1099,5 +1217,45 @@ describe('settings write lock', () => {
 
     expect(error?.message).to.equal('Timed out waiting for settings write lock')
     expect(fs.existsSync(lockPath)).to.equal(true)
+  })
+
+  it('restores a backup while holding the settings write lock', async () => {
+    const backupDir = getSettingsBackupDir()
+    fs.mkdirSync(backupDir, { recursive: true })
+    const filename = 'settings.2026-11-02T12-00-00-000Z.yaml'
+    const defaults = loadDefaults()
+
+    fs.writeFileSync(
+      path.join(backupDir, filename),
+      yaml.dump({ ...defaults, info: { ...defaults.info, name: 'restored-from-backup' } }),
+    )
+
+    const lockPath = getSettingsWriteLockPath()
+    const settingsPath = getSettingsFilePath()
+    const renameSync = fs.renameSync.bind(fs)
+    let lockHeldDuringWrite = false
+
+    // saveSettings() swaps the new document into place with renameSync(). Seeing
+    // the lock during that call proves restoreSettingsBackup() still holds it;
+    // the test would fail if the lock were removed from the restore path.
+    const renameStub = Sinon.stub(fs, 'renameSync').callsFake((from, to) => {
+      if (to === settingsPath) {
+        lockHeldDuringWrite = fs.existsSync(lockPath)
+      }
+
+      return renameSync(from, to)
+    })
+
+    try {
+      const restored = await restoreSettingsBackup(filename)
+
+      expect(restored.info?.name).to.equal('restored-from-backup')
+      expect(loadUserSettings().info?.name).to.equal('restored-from-backup')
+    } finally {
+      renameStub.restore()
+    }
+
+    expect(lockHeldDuringWrite).to.equal(true)
+    expect(fs.existsSync(lockPath)).to.equal(false)
   })
 })

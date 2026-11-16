@@ -1,4 +1,6 @@
 import fs from 'fs'
+import os from 'os'
+import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { join } from 'path'
 import yaml from 'js-yaml'
@@ -32,40 +34,115 @@ export {
 const SETTINGS_WRITE_LOCK_STALE_MS = 60_000
 const SETTINGS_WRITE_LOCK_RETRY_MS = 25
 const SETTINGS_WRITE_LOCK_MAX_WAIT_MS = 30_000
+// A holder refreshes the lock mtime well inside the stale window. Without this a
+// long write outlives the window and another process may steal a live lock.
+const SETTINGS_WRITE_LOCK_HEARTBEAT_MS = 20_000
 
 type SettingsWriteLockMetadata = {
   pid: number
   acquiredAt: number
+  /** Missing on locks written by older versions. */
+  hostname?: string
+  /** Missing on locks written by older versions. */
+  token?: string
+  /** Missing on locks written by older versions or platforms without /proc. */
+  pidStartedAt?: string
 }
 
-const readSettingsWriteLockMetadata = (lockPath: string): SettingsWriteLockMetadata | undefined => {
+const readProcessStartTime = (pid: number): string | undefined => {
   try {
-    const raw = fs.readFileSync(lockPath, 'utf-8')
-    const [pidLine, acquiredLine] = raw.split('\n')
-    const pid = Number(pidLine)
-    const acquiredAt = Number(acquiredLine)
-    if (!Number.isFinite(pid) || !Number.isFinite(acquiredAt)) {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf-8')
+    // The comm field can contain spaces and parentheses, so split after its last ')'.
+    const end = stat.lastIndexOf(')')
+    if (end < 0) {
       return undefined
     }
-    return { pid, acquiredAt }
+    // Field 22 is the start time; the remainder starts at field 3.
+    return stat
+      .slice(end + 1)
+      .trim()
+      .split(/\s+/)[19]
   } catch {
     return undefined
   }
 }
 
-const isSettingsWriteLockStale = (metadata: SettingsWriteLockMetadata): boolean => {
-  if (Date.now() - metadata.acquiredAt > SETTINGS_WRITE_LOCK_STALE_MS) {
-    return true
+const readSettingsWriteLockMetadata = (lockPath: string): SettingsWriteLockMetadata | undefined => {
+  try {
+    const raw = fs.readFileSync(lockPath, 'utf-8')
+    const [pidLine, acquiredLine, hostnameLine, tokenLine, startedLine] = raw.split('\n')
+    const pid = Number(pidLine)
+    const acquiredAt = Number(acquiredLine)
+    if (!Number.isFinite(pid) || !Number.isFinite(acquiredAt)) {
+      return undefined
+    }
+    return {
+      pid,
+      acquiredAt,
+      hostname: hostnameLine || undefined,
+      token: tokenLine || undefined,
+      pidStartedAt: startedLine || undefined,
+    }
+  } catch {
+    return undefined
+  }
+}
+
+const getSettingsWriteLockAgeMs = (lockPath: string): number => {
+  try {
+    return Date.now() - fs.statSync(lockPath).mtimeMs
+  } catch {
+    return Number.POSITIVE_INFINITY
+  }
+}
+
+const isSettingsWriteLockStale = (lockPath: string, metadata: SettingsWriteLockMetadata): boolean => {
+  const age = getSettingsWriteLockAgeMs(lockPath)
+
+  // A PID means nothing across container/host namespaces: the relay's PID 5 is
+  // not the host CLI's PID 5. Only the heartbeat age can prove abandonment there.
+  if (metadata.hostname !== os.hostname()) {
+    return age > SETTINGS_WRITE_LOCK_STALE_MS
   }
 
   try {
     process.kill(metadata.pid, 0)
-    return false
   } catch (error) {
-    // Only ESRCH proves the owner is gone. EPERM means the process exists under
-    // another user, and any other error is treated as alive so a failed check
-    // can never steal a live lock; the age rule above remains the fallback.
-    return (error as NodeJS.ErrnoException).code === 'ESRCH'
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+      return true
+    }
+    // EPERM means the process exists under another user; fall through to identity.
+  }
+
+  if (metadata.pidStartedAt) {
+    const currentStartedAt = readProcessStartTime(metadata.pid)
+    if (currentStartedAt) {
+      // A restarted process can reuse the old PID but never its start time.
+      return currentStartedAt !== metadata.pidStartedAt
+    }
+  }
+
+  // Writers are synchronous, so the heartbeat cannot tick during a slow save.
+  // A live same-host PID is never evicted on age alone.
+  return false
+}
+
+const removeSettingsWriteLockIfOwner = (lockPath: string, owner: SettingsWriteLockMetadata): void => {
+  try {
+    const current = readSettingsWriteLockMetadata(lockPath)
+    if (
+      !current ||
+      current.pid !== owner.pid ||
+      current.acquiredAt !== owner.acquiredAt ||
+      current.hostname !== owner.hostname ||
+      current.token !== owner.token
+    ) {
+      return
+    }
+
+    fs.rmSync(lockPath, { force: true })
+  } catch {
+    // The lock is already gone or unreadable; nothing else to release.
   }
 }
 
@@ -85,7 +162,7 @@ const attemptStealStaleSettingsWriteLock = (
       !current ||
       current.pid !== expected.pid ||
       current.acquiredAt !== expected.acquiredAt ||
-      !isSettingsWriteLockStale(current)
+      !isSettingsWriteLockStale(lockPath, current)
     ) {
       return false
     }
@@ -119,13 +196,24 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
   ensureSettingsExists()
   const lockPath = getSettingsWriteLockPath()
   const deadline = Date.now() + SETTINGS_WRITE_LOCK_MAX_WAIT_MS
+  const owner: SettingsWriteLockMetadata = {
+    pid: process.pid,
+    acquiredAt: Date.now(),
+    hostname: os.hostname(),
+    token: randomUUID(),
+    pidStartedAt: readProcessStartTime(process.pid),
+  }
   let lockFd: number | undefined
+  let heartbeat: NodeJS.Timeout | undefined
 
   while (Date.now() < deadline) {
     try {
       const lockFdLocal = fs.openSync(lockPath, 'wx')
       try {
-        fs.writeFileSync(lockFdLocal, `${process.pid}\n${Date.now()}\n`)
+        fs.writeFileSync(
+          lockFdLocal,
+          `${owner.pid}\n${owner.acquiredAt}\n${owner.hostname}\n${owner.token}\n${owner.pidStartedAt ?? ''}\n`,
+        )
       } catch (error) {
         // The lock exists before it has contents; leaving that empty file
         // behind would block every later writer until someone removes it.
@@ -146,7 +234,7 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
 
       const metadata = readSettingsWriteLockMetadata(lockPath)
       if (metadata) {
-        if (isSettingsWriteLockStale(metadata)) {
+        if (isSettingsWriteLockStale(lockPath, metadata)) {
           attemptStealStaleSettingsWriteLock(lockPath, metadata)
         }
       } else {
@@ -161,11 +249,29 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
     throw new Error('Timed out waiting for settings write lock')
   }
 
+  const heldFd = lockFd
+  heartbeat = setInterval(() => {
+    try {
+      const now = new Date()
+      // futimes works on the open file, so a stolen-and-replaced path cannot be
+      // kept alive by this holder's timer.
+      fs.futimesSync(heldFd, now, now)
+    } catch {
+      // The descriptor is gone; release will clear the timer.
+    }
+  }, SETTINGS_WRITE_LOCK_HEARTBEAT_MS)
+  heartbeat.unref()
+
   try {
-    return operation()
+    // Await the result so an async writer keeps the lock until it settles; a plain
+    // `return operation()` would run the finally block as soon as the promise is created.
+    return await operation()
   } finally {
-    fs.closeSync(lockFd)
-    fs.rmSync(lockPath, { force: true })
+    if (heartbeat) {
+      clearInterval(heartbeat)
+    }
+    fs.closeSync(heldFd)
+    removeSettingsWriteLockIfOwner(lockPath, owner)
   }
 }
 
@@ -585,24 +691,26 @@ export const listSettingsBackups = (): SettingsBackupInfo[] => {
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
-export const restoreSettingsBackup = (filename: string): Settings => {
+export const restoreSettingsBackup = async (filename: string): Promise<Settings> => {
   if (!isSafeBackupFilename(filename)) {
     throw new Error('Invalid backup filename')
   }
 
-  const backupPath = join(getSettingsBackupDir(), filename)
-  if (!fs.existsSync(backupPath)) {
-    throw new Error('Backup not found')
-  }
+  return withSettingsWriteLock(() => {
+    const backupPath = join(getSettingsBackupDir(), filename)
+    if (!fs.existsSync(backupPath)) {
+      throw new Error('Backup not found')
+    }
 
-  const restored = yaml.load(fs.readFileSync(backupPath, 'utf-8')) as Settings
-  const issues = validateSettings(mergeDeepRight(loadDefaults(), restored) as Settings)
-  if (issues.length > 0) {
-    throw new Error(`Backup failed validation: ${issues.map((issue) => issue.path).join(', ')}`)
-  }
+    const restored = yaml.load(fs.readFileSync(backupPath, 'utf-8')) as Settings
+    const issues = validateSettings(mergeDeepRight(loadDefaults(), restored) as Settings)
+    if (issues.length > 0) {
+      throw new Error(`Backup failed validation: ${issues.map((issue) => issue.path).join(', ')}`)
+    }
 
-  saveSettings(restored)
-  return restored
+    saveSettings(restored)
+    return restored
+  })
 }
 
 export const getTopLevelSettingCategories = (): string[] => {

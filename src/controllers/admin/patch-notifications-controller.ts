@@ -19,6 +19,7 @@ import {
   loadUserSettings,
   saveSettings,
   validateSettings,
+  withSettingsWriteLock,
 } from '../../utils/settings-config'
 import { validateSchema } from '../../utils/validation'
 import { recordAdminAuditFromRequest } from '../../utils/record-admin-audit'
@@ -35,27 +36,44 @@ export class PatchAdminNotificationsController implements IController {
       return
     }
 
-    const merged = loadMergedSettings()
-    const current = getMergedAdminNotifications(merged)
-    const nextNotifications = mergeAdminNotificationsPatch(current, validation.value)
+    // Read and write under the same settings-file lock the moderation writer
+    // uses, so a notification save cannot clobber a ban written meanwhile.
+    const outcome = await withSettingsWriteLock<
+      | { ok: true; redacted: ReturnType<typeof getRedactedAdminNotifications> }
+      | { ok: false; issues: Array<{ path: string; message: string }> }
+    >(() => {
+      const merged = loadMergedSettings()
+      const current = getMergedAdminNotifications(merged)
+      const nextNotifications = mergeAdminNotificationsPatch(current, validation.value)
 
-    const userSettings = loadUserSettings() as Settings
-    const nextUserSettings = mergeDeepRight(userSettings, {
-      admin: {
-        ...userSettings.admin,
-        notifications: nextNotifications,
-      },
-    }) as Settings
+      const userSettings = loadUserSettings() as Settings
+      const nextUserSettings = mergeDeepRight(userSettings, {
+        admin: {
+          ...userSettings.admin,
+          notifications: nextNotifications,
+        },
+      }) as Settings
 
-    const mergedNext = mergeDeepRight(loadDefaults(), nextUserSettings) as Settings
+      const mergedNext = mergeDeepRight(loadDefaults(), nextUserSettings) as Settings
 
-    const issues = validateSettings(mergedNext)
-    if (issues.length > 0) {
-      response.status(400).setHeader('content-type', 'application/json').send({ error: 'Validation failed', issues })
+      const issues = validateSettings(mergedNext)
+      if (issues.length > 0) {
+        return { ok: false as const, issues }
+      }
+
+      saveSettings(nextUserSettings)
+
+      return { ok: true as const, redacted: getRedactedAdminNotifications() }
+    })
+
+    if ('issues' in outcome) {
+      response
+        .status(400)
+        .setHeader('content-type', 'application/json')
+        .send({ error: 'Validation failed', issues: outcome.issues })
       return
     }
 
-    saveSettings(nextUserSettings)
     appendSettingsAuditLog({
       action: 'settings.updated',
       changes: [{ path: 'admin.notifications', reload: 'hot-reload' }],
@@ -74,7 +92,7 @@ export class PatchAdminNotificationsController implements IController {
 
     response.status(200).setHeader('content-type', 'application/json').send({
       ok: true,
-      notifications: getRedactedAdminNotifications(),
+      notifications: outcome.redacted,
     })
   }
 }
