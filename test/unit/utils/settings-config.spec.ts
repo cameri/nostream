@@ -1107,6 +1107,34 @@ describe('settings write lock', () => {
     expect(fs.readFileSync(lockPath, 'utf-8')).to.contain('replacement-token')
   })
 
+  it('holds the lock until an async operation settles', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    const first = withSettingsWriteLock(async () => {
+      await held
+      return 'first'
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fs.existsSync(lockPath)).to.equal(true)
+
+    let secondRan = false
+    const second = withSettingsWriteLock(() => {
+      secondRan = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(secondRan).to.equal(false)
+
+    release()
+    expect(await Promise.all([first, second])).to.deep.equal(['first', undefined])
+    expect(secondRan).to.equal(true)
+  })
+
   it('does not steal a live lock when the liveness check fails with EPERM', async () => {
     ensureSettingsExists()
     const lockPath = getSettingsWriteLockPath()

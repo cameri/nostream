@@ -229,7 +229,9 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
   heartbeat.unref()
 
   try {
-    return operation()
+    // Await the result so an async writer keeps the lock until it settles; a plain
+    // `return operation()` would run the finally block as soon as the promise is created.
+    return await operation()
   } finally {
     if (heartbeat) {
       clearInterval(heartbeat)
