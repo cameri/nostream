@@ -187,4 +187,14 @@ describe('issue templates', () => {
     expect(existsSync(join(templateDir, 'bug_report.md'))).to.equal(false)
     expect(existsSync(join(templateDir, 'feature_request.md'))).to.equal(false)
   })
+
+  it('is run by CI when only a template changes, so these tests protect the files they read', () => {
+    const workflow = load(readFileSync(join(process.cwd(), '.github', 'workflows', 'checks.yml'), 'utf-8')) as {
+      jobs?: { changes?: { steps?: Array<{ id?: string; with?: { filters?: string } }> } }
+    }
+    const filterStep = workflow.jobs?.changes?.steps?.find((step) => step.id === 'filter')
+    const filters = load(filterStep?.with?.filters ?? '') as { src?: string[] }
+
+    expect(filters.src).to.include('.github/ISSUE_TEMPLATE/**')
+  })
 })
