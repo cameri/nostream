@@ -296,6 +296,8 @@ jobs:
           persist-credentials: false
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+      - name: Format, which covers the file Linux cannot reach
+        run: cargo fmt --all --check
       - name: CLI builds on Windows
         run: cargo build -p nostream-cli --no-default-features
       - name: CLI refuses the migration on Windows
