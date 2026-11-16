@@ -194,7 +194,7 @@ const REDACTED = '[redacted]'
 
 // Headers that carry credentials. Matching is on the lower-cased name, which is
 // how Node exposes incoming headers.
-const SENSITIVE_HEADER_PATTERN = /^(authorization|proxy-authorization|cookie|set-cookie)$|token|secret|signature|api-?key|auth/
+const SENSITIVE_HEADER_PATTERN = /^(authorization|proxy-authorization|cookie|set-cookie)$|token|secret|signature|password|passwd|api-?key|auth/
 
 /**
  * Copy of the request headers that is safe to write to a log: the value of

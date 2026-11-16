@@ -291,6 +291,7 @@ describe('redactHeaders', () => {
       'set-cookie': ['a=b'],
       'x-api-key': 'key',
       'x-auth-token': 'token',
+      'x-password': 'hunter2',
       'nodeless-signature': 'sig',
     })
 
@@ -301,6 +302,7 @@ describe('redactHeaders', () => {
       'set-cookie': '[redacted]',
       'x-api-key': '[redacted]',
       'x-auth-token': '[redacted]',
+      'x-password': '[redacted]',
       'nodeless-signature': '[redacted]',
     })
   })
