@@ -8,6 +8,9 @@
 //! These targets may unwrap and assert by panicking: a failed assertion is a failed test.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+// The copy drives the Unix-only half of the command; the refusal on other platforms is pinned in
+// `migrate_cli_unsupported.rs`, which is the only file that compiles there.
+#![cfg(unix)]
 
 use std::collections::BTreeMap;
 use std::process::Command;

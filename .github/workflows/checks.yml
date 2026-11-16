@@ -284,6 +284,23 @@ jobs:
       - name: Release build
         run: cargo build --workspace --all-features --release
 
+  windows-cli-check:
+    name: Windows CLI Check
+    runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+      - name: CLI builds on Windows
+        run: cargo build -p nostream-cli --no-default-features
+      - name: CLI refuses the migration on Windows
+        run: cargo test -p nostream-cli --no-default-features --test migrate_cli_unsupported
+
   changeset-check:
     name: Changeset Required
     runs-on: ubuntu-latest
