@@ -1,12 +1,17 @@
 import fs from 'fs'
 import yaml from 'js-yaml'
 
-import { extname, join } from 'path'
+import { basename, extname, join } from 'path'
 
 import { createLogger } from '../factories/logger-factory'
 import { Settings } from '../@types/settings'
 import { ensureSettingsExists, loadDefaults, loadMergedSettings } from './settings-config'
-import { getConfigBaseDir, getDefaultSettingsFilePath, getSettingsFilePath } from './settings-paths'
+import {
+  getConfigBaseDir,
+  getDefaultSettingsFilePath,
+  getLegacySettingsFilePath,
+  getSettingsFilePath,
+} from './settings-paths'
 
 const logger = createLogger('settings')
 
@@ -105,10 +110,15 @@ export class SettingsStatic {
     const defaultsFilePath = getDefaultSettingsFilePath()
 
     // Workers can reach watchSettings() before any process has run createSettings(),
-    // and both settingsFileType() and fs.watch() throw if the config dir is missing.
+    // and fs.watch() throws if the config dir is missing.
     ensureSettingsExists()
 
-    const fileType = SettingsStatic.settingsFileType(basePath)
+    // The loader reads settings.yaml and falls back to the deprecated settings.json,
+    // and the admin console and CLI always write settings.yaml. Watching only the
+    // file that existed at startup would leave a worker that started from
+    // settings.json on its old settings (for example the admin allowlist) after
+    // the yaml file is written, so both names trigger a reload.
+    const watchedFilenames = new Set([basename(getSettingsFilePath()), basename(getLegacySettingsFilePath())])
 
     const reload = () => {
       logger('reloading settings')
@@ -117,7 +127,7 @@ export class SettingsStatic {
     }
 
     const watchSettingsDirectory = (_eventType: string, filename: string | Buffer | null) => {
-      if (filename?.toString() === `settings.${fileType}`) {
+      if (watchedFilenames.has(filename?.toString() ?? '')) {
         reload()
       }
     }
