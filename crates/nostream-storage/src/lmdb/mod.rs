@@ -226,6 +226,7 @@ impl Databases {
             notification_delivery_log: open_named(env, txn, "notification_delivery_log")?,
             delivery_log_by_created_at: open_named(env, txn, "delivery_log_by_created_at")?,
             delivery_log_by_outbox: open_named(env, txn, "delivery_log_by_outbox")?,
+            events_by_term: open_named(env, txn, search::SEARCH_INDEX_DB)?,
             meta: open_named(env, txn, "meta")?,
         })
     }
