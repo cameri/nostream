@@ -755,7 +755,8 @@ struct Plan<'a> {
     /// `tag_ranges` builds one range per criterion that fits a key, carrying that criterion. A
     /// key in these ranges has already proved that family, so the row's body is decoded only for
     /// the filter's other tag families, and a `tags` count holds one id per row its matcher
-    /// accepts until the set is full, then reads a repeated key's body instead.
+    /// accepts until the set is full, then reads the body of every key the set does not answer
+    /// outside the family's first exact criterion.
     tag: Option<(&'a str, &'a [String])>,
 }
 
@@ -935,9 +936,11 @@ fn count_matches_bounded(
     // A single exact criterion names one key per row, so only a second criterion or a `#g`
     // prefix can walk one row twice, and only then is the id set paid for.
     //
-    // shortcut: the set holds at most `MAX_PAGE_KEYS` ids; a repeated key past that reads the
-    // row's body to ask whether an earlier key of this walk already answered for it, against a
-    // slot per repeated row. Upgrade when a count past the cap must decode nothing, which needs
+    // shortcut: the set holds at most `MAX_PAGE_KEYS` ids; every key past that the set does
+    // not answer, outside the family's first exact criterion, reads the row's body to ask whether
+    // an earlier key of this walk already answered for it, not only a repeated one, against a slot
+    // per repeated row.
+    // Upgrade when a count past the cap must decode nothing, which needs
     // an index order that visits a row once.
     let mut counted_ids = HashSet::new();
     let dedupe = plan.tag.is_some_and(|(name, criteria)| {
@@ -3229,9 +3232,10 @@ mod tests {
         );
     }
 
-    /// A count's total does not depend on how many ids its walk may hold: past the cap a
-    /// repeated key reads the row's body to tell an earlier key from a first one, and this runs
-    /// that walk and the one the set alone answers over one corpus.
+    /// A count's total does not depend on how many ids its walk may hold: past the cap a key
+    /// the set does not answer, outside the family's first exact criterion, reads the row's body
+    /// to tell an earlier key from a first one, and this runs that walk and the one the set alone
+    /// answers over one corpus.
     #[test]
     fn a_count_past_its_id_cap_totals_what_the_unbounded_walk_totals() {
         let _serial = counting();

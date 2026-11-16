@@ -197,15 +197,20 @@ as the capture's does.
 
 One read keeps a second thing resident, and it is a count's rather than a page's: a `tags` count
 whose criteria can select one row twice holds an id per row its matcher accepts, and that set is
-bounded by `MAX_PAGE_KEYS` — the same 5 000. Below the cap the walk reads no body; at the cap it
-stops inserting and decides each further key with a bounded-memory check instead: a repeated key
-reads the row's body and asks whether an earlier key of the walk already answered for it, an
-earlier criterion that matches one of its tags or, within one `#g` prefix range, a smaller value
-the prefix matches. The total is therefore the same at every corpus size, and the set is a
-constant 270 352 B once full (measured live: 5 000 ids at a `HashSet` capacity of 7 168 slots,
-against 1 081 360 B for the same 20 000-row corpus with the set unbounded). The price of the
-cap is a body decode per repeated key past it; an index order that visits each row once is what
-would remove that too.
+bounded by `MAX_PAGE_KEYS` — the same 5 000. Below the cap a walk over a single tag family reads
+no body (a second family decodes there too, as below); at the cap it stops inserting and decides
+each further key with a bounded-memory check instead: a key the set does not answer, outside the
+family's first exact criterion, reads the row's body and asks whether an earlier key of the walk
+already answered for it, an earlier criterion that matches one of its tags or, within one `#g`
+prefix range, a smaller value the prefix matches. The total is therefore the same at every corpus
+size, and the set is a constant 270 352 B once full (measured live: 5 000 ids at a `HashSet`
+capacity of 7 168 slots, against 1 081 360 B for the same 20 000-row corpus with the set
+unbounded). Past the cap every key the set does not answer, outside the family's first exact
+criterion, reads the row's body — a later criterion's key to ask whether an earlier criterion
+matched the row, a `#g` prefix's key to ask whether a smaller value did — not only a repeated one,
+while the first criterion's own keys decode nothing. The walk costs 5.3× to 5.7× its uncapped time
+at 20,000 rows for that reason. An index order that visits each row once is what would remove that
+cost.
 
 The index is chosen from the filter, and which ranges can stop early follows from the key:
 
@@ -254,9 +259,10 @@ Two consequences of the same bound:
   row two criteria — or two values of a `#g` prefix — both select is counted at the first key
   the walk reaches and skipped at the rest without a body decode, while the set has room: the
   ranges run in the criteria's order, so that key is not necessarily the row's smallest matching
-  one. Once the set is full the walk reads the body of a repeated key instead and asks whether
-  an earlier key of the walk already answered for it — an earlier criterion, or a smaller value
-  of the same prefix — so the count stays exact and its resident set stays a constant. Only those
+  one. Once the set is full the walk reads the body of every key the set does not answer,
+  outside the family's first exact criterion, instead and asks whether an earlier key of the walk
+  already answered for it — an earlier criterion, or a smaller value of the same prefix — so the
+  count stays exact and its resident set stays a constant. Only those
   two shapes hold the set, whose population is one id per row its matcher accepts: a single exact
   criterion names one key per row. The tags index has no order that visits each row once, which
   is why the cap trades a slot past it for a body decode.
@@ -357,8 +363,9 @@ its op is one of the five above — so the list cannot grow without the diff sho
 - A page is bounded by `MAX_PAGE_KEYS` and a read holds a page rather than a range; a count
   materialises no result set, and the ids it holds for a tag walk that can select a row twice
   are bounded by the same `MAX_PAGE_KEYS` — 270 352 B of resident set once full, however large
-  the corpus, with a body decode per repeated key past the cap. So a client cannot choose how
-  much a request materialises.
+  the corpus, with a body decode per key past the cap that the set does not answer and
+  that lies outside the family's first exact criterion, not only per repeated one. So a client
+  cannot choose how much a request materialises.
   The price is that a `#g`-prefix page walks its whole (time-bounded) range, an author page
   without kinds reads the created-at index, and so does an author × kind filter whose
   composition passes `MAX_PAGE_KEYS` ranges; an `ids` read whose criteria are exact is bounded
