@@ -1,7 +1,7 @@
 //! Backend selection and the LMDB environment. Mirrors `src/utils/event-store.ts` (the
 //! selection half) and the storage boundary in `src/@types/adapters.ts`.
 
-#[cfg(feature = "lmdb")]
+#[cfg(all(feature = "lmdb", unix))]
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
@@ -99,6 +99,7 @@ impl LmdbEnv {
         // host whose umask is 002 `create_dir_all` leaves it group-writable, which is both a
         // wider audience than the store's own 0600 files and something the migration's target
         // check refuses on the next run.
+        #[cfg(unix)]
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -107,6 +108,12 @@ impl LmdbEnv {
                 path: path.clone(),
                 source,
             })?;
+        #[cfg(not(unix))]
+        std::fs::create_dir_all(&path).map_err(|source| StorageError::CreateDirectory {
+            path: path.clone(),
+            source,
+        })?;
+
         let env = Self::open_with(&path, map_size, EnvFlags::empty())?;
         Ok(Self { env, path })
     }

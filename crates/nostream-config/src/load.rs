@@ -5,7 +5,6 @@
 //! validate never aborts the process. It is reported as [`Issue`] values and the caller gets
 //! the shipped defaults, so a broken `settings.yaml` cannot stop a relay from starting.
 
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -70,6 +69,7 @@ pub fn load_document(path: &Path) -> Result<Value, ConfigError> {
 /// and non-UTF-8 paths are handled because the work is on `OsStr` bytes, not a `to_str`.
 #[cfg(unix)]
 fn trim_trailing_separators(path: &Path) -> &Path {
+    use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
 
     let bytes = path.as_os_str().as_bytes();
