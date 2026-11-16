@@ -1094,17 +1094,41 @@ describe('settings write lock', () => {
     expect(fs.existsSync(lockPath)).to.equal(false)
   })
 
-  it('reclaims a lock whose heartbeat stopped even when the pid was reused', async () => {
+  const linuxIt = fs.existsSync('/proc/self/stat') ? it : it.skip
+
+  linuxIt('reclaims a lock whose pid was reused after a restart', async () => {
     ensureSettingsExists()
     const lockPath = getSettingsWriteLockPath()
-    // Same host and a live PID, but no heartbeat for over a minute: the owner died
-    // and a restart gave its PID to a new process.
+    // Same host, same live PID, but a different process start time: a restart
+    // reused the PID while the old lock file stayed on the shared volume.
+    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n${os.hostname()}\nowner-token\n1\n`)
+
+    expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
+    expect(fs.existsSync(lockPath)).to.equal(false)
+  })
+
+  it('does not steal a slow same-host writer with an old heartbeat', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
     fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n${os.hostname()}\nowner-token\n`)
     const old = new Date(Date.now() - 61_000)
     fs.utimesSync(lockPath, old, old)
 
-    expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
-    expect(fs.existsSync(lockPath)).to.equal(false)
+    let now = Date.now()
+    Sinon.stub(Date, 'now').callsFake(() => now)
+    setTimeout(() => {
+      now += 31_000
+    }, 10)
+
+    let error: Error | undefined
+    try {
+      await withSettingsWriteLock(() => 'ran')
+    } catch (err) {
+      error = err as Error
+    }
+
+    expect(error?.message).to.equal('Timed out waiting for settings write lock')
+    expect(fs.existsSync(lockPath)).to.equal(true)
   })
 
   it('does not remove a lock that was replaced while it was held', async () => {

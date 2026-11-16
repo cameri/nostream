@@ -45,12 +45,32 @@ type SettingsWriteLockMetadata = {
   hostname?: string
   /** Missing on locks written by older versions. */
   token?: string
+  /** Missing on locks written by older versions or platforms without /proc. */
+  pidStartedAt?: string
+}
+
+const readProcessStartTime = (pid: number): string | undefined => {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf-8')
+    // The comm field can contain spaces and parentheses, so split after its last ')'.
+    const end = stat.lastIndexOf(')')
+    if (end < 0) {
+      return undefined
+    }
+    // Field 22 is the start time; the remainder starts at field 3.
+    return stat
+      .slice(end + 1)
+      .trim()
+      .split(/\s+/)[19]
+  } catch {
+    return undefined
+  }
 }
 
 const readSettingsWriteLockMetadata = (lockPath: string): SettingsWriteLockMetadata | undefined => {
   try {
     const raw = fs.readFileSync(lockPath, 'utf-8')
-    const [pidLine, acquiredLine, hostnameLine, tokenLine] = raw.split('\n')
+    const [pidLine, acquiredLine, hostnameLine, tokenLine, startedLine] = raw.split('\n')
     const pid = Number(pidLine)
     const acquiredAt = Number(acquiredLine)
     if (!Number.isFinite(pid) || !Number.isFinite(acquiredAt)) {
@@ -61,6 +81,7 @@ const readSettingsWriteLockMetadata = (lockPath: string): SettingsWriteLockMetad
       acquiredAt,
       hostname: hostnameLine || undefined,
       token: tokenLine || undefined,
+      pidStartedAt: startedLine || undefined,
     }
   } catch {
     return undefined
@@ -78,26 +99,32 @@ const getSettingsWriteLockAgeMs = (lockPath: string): number => {
 const isSettingsWriteLockStale = (lockPath: string, metadata: SettingsWriteLockMetadata): boolean => {
   const age = getSettingsWriteLockAgeMs(lockPath)
 
-  // A live holder refreshes the mtime every heartbeat. An expired heartbeat means
-  // the owner is gone even if its PID was reused by a new process after a restart.
-  if (age > SETTINGS_WRITE_LOCK_STALE_MS) {
-    return true
-  }
-
   // A PID means nothing across container/host namespaces: the relay's PID 5 is
   // not the host CLI's PID 5. Only the heartbeat age can prove abandonment there.
   if (metadata.hostname !== os.hostname()) {
-    return false
+    return age > SETTINGS_WRITE_LOCK_STALE_MS
   }
 
   try {
     process.kill(metadata.pid, 0)
-    return false
   } catch (error) {
-    // Only ESRCH proves the owner is gone. EPERM means the process exists under
-    // another user; treat other errors as alive until the heartbeat expires.
-    return (error as NodeJS.ErrnoException).code === 'ESRCH'
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+      return true
+    }
+    // EPERM means the process exists under another user; fall through to identity.
   }
+
+  if (metadata.pidStartedAt) {
+    const currentStartedAt = readProcessStartTime(metadata.pid)
+    if (currentStartedAt) {
+      // A restarted process can reuse the old PID but never its start time.
+      return currentStartedAt !== metadata.pidStartedAt
+    }
+  }
+
+  // Writers are synchronous, so the heartbeat cannot tick during a slow save.
+  // A live same-host PID is never evicted on age alone.
+  return false
 }
 
 const removeSettingsWriteLockIfOwner = (lockPath: string, owner: SettingsWriteLockMetadata): void => {
@@ -174,6 +201,7 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
     acquiredAt: Date.now(),
     hostname: os.hostname(),
     token: randomUUID(),
+    pidStartedAt: readProcessStartTime(process.pid),
   }
   let lockFd: number | undefined
   let heartbeat: NodeJS.Timeout | undefined
@@ -184,7 +212,7 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
       try {
         fs.writeFileSync(
           lockFdLocal,
-          `${owner.pid}\n${owner.acquiredAt}\n${owner.hostname}\n${owner.token}\n`,
+          `${owner.pid}\n${owner.acquiredAt}\n${owner.hostname}\n${owner.token}\n${owner.pidStartedAt ?? ''}\n`,
         )
       } catch (error) {
         // The lock exists before it has contents; leaving that empty file
