@@ -38,7 +38,7 @@ describe('adminAuthMiddleware', () => {
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
-    isRequestAuthenticated = sandbox.stub(PasswordAdminAuthProvider.prototype, 'isRequestAuthenticated').returns(false)
+    isRequestAuthenticated = sandbox.stub(PasswordAdminAuthProvider.prototype, 'isRequestAuthenticated').resolves(false)
     claimNip98AuthEventId = sandbox.stub(nip98Replay, 'claimNip98AuthEventId').resolves('claimed')
     next = sandbox.stub()
     response = {
@@ -119,7 +119,7 @@ describe('adminAuthMiddleware', () => {
 
   describe('adminAuthGateMiddleware', () => {
     it('continues for session-authenticated requests', async () => {
-      isRequestAuthenticated.returns(true)
+      isRequestAuthenticated.resolves(true)
       const request = mockRequest()
 
       await adminAuthGateMiddleware(request, response as any, next)
@@ -188,7 +188,7 @@ describe('adminAuthMiddleware', () => {
   })
 
   it('allows cookie/session authenticated requests without NIP-98', async () => {
-    isRequestAuthenticated.returns(true)
+    isRequestAuthenticated.resolves(true)
     const request = mockRequest()
 
     await adminAuthMiddleware(request, response as any, next)

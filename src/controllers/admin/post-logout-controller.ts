@@ -7,6 +7,6 @@ export class PostAdminLogoutController implements IController {
   public constructor(private readonly authProvider: IAdminAuthProvider) {}
 
   public async handleRequest(request: Request, response: Response): Promise<void> {
-    this.authProvider.handleLogout(request, response)
+    await this.authProvider.handleLogout(request, response)
   }
 }

@@ -7,6 +7,7 @@ import sinonChai from 'sinon-chai'
 
 import { InvoicePurpose, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
 import { Nip05Verification } from '../../../src/@types/nip05'
+import { OperatorNotificationEventType } from '../../../src/@types/operator-notifications'
 import { IMaintenanceService, INotificationOutboxService, IPaymentsService } from '../../../src/@types/services'
 import { Settings } from '../../../src/@types/settings'
 import { applyReverificationOutcome, MaintenanceWorker } from '../../../src/app/maintenance-worker'
@@ -32,6 +33,7 @@ describe('MaintenanceWorker', () => {
   let notificationOutboxService: Sinon.SinonStubbedInstance<INotificationOutboxService>
   let notificationDeliveryLogRepository: any
   let notificationOutboxRepository: any
+  let peeringBillingService: { processLapses: Sinon.SinonStub; handleInvoiceExpired: Sinon.SinonStub }
   let verifyStub: Sinon.SinonStub
 
   const pendingInvoice = {
@@ -109,6 +111,11 @@ describe('MaintenanceWorker', () => {
       deleteTerminalOlderThan: sandbox.stub().resolves(0),
     }
 
+    peeringBillingService = {
+      processLapses: sandbox.stub().resolves(0),
+      handleInvoiceExpired: sandbox.stub().resolves(),
+    }
+
     // Prevent real timeouts and randomized per-invoice delays.
     sandbox.stub(misc, 'delayMs').resolves()
 
@@ -121,6 +128,9 @@ describe('MaintenanceWorker', () => {
       notificationOutboxService,
       notificationDeliveryLogRepository,
       notificationOutboxRepository,
+      undefined,
+      undefined,
+      peeringBillingService as any,
     )
   })
 
@@ -739,6 +749,47 @@ describe('MaintenanceWorker', () => {
       await (worker as any).onSchedule()
 
       expect(paymentsService.updateInvoiceStatus).not.to.have.been.called
+    })
+
+    it('uses the peering expiry handler for a pending peering 404', async () => {
+      const expiredPeering = {
+        ...pendingInvoice,
+        purpose: InvoicePurpose.PEERING,
+        expiresAt: new Date(Date.now() - 60000),
+      }
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getPendingInvoices.resolves([expiredPeering])
+      paymentsService.getInvoiceFromPaymentsProcessor.rejects({ response: { status: 404 } })
+
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.updateInvoiceStatus).to.have.been.calledOnceWithExactly({
+        id: expiredPeering.id,
+        status: InvoiceStatus.EXPIRED,
+      })
+      expect(peeringBillingService.handleInvoiceExpired).to.have.been.calledWith(expiredPeering)
+      expect(notificationOutboxRepository.enqueue).not.to.have.been.calledWith(
+        OperatorNotificationEventType.ADMISSION_INVOICE_FAILED,
+        Sinon.match.any,
+      )
+    })
+
+    it('runs the peering lapse scan on each pass', async () => {
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getPendingInvoices.resolves([])
+      peeringBillingService.processLapses.resolves(2)
+
+      await (worker as any).onSchedule()
+
+      expect(peeringBillingService.processLapses).to.have.been.calledOnce
+    })
+
+    it('skips the peering lapse scan when payments are disabled', async () => {
+      settingsState.payments = { enabled: false } as any
+
+      await (worker as any).onSchedule()
+
+      expect(peeringBillingService.processLapses).not.to.have.been.called
     })
 
     it('keeps an expired pending invoice pending when the processor lookup fails without 404', async () => {

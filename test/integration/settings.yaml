@@ -15,7 +15,3 @@ peering:
       windowSeconds: 3600
     - kinds: [3]
       since: 1700000000
-  terms:
-    - amount: 1000
-      unit: msats
-      period: 2592000

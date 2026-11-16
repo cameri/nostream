@@ -1,6 +1,7 @@
 import { DatabaseTransaction, Pubkey } from './base'
 import { Invoice } from './invoice'
 import { NotificationOutboxPayload } from './notification-outbox'
+import { PeeringAccess } from './peering'
 
 export interface IMaintenanceService {
   clearOldEvents(): Promise<void>
@@ -52,6 +53,17 @@ export interface IPaymentsService {
   getPendingInvoices(offset?: number): Promise<Invoice[]>
   /** Completed peering invoices whose settlement did not commit, for retry. */
   getUnconfirmedPeeringInvoices(limit?: number, offset?: number): Promise<Invoice[]>
+}
+
+export interface IPeeringBillingService {
+  /** Access decision for a configured peer's feed. Optionally rechecks a pending invoice first. */
+  getAccess(peerPubkey: Pubkey, options?: { now?: Date; recheck?: boolean }): Promise<PeeringAccess>
+  /** Returns a usable invoice, creating or reissuing one when needed. */
+  ensureInvoice(peerPubkey: Pubkey, options?: { now?: Date; renewal?: boolean }): Promise<Invoice | undefined>
+  /** Ends expired periods once, marking them lapsed and alerting the operator. */
+  processLapses(now?: Date): Promise<number>
+  /** Clears a pointer and updates status after the processor confirms an invoice expired. */
+  handleInvoiceExpired(invoice: Invoice): Promise<void>
 }
 
 export interface ISubscriptionService {

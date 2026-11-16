@@ -7,6 +7,7 @@ import path from 'path'
 import Sinon from 'sinon'
 
 import { hashAdminPassword } from '../../../src/utils/admin-password'
+import { CacheAdminSessionRevocations } from '../../../src/utils/admin-session-revocations'
 import * as adminRateLimitMiddleware from '../../../src/handlers/request-handlers/admin-rate-limit-middleware'
 import * as rateLimiterMiddleware from '../../../src/handlers/request-handlers/rate-limiter-middleware'
 import { PatchAdminSettingsController } from '../../../src/controllers/admin/patch-settings-controller'
@@ -30,6 +31,7 @@ describe('admin settings API', () => {
   let adminLoginRateLimitMiddlewareStub: Sinon.SinonStub
   let createPatchAdminSettingsControllerStub: Sinon.SinonStub
   let server: any
+  let revocationStubs: Sinon.SinonStub[] = []
 
   const loadAdminRouter = () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -67,6 +69,16 @@ describe('admin settings API', () => {
           enqueue: Sinon.stub().resolves(),
         } as any),
     )
+    // Logout records the session in Redis, which these tests do not run, so an in-memory list stands in for it.
+    const revokedSessions = new Set<string>()
+    revocationStubs = [
+      Sinon.stub(CacheAdminSessionRevocations.prototype, 'revoke').callsFake(async (sessionId: string) => {
+        revokedSessions.add(sessionId)
+      }),
+      Sinon.stub(CacheAdminSessionRevocations.prototype, 'isRevoked').callsFake(async (sessionId: string) =>
+        revokedSessions.has(sessionId),
+      ),
+    ]
     const router = loadAdminRouter()
     const app = express()
     app.use('/admin', router)
@@ -79,6 +91,8 @@ describe('admin settings API', () => {
   }
 
   const stopServer = async () => {
+    revocationStubs.forEach((stub) => stub.restore())
+    revocationStubs = []
     createSettingsStub?.restore()
     rateLimiterMiddlewareStub?.restore()
     adminRateLimitMiddlewareStub?.restore()
@@ -183,7 +197,9 @@ describe('admin settings API', () => {
         sessionTtlSeconds: 3600,
         notifications: {
           ...loadDefaults().admin?.notifications,
-          targets: [{ id: 'ops-telegram', type: 'telegram', enabled: true, botToken: 'telegram-bot-token', chatId: '1' }],
+          targets: [
+            { id: 'ops-telegram', type: 'telegram', enabled: true, botToken: 'telegram-bot-token', chatId: '1' },
+          ],
         },
       },
     })
