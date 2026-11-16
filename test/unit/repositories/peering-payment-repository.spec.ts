@@ -100,6 +100,20 @@ describe('PeeringPaymentRepository', () => {
     expect(saved.status).to.equal(PeeringPaymentStatus.LAPSED)
   })
 
+  it('updates only the processor-check diagnostics', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringPaymentRepository(recording.db)
+    recording.respondWith(1)
+
+    await repository.recordCheck(pubkey, now, 'processor status: pending', recording.db)
+
+    const sql = recording.queries[0].sql
+    expect(sql).to.include('"last_checked_at"')
+    expect(sql).to.include('"last_error"')
+    expect(sql).to.not.include('"status"')
+    expect(sql).to.not.include('"period_end"')
+  })
+
   it('finds periods due for renewal and periods that ended', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringPaymentRepository(recording.db)
