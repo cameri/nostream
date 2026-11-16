@@ -1,6 +1,7 @@
 import { expect } from 'chai'
 import fs from 'fs'
 import { join } from 'path'
+import { tmpdir } from 'os'
 import Sinon from 'sinon'
 import { mergeDeepRight } from 'ramda'
 import { Settings } from '../../../src/@types/settings'
@@ -220,6 +221,76 @@ describe('SettingsStatic', () => {
         Sinon.match.string,
         { encoding: 'utf-8' },
       )
+    })
+  })
+
+  describe('.watchSettings', () => {
+    let sandbox: Sinon.SinonSandbox
+    let configDir: string
+    let previousConfigDir: string | undefined
+    let directoryListener: (eventType: string, filename: string | Buffer | null) => void
+    let reloadStub: Sinon.SinonStub
+
+    beforeEach(() => {
+      sandbox = Sinon.createSandbox()
+      previousConfigDir = process.env.NOSTR_CONFIG_DIR
+      configDir = fs.mkdtempSync(join(tmpdir(), 'nostream-watch-'))
+      process.env.NOSTR_CONFIG_DIR = configDir
+
+      sandbox.stub(fs, 'watch').callsFake(((path: string, _options: unknown, listener: any) => {
+        if (path === configDir) {
+          directoryListener = listener
+        }
+        return { close: () => undefined } as fs.FSWatcher
+      }) as any)
+      reloadStub = sandbox.stub(settingsConfig, 'loadMergedSettings').returns({} as Settings)
+      SettingsStatic._settings = { stale: true } as any
+    })
+
+    afterEach(() => {
+      sandbox.restore()
+      SettingsStatic._settings = undefined
+      if (previousConfigDir === undefined) {
+        delete process.env.NOSTR_CONFIG_DIR
+      } else {
+        process.env.NOSTR_CONFIG_DIR = previousConfigDir
+      }
+      fs.rmSync(configDir, { recursive: true, force: true })
+    })
+
+    it('reloads when settings.yaml changes', () => {
+      SettingsStatic.watchSettings()
+
+      directoryListener('change', 'settings.yaml')
+
+      expect(reloadStub).to.have.been.calledOnce
+    })
+
+    it('reloads when the deprecated settings.json changes', () => {
+      SettingsStatic.watchSettings()
+
+      directoryListener('change', 'settings.json')
+
+      expect(reloadStub).to.have.been.calledOnce
+    })
+
+    it('reloads when settings.yaml is written in a worker that started from settings.json', () => {
+      fs.writeFileSync(join(configDir, 'settings.json'), '{}')
+
+      SettingsStatic.watchSettings()
+      directoryListener('rename', 'settings.yaml')
+
+      expect(reloadStub).to.have.been.calledOnce
+    })
+
+    it('ignores other files and a missing filename', () => {
+      SettingsStatic.watchSettings()
+
+      directoryListener('change', 'settings-audit.jsonl')
+      directoryListener('change', '.settings-write.lock')
+      directoryListener('change', null)
+
+      expect(reloadStub).not.to.have.been.called
     })
   })
 
