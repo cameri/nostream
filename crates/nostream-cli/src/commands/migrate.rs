@@ -112,16 +112,6 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
     })
 }
 
-#[cfg(not(unix))]
-pub fn run(_options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
-    writeln!(out, "migrate pg-to-lmdb is unsupported on this platform")
-        .map_err(|e| CliError::Migrate(e.to_string()))?;
-    Ok(CommandOutput {
-        lines: Vec::new(),
-        exit_code: 1,
-    })
-}
-
 /// The copy over an injected source, target and writer, which is how the whole run is tested
 /// without a process and without a database.
 ///
