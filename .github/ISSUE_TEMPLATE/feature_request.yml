@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest an idea for this project
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Pledge**
+        If the feature or idea is implemented or resolved to your satisfaction, please consider making a small monetary donation to support the continued development and independence of this project. To help the maintainers gauge on where to focus their effort, please include the amount of your pledge. A wallet address or Lightning invoice will be provided once the feature is complete.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what is in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you would like to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: input
+    id: pledge
+    attributes:
+      label: Pledge amount
+      description: Optional. The amount you would pledge, with its unit.
+      placeholder: 50000 sats
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

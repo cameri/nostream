@@ -46,6 +46,9 @@ jobs:
               # test/unit/scripts/deploy-with-retry.spec.ts runs the deploy
               # script, so a change to it must run the suite that asserts on it.
               - '.github/scripts/**'
+              # test/unit/ci/issue-templates.spec.ts reads these templates, so a
+              # template-only change must run the suite that asserts on them.
+              - '.github/ISSUE_TEMPLATE/**'
 
   commit-lint:
     name: Lint commits
