@@ -220,8 +220,9 @@ the `events` table only. Both numbers are plain digits so a reader can recompute
 exactly, and the rate comes from the same integers that were printed.
 
 **No floor is asserted.** The board's 50 000 events/s target belongs to the benchmark rig,
-which does not exist; a CI runner's rate is not that number, so this tool reports what it
-measured and claims nothing about it.
+~~which does not exist~~ (landed as #1131; measured numbers in docs/rewrite/benchmarks.md); a CI
+runner's rate is not that number, so this tool reports what it measured and claims nothing about
+it.
 
 ## The relay must be stopped (D9)
 

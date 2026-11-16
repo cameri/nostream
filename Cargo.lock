@@ -1347,6 +1347,7 @@ name = "nostream-storage"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "clap",
  "futures-core",
  "heed",
  "nostream-config",

@@ -32,8 +32,17 @@ tracing = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
+clap.workspace = true
 serde_yaml.workspace = true
 tempfile.workspace = true
+
+# The benchmark rig (`docs/rewrite/benchmarks.md`). Both features are required: the harness holds
+# either backend behind one `EventRepository`, so a build that turns one off has nothing to
+# measure. The requirement is also what keeps CI's `--no-default-features --all-targets` check
+# from compiling it.
+[[example]]
+name = "bench"
+required-features = ["lmdb", "postgres"]
 
 [lints]
 workspace = true

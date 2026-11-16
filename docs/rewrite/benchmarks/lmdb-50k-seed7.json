@@ -1,0 +1,386 @@
+{
+  "backend": "lmdb",
+  "event_count_read_back": 50000,
+  "events": 50000,
+  "schema": 2,
+  "seed": 7,
+  "shapes": [
+    {
+      "count": 98,
+      "rows": 49000,
+      "shape": "create_many"
+    },
+    {
+      "count": 1000,
+      "rows": 1000,
+      "shape": "create"
+    },
+    {
+      "count": 200,
+      "rows": 200,
+      "shape": "by_id"
+    },
+    {
+      "count": 200,
+      "rows": 20000,
+      "shape": "author_kind"
+    },
+    {
+      "count": 200,
+      "rows": 99602,
+      "shape": "kind_since"
+    },
+    {
+      "count": 200,
+      "rows": 20000,
+      "shape": "tag"
+    },
+    {
+      "count": 50,
+      "rows": 1020000,
+      "shape": "count"
+    }
+  ],
+  "volatile": {
+    "machine": {
+      "arch": "x86_64",
+      "cpu_count": 4,
+      "cpu_model": "Intel(R) Core(TM) i7-10700T CPU @ 2.00GHz",
+      "load_1min": 48.79,
+      "load_1min_by_repeat": [
+        48.79,
+        48.73,
+        48.69
+      ],
+      "os": "linux",
+      "profile": "release"
+    },
+    "repeats": {
+      "author_kind": {
+        "p50_us": {
+          "median": 311,
+          "p10": 295,
+          "p90": 339
+        },
+        "p95_us": {
+          "median": 325,
+          "p10": 320,
+          "p90": 422
+        },
+        "p99_us": {
+          "median": 386,
+          "p10": 332,
+          "p90": 531
+        },
+        "per_second": {
+          "median": 3202,
+          "p10": 2813,
+          "p90": 3344
+        },
+        "rows_per_second": {
+          "median": 320210,
+          "p10": 281333,
+          "p90": 334476
+        }
+      },
+      "by_id": {
+        "p50_us": {
+          "median": 22,
+          "p10": 19,
+          "p90": 27
+        },
+        "p95_us": {
+          "median": 30,
+          "p10": 20,
+          "p90": 53
+        },
+        "p99_us": {
+          "median": 59,
+          "p10": 38,
+          "p90": 75
+        },
+        "per_second": {
+          "median": 37615,
+          "p10": 36784,
+          "p90": 48732
+        },
+        "rows_per_second": {
+          "median": 37615,
+          "p10": 36784,
+          "p90": 48732
+        }
+      },
+      "count": {
+        "p50_us": {
+          "median": 9621,
+          "p10": 8690,
+          "p90": 10656
+        },
+        "p95_us": {
+          "median": 18156,
+          "p10": 17224,
+          "p90": 18194
+        },
+        "p99_us": {
+          "median": 18394,
+          "p10": 18245,
+          "p90": 18894
+        },
+        "per_second": {
+          "median": 109,
+          "p10": 95,
+          "p90": 111
+        },
+        "rows_per_second": {
+          "median": 2229576,
+          "p10": 1953259,
+          "p90": 2275323
+        }
+      },
+      "create": {
+        "p50_us": {
+          "median": 3891,
+          "p10": 3788,
+          "p90": 3988
+        },
+        "p95_us": {
+          "median": 4655,
+          "p10": 4644,
+          "p90": 4694
+        },
+        "p99_us": {
+          "median": 4971,
+          "p10": 4885,
+          "p90": 5323
+        },
+        "per_second": {
+          "median": 254,
+          "p10": 251,
+          "p90": 256
+        },
+        "rows_per_second": {
+          "median": 254,
+          "p10": 251,
+          "p90": 256
+        }
+      },
+      "create_many": {
+        "p50_us": {
+          "median": 22042,
+          "p10": 21661,
+          "p90": 22195
+        },
+        "p95_us": {
+          "median": 30618,
+          "p10": 30112,
+          "p90": 31162
+        },
+        "p99_us": {
+          "median": 32675,
+          "p10": 32333,
+          "p90": 33129
+        },
+        "per_second": {
+          "median": 45,
+          "p10": 43,
+          "p90": 45
+        },
+        "rows_per_second": {
+          "median": 22673,
+          "p10": 21985,
+          "p90": 22890
+        }
+      },
+      "kind_since": {
+        "p50_us": {
+          "median": 1507,
+          "p10": 1351,
+          "p90": 1523
+        },
+        "p95_us": {
+          "median": 1690,
+          "p10": 1497,
+          "p90": 1707
+        },
+        "p99_us": {
+          "median": 1964,
+          "p10": 1643,
+          "p90": 1987
+        },
+        "per_second": {
+          "median": 660,
+          "p10": 659,
+          "p90": 734
+        },
+        "rows_per_second": {
+          "median": 328819,
+          "p10": 328382,
+          "p90": 365695
+        }
+      },
+      "read_back": {
+        "p50_us": {
+          "median": 20434,
+          "p10": 18497,
+          "p90": 46089
+        },
+        "p95_us": {
+          "median": 20434,
+          "p10": 18497,
+          "p90": 46089
+        },
+        "p99_us": {
+          "median": 20434,
+          "p10": 18497,
+          "p90": 46089
+        },
+        "per_second": {
+          "median": 48,
+          "p10": 21,
+          "p90": 54
+        },
+        "rows_per_second": {
+          "median": 2446902,
+          "p10": 1084857,
+          "p90": 2703141
+        }
+      },
+      "tag": {
+        "p50_us": {
+          "median": 278,
+          "p10": 270,
+          "p90": 281
+        },
+        "p95_us": {
+          "median": 290,
+          "p10": 282,
+          "p90": 292
+        },
+        "p99_us": {
+          "median": 325,
+          "p10": 311,
+          "p90": 347
+        },
+        "per_second": {
+          "median": 3552,
+          "p10": 3531,
+          "p90": 3679
+        },
+        "rows_per_second": {
+          "median": 355220,
+          "p10": 353150,
+          "p90": 367944
+        }
+      }
+    },
+    "store": {
+      "bytes_per_event": 1889,
+      "data_bytes": 94490624
+    },
+    "timings": {
+      "author_kind": {
+        "ops": 200,
+        "p50_us": 339,
+        "p95_us": 422,
+        "p99_us": 531,
+        "per_second": 2813,
+        "rows_per_second": 281333
+      },
+      "by_id": {
+        "ops": 200,
+        "p50_us": 22,
+        "p95_us": 53,
+        "p99_us": 59,
+        "per_second": 36784,
+        "rows_per_second": 36784
+      },
+      "count": {
+        "ops": 50,
+        "p50_us": 10656,
+        "p95_us": 18194,
+        "p99_us": 18894,
+        "per_second": 95,
+        "rows_per_second": 1953259
+      },
+      "create": {
+        "ops": 1000,
+        "p50_us": 3788,
+        "p95_us": 4644,
+        "p99_us": 4885,
+        "per_second": 256,
+        "rows_per_second": 256
+      },
+      "create_many": {
+        "ops": 98,
+        "p50_us": 22195,
+        "p95_us": 31162,
+        "p99_us": 32675,
+        "per_second": 43,
+        "rows_per_second": 21985
+      },
+      "kind_since": {
+        "ops": 200,
+        "p50_us": 1507,
+        "p95_us": 1690,
+        "p99_us": 1964,
+        "per_second": 660,
+        "rows_per_second": 328819
+      },
+      "read_back": {
+        "ops": 1,
+        "p50_us": 20434,
+        "p95_us": 20434,
+        "p99_us": 20434,
+        "per_second": 48,
+        "rows_per_second": 2446902
+      },
+      "tag": {
+        "ops": 200,
+        "p50_us": 281,
+        "p95_us": 292,
+        "p99_us": 325,
+        "per_second": 3531,
+        "rows_per_second": 353150
+      }
+    }
+  },
+  "workload": {
+    "concurrency": 1,
+    "corpus": {
+      "authors": 200,
+      "content_len": 256,
+      "created_at_anchor_unix": 1700000000,
+      "created_at_window_secs": 2592000,
+      "kind_cycle": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        7,
+        7
+      ],
+      "tag_value_count": 20
+    },
+    "reads": {
+      "by_id_offset": 13,
+      "by_id_stride": 7919,
+      "counts": 50,
+      "iterations": 200,
+      "limits": {
+        "author_kind": 100,
+        "by_id": 1,
+        "kind_since": 500,
+        "tag": 100
+      }
+    },
+    "repeats": 3,
+    "writes": {
+      "create_many_batch": 500,
+      "ingest_events": 1000
+    }
+  }
+}
