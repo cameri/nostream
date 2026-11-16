@@ -28,10 +28,7 @@ pub struct MigrateOptions {
 ///
 /// `migrate_cli_unsupported.rs` pins the line and the code, and the `windows-latest` job in
 /// `checks.yml` runs it there.
-pub fn run(
-    _options: MigrateOptions,
-    out: &mut dyn Write,
-) -> Result<CommandOutput, CliError> {
+pub fn run(_options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
     writeln!(out, "migrate pg-to-lmdb is unsupported on this platform")
         .map_err(|e| CliError::Migrate(e.to_string()))?;
     Ok(CommandOutput {
