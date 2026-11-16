@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 import { createLogger } from '../../factories/logger-factory'
 import { createSettings } from '../../factories/settings-factory'
-import { getRemoteAddress } from '../../utils/http'
+import { getRemoteAddress, redactHeaders } from '../../utils/http'
 import { rateLimiterFactory } from '../../factories/rate-limiter-factory'
 import { Settings } from '../../@types/settings'
 
@@ -12,7 +12,7 @@ export const rateLimiterMiddleware = async (request: Request, response: Response
 
   const clientAddress = getRemoteAddress(request, currentSettings).split(',')[0]
 
-  logger('request received from %s: %o', clientAddress, request.headers)
+  logger('request received from %s: %o', clientAddress, redactHeaders(request.headers))
 
   if (await isRateLimited(clientAddress, currentSettings)) {
     response.destroy()

@@ -9,7 +9,7 @@ import { Settings } from '../@types/settings'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
 import { createLogger } from '../factories/logger-factory'
 import { isRateLimited } from '../handlers/request-handlers/rate-limiter-middleware'
-import { getRemoteAddress } from '../utils/http'
+import { getRemoteAddress, redactHeaders } from '../utils/http'
 import { getWsDrainTimeoutMs, isDraining } from '../utils/shutdown-state'
 import { WebServerAdapter } from './web-server-adapter'
 
@@ -168,7 +168,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     const currentSettings = this.settings()
     const remoteAddress = getRemoteAddress(req, currentSettings)
 
-    logger('client %s connected: %o', remoteAddress, req.headers)
+    logger('client %s connected: %o', remoteAddress, redactHeaders(req.headers))
 
     // Attach before the awaited admission check: ws emits to whichever
     // listeners exist at the moment a frame arrives, and EventEmitter drops

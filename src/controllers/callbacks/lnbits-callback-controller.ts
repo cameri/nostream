@@ -6,7 +6,7 @@ import { IPaymentsService } from '../../@types/services'
 import { createLogger } from '../../factories/logger-factory'
 import { createSettings } from '../../factories/settings-factory'
 import { lnbitsCallbackBodySchema, lnbitsCallbackQuerySchema } from '../../schemas/lnbits-callback-schema'
-import { getRemoteAddress } from '../../utils/http'
+import { getRemoteAddress, redactHeaders } from '../../utils/http'
 import { deriveFromSecret, hmacSha256 } from '../../utils/secret'
 import { validateSchema } from '../../utils/validation'
 
@@ -19,7 +19,7 @@ export class LNbitsCallbackController implements IController {
   ) {}
 
   public async handleRequest(request: Request, response: Response) {
-    logger('request headers: %o', request.headers)
+    logger('request headers: %o', redactHeaders(request.headers))
     logger('request body: %o', request.body)
 
     const settings = createSettings()

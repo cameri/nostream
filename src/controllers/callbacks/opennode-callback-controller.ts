@@ -5,7 +5,7 @@ import { Request, Response } from 'express'
 import { Invoice, InvoiceStatus } from '../../@types/invoice'
 import { createLogger } from '../../factories/logger-factory'
 import { createSettings } from '../../factories/settings-factory'
-import { getRemoteAddress } from '../../utils/http'
+import { getRemoteAddress, redactHeaders } from '../../utils/http'
 import { hmacSha256 } from '../../utils/secret'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
@@ -18,7 +18,7 @@ export class OpenNodeCallbackController implements IController {
   public constructor(private readonly paymentsService: IPaymentsService) {}
 
   public async handleRequest(request: Request, response: Response) {
-    logger('request headers: %o', request.headers)
+    logger('request headers: %o', redactHeaders(request.headers))
 
     const settings = createSettings()
     const remoteAddress = getRemoteAddress(request, settings)
