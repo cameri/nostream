@@ -189,3 +189,25 @@ const getPublicHttpOrigin = (settings: Settings): string | undefined => {
 
   return undefined
 }
+
+const REDACTED = '[redacted]'
+
+// Headers that carry credentials. Matching is on the lower-cased name, which is
+// how Node exposes incoming headers.
+const SENSITIVE_HEADER_PATTERN = /^(authorization|proxy-authorization|cookie|set-cookie)$|token|secret|signature|api-?key|auth/
+
+/**
+ * Copy of the request headers that is safe to write to a log: the value of
+ * every credential-bearing header (session cookie, Authorization, API keys,
+ * webhook signatures) is replaced, so a debug log cannot be used to recover a
+ * session token or a signature.
+ */
+export const redactHeaders = (headers: IncomingMessage['headers'] | undefined): Record<string, unknown> => {
+  const safe: Record<string, unknown> = {}
+
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    safe[name] = SENSITIVE_HEADER_PATTERN.test(name.toLowerCase()) ? REDACTED : value
+  }
+
+  return safe
+}
