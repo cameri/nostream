@@ -1,6 +1,17 @@
 #!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
+# `git worktree add` never runs `prepare`, so a worktree arrives with neither
+# .husky/_ nor node_modules and the source below kills the commit before any
+# gate can run. Run what this checkout can run, and never block on what it
+# cannot: a checkout without dependencies has no gates to fail.
+[ -d node_modules ] || exit 0
+_root=$(dirname -- "$0")
+[ -f "$_root/_/husky.sh" ] && . "$_root/_/husky.sh"
 
+# The three gates below are separate commands, so without this the hook's status is the last
+# one's and a failing lint is swallowed by a passing test run. It goes after the shim line
+# rather than before it: `[ -f … ] && . …` returns 1 when the shim is absent, and under `set -e`
+# that would abort the commit, which is the worktree case this file exists to fix.
+set -e
 pnpm run lint
 pnpm run build:check
 pnpm run test:unit
