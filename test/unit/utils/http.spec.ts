@@ -7,6 +7,7 @@ import {
   getRemoteAddress,
   isSecureRequest,
   joinPathPrefix,
+  redactHeaders,
 } from '../../../src/utils/http'
 
 describe('getRemoteAddress', () => {
@@ -278,5 +279,56 @@ describe('getAbsoluteHttpRequestUrl', () => {
         network: {},
       } as any),
     ).to.equal(undefined)
+  })
+})
+
+describe('redactHeaders', () => {
+  it('replaces the values of credential-bearing headers', () => {
+    const safe = redactHeaders({
+      cookie: 'nostream_admin_session=1.abc.def',
+      authorization: 'Bearer 1.abc.def',
+      'proxy-authorization': 'Basic abc',
+      'set-cookie': ['a=b'],
+      'x-api-key': 'key',
+      'x-auth-token': 'token',
+      'x-password': 'hunter2',
+      'nodeless-signature': 'sig',
+    })
+
+    expect(safe).to.deep.equal({
+      cookie: '[redacted]',
+      authorization: '[redacted]',
+      'proxy-authorization': '[redacted]',
+      'set-cookie': '[redacted]',
+      'x-api-key': '[redacted]',
+      'x-auth-token': '[redacted]',
+      'x-password': '[redacted]',
+      'nodeless-signature': '[redacted]',
+    })
+  })
+
+  it('matches header names regardless of case', () => {
+    expect(redactHeaders({ Authorization: 'Bearer x', COOKIE: 'a=b' })).to.deep.equal({
+      Authorization: '[redacted]',
+      COOKIE: '[redacted]',
+    })
+  })
+
+  it('keeps the headers that are useful for diagnostics', () => {
+    const headers = { host: 'relay.example', 'user-agent': 'curl/8', 'x-forwarded-for': '1.2.3.4' }
+
+    expect(redactHeaders(headers)).to.deep.equal(headers)
+  })
+
+  it('does not modify the headers it was given', () => {
+    const headers = { cookie: 'a=b' }
+
+    redactHeaders(headers)
+
+    expect(headers.cookie).to.equal('a=b')
+  })
+
+  it('returns an empty object when there are no headers', () => {
+    expect(redactHeaders(undefined)).to.deep.equal({})
   })
 })

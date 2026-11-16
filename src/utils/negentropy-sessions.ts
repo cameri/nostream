@@ -71,6 +71,10 @@ export class NegentropySessions implements INegentropySessions {
     return entry.session
   }
 
+  public peek(subscriptionId: SubscriptionId): NegentropySession | undefined {
+    return this.entries.get(subscriptionId)?.session
+  }
+
   public release(subscriptionId: SubscriptionId, token: NegentropySessionToken): void {
     if (this.entries.get(subscriptionId)?.token === token) {
       this.close(subscriptionId)

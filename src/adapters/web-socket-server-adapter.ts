@@ -9,7 +9,7 @@ import { Settings } from '../@types/settings'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../constants/adapter'
 import { createLogger } from '../factories/logger-factory'
 import { isRateLimited } from '../handlers/request-handlers/rate-limiter-middleware'
-import { getRemoteAddress } from '../utils/http'
+import { getRemoteAddress, redactHeaders } from '../utils/http'
 import { getWsDrainTimeoutMs, isDraining } from '../utils/shutdown-state'
 import { WebServerAdapter } from './web-server-adapter'
 
@@ -55,6 +55,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     this.webSocketsAdapters = new WeakMap()
 
     this.on(WebSocketServerAdapterEvent.Broadcast, this.onBroadcast.bind(this))
+    this.on(WebSocketServerAdapterEvent.PeeringRevoke, this.onPeeringRevoke.bind(this))
 
     this.webSocketServer
       .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))
@@ -123,6 +124,23 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     })
   }
 
+  private onPeeringRevoke(payload: { pubkey?: unknown }) {
+    const pubkey = typeof payload?.pubkey === 'string' ? payload.pubkey : undefined
+    if (!pubkey) {
+      return
+    }
+
+    this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
+      const webSocketAdapter = this.webSocketsAdapters.get(webSocket)
+      if (webSocketAdapter?.getPeerPubkey() !== pubkey) {
+        return
+      }
+
+      logger('closing peer %s: peering access ended', pubkey)
+      webSocket.close(4001, 'payment-required: peering access expired')
+    })
+  }
+
   private onBroadcast(event: Event) {
     this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
       if (!propEq('readyState', OPEN)(webSocket)) {
@@ -150,7 +168,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     const currentSettings = this.settings()
     const remoteAddress = getRemoteAddress(req, currentSettings)
 
-    logger('client %s connected: %o', remoteAddress, req.headers)
+    logger('client %s connected: %o', remoteAddress, redactHeaders(req.headers))
 
     // Attach before the awaited admission check: ws emits to whichever
     // listeners exist at the moment a frame arrives, and EventEmitter drops

@@ -1,4 +1,4 @@
-import { PeeringTermSnapshot } from '../@types/peering'
+import { PeeringAccess, PeeringTermSnapshot } from '../@types/peering'
 import { Settings } from '../@types/settings'
 import { SubscriptionFilter } from '../@types/subscription'
 import { EventKinds } from '../constants/base'
@@ -14,6 +14,12 @@ export const PEERING_REISSUE_COOLDOWN_SECONDS = 15
 
 /** Do not ask the processor about the same unpaid peer more often than this. */
 export const PEERING_RECHECK_COOLDOWN_SECONDS = 30
+
+/** NIP-01 rejection reason for a denied peering access check. */
+export const peeringPaymentRequiredReason = (access: Pick<PeeringAccess, 'reason'>): string =>
+  access.reason?.startsWith('payment-required:')
+    ? access.reason
+    : `payment-required: ${access.reason ?? 'peering payment required; request the kind 402 peering invoice'}`
 
 const UNIT_MULTIPLIER: Record<string, bigint> = {
   msats: 1n,
