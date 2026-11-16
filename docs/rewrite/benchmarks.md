@@ -323,11 +323,13 @@ The harness's contract is three exit code values, the same ones `--help` states:
 
 A refusal is answered before the store is opened and prints one line: a corpus below the minimum
 — the ingest phase takes the corpus's last thousand events, and the bulk phase needs one more to
-have anything to load — or above the ceiling, a `--out` directory that does not exist, a
-`--repeats` below one, a `--store` directory that already holds a store at any path the repeats
-would open, a Postgres run without `PARITY_ADMIN_URL`, or a running `rustc` — a build on the same
-box distorts the numbers about threefold, so pass `--allow-busy-host` only when the measurement is
-a smoke test. Progress goes to stderr, so stdout never carries anything a script would parse.
+have anything to load — or above the ceiling, a `--out` directory that does not exist, a `--out`
+naming a directory, a `--out` whose parent cannot take a new file, a `--repeats` below one, a
+`--store` directory that already holds a store at any path the repeats would open, a `--store`
+with `--backend postgres`, a Postgres run without `PARITY_ADMIN_URL`, or a running `rustc` — a
+build on the same box distorts the numbers about threefold, so pass `--allow-busy-host` only when
+the measurement is a smoke test. Progress goes to stderr, so stdout never carries anything a script
+would parse.
 
 ## Context from job 007, not this rig's numbers
 
