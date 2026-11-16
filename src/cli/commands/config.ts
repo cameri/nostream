@@ -18,6 +18,7 @@ import {
   maskSecretValue,
   readEnvValues,
   upsertEnvValue,
+  getUnsafeSecretReason,
   validateEnvPair,
   validateEnvValues,
 } from '../utils/env-config'
@@ -219,7 +220,8 @@ export const runConfigEnvSet = async (key: string, value: string): Promise<numbe
     return 1
   }
 
-  const issue = validateEnvPair(normalizedKey, value)
+  const issue =
+    validateEnvPair(normalizedKey, value) ?? (normalizedKey === 'SECRET' ? getUnsafeSecretReason(value) : undefined)
   if (issue) {
     logError(issue)
     return 1

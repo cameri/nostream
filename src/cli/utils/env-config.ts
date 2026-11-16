@@ -135,6 +135,46 @@ const validateBoolean = (key: string, value: string): string | undefined => {
   return `${key} must be true or false`
 }
 
+export const stripQuotes = (value: string): string => {
+  const trimmed = value.trim()
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1).trim()
+  }
+  return trimmed
+}
+
+/**
+ * Why a secret cannot be written to `.env` and read back unchanged, or undefined when it can. An unquoted `#` starts a
+ * comment for the loader, a newline ends the line, a `$` is expanded by Docker Compose, a quote the loader cannot
+ * match changes what it reads, and a backslash inside double quotes is read as an escape by some loaders.
+ */
+export const getUnsafeSecretReason = (secret: string): string | undefined => {
+  if (secret.includes('#')) {
+    return 'SECRET cannot contain "#"'
+  }
+  if (/[\r\n]/.test(secret)) {
+    return 'SECRET cannot contain newlines'
+  }
+  if (secret.includes('$')) {
+    // Docker Compose reads the same .env and expands `$NAME`, `${NAME}` and `$$`, which Node's loader leaves alone.
+    return 'SECRET cannot contain "$"'
+  }
+  if (/^["'`]/.test(stripQuotes(secret))) {
+    return 'SECRET cannot start with an unmatched quote'
+  }
+  const trimmed = secret.trim()
+  if (trimmed.length > 1 && trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.includes('\\')) {
+    // Node's loader turns `\n` inside double quotes into a newline and Docker Compose expands escapes there too, while
+    // the setup parser keeps a backslash as it is, so the readers would end up with different secrets.
+    return 'SECRET cannot contain a backslash inside double quotes'
+  }
+  if (stripQuotes(trimmed) !== trimmed && stripQuotes(trimmed).includes(trimmed[0])) {
+    // The loader ends a quoted value at the first closing quote, so a quote inside would cut the secret short.
+    return 'SECRET cannot contain the quote it is wrapped in'
+  }
+  return undefined
+}
+
 export const validateEnvPair = (key: string, value: string): string | undefined => {
   if (!isSupportedEnvKey(key)) {
     return `${key} is not a supported environment setting`
