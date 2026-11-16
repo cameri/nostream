@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto'
 import { intro, outro, confirm, text, isCancel, cancel } from '@clack/prompts'
 
 import { ensureConfigBootstrap } from '../utils/bootstrap'
+import { getUnsafeSecretReason, stripQuotes } from '../utils/env-config'
 import { getProjectPath } from '../utils/paths'
 import { runStart } from './start'
 
@@ -27,14 +28,6 @@ class SetupCancelledError extends Error {
     super('Setup cancelled')
     this.name = 'SetupCancelledError'
   }
-}
-
-const stripQuotes = (value: string): string => {
-  const trimmed = value.trim()
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-    return trimmed.slice(1, -1).trim()
-  }
-  return trimmed
 }
 
 const parseEnvValue = (rawValue: string): string => {
@@ -91,6 +84,15 @@ const needsSecretReplacement = (secret: string | undefined): boolean => {
 const resolveSecret = async (assumeYes: boolean): Promise<string> => {
   const inheritedSecret = process.env.SECRET?.trim()
   if (inheritedSecret && !needsSecretReplacement(inheritedSecret)) {
+    // It will be written to .env and read back by a loader that would not return it unchanged, which would give the
+    // relay a different secret, and so different derived keys, from the one this run started with.
+    const unsafeReason = getUnsafeSecretReason(inheritedSecret)
+    if (unsafeReason) {
+      throw new Error(
+        `${unsafeReason}. The SECRET in the environment cannot be saved to .env and read back unchanged: unset it, or use one without those characters.`,
+      )
+    }
+
     return stripQuotes(inheritedSecret)
   }
 
@@ -106,13 +108,7 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
         if (needsSecretReplacement(trimmed)) {
           return 'SECRET cannot be the default placeholder'
         }
-        if (input.includes('#')) {
-          return 'SECRET cannot contain "#"'
-        }
-        if (/[\r\n]/.test(input)) {
-          return 'SECRET cannot contain newlines'
-        }
-        return undefined
+        return getUnsafeSecretReason(input)
       },
     })
 
@@ -121,9 +117,10 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
       throw new SetupCancelledError()
     }
 
-    const trimmed = value.trim()
-    if (!needsSecretReplacement(trimmed)) {
-      return trimmed
+    // Without the quotes, as for an inherited secret: they are not part of the secret, and .env is read without them.
+    const unquoted = stripQuotes(value)
+    if (!needsSecretReplacement(unquoted)) {
+      return unquoted
     }
   }
 
@@ -131,6 +128,11 @@ const resolveSecret = async (assumeYes: boolean): Promise<string> => {
 }
 
 const upsertSecret = (content: string, secret: string): string => {
+  const unsafeReason = getUnsafeSecretReason(secret)
+  if (unsafeReason) {
+    throw new Error(unsafeReason)
+  }
+
   const normalized = content.length > 0 ? content : ''
   const lines = normalized.split(/\r?\n/)
   let replaced = false
