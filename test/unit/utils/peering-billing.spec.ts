@@ -4,6 +4,7 @@ import { Settings } from '../../../src/@types/settings'
 import {
   InvalidPeeringTermError,
   isPeeringInvoiceRequest,
+  peeringPaymentRequiredReason,
   resolvePaidPeeringTerm,
 } from '../../../src/utils/peering-billing'
 
@@ -80,5 +81,25 @@ describe('resolvePaidPeeringTerm', () => {
     expect(isPeeringInvoiceRequest([invoice], peer)).to.be.true
     expect(isPeeringInvoiceRequest([invoice, { kinds: [1] }], peer)).to.be.false
     expect(isPeeringInvoiceRequest([], peer)).to.be.false
+  })
+})
+
+describe('peeringPaymentRequiredReason', () => {
+  it('prefixes an unprefixed denial reason', () => {
+    expect(peeringPaymentRequiredReason({ reason: 'peering access lapsed' })).to.equal(
+      'payment-required: peering access lapsed',
+    )
+  })
+
+  it('keeps an already-prefixed reason unchanged', () => {
+    expect(peeringPaymentRequiredReason({ reason: 'payment-required: settle the invoice' })).to.equal(
+      'payment-required: settle the invoice',
+    )
+  })
+
+  it('falls back to the invoice hint when there is no reason', () => {
+    expect(peeringPaymentRequiredReason({})).to.equal(
+      'payment-required: peering payment required; request the kind 402 peering invoice',
+    )
   })
 })

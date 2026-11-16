@@ -27,7 +27,7 @@ import { isNip43InviteRequestFilter, isRelaySelfConsistent } from '../utils/nip4
 import { buildInviteCodeEvent, issueInviteCode } from '../utils/nip43-invites'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
 import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
-import { isPeeringInvoiceRequest, PeeringInvoiceCooldownError } from '../utils/peering-billing'
+import { isPeeringInvoiceRequest, PeeringInvoiceCooldownError, peeringPaymentRequiredReason } from '../utils/peering-billing'
 import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 import { streamEachAsync, streamEnd, streamFilter, streamMap } from '../utils/stream'
 
@@ -209,9 +209,7 @@ export class SubscribeMessageHandler implements IMessageHandler, IAbortable {
       return { rejected: false, access }
     }
 
-    const reason = access.reason?.startsWith('payment-required:')
-      ? access.reason
-      : `payment-required: ${access.reason ?? 'peering payment required; request the kind 402 peering invoice'}`
+    const reason = peeringPaymentRequiredReason(access)
 
     logger('subscription %s with %o rejected for peer %s: %s', subscriptionId, filters, peerPubkey, reason)
     this.webSocket.emit(WebSocketAdapterEvent.Message, createClosedMessage(subscriptionId, reason))

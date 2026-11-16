@@ -272,10 +272,13 @@ export class MaintenanceWorker implements IRunnable {
             mergeDeepLeft({ amountPaid }),
           )(invoice)
 
-          await Promise.all([
-            this.paymentsService.confirmInvoice(update),
-            this.paymentsService.sendInvoiceUpdateNotification(update),
-          ])
+          await this.paymentsService.confirmInvoice(update)
+
+          // Peering settlement is complete once confirmInvoice applies the period;
+          // a generic “invoice paid” notice would not match the peer's peering filter.
+          if (invoice.purpose !== InvoicePurpose.PEERING) {
+            await this.paymentsService.sendInvoiceUpdateNotification(update)
+          }
 
           await delay()
         }
@@ -313,7 +316,7 @@ export class MaintenanceWorker implements IRunnable {
     }
 
     await this.processSubscriptions()
-    await this.processPeeringLapses()
+    await this.processPeering()
 
     await clearOldEventsPromise
     await this.publishOpsHeartbeat({
@@ -333,14 +336,14 @@ export class MaintenanceWorker implements IRunnable {
     }
   }
 
-  private async processPeeringLapses(): Promise<void> {
+  private async processPeering(): Promise<void> {
     try {
-      const changed = await this.peeringBillingService?.processLapses()
+      const changed = await this.peeringBillingService?.processLifecycle()
       if (changed) {
-        logger('lapsed %d peering relationship(s)', changed)
+        logger('moved %d peering relationship(s) through their lifecycle', changed)
       }
     } catch (error) {
-      logger.error('Unable to process peering lapses', error)
+      logger.error('Unable to process peering billing', error)
     }
   }
 

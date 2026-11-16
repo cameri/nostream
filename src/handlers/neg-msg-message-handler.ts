@@ -2,11 +2,14 @@ import { createNegErrMessage, createNegMsgMessage } from '../utils/messages'
 import { IMessageHandler } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { NegMsgMessage, OutgoingMessage } from '../@types/messages'
+import { PeeringAccess } from '../@types/peering'
+import { IPeeringBillingService } from '../@types/services'
 import { Settings } from '../@types/settings'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 import { createLogger } from '../factories/logger-factory'
 import { isNip77Active } from '../utils/nip77'
 import { isReconciliationAuthorized } from '../utils/nip42'
+import { peeringPaymentRequiredReason } from '../utils/peering-billing'
 
 const logger = createLogger('neg-msg-message-handler')
 
@@ -14,6 +17,7 @@ export class NegMsgMessageHandler implements IMessageHandler {
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly settings: () => Settings,
+    private readonly peeringBillingService?: IPeeringBillingService,
   ) {}
 
   public async handleMessage(message: NegMsgMessage): Promise<void> {
@@ -40,6 +44,37 @@ export class NegMsgMessageHandler implements IMessageHandler {
         createNegErrMessage(subscriptionId, 'auth-required: authentication is required to sync these event kinds'),
       )
       return
+    }
+
+    // NEG-OPEN checks payment once. A running sync must re-read it so a lapsed peer
+    // cannot keep pulling events until the maintenance worker closes its socket.
+    const peerPubkey = this.webSocket.getPeerPubkey?.()
+    if (peerPubkey && this.peeringBillingService) {
+      let access: PeeringAccess
+      try {
+        access = await this.peeringBillingService.getAccess(peerPubkey)
+      } catch (error) {
+        logger.error('unable to check peering access for %s: %o', peerPubkey, error)
+        // A replacement NEG-OPEN may own this id now; the old check must not close it.
+        if (sessions.peek(subscriptionId) !== session) {
+          return
+        }
+        sessions.close(subscriptionId)
+        this.reply(createNegErrMessage(subscriptionId, 'error: unable to check peering access'))
+        return
+      }
+
+      // NEG-CLOSE or a replacement NEG-OPEN can land while billing is pending.
+      // Never answer or close a session this message no longer owns.
+      if (sessions.peek(subscriptionId) !== session) {
+        return
+      }
+
+      if (!access.allowed) {
+        sessions.close(subscriptionId)
+        this.reply(createNegErrMessage(subscriptionId, peeringPaymentRequiredReason(access)))
+        return
+      }
     }
 
     try {
