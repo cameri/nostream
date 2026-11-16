@@ -2,11 +2,13 @@ import { createNegErrMessage, createNegMsgMessage } from '../utils/messages'
 import { IMessageHandler } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { NegMsgMessage, OutgoingMessage } from '../@types/messages'
+import { IPeeringBillingService } from '../@types/services'
 import { Settings } from '../@types/settings'
 import { WebSocketAdapterEvent } from '../constants/adapter'
 import { createLogger } from '../factories/logger-factory'
 import { isNip77Active } from '../utils/nip77'
 import { isReconciliationAuthorized } from '../utils/nip42'
+import { peeringPaymentRequiredReason } from '../utils/peering-billing'
 
 const logger = createLogger('neg-msg-message-handler')
 
@@ -14,6 +16,7 @@ export class NegMsgMessageHandler implements IMessageHandler {
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly settings: () => Settings,
+    private readonly peeringBillingService?: IPeeringBillingService,
   ) {}
 
   public async handleMessage(message: NegMsgMessage): Promise<void> {
@@ -40,6 +43,25 @@ export class NegMsgMessageHandler implements IMessageHandler {
         createNegErrMessage(subscriptionId, 'auth-required: authentication is required to sync these event kinds'),
       )
       return
+    }
+
+    // NEG-OPEN checks payment once. A running sync must re-read it so a lapsed peer
+    // cannot keep pulling events until the maintenance worker closes its socket.
+    const peerPubkey = this.webSocket.getPeerPubkey?.()
+    if (peerPubkey && this.peeringBillingService) {
+      try {
+        const access = await this.peeringBillingService.getAccess(peerPubkey)
+        if (!access.allowed) {
+          sessions.close(subscriptionId)
+          this.reply(createNegErrMessage(subscriptionId, peeringPaymentRequiredReason(access)))
+          return
+        }
+      } catch (error) {
+        logger.error('unable to check peering access for %s: %o', peerPubkey, error)
+        sessions.close(subscriptionId)
+        this.reply(createNegErrMessage(subscriptionId, 'error: unable to check peering access'))
+        return
+      }
     }
 
     try {

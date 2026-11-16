@@ -17,6 +17,7 @@ import { createClosedMessage, createCountResultMessage } from '../utils/messages
 import { isCountAuthorized } from '../utils/nip42'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
 import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
+import { peeringPaymentRequiredReason } from '../utils/peering-billing'
 import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 
 const debug = createLogger('count-message-handler')
@@ -70,9 +71,7 @@ export class CountMessageHandler implements IMessageHandler {
       }
 
       if (!access.allowed) {
-        const reason = access.reason?.startsWith('payment-required:')
-          ? access.reason
-          : `payment-required: ${access.reason ?? 'peering payment required; request the kind 402 peering invoice'}`
+        const reason = peeringPaymentRequiredReason(access)
         this.webSocket.emit(WebSocketAdapterEvent.Message, createClosedMessage(queryId, reason))
         return
       }

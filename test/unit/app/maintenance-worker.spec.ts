@@ -378,6 +378,14 @@ describe('MaintenanceWorker', () => {
         expect(peeringBillingService.processLifecycle).to.have.been.calledOnce
       })
 
+      it('still finishes the pass when the peering lifecycle fails', async () => {
+        peeringBillingService.processLifecycle.rejects(new Error('database down'))
+
+        await (worker as any).onSchedule()
+
+        expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
+      })
+
       it('settles a peering invoice without sending the generic paid notice', async () => {
         settingsState.payments = { enabled: true } as any
         const invoice = { ...pendingInvoice, purpose: InvoicePurpose.PEERING }

@@ -15,6 +15,15 @@ Feature: Paid peering billing ledger
     When the peer underpays a 21000 msat peering invoice with 1000 msats
     Then the underpayment is recorded without activating the peer
 
+  Scenario: A running paid period is offered a renewal
+    When the peer pays a 21000 msat peering invoice
+    Then the lifecycle offers a renewal without moving the paid period
+
+  Scenario: An ended paid period is lapsed, alerted and revoked once
+    When the peer pays a 21000 msat peering invoice
+    And the paid peering period ends
+    Then the lifecycle lapses the peer, alerts once and revokes the socket
+
   Scenario: A completed but unconfirmed peering invoice is retryable
     When a peering invoice is marked completed without a confirmation
     Then the unconfirmed peering invoice is returned for retry

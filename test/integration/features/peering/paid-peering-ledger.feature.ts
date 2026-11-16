@@ -6,9 +6,11 @@ import Sinon from 'sinon'
 import { adminNotificationsPatchBodySchema } from '../../../../src/schemas/admin-notifications-schema'
 import { getMasterDbClient } from '../../../../src/database/client'
 import { InvoiceStatus, InvoiceUnit } from '../../../../src/@types/invoice'
+import { OperatorNotificationEventType } from '../../../../src/@types/operator-notifications'
 import { InvoiceRepository } from '../../../../src/repositories/invoice-repository'
 import { PeeringPaymentRepository } from '../../../../src/repositories/peering-payment-repository'
 import { PaymentsService } from '../../../../src/services/payments-service'
+import { PeeringBillingService } from '../../../../src/services/peering-billing-service'
 import { SettingsStatic } from '../../../../src/utils/settings'
 import * as eventUtils from '../../../../src/utils/event'
 import {
@@ -59,7 +61,10 @@ const createService = (world: World<Record<string, any>>): void => {
   } as any
 
   const notificationOutboxRepository = {
-    enqueue: async () => ({}),
+    enqueue: async (type: string, payload: unknown) => {
+      world.parameters.peeringNotifications.push({ type, payload })
+      return {}
+    },
   } as any
 
   const paymentsProcessor = {
@@ -95,6 +100,16 @@ const createService = (world: World<Record<string, any>>): void => {
     notificationOutboxRepository,
     undefined,
     peeringPaymentRepository,
+  )
+  world.parameters.peeringRevokePeer = Sinon.stub()
+  world.parameters.peeringBillingService = new PeeringBillingService(
+    db,
+    peeringPaymentRepository,
+    invoiceRepository,
+    world.parameters.peeringService,
+    notificationOutboxRepository,
+    () => SettingsStatic._settings,
+    world.parameters.peeringRevokePeer,
   )
 }
 
@@ -153,6 +168,7 @@ Before({ tags: '@paid-peering-ledger' }, function (this: World<Record<string, an
   this.parameters.peeringInvoiceIds = []
   this.parameters.peeringUserPubkeys = []
   this.parameters.peeringEvents = []
+  this.parameters.peeringNotifications = []
   this.parameters.peeringEventCreates = 0
   this.parameters.peeringInvoiceCreates = 0
   this.parameters.peeringSandbox = Sinon.createSandbox()
@@ -207,6 +223,9 @@ After({ tags: '@paid-peering-ledger' }, async function (this: World<Record<strin
     this.parameters.peeringInvoiceRepository = undefined
     this.parameters.peeringPaymentRepository = undefined
     this.parameters.peeringService = undefined
+    this.parameters.peeringBillingService = undefined
+    this.parameters.peeringRevokePeer = undefined
+    this.parameters.peeringNotifications = []
     this.parameters.peeringPreviousSettings = undefined
     this.parameters.peeringSandbox = undefined
     this.parameters.peeringEvents = []
@@ -295,6 +314,78 @@ Then('the peer period did not change', async function (this: World<Record<string
   expect(row.period_end.getTime()).to.equal(this.parameters.peeringFirstPeriodEnd.getTime())
   expect(row.last_settled_invoice_id).to.equal(this.parameters.peeringInvoice.id)
 })
+
+Then(
+  'the lifecycle offers a renewal without moving the paid period',
+  async function (this: World<Record<string, any>>) {
+    const billing = this.parameters.peeringBillingService as PeeringBillingService
+    const db = this.parameters.peeringDb
+    const peer = this.parameters.peeringPeer as string
+    const before = await peerRow(this, peer)
+
+    const changed = await billing.processLifecycle(new Date())
+    expect(changed).to.be.greaterThan(0)
+
+    const row = await peerRow(this, peer)
+    expect(row.status).to.equal('renewal_pending')
+    expect(row.renewal_invoice_id).to.be.a('string')
+    expect(row.period_end.getTime()).to.equal(before.period_end.getTime())
+
+    const renewal = await db('invoices').where('id', row.renewal_invoice_id).first()
+    expect(renewal).to.exist
+    expect(renewal.purpose).to.equal('peering')
+    expect(renewal.status).to.equal('pending')
+
+    const access = await billing.getAccess(peer)
+    expect(access.allowed).to.equal(true)
+    expect(access.status).to.equal('renewal_pending')
+  },
+)
+
+When('the paid peering period ends', async function (this: World<Record<string, any>>) {
+  const db = this.parameters.peeringDb
+  const peer = this.parameters.peeringPeer as string
+
+  await db('peering_payments')
+    .where('peer_pubkey', Buffer.from(peer, 'hex'))
+    .update({ period_end: new Date(Date.now() - 1000) })
+})
+
+Then(
+  'the lifecycle lapses the peer, alerts once and revokes the socket',
+  async function (this: World<Record<string, any>>) {
+    const billing = this.parameters.peeringBillingService as PeeringBillingService
+    const revokePeer = this.parameters.peeringRevokePeer as Sinon.SinonStub
+    const notifications: { type: string; payload: any }[] = this.parameters.peeringNotifications
+    const peer = this.parameters.peeringPeer as string
+    const lapseAlerts = () =>
+      notifications.filter(
+        (notification) =>
+          notification.type === OperatorNotificationEventType.PEERING_ACCESS_LAPSED &&
+          notification.payload?.pubkey === peer,
+      )
+
+    expect(lapseAlerts()).to.have.length(0)
+
+    const changed = await billing.processLapses(new Date())
+    expect(changed).to.be.greaterThan(0)
+
+    const row = await peerRow(this, peer)
+    expect(row.status).to.equal('lapsed')
+    expect(row.current_invoice_id).to.equal(null)
+    expect(row.renewal_invoice_id).to.equal(null)
+    expect(row.last_error).to.equal(null)
+    expect(lapseAlerts()).to.have.length(1)
+    Sinon.assert.calledWith(revokePeer, peer)
+
+    const access = await billing.getAccess(peer)
+    expect(access.allowed).to.equal(false)
+    expect(access.status).to.equal('lapsed')
+
+    expect(await billing.processLapses(new Date())).to.equal(0)
+    expect(lapseAlerts()).to.have.length(1)
+  },
+)
 
 When(
   'the peer underpays a {int} msat peering invoice with {int} msats',

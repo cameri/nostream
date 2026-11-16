@@ -189,4 +189,71 @@ describe('NegMsgMessageHandler', () => {
 
     expect(emitted).to.have.been.calledOnceWithExactly([MessageType.NEG_MSG, 'sync1', '61'])
   })
+
+  describe('paid access is checked on every message', () => {
+    const peer = 'a'.repeat(64)
+    let billing: { getAccess: Sinon.SinonStub }
+
+    beforeEach(() => {
+      billing = { getAccess: sandbox.stub().resolves({ allowed: true }) }
+      ;(webSocket as any).getPeerPubkey = () => peer
+      handler = new NegMsgMessageHandler(webSocket, () => settings, billing as any)
+    })
+
+    it('keeps answering while the peer still has an active period', async () => {
+      openSession('sync1')
+
+      await send('sync1', validMessageHex)
+
+      expect(billing.getAccess).to.have.been.calledWith(peer)
+      expect(emitted.firstCall.args[0][0]).to.equal(MessageType.NEG_MSG)
+    })
+
+    it('closes the session when the paid period lapses mid-sync', async () => {
+      openSession('sync1')
+      billing.getAccess.resolves({ allowed: false, reason: 'peering access lapsed; request a new invoice' })
+
+      await send('sync1', validMessageHex)
+
+      expect(emitted).to.have.been.calledOnceWithExactly([
+        MessageType.NEG_ERR,
+        'sync1',
+        'payment-required: peering access lapsed; request a new invoice',
+      ])
+      expect(sessions.getSessionIds()).to.deep.equal([])
+    })
+
+    it('does not double-prefix a payment-required reason', async () => {
+      openSession('sync1')
+      billing.getAccess.resolves({ allowed: false, reason: 'payment-required: settle the invoice' })
+
+      await send('sync1', validMessageHex)
+
+      expect(emitted.firstCall.args[0][2]).to.equal('payment-required: settle the invoice')
+    })
+
+    it('fails closed when the billing check errors', async () => {
+      openSession('sync1')
+      billing.getAccess.rejects(new Error('database down'))
+
+      await send('sync1', validMessageHex)
+
+      expect(emitted).to.have.been.calledOnceWithExactly([
+        MessageType.NEG_ERR,
+        'sync1',
+        'error: unable to check peering access',
+      ])
+      expect(sessions.getSessionIds()).to.deep.equal([])
+    })
+
+    it('does not consult billing for a connection without a peer identity', async () => {
+      ;(webSocket as any).getPeerPubkey = () => undefined
+      openSession('sync1')
+
+      await send('sync1', validMessageHex)
+
+      expect(billing.getAccess).not.to.have.been.called
+      expect(emitted.firstCall.args[0][0]).to.equal(MessageType.NEG_MSG)
+    })
+  })
 })

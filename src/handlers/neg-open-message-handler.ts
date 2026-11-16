@@ -18,6 +18,7 @@ import { isReconciliationAuthorized } from '../utils/nip42'
 import { getNip77Limits, isNip77Active, NEGENTROPY_FRAME_SIZE_LIMIT } from '../utils/nip77'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
 import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
+import { peeringPaymentRequiredReason } from '../utils/peering-billing'
 import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 
 const logger = createLogger('neg-open-message-handler')
@@ -110,10 +111,7 @@ export class NegOpenMessageHandler implements IMessageHandler {
 
       if (!access.allowed) {
         sessions.endRead(token)
-        const reason = access.reason?.startsWith('payment-required:')
-          ? access.reason
-          : `payment-required: ${access.reason ?? 'peering payment required; request the kind 402 peering invoice'}`
-        this.reject(sessions, subscriptionId, reason)
+        this.reject(sessions, subscriptionId, peeringPaymentRequiredReason(access))
         return
       }
     }
