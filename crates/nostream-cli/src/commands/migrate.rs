@@ -865,6 +865,7 @@ fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Re
 /// the entry itself, so a group- or world-writable ancestor lets another user move this target
 /// aside and put their own there before the store opens. The sticky bit is the exception that
 /// makes `/tmp` usable: it refuses the rename of an entry its writer does not own.
+#[cfg(unix)]
 fn refuse_swappable_ancestry(target: &Path) -> Result<(), CliError> {
     let mut path = match target.parent() {
         Some(parent) if parent.as_os_str().is_empty() => PathBuf::from("."),

@@ -298,6 +298,8 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       - name: CLI builds on Windows
         run: cargo build -p nostream-cli --no-default-features
+      - name: CLI refuses the migration on Windows
+        run: cargo test -p nostream-cli --no-default-features --test migrate_cli_unsupported
 
   changeset-check:
     name: Changeset Required
