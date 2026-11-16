@@ -909,6 +909,7 @@ fn refuse_swappable_ancestry(target: &Path) -> Result<(), CliError> {
 /// by `create_dir_all` without a word. Creating it here, under the mode the store itself uses,
 /// and checking again closes the window: after this call the target is a directory this process
 /// made, or the run has ended.
+#[cfg(unix)]
 fn create_target(options: &MigrateOptions) -> Result<(), CliError> {
     fs::DirBuilder::new()
         .recursive(true)
@@ -1109,6 +1110,7 @@ mod tests {
     /// needs no ownership of the target to do it: a rename takes write permission on the holder.
     /// Without the sticky bit that permission is refused; `/tmp` is exactly this mode plus the
     /// sticky bit, which is why the bit, and not the mode alone, is the question.
+    #[cfg(unix)]
     #[test]
     #[allow(clippy::expect_used)]
     fn a_target_under_a_swappable_directory_is_refused() {
@@ -1139,6 +1141,7 @@ mod tests {
     /// target is created and then judged. Both halves are needed: the creation gives the second
     /// check something to see, and the second check is what refuses a directory another user
     /// planted while the source was being probed.
+    #[cfg(unix)]
     #[test]
     #[allow(clippy::expect_used)]
     fn a_missing_target_is_created_and_then_judged() {
