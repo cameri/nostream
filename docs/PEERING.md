@@ -191,3 +191,39 @@ authenticate the remote relay, because NIP-42 is a client-to-relay proof. The
 remote relay's identity is established separately by the configured
 `peering.peers` pubkey (and, in later phases, by discovery and owner
 attestation).
+
+## Paid peering
+
+When `peering.terms` contains exactly one positive term, this relay sells the
+feed instead of serving it settlement-free. Terms use the NIP-11 fee-object
+shape (`amount`, `unit`, `period`); `unit` must be `msats`, `sats` or `btc`, and
+a paid `msats` amount must be a whole number of satoshis so every payment
+processor charges the same value. Payments must be enabled.
+
+The buyer, Relay A, has no relationship with this relay's payment processor.
+The invoice travels over the authenticated relay connection:
+
+1. Relay A authenticates with NIP-42 and sends
+   `REQ {"kinds":[402],"#p":["<A pubkey>"],"#t":["peering"],"limit":1}`.
+2. Relay B creates a BOLT11 invoice with its existing payments processor and
+   persists it with `invoices.purpose = peering` and a snapshot of the term.
+3. Relay B publishes a signed `kind 402` event tagged `p` (Relay A), `t`
+   (`peering`), `bolt11`, `i` (processor invoice id) and `expiration`.
+4. Relay A pays the invoice. The processor calls Relay B's existing callback,
+   or the billing worker finds the payment by polling. Settlement validates the
+   amount and extends `peering_payments.period_end` exactly once.
+5. Feed access is allowed while `period_end` is in the future. An unpaid period
+   marks the peer `lapsed`, closes its peer sockets, and refuses feed `REQ`,
+   `COUNT` and `NIP-77`; it does not delete events or sync state.
+6. Renewal is the same loop: the billing worker issues a renewal invoice before
+   the period ends and publishes it on the same `kind 402` path.
+
+An expired invoice is retired and reissued on request after a short cooldown.
+Before denying access, the relay rechecks a pending invoice with the processor,
+so a missed webhook heals on its own. A peer can always authenticate and ask for
+its invoice, even while lapsed, but cannot read the feed.
+
+Billing state is stored in `peering_payments`, one row per peer and direction
+(`sell` here; `buy` is reserved for the paying side). `GET /admin/peering`
+merges it with the sync and request rows, showing status, access end, the open
+invoice and the last processor error.

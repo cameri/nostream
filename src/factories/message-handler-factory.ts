@@ -137,7 +137,7 @@ export const messageHandlerFactory =
           peeringBillingServiceFor(adapter),
         )
       case MessageType.NEG_MSG:
-        return new NegMsgMessageHandler(adapter, createSettings)
+        return new NegMsgMessageHandler(adapter, createSettings, peeringBillingServiceFor(adapter))
       case MessageType.NEG_CLOSE:
         return new NegCloseMessageHandler(adapter)
       default:

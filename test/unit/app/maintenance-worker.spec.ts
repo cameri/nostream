@@ -33,7 +33,7 @@ describe('MaintenanceWorker', () => {
   let notificationOutboxService: Sinon.SinonStubbedInstance<INotificationOutboxService>
   let notificationDeliveryLogRepository: any
   let notificationOutboxRepository: any
-  let peeringBillingService: { processLapses: Sinon.SinonStub; handleInvoiceExpired: Sinon.SinonStub }
+  let peeringBillingService: { processLifecycle: Sinon.SinonStub; handleInvoiceExpired: Sinon.SinonStub }
   let verifyStub: Sinon.SinonStub
 
   const pendingInvoice = {
@@ -112,7 +112,7 @@ describe('MaintenanceWorker', () => {
     }
 
     peeringBillingService = {
-      processLapses: sandbox.stub().resolves(0),
+      processLifecycle: sandbox.stub().resolves(0),
       handleInvoiceExpired: sandbox.stub().resolves(),
     }
 
@@ -369,6 +369,57 @@ describe('MaintenanceWorker', () => {
       expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
       expect(paymentsService.updateInvoiceStatus).not.to.have.been.called
       expect(paymentsService.getPendingInvoices).not.to.have.been.called
+    })
+
+    describe('peering lifecycle', () => {
+      it('runs the peering lifecycle once per pass', async () => {
+        await (worker as any).onSchedule()
+
+        expect(peeringBillingService.processLifecycle).to.have.been.calledOnce
+      })
+
+      it('still finishes the pass when the peering lifecycle fails', async () => {
+        peeringBillingService.processLifecycle.rejects(new Error('database down'))
+
+        await (worker as any).onSchedule()
+
+        expect(maintenanceService.clearOldEvents).to.have.been.calledOnce
+      })
+
+      it('settles a peering invoice without sending the generic paid notice', async () => {
+        settingsState.payments = { enabled: true } as any
+        const invoice = { ...pendingInvoice, purpose: InvoicePurpose.PEERING }
+        paymentsService.getPendingInvoices.resolves([invoice])
+        paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+          id: 'inv-1',
+          status: InvoiceStatus.COMPLETED,
+          confirmedAt: new Date(),
+        })
+
+        await (worker as any).onSchedule()
+
+        expect(paymentsService.confirmInvoice).to.have.been.calledOnce
+        expect(paymentsService.sendInvoiceUpdateNotification).not.to.have.been.called
+      })
+
+      it('hands an expired peering invoice to the billing service', async () => {
+        settingsState.payments = { enabled: true } as any
+        const invoice = {
+          ...pendingInvoice,
+          purpose: InvoicePurpose.PEERING,
+          expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+        }
+        paymentsService.getPendingInvoices.resolves([invoice])
+        paymentsService.getInvoiceFromPaymentsProcessor.rejects({ response: { status: 404 } })
+
+        await (worker as any).onSchedule()
+
+        expect(peeringBillingService.handleInvoiceExpired).to.have.been.calledWith(invoice)
+        expect(notificationOutboxRepository.enqueue).not.to.have.been.calledWith(
+          'admission.invoice.failed',
+          Sinon.match.any,
+        )
+      })
     })
 
     describe('subscription lifecycle', () => {
@@ -772,24 +823,6 @@ describe('MaintenanceWorker', () => {
         OperatorNotificationEventType.ADMISSION_INVOICE_FAILED,
         Sinon.match.any,
       )
-    })
-
-    it('runs the peering lapse scan on each pass', async () => {
-      settingsState.payments = { enabled: true } as any
-      paymentsService.getPendingInvoices.resolves([])
-      peeringBillingService.processLapses.resolves(2)
-
-      await (worker as any).onSchedule()
-
-      expect(peeringBillingService.processLapses).to.have.been.calledOnce
-    })
-
-    it('skips the peering lapse scan when payments are disabled', async () => {
-      settingsState.payments = { enabled: false } as any
-
-      await (worker as any).onSchedule()
-
-      expect(peeringBillingService.processLapses).not.to.have.been.called
     })
 
     it('keeps an expired pending invoice pending when the processor lookup fails without 404', async () => {

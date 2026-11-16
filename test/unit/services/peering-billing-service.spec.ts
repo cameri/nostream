@@ -477,6 +477,34 @@ describe('PeeringBillingService', () => {
         Sinon.match.any,
       )
     })
+
+    it('keeps the peer active when the lapse transaction fails', async () => {
+      const expired = payment({
+        status: PeeringPaymentStatus.ACTIVE,
+        periodEnd: new Date(now.getTime() - 1000),
+      })
+      paymentRepository.findPeriodEnded.resolves([expired])
+      paymentRepository.findByPeer.resolves(expired)
+      paymentRepository.lockByPeer.rejects(new Error('deadlock'))
+
+      expect(await service.processLapses(now)).to.equal(0)
+      expect(mockTrx.rollback).to.have.been.calledOnce
+      expect(notificationOutboxRepository.enqueue).not.to.have.been.called
+      expect(revokePeer).not.to.have.been.called
+    })
+
+    it('does not fail the pass when revoking the live sockets throws', async () => {
+      const expired = payment({
+        status: PeeringPaymentStatus.ACTIVE,
+        periodEnd: new Date(now.getTime() - 1000),
+      })
+      paymentRepository.findPeriodEnded.resolves([expired])
+      paymentRepository.findByPeer.resolves(expired)
+      paymentRepository.lockByPeer.resolves(expired)
+      revokePeer.throws(new Error('cluster down'))
+
+      expect(await service.processLapses(now)).to.equal(1)
+    })
   })
 
   describe('handleInvoiceExpired', () => {
@@ -492,6 +520,26 @@ describe('PeeringBillingService', () => {
       await service.handleInvoiceExpired(invoice())
 
       expect(paymentRepository.save).not.to.have.been.called
+    })
+
+    it('ignores an invoice when the peer has no billing row', async () => {
+      paymentRepository.findByPeer.resolves(undefined)
+
+      await service.handleInvoiceExpired(invoice())
+
+      expect(paymentRepository.save).not.to.have.been.called
+      expect(notificationOutboxRepository.enqueue).not.to.have.been.called
+    })
+
+    it('does not fail the worker when the failure alert cannot be enqueued', async () => {
+      paymentRepository.findByPeer.resolves(
+        payment({ status: PeeringPaymentStatus.INVOICED, currentInvoiceId: 'inv-1' }),
+      )
+      notificationOutboxRepository.enqueue.rejects(new Error('outbox down'))
+
+      await service.handleInvoiceExpired(invoice())
+
+      expect(paymentRepository.save).to.have.been.called
     })
 
     it('clears the pointer and records a failure', async () => {
@@ -531,6 +579,111 @@ describe('PeeringBillingService', () => {
           renewalInvoiceId: null,
         }),
       )
+    })
+  })
+
+  describe('processLifecycle', () => {
+    it('issues renewals and then lapses ended periods', async () => {
+      const running = payment({
+        status: PeeringPaymentStatus.ACTIVE,
+        periodEnd: new Date(now.getTime() + 86_400_000),
+      })
+      paymentRepository.findDueForRenewal.resolves([running])
+      paymentRepository.findPeriodEnded.resolves([])
+      sandbox.stub(service, 'ensureInvoice').resolves(invoice({ id: 'renewal-1' }))
+
+      const changed = await service.processLifecycle(now)
+
+      expect(changed).to.equal(1)
+      expect(service.ensureInvoice).to.have.been.calledWith(peer, { now, renewal: true })
+    })
+
+    it('runs the ended-period sweep', async () => {
+      const expired = payment({
+        status: PeeringPaymentStatus.ACTIVE,
+        periodEnd: new Date(now.getTime() - 1000),
+      })
+      paymentRepository.findDueForRenewal.resolves([])
+      paymentRepository.findPeriodEnded.resolves([expired])
+      paymentRepository.findByPeer.resolves(expired)
+      paymentRepository.lockByPeer.resolves(expired)
+
+      const changed = await service.processLifecycle(now)
+
+      expect(changed).to.equal(1)
+      expect(paymentRepository.save).to.have.been.calledWith(
+        Sinon.match({ status: PeeringPaymentStatus.LAPSED }),
+        mockTrx,
+      )
+    })
+
+    it('does nothing when the paid term is invalid', async () => {
+      settingsState.peering!.terms = [{ amount: 1500, unit: 'msats', period: 2592000 }]
+
+      expect(await service.processLifecycle(now)).to.equal(0)
+      expect(paymentRepository.findDueForRenewal).not.to.have.been.called
+      expect(paymentRepository.findPeriodEnded).not.to.have.been.called
+    })
+
+    it('does nothing for settlement-free peering', async () => {
+      settingsState.peering!.terms = []
+
+      expect(await service.processLifecycle(now)).to.equal(0)
+      expect(paymentRepository.findDueForRenewal).not.to.have.been.called
+    })
+
+    it('does not renew a row whose period already ended', async () => {
+      paymentRepository.findDueForRenewal.resolves([
+        payment({
+          status: PeeringPaymentStatus.ACTIVE,
+          periodEnd: new Date(now.getTime() - 1000),
+        }),
+      ])
+      paymentRepository.findPeriodEnded.resolves([])
+      const ensureInvoice = sandbox.stub(service, 'ensureInvoice').resolves(invoice())
+
+      expect(await service.processLifecycle(now)).to.equal(0)
+      expect(ensureInvoice).not.to.have.been.called
+    })
+
+    it('treats a reissue cooldown as handled without failing the pass', async () => {
+      paymentRepository.findDueForRenewal.resolves([
+        payment({
+          status: PeeringPaymentStatus.ACTIVE,
+          periodEnd: new Date(now.getTime() + 1000),
+        }),
+      ])
+      paymentRepository.findPeriodEnded.resolves([])
+      sandbox.stub(service, 'ensureInvoice').rejects(new PeeringInvoiceCooldownError(15))
+
+      expect(await service.processLifecycle(now)).to.equal(0)
+    })
+
+    it('keeps the pass alive when issuing one renewal fails', async () => {
+      paymentRepository.findDueForRenewal.resolves([
+        payment({
+          status: PeeringPaymentStatus.ACTIVE,
+          periodEnd: new Date(now.getTime() + 1000),
+        }),
+      ])
+      paymentRepository.findPeriodEnded.resolves([])
+      sandbox.stub(service, 'ensureInvoice').rejects(new Error('invoice provider down'))
+
+      expect(await service.processLifecycle(now)).to.equal(0)
+    })
+
+    it('adds renewals and lapses into one count', async () => {
+      paymentRepository.findDueForRenewal.resolves([
+        payment({
+          status: PeeringPaymentStatus.ACTIVE,
+          periodEnd: new Date(now.getTime() + 1000),
+        }),
+      ])
+      paymentRepository.findPeriodEnded.resolves([])
+      sandbox.stub(service, 'ensureInvoice').resolves(invoice({ id: 'renewal-1' }))
+      sandbox.stub(service, 'processLapses').resolves(2)
+
+      expect(await service.processLifecycle(now)).to.equal(3)
     })
   })
 })

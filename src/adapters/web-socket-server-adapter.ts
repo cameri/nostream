@@ -55,6 +55,7 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
     this.webSocketsAdapters = new WeakMap()
 
     this.on(WebSocketServerAdapterEvent.Broadcast, this.onBroadcast.bind(this))
+    this.on(WebSocketServerAdapterEvent.PeeringRevoke, this.onPeeringRevoke.bind(this))
 
     this.webSocketServer
       .on(WebSocketServerAdapterEvent.Connection, this.onConnection.bind(this))
@@ -120,6 +121,23 @@ export class WebSocketServerAdapter extends WebServerAdapter implements IWebSock
 
     return new Promise((resolve) => {
       webSocket.once('close', () => resolve())
+    })
+  }
+
+  private onPeeringRevoke(payload: { pubkey?: unknown }) {
+    const pubkey = typeof payload?.pubkey === 'string' ? payload.pubkey : undefined
+    if (!pubkey) {
+      return
+    }
+
+    this.webSocketServer.clients.forEach((webSocket: WebSocket) => {
+      const webSocketAdapter = this.webSocketsAdapters.get(webSocket)
+      if (webSocketAdapter?.getPeerPubkey() !== pubkey) {
+        return
+      }
+
+      logger('closing peer %s: peering access ended', pubkey)
+      webSocket.close(4001, 'payment-required: peering access expired')
     })
   }
 

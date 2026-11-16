@@ -62,6 +62,8 @@ export interface IPeeringBillingService {
   ensureInvoice(peerPubkey: Pubkey, options?: { now?: Date; renewal?: boolean }): Promise<Invoice | undefined>
   /** Ends expired periods once, marking them lapsed and alerting the operator. */
   processLapses(now?: Date): Promise<number>
+  /** Renewal window, period end/lapse, and invoice expiry bookkeeping. */
+  processLifecycle(now?: Date): Promise<number>
   /** Clears a pointer and updates status after the processor confirms an invoice expired. */
   handleInvoiceExpired(invoice: Invoice): Promise<void>
 }
