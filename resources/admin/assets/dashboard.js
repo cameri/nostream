@@ -1786,16 +1786,24 @@
   })
 
   logoutButton.addEventListener('click', async () => {
+    let sessionEnded = false
+
     try {
-      await fetch(`${adminBase}/logout`, {
+      const response = await fetch(`${adminBase}/logout`, {
         method: 'POST',
         credentials: 'include',
       })
+      sessionEnded = response.ok
     } catch {
-      // Still return to the login screen if the network request fails.
+      // The request did not reach the server, so nothing was revoked and the cookie was not cleared.
     }
 
     showLogin()
+
+    if (!sessionEnded) {
+      // Neither a retry nor a new sign-in revokes the original token, so do not suggest one.
+      showLoginError('Sign-out could not be confirmed. The session may stay active until it expires.')
+    }
   })
 
   copySnapshotButton?.addEventListener('click', () => {
