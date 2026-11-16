@@ -284,6 +284,12 @@ jobs:
       - name: Release build
         run: cargo build --workspace --all-features --release
 
+  noop-probe:
+    name: Noop Probe
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+
   changeset-check:
     name: Changeset Required
     runs-on: ubuntu-latest
