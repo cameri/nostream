@@ -1001,7 +1001,7 @@ no relay-side test reaches them.
 | 43 | `core/nip43.rs`; `relay/strategies/{join,leave,invite}_request.rs` | `session invite-mint` |
 | 44 | `core/nip44.rs` | `divergent: nip44_parity::produces_the_canonical_payload_from_the_nip44_spec_test_vector` *(nostream-core)* |
 | 45 | `relay/handlers/count.rs`; `core/messages.rs` | `session count-disabled`, `measured-session` |
-| 50 | `core/filter.rs`; `storage/postgres/sql.rs` | `vectors-only: nip_vectors::nip50_a_search_filter_is_served_only_when_enabled` |
+| 50 | `core/filter.rs`; `storage/postgres/sql.rs`; `storage/lmdb/search.rs` | `vectors-only: nip_vectors::nip50_a_search_filter_is_served_only_when_enabled`; the embedded store's own order by `parity_lmdb::a_search_returns_the_recorded_rows_in_rank_order` |
 | 56 | `core/nip56.rs`; `relay/strategies/report.rs`; `relay/hidden_content.rs` | `session hidden-report` |
 | 59 | `relay/strategies/gift_wrap.rs`; `core/event.rs` | `session event-rejections`, step 3 |
 | 62 | `relay/strategies/vanish.rs` | `vectors-only: strategies::vanish_soft_deletes_the_other_events_and_stores_the_request` |
@@ -1015,9 +1015,13 @@ no relay-side test reaches them.
 | 98 | `core/nip98.rs` (stub) | `no-wire-surface: header verification needs the admin HTTP surface (D1, #865)` |
 
 Two limits of the map, stated so a later reader does not take it for more than it is.
-**NIP-50's ranking** is not in it: `ts_rank` lives in the SQL backend and needs Postgres,
-so ranking stays with the `#[ignore]`d `parity` target while the vector above pins the
-matcher's accept-and-drop behaviour. **The census is a different oracle**: it maps 658
+**NIP-50's ranking** is split twice over. The SQL backend's `ts_rank` needs Postgres, so its
+*values* stay with the `#[ignore]`d `parity` target, while the vector above pins the matcher's
+accept-and-drop behaviour. The embedded store does not use `ts_rank`: it ranks by the smallest
+cover span, then `event_id` (`storage/lmdb/search.rs`, ADR 0012 D4), and the `parity_lmdb`
+arm pins the order it produces on the captured corpus — through entry 21, which is replayed
+now, and through `a_search_returns_the_recorded_rows_in_rank_order`. What neither arm
+establishes is that the two rank *numbers* agree; the fixture records an order, not values. **The census is a different oracle**: it maps 658
 TypeScript unit cases to Rust tests and is untouched here, because a NIP with a vector
 and no TypeScript case has nothing to map, and hand-adding one fails `ts_case_parity` by
 design.
