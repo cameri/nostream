@@ -2,6 +2,7 @@ import { createNegErrMessage, createNegMsgMessage } from '../utils/messages'
 import { IMessageHandler } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
 import { NegMsgMessage, OutgoingMessage } from '../@types/messages'
+import { PeeringAccess } from '../@types/peering'
 import { IPeeringBillingService } from '../@types/services'
 import { Settings } from '../@types/settings'
 import { WebSocketAdapterEvent } from '../constants/adapter'
@@ -49,17 +50,29 @@ export class NegMsgMessageHandler implements IMessageHandler {
     // cannot keep pulling events until the maintenance worker closes its socket.
     const peerPubkey = this.webSocket.getPeerPubkey?.()
     if (peerPubkey && this.peeringBillingService) {
+      let access: PeeringAccess
       try {
-        const access = await this.peeringBillingService.getAccess(peerPubkey)
-        if (!access.allowed) {
-          sessions.close(subscriptionId)
-          this.reply(createNegErrMessage(subscriptionId, peeringPaymentRequiredReason(access)))
-          return
-        }
+        access = await this.peeringBillingService.getAccess(peerPubkey)
       } catch (error) {
         logger.error('unable to check peering access for %s: %o', peerPubkey, error)
+        // A replacement NEG-OPEN may own this id now; the old check must not close it.
+        if (sessions.peek(subscriptionId) !== session) {
+          return
+        }
         sessions.close(subscriptionId)
         this.reply(createNegErrMessage(subscriptionId, 'error: unable to check peering access'))
+        return
+      }
+
+      // NEG-CLOSE or a replacement NEG-OPEN can land while billing is pending.
+      // Never answer or close a session this message no longer owns.
+      if (sessions.peek(subscriptionId) !== session) {
+        return
+      }
+
+      if (!access.allowed) {
+        sessions.close(subscriptionId)
+        this.reply(createNegErrMessage(subscriptionId, peeringPaymentRequiredReason(access)))
         return
       }
     }

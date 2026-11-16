@@ -255,5 +255,63 @@ describe('NegMsgMessageHandler', () => {
       expect(billing.getAccess).not.to.have.been.called
       expect(emitted.firstCall.args[0][0]).to.equal(MessageType.NEG_MSG)
     })
+
+    it('does not answer or close a replacement session after the billing wait', async () => {
+      openSession('sync1')
+      let settle!: (access: unknown) => void
+      billing.getAccess.returns(
+        new Promise((resolve) => {
+          settle = resolve
+        }),
+      )
+
+      const pending = send('sync1', validMessageHex)
+      // The peer replaces sync1 while the billing check is still running.
+      openSession('sync1')
+      settle({ allowed: false, reason: 'peering access lapsed' })
+
+      await pending
+
+      expect(emitted).not.to.have.been.called
+      expect(sessions.getSessionIds()).to.deep.equal(['sync1'])
+    })
+
+    it('does not close a replacement session when the billing check fails', async () => {
+      openSession('sync1')
+      let fail!: (error: unknown) => void
+      billing.getAccess.returns(
+        new Promise((_resolve, reject) => {
+          fail = reject
+        }),
+      )
+
+      const pending = send('sync1', validMessageHex)
+      openSession('sync1')
+      fail(new Error('database down'))
+
+      await pending
+
+      expect(emitted).not.to.have.been.called
+      expect(sessions.getSessionIds()).to.deep.equal(['sync1'])
+    })
+
+    it('does not answer a session that was closed during the billing wait', async () => {
+      openSession('sync1')
+      let settle!: (access: unknown) => void
+      billing.getAccess.returns(
+        new Promise((resolve) => {
+          settle = resolve
+        }),
+      )
+
+      const pending = send('sync1', validMessageHex)
+      sessions.close('sync1')
+      settle({ allowed: false, reason: 'peering access lapsed' })
+
+      await pending
+
+      expect(emitted).not.to.have.been.called
+      expect(sessions.getSessionIds()).to.deep.equal([])
+    })
   })
 })

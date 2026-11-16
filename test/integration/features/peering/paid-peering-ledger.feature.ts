@@ -177,6 +177,11 @@ Before({ tags: '@paid-peering-ledger' }, function (this: World<Record<string, an
   const settings = SettingsStatic._settings as any
   SettingsStatic._settings = {
     ...settings,
+    // The billing service refuses to mint an invoice while payments are disabled.
+    payments: {
+      ...(settings?.payments ?? {}),
+      enabled: true,
+    },
     peering: {
       ...(settings?.peering ?? {}),
       enabled: true,
