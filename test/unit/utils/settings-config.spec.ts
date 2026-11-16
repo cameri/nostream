@@ -117,6 +117,7 @@ describe('settings-config', () => {
           contact: 'test@example.com',
         },
         network: { maxPayloadSize: 1024 },
+        payments: { enabled: true, processor: 'lnbits' },
         peering,
       }) as any
 
@@ -246,6 +247,51 @@ describe('settings-config', () => {
       })
 
       expect(issues.some((issue) => issue.path === 'peering.terms[0].currency')).to.equal(true)
+    })
+
+    it('rejects a paid msat term that is not a whole number of satoshis', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        terms: [{ amount: 1500, unit: 'msats', period: 2592000 }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.terms[0].amount')).to.equal(true)
+    })
+
+    it('rejects a paid term in an unsupported unit', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        terms: [{ amount: 1, unit: 'usd', period: 2592000 }],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.terms[0].unit')).to.equal(true)
+    })
+
+    it('rejects more than one paid term', () => {
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        terms: [
+          { amount: 21000, unit: 'msats', period: 2592000 },
+          { amount: 42000, unit: 'msats', period: 2592000 },
+        ],
+      })
+
+      expect(issues.some((issue) => issue.path === 'peering.terms')).to.equal(true)
+      expect(issues.find((issue) => issue.path === 'peering.terms')?.message).to.include('only one paid')
+    })
+
+    it('rejects paid terms while payments are disabled', () => {
+      const issues = validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        network: { maxPayloadSize: 1024 },
+        peering: {
+          ...settlementFreePeering,
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
+        },
+      } as any)
+
+      expect(issues.some((issue) => issue.path === 'peering.terms')).to.equal(true)
+      expect(issues.find((issue) => issue.path === 'peering.terms')?.message).to.include('payments must be enabled')
     })
 
     it('rejects a proof-of-work requirement above the NIP-13 maximum', () => {
@@ -380,8 +426,7 @@ describe('settings-config', () => {
       expect(
         issues.some(
           (issue) =>
-            issue.path === 'info.relay_url' &&
-            issue.message === 'relay_url must use ws, wss, http, or https protocol',
+            issue.path === 'info.relay_url' && issue.message === 'relay_url must use ws, wss, http, or https protocol',
         ),
         `expected ${relay_url} to be rejected for protocol`,
       ).to.equal(true)
@@ -480,7 +525,9 @@ describe('settings-config', () => {
       const settings = baseSettings()
       settings.limits = { event: { rateLimits: [{ period: 0.5, rate: 10 }] } }
 
-      const message = validateSettings(settings).find((issue) => issue.path === 'limits.event.rateLimits[0].period')?.message
+      const message = validateSettings(settings).find(
+        (issue) => issue.path === 'limits.event.rateLimits[0].period',
+      )?.message
       expect(message).to.contain('milliseconds')
     })
 
@@ -862,8 +909,13 @@ describe('settings-config', () => {
 describe('settings-guided-schema', () => {
   it('exports guided categories for admin and CLI use', () => {
     expect(guidedSettingCategories.length).to.be.greaterThan(0)
-    expect(getGuidedSettingCategory('payments')?.settings.some((entry) => entry.path === 'payments.enabled')).to.equal(true)
-    expect(getGuidedSettingField('limits', 'limits.rateLimiter.strategy')?.options).to.deep.equal(['ewma', 'sliding_window'])
+    expect(getGuidedSettingCategory('payments')?.settings.some((entry) => entry.path === 'payments.enabled')).to.equal(
+      true,
+    )
+    expect(getGuidedSettingField('limits', 'limits.rateLimiter.strategy')?.options).to.deep.equal([
+      'ewma',
+      'sliding_window',
+    ])
   })
 
   it('validates guided numeric fields', () => {
@@ -999,18 +1051,67 @@ describe('settings write lock', () => {
   it('reclaims a lock whose owner pid is gone (ESRCH)', async () => {
     ensureSettingsExists()
     const lockPath = getSettingsWriteLockPath()
-    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n`)
+    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n${os.hostname()}\nowner-token\n`)
     Sinon.stub(process, 'kill').throws(Object.assign(new Error('no such process'), { code: 'ESRCH' }))
 
     expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
     expect(fs.existsSync(lockPath)).to.equal(false)
   })
 
+  it('does not steal a fresh lock from another host even when the pid is gone', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    const acquiredAt = Date.now()
+    // A Docker relay and a host CLI share .nostr but not their PID namespaces.
+    fs.writeFileSync(lockPath, `5\n${acquiredAt}\nrelay-container\nother-token\n`)
+    Sinon.stub(process, 'kill').throws(Object.assign(new Error('no such process'), { code: 'ESRCH' }))
+
+    let now = acquiredAt
+    Sinon.stub(Date, 'now').callsFake(() => now)
+    setTimeout(() => {
+      now = acquiredAt + 31_000
+    }, 10)
+
+    let error: Error | undefined
+    try {
+      await withSettingsWriteLock(() => 'ran')
+    } catch (err) {
+      error = err as Error
+    }
+
+    expect(error?.message).to.equal('Timed out waiting for settings write lock')
+    expect(fs.existsSync(lockPath)).to.equal(true)
+  })
+
+  it('reclaims a lock from another host once its heartbeat stops', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    fs.writeFileSync(lockPath, `5\n${Date.now()}\nrelay-container\nother-token\n`)
+    const old = new Date(Date.now() - 61_000)
+    fs.utimesSync(lockPath, old, old)
+
+    expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
+    expect(fs.existsSync(lockPath)).to.equal(false)
+  })
+
+  it('does not remove a lock that was replaced while it was held', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+
+    await withSettingsWriteLock(() => {
+      fs.rmSync(lockPath)
+      fs.writeFileSync(lockPath, `999\n${Date.now()}\n${os.hostname()}\nreplacement-token\n`)
+    })
+
+    expect(fs.existsSync(lockPath)).to.equal(true)
+    expect(fs.readFileSync(lockPath, 'utf-8')).to.contain('replacement-token')
+  })
+
   it('does not steal a live lock when the liveness check fails with EPERM', async () => {
     ensureSettingsExists()
     const lockPath = getSettingsWriteLockPath()
     const acquiredAt = Date.now()
-    fs.writeFileSync(lockPath, `${process.pid}\n${acquiredAt}\n`)
+    fs.writeFileSync(lockPath, `${process.pid}\n${acquiredAt}\n${os.hostname()}\nowner-token\n`)
     Sinon.stub(process, 'kill').throws(Object.assign(new Error('not permitted'), { code: 'EPERM' }))
 
     let now = acquiredAt

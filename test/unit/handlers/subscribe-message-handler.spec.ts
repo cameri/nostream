@@ -132,6 +132,178 @@ describe('SubscribeMessageHandler', () => {
       expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly(['NOTICE', 'Subscription rejected: reason'])
     })
 
+    it('closes a peer feed request when paid access is not active', async () => {
+      const peer = 'a'.repeat(64)
+      const billing = {
+        getAccess: sandbox.stub().resolves({ allowed: false, reason: 'peering payment required' }),
+        ensureInvoice: sandbox.stub().resolves(),
+      }
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { subscription: { maxFilters: 10, maxLimit: 0 } } },
+      })
+      handler = new SubscribeMessageHandler(
+        webSocket,
+        eventRepository,
+        settingsFactory,
+        inviteCodeRepository,
+        rateLimiterFactory,
+        requestStats as any,
+        billing as any,
+      )
+      message = [MessageType.REQ, subscriptionId, { kinds: [1] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(billing.getAccess).to.have.been.calledWith(peer, { recheck: true })
+      expect(webSocketOnMessageStub.firstCall.args[0]).to.deep.equal([
+        'CLOSED',
+        subscriptionId,
+        'payment-required: peering payment required',
+      ])
+      expect(fetchAndSendStub).not.to.have.been.called
+    })
+
+    it('lets a peer request its invoice without paid access', async () => {
+      const peer = 'a'.repeat(64)
+      const billing = {
+        getAccess: sandbox.stub(),
+        ensureInvoice: sandbox.stub().resolves(),
+      }
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { subscription: { maxFilters: 10, maxLimit: 0 } } },
+      })
+      handler = new SubscribeMessageHandler(
+        webSocket,
+        eventRepository,
+        settingsFactory,
+        inviteCodeRepository,
+        rateLimiterFactory,
+        requestStats as any,
+        billing as any,
+      )
+      message = [MessageType.REQ, subscriptionId, { kinds: [402], '#p': [peer], '#t': ['peering'], limit: 1 }] as any
+
+      await handler.handleMessage(message)
+
+      expect(billing.ensureInvoice).to.have.been.calledWith(peer)
+      expect(billing.getAccess).not.to.have.been.called
+      expect(fetchAndSendStub).to.have.been.calledOnce
+    })
+
+    it('does not exempt a mixed invoice and feed request from the paid gate', async () => {
+      const peer = 'a'.repeat(64)
+      const billing = {
+        getAccess: sandbox.stub().resolves({ allowed: false, reason: 'peering payment required' }),
+        ensureInvoice: sandbox.stub().resolves(),
+      }
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { subscription: { maxFilters: 10, maxLimit: 0 } } },
+      })
+      handler = new SubscribeMessageHandler(
+        webSocket,
+        eventRepository,
+        settingsFactory,
+        inviteCodeRepository,
+        rateLimiterFactory,
+        requestStats as any,
+        billing as any,
+      )
+      const invoice = { kinds: [402], '#p': [peer], '#t': ['peering'], limit: 1 }
+      message = [MessageType.REQ, subscriptionId, invoice, { kinds: [1] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(billing.ensureInvoice).not.to.have.been.called
+      expect(billing.getAccess).to.have.been.calledWith(peer, { recheck: true })
+      expect(webSocketOnMessageStub.firstCall.args[0]).to.deep.equal([
+        'CLOSED',
+        subscriptionId,
+        'payment-required: peering payment required',
+      ])
+      expect(fetchAndSendStub).not.to.have.been.called
+    })
+
+    it('does not register a subscription closed while billing is pending', async () => {
+      const peer = 'a'.repeat(64)
+      let releaseAccess: ((access: unknown) => void) | undefined
+      const billing = {
+        getAccess: sandbox.stub().returns(
+          new Promise((resolve) => {
+            releaseAccess = resolve
+          }),
+        ),
+        ensureInvoice: sandbox.stub().resolves(),
+      }
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { subscription: { maxFilters: 10, maxLimit: 0 } } },
+      })
+      handler = new SubscribeMessageHandler(
+        webSocket,
+        eventRepository,
+        settingsFactory,
+        inviteCodeRepository,
+        rateLimiterFactory,
+        requestStats as any,
+        billing as any,
+      )
+      message = [MessageType.REQ, subscriptionId, { kinds: [1] }] as any
+
+      const pending = handler.handleMessage(message)
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(billing.getAccess).to.have.been.calledOnce
+      ;(handler as any).abort()
+      releaseAccess?.({ allowed: true, periodEnd: new Date(Date.now() + 60_000) })
+      await pending
+
+      expect(webSocketOnSubscribeStub).not.to.have.been.called
+      expect(fetchAndSendStub).not.to.have.been.called
+    })
+
+    it('schedules a paid feed expiry with the socket adapter', async () => {
+      const peer = 'a'.repeat(64)
+      const periodEnd = new Date(Date.now() + 60_000)
+      const setSubscriptionExpiry = sandbox.stub()
+      const billing = {
+        getAccess: sandbox.stub().resolves({ allowed: true, periodEnd }),
+        ensureInvoice: sandbox.stub().resolves(),
+      }
+      ;(webSocket as any).setSubscriptionExpiry = setSubscriptionExpiry
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { subscription: { maxFilters: 10, maxLimit: 0 } } },
+      })
+      handler = new SubscribeMessageHandler(
+        webSocket,
+        eventRepository,
+        settingsFactory,
+        inviteCodeRepository,
+        rateLimiterFactory,
+        requestStats as any,
+        billing as any,
+      )
+      message = [MessageType.REQ, subscriptionId, { kinds: [1] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(setSubscriptionExpiry).to.have.been.calledWith(subscriptionId, periodEnd, Sinon.match.func)
+
+      const check = setSubscriptionExpiry.firstCall.args[2] as () => Promise<Date | null | false>
+      const renewedPeriodEnd = new Date(periodEnd.getTime() + 60_000)
+      billing.getAccess.resolves({ allowed: true, periodEnd: renewedPeriodEnd })
+      expect(await check()).to.equal(renewedPeriodEnd)
+      expect(billing.getAccess).to.have.been.calledWith(peer, { recheck: true })
+
+      billing.getAccess.resolves({ allowed: true, status: 'free' })
+      expect(await check()).to.be.null
+
+      billing.getAccess.resolves({ allowed: false })
+      expect(await check()).to.be.false
+    })
+
     it('bounds raw filters before deduplicating them', async () => {
       settingsFactory.returns({ limits: { client: { subscription: { maxFilters: 10 } } } })
       const duplicate = { kinds: [1] }
@@ -910,6 +1082,34 @@ describe('SubscribeMessageHandler', () => {
       })
 
       expect((handler as any).canSubscribe(subscriptionId, filters)).to.be.undefined
+    })
+
+    it('caps peering invoice subscriptions for a peer', () => {
+      const peer = 'a'.repeat(64)
+      const invoice = { kinds: [402], '#p': [peer], '#t': ['peering'], limit: 1 }
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { subscription: { maxSubscriptions: 10, maxFilters: 10 } } },
+      })
+      subscriptions.set('invoice-1', [invoice])
+
+      expect((handler as any).canSubscribe('invoice-2', [invoice])).to.equal(
+        'Too many peering invoice subscriptions: close the previous invoice subscription before opening another',
+      )
+    })
+
+    it('does not exempt a mixed invoice and feed request from maxSubscriptions', () => {
+      const peer = 'a'.repeat(64)
+      const invoice = { kinds: [402], '#p': [peer], '#t': ['peering'], limit: 1 }
+      ;(webSocket.getPeerPubkey as Sinon.SinonStub).returns(peer)
+      settingsFactory.returns({
+        limits: { peer: { subscription: { maxSubscriptions: 1, maxFilters: 10 } } },
+      })
+      subscriptions.set('other', [])
+
+      expect((handler as any).canSubscribe('mixed', [invoice, { kinds: [1] }])).to.equal(
+        'Too many subscriptions: Number of subscriptions must be less than or equal to 1',
+      )
     })
 
     it('uses peer limits instead of client limits for a recognized peer', () => {

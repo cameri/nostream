@@ -1,9 +1,10 @@
 import { getMasterDbClient, getReadReplicaDbClient } from '../database/client'
 import { createEventRepository } from './event-repository-factory'
-import { createPaymentsProcessor } from './payments-processor-factory'
+import { LazyPaymentsProcessor } from './payments-processor-factory'
 import { createSettings } from './settings-factory'
 import { InvoiceRepository } from '../repositories/invoice-repository'
 import { PaymentsService } from '../services/payments-service'
+import { PeeringPaymentRepository } from '../repositories/peering-payment-repository'
 import { UserSubscriptionRepository } from '../repositories/user-subscription-repository'
 import { UserRepository } from '../repositories/user-repository'
 import { NotificationOutboxRepository } from '../repositories/notification-outbox-repository'
@@ -15,7 +16,7 @@ export const createPaymentsService = () => {
   const eventRepository = createEventRepository(dbClient, rrDbClient)
   const userRepository = new UserRepository(dbClient, eventRepository)
   const notificationOutboxRepository = new NotificationOutboxRepository(dbClient)
-  const paymentsProcessor = createPaymentsProcessor()
+  const paymentsProcessor = new LazyPaymentsProcessor()
 
   return new PaymentsService(
     dbClient,
@@ -26,5 +27,6 @@ export const createPaymentsService = () => {
     createSettings,
     notificationOutboxRepository,
     new UserSubscriptionRepository(dbClient),
+    new PeeringPaymentRepository(dbClient),
   )
 }

@@ -1,4 +1,6 @@
 import fs from 'fs'
+import os from 'os'
+import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { join } from 'path'
 import yaml from 'js-yaml'
@@ -32,30 +34,54 @@ export {
 const SETTINGS_WRITE_LOCK_STALE_MS = 60_000
 const SETTINGS_WRITE_LOCK_RETRY_MS = 25
 const SETTINGS_WRITE_LOCK_MAX_WAIT_MS = 30_000
+// A holder refreshes the lock mtime well inside the stale window. Without this a
+// long write outlives the window and another process may steal a live lock.
+const SETTINGS_WRITE_LOCK_HEARTBEAT_MS = 20_000
 
 type SettingsWriteLockMetadata = {
   pid: number
   acquiredAt: number
+  /** Missing on locks written by older versions. */
+  hostname?: string
+  /** Missing on locks written by older versions. */
+  token?: string
 }
 
 const readSettingsWriteLockMetadata = (lockPath: string): SettingsWriteLockMetadata | undefined => {
   try {
     const raw = fs.readFileSync(lockPath, 'utf-8')
-    const [pidLine, acquiredLine] = raw.split('\n')
+    const [pidLine, acquiredLine, hostnameLine, tokenLine] = raw.split('\n')
     const pid = Number(pidLine)
     const acquiredAt = Number(acquiredLine)
     if (!Number.isFinite(pid) || !Number.isFinite(acquiredAt)) {
       return undefined
     }
-    return { pid, acquiredAt }
+    return {
+      pid,
+      acquiredAt,
+      hostname: hostnameLine || undefined,
+      token: tokenLine || undefined,
+    }
   } catch {
     return undefined
   }
 }
 
-const isSettingsWriteLockStale = (metadata: SettingsWriteLockMetadata): boolean => {
-  if (Date.now() - metadata.acquiredAt > SETTINGS_WRITE_LOCK_STALE_MS) {
-    return true
+const getSettingsWriteLockAgeMs = (lockPath: string): number => {
+  try {
+    return Date.now() - fs.statSync(lockPath).mtimeMs
+  } catch {
+    return Number.POSITIVE_INFINITY
+  }
+}
+
+const isSettingsWriteLockStale = (lockPath: string, metadata: SettingsWriteLockMetadata): boolean => {
+  const age = getSettingsWriteLockAgeMs(lockPath)
+
+  // A PID means nothing across container/host namespaces: the relay's PID 5 is
+  // not the host CLI's PID 5. Only the heartbeat age can prove abandonment there.
+  if (metadata.hostname !== os.hostname()) {
+    return age > SETTINGS_WRITE_LOCK_STALE_MS
   }
 
   try {
@@ -63,9 +89,27 @@ const isSettingsWriteLockStale = (metadata: SettingsWriteLockMetadata): boolean 
     return false
   } catch (error) {
     // Only ESRCH proves the owner is gone. EPERM means the process exists under
-    // another user, and any other error is treated as alive so a failed check
-    // can never steal a live lock; the age rule above remains the fallback.
-    return (error as NodeJS.ErrnoException).code === 'ESRCH'
+    // another user; the heartbeat age remains the fallback for other errors.
+    return (error as NodeJS.ErrnoException).code === 'ESRCH' || age > SETTINGS_WRITE_LOCK_STALE_MS
+  }
+}
+
+const removeSettingsWriteLockIfOwner = (lockPath: string, owner: SettingsWriteLockMetadata): void => {
+  try {
+    const current = readSettingsWriteLockMetadata(lockPath)
+    if (
+      !current ||
+      current.pid !== owner.pid ||
+      current.acquiredAt !== owner.acquiredAt ||
+      current.hostname !== owner.hostname ||
+      current.token !== owner.token
+    ) {
+      return
+    }
+
+    fs.rmSync(lockPath, { force: true })
+  } catch {
+    // The lock is already gone or unreadable; nothing else to release.
   }
 }
 
@@ -85,7 +129,7 @@ const attemptStealStaleSettingsWriteLock = (
       !current ||
       current.pid !== expected.pid ||
       current.acquiredAt !== expected.acquiredAt ||
-      !isSettingsWriteLockStale(current)
+      !isSettingsWriteLockStale(lockPath, current)
     ) {
       return false
     }
@@ -119,13 +163,23 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
   ensureSettingsExists()
   const lockPath = getSettingsWriteLockPath()
   const deadline = Date.now() + SETTINGS_WRITE_LOCK_MAX_WAIT_MS
+  const owner: SettingsWriteLockMetadata = {
+    pid: process.pid,
+    acquiredAt: Date.now(),
+    hostname: os.hostname(),
+    token: randomUUID(),
+  }
   let lockFd: number | undefined
+  let heartbeat: NodeJS.Timeout | undefined
 
   while (Date.now() < deadline) {
     try {
       const lockFdLocal = fs.openSync(lockPath, 'wx')
       try {
-        fs.writeFileSync(lockFdLocal, `${process.pid}\n${Date.now()}\n`)
+        fs.writeFileSync(
+          lockFdLocal,
+          `${owner.pid}\n${owner.acquiredAt}\n${owner.hostname}\n${owner.token}\n`,
+        )
       } catch (error) {
         // The lock exists before it has contents; leaving that empty file
         // behind would block every later writer until someone removes it.
@@ -146,7 +200,7 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
 
       const metadata = readSettingsWriteLockMetadata(lockPath)
       if (metadata) {
-        if (isSettingsWriteLockStale(metadata)) {
+        if (isSettingsWriteLockStale(lockPath, metadata)) {
           attemptStealStaleSettingsWriteLock(lockPath, metadata)
         }
       } else {
@@ -161,11 +215,27 @@ export const withSettingsWriteLock = async <T>(operation: () => T): Promise<T> =
     throw new Error('Timed out waiting for settings write lock')
   }
 
+  const heldFd = lockFd
+  heartbeat = setInterval(() => {
+    try {
+      const now = new Date()
+      // futimes works on the open file, so a stolen-and-replaced path cannot be
+      // kept alive by this holder's timer.
+      fs.futimesSync(heldFd, now, now)
+    } catch {
+      // The descriptor is gone; release will clear the timer.
+    }
+  }, SETTINGS_WRITE_LOCK_HEARTBEAT_MS)
+  heartbeat.unref()
+
   try {
     return operation()
   } finally {
-    fs.closeSync(lockFd)
-    fs.rmSync(lockPath, { force: true })
+    if (heartbeat) {
+      clearInterval(heartbeat)
+    }
+    fs.closeSync(heldFd)
+    removeSettingsWriteLockIfOwner(lockPath, owner)
   }
 }
 
@@ -961,6 +1031,14 @@ const validatePeeringTerms = (terms: unknown, issues: ValidationIssue[]): void =
 
     if (typeof term.unit !== 'string' || !term.unit.trim()) {
       issues.push({ path: `${prefix}.unit`, message: 'unit must be a non-empty string' })
+    } else if (typeof term.amount === 'number' && term.amount > 0) {
+      const unit = term.unit.trim().toLowerCase()
+      if (!['msats', 'sats', 'btc'].includes(unit)) {
+        issues.push({ path: `${prefix}.unit`, message: 'paid terms must use msats, sats or btc' })
+      } else if (unit === 'msats' && term.amount % 1000 !== 0) {
+        // Processors such as LNbits and OpenNode truncate msats to whole sats.
+        issues.push({ path: `${prefix}.amount`, message: 'paid msat terms must be a whole number of satoshis' })
+      }
     }
 
     if (!(typeof term.period === 'number' && Number.isSafeInteger(term.period) && term.period > 0)) {
@@ -1079,6 +1157,26 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
   validatePeeringScopes(peering.scopes, issues)
   validatePeeringTerms(peering.terms, issues)
   validatePeeringPeers(peering.peers, issues)
+
+  const paidTerms = Array.isArray(peering.terms)
+    ? peering.terms.filter(
+        (term) => isPlainObject(term) && typeof term.amount === 'number' && term.amount > 0,
+      )
+    : []
+
+  if (paidTerms.length > 1) {
+    issues.push({
+      path: 'peering.terms',
+      message: 'only one paid peering term is supported',
+    })
+  }
+
+  if (paidTerms.length > 0 && settings.payments?.enabled !== true) {
+    issues.push({
+      path: 'peering.terms',
+      message: 'payments must be enabled to charge for peering',
+    })
+  }
 
   if (!enabled) {
     return

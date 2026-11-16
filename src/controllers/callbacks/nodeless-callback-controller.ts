@@ -10,6 +10,7 @@ import { hmacSha256 } from '../../utils/secret'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
 import { nodelessCallbackBodySchema, nodelessSignatureSchema } from '../../schemas/nodeless-callback-schema'
+import { redactHeaders } from '../../utils/http'
 import { validateSchema } from '../../utils/validation'
 
 const logger = createLogger('nodeless-callback-controller')
@@ -18,7 +19,7 @@ export class NodelessCallbackController implements IController {
   public constructor(private readonly paymentsService: IPaymentsService) {}
 
   public async handleRequest(request: Request, response: Response) {
-    logger('callback request headers: %o', request.headers)
+    logger('callback request headers: %o', redactHeaders(request.headers))
     logger('callback request body: %O', request.body)
 
     const bodyValidation = validateSchema(nodelessCallbackBodySchema)(request.body)
@@ -91,8 +92,12 @@ export class NodelessCallbackController implements IController {
       return
     }
 
-    invoice.amountPaid = invoice.amountRequested
-    updatedInvoice.amountPaid = invoice.amountRequested
+    if (typeof invoice.amountPaid !== 'bigint') {
+      invoice.amountPaid = invoice.amountRequested
+    }
+    if (typeof updatedInvoice.amountPaid !== 'bigint') {
+      updatedInvoice.amountPaid = invoice.amountPaid
+    }
 
     try {
       await this.paymentsService.confirmInvoice(invoice)

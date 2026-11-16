@@ -111,6 +111,10 @@ describe('WebSocketServerAdapter', () => {
     it('registers error event listener on webSocketServer', () => {
       expect(webSocketServer.on).to.have.been.calledWith('error')
     })
+
+    it('registers the peering revoke listener on itself', () => {
+      expect(adapter.listenerCount(WebSocketServerAdapterEvent.PeeringRevoke)).to.be.greaterThan(0)
+    })
   })
 
   describe('getConnectedClients', () => {
@@ -279,6 +283,47 @@ describe('WebSocketServerAdapter', () => {
 
       // Should not throw when skipping non-OPEN clients
       expect(() => adapter.emit(WebSocketServerAdapterEvent.Broadcast, event)).not.to.throw()
+    })
+  })
+
+  describe('onPeeringRevoke', () => {
+    const peer = 'a'.repeat(64)
+    const adapters = () => (adapter as any).webSocketsAdapters as WeakMap<object, any>
+
+    it('closes only the sockets authenticated as the revoked peer', () => {
+      const matching = createMockClient()
+      const other = createMockClient()
+      const anonymous = createMockClient()
+      webSocketServer.clients = new Set([matching, other, anonymous] as any)
+      adapters().set(matching, { getPeerPubkey: () => peer })
+      adapters().set(other, { getPeerPubkey: () => 'b'.repeat(64) })
+      adapters().set(anonymous, { getPeerPubkey: () => undefined })
+
+      adapter.emit(WebSocketServerAdapterEvent.PeeringRevoke, { pubkey: peer })
+
+      expect(matching.close).to.have.been.calledOnceWithExactly(4001, 'payment-required: peering access expired')
+      expect(other.close).not.to.have.been.called
+      expect(anonymous.close).not.to.have.been.called
+    })
+
+    it('ignores a payload without a usable pubkey', () => {
+      const client = createMockClient()
+      webSocketServer.clients = new Set([client] as any)
+      adapters().set(client, { getPeerPubkey: () => peer })
+
+      adapter.emit(WebSocketServerAdapterEvent.PeeringRevoke, {})
+      adapter.emit(WebSocketServerAdapterEvent.PeeringRevoke, { pubkey: 42 })
+      adapter.emit(WebSocketServerAdapterEvent.PeeringRevoke, undefined as any)
+
+      expect(client.close).not.to.have.been.called
+    })
+
+    it('skips clients that were never adapted', () => {
+      const client = createMockClient()
+      webSocketServer.clients = new Set([client] as any)
+
+      expect(() => adapter.emit(WebSocketServerAdapterEvent.PeeringRevoke, { pubkey: peer })).not.to.throw
+      expect(client.close).not.to.have.been.called
     })
   })
 

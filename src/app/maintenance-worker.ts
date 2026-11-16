@@ -2,7 +2,7 @@ import { FSWatcher } from 'fs'
 import { mergeDeepLeft, path, pipe } from 'ramda'
 import { ICacheAdapter } from '../@types/adapters'
 import { IRunnable } from '../@types/base'
-import { InvoiceStatus } from '../@types/invoice'
+import { InvoicePurpose, InvoiceStatus } from '../@types/invoice'
 import { Nip05Verification } from '../@types/nip05'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import {
@@ -14,6 +14,7 @@ import {
   IMaintenanceService,
   INotificationOutboxService,
   IPaymentsService,
+  IPeeringBillingService,
   ISubscriptionService,
 } from '../@types/services'
 import { Settings } from '../@types/settings'
@@ -94,6 +95,11 @@ export class MaintenanceWorker implements IRunnable {
    * ten invoices that never resolve starve everything behind them.
    */
   private pendingInvoiceOffset = 0
+  /**
+   * Where the next retry scan starts. A page of invoices that keep failing must
+   * not starve the ones behind them.
+   */
+  private retryPeeringInvoiceOffset = 0
 
   public constructor(
     private readonly process: NodeJS.Process,
@@ -106,6 +112,7 @@ export class MaintenanceWorker implements IRunnable {
     private readonly notificationOutboxRepository: INotificationOutboxRepository,
     private readonly opsCache?: ICacheAdapter,
     private readonly subscriptionService?: ISubscriptionService,
+    private readonly peeringBillingService?: IPeeringBillingService,
   ) {
     this.process
       .on('SIGINT', this.onExit.bind(this))
@@ -187,12 +194,45 @@ export class MaintenanceWorker implements IRunnable {
       return
     }
 
-    const invoices = await this.paymentsService.getPendingInvoices(this.pendingInvoiceOffset)
-    logger('found %d pending invoices from offset %d', invoices.length, this.pendingInvoiceOffset)
+    // A paid peering invoice is marked completed before settlement runs. If that
+    // settlement rolled back, confirmed_at is still null and the invoice is no
+    // longer in the pending page. Pick those up first so a paid peer is never
+    // stranded between "completed" and "settled".
+    const retryOffset = this.retryPeeringInvoiceOffset
+    const retryablePeering = await this.paymentsService.getUnconfirmedPeeringInvoices(
+      PENDING_INVOICE_PAGE_SIZE,
+      retryOffset,
+    )
+    const pending = await this.paymentsService.getPendingInvoices(this.pendingInvoiceOffset)
+    logger(
+      'found %d pending invoice(s) from offset %d and %d unconfirmed peering invoice(s) from offset %d',
+      pending.length,
+      this.pendingInvoiceOffset,
+      retryablePeering.length,
+      retryOffset,
+    )
 
-    // A short page means we reached the end, so start over next pass.
+    // A short page means we reached the end, so start over next pass. A full
+    // page advances the retry cursor so the same failing invoices cannot starve
+    // the ones behind them.
     this.pendingInvoiceOffset =
-      invoices.length < PENDING_INVOICE_PAGE_SIZE ? 0 : this.pendingInvoiceOffset + PENDING_INVOICE_PAGE_SIZE
+      pending.length < PENDING_INVOICE_PAGE_SIZE ? 0 : this.pendingInvoiceOffset + PENDING_INVOICE_PAGE_SIZE
+    this.retryPeeringInvoiceOffset =
+      retryablePeering.length < PENDING_INVOICE_PAGE_SIZE ? 0 : retryOffset + PENDING_INVOICE_PAGE_SIZE
+
+    // A retryable peering invoice is completed, not pending, so the two lists do
+    // not normally overlap. Deduplicate anyway so a future query change cannot
+    // settle the same invoice twice in one pass.
+    const seen = new Set<string>()
+    const invoices = [...retryablePeering, ...pending].filter((invoice) => {
+      if (seen.has(invoice.id)) {
+        return false
+      }
+
+      seen.add(invoice.id)
+      return true
+    })
+
     const delay = () => delayMs(100 + Math.floor(Math.random() * 10))
 
     let successful = 0
@@ -211,41 +251,59 @@ export class MaintenanceWorker implements IRunnable {
 
         await this.paymentsService.updateInvoiceStatus({ id, status })
 
-        if (
-          invoice.status !== updatedInvoice.status &&
-          updatedInvoice.status == InvoiceStatus.COMPLETED &&
-          updatedInvoice.confirmedAt
-        ) {
+        const needsConfirmation =
+          updatedInvoice.status === InvoiceStatus.COMPLETED &&
+          updatedInvoice.confirmedAt &&
+          (invoice.status !== updatedInvoice.status || invoice.confirmedAt == null)
+
+        if (needsConfirmation) {
           logger('confirming invoice %s & notifying %s', invoice.id, invoice.pubkey)
+
+          // The processor may report a real paid amount for a peering invoice
+          // (underpayment or overpayment). Preserve it; fall back to the
+          // requested amount only when the processor does not report one.
+          const amountPaid =
+            typeof updatedInvoice.amountPaid === 'bigint'
+              ? updatedInvoice.amountPaid
+              : invoice.amountRequested
 
           const update = pipe(
             mergeDeepLeft(updatedInvoice),
-            mergeDeepLeft({ amountPaid: invoice.amountRequested }),
+            mergeDeepLeft({ amountPaid }),
           )(invoice)
 
-          await Promise.all([
-            this.paymentsService.confirmInvoice(update),
-            this.paymentsService.sendInvoiceUpdateNotification(update),
-          ])
+          await this.paymentsService.confirmInvoice(update)
+
+          // Peering settlement is complete once confirmInvoice applies the period;
+          // a generic “invoice paid” notice would not match the peer's peering filter.
+          if (invoice.purpose !== InvoicePurpose.PEERING) {
+            await this.paymentsService.sendInvoiceUpdateNotification(update)
+          }
 
           await delay()
         }
         successful++
       } catch (error) {
-        if (isNotFoundError(error) && isExpiredInvoice(invoice)) {
+        // Only a pending invoice has no settled period to protect. A completed
+        // invoice may be a peering settlement that rolled back; never expire it.
+        if (invoice.status === InvoiceStatus.PENDING && isNotFoundError(error) && isExpiredInvoice(invoice)) {
           logger('marking expired invoice %s after payment processor returned 404', invoice.id)
           await this.paymentsService.updateInvoiceStatus({
             id: invoice.id,
             status: InvoiceStatus.EXPIRED,
           })
-          try {
-            await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.ADMISSION_INVOICE_FAILED, {
-              invoiceId: invoice.id,
-              pubkey: invoice.pubkey,
-              reason: 'expired',
-            })
-          } catch (error) {
-            logger.error('Unable to enqueue admission.invoice.failed notification', error)
+          if (invoice.purpose === InvoicePurpose.PEERING) {
+            await this.peeringBillingService?.handleInvoiceExpired(invoice)
+          } else {
+            try {
+              await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.ADMISSION_INVOICE_FAILED, {
+                invoiceId: invoice.id,
+                pubkey: invoice.pubkey,
+                reason: 'expired',
+              })
+            } catch (error) {
+              logger.error('Unable to enqueue admission.invoice.failed notification', error)
+            }
           }
           successful++
           continue
@@ -258,6 +316,7 @@ export class MaintenanceWorker implements IRunnable {
     }
 
     await this.processSubscriptions()
+    await this.processPeering()
 
     await clearOldEventsPromise
     await this.publishOpsHeartbeat({
@@ -274,6 +333,17 @@ export class MaintenanceWorker implements IRunnable {
       }
     } catch (error) {
       logger.error('Unable to process subscriptions', error)
+    }
+  }
+
+  private async processPeering(): Promise<void> {
+    try {
+      const changed = await this.peeringBillingService?.processLifecycle()
+      if (changed) {
+        logger('moved %d peering relationship(s) through their lifecycle', changed)
+      }
+    } catch (error) {
+      logger.error('Unable to process peering billing', error)
     }
   }
 

@@ -3,7 +3,9 @@ import { Factory } from '../@types/base'
 import { IMessageHandler } from '../@types/message-handlers'
 import { NegOpenMessage, OutgoingMessage } from '../@types/messages'
 import { INegentropySessions } from '../@types/negentropy'
+import { PeeringAccess } from '../@types/peering'
 import { IEventRepository, ReconciliationItem } from '../@types/repositories'
+import { IPeeringBillingService } from '../@types/services'
 import { Settings } from '../@types/settings'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { IRateLimiter } from '../@types/utils'
@@ -16,6 +18,7 @@ import { isReconciliationAuthorized } from '../utils/nip42'
 import { getNip77Limits, isNip77Active, NEGENTROPY_FRAME_SIZE_LIMIT } from '../utils/nip77'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
 import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
+import { peeringPaymentRequiredReason } from '../utils/peering-billing'
 import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 
 const logger = createLogger('neg-open-message-handler')
@@ -31,6 +34,7 @@ export class NegOpenMessageHandler implements IMessageHandler {
     private readonly settings: () => Settings,
     private readonly rateLimiter?: Factory<IRateLimiter>,
     private readonly requestStats?: PeeringRequestStatsStore,
+    private readonly peeringBillingService?: IPeeringBillingService,
   ) {}
 
   public async handleMessage(message: NegOpenMessage): Promise<void> {
@@ -83,6 +87,33 @@ export class NegOpenMessageHandler implements IMessageHandler {
     if (!sessions.isCurrent(subscriptionId, token)) {
       sessions.endRead(token)
       return
+    }
+
+    if (peerPubkey && this.peeringBillingService) {
+      let access: PeeringAccess
+      try {
+        access = await this.peeringBillingService.getAccess(peerPubkey, { recheck: true })
+      } catch (error) {
+        sessions.endRead(token)
+        if (sessions.isCurrent(subscriptionId, token)) {
+          logger.error('unable to check peering access for %s: %o', peerPubkey, error)
+          this.reject(sessions, subscriptionId, 'error: unable to check peering access')
+        }
+        return
+      }
+
+      // A replacement NEG-OPEN may have claimed this id while billing was pending.
+      // The older check must not close the newer session.
+      if (!sessions.isCurrent(subscriptionId, token)) {
+        sessions.endRead(token)
+        return
+      }
+
+      if (!access.allowed) {
+        sessions.endRead(token)
+        this.reject(sessions, subscriptionId, peeringPaymentRequiredReason(access))
+        return
+      }
     }
 
     if (peerPubkey) {

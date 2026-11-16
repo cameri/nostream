@@ -1,0 +1,22 @@
+name: Documentation
+description: Something in the docs, README or website is missing, wrong or unclear
+labels: ["documentation"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Where
+      description: The file or page, for example CONFIGURATION.md or a link to the website.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is missing, wrong or unclear
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording
+      description: Optional, if you already know what it should say.

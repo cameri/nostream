@@ -4,7 +4,7 @@ import { Invoice, InvoiceStatus } from '../../@types/invoice'
 import { createLogger } from '../../factories/logger-factory'
 import { createSettings } from '../../factories/settings-factory'
 import { fromZebedeeInvoice } from '../../utils/transform'
-import { getRemoteAddress } from '../../utils/http'
+import { getRemoteAddress, redactHeaders } from '../../utils/http'
 import { IController } from '../../@types/controllers'
 import { IPaymentsService } from '../../@types/services'
 import { validateSchema } from '../../utils/validation'
@@ -16,7 +16,7 @@ export class ZebedeeCallbackController implements IController {
   public constructor(private readonly paymentsService: IPaymentsService) {}
 
   public async handleRequest(request: Request, response: Response) {
-    logger('request headers: %o', request.headers)
+    logger('request headers: %o', redactHeaders(request.headers))
     logger('request body: %O', request.body)
 
     const bodyValidation = validateSchema(zebedeeCallbackBodySchema)(request.body)
@@ -56,9 +56,13 @@ export class ZebedeeCallbackController implements IController {
       return
     }
 
-    invoice.amountPaid = invoice.amountRequested
+    if (typeof invoice.amountPaid !== 'bigint') {
+      invoice.amountPaid = invoice.amountRequested
+    }
     invoice.status = updatedInvoice.status
-    updatedInvoice.amountPaid = invoice.amountRequested
+    if (typeof updatedInvoice.amountPaid !== 'bigint') {
+      updatedInvoice.amountPaid = invoice.amountPaid
+    }
 
     try {
       await this.paymentsService.confirmInvoice({
@@ -66,7 +70,7 @@ export class ZebedeeCallbackController implements IController {
         pubkey: invoice.pubkey,
         status: invoice.status,
         confirmedAt: invoice.confirmedAt,
-        amountPaid: invoice.amountRequested,
+        amountPaid: invoice.amountPaid,
       })
       await this.paymentsService.sendInvoiceUpdateNotification(updatedInvoice)
     } catch (error) {

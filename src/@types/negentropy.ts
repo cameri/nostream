@@ -34,6 +34,8 @@ export interface INegentropySessions {
   ): boolean
   /** The live session for an id, with its idle timer restarted. */
   touch(subscriptionId: SubscriptionId): NegentropySession | undefined
+  /** The live session for an id, without restarting its idle timer. */
+  peek(subscriptionId: SubscriptionId): NegentropySession | undefined
   /** Drops a reservation that never became a session; a no-op if it has since been replaced. */
   release(subscriptionId: SubscriptionId, token: NegentropySessionToken): void
   close(subscriptionId: SubscriptionId): boolean

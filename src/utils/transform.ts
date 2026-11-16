@@ -16,6 +16,7 @@ import {
 } from 'ramda'
 
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
+import { DBPeeringPayment, PeeringPayment } from '../@types/peering'
 import { User } from '../@types/user'
 
 const BECH32_ALPHABET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
@@ -132,9 +133,38 @@ export const fromDBInvoice = applySpec<Invoice>({
   updatedAt: prop('updated_at'),
   createdAt: prop('created_at'),
   verifyURL: prop('verify_url'),
+  purpose: prop('purpose'),
   planId: prop('plan_id'),
   periodStart: prop('period_start'),
   periodEnd: prop('period_end'),
+  termAmountMsats: ifElse(
+    propSatisfies(isNil, 'term_amount_msats'),
+    always(undefined),
+    pipe(prop('term_amount_msats') as () => string, toBigInt),
+  ),
+  termPeriodSeconds: prop('term_period_seconds'),
+})
+
+export const fromDBPeeringPayment = applySpec<PeeringPayment>({
+  peerPubkey: pipe(prop('peer_pubkey') as () => Buffer, fromBuffer),
+  direction: prop('direction'),
+  status: prop('status'),
+  currentInvoiceId: prop('current_invoice_id'),
+  renewalInvoiceId: prop('renewal_invoice_id'),
+  periodStart: prop('period_start'),
+  periodEnd: prop('period_end'),
+  termAmountMsats: ifElse(
+    propSatisfies(isNil, 'term_amount_msats'),
+    always(undefined),
+    pipe(prop('term_amount_msats') as () => string, toBigInt),
+  ),
+  termPeriodSeconds: prop('term_period_seconds'),
+  lastSettledInvoiceId: prop('last_settled_invoice_id'),
+  lastSettledAt: prop('last_settled_at'),
+  lastCheckedAt: prop('last_checked_at'),
+  lastError: prop('last_error'),
+  createdAt: prop('created_at'),
+  updatedAt: prop('updated_at'),
 })
 
 export const fromDBUser = applySpec<User>({

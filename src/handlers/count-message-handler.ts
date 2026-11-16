@@ -4,7 +4,9 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import { Factory } from '../@types/base'
 import { IMessageHandler } from '../@types/message-handlers'
 import { CountMessage } from '../@types/messages'
+import { PeeringAccess } from '../@types/peering'
 import { IEventRepository } from '../@types/repositories'
+import { IPeeringBillingService } from '../@types/services'
 import { Settings } from '../@types/settings'
 import { SubscriptionFilter, SubscriptionId } from '../@types/subscription'
 import { IRateLimiter } from '../@types/utils'
@@ -15,6 +17,7 @@ import { createClosedMessage, createCountResultMessage } from '../utils/messages
 import { isCountAuthorized } from '../utils/nip42'
 import { subscriptionLimitsFor } from '../utils/peer-limits'
 import { getPeerRequestRetryAfterMs } from '../utils/peer-requests'
+import { peeringPaymentRequiredReason } from '../utils/peering-billing'
 import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 
 const debug = createLogger('count-message-handler')
@@ -26,6 +29,7 @@ export class CountMessageHandler implements IMessageHandler {
     private readonly settings: () => Settings,
     private readonly rateLimiter?: Factory<IRateLimiter>,
     private readonly requestStats?: PeeringRequestStatsStore,
+    private readonly peeringBillingService?: IPeeringBillingService,
   ) {}
 
   public async handleMessage(message: CountMessage): Promise<void> {
@@ -51,6 +55,26 @@ export class CountMessageHandler implements IMessageHandler {
       }
 
       void this.requestStats?.recordRequest(peerPubkey, 'COUNT')
+    }
+
+    if (peerPubkey && this.peeringBillingService) {
+      let access: PeeringAccess
+      try {
+        access = await this.peeringBillingService.getAccess(peerPubkey, { recheck: true })
+      } catch (error) {
+        debug('unable to check peering access for %s: %o', peerPubkey, error)
+        this.webSocket.emit(
+          WebSocketAdapterEvent.Message,
+          createClosedMessage(queryId, 'error: unable to check peering access'),
+        )
+        return
+      }
+
+      if (!access.allowed) {
+        const reason = peeringPaymentRequiredReason(access)
+        this.webSocket.emit(WebSocketAdapterEvent.Message, createClosedMessage(queryId, reason))
+        return
+      }
     }
 
     // Some clients send the same filter more than once. Bound the raw list
