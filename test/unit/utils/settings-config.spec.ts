@@ -1094,6 +1094,19 @@ describe('settings write lock', () => {
     expect(fs.existsSync(lockPath)).to.equal(false)
   })
 
+  it('reclaims a lock whose heartbeat stopped even when the pid was reused', async () => {
+    ensureSettingsExists()
+    const lockPath = getSettingsWriteLockPath()
+    // Same host and a live PID, but no heartbeat for over a minute: the owner died
+    // and a restart gave its PID to a new process.
+    fs.writeFileSync(lockPath, `${process.pid}\n${Date.now()}\n${os.hostname()}\nowner-token\n`)
+    const old = new Date(Date.now() - 61_000)
+    fs.utimesSync(lockPath, old, old)
+
+    expect(await withSettingsWriteLock(() => 'ran')).to.equal('ran')
+    expect(fs.existsSync(lockPath)).to.equal(false)
+  })
+
   it('does not remove a lock that was replaced while it was held', async () => {
     ensureSettingsExists()
     const lockPath = getSettingsWriteLockPath()

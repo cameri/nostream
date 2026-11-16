@@ -78,10 +78,16 @@ const getSettingsWriteLockAgeMs = (lockPath: string): number => {
 const isSettingsWriteLockStale = (lockPath: string, metadata: SettingsWriteLockMetadata): boolean => {
   const age = getSettingsWriteLockAgeMs(lockPath)
 
+  // A live holder refreshes the mtime every heartbeat. An expired heartbeat means
+  // the owner is gone even if its PID was reused by a new process after a restart.
+  if (age > SETTINGS_WRITE_LOCK_STALE_MS) {
+    return true
+  }
+
   // A PID means nothing across container/host namespaces: the relay's PID 5 is
   // not the host CLI's PID 5. Only the heartbeat age can prove abandonment there.
   if (metadata.hostname !== os.hostname()) {
-    return age > SETTINGS_WRITE_LOCK_STALE_MS
+    return false
   }
 
   try {
@@ -89,8 +95,8 @@ const isSettingsWriteLockStale = (lockPath: string, metadata: SettingsWriteLockM
     return false
   } catch (error) {
     // Only ESRCH proves the owner is gone. EPERM means the process exists under
-    // another user; the heartbeat age remains the fallback for other errors.
-    return (error as NodeJS.ErrnoException).code === 'ESRCH' || age > SETTINGS_WRITE_LOCK_STALE_MS
+    // another user; treat other errors as alive until the heartbeat expires.
+    return (error as NodeJS.ErrnoException).code === 'ESRCH'
   }
 }
 
