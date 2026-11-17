@@ -120,4 +120,20 @@ describe('LNbitsPaymentsProcessor', () => {
       expect(invoice.confirmedAt?.toISOString()).to.equal('2025-10-11T15:24:27.000Z')
     })
   })
+
+  describe('payInvoice', () => {
+    it('sends an outgoing payment and returns the processor payment hash', async () => {
+      const httpClient = {
+        post: sinon.stub().resolves({ data: { payment_hash: 'paid-hash' } }),
+      }
+      const processor = new LNbitsPaymentsProcessor(httpClient as any, (() => ({})) as any)
+      const bolt11 =
+        'lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh'
+
+      const result = await processor.payInvoice({ bolt11 })
+
+      expect(result.paymentHash).to.equal('paid-hash')
+      expect(httpClient.post).to.have.been.calledWith('/api/v1/payments', { out: true, bolt11 }, { maxRedirects: 1 })
+    })
+  })
 })

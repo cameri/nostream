@@ -1,5 +1,5 @@
 import { PeeringAccess, PeeringTermSnapshot } from '../@types/peering'
-import { Settings } from '../@types/settings'
+import { PeeringTerm, Settings } from '../@types/settings'
 import { SubscriptionFilter } from '../@types/subscription'
 import { EventKinds } from '../constants/base'
 
@@ -50,15 +50,18 @@ const toMsats = (amount: number, unit: string): bigint | undefined => {
   return BigInt(amount) * multiplier
 }
 
-/**
- * The paid term this relay sells. An empty list, or only zero-amount terms, means
- * settlement-free peering and returns undefined. A configured paid term that cannot
- * be charged safely throws instead of silently granting free access.
- */
-export const resolvePaidPeeringTerm = (settings: Settings): PeeringTermSnapshot | undefined => {
-  const terms = settings.peering?.terms ?? []
+/** Converts an advertised or configured amount to msats, or undefined for an unknown unit. */
+export const peeringAmountToMsats = (amount: number, unit: string): bigint | undefined => toMsats(amount, unit)
 
-  for (const term of terms) {
+/**
+ * Resolves the single paid term in a list. An empty list, or only zero-amount
+ * terms, means settlement-free peering and returns undefined. Anything unsafe
+ * throws instead of silently granting free access.
+ */
+export const resolvePeeringTerm = (terms: PeeringTerm[] | undefined): PeeringTermSnapshot | undefined => {
+  let resolved: PeeringTermSnapshot | undefined
+
+  for (const term of terms ?? []) {
     if (typeof term !== 'object' || term === null) {
       throw new InvalidPeeringTermError('peering term must be an object')
     }
@@ -103,14 +106,31 @@ export const resolvePaidPeeringTerm = (settings: Settings): PeeringTermSnapshot 
       throw new InvalidPeeringTermError('peering term period must be a positive number of seconds')
     }
 
-    return {
+    if (resolved) {
+      throw new InvalidPeeringTermError('multiple paid peering terms are not supported')
+    }
+
+    resolved = {
       amountMsats,
       periodSeconds: term.period,
     }
   }
 
-  return undefined
+  return resolved
 }
+
+/**
+ * The paid term this relay sells. An empty list, or only zero-amount terms, means
+ * settlement-free peering and returns undefined.
+ */
+export const resolvePaidPeeringTerm = (settings: Settings): PeeringTermSnapshot | undefined =>
+  resolvePeeringTerm(settings.peering?.terms)
+
+/** A configured buying budget, normalized for comparison with invoice amounts. */
+export type PeeringBudgetSnapshot = PeeringTermSnapshot
+
+export const resolvePeeringBudget = (budget: PeeringTerm | undefined): PeeringBudgetSnapshot | undefined =>
+  budget === undefined ? undefined : resolvePeeringTerm([budget])
 
 export const isPeeringInvoiceFilter = (filter: SubscriptionFilter, peerPubkey: string): boolean => {
   const kinds = filter.kinds
@@ -133,6 +153,20 @@ export const isPeeringInvoiceRequest = (filters: SubscriptionFilter[], peerPubke
 
 export const peeringPeriodEnd = (start: Date, periodSeconds: number): Date =>
   new Date(start.getTime() + periodSeconds * 1000)
+
+/** Fixed, epoch-aligned budget window. Renewals inside it share one counter. */
+export const peeringBudgetWindow = (
+  now: Date,
+  periodSeconds: number,
+): { start: Date; end: Date } => {
+  const periodMs = periodSeconds * 1000
+  const startMs = Math.floor(now.getTime() / periodMs) * periodMs
+
+  return {
+    start: new Date(startMs),
+    end: new Date(startMs + periodMs),
+  }
+}
 
 export const peeringInvoiceDescription = (
   settings: Settings,

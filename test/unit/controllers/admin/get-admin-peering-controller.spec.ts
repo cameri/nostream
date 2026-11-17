@@ -51,11 +51,28 @@ describe('GetAdminPeeringController', () => {
         },
       ]),
     }
+    const peeringBuyerService = {
+      list: Sinon.stub().resolves([
+        {
+          paymentHash: 'payment-hash',
+          eventId: 'event-1',
+          peerPubkey: state.pubkey,
+          amountMsats: 250_000_000n,
+          status: 'held',
+          reason: 'amount_mismatch',
+          autoPaid: false,
+          seenCount: 1,
+          createdAt: new Date('2026-11-18T00:00:00.000Z'),
+          updatedAt: new Date('2026-11-18T00:00:00.000Z'),
+        },
+      ]),
+    }
     const controller = new GetAdminPeeringController(
       stateStore as any,
       () => settings,
       requestStatsStore as any,
       peeringPaymentRepository as any,
+      peeringBuyerService as any,
     )
     const response = {
       status: Sinon.stub().returnsThis(),
@@ -83,8 +100,14 @@ describe('GetAdminPeeringController', () => {
     })
     expect(payload.peers[0].billing).to.include({
       status: 'active',
-      termAmountMsats: 21000n,
+      termAmountMsats: '21000',
       termPeriodSeconds: 2592000,
+    })
+    expect(payload.invoices[0]).to.deep.include({
+      paymentHash: 'payment-hash',
+      amountMsats: '250000000',
+      status: 'held',
+      reason: 'amount_mismatch',
     })
   })
 })

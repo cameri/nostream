@@ -72,6 +72,80 @@ export interface PeeringAccess {
   reason?: string
 }
 
+/** A buying-side invoice received over the peer connection. */
+export enum PeeringInvoiceStatus {
+  RECEIVED = 'received',
+  PAYING = 'paying',
+  PAID = 'paid',
+  HELD = 'held',
+  REJECTED = 'rejected',
+  FAILED = 'failed',
+}
+
+/** Why a buyer invoice was held, failed, or paid by an operator instead of auto-pay. */
+export enum PeeringInvoiceReason {
+  BUDGET_EXCEEDED = 'budget_exceeded',
+  BUDGET_NOT_CONFIGURED = 'budget_not_configured',
+  AUTO_PAY_DISABLED = 'auto_pay_disabled',
+  AMOUNT_MISMATCH = 'amount_mismatch',
+  UNKNOWN_PEER = 'unknown_peer',
+  DUPLICATE = 'duplicate',
+  UNSUPPORTED_PROCESSOR = 'unsupported_processor',
+  PAYMENT_FAILED = 'payment_failed',
+  EXPIRED = 'expired',
+  INVALID_INVOICE = 'invalid_invoice',
+}
+
+export interface PeeringInvoice {
+  /** BOLT11 payment hash; dedupe key across events and restarts. */
+  paymentHash: string
+  /** Kind 402 event that delivered this invoice. */
+  eventId: string
+  peerPubkey: Pubkey
+  bolt11: string
+  amountMsats: bigint
+  status: PeeringInvoiceStatus
+  reason?: PeeringInvoiceReason | null
+  /** True only for an automatic payment; manual approvals are not auto-spend. */
+  autoPaid: boolean
+  budgetPeriodStart?: Date | null
+  budgetPeriodEnd?: Date | null
+  /** Period this invoice buys from the peer, from the advertised term. */
+  termPeriodSeconds?: number | null
+  expiresAt?: Date | null
+  seenCount: number
+  paidAt?: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface DBPeeringInvoice {
+  payment_hash: string
+  event_id: string
+  peer_pubkey: Buffer
+  bolt11: string
+  amount_msats: string
+  status: PeeringInvoiceStatus
+  reason: PeeringInvoiceReason | null
+  auto_paid: boolean
+  budget_period_start: Date | null
+  budget_period_end: Date | null
+  term_period_seconds: number | null
+  expires_at: Date | null
+  seen_count: number
+  paid_at: Date | null
+  created_at: Date
+  updated_at: Date
+}
+
+/** One budget counter, either `global` or `peer:<hex>`. */
+export interface PeeringBudgetUsage {
+  scope: string
+  periodStart: Date
+  periodEnd: Date
+  spentMsats: bigint
+}
+
 export interface PeeringTermSnapshot {
   amountMsats: bigint
   periodSeconds: number

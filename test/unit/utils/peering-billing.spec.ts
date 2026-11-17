@@ -4,8 +4,10 @@ import { Settings } from '../../../src/@types/settings'
 import {
   InvalidPeeringTermError,
   isPeeringInvoiceRequest,
+  peeringBudgetWindow,
   peeringPaymentRequiredReason,
   resolvePaidPeeringTerm,
+  resolvePeeringBudget,
 } from '../../../src/utils/peering-billing'
 
 const withTerms = (terms: unknown[]): Settings =>
@@ -84,8 +86,28 @@ describe('resolvePaidPeeringTerm', () => {
   })
 })
 
-describe('peeringPaymentRequiredReason', () => {
-  it('prefixes an unprefixed denial reason', () => {
+describe('peering budget windows', () => {
+  it('resolves a configured budget to msats', () => {
+    expect(resolvePeeringBudget({ amount: 10000, unit: 'sats', period: 3600 })).to.deep.equal({
+      amountMsats: 10_000_000n,
+      periodSeconds: 3600,
+    })
+  })
+
+  it('treats a zero budget as no budget', () => {
+    expect(resolvePeeringBudget({ amount: 0, unit: 'sats', period: 3600 })).to.be.undefined
+    expect(resolvePeeringBudget(undefined)).to.be.undefined
+  })
+
+  it('aligns a budget window to the period boundary', () => {
+    const window = peeringBudgetWindow(new Date('2026-11-18T12:34:56.000Z'), 3600)
+
+    expect(window.start.toISOString()).to.equal('2026-11-18T12:00:00.000Z')
+    expect(window.end.toISOString()).to.equal('2026-11-18T13:00:00.000Z')
+  })
+})
+
+describe('peeringPaymentRequiredReason', () => {  it('prefixes an unprefixed denial reason', () => {
     expect(peeringPaymentRequiredReason({ reason: 'peering access lapsed' })).to.equal(
       'payment-required: peering access lapsed',
     )

@@ -3,6 +3,7 @@ import { RedisAdapter } from '../../adapters/redis-adapter'
 import { getCacheClient } from '../../cache/client'
 import { GetAdminPeeringController } from '../../controllers/admin/get-admin-peering-controller'
 import { getMasterDbClient } from '../../database/client'
+import { createPeeringBuyerService } from '../peering-buyer-service-factory'
 import { PeeringPaymentRepository } from '../../repositories/peering-payment-repository'
 import { PeeringRequestStatsStore } from '../../utils/peering-request-stats'
 import { PeeringSyncStateStore } from '../../utils/peering-sync-state'
@@ -20,6 +21,7 @@ export const createGetAdminPeeringController = (): IController => {
       undefined,
       requestStatsStore,
       new PeeringPaymentRepository(getMasterDbClient()),
+      createPeeringBuyerService(),
     )
   }
 

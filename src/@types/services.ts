@@ -1,7 +1,9 @@
 import { DatabaseTransaction, Pubkey } from './base'
+import { Event } from './event'
 import { Invoice } from './invoice'
 import { NotificationOutboxPayload } from './notification-outbox'
-import { PeeringAccess } from './peering'
+import { PeeringAccess, PeeringAdvertisement, PeeringInvoice, PeeringInvoiceStatus } from './peering'
+import { PeeringPeer } from './settings'
 
 export interface IMaintenanceService {
   clearOldEvents(): Promise<void>
@@ -53,6 +55,8 @@ export interface IPaymentsService {
   getPendingInvoices(offset?: number): Promise<Invoice[]>
   /** Completed peering invoices whose settlement did not commit, for retry. */
   getUnconfirmedPeeringInvoices(limit?: number, offset?: number): Promise<Invoice[]>
+  /** Pays a BOLT11 invoice from the configured wallet and returns its payment hash. */
+  payInvoice(bolt11: string): Promise<string>
 }
 
 export interface IPeeringBillingService {
@@ -66,6 +70,22 @@ export interface IPeeringBillingService {
   processLifecycle(now?: Date): Promise<number>
   /** Clears a pointer and updates status after the processor confirms an invoice expired. */
   handleInvoiceExpired(invoice: Invoice): Promise<void>
+}
+
+export interface IPeeringBuyerService {
+  /** Validates a kind 402 invoice from a peer, then auto-pays or holds it. */
+  handleInvoice(
+    peer: PeeringPeer,
+    advertisement: PeeringAdvertisement,
+    event: Event,
+    now?: Date,
+  ): Promise<PeeringInvoice>
+  /** Pays a held invoice on operator approval, bypassing the auto-pay budget guard. */
+  approve(paymentHash: string, now?: Date): Promise<PeeringInvoice>
+  /** Rejects a held invoice without paying it. */
+  reject(paymentHash: string): Promise<PeeringInvoice>
+  /** Recent buyer invoices for the admin console. */
+  list(statuses?: PeeringInvoiceStatus[], limit?: number): Promise<PeeringInvoice[]>
 }
 
 export interface ISubscriptionService {

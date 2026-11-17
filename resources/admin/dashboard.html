@@ -253,6 +253,29 @@
             </div>
           </section>
 
+          <section class="dashboard-section">
+            <h2 class="section-title">Peering invoices</h2>
+            <p id="peering-invoices-sync" class="sync-line mb-2"><span class="prompt-char">&gt;</span> buyer invoices: not loaded</p>
+            <div class="table-responsive panel-card">
+              <table class="table table-sm mb-0" aria-describedby="peering-invoices-caption">
+                <caption id="peering-invoices-caption" class="visually-hidden">Invoices received from peering peers and their auto-pay status</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Peer</th>
+                    <th scope="col">Amount</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col">Received</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="peering-invoices-body">
+                  <tr><td colspan="6" class="admin-muted small">No buyer invoices yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
           <section id="network-health-section" class="dashboard-section">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
               <h2 class="section-title mb-0">Tor / I2P &amp; network probes</h2>

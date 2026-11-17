@@ -294,6 +294,71 @@ describe('settings-config', () => {
       expect(issues.find((issue) => issue.path === 'peering.terms')?.message).to.include('payments must be enabled')
     })
 
+    it('accepts buyer budgets when payments are enabled', () => {
+      const issues = validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        payments: { enabled: true },
+        network: { maxPayloadSize: 1024 },
+        peering: {
+          ...settlementFreePeering,
+          autoPay: {
+            enabled: true,
+            globalBudget: { amount: 100000, unit: 'sats', period: 2592000 },
+          },
+          peers: [
+            {
+              pubkey: 'a'.repeat(64),
+              relayUrl: 'wss://peer.example.com',
+              budget: { amount: 10000, unit: 'sats', period: 2592000 },
+            },
+          ],
+        },
+      } as any)
+
+      expect(issues.filter((issue) => issue.path.startsWith('peering'))).to.deep.equal([])
+    })
+
+    it('rejects malformed buyer budgets', () => {
+      const issues = validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        payments: { enabled: true },
+        network: { maxPayloadSize: 1024 },
+        peering: {
+          ...settlementFreePeering,
+          autoPay: {
+            enabled: true,
+            globalBudget: { amount: 0.5, unit: 'usd', period: 0, extra: true },
+          },
+          peers: [
+            {
+              pubkey: 'a'.repeat(64),
+              relayUrl: 'wss://peer.example.com',
+              budget: { amount: 0, unit: 'msats', period: 2592000 },
+            },
+          ],
+        },
+      } as any)
+
+      expect(issues.some((issue) => issue.path === 'peering.autoPay.globalBudget.amount')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.autoPay.globalBudget.unit')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.autoPay.globalBudget.period')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.autoPay.globalBudget.extra')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].budget.amount')).to.equal(true)
+    })
+
+    it('rejects auto-pay while payments are disabled', () => {
+      const issues = validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        network: { maxPayloadSize: 1024 },
+        peering: {
+          ...settlementFreePeering,
+          autoPay: { enabled: true },
+        },
+      } as any)
+
+      expect(issues.some((issue) => issue.path === 'peering.autoPay.enabled')).to.equal(true)
+    })
+
     it('rejects a proof-of-work requirement above the NIP-13 maximum', () => {
       const issues = peeringIssues({ ...settlementFreePeering, minRequestPowDifficulty: 257 })
 

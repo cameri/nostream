@@ -16,7 +16,7 @@ import { Invoice, InvoicePurpose, InvoiceStatus, InvoiceUnit } from '../@types/i
 import { Event, ExpiringEvent, UnidentifiedEvent } from '../@types/event'
 import { EventExpirationTimeMetadataKey, EventKinds, EventTags } from '../constants/base'
 import { createLogger } from '../factories/logger-factory'
-import { IPaymentsProcessor } from '../@types/clients'
+import { IPaymentsProcessor, PaymentsProcessorCannotPayError } from '../@types/clients'
 import { IPaymentsService } from '../@types/services'
 import { PeeringPaymentStatus } from '../@types/peering'
 import { Transaction } from '../database/transaction'
@@ -69,6 +69,17 @@ export class PaymentsService implements IPaymentsService {
 
       throw error
     }
+  }
+
+  public async payInvoice(bolt11: string): Promise<string> {
+    if (typeof this.paymentsProcessor.payInvoice !== 'function') {
+      throw new PaymentsProcessorCannotPayError()
+    }
+
+    logger('paying a peering invoice from the configured wallet')
+    const result = await this.paymentsProcessor.payInvoice({ bolt11 })
+
+    return result.paymentHash
   }
 
   public async getInvoiceFromPaymentsProcessor(invoice: Invoice | string): Promise<Partial<Invoice>> {

@@ -182,6 +182,8 @@ describe('PeeringSyncWorker', () => {
 
   interface StartWorkerOptions {
     scopes?: { kinds: number[]; windowSeconds?: number }[]
+    terms?: { amount: number; unit: string; period: number }[]
+    buyerService?: { handleInvoice: (...args: any[]) => Promise<unknown> }
     reconcileIntervalMs?: number
     peerRefreshMs?: number
     stateHeartbeatMs?: number
@@ -202,7 +204,7 @@ describe('PeeringSyncWorker', () => {
         enabled: true,
         supportedNips: [1, 77],
         self: peerPubkey,
-        terms: [],
+        terms: options.terms ?? [],
         scopes: options.scopes ?? [{ kinds: [1] }],
       }),
       createConnection: () => connection as any,
@@ -213,6 +215,7 @@ describe('PeeringSyncWorker', () => {
       stateHeartbeatMs: options.stateHeartbeatMs,
       reconnectDelayMs: 10,
       userRepository: options.userRepository,
+      buyerService: options.buyerService as any,
     })
 
     worker.run()
@@ -474,5 +477,40 @@ describe('PeeringSyncWorker', () => {
 
     await waitFor(() => stateStore.published.some((state) => state.status === 'error'))
     expect(stateStore.published.some((state) => state.lastError === 'peer does not advertise peering')).to.equal(true)
+  })
+
+  it('hands a paid peer invoice to the buyer service', async () => {
+    const calls: any[][] = []
+    const terms = [{ amount: 250_000_000, unit: 'msats', period: 2592000 }]
+    const buyerService = {
+      handleInvoice: async (...args: any[]) => {
+        calls.push(args)
+      },
+    }
+    const invoiceEvent = await signEvent('b'.repeat(64))(
+      await identifyEvent({
+        pubkey: peerPubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        kind: 402,
+        tags: [
+          ['p', getPublicKey(privateKey)],
+          ['t', 'peering'],
+          [
+            'bolt11',
+            'lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh',
+          ],
+        ],
+        content: '',
+      }),
+    )
+
+    startWorker([], { terms, buyerService })
+    await waitFor(() => typeof connection.liveOnEvent === 'function')
+    connection.liveOnEvent?.(invoiceEvent)
+    await waitFor(() => calls.length > 0)
+
+    expect(calls[0][0].pubkey).to.equal(peerPubkey)
+    expect(calls[0][1].terms).to.deep.equal(terms)
+    expect(calls[0][2].id).to.equal(invoiceEvent.id)
   })
 })
