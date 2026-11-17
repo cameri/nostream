@@ -20,14 +20,15 @@ fixed, a marker joins `meta`, and `LmdbBackend::open` gains a step that a store 
 index pays once. Those are the parts a later reader judges by the on-disk contract, and the next one
 is that reader's to reopen.
 
-## D1 — A thirtieth named database, `events_by_term`, keyed `term ‖ event_id`
+## D1 — A thirtieth named database, `events_by_term`, keyed `term ‖ 0x00 ‖ event_id`
 
 `Databases` gains one field and `Databases::create` one line
 (`crates/nostream-storage/src/lmdb/mod.rs:141`, `:186`), so the environment holds 30 named databases
 under `LMDB_MAX_DBS = 64` (`:54`). The key is one token of the event's `content` — truncated to 64
-bytes on a `char` boundary (D2) — followed by the row's 32-byte id, and the value is empty, as every
-other index database's is (`crates/nostream-storage/src/lmdb/search.rs:64-94`). A term's postings
-are therefore one contiguous byte range in id order, seekable as `term .. term ‖ 0xff×32`, and the
+bytes on a `char` boundary (D2) and terminated by `0x00` (#1112) — followed by the row's 32-byte id,
+and the value is empty, as every other index database's is
+(`crates/nostream-storage/src/lmdb/search.rs:64-94`). A term's postings are therefore one
+contiguous byte range in id order, seekable as `term ‖ 0x00 .. term ‖ 0x00 ‖ 0xff×32`, and the
 order the range is walked in is stable.
 
 The index is maintained by `write_event` and `hard_delete` (`lmdb/events.rs:248`, `:298`), the only
@@ -102,15 +103,17 @@ change with it, and `SEARCH_INDEX_VERSION` (D5) is what makes every existing sto
 ## D3 — The index narrows candidates and the body decides
 
 A row matches a search when every distinct query term is one of the tokens of its `content` — never
-of a tag (`lmdb/search.rs:177-221`). The walk narrows in three stages: the **prefix range** of the
-first distinct query term (which necessarily also visits longer terms sharing its bytes), then
-**term identity** — a posting whose term slice is not the walked term's bytes is skipped before
-anything else — then each other term's exact key for the same id, and finally `Matcher::matches`,
-whose one body decode answers both the tag families and the search verdict (`lmdb/search.rs:323-382`).
-Without the identity stage a row whose content holds both `cat` and `cats` reaches the keeper twice
-for a query of `cat`: a count over-reports and a limited page can spend two slots on one row. A stale or truncated posting therefore cannot produce a false positive,
-and completeness is the write path's (D1). A query whose tokens are empty — a punctuation-only
-query, which `plainto_tsquery` turns into an empty tsquery — selects nothing and takes no walk.
+of a tag (`lmdb/search.rs:177-221`). The walk narrows in three stages: the **equality range** of the
+first distinct query term (`term ‖ 0x00 .. term ‖ 0x00 ‖ 0xff×32`, which bounds candidate postings
+to exact matches of the term prefix without visiting longer tokens, #1112), then **term identity**
+defense-in-depth before anything else (ensuring truncated tokens sharing a 64-byte prefix, D2, or
+stale keys do not match), then each other term's exact key for the same id, and finally
+`Matcher::matches`, whose one body decode answers both the tag families and the search verdict
+(`lmdb/search.rs:323-382`). In the original prefix format (prior to #1112), this identity stage also
+rejected longer tokens like `cats` in a query for `cat`; with terminated keys, those sort outside the
+range entirely, but identity checking ensures a truncated posting cannot produce a false positive, and
+completeness is the write path's (D1). A query whose tokens are empty — a punctuation-only query, which
+`plainto_tsquery` turns into an empty tsquery — selects nothing and takes no walk.
 
 **Alternatives rejected:** making the index authoritative (a stored verdict per key) would remove
 the body decode and would make every stale posting a wrong answer — the failure mode the truncation
@@ -154,8 +157,9 @@ become `ts_rank`'s, and the divergence above goes with a contract change, not a 
 ## D5 — `meta` carries `search-index-version`, and "stale" means absent or different
 
 `meta` holds `SEARCH_INDEX_MARKER = b"search-index-version"` whose one-byte value is
-`SEARCH_INDEX_VERSION = 1` (`lmdb/search.rs:33-41`). `LmdbBackend::open` reads it in the transaction
-that creates the databases (`lmdb/mod.rs:257-263`); when it matches, nothing else happens.
+`SEARCH_INDEX_VERSION = 2` (`lmdb/search.rs:33-41`), bumped from 1 when #1112 terminated the term in
+the key. `LmdbBackend::open` reads it in the transaction that creates the databases
+(`lmdb/mod.rs:257-263`); when it matches, nothing else happens.
 
 **Stale** is the marker being absent — a store written by a binary that had no index — or holding
 another byte — an index a previous tokeniser built. Both are replaced, not extended: `events_by_term`
