@@ -106,8 +106,9 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         let source = PostgresBackend::master_only_from_env().map_err(|error| {
             CliError::Migrate(format!("could not read the source at {described}: {error}"))
         })?;
-        create_target(&options)?;
+        let pin = create_target(&options)?;
         let target = open_target(&options.target).await?;
+        pin.verify(&options.target)?;
         migrate_with(&source, &target, &options, out).await
     })
 }
@@ -808,9 +809,9 @@ fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Re
     }
     // The directory that holds the target decides whether the target itself can be replaced.
     // Write permission on a directory is what allows an entry in it to be renamed away and
-    // another put in its place, and it takes no ownership of the entry to do it, so this is a
-    // mode question rather than a uid one.
-    refuse_swappable_ancestry(&options.target)?;
+    // another put in its place, and it takes no ownership of the entry to do it, so the mode is
+    // asked first; the holder's own owner is asked after it, since its owner needs no bits.
+    refuse_swappable_ancestry(&options.target, caller)?;
 
     // The data file itself, which `is_file()` and LMDB both follow: a link there would let the
     // copy read or write through it, and heed creates `lock.mdb` beside whatever it resolves to.
@@ -855,8 +856,15 @@ fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Re
 /// the entry itself, so a group- or world-writable ancestor lets another user move this target
 /// aside and put their own there before the store opens. The sticky bit is the exception that
 /// makes `/tmp` usable: it refuses the rename of an entry its writer does not own.
+///
+/// Ownership is the other half, and the mode cannot see it: the owner of an ancestor can rename
+/// its entries whatever the bits say, so `--target /home/alice/store` run as root is swappable by
+/// alice even though `/home/alice` is `0755`. An ancestor owned by neither the caller nor root is
+/// refused outright. The sticky bit is no exemption here: it restrains other users, not the
+/// directory's own owner, who may still rename an entry inside it — `/tmp` is safe because root
+/// owns it, not because it is sticky.
 #[cfg(unix)]
-fn refuse_swappable_ancestry(target: &Path) -> Result<(), CliError> {
+fn refuse_swappable_ancestry(target: &Path, caller: Option<u32>) -> Result<(), CliError> {
     let mut path = match target.parent() {
         Some(parent) if parent.as_os_str().is_empty() => PathBuf::from("."),
         Some(parent) => parent.to_path_buf(),
@@ -869,13 +877,31 @@ fn refuse_swappable_ancestry(target: &Path) -> Result<(), CliError> {
         match fs::metadata(&path) {
             Ok(metadata) => {
                 let mode = metadata.permissions().mode();
-                if mode & 0o022 != 0 && mode & 0o1000 == 0 {
+                let sticky = mode & 0o1000 != 0;
+                if mode & 0o022 != 0 && !sticky {
                     return Err(CliError::Migrate(format!(
                         "{} is writable by group or other ({:04o}) and has no sticky bit: another \
                          user could replace {} before the store opens. Put the target under a \
                          directory only its owner can write to, or under one with the sticky bit",
                         path.display(),
                         mode & 0o7777,
+                        target.display()
+                    )));
+                }
+                // The mode's blind spot: an ancestor's owner renames its entries whatever the
+                // bits say, and root is the caller often enough that `/home/<other>` is reached
+                // this way. The sticky bit does not help — it restrains other users, not the
+                // directory's owner — so ownership is asked on its own.
+                if let Some(caller) = caller
+                    && metadata.uid() != caller
+                    && metadata.uid() != 0
+                {
+                    return Err(CliError::Migrate(format!(
+                        "{} is owned by uid {}, neither the user running the copy ({caller}) nor \
+                         root, so its owner could replace {} before the store opens. Put the \
+                         target under a directory the caller or root owns",
+                        path.display(),
+                        metadata.uid(),
                         target.display()
                     )));
                 }
@@ -893,22 +919,85 @@ fn refuse_swappable_ancestry(target: &Path) -> Result<(), CliError> {
     }
 }
 
-/// Creates the target when it is missing, then judges what is on disk.
-///
-/// `refuse_unsafe_target` can only judge what exists, and the source is dialled and probed
-/// before the store opens, so a directory another user planted in that window would be adopted
-/// by `create_dir_all` without a word. Creating it here, under the mode the store itself uses,
-/// and checking again closes the window: after this call the target is a directory this process
-/// made, or the run has ended.
+/// A handle and device/inode pin that closes the TOCTOU window between target creation
+/// and store open. Holding the file handle keeps the directory inode active, and verify
+/// ensures the directory opened by LMDB is the exact inode judged by the security checks.
 #[cfg(unix)]
-fn create_target(options: &MigrateOptions) -> Result<(), CliError> {
+#[derive(Debug)]
+struct TargetPin {
+    _handle: fs::File,
+    dev: u64,
+    ino: u64,
+}
+
+#[cfg(unix)]
+impl TargetPin {
+    fn pin(path: &Path) -> Result<Self, CliError> {
+        let file = fs::File::open(path)
+            .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        let metadata = file
+            .metadata()
+            .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        Ok(Self {
+            _handle: file,
+            dev: metadata.dev(),
+            ino: metadata.ino(),
+        })
+    }
+
+    fn verify(&self, path: &Path) -> Result<(), CliError> {
+        let metadata = fs::symlink_metadata(path)
+            .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        if metadata.dev() != self.dev || metadata.ino() != self.ino {
+            return Err(CliError::Migrate(format!(
+                "{} was replaced between check and open: expected inode {} on device {}, found inode {} on device {}",
+                path.display(),
+                self.ino,
+                self.dev,
+                metadata.ino(),
+                metadata.dev()
+            )));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(unix))]
+#[derive(Debug)]
+struct TargetPin;
+
+#[cfg(not(unix))]
+impl TargetPin {
+    fn pin(_path: &Path) -> Result<Self, CliError> {
+        Ok(Self)
+    }
+
+    fn verify(&self, _path: &Path) -> Result<(), CliError> {
+        Ok(())
+    }
+}
+
+/// Creates the target when it is missing, judges what is on disk, and pins the directory
+/// handle to close the TOCTOU window before the store opens.
+#[cfg(unix)]
+fn create_target(options: &MigrateOptions) -> Result<TargetPin, CliError> {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(&options.target)
         .map_err(|error| CliError::Migrate(format!("{}: {error}", options.target.display())))?;
 
-    refuse_unsafe_target(options)
+    refuse_unsafe_target(options)?;
+    TargetPin::pin(&options.target)
+}
+
+#[cfg(not(unix))]
+fn create_target(options: &MigrateOptions) -> Result<TargetPin, CliError> {
+    fs::create_dir_all(&options.target)
+        .map_err(|error| CliError::Migrate(format!("{}: {error}", options.target.display())))?;
+
+    refuse_unsafe_target(options)?;
+    TargetPin::pin(&options.target)
 }
 
 /// The line and exit code a verify answers when the target has no manifest.
@@ -1128,6 +1217,64 @@ mod tests {
         );
     }
 
+    /// The mode's blind spot: an ancestor can be `0755` and still be another user's to reorder,
+    /// because its owner needs no write bits to rename an entry inside it. `--target
+    /// /home/alice/store` run as root is the shape — every ancestor passes the mode check and
+    /// alice can still move the target aside. The sticky bit is not an exemption for the same
+    /// reason: it restrains other users, not the stholder's own owner. Measured as if a different
+    /// uid were running, since a directory this process owns cannot be made to belong to another
+    /// user without root.
+    #[cfg(unix)]
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn a_target_under_an_ancestor_another_user_owns_is_refused() {
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let home = temporary.path().join("home");
+        fs::create_dir(&home).expect("the ancestor is made");
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o755))
+            .expect("the ancestor is left as a home directory is");
+        let options = MigrateOptions {
+            target: home.join("target"),
+            batch_size: 1_000,
+            verify: false,
+        };
+
+        let owner = std::fs::symlink_metadata(&home)
+            .expect("the ancestor's metadata")
+            .uid();
+        if owner == 0 {
+            // Running as root: every ancestor this test can make is root's own, and root is
+            // exempt by rule, so there is no foreign owner to measure against.
+            return;
+        }
+        // A uid that owns none of these ancestors and is not root, so the refusal is the
+        // ancestor's ownership rather than anything about the target.
+        let other = 0;
+        let error = refuse_unsafe_target_for(&options, Some(other))
+            .expect_err("an ancestor owned by neither the caller nor root is refused");
+        assert!(
+            error
+                .to_string()
+                .contains("neither the user running the copy"),
+            "{error}"
+        );
+
+        // The sticky bit is not an exemption: a sticky directory restrains other users, not its
+        // own owner, who can still rename the target out of it.
+        fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o1755))
+            .expect("the temporary directory is made sticky");
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o1755))
+            .expect("the ancestor is made sticky");
+        let error = refuse_unsafe_target_for(&options, Some(other))
+            .expect_err("a sticky ancestor owned by another user is still refused");
+        assert!(
+            error
+                .to_string()
+                .contains("neither the user running the copy"),
+            "{error}"
+        );
+    }
+
     /// The check that runs before the source is dialled can only judge what exists, so the
     /// target is created and then judged. Both halves are needed: the creation gives the second
     /// check something to see, and the second check is what refuses a directory another user
@@ -1227,5 +1374,34 @@ mod tests {
         sum_words(&mut limbs, &words);
 
         assert_eq!(limbs, [1, 0, 0, 0]);
+    }
+
+    /// A target swapped between the pre-open check and store open has a different inode or device;
+    /// `TargetPin::verify` detects the swap and refuses it.
+    #[test]
+    #[cfg(unix)]
+    #[allow(clippy::expect_used)]
+    fn a_target_swapped_between_check_and_open_is_refused() {
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let target = temporary.path().join("target");
+        fs::create_dir(&target).expect("target is created");
+
+        let pin = TargetPin::pin(&target).expect("target is pinned");
+
+        // Swap the target directory with a newly created one (different inode)
+        let swapped = temporary.path().join("target_swapped");
+        fs::create_dir(&swapped).expect("swapped is created");
+        fs::remove_dir(&target).expect("original target removed");
+        fs::rename(&swapped, &target).expect("swapped renamed to target");
+
+        let error = pin
+            .verify(&target)
+            .expect_err("a target replaced between check and open must be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("replaced between check and open"),
+            "{error}"
+        );
     }
 }
