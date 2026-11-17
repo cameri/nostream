@@ -4,7 +4,8 @@
 //! request:
 //!
 //! - an `e` tag whose value parses as an event id — exact 32 bytes of lowercase hex, which is
-//!   what `EventId`'s own parser accepts — goes to `delete_by_pubkey_and_ids`;
+//!   what `EventId`'s own parser accepts — goes to `delete_by_pubkey_and_ids`, deduplicated and
+//!   capped at `MAX_EVENT_IDS_PER_REQUEST`;
 //! - an `a` tag naming `<kind>:<pubkey>:<d>` goes to `delete_by_addresses`, which resolves and
 //!   deletes the whole batch in one transaction (see [`EventRepository::delete_by_addresses`]).
 //!
@@ -51,6 +52,29 @@ use crate::strategies::{EventStrategy, event_record};
 /// requests, which is what the per-request reading of `09.md` asks for anyway.
 const MAX_ADDRESSES_PER_REQUEST: usize = 100;
 
+/// The most distinct event ids one deletion request may name through its `e` tags.
+///
+/// Derived on its own arithmetic, not copied from [`MAX_ADDRESSES_PER_REQUEST`], because the work
+/// is different: one id is one `events` point get and one row decode (plus the soft delete's two
+/// writes on a hit), where one address is a `replaceable` lookup and then the same.
+///
+/// - **what one admission gate allows.** An `e` tag costs 73 bytes (`,["e","<64 hex>"]`), so
+///   `maxPayloadSize`'s 524 288 bytes admit ~7 180 of them, and nothing else caps a tag list.
+/// - **what one id costs.** Measured on a temporary LMDB store (release build, one call per
+///   batch): 100 hits are 3.95 ms, 1 000 are 10.9 ms and 7 000 are 64.5 ms — ~0.008 ms per id at
+///   the margin, against ~0.010 ms per address measured the same way. A miss is ~0.0002 ms. An id
+///   is therefore no dearer than an address, and a batch of 100 costs what a batch of 100
+///   addresses costs: ~4 ms of one write transaction.
+/// - **what a key can ask for.** Kind 5 is limited to 30 events/min per free key, so 30 × 100 =
+///   3 000 id-deletes/min, ~120 ms of writer time per minute — the same 0.2 % of the single LMDB
+///   writer the address cap allows, and the two arms together stay under 0.5 %. The same key at the
+///   transport's ~7 180 would be ~30 × 66 ms ≈ 2 s of writer time per minute, ~16× the bound.
+///
+/// Over the cap is **refused**, exactly as the address arm refuses, before anything is deleted or
+/// stored: a partial delete answered `true` would claim deletions that did not happen. Repeated
+/// tags collapse first, so the count is the work's, not the tag list's.
+const MAX_EVENT_IDS_PER_REQUEST: usize = 100;
+
 /// The `delete` arm.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DeleteStrategy;
@@ -78,12 +102,21 @@ impl EventStrategy for DeleteStrategy {
                 return Ok(());
             }
 
-            let ids: Vec<EventId> = event
-                .tags
-                .iter()
-                .filter(|tag| tag.len() >= 2 && tag[0] == "e")
-                .filter_map(|tag| tag[1].parse::<EventId>().ok())
-                .collect();
+            let ids = event_ids(event);
+
+            if ids.len() > MAX_EVENT_IDS_PER_REQUEST {
+                context.send_ok(
+                    event.id,
+                    false,
+                    &format!(
+                        "invalid: a deletion request may name at most \
+                         {MAX_EVENT_IDS_PER_REQUEST} events"
+                    ),
+                    None,
+                );
+
+                return Ok(());
+            }
 
             if !ids.is_empty() {
                 context
@@ -118,6 +151,41 @@ impl EventStrategy for DeleteStrategy {
             Ok(())
         })
     }
+}
+
+/// The distinct event ids a deletion request's `e` tags name, in the order they first appear.
+///
+/// A tag qualifies when it has a value and that value parses as an [`EventId`] — the capture's
+/// `^[0-9a-f]{64}$`, which is what `EventId`'s parser accepts; anything else is ignored, as before.
+/// Duplicates collapse to one id, so `[["e",X],["e",X]]` asks the store for one point get, not two.
+///
+/// Collection stops at the (cap + 1)th **distinct** id: the request will be refused, so the rest
+/// of the tags are not worth parsing, and a run of repeats (dropped by the `contains` without a
+/// push) never trips it.
+fn event_ids(event: &Event) -> Vec<EventId> {
+    let mut ids: Vec<EventId> = Vec::new();
+
+    for tag in &event.tags {
+        if tag.len() < 2 || tag[0] != "e" {
+            continue;
+        }
+
+        let Ok(id) = tag[1].parse::<EventId>() else {
+            continue;
+        };
+
+        if ids.contains(&id) {
+            continue;
+        }
+
+        ids.push(id);
+
+        if ids.len() > MAX_EVENT_IDS_PER_REQUEST {
+            break;
+        }
+    }
+
+    ids
 }
 
 /// The distinct `(kind, d)` addresses a deletion request may act on, in the order they appear.
