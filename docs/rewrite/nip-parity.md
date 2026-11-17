@@ -904,6 +904,17 @@ is a defect, and §10 is the same record in table form.
         LMDB writer), where 30 × 6 096 would be ≈7.3 s of writer time per minute from one free key.
         A refusal changes nothing, so the client can retry with the addresses split across
         requests; a partial delete answered `true` would claim deletions that did not happen.
+      - **One request names at most 100 distinct event ids** through its `e` tags (`delete.rs`'s
+        `MAX_EVENT_IDS_PER_REQUEST`, #1090), deduplicated before the seam and refused the same way
+        when over. This arm was uncapped at the capture too (`delete-event-strategy.ts:22-31` hands
+        every valid `e` tag to `deleteByPubkeyAndIds`), so the cap is a deliberate divergence from
+        the TypeScript target, not a port. Its number is derived on its own cost rather than
+        copied: an `e` tag is 73 bytes, so `maxPayloadSize` admits ≈7 180; one id is an `events`
+        point get and a decode, measured on a temporary LMDB store at 3.95 ms per 100 hits and
+        ~0.008 ms per id at the margin (~0.010 ms per address measured the same way; a miss is
+        ~0.0002 ms), so 100 ids cost what 100 addresses cost — 30 × 100 ≈ 120 ms of writer time per
+        minute per free key, where the uncapped ≈7 180 would be ≈2 s. The two arms together stay
+        under 0.5 % of the single LMDB writer.
       - **Postgres's arm has never been executed.** No command in this repository runs it: the
         capture has no such operation, so neither parity target can replay it, and
         `tests/address_delete.rs` is `#![cfg(feature = "lmdb")]`. What would close it: a
@@ -912,6 +923,11 @@ is a defect, and §10 is the same record in table form.
         `address_delete.rs`.
       - Tests: `strategies::delete_names_each_distinct_address_once`,
         `delete_refuses_a_request_naming_too_many_addresses`, `delete_admits_a_cap_sized_batch`,
+        `delete_names_each_distinct_event_id_once`,
+        `delete_refuses_a_request_naming_too_many_event_ids`,
+        `delete_admits_a_cap_sized_batch_of_event_ids`,
+        `delete_admits_a_cap_sized_batch_of_event_ids_with_repeats`,
+        `delete_refusal_on_the_id_cap_skips_the_address_arm_too`,
         `delete_resolves_and_deletes_an_address_in_one_operation`,
         `delete_by_addresses_reaches_a_row_past_the_page_bound`,
         `delete_by_addresses_reaches_a_reported_row`,

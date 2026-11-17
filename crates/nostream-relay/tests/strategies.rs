@@ -442,6 +442,140 @@ async fn delete_returns_an_error_when_the_create_fails() {
     assert_eq!(frames(&mut sink), Vec::<String>::new());
 }
 
+/// The `index`th distinct 64-hex event id an `e` tag can name.
+fn nth_id(index: usize) -> String {
+    format!("{index:064x}")
+}
+
+/// A request naming the same event a thousand times makes one storage call with **one** id: the
+/// ids are deduplicated before the seam, so the tag count is not the work count. Before the change
+/// the call carried all 1 000, each its own point get in the write transaction.
+#[tokio::test]
+async fn delete_names_each_distinct_event_id_once() {
+    let fixture = Fixture::new(settings());
+    let tags: Vec<Vec<String>> = (0..1_000).map(|_| tag(&["e", &nth_id(7)])).collect();
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(
+        fixture.events.deletes(),
+        vec![(author(), vec![nth_id(7).parse().unwrap()])],
+        "a thousand identical tags are one id"
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// A request naming more distinct events than one request may is refused before anything is
+/// deleted or stored: `OK false`, no storage call, no row written.
+#[tokio::test]
+async fn delete_refuses_a_request_naming_too_many_event_ids() {
+    let fixture = Fixture::new(settings());
+    let target = Event {
+        id: nth_id(0).parse().unwrap(),
+        ..event(1, Vec::new(), "first")
+    };
+    fixture.seed_event(target.clone()).await;
+
+    let tags: Vec<Vec<String>> = (0..101).map(|index| tag(&["e", &nth_id(index)])).collect();
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.deletes(), Vec::new());
+    assert_eq!(
+        fixture.events.live_events(),
+        vec![target],
+        "nothing was deleted and the request itself was not stored"
+    );
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(
+            &event,
+            false,
+            "invalid: a deletion request may name at most 100 events"
+        )]
+    );
+}
+
+/// Exactly the cap is admitted, as one call carrying every id in tag order.
+#[tokio::test]
+async fn delete_admits_a_cap_sized_batch_of_event_ids() {
+    let fixture = Fixture::new(settings());
+    let tags: Vec<Vec<String>> = (0..100).map(|index| tag(&["e", &nth_id(index)])).collect();
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    let expected: Vec<EventId> = (0..100)
+        .map(|index| nth_id(index).parse().unwrap())
+        .collect();
+    assert_eq!(fixture.events.deletes(), vec![(author(), expected)]);
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// A legal request stays legal when its ids repeat: the cap counts distinct ids, and the early
+/// break that keeps an over-cap list cheap must not turn this into a refusal. Twenty tags per id,
+/// a total far past the cap, plus a repeat of the first id at the end.
+#[tokio::test]
+async fn delete_admits_a_cap_sized_batch_of_event_ids_with_repeats() {
+    let fixture = Fixture::new(settings());
+    let mut tags: Vec<Vec<String>> = Vec::new();
+
+    for _ in 0..20 {
+        for index in 0..100 {
+            tags.push(tag(&["e", &nth_id(index)]));
+        }
+    }
+
+    tags.push(tag(&["e", &nth_id(0)]));
+    assert!(tags.len() > 101, "the tag count is past the cap on purpose");
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    let deletes = fixture.events.deletes();
+    assert_eq!(deletes.len(), 1, "one call");
+    assert_eq!(
+        deletes[0].1.len(),
+        100,
+        "one entry per distinct id, and no refusal"
+    );
+    assert_eq!(fixture.events.live_events(), vec![event.clone()]);
+    assert_eq!(frames(&mut sink), vec![ok_frame(&event, true, "")]);
+}
+
+/// The two arms are capped independently and refuse as one: a request within the address cap but
+/// over the id cap deletes nothing through **either** arm.
+#[tokio::test]
+async fn delete_refusal_on_the_id_cap_skips_the_address_arm_too() {
+    let fixture = Fixture::new(settings());
+    let mut tags: Vec<Vec<String>> = (0..101).map(|index| tag(&["e", &nth_id(index)])).collect();
+    tags.push(tag(&["a", &format!("30023:{}:post-1", author())]));
+    let event = event(5, tags, "");
+
+    let (context, mut sink) = socket(&fixture);
+    DeleteStrategy.execute(&event, &context).await.unwrap();
+
+    assert_eq!(fixture.events.deletes(), Vec::new());
+    assert_eq!(fixture.events.address_deletes(), Vec::new());
+    assert_eq!(fixture.events.live_events(), Vec::new());
+    assert_eq!(
+        frames(&mut sink),
+        vec![ok_frame(
+            &event,
+            false,
+            "invalid: a deletion request may name at most 100 events"
+        )]
+    );
+}
+
 // --- NIP-09 `a` tags (09.md §"Deletion Request") -----------------------------------------
 
 /// A kind-30023 row carrying `d`, under [`other_event_id`] so it cannot be confused with the
