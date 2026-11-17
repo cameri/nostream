@@ -860,7 +860,9 @@ fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Re
 /// Ownership is the other half, and the mode cannot see it: the owner of an ancestor can rename
 /// its entries whatever the bits say, so `--target /home/alice/store` run as root is swappable by
 /// alice even though `/home/alice` is `0755`. An ancestor owned by neither the caller nor root is
-/// therefore refused unless its sticky bit makes the caller's own entry unrenamable by its owner.
+/// refused outright. The sticky bit is no exemption here: it restrains other users, not the
+/// directory's own owner, who may still rename an entry inside it — `/tmp` is safe because root
+/// owns it, not because it is sticky.
 #[cfg(unix)]
 fn refuse_swappable_ancestry(target: &Path, caller: Option<u32>) -> Result<(), CliError> {
     let mut path = match target.parent() {
@@ -888,18 +890,16 @@ fn refuse_swappable_ancestry(target: &Path, caller: Option<u32>) -> Result<(), C
                 }
                 // The mode's blind spot: an ancestor's owner renames its entries whatever the
                 // bits say, and root is the caller often enough that `/home/<other>` is reached
-                // this way. A sticky ancestor is the exception, for the same reason it is above:
-                // the owner cannot rename an entry the caller owns.
+                // this way. The sticky bit does not help — it restrains other users, not the
+                // directory's owner — so ownership is asked on its own.
                 if let Some(caller) = caller
                     && metadata.uid() != caller
                     && metadata.uid() != 0
-                    && !sticky
                 {
                     return Err(CliError::Migrate(format!(
                         "{} is owned by uid {}, neither the user running the copy ({caller}) nor \
                          root, so its owner could replace {} before the store opens. Put the \
-                         target under a directory the caller or root owns, or one with the sticky \
-                         bit",
+                         target under a directory the caller or root owns",
                         path.display(),
                         metadata.uid(),
                         target.display()
@@ -1220,8 +1220,10 @@ mod tests {
     /// The mode's blind spot: an ancestor can be `0755` and still be another user's to reorder,
     /// because its owner needs no write bits to rename an entry inside it. `--target
     /// /home/alice/store` run as root is the shape — every ancestor passes the mode check and
-    /// alice can still move the target aside. Measured as if a different uid were running, since
-    /// a directory this process owns cannot be made to belong to another user without root.
+    /// alice can still move the target aside. The sticky bit is not an exemption for the same
+    /// reason: it restrains other users, not the stholder's own owner. Measured as if a different
+    /// uid were running, since a directory this process owns cannot be made to belong to another
+    /// user without root.
     #[cfg(unix)]
     #[test]
     #[allow(clippy::expect_used)]
@@ -1257,16 +1259,19 @@ mod tests {
             "{error}"
         );
 
-        // The same shape with the sticky bit set cannot have the caller's entry renamed by its
-        // owner, so it is allowed — `/tmp` again, one level up. Every ancestor the caller does
-        // not own needs the bit for that to hold, the temporary directory included.
+        // The sticky bit is not an exemption: a sticky directory restrains other users, not its
+        // own owner, who can still rename the target out of it.
         fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o1755))
             .expect("the temporary directory is made sticky");
         fs::set_permissions(&home, fs::Permissions::from_mode(0o1755))
-            .expect("the sticky bit is set");
+            .expect("the ancestor is made sticky");
+        let error = refuse_unsafe_target_for(&options, Some(other))
+            .expect_err("a sticky ancestor owned by another user is still refused");
         assert!(
-            refuse_unsafe_target_for(&options, Some(other)).is_ok(),
-            "a sticky ancestor is the shape /tmp has, and is allowed"
+            error
+                .to_string()
+                .contains("neither the user running the copy"),
+            "{error}"
         );
     }
 
