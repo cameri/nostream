@@ -1,6 +1,7 @@
 import { DatabaseClient } from '../@types/base'
 import {
   DBPeeringInvoice,
+  PeeringBudgetUsage,
   PeeringInvoice,
   PeeringInvoiceReason,
   PeeringInvoiceStatus,
@@ -224,5 +225,16 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
        WHERE scope = ? AND period_start = ?`,
       [amountMsats.toString(), scope, periodStart],
     )
+  }
+
+  public async listBudgets(): Promise<PeeringBudgetUsage[]> {
+    const rows = await this.dbClient<any>('peering_budgets').orderBy('period_start', 'desc')
+
+    return rows.map((row) => ({
+      scope: row.scope,
+      periodStart: row.period_start,
+      periodEnd: row.period_end,
+      spentMsats: BigInt(row.spent_msats),
+    }))
   }
 }

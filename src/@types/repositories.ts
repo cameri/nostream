@@ -12,7 +12,7 @@ import {
   NotificationDeliveryStatus,
   OperatorNotificationChannelType,
 } from './operator-notifications'
-import { PeeringInvoice, PeeringInvoiceStatus, PeeringPayment } from './peering'
+import { PeeringBudgetUsage, PeeringInvoice, PeeringInvoiceStatus, PeeringPayment } from './peering'
 import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
@@ -137,6 +137,8 @@ export interface IPeeringInvoiceRepository {
     client: DatabaseClient,
   ): Promise<bigint>
   releaseBudget(scope: string, periodStart: Date, amountMsats: bigint, client: DatabaseClient): Promise<void>
+  /** Current and recent budget counters for the admin console. */
+  listBudgets(): Promise<PeeringBudgetUsage[]>
 }
 
 export interface IUserSubscriptionRepository {

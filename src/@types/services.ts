@@ -2,7 +2,7 @@ import { DatabaseTransaction, Pubkey } from './base'
 import { Event } from './event'
 import { Invoice } from './invoice'
 import { NotificationOutboxPayload } from './notification-outbox'
-import { PeeringAccess, PeeringAdvertisement, PeeringInvoice, PeeringInvoiceStatus } from './peering'
+import { PeeringAccess, PeeringAdvertisement, PeeringBudgetSummary, PeeringInvoice, PeeringInvoiceStatus } from './peering'
 import { PeeringPeer } from './settings'
 
 export interface IMaintenanceService {
@@ -86,6 +86,8 @@ export interface IPeeringBuyerService {
   reject(paymentHash: string): Promise<PeeringInvoice>
   /** Recent buyer invoices for the admin console. */
   list(statuses?: PeeringInvoiceStatus[], limit?: number): Promise<PeeringInvoice[]>
+  /** Spend, remaining budget and invoice counts for the current period. */
+  budgetSummary(now?: Date): Promise<PeeringBudgetSummary[]>
 }
 
 export interface ISubscriptionService {

@@ -66,6 +66,20 @@ describe('GetAdminPeeringController', () => {
           updatedAt: new Date('2026-11-18T00:00:00.000Z'),
         },
       ]),
+      budgetSummary: Sinon.stub().resolves([
+        {
+          scope: 'peer',
+          peerPubkey: state.pubkey,
+          periodStart: new Date('2026-11-18T00:00:00.000Z'),
+          periodEnd: new Date('2026-12-18T00:00:00.000Z'),
+          limitMsats: 10_000_000n,
+          spentMsats: 250_000_000n,
+          remainingMsats: 0n,
+          received: 1,
+          paid: 0,
+          held: 1,
+        },
+      ]),
     }
     const controller = new GetAdminPeeringController(
       stateStore as any,
@@ -108,6 +122,12 @@ describe('GetAdminPeeringController', () => {
       amountMsats: '250000000',
       status: 'held',
       reason: 'amount_mismatch',
+    })
+    expect(payload.budgets[0]).to.deep.include({
+      scope: 'peer',
+      limitMsats: '10000000',
+      spentMsats: '250000000',
+      remainingMsats: '0',
     })
   })
 })

@@ -256,6 +256,23 @@
           <section class="dashboard-section">
             <h2 class="section-title">Peering invoices</h2>
             <p id="peering-invoices-sync" class="sync-line mb-2"><span class="prompt-char">&gt;</span> buyer invoices: not loaded</p>
+            <div class="table-responsive panel-card mb-2">
+              <table class="table table-sm mb-0" aria-describedby="peering-budgets-caption">
+                <caption id="peering-budgets-caption" class="visually-hidden">Buyer spend and remaining budget for the current period</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Budget</th>
+                    <th scope="col">Period</th>
+                    <th scope="col">Spent</th>
+                    <th scope="col">Remaining</th>
+                    <th scope="col">Received / paid / held</th>
+                  </tr>
+                </thead>
+                <tbody id="peering-budgets-body">
+                  <tr><td colspan="5" class="admin-muted small">No buyer budgets configured.</td></tr>
+                </tbody>
+              </table>
+            </div>
             <div class="table-responsive panel-card">
               <table class="table table-sm mb-0" aria-describedby="peering-invoices-caption">
                 <caption id="peering-invoices-caption" class="visually-hidden">Invoices received from peering peers and their auto-pay status</caption>

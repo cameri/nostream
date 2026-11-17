@@ -146,6 +146,20 @@ export interface PeeringBudgetUsage {
   spentMsats: bigint
 }
 
+/** Admin view of one budget window, with invoice counts for its peer. */
+export interface PeeringBudgetSummary {
+  scope: 'peer' | 'global'
+  peerPubkey?: string
+  periodStart: Date
+  periodEnd: Date
+  limitMsats: bigint
+  spentMsats: bigint
+  remainingMsats: bigint
+  received: number
+  paid: number
+  held: number
+}
+
 export interface PeeringTermSnapshot {
   amountMsats: bigint
   periodSeconds: number

@@ -11,6 +11,7 @@ import {
 } from '../../../src/@types/peering'
 import { PeeringPeer, Settings } from '../../../src/@types/settings'
 import { PeeringBuyerService } from '../../../src/services/peering-buyer-service'
+import { peeringBudgetWindow } from '../../../src/utils/peering-billing'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
@@ -76,6 +77,7 @@ describe('PeeringBuyerService', () => {
       reserveBudget: sandbox.stub().resolves(250_000_000n),
       addBudgetSpend: sandbox.stub().resolves(250_000_000n),
       releaseBudget: sandbox.stub().resolves(),
+      listBudgets: sandbox.stub().resolves([]),
     }
 
     paymentsService = {
@@ -232,5 +234,31 @@ describe('PeeringBuyerService', () => {
 
     expect(result.status).to.equal(PeeringInvoiceStatus.REJECTED)
     expect(paymentsService.payInvoice).not.to.have.been.called
+  })
+
+  it('summarizes per-peer and global budget spend', async () => {
+    const window = peeringBudgetWindow(now, 2592000)
+    invoiceRepository.list.resolves([
+      invoice({ status: PeeringInvoiceStatus.PAID, createdAt: now, amountMsats: 250_000_000n }),
+      invoice({ status: PeeringInvoiceStatus.HELD, createdAt: now, amountMsats: 250_000_000n }),
+    ])
+    invoiceRepository.listBudgets.resolves([
+      { scope: `peer:${PEER}`, periodStart: window.start, periodEnd: window.end, spentMsats: 250_000_000n },
+      { scope: 'global', periodStart: window.start, periodEnd: window.end, spentMsats: 250_000_000n },
+    ])
+
+    const summaries = await service.budgetSummary(now)
+    const peerSummary = summaries.find((summary) => summary.scope === 'peer')
+    const globalSummary = summaries.find((summary) => summary.scope === 'global')
+
+    expect(peerSummary).to.include({
+      peerPubkey: PEER,
+      spentMsats: 250_000_000n,
+      remainingMsats: 750_000_000n,
+      received: 2,
+      paid: 1,
+      held: 1,
+    })
+    expect(globalSummary?.remainingMsats).to.equal(9_750_000_000n)
   })
 })

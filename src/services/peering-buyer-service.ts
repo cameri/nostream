@@ -4,6 +4,7 @@ import { Event } from '../@types/event'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
 import {
   PeeringAdvertisement,
+  PeeringBudgetSummary,
   PeeringInvoice,
   PeeringInvoiceReason,
   PeeringInvoiceStatus,
@@ -166,6 +167,62 @@ export class PeeringBuyerService implements IPeeringBuyerService {
 
   public list(statuses?: PeeringInvoiceStatus[], limit = 100): Promise<PeeringInvoice[]> {
     return this.invoiceRepository.list(statuses, limit)
+  }
+
+  public async budgetSummary(now = new Date()): Promise<PeeringBudgetSummary[]> {
+    const [usage, invoices] = await Promise.all([
+      this.invoiceRepository.listBudgets(),
+      this.invoiceRepository.list(undefined, 1000),
+    ])
+    const byScope = new Map(usage.map((entry) => [`${entry.scope}|${entry.periodStart.toISOString()}`, entry]))
+    const summaries: PeeringBudgetSummary[] = []
+
+    const summarize = (
+      scope: 'peer' | 'global',
+      peerPubkey: string | undefined,
+      budget: { amount: number; unit: string; period: number } | undefined,
+    ) => {
+      const resolved = resolvePeeringBudget(budget)
+      if (!resolved) {
+        return
+      }
+
+      const window = peeringBudgetWindow(now, resolved.periodSeconds)
+      const key = `${scope === 'global' ? 'global' : `peer:${peerPubkey!.toLowerCase()}`}|${window.start.toISOString()}`
+      const spent = byScope.get(key)?.spentMsats ?? 0n
+      const relevant = invoices.filter(
+        (invoice) =>
+          invoice.createdAt >= window.start &&
+          invoice.createdAt < window.end &&
+          (scope === 'global' || invoice.peerPubkey.toLowerCase() === peerPubkey!.toLowerCase()),
+      )
+
+      summaries.push({
+        scope,
+        ...(peerPubkey ? { peerPubkey } : {}),
+        periodStart: window.start,
+        periodEnd: window.end,
+        limitMsats: resolved.amountMsats,
+        spentMsats: spent,
+        remainingMsats: resolved.amountMsats > spent ? resolved.amountMsats - spent : 0n,
+        received: relevant.length,
+        paid: relevant.filter((invoice) => invoice.status === PeeringInvoiceStatus.PAID).length,
+        held: relevant.filter(
+          (invoice) =>
+            invoice.status === PeeringInvoiceStatus.HELD || invoice.status === PeeringInvoiceStatus.FAILED,
+        ).length,
+      })
+    }
+
+    summarize('global', undefined, this.settings().peering?.autoPay?.globalBudget)
+    for (const peer of this.settings().peering?.peers ?? []) {
+      if (peer.enabled === false) {
+        continue
+      }
+      summarize('peer', parsePeeringPeerPubkey(peer.pubkey) ?? peer.pubkey, peer.budget)
+    }
+
+    return summaries.sort((left, right) => (left.peerPubkey ?? '').localeCompare(right.peerPubkey ?? ''))
   }
 
   private baseInvoice(peerPubkey: Pubkey, event: Event): PeeringInvoice {

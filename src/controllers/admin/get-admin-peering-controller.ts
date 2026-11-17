@@ -38,18 +38,28 @@ export class GetAdminPeeringController implements IController {
   ) {}
 
   public async handleRequest(_request: Request, response: Response): Promise<void> {
-    const [states, settings, requestStats, billing, invoices] = await Promise.all([
+    const [states, settings, requestStats, billing, invoices, budgets] = await Promise.all([
       this.stateStore.list(),
       this.getSettings(),
       this.requestStatsStore?.list() ?? [],
       this.peeringPaymentRepository?.list() ?? [],
       this.peeringBuyerService?.list(undefined, 50) ?? [],
+      this.peeringBuyerService?.budgetSummary() ?? [],
     ])
     const peers = mergePeeringRows(settings, states, undefined, requestStats, billing)
 
     response
       .status(200)
       .setHeader('content-type', 'application/json')
-      .send({ peers, invoices: invoices.map(serializePeeringInvoice) })
+      .send({
+        peers,
+        invoices: invoices.map(serializePeeringInvoice),
+        budgets: budgets.map((budget) => ({
+          ...budget,
+          limitMsats: budget.limitMsats.toString(),
+          spentMsats: budget.spentMsats.toString(),
+          remainingMsats: budget.remainingMsats.toString(),
+        })),
+      })
   }
 }

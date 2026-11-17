@@ -118,6 +118,23 @@ describe('PeeringInvoiceRepository', () => {
     expect(recording.queries[0].sql).to.include('limit')
   })
 
+  it('lists current budget counters for the admin console', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([
+      {
+        scope: `peer:${peerPubkey}`,
+        period_start: now,
+        period_end: new Date(now.getTime() + 86_400_000),
+        spent_msats: '250000000',
+      },
+    ])
+
+    const result = await repository.listBudgets()
+
+    expect(result[0]).to.deep.include({ scope: `peer:${peerPubkey}`, spentMsats: 250_000_000n })
+  })
+
   it('reserves and releases a budget atomically', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringInvoiceRepository(recording.db)

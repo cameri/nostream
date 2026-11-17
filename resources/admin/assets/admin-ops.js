@@ -14,6 +14,7 @@
     peeringBody: document.getElementById('peering-body'),
     peeringInvoicesSync: document.getElementById('peering-invoices-sync'),
     peeringInvoicesBody: document.getElementById('peering-invoices-body'),
+    peeringBudgetsBody: document.getElementById('peering-budgets-body'),
     nip05Error: document.getElementById('ops-nip05-error'),
     nip05Domain: document.getElementById('ops-nip05-domain'),
     nip05Verified: document.getElementById('ops-nip05-verified'),
@@ -186,6 +187,28 @@
       .join('')
   }
 
+  const renderPeeringBudgets = (budgets) => {
+    if (!Array.isArray(budgets) || !budgets.length) {
+      elements.peeringBudgetsBody.innerHTML =
+        '<tr><td colspan="5" class="admin-muted small">No buyer budgets configured.</td></tr>'
+      return
+    }
+
+    elements.peeringBudgetsBody.innerHTML = budgets
+      .map((budget) => {
+        const label = budget.scope === 'global' ? 'All peers' : shortPubkey(budget.peerPubkey)
+        const title = budget.scope === 'global' ? 'global cap' : budget.peerPubkey
+        return `<tr>
+          <td class="small" title="${escapeAttr(title)}">${escapeHtml(label)}</td>
+          <td class="small">${escapeHtml(formatTime(budget.periodStart))} → ${escapeHtml(formatTime(budget.periodEnd))}</td>
+          <td class="small">${escapeHtml(Math.round(Number(BigInt(budget.spentMsats) / 1000n)))} sats</td>
+          <td class="small">${escapeHtml(Math.round(Number(BigInt(budget.remainingMsats) / 1000n)))} sats</td>
+          <td class="small">${escapeHtml(budget.received)} / ${escapeHtml(budget.paid)} / ${escapeHtml(budget.held)}</td>
+        </tr>`
+      })
+      .join('')
+  }
+
   const renderPeering = (rows) => {    if (!Array.isArray(rows) || !rows.length) {
       elements.peeringBody.innerHTML =
         '<tr><td colspan="10" class="admin-muted small">No peering peers configured.</td></tr>'
@@ -325,6 +348,7 @@
     const payload = await response.json()
     renderPeering(payload.peers)
     renderPeeringInvoices(payload.invoices)
+    renderPeeringBudgets(payload.budgets)
     if (elements.peeringSync) {
       elements.peeringSync.innerHTML = `<span class="prompt-char">&gt;</span> peers: updated ${formatTime(new Date().toISOString())}`
     }
