@@ -310,6 +310,172 @@ async fn the_persister_routes_ephemeral_delete_and_replaceable_events() {
     );
 }
 
+/// The author a deletion test signs with, and the 64-hex pubkey its `a` tags must name.
+const DELETER: [u8; 32] = [5; 32];
+
+fn deleter_pubkey() -> String {
+    testing::signed_event(&DELETER, Kind::TEXT_NOTE, vec![], "")
+        .pubkey
+        .to_string()
+}
+
+/// The `index`th distinct 64-hex event id an `e` tag can name.
+fn nth_id(index: usize) -> String {
+    format!("{index:064x}")
+}
+
+/// A kind-5 that names an article only by address deletes it by address, as the live relay's
+/// delete arm does, and is stored itself. Before #1097 the import applied `e` targets alone, so
+/// this request was stored and its article stayed readable.
+#[tokio::test]
+async fn an_imported_deletion_with_only_a_tags_deletes_by_address() {
+    let repository = InMemoryEventRepository::new();
+    let persister = repository_persister(&repository);
+    let address = format!("30023:{}:post-1", deleter_pubkey());
+    let delete = testing::signed_event(&DELETER, Kind::DELETE, vec![tagged(&["a", &address])], "");
+
+    let inserted = persist(&persister, std::slice::from_ref(&delete)).await;
+
+    assert_eq!(
+        repository.address_deletes(),
+        [(
+            delete.pubkey,
+            vec![(Kind(30_023), "post-1".to_owned())],
+            delete.created_at
+        )],
+        "the address is deleted, bounded by the request's created_at"
+    );
+    assert!(repository.deletes().is_empty(), "no `e` tags, no id delete");
+    assert_eq!(repository.creates().len(), 1);
+    assert_eq!(repository.creates()[0].event.id, delete.id);
+    assert_eq!(inserted, 1.0);
+}
+
+/// A request carrying both shapes deletes through both arms and is stored once.
+#[tokio::test]
+async fn an_imported_deletion_with_e_and_a_tags_deletes_through_both_arms() {
+    let repository = InMemoryEventRepository::new();
+    let persister = repository_persister(&repository);
+    let address = format!("30023:{}:post-1", deleter_pubkey());
+    let delete = testing::signed_event(
+        &DELETER,
+        Kind::DELETE,
+        vec![tagged(&["e", &nth_id(1)]), tagged(&["a", &address])],
+        "",
+    );
+
+    let inserted = persist(&persister, std::slice::from_ref(&delete)).await;
+
+    assert_eq!(
+        repository.deletes(),
+        [(delete.pubkey, vec![nth_id(1).parse().expect("a 64-hex id")])]
+    );
+    assert_eq!(
+        repository.address_deletes(),
+        [(
+            delete.pubkey,
+            vec![(Kind(30_023), "post-1".to_owned())],
+            delete.created_at
+        )]
+    );
+    assert_eq!(repository.creates().len(), 1);
+    assert_eq!(inserted, 1.0);
+}
+
+/// The import reads an `a` tag by the live arm's rules: another author's address, a
+/// non-addressable kind and a malformed value name nothing, and repeats collapse to one.
+#[tokio::test]
+async fn an_imported_deletion_reads_a_tags_by_the_live_rules() {
+    let repository = InMemoryEventRepository::new();
+    let persister = repository_persister(&repository);
+    let own = deleter_pubkey();
+    let other = testing::signed_event(&[6; 32], Kind::TEXT_NOTE, vec![], "")
+        .pubkey
+        .to_string();
+    let delete = testing::signed_event(
+        &DELETER,
+        Kind::DELETE,
+        vec![
+            tagged(&["a", &format!("30023:{other}:theirs")]),
+            tagged(&["a", &format!("0:{own}:")]),
+            tagged(&["a", "not-an-address"]),
+            tagged(&["a", &format!("30023:{own}:mine")]),
+            tagged(&["a", &format!("30023:{own}:mine")]),
+        ],
+        "",
+    );
+
+    persist(&persister, std::slice::from_ref(&delete)).await;
+
+    assert_eq!(
+        repository.address_deletes(),
+        [(
+            delete.pubkey,
+            vec![(Kind(30_023), "mine".to_owned())],
+            delete.created_at
+        )],
+        "only the author's own addressable address, once"
+    );
+}
+
+/// Repeated `e` tags collapse to one id, as they do on the live arm since #1090.
+#[tokio::test]
+async fn an_imported_deletion_names_each_distinct_event_id_once() {
+    let repository = InMemoryEventRepository::new();
+    let persister = repository_persister(&repository);
+    let tags: Vec<Vec<String>> = (0..1_000).map(|_| tagged(&["e", &nth_id(7)])).collect();
+    let delete = testing::signed_event(&DELETER, Kind::DELETE, tags, "");
+
+    persist(&persister, std::slice::from_ref(&delete)).await;
+
+    assert_eq!(
+        repository.deletes(),
+        [(delete.pubkey, vec![nth_id(7).parse().expect("a 64-hex id")])]
+    );
+}
+
+/// A request the live relay would refuse for naming more than 100 distinct event ids is not
+/// applied by the import either: nothing is deleted, the request is not stored, and it is counted
+/// as skipped rather than inserted. The rows around it still import.
+#[tokio::test]
+async fn an_imported_deletion_over_the_event_id_cap_is_skipped() {
+    let repository = InMemoryEventRepository::new();
+    let persister = repository_persister(&repository);
+    let regular = testing::signed_event(&DELETER, Kind::TEXT_NOTE, vec![], "regular");
+    let tags: Vec<Vec<String>> = (0..101)
+        .map(|index| tagged(&["e", &nth_id(index)]))
+        .collect();
+    let delete = testing::signed_event(&DELETER, Kind::DELETE, tags, "");
+
+    let inserted = persist(&persister, &[regular.clone(), delete]).await;
+
+    assert!(repository.deletes().is_empty(), "nothing is deleted");
+    assert!(repository.address_deletes().is_empty());
+    assert!(repository.creates().is_empty(), "the request is not stored");
+    assert_eq!(inserted, 1.0, "only the regular row is written");
+}
+
+/// The same for a request naming more than 100 distinct addresses: refused as a whole, so its
+/// `e` targets are not applied either.
+#[tokio::test]
+async fn an_imported_deletion_over_the_address_cap_is_skipped() {
+    let repository = InMemoryEventRepository::new();
+    let persister = repository_persister(&repository);
+    let own = deleter_pubkey();
+    let mut tags: Vec<Vec<String>> = (0..101)
+        .map(|index| tagged(&["a", &format!("30023:{own}:post-{index}")]))
+        .collect();
+    tags.push(tagged(&["e", &nth_id(1)]));
+    let delete = testing::signed_event(&DELETER, Kind::DELETE, tags, "");
+
+    let inserted = persist(&persister, std::slice::from_ref(&delete)).await;
+
+    assert!(repository.deletes().is_empty());
+    assert!(repository.address_deletes().is_empty());
+    assert!(repository.creates().is_empty());
+    assert_eq!(inserted, 0.0);
+}
+
 #[tokio::test]
 async fn the_persister_enriches_deduplication_and_expiration() {
     let repository = InMemoryEventRepository::new();

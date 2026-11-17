@@ -915,6 +915,16 @@ is a defect, and §10 is the same record in table form.
         ~0.0002 ms), so 100 ids cost what 100 addresses cost — 30 × 100 ≈ 120 ms of writer time per
         minute per free key, where the uncapped ≈7 180 would be ≈2 s. The two arms together stay
         under 0.5 % of the single LMDB writer.
+      - **The event import reads a deletion the same way** (#1097). `event_import_service`'s
+        persister used to apply only a kind-5's `e` ids — the capture's
+        `event-import-service.ts:107-118` does the same — so an `a`-only request was stored, its
+        counters said the import succeeded, and the article it named stayed readable: an import
+        built a different store than the relay would for the same events. It now calls
+        `delete.rs`'s `deletion_targets`, the one reading of a request's tags, and applies `e` ids
+        and `a` addresses as the live arm does, bounded by the request's `created_at`. A request
+        over either cap is neither applied nor stored, as the relay would have refused it, and
+        counts as skipped. This is a divergence from the capture's import, made so the two
+        writers agree.
       - **Postgres's arm has never been executed.** No command in this repository runs it: the
         capture has no such operation, so neither parity target can replay it, and
         `tests/address_delete.rs` is `#![cfg(feature = "lmdb")]`. What would close it: a
@@ -932,7 +942,13 @@ is a defect, and §10 is the same record in table form.
         `delete_by_addresses_reaches_a_row_past_the_page_bound`,
         `delete_by_addresses_reaches_a_reported_row`,
         `delete_by_addresses_uses_the_first_d_tag`,
-        `delete_by_addresses_keeps_a_row_newer_than_the_request` (§10).
+        `delete_by_addresses_keeps_a_row_newer_than_the_request` (§10); for the import,
+        `event_import::an_imported_deletion_with_only_a_tags_deletes_by_address`,
+        `an_imported_deletion_with_e_and_a_tags_deletes_through_both_arms`,
+        `an_imported_deletion_reads_a_tags_by_the_live_rules`,
+        `an_imported_deletion_names_each_distinct_event_id_once`,
+        `an_imported_deletion_over_the_event_id_cap_is_skipped`,
+        `an_imported_deletion_over_the_address_cap_is_skipped`.
 
 ## 10. Phase 2: the advertisement and the harness map
 

@@ -10,7 +10,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReade
 
 use nostream_core::Event;
 use nostream_core::crypto::{compute_event_id, verify_event_signature};
-use nostream_core::event::EventId;
+use nostream_relay::strategies::delete::{DeletionTargets, deletion_targets};
 use nostream_storage::repositories::{EventRecord, EventRepository};
 
 use crate::error::ServicesError;
@@ -528,16 +528,23 @@ impl EventBatchPersister for RepositoryEventPersister {
                     inserted += self.events.upsert_many(&replaceable).await?;
                     replaceable.clear();
 
-                    let ids: Vec<EventId> = event
-                        .tags
-                        .iter()
-                        .filter(|tag| tag.len() >= 2 && tag[0] == "e")
-                        .filter_map(|tag| tag[1].parse::<EventId>().ok())
-                        .collect();
+                    // The live arm's reading of the request (#1097): `e` ids and the author's own
+                    // `a` addresses, deduplicated, and refused whole past either cap. A refused
+                    // request is neither applied nor stored, as the relay would not have stored
+                    // it, so it counts as skipped.
+                    let Ok(DeletionTargets { ids, addresses }) = deletion_targets(event) else {
+                        continue;
+                    };
 
                     if !ids.is_empty() {
                         self.events
                             .delete_by_pubkey_and_ids(&event.pubkey, &ids)
+                            .await?;
+                    }
+
+                    if !addresses.is_empty() {
+                        self.events
+                            .delete_by_addresses(&event.pubkey, &addresses, event.created_at)
                             .await?;
                     }
 
