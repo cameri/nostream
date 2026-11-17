@@ -106,8 +106,9 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
         let source = PostgresBackend::master_only_from_env().map_err(|error| {
             CliError::Migrate(format!("could not read the source at {described}: {error}"))
         })?;
-        create_target(&options)?;
+        let pin = create_target(&options)?;
         let target = open_target(&options.target).await?;
+        pin.verify(&options.target)?;
         migrate_with(&source, &target, &options, out).await
     })
 }
@@ -893,22 +894,85 @@ fn refuse_swappable_ancestry(target: &Path) -> Result<(), CliError> {
     }
 }
 
-/// Creates the target when it is missing, then judges what is on disk.
-///
-/// `refuse_unsafe_target` can only judge what exists, and the source is dialled and probed
-/// before the store opens, so a directory another user planted in that window would be adopted
-/// by `create_dir_all` without a word. Creating it here, under the mode the store itself uses,
-/// and checking again closes the window: after this call the target is a directory this process
-/// made, or the run has ended.
+/// A handle and device/inode pin that closes the TOCTOU window between target creation
+/// and store open. Holding the file handle keeps the directory inode active, and verify
+/// ensures the directory opened by LMDB is the exact inode judged by the security checks.
 #[cfg(unix)]
-fn create_target(options: &MigrateOptions) -> Result<(), CliError> {
+#[derive(Debug)]
+struct TargetPin {
+    _handle: fs::File,
+    dev: u64,
+    ino: u64,
+}
+
+#[cfg(unix)]
+impl TargetPin {
+    fn pin(path: &Path) -> Result<Self, CliError> {
+        let file = fs::File::open(path)
+            .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        let metadata = file
+            .metadata()
+            .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        Ok(Self {
+            _handle: file,
+            dev: metadata.dev(),
+            ino: metadata.ino(),
+        })
+    }
+
+    fn verify(&self, path: &Path) -> Result<(), CliError> {
+        let metadata = fs::symlink_metadata(path)
+            .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        if metadata.dev() != self.dev || metadata.ino() != self.ino {
+            return Err(CliError::Migrate(format!(
+                "{} was replaced between check and open: expected inode {} on device {}, found inode {} on device {}",
+                path.display(),
+                self.ino,
+                self.dev,
+                metadata.ino(),
+                metadata.dev()
+            )));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(unix))]
+#[derive(Debug)]
+struct TargetPin;
+
+#[cfg(not(unix))]
+impl TargetPin {
+    fn pin(_path: &Path) -> Result<Self, CliError> {
+        Ok(Self)
+    }
+
+    fn verify(&self, _path: &Path) -> Result<(), CliError> {
+        Ok(())
+    }
+}
+
+/// Creates the target when it is missing, judges what is on disk, and pins the directory
+/// handle to close the TOCTOU window before the store opens.
+#[cfg(unix)]
+fn create_target(options: &MigrateOptions) -> Result<TargetPin, CliError> {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(&options.target)
         .map_err(|error| CliError::Migrate(format!("{}: {error}", options.target.display())))?;
 
-    refuse_unsafe_target(options)
+    refuse_unsafe_target(options)?;
+    TargetPin::pin(&options.target)
+}
+
+#[cfg(not(unix))]
+fn create_target(options: &MigrateOptions) -> Result<TargetPin, CliError> {
+    fs::create_dir_all(&options.target)
+        .map_err(|error| CliError::Migrate(format!("{}: {error}", options.target.display())))?;
+
+    refuse_unsafe_target(options)?;
+    TargetPin::pin(&options.target)
 }
 
 /// The line and exit code a verify answers when the target has no manifest.
@@ -1227,5 +1291,32 @@ mod tests {
         sum_words(&mut limbs, &words);
 
         assert_eq!(limbs, [1, 0, 0, 0]);
+    }
+
+    /// A target swapped between the pre-open check and store open has a different inode or device;
+    /// `TargetPin::verify` detects the swap and refuses it.
+    #[test]
+    #[cfg(unix)]
+    #[allow(clippy::expect_used)]
+    fn a_target_swapped_between_check_and_open_is_refused() {
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let target = temporary.path().join("target");
+        fs::create_dir(&target).expect("target is created");
+
+        let pin = TargetPin::pin(&target).expect("target is pinned");
+
+        // Swap the target directory with a newly created one (different inode)
+        let swapped = temporary.path().join("target_swapped");
+        fs::create_dir(&swapped).expect("swapped is created");
+        fs::remove_dir(&target).expect("original target removed");
+        fs::rename(&swapped, &target).expect("swapped renamed to target");
+
+        let error = pin
+            .verify(&target)
+            .expect_err("a target replaced between check and open must be refused");
+        assert!(
+            error.to_string().contains("replaced between check and open"),
+            "{error}"
+        );
     }
 }
