@@ -33,8 +33,8 @@ const MAX_PROBE_TRANSITION_PASSES = 10
  * - When there is nothing to alert, the new status is stored right away.
  * - When there is an alert, the stored status is left unchanged and the claim is
  *   taken (or kept) with this run's token. The caller records the status only
- *   after the alert has been stored, so a failed save is retried by the next run
- *   instead of the transition being lost.
+ *   after the alert has been stored, so a failed save is tried again by the next
+ *   run that observes the same transition instead of the status moving on.
  */
 const PROBE_TRANSITION_SCRIPT = `
 local current = ARGV[1]
@@ -217,10 +217,11 @@ const processProbeTransitions = async (cache: ICacheAdapter, snapshot: ParkedPro
         }
 
         if (enqueued) {
-          // Only now is the transition recorded, so a failed enqueue is retried by the next run.
+          // Only now is the transition recorded. If the save failed the status stays as it was, so the next run that
+          // observes the same transition tries again.
           recordedStatus = current.status
         } else {
-          logger.error('probe %s notification was not enqueued; it will be retried on the next run', action)
+          logger.error('probe %s notification was not enqueued; the next run that sees it will try again', action)
         }
       } else if (!holdingClaim) {
         // Nothing to alert (the status is stored) or another run holds the claim (this result is parked).
