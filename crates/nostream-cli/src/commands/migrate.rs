@@ -1315,7 +1315,9 @@ mod tests {
             .verify(&target)
             .expect_err("a target replaced between check and open must be refused");
         assert!(
-            error.to_string().contains("replaced between check and open"),
+            error
+                .to_string()
+                .contains("replaced between check and open"),
             "{error}"
         );
     }
