@@ -1,5 +1,54 @@
 # nostream
 
+## 3.16.0
+
+### Minor Changes
+
+- [#1088](https://github.com/cameri/nostream/pull/1088) [`e1f92ad`](https://github.com/cameri/nostream/commit/e1f92adb9ebdfc3698ba7ce7826120448bdb6d9e) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): deliver paid peering invoices and gate peer feeds
+
+  Configured peers can request their BOLT11 invoice as a signed `kind 402` event
+  and pay it through Relay B's existing processor. Feed `REQ`, `COUNT` and NIP-77
+  requests are refused with a payment-required reason until a paid period is
+  active. Expired invoices are reissued after a cooldown, and a missed webhook is
+  rechecked before access is denied.
+
+- [#1087](https://github.com/cameri/nostream/pull/1087) [`1d5c473`](https://github.com/cameri/nostream/commit/1d5c473041dd9bfb985be3c9c8ba321aff42b429) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): add the paid peering billing ledger
+
+- [#1089](https://github.com/cameri/nostream/pull/1089) [`15de73a`](https://github.com/cameri/nostream/commit/15de73a62191a50ae82f65e45871149f9ac3ae31) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): renew, lapse and expose paid peering access
+
+  The billing worker now issues renewal invoices before a period ends, rechecks
+  pending payments before lapsing a peer, closes live peer sockets on lapse, and
+  keeps stored events and sync state for a later resume. `GET /admin/peering` and
+  the dashboard show billing status, access end, the open invoice and the last
+  processor error. NEG-MSG rechecks paid access so an open NIP-77 session cannot
+  keep syncing after the paid period ends.
+
+### Patch Changes
+
+- [#1145](https://github.com/cameri/nostream/pull/1145) [`afb381f`](https://github.com/cameri/nostream/commit/afb381fd32be065ef5ada9a444706d4669594074) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(admin): revoke the session token at logout, not only its cookie
+
+  `POST /admin/logout` deleted the browser cookie but the session token itself stayed valid until it expired (24 hours by default), because the token was only `<expiresAt>.<signature>` and nothing on the server recorded a logout. A copy of the token kept elsewhere (a `Bearer` client, a log, a proxy) could restore administrator access after sign-out. The token now carries a random session id under the same signature, logout records that id in Redis until the token would have expired, and every admin request checks it, so a logout on one worker ends the session on all of them and ends only that session. If Redis cannot be read the token is refused, and a logout that cannot record the id answers 500 (and still clears the cookie).
+
+  Tokens issued before this change have no session id and are refused, so every administrator signs in once more after the upgrade.
+
+- [#1091](https://github.com/cameri/nostream/pull/1091) [`6b3db4d`](https://github.com/cameri/nostream/commit/6b3db4dca34cf4bca1dc2a3beb9e6476f868f6a5) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(cli): reject a SECRET that cannot be saved to .env and read back unchanged
+
+- [#1156](https://github.com/cameri/nostream/pull/1156) [`69197f7`](https://github.com/cameri/nostream/commit/69197f755acb094ba6dce8506cf3d919ed71b8d7) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(logging): do not write credential headers to debug logs
+
+  Debug logging of incoming requests printed every header, so the admin session cookie, an `Authorization` bearer token, API keys and webhook signatures could be read from the logs and reused. The rate-limit middleware, the WebSocket connection log and the four payment callback controllers now log the headers with the value of every credential-bearing header replaced by `[redacted]`.
+
+- [#1157](https://github.com/cameri/nostream/pull/1157) [`8e90d9e`](https://github.com/cameri/nostream/commit/8e90d9e7226c7ffed50896fd8ef6332fe7bceb59) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(settings): reload settings when either settings.yaml or settings.json changes
+
+  A worker watched only the settings file whose extension existed when it started. The loader reads `settings.yaml` first and falls back to the deprecated `settings.json`, and the admin console and the CLI always write `settings.yaml`, so a worker that started from `settings.json` never reloaded after the yaml file was written. A change such as removing a pubkey from the NIP-98 admin allowlist stayed unseen by that worker until it restarted. The watcher now reloads on a change to either file.
+
+- [#1118](https://github.com/cameri/nostream/pull/1118) [`5c4b4f0`](https://github.com/cameri/nostream/commit/5c4b4f0c246f4b83368afa63c67e65630936c7b5) Thanks [@Ferryx349](https://github.com/Ferryx349)! - fix(admin): serialize every settings-file writer with the settings write lock
+
+  The lock records its owner hostname and refreshes a heartbeat, so a relay in a
+  container no longer steals a live CLI lock just because the host PID does not
+  exist in its own PID namespace. On the same host the lock checks the owner's
+  process start time, so a reused PID is reclaimed without ever evicting a slow
+  writer, and async writers keep the lock until they settle.
+
 ## 3.15.3
 
 ### Patch Changes
