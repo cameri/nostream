@@ -14,6 +14,8 @@ use std::fs;
 use std::io;
 use std::io::Write;
 #[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -66,8 +68,13 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             if read_manifest(&options.target)?.is_none() {
                 return no_manifest(&options.target, out);
             }
-            let target = open_existing_target(&options.target).await?;
-            return verify_with(&target, &options, out).await;
+            // The pin is taken after both answers, so a target that is not there is refused by
+            // the pre-check's line rather than by a failed open; from here the store and the
+            // manifest are read through the descriptor.
+            let pin = TargetPin::pin(&options.target)?;
+            let root = pin.root(&options.target);
+            let target = open_existing_target(&root).await?;
+            return verify_with(&target, &root, &options, out).await;
         }
 
         let existing = read_manifest(&options.target)?;
@@ -81,8 +88,10 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             if !store_present(&options) {
                 return no_store(&options, out);
             }
-            let target = open_existing_target(&options.target).await?;
-            return verify_with(&target, &options, out).await;
+            let pin = TargetPin::pin(&options.target)?;
+            let root = pin.root(&options.target);
+            let target = open_existing_target(&root).await?;
+            return verify_with(&target, &root, &options, out).await;
         }
 
         // R7's store requirement, answered before the source is dialled so a missing store is
@@ -107,9 +116,10 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             CliError::Migrate(format!("could not read the source at {described}: {error}"))
         })?;
         let pin = create_target(&options)?;
-        let target = open_target(&options.target).await?;
+        let root = pin.root(&options.target);
+        let target = open_target(&root).await?;
         pin.verify(&options.target)?;
-        migrate_with(&source, &target, &options, out).await
+        migrate_with(&source, &target, &root, &options, out).await
     })
 }
 
@@ -119,14 +129,18 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
 /// Every batch's rows are written to the store and then folded into the manifest, which is
 /// replaced after each batch; a batch that fails leaves the previous batch's `after`, `rows` and
 /// `checksum` in place, so the next run resumes at the refused row.
+///
+/// `root` is the path the store and the manifest are read and written through: the target's own
+/// descriptor spelling where procfs answers, and the operator's path otherwise.
 pub async fn migrate_with(
     source: &dyn MigrationSource,
     target: &dyn MigrationTarget,
+    root: &Path,
     options: &MigrateOptions,
     out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
     refuse_zero_batch(options)?;
-    let existing = read_manifest(&options.target)?;
+    let existing = read_manifest(root)?;
     let mut manifest = existing.clone().unwrap_or_else(Manifest::fresh);
 
     // A store that already holds rows and carries no manifest is not this tool's. Copying over
@@ -172,11 +186,11 @@ pub async fn migrate_with(
     // R6: written before the first `read_batch`, so a store this tool has begun to fill always
     // carries a manifest and a crash after the first batch resumes rather than being refused.
     if existing.is_none() {
-        write_manifest(&options.target, &manifest)?;
+        write_manifest(root, &manifest)?;
     }
 
     if manifest.complete() {
-        return verify_with(target, options, out).await;
+        return verify_with(target, root, options, out).await;
     }
 
     let started = Instant::now();
@@ -225,7 +239,7 @@ pub async fn migrate_with(
             entry.checksum = sum.to_hex();
             entry.after = after.as_deref().map(hex::encode).unwrap_or_default();
             entry.complete = complete;
-            write_manifest(&options.target, &manifest)?;
+            write_manifest(root, &manifest)?;
 
             if complete {
                 break;
@@ -237,13 +251,13 @@ pub async fn migrate_with(
     let rate = events.saturating_mul(1_000) / ms.max(1);
     writeln!(out, "Migrated {total} rows in {ms} ms").map_err(write_failed)?;
     writeln!(out, "Events throughput: {rate} events/s").map_err(write_failed)?;
-    // Where the copy landed: a target that was redirected or mistyped is visible here rather
-    // than as a store the operator cannot find.
+    // Where the copy landed, resolved through the root it wrote through: a target that was
+    // redirected or mistyped is visible here rather than as a store the operator cannot find.
     writeln!(
         out,
         "Store: {}",
-        fs::canonicalize(store_path(options))
-            .unwrap_or_else(|_| store_path(options))
+        fs::canonicalize(store_path(root))
+            .unwrap_or_else(|_| store_path(root))
             .display()
     )
     .map_err(write_failed)?;
@@ -256,13 +270,17 @@ pub async fn migrate_with(
 ///
 /// Every table is paged to its end, so a table longer than one page is read rather than cut at
 /// its first. The pass writes nothing to the store and never opens the source.
+///
+/// `root` is the path the store and the manifest are read through: the target's own descriptor
+/// spelling where procfs answers, and the operator's path otherwise.
 pub async fn verify_with(
     target: &dyn MigrationTarget,
+    root: &Path,
     options: &MigrateOptions,
     out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
     refuse_zero_batch(options)?;
-    let Some(manifest) = read_manifest(&options.target)? else {
+    let Some(manifest) = read_manifest(root)? else {
         return no_manifest(&options.target, out);
     };
 
@@ -486,6 +504,10 @@ fn sum_words(limbs: &mut [u64; 4], words: &[[u8; 8]]) {
 }
 
 /// The manifest's path under a target root.
+///
+/// `shortcut: a failure in the manifest exchange names this root, which on the procfs path is the
+/// descriptor's spelling rather than the operator's; upgrade when a failure an operator reads
+/// needs their own path, which costs a second parameter on four private functions.
 fn manifest_path(target: &Path) -> PathBuf {
     target.join(MANIFEST_FILE)
 }
@@ -761,7 +783,7 @@ fn effective_uid() -> Option<u32> {
 
 #[cfg(unix)]
 fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Result<(), CliError> {
-    for path in [&options.target, &store_path(options)] {
+    for path in [&options.target, &store_path(&options.target)] {
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
@@ -919,13 +941,33 @@ fn refuse_swappable_ancestry(target: &Path, caller: Option<u32>) -> Result<(), C
     }
 }
 
-/// A handle and device/inode pin that closes the TOCTOU window between target creation
-/// and store open. Holding the file handle keeps the directory inode active, and verify
-/// ensures the directory opened by LMDB is the exact inode judged by the security checks.
+/// The root `path` is opened through: the descriptor's own procfs spelling where procfs
+/// answers, and `path` unchanged where it does not.
+///
+/// The answer is a parameter rather than a probe, so a test can drive the branch a host without
+/// `/proc` would take — the same split `refuse_unsafe_target_for` makes for the caller's uid.
+#[cfg(unix)]
+fn root_for(handle: &fs::File, path: &Path, procfs: bool) -> PathBuf {
+    if procfs {
+        PathBuf::from(format!("/proc/self/fd/{}", handle.as_raw_fd()))
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// A handle and device/inode pin on the target directory, taken before the store opens.
+///
+/// Holding the handle keeps the directory inode alive and names it through `root`, so the store
+/// and every manifest write after the pin resolve to the inode the security checks judged,
+/// however the operator's path is renamed afterwards. That narrows the TOCTOU window between
+/// target creation and store open and does not close it: heed canonicalises the spelling before
+/// `mdb_env_open` (`heed-0.20.5/src/env.rs:239,305`), so the mapping itself still resolves a
+/// name. `verify` is the post-open cross-check of the operator's path, and the only check where
+/// procfs is absent.
 #[cfg(unix)]
 #[derive(Debug)]
 struct TargetPin {
-    _handle: fs::File,
+    handle: fs::File,
     dev: u64,
     ino: u64,
 }
@@ -939,10 +981,16 @@ impl TargetPin {
             .metadata()
             .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
         Ok(Self {
-            _handle: file,
+            handle: file,
             dev: metadata.dev(),
             ino: metadata.ino(),
         })
+    }
+
+    /// The root the store and the manifest are opened through: the pin's own descriptor where
+    /// procfs answers, and the operator's path otherwise.
+    fn root(&self, path: &Path) -> PathBuf {
+        root_for(&self.handle, path, Path::new("/proc/self/fd").is_dir())
     }
 
     fn verify(&self, path: &Path) -> Result<(), CliError> {
@@ -972,13 +1020,18 @@ impl TargetPin {
         Ok(Self)
     }
 
+    fn root(&self, path: &Path) -> PathBuf {
+        path.to_path_buf()
+    }
+
     fn verify(&self, _path: &Path) -> Result<(), CliError> {
         Ok(())
     }
 }
 
 /// Creates the target when it is missing, judges what is on disk, and pins the directory
-/// handle to close the TOCTOU window before the store opens.
+/// handle the store is opened through. The pin narrows, and does not close, the TOCTOU window
+/// between this check and the store's open.
 #[cfg(unix)]
 fn create_target(options: &MigrateOptions) -> Result<TargetPin, CliError> {
     fs::DirBuilder::new()
@@ -1015,7 +1068,7 @@ fn no_store(options: &MigrateOptions, out: &mut dyn Write) -> Result<CommandOutp
         out,
         "No store at {}: a re-run resumes once the store is back. To start over, use a fresh \
          --target, or remove {} and the store together",
-        store_path(options).display(),
+        store_path(&options.target).display(),
         manifest_path(&options.target).display()
     )
     .map_err(write_failed)?;
@@ -1025,9 +1078,9 @@ fn no_store(options: &MigrateOptions, out: &mut dyn Write) -> Result<CommandOutp
     })
 }
 
-/// The store's directory under a target root: the environment `LmdbBackend::open` would create.
-fn store_path(options: &MigrateOptions) -> PathBuf {
-    nostream_storage::backend::store_dir(&options.target)
+/// The store's directory under a root: the environment `LmdbBackend::open` would create.
+fn store_path(root: &Path) -> PathBuf {
+    nostream_storage::backend::store_dir(root)
 }
 
 /// Whether the target already holds an LMDB environment, asked the way R8 asks it: `<target>/
@@ -1084,7 +1137,7 @@ fn check_resume_store(
         return Err(CliError::Migrate(format!(
             "No store at {}: the manifest records progress, so a re-run resumes once the store is \
              back. To start over, use a fresh --target, or remove {} and the store together",
-            store_path(options).display(),
+            store_path(&options.target).display(),
             manifest_path(&options.target).display()
         )));
     }
@@ -1397,6 +1450,84 @@ mod tests {
         let error = pin
             .verify(&target)
             .expect_err("a target replaced between check and open must be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("replaced between check and open"),
+            "{error}"
+        );
+    }
+
+    /// A host with procfs names the pinned directory by its descriptor, and one without it has
+    /// nothing but the path: both halves are the `root_for` branch, and the third assertion is
+    /// the wiring from the real probe to the helper on a host where it answers.
+    #[test]
+    #[cfg(unix)]
+    #[allow(clippy::expect_used)]
+    fn the_root_is_the_descriptor_when_procfs_answers_and_the_path_otherwise() {
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let target = temporary.path().join("target");
+        fs::create_dir(&target).expect("the target is created");
+        let handle = fs::File::open(&target).expect("the target is opened");
+
+        assert_eq!(
+            root_for(&handle, &target, true),
+            PathBuf::from(format!("/proc/self/fd/{}", handle.as_raw_fd())),
+            "the descriptor branch names the handle's own number"
+        );
+        assert_eq!(
+            root_for(&handle, &target, false),
+            target,
+            "without procfs the operator's path is the root, unchanged"
+        );
+
+        if Path::new("/proc/self/fd").is_dir() {
+            let pin = TargetPin::pin(&target).expect("the target is pinned");
+            assert_eq!(
+                pin.root(&target),
+                PathBuf::from(format!("/proc/self/fd/{}", pin.handle.as_raw_fd())),
+                "the pin's root is its own descriptor"
+            );
+        }
+    }
+
+    /// The swap this job exists for: the pin is taken, the target is renamed away through its
+    /// parent and a fresh directory takes its name, and the store is then opened through the
+    /// descriptor. The store lands in the directory the pin holds whatever the operator's path
+    /// now names, and `verify` refuses the path that no longer denotes it.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[allow(clippy::expect_used)]
+    async fn a_target_swapped_after_the_pin_keeps_the_store_in_the_pinned_directory() {
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let target = temporary.path().join("target");
+        fs::create_dir(&target).expect("the target is created");
+        let options = MigrateOptions {
+            target: target.clone(),
+            batch_size: 1_000,
+            verify: false,
+        };
+        let pin = create_target(&options).expect("the target is pinned");
+
+        let moved = temporary.path().join("moved");
+        fs::rename(&target, &moved).expect("the target is renamed away");
+        fs::create_dir(&target).expect("the replacement is created");
+
+        open_target(&pin.root(&target))
+            .await
+            .expect("the store opens through the descriptor");
+
+        assert!(
+            fs::metadata(moved.join("lmdb").join("data.mdb")).is_ok(),
+            "the store landed in the directory the pin holds"
+        );
+        assert!(
+            fs::metadata(target.join("lmdb")).is_err(),
+            "and nothing was written into the replacement"
+        );
+        let error = pin
+            .verify(&target)
+            .expect_err("the operator's path no longer names the pinned inode");
         assert!(
             error
                 .to_string()
