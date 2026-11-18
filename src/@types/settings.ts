@@ -579,6 +579,19 @@ export interface PeeringPeer {
   relayUrl: string
   /** Whether this configured peer is active. Defaults to true. */
   enabled?: boolean
+  /**
+   * Buying side only: how much this relay may auto-pay to this peer per budget
+   * period. Absent means invoices from this peer are held for an operator.
+   */
+  budget?: PeeringTerm
+}
+
+/** Buying-side automatic payment policy. */
+export interface PeeringAutoPaySettings {
+  /** Master switch. Per-peer budgets still decide which peers can be paid. */
+  enabled: boolean
+  /** Optional cap across every peer, per its own period. */
+  globalBudget?: PeeringTerm
 }
 
 export interface PeeringSettings {
@@ -617,6 +630,11 @@ export interface PeeringSettings {
    * pubkey receives no peer recognition, even with a valid signature.
    */
   peers?: PeeringPeer[]
+  /**
+   * Buying side: pay invoices from configured peers automatically while they
+   * stay inside the per-peer budget (and the optional global cap).
+   */
+  autoPay?: PeeringAutoPaySettings
 }
 
 export interface Settings {
