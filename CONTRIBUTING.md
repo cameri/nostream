@@ -240,20 +240,21 @@ Change to the project's directory:
 cd /path/to/nostream
 ```
 
-Set the following environment variables:
+Unset `DB_URI` first if this shell already exported it for the quick start, then set the test database. The relay prefers `DB_URI` over `DB_*`, so a leftover `DB_URI` silently points the tests at the development database, where they write their fixtures and delete them again, and the run proves nothing about a clean schema.
 
 ```
-DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
+unset DB_URI
+export DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
 
 or
 
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=nostr_ts_relay_test
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_MIN_POOL_SIZE=1
-DB_MAX_POOL_SIZE=2
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=nostr_ts_relay_test
+export DB_USER=postgres
+export DB_PASSWORD=postgres
+export DB_MIN_POOL_SIZE=1
+export DB_MAX_POOL_SIZE=2
 ```
 
 Run the integration tests:
