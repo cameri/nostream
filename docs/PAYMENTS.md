@@ -97,7 +97,7 @@ Set `payments.enabled`, choose one processor, and restart the relay.
      NWC_URL={NOSTR_WALLET_CONNECT_URL}
      ```
 
-   - If you run the bundled `docker-compose.yml`, add `NWC_URL: ${NWC_URL}` to the relay service's `environment:` list first. The compose file forwards the other processors' keys but not this one, so the value in `.env` never reaches the container.
+
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `nwc`
    - Restart Nostream (`nostream stop` followed by `nostream start`)
