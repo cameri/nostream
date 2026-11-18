@@ -210,7 +210,7 @@ export class EventMessageHandler implements IMessageHandler {
 
     try {
       await strategy.execute(event)
-      this.processNip05Metadata(event)
+      await this.processNip05MetadataIfCurrent(event)
     } catch (error) {
       logger.error('error handling message', message, error)
       this.webSocket.emit(
@@ -753,6 +753,47 @@ export class EventMessageHandler implements IMessageHandler {
     if (elapsed > expirationMs) {
       return 'blocked: NIP-05 verification expired'
     }
+  }
+
+  /**
+   * A kind-0 profile the relay already replaced with a newer one is still accepted by the replaceable-event
+   * strategy (the write is a no-op and the client gets `duplicate:`), but it must not change the author's
+   * NIP-05 state: replaying someone's older signed profile would otherwise delete or swap the verification
+   * that belongs to their current profile. Only a profile that is the author's current one is processed.
+   */
+  protected async processNip05MetadataIfCurrent(event: Event): Promise<void> {
+    const nip05Settings = this.settings().nip05
+    if (event.kind === EventKinds.SET_METADATA && nip05Settings && nip05Settings.mode !== 'disabled') {
+      try {
+        if (await this.isSupersededProfile(event)) {
+          logger('kind-0 %s from %s was replaced by a newer profile, NIP-05 left as is', event.id, event.pubkey)
+          return
+        }
+      } catch (error) {
+        // Not being able to tell is not a reason to skip a genuine profile update.
+        logger('unable to check whether kind-0 %s is the current profile: %o', event.id, error)
+      }
+    }
+
+    this.processNip05Metadata(event)
+  }
+
+  // Mirrors which of two kind-0 events the replaceable upsert keeps: the later created_at, and for equal
+  // created_at the lower id. A stored profile that is not newer (for example a replica that has not caught
+  // up yet) does not count as superseding.
+  private async isSupersededProfile(event: Event): Promise<boolean> {
+    const [stored] = await this.eventRepository.findByFilters([
+      { authors: [event.pubkey], kinds: [EventKinds.SET_METADATA], limit: 1 },
+    ])
+    if (!stored) {
+      return false
+    }
+
+    const storedId = stored.event_id.toString('hex')
+    return (
+      stored.event_created_at > event.created_at ||
+      (stored.event_created_at === event.created_at && storedId < event.id)
+    )
   }
 
   protected processNip05Metadata(event: Event): void {
