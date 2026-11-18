@@ -240,14 +240,14 @@ Change to the project's directory:
 cd /path/to/nostream
 ```
 
-Unset `DB_URI` first if this shell already exported it for the quick start, then set the test database. The relay prefers `DB_URI` over `DB_*`, so a leftover `DB_URI` silently points the tests at the development database, where they write their fixtures and delete them again, and the run proves nothing about a clean schema.
+The relay prefers `DB_URI` over `DB_*`, and the CLI starts with `node --env-file-if-exists=.env`, which fills in a variable that is not already set. So a `DB_URI` left in `.env` by the quick start, or exported in this shell, silently points the tests at the development database: they write their fixtures there and delete them again, and the run proves nothing about a clean schema. Use whichever form matches how you configure the relay:
 
 ```
-unset DB_URI
 export DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
 
 or
 
+export DB_URI=''
 export DB_HOST=localhost
 export DB_PORT=5432
 export DB_NAME=nostr_ts_relay_test
@@ -256,6 +256,8 @@ export DB_PASSWORD=postgres
 export DB_MIN_POOL_SIZE=1
 export DB_MAX_POOL_SIZE=2
 ```
+
+The empty `DB_URI` is deliberate: `--env-file-if-exists` does not overwrite a variable that already exists, so an empty value stops `.env` from supplying the development database, and the client treats it as unset.
 
 Run the integration tests:
 
