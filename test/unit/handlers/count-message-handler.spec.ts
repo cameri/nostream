@@ -307,6 +307,49 @@ describe('CountMessageHandler', () => {
       ])
     })
 
+    it('returns CLOSED with auth-required when a filter names no kinds and could match restricted events', async () => {
+      webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set())
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            nip42: { restrictedReads: { enabled: true } },
+          }) as Settings,
+      )
+
+      const message = [MessageType.COUNT, 'q1', { '#p': ['f'.repeat(64)] }] as any
+
+      await handler.handleMessage(message)
+
+      expect(eventRepository.countByFilters).to.not.have.been.called
+      expect(webSocketOnMessageStub).to.have.been.calledOnceWithExactly([
+        MessageType.CLOSED,
+        'q1',
+        'auth-required: authentication is required to count these event kinds',
+      ])
+    })
+
+    it('returns COUNT for a filter without kinds scoped to the authenticated client', async () => {
+      const pubkey = 'f'.repeat(64)
+      webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set([pubkey]))
+      handler = new CountMessageHandler(
+        webSocket,
+        eventRepository,
+        () =>
+          ({
+            nip42: { restrictedReads: { enabled: true } },
+          }) as Settings,
+      )
+      ;(eventRepository.countByFilters as Sinon.SinonStub).resolves(3)
+
+      const filter = { authors: [pubkey] }
+
+      await handler.handleMessage([MessageType.COUNT, 'q1', filter] as any)
+
+      expect(eventRepository.countByFilters).to.have.been.calledOnceWithExactly([filter])
+    })
+
     it('returns CLOSED when counting restricted kinds scoped to another pubkey', async () => {
       webSocket.getAuthenticatedPubkeys = sandbox.stub().returns(new Set(['a'.repeat(64)]))
       handler = new CountMessageHandler(
