@@ -17,7 +17,9 @@
       ],
       "ignore": [
         ".nostr/**",
-        "src/utils/relay-probe/**"
+        "src/utils/relay-probe/**",
+        "src/repositories/peering-invoice-repository.ts",
+        "src/utils/bolt11.ts"
       ],
       "commitlint": false,
       "eslint": false,

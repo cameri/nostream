@@ -12,7 +12,7 @@ import {
   NotificationDeliveryStatus,
   OperatorNotificationChannelType,
 } from './operator-notifications'
-import { PeeringPayment } from './peering'
+import { PeeringInvoice, PeeringInvoiceStatus, PeeringPayment } from './peering'
 import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
@@ -97,6 +97,37 @@ export interface IPeeringPaymentRepository {
   findDueForRenewal(before: Date, limit: number, offset: number): Promise<PeeringPayment[]>
   /** Active or renewal-pending relationships whose period has ended by `now`. */
   findPeriodEnded(now: Date, limit: number, offset: number): Promise<PeeringPayment[]>
+}
+
+export interface IPeeringInvoiceRepository {
+  /** Inserts once per payment hash; returns the stored row and whether it was new. */
+  insertIfNew(
+    invoice: PeeringInvoice,
+    client?: DatabaseClient,
+  ): Promise<{ inserted: boolean; invoice: PeeringInvoice }>
+  findByHash(paymentHash: string, client?: DatabaseClient): Promise<PeeringInvoice | undefined>
+  update(
+    paymentHash: string,
+    changes: Partial<Pick<PeeringInvoice, 'status' | 'reason' | 'autoPaid' | 'paidAt' | 'budgetPeriodStart' | 'budgetPeriodEnd' | 'termPeriodSeconds'>>,
+    client?: DatabaseClient,
+  ): Promise<PeeringInvoice | undefined>
+  /** Atomically moves one row from an allowed state; undefined when another writer won. */
+  claim(
+    paymentHash: string,
+    from: PeeringInvoiceStatus[],
+    to: PeeringInvoiceStatus,
+    client?: DatabaseClient,
+  ): Promise<PeeringInvoice | undefined>
+  list(statuses?: PeeringInvoiceStatus[], limit?: number): Promise<PeeringInvoice[]>
+  /** Atomically adds `amount` when the resulting spend stays inside `limit`. */
+  reserveBudget(
+    scope: string,
+    periodStart: Date,
+    periodEnd: Date,
+    amountMsats: bigint,
+    limitMsats: bigint,
+    client: DatabaseClient,
+  ): Promise<bigint | undefined>
 }
 
 export interface IUserSubscriptionRepository {

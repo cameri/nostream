@@ -952,7 +952,7 @@ const PEERING_KIND_MAX = 65535
 const PEERING_POW_MAX_BITS = 256
 const PEERING_SCOPE_KEYS = new Set(['kinds', 'since', 'until', 'windowSeconds'])
 const PEERING_TERM_KEYS = new Set(['amount', 'unit', 'period'])
-const PEERING_PEER_KEYS = new Set(['pubkey', 'relayUrl', 'enabled'])
+const PEERING_PEER_KEYS = new Set(['pubkey', 'relayUrl', 'enabled', 'budget'])
 
 const isValidPeeringKindValue = (value: unknown): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= PEERING_KIND_MAX
@@ -1131,6 +1131,38 @@ const validatePeeringPeers = (peers: unknown, issues: ValidationIssue[]): void =
 
     if (peer.enabled !== undefined && typeof peer.enabled !== 'boolean') {
       issues.push({ path: `${prefix}.enabled`, message: 'must be a boolean' })
+    }
+
+    if (peer.budget !== undefined) {
+      if (!isPlainObject(peer.budget)) {
+        issues.push({ path: `${prefix}.budget`, message: 'budget must be an object' })
+      } else {
+        for (const key of Object.keys(peer.budget)) {
+          if (!PEERING_TERM_KEYS.has(key)) {
+            issues.push({ path: `${prefix}.budget.${key}`, message: 'Unknown setting key' })
+          }
+        }
+
+        const { amount, unit, period } = peer.budget
+        if (!(typeof amount === 'number' && Number.isSafeInteger(amount) && amount > 0)) {
+          issues.push({ path: `${prefix}.budget.amount`, message: 'amount must be a positive integer' })
+        }
+
+        if (typeof unit !== 'string' || !unit.trim()) {
+          issues.push({ path: `${prefix}.budget.unit`, message: 'unit must be a non-empty string' })
+        } else if (typeof amount === 'number' && amount > 0) {
+          const normalized = unit.trim().toLowerCase()
+          if (!['msats', 'sats', 'btc'].includes(normalized)) {
+            issues.push({ path: `${prefix}.budget.unit`, message: 'paid terms must use msats, sats or btc' })
+          } else if (normalized === 'msats' && amount % 1000 !== 0) {
+            issues.push({ path: `${prefix}.budget.amount`, message: 'paid msat terms must be a whole number of satoshis' })
+          }
+        }
+
+        if (!(typeof period === 'number' && Number.isSafeInteger(period) && period > 0)) {
+          issues.push({ path: `${prefix}.budget.period`, message: 'period must be a positive integer (seconds)' })
+        }
+      }
     }
   })
 }
