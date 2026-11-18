@@ -4,12 +4,12 @@ import { PeeringInvoiceStatus } from '../../../src/@types/peering'
 import { PeeringInvoiceRepository } from '../../../src/repositories/peering-invoice-repository'
 import { createRecordingKnex } from './recording-knex'
 
-const rejects = async (promise: Promise<unknown>): Promise<boolean> => {
+const rejection = async (promise: Promise<unknown>): Promise<string | undefined> => {
   try {
     await promise
-    return false
-  } catch {
-    return true
+    return undefined
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
   }
 }
 
@@ -104,6 +104,10 @@ describe('PeeringInvoiceRepository', () => {
     expect(recording.queries[0].sql).to.include('"budget_period_start"')
     expect(recording.queries[0].sql).to.include('"budget_period_end"')
     expect(recording.queries[0].sql).to.include('"term_period_seconds"')
+    const bindings = recording.queries[0].bindings as unknown[]
+    expect((bindings[5] as Date).getTime()).to.equal(now.getTime())
+    expect((bindings[6] as Date).getTime()).to.equal(now.getTime() + 60_000)
+    expect(bindings[7]).to.equal(60)
   })
 
   it('claims a state transition atomically', async () => {
@@ -136,9 +140,12 @@ describe('PeeringInvoiceRepository', () => {
   it('throws when a duplicate row disappears before the fallback read', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringInvoiceRepository(recording.db)
-    recording.respondWith([], [], [])
+    recording.respondWith([], [])
 
-    expect(await rejects(repository.insertIfNew(invoice))).to.equal(true)
+    expect(await rejection(repository.insertIfNew(invoice))).to.equal('Unable to load peering invoice hash-1')
+    expect(recording.queries).to.have.length(2)
+    expect(recording.queries[0].sql).to.include('insert into "peering_invoices"')
+    expect(recording.queries[1].sql).to.include('select')
   })
 
   it('re-reads a duplicate row when the counter update returns no row', async () => {
@@ -156,9 +163,10 @@ describe('PeeringInvoiceRepository', () => {
     const recording = createRecordingKnex()
     const repository = new PeeringInvoiceRepository(recording.db)
 
-    expect(
-      await rejects(repository.reserveBudget(`peer:${peerPubkey}`, now, now, -1n, 1_000n, recording.db)),
-    ).to.equal(true)
+    expect(await rejection(repository.reserveBudget(`peer:${peerPubkey}`, now, now, -1n, 1_000n, recording.db))).to.equal(
+      'budget reservation amount must be non-negative',
+    )
+    expect(recording.queries).to.be.empty
   })
 
   it('refuses a first reservation that already exceeds the limit', async () => {
