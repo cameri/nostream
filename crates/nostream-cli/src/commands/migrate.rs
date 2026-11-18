@@ -47,6 +47,21 @@ pub struct MigrateOptions {
 /// `migrate pg-to-lmdb`: the copy, or the verification pass when `verify` is set.
 #[cfg(unix)]
 pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
+    run_with(options, out, || {})
+}
+
+/// The command over a step injected between the target's pin and the root derived from it.
+///
+/// Nothing in the command renames its target, so production passes an empty closure; it is how a
+/// test reaches the interval between the pin and the store's open, which no request the command
+/// makes can block on — the same split `refuse_unsafe_target_for`'s `caller` makes for the uid
+/// branch.
+#[cfg(unix)]
+fn run_with(
+    options: MigrateOptions,
+    out: &mut dyn Write,
+    mut after_pin: impl FnMut(),
+) -> Result<CommandOutput, CliError> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -72,6 +87,7 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             // the pre-check's line rather than by a failed open; from here the store and the
             // manifest are read through the descriptor.
             let pin = TargetPin::pin(&options.target)?;
+            after_pin();
             let root = pin.root(&options.target);
             let target = open_existing_target(&root).await?;
             return verify_with(&target, &root, &options, out).await;
@@ -89,6 +105,7 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
                 return no_store(&options, out);
             }
             let pin = TargetPin::pin(&options.target)?;
+            after_pin();
             let root = pin.root(&options.target);
             let target = open_existing_target(&root).await?;
             return verify_with(&target, &root, &options, out).await;
@@ -116,6 +133,7 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             CliError::Migrate(format!("could not read the source at {described}: {error}"))
         })?;
         let pin = create_target(&options)?;
+        after_pin();
         let root = pin.root(&options.target);
         let target = open_target(&root).await?;
         pin.verify(&options.target)?;
@@ -1533,6 +1551,105 @@ mod tests {
                 .to_string()
                 .contains("replaced between check and open"),
             "{error}"
+        );
+    }
+
+    /// Copies an environment's files into a directory of their own, so the copy is an inode no
+    /// environment in this process has opened: heed registers an environment by its canonical
+    /// path, and a second open of one path with different flags is refused.
+    #[allow(clippy::expect_used)]
+    fn copy_store(from: &Path, into: &Path) {
+        fs::create_dir_all(into).expect("the copied store directory is made");
+        for entry in fs::read_dir(from).expect("the store directory reads") {
+            let entry = entry.expect("an entry reads");
+            fs::copy(entry.path(), into.join(entry.file_name())).expect("the store file is copied");
+        }
+    }
+
+    /// An environment with no rows and a manifest that records it complete, both written where
+    /// the command is not going to look: a test copies them to its target, so what the command
+    /// opens there is an inode this process has never opened.
+    #[allow(clippy::expect_used)]
+    fn prepared_migration() -> tempfile::TempDir {
+        let prepared = tempfile::tempdir().expect("a temporary directory");
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("the test runtime builds")
+            .block_on(async {
+                LmdbBackend::open(prepared.path())
+                    .await
+                    .expect("the store opens");
+            });
+        let mut manifest = Manifest::fresh();
+        for table in MigratedTable::ALL {
+            manifest.entry(table).complete = true;
+        }
+        write_manifest(prepared.path(), &manifest).expect("the manifest is written");
+        prepared
+    }
+
+    /// Runs the command over a target that is swapped in the interval between its pin and the
+    /// store's open: the target is renamed away through its parent, and a fresh directory takes
+    /// its name holding a store of its own.
+    #[allow(clippy::expect_used)]
+    fn run_over_a_swap(verify: bool) -> (CommandOutput, String) {
+        let prepared = prepared_migration();
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let target = temporary.path().join("target");
+        let moved = temporary.path().join("moved");
+        copy_store(&prepared.path().join("lmdb"), &target.join("lmdb"));
+        fs::copy(
+            prepared.path().join(MANIFEST_FILE),
+            target.join(MANIFEST_FILE),
+        )
+        .expect("the manifest is copied");
+
+        let mut out = Vec::new();
+        let output = run_with(
+            MigrateOptions {
+                target: target.clone(),
+                batch_size: 1_000,
+                verify,
+            },
+            &mut out,
+            || {
+                fs::rename(&target, &moved).expect("the target is renamed away");
+                copy_store(&prepared.path().join("lmdb"), &target.join("lmdb"));
+            },
+        )
+        .expect("the command answers rather than failing");
+        (
+            output,
+            String::from_utf8(out).expect("the command writes utf-8"),
+        )
+    }
+
+    /// `run`'s `--verify` arm takes its own pin, and this is the half no grep can show: only the
+    /// pinned directory holds the manifest, so an arm that opened the bare path answers
+    /// `No manifest at …` and exits 1 where this exits 0.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn the_verify_arm_reads_the_store_its_pin_names_rather_than_the_replacement() {
+        let (output, text) = run_over_a_swap(true);
+        assert_eq!(output.exit_code, 0, "got:\n{text}");
+        assert!(
+            text.contains("Verified 9 tables"),
+            "the arm read the store its pin names, got:\n{text}"
+        );
+    }
+
+    /// The same swap on the other arm that verifies: a complete manifest with no `--verify` set.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn the_completed_manifest_arm_reads_the_store_its_pin_names_rather_than_the_replacement() {
+        let (output, text) = run_over_a_swap(false);
+        assert_eq!(output.exit_code, 0, "got:\n{text}");
+        assert!(
+            text.contains("Verified 9 tables"),
+            "the arm read the store its pin names, got:\n{text}"
         );
     }
 }
