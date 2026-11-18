@@ -68,6 +68,25 @@ pnpm run cli -- start
 
 ### Development Quick Start (Standalone)
 
+Make sure PostgreSQL and Redis are running locally. Create the database the
+relay will use:
+
+```
+$ psql -h $DB_HOST -p $DB_PORT -U $DB_USER -W
+postgres=# create database nostr_ts_relay;
+postgres=# quit
+```
+
+Set the Redis password the default configuration expects, and verify it:
+
+```
+$ redis-cli
+127.0.0.1:6379> CONFIG SET requirepass "nostr_ts_relay"
+OK
+127.0.0.1:6379> AUTH nostr_ts_relay
+Ok
+```
+
 Set the required environment variables (or copy `.env.example` to `.env` and edit it):
 
 ```
