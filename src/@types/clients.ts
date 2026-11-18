@@ -23,7 +23,27 @@ export interface CreateInvoiceRequest {
 
 export type GetInvoiceResponse = Partial<Invoice>
 
+export interface PayInvoiceRequest {
+  bolt11: string
+}
+
+export interface PayInvoiceResponse {
+  /** BOLT11 payment hash, used as the buyer-side dedupe key. */
+  paymentHash: string
+  preimage?: string
+}
+
+/** The configured processor only creates/reads incoming invoices; it cannot spend. */
+export class PaymentsProcessorCannotPayError extends Error {
+  public constructor() {
+    super('the configured payments processor cannot pay a BOLT11 invoice')
+    this.name = 'PaymentsProcessorCannotPayError'
+  }
+}
+
 export interface IPaymentsProcessor {
   createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse>
   getInvoice(invoice: string | Invoice): Promise<GetInvoiceResponse>
+  /** Pays a BOLT11 invoice from the processor wallet. Absent on receive-only adapters. */
+  payInvoice?(request: PayInvoiceRequest): Promise<PayInvoiceResponse>
 }

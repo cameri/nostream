@@ -19,7 +19,8 @@
         ".nostr/**",
         "src/utils/relay-probe/**",
         "src/repositories/peering-invoice-repository.ts",
-        "src/utils/bolt11.ts"
+        "src/utils/bolt11.ts",
+        "src/services/peering-buyer-service.ts"
       ],
       "commitlint": false,
       "eslint": false,
