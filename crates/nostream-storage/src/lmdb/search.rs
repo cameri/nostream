@@ -2,7 +2,7 @@
 //! proximity rank, and the rebuild that gives a store written before this module existed its
 //! index on its next open.
 //!
-//! The index is `events_by_term`, keyed `term ‖ event_id` with an empty value, so one term's
+//! The index is `events_by_term`, keyed `term ‖ 0x00 ‖ event_id` with an empty value, so one term's
 //! postings are one byte range in id order. It is maintained on every write path, whether or not
 //! the NIP-50 gate is on, because the gate is a read gate: a store written with the feature off
 //! answers a search the moment it is turned on.
@@ -30,12 +30,12 @@ use super::{Databases, Gates};
 use crate::error::StorageError;
 use crate::repositories::EventRecord;
 
-/// The name of the term index database: `term ‖ event_id`, value empty, one posting per key.
+/// The name of the term index database: `term ‖ 0x00 ‖ event_id`, value empty, one posting per key.
 pub const SEARCH_INDEX_DB: &str = "events_by_term";
 
 /// The version of the index's contents, written into `meta` under [`SEARCH_INDEX_MARKER`] after
 /// a rebuild. A store whose marker holds another value is rebuilt on the next open.
-pub const SEARCH_INDEX_VERSION: u8 = 1;
+pub const SEARCH_INDEX_VERSION: u8 = 2;
 
 /// The `meta` key that records [`SEARCH_INDEX_VERSION`].
 pub const SEARCH_INDEX_MARKER: &[u8] = b"search-index-version";
@@ -60,13 +60,14 @@ const LANGUAGE_REFUSAL: &str =
 
 /// One term index key, as the write path composes it and the walk reads it.
 ///
-/// The term is cut to [`SEARCH_TERM_MAX_LEN`] bytes on a `char` boundary, so two tokens sharing
-/// their first 64 bytes are one key; the id tail keeps a term's postings contiguous and in id
-/// order, which is what makes the range seekable and its order stable.
-fn term_key(term: &str, id: &EventId) -> Vec<u8> {
+/// The term is cut to [`SEARCH_TERM_MAX_LEN`] bytes on a `char` boundary and terminated by
+/// `0x00`, so an exact-term range is a true equality range; the id tail keeps a term's postings
+/// contiguous and in id order, which is what makes the range seekable and its order stable.
+pub fn term_key(term: &str, id: &EventId) -> Vec<u8> {
     let bytes = term_bytes(term);
-    let mut key = Vec::with_capacity(bytes.len() + 32);
+    let mut key = Vec::with_capacity(bytes.len() + 1 + 32);
     key.extend_from_slice(bytes);
+    key.push(0);
     key.extend_from_slice(id.as_bytes());
     key
 }
@@ -84,15 +85,20 @@ fn term_bytes(term: &str) -> &[u8] {
     &term.as_bytes()[..end]
 }
 
-/// The bounds of one term's postings: the term's bytes, then the same bytes followed by the
-/// largest possible id. Truncation can only merge two keys, so a query term's range covers every
-/// posting a token sharing its prefix wrote.
-fn term_range(term: &str) -> (Vec<u8>, Vec<u8>) {
+/// The bounds of one term's postings: the term's bytes followed by `0x00`, then the same bytes
+/// followed by `0x00` and the largest possible id. Because the term is terminated, the range is
+/// an exact-term equality range: it covers every posting for this exact term prefix without
+/// visiting longer tokens that merely share the prefix.
+pub fn term_range(term: &str) -> (Vec<u8>, Vec<u8>) {
     let bytes = term_bytes(term);
-    let mut high = Vec::with_capacity(bytes.len() + 32);
+    let mut low = Vec::with_capacity(bytes.len() + 1);
+    low.extend_from_slice(bytes);
+    low.push(0);
+    let mut high = Vec::with_capacity(bytes.len() + 1 + 32);
     high.extend_from_slice(bytes);
+    high.push(0);
     high.extend([0xff; 32]);
-    (bytes.to_vec(), high)
+    (low, high)
 }
 
 /// The 32-byte id tail of an index key.
@@ -324,18 +330,15 @@ pub(crate) fn page(
 /// rank, to `keep`.
 ///
 /// The first term's range is the candidate list because a term's postings are one contiguous
-/// range in id order. The range narrows by prefix: a key is `term ‖ event_id`, so the bounds
-/// [`term_range`] builds admit every posting whose term begins with the first term's bytes —
-/// `cats` sorts inside `cat`'s range. The walk then enforces term identity, comparing each
-/// posting's own term bytes to the first term's, before the other terms are probed by exact key
-/// and before any body is decoded. The verdict is the row's own (`Matcher::matches`): the walk
-/// narrows by prefix and enforces identity, and the body decides.
+/// range in id order. The range is an exact equality range: a key is `term ‖ 0x00 ‖ event_id`,
+/// so the bounds [`term_range`] builds admit only postings whose term equals the first term's
+/// bytes (up to truncation). The walk also enforces term identity before other terms are probed
+/// by exact key and before any body is decoded. The verdict is the row's own
+/// (`Matcher::matches`): the walk narrows by equality and the body decides.
 ///
 /// shortcut: the walk is bounded by the first query term's postings, not by the rarest term —
 /// there are no statistics to choose one; upgrade when the benchmark rig can measure a corpus
 /// and a stored document frequency, or an intersection of two ranges, is worth the second index.
-/// The breadth #1112 measures remains: a prefix range still visits every longer token's postings
-/// to reject them.
 pub(crate) fn walk<F>(
     txn: &RoTxn<'_>,
     databases: &Databases,
@@ -355,10 +358,8 @@ where
     'postings: for entry in databases.events_by_term.range(txn, &bounds)? {
         let (key, _) = entry?;
         let id = posting_id(key)?;
-        // The range is a prefix range, so a posting for a longer token that starts with the
-        // first term's bytes sorts inside it; only a posting whose own term is that term is a
-        // candidate. A key carries its term before the 32-byte id tail.
-        if key.get(..key.len() - 32) != Some(first_bytes) {
+        let term_len = key.len().saturating_sub(33);
+        if key.get(..term_len) != Some(first_bytes) || key.get(term_len) != Some(&0) {
             continue;
         }
         for other in others {
@@ -593,6 +594,24 @@ mod tests {
         assert_eq!(terms(&first), vec![first.clone()]);
         assert_eq!(verdict(&second, std::slice::from_ref(&first)), None);
         assert_eq!(verdict(&first, std::slice::from_ref(&first)), Some(1));
+    }
+
+    #[test]
+    fn term_range_is_exact_equality_range_excluding_longer_prefixes() {
+        let (low, high) = term_range("cat");
+        assert_eq!(low, b"cat\x00");
+        let mut expected_high = b"cat\x00".to_vec();
+        expected_high.extend([0xff; 32]);
+        assert_eq!(high, expected_high);
+
+        let id = EventId::from_byte_array([0; 32]);
+        let cat_key = term_key("cat", &id);
+        assert!(cat_key.as_slice() >= low.as_slice());
+        assert!(cat_key.as_slice() <= high.as_slice());
+
+        // A longer token sharing the prefix sorts strictly past high
+        let cats_key = term_key("cats", &id);
+        assert!(cats_key.as_slice() > high.as_slice());
     }
 
     #[tokio::test]

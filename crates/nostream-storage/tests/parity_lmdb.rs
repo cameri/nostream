@@ -201,6 +201,20 @@ fn index_keys(backend: &LmdbBackend, term: &str) -> usize {
         .count()
 }
 
+/// How many `events_by_term` postings fall inside the production search range for `term`.
+fn term_postings(backend: &LmdbBackend, term: &str) -> usize {
+    let env = backend.env();
+    let rtxn = env.read_txn().expect("a read transaction");
+    let (index, _) = named_databases(env, &rtxn);
+    let (low, high) = nostream_storage::lmdb::term_range(term);
+    let start = std::ops::Bound::Included(low.as_slice());
+    let end = std::ops::Bound::Included(high.as_slice());
+    index
+        .range(&rtxn, &(start, end))
+        .expect("the index reads")
+        .count()
+}
+
 /// The ids a page returned, ascending, so a caller can compare a set before it compares an
 /// order.
 fn sorted_ids(records: &[EventRecord]) -> Vec<EventId> {
@@ -1823,8 +1837,44 @@ async fn a_search_page_honours_the_limit() {
     assert_eq!(ids_of(&two), by_id, "limit 2: the two best by (rank, id)");
 }
 
-/// A key is the whole term a row wrote, so `cats` sorts inside `cat`'s index range but is not a
-/// `cat` posting: the walk compares the posting's own term before it accepts the row.
+/// Candidate count equals match count for one-term queries over the fixture corpus (#1112).
+///
+/// Under the prefix range (#1112 recon), "a" proposed 414 candidates for 49 matches, "c" 254
+/// candidates for 2 matches, and "bit" 54 candidates for 1 match. With the term terminated in
+/// the key and SEARCH_INDEX_VERSION bumped, each one-term query visits exactly its matching
+/// postings.
+#[tokio::test]
+async fn candidate_count_equals_match_count_for_one_term_queries() {
+    let fixture = fixture();
+    let (_directory, backend) = open_store().await;
+    let corpus: Vec<EventRecord> = fixture["corpus"]
+        .as_array()
+        .expect("corpus")
+        .iter()
+        .map(common::event_record)
+        .collect();
+    backend
+        .create_many(&corpus)
+        .await
+        .expect("the corpus inserts");
+
+    for (term, expected_matches) in [("a", 49), ("c", 2), ("bit", 1)] {
+        let page = rows_of(&backend, &search(term)).await;
+        assert_eq!(
+            page.len(),
+            expected_matches,
+            "match count for term '{term}'"
+        );
+        assert_eq!(
+            term_postings(&backend, term),
+            expected_matches,
+            "candidate count equals match count for term '{term}' (#1112)"
+        );
+    }
+}
+
+/// A key is terminated by `0x00`, so an exact-term range is a true equality range: `cats` sorts
+/// outside `cat`'s index range and is never visited as a candidate.
 #[tokio::test]
 async fn a_search_counts_a_row_once_though_a_longer_token_shares_its_prefix() {
     let (_directory, backend) = open_store().await;

@@ -17,7 +17,9 @@ mod rows;
 mod search;
 mod users;
 
-pub use search::{SEARCH_INDEX_DB, SEARCH_INDEX_MARKER, SEARCH_INDEX_VERSION};
+pub use search::{
+    SEARCH_INDEX_DB, SEARCH_INDEX_MARKER, SEARCH_INDEX_VERSION, term_key, term_range,
+};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
