@@ -26,6 +26,7 @@ import { createPostAdminModerationActionsController } from '../../factories/cont
 import { createPostAdminNetworkHealthRunController } from '../../factories/controllers/post-admin-network-health-run-controller-factory'
 import { createPostAdminNotificationTestController } from '../../factories/controllers/post-admin-notification-test-controller-factory'
 import { createPostAdminOpsNip05ReverifyController } from '../../factories/controllers/post-admin-ops-nip05-reverify-controller-factory'
+import { createPostAdminPeeringInvoiceDecisionController } from '../../factories/controllers/post-admin-peering-invoice-decision-controller-factory'
 import { createPostAdminSettingsRestoreController } from '../../factories/controllers/post-admin-settings-restore-controller-factory'
 import { createPostAdminSettingsValidateController } from '../../factories/controllers/post-admin-settings-validate-controller-factory'
 import { adminAuthGateMiddleware, adminAuthMiddleware } from '../../handlers/request-handlers/admin-auth-middleware'
@@ -211,6 +212,14 @@ router.get(
   adminRateLimitMiddleware,
   adminAuthMiddleware,
   withAdminController(createGetAdminPeeringController),
+)
+router.post(
+  '/peering/invoices/decision',
+  adminRateLimitMiddleware,
+  adminAuthGateMiddleware,
+  adminJsonBodyMiddleware,
+  adminAuthMiddleware,
+  withAdminController(createPostAdminPeeringInvoiceDecisionController),
 )
 router.get(
   '/ops/nip05-verifications',

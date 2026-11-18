@@ -1,11 +1,19 @@
 import { nwc } from '@getalby/sdk'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
+import {
+  CreateInvoiceRequest,
+  CreateInvoiceResponse,
+  GetInvoiceResponse,
+  IPaymentsProcessor,
+  PayInvoiceRequest,
+  PayInvoiceResponse,
+} from '../@types/clients'
 import { Factory } from '../@types/base'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 import { Settings } from '../@types/settings'
 import { createLogger } from '../factories/logger-factory'
+import { bolt11PaymentHash } from '../utils/bolt11'
 
 const logger = createLogger('nwc-payments-processor')
 
@@ -192,6 +200,30 @@ export class NwcPaymentsProcessor implements IPaymentsProcessor {
         logger('Unable to get NWC invoice %s. Reason: %s', invoiceId, error.message)
       } else {
         logger('Unable to get NWC invoice %s. Reason: %o', invoiceId, error)
+      }
+      throw error
+    }
+  }
+
+  public async payInvoice(request: PayInvoiceRequest): Promise<PayInvoiceResponse> {
+    logger('pay invoice')
+
+    try {
+      return await this.withClient(async (client) => {
+        const result = (await this.withReplyTimeout(
+          client.payInvoice({ invoice: request.bolt11 }),
+        )) as { preimage?: string }
+
+        return {
+          paymentHash: bolt11PaymentHash(request.bolt11),
+          ...(result.preimage ? { preimage: result.preimage } : {}),
+        }
+      })
+    } catch (error) {
+      if (error instanceof nwc.Nip47WalletError || error instanceof nwc.Nip47ReplyTimeoutError) {
+        logger('Unable to pay invoice. Reason: %s', error.message)
+      } else {
+        logger('Unable to pay invoice. Reason: %o', error)
       }
       throw error
     }

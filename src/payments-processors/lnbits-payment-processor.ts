@@ -1,4 +1,11 @@
-import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
+import {
+  CreateInvoiceRequest,
+  CreateInvoiceResponse,
+  GetInvoiceResponse,
+  IPaymentsProcessor,
+  PayInvoiceRequest,
+  PayInvoiceResponse,
+} from '../@types/clients'
 import { deriveFromSecret, hmacSha256 } from '../utils/secret'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 
@@ -6,6 +13,7 @@ import { AxiosInstance } from 'axios'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
 import { isExpiredInvoice } from '../utils/invoice'
+import { bolt11PaymentHash } from '../utils/bolt11'
 import { Pubkey } from '../@types/base'
 import { Settings } from '../@types/settings'
 
@@ -82,6 +90,30 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
     } catch (error) {
       logger.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
 
+      throw error
+    }
+  }
+
+  public async payInvoice(request: PayInvoiceRequest): Promise<PayInvoiceResponse> {
+    logger('pay invoice')
+    try {
+      const response = await this.httpClient.post(
+        '/api/v1/payments',
+        {
+          out: true,
+          bolt11: request.bolt11,
+        },
+        { maxRedirects: 1 },
+      )
+
+      const paymentHash =
+        typeof response.data?.payment_hash === 'string' && response.data.payment_hash
+          ? response.data.payment_hash
+          : bolt11PaymentHash(request.bolt11)
+
+      return { paymentHash }
+    } catch (error) {
+      logger.error('Unable to pay invoice. Reason:', error)
       throw error
     }
   }

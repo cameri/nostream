@@ -12,6 +12,9 @@
     workersBody,
     peeringSync: document.getElementById('peering-sync'),
     peeringBody: document.getElementById('peering-body'),
+    peeringInvoicesSync: document.getElementById('peering-invoices-sync'),
+    peeringInvoicesBody: document.getElementById('peering-invoices-body'),
+    peeringBudgetsBody: document.getElementById('peering-budgets-body'),
     nip05Error: document.getElementById('ops-nip05-error'),
     nip05Domain: document.getElementById('ops-nip05-domain'),
     nip05Verified: document.getElementById('ops-nip05-verified'),
@@ -152,8 +155,61 @@
     }
   }
 
-  const renderPeering = (rows) => {
-    if (!Array.isArray(rows) || !rows.length) {
+  const peeringInvoiceBadge = (status) => {
+    const degraded = status === 'held' || status === 'failed' || status === 'rejected'
+    return `<span class="status-badge${degraded ? ' status-degraded' : ''}"><span class="status-led" aria-hidden="true"></span>${escapeHtml(status)}</span>`
+  }
+
+  const renderPeeringInvoices = (invoices) => {
+    if (!Array.isArray(invoices) || !invoices.length) {
+      elements.peeringInvoicesBody.innerHTML =
+        '<tr><td colspan="6" class="admin-muted small">No buyer invoices yet.</td></tr>'
+      return
+    }
+
+    elements.peeringInvoicesBody.innerHTML = invoices
+      .map((invoice) => {
+        const pending = invoice.status === 'held' || invoice.status === 'failed'
+        const actions = pending
+          ? `<button type="button" class="btn btn-console btn-sm me-1" data-peering-invoice-action="approve" data-payment-hash="${escapeAttr(invoice.paymentHash)}">Approve</button>
+             <button type="button" class="btn btn-console btn-sm" data-peering-invoice-action="reject" data-payment-hash="${escapeAttr(invoice.paymentHash)}">Reject</button>`
+          : ''
+        const title = [invoice.peerPubkey, invoice.reason || '', invoice.expiresAt || ''].filter(Boolean).join(' · ')
+        return `<tr>
+          <td><code class="small" title="${escapeAttr(title)}">${escapeHtml(shortPubkey(invoice.peerPubkey))}</code></td>
+          <td class="small">${escapeHtml(Math.round(Number(BigInt(invoice.amountMsats) / 1000n)))} sats</td>
+          <td>${peeringInvoiceBadge(invoice.status)}</td>
+          <td class="small">${escapeHtml(invoice.reason || '—')}</td>
+          <td class="small">${escapeHtml(formatTime(invoice.createdAt))}</td>
+          <td>${actions}</td>
+        </tr>`
+      })
+      .join('')
+  }
+
+  const renderPeeringBudgets = (budgets) => {
+    if (!Array.isArray(budgets) || !budgets.length) {
+      elements.peeringBudgetsBody.innerHTML =
+        '<tr><td colspan="5" class="admin-muted small">No buyer budgets configured.</td></tr>'
+      return
+    }
+
+    elements.peeringBudgetsBody.innerHTML = budgets
+      .map((budget) => {
+        const label = budget.scope === 'global' ? 'All peers' : shortPubkey(budget.peerPubkey)
+        const title = budget.scope === 'global' ? 'global cap' : budget.peerPubkey
+        return `<tr>
+          <td class="small" title="${escapeAttr(title)}">${escapeHtml(label)}</td>
+          <td class="small">${escapeHtml(formatTime(budget.periodStart))} → ${escapeHtml(formatTime(budget.periodEnd))}</td>
+          <td class="small">${escapeHtml(Math.round(Number(BigInt(budget.spentMsats) / 1000n)))} sats</td>
+          <td class="small">${escapeHtml(Math.round(Number(BigInt(budget.remainingMsats) / 1000n)))} sats</td>
+          <td class="small">${escapeHtml(budget.received)} / ${escapeHtml(budget.paid)} / ${escapeHtml(budget.held)}</td>
+        </tr>`
+      })
+      .join('')
+  }
+
+  const renderPeering = (rows) => {    if (!Array.isArray(rows) || !rows.length) {
       elements.peeringBody.innerHTML =
         '<tr><td colspan="10" class="admin-muted small">No peering peers configured.</td></tr>'
       return
@@ -291,8 +347,13 @@
     }
     const payload = await response.json()
     renderPeering(payload.peers)
+    renderPeeringInvoices(payload.invoices)
+    renderPeeringBudgets(payload.budgets)
     if (elements.peeringSync) {
       elements.peeringSync.innerHTML = `<span class="prompt-char">&gt;</span> peers: updated ${formatTime(new Date().toISOString())}`
+    }
+    if (elements.peeringInvoicesSync) {
+      elements.peeringInvoicesSync.innerHTML = `<span class="prompt-char">&gt;</span> buyer invoices: updated ${formatTime(new Date().toISOString())}`
     }
   }
 
@@ -375,6 +436,22 @@
     await loadNip05()
   }
 
+  const decidePeeringInvoice = async (paymentHash, action) => {
+    const response = await adminFetch('/peering/invoices/decision', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ paymentHash, action }),
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      if (elements.peeringInvoicesSync) {
+        elements.peeringInvoicesSync.innerHTML = `<span class="prompt-char">&gt;</span><span class="text-danger"> invoice: ${escapeHtml(payload.error || 'decision failed')}</span>`
+      }
+      return
+    }
+    await loadPeering()
+  }
+
   const refreshAll = async () => {
     const results = await Promise.allSettled([loadWorkers(), loadPeering(), loadNip05()])
 
@@ -429,6 +506,19 @@
       return
     }
     void reverify(pubkey)
+  })
+
+  elements.peeringInvoicesBody?.addEventListener('click', (event) => {
+    const target = event.target
+    if (!(target instanceof HTMLElement)) {
+      return
+    }
+    const action = target.getAttribute('data-peering-invoice-action')
+    const paymentHash = target.getAttribute('data-payment-hash')
+    if (!action || !paymentHash) {
+      return
+    }
+    void decidePeeringInvoice(paymentHash, action)
   })
 
   window.__ADMIN_OPS__ = {
