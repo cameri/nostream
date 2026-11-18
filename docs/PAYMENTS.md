@@ -80,12 +80,12 @@ Set `payments.enabled`, choose one processor, and restart the relay.
       - Set `paymentsProcessors.lnbits.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/lnbits`)
     - Restart Nostream (`nostream stop` followed by `nostream start`)
 
-6. [Alby](https://getalby.com/) or any LNURL Provider with [LNURL-verify](https://github.com/lnurl/luds/issues/182) support
+6. [Alby](https://getalby.com/), or another LNURL-pay provider that serves its callback at `<invoiceURL>/callback`. That path is a Nostream requirement, not something [LUD-06](https://github.com/lnurl/luds/blob/luds/06.md) guarantees, since a provider may advertise any callback it likes. [LNURL-verify](https://github.com/lnurl/luds/issues/182) support is also needed
    - Complete the step "Before you begin"
    - [Create a new account](https://getalby.com/) if you don't have an LNURL
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `lnurl`
-     - Set `paymentsProcessors.lnurl.invoiceURL` to your LNURL-pay address up to but excluding `/callback` (e.g. `https://getalby.com/lnurlp/your-username`, with your own username) — the processor requests `${invoiceURL}/callback`, so use a provider that follows that LUD-06 convention
+     - Set `paymentsProcessors.lnurl.invoiceURL` to your LNURL-pay address up to but excluding `/callback` (e.g. `https://getalby.com/lnurlp/your-username`, with your own username)
    - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 7. Nostr Wallet Connect (NIP-47 / NWC)
