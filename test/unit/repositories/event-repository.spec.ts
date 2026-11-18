@@ -715,6 +715,61 @@ describe('EventRepository', () => {
     })
   })
 
+  describe('.findStoredReplaceable', () => {
+    const pubkey = 'a'.repeat(64)
+
+    it('returns a function with stream and then', () => {
+      const result = repository.findStoredReplaceable(pubkey, 0)
+
+      expect(result).to.have.property('stream')
+      expect(result).to.have.property('then')
+    })
+
+    it('selects the newest event of the author and kind, the lower id first on a tie', () => {
+      const query = repository.findStoredReplaceable(pubkey, 0).toString()
+
+      expect(query).to.equal(
+        'select "events"."event_created_at", "events"."event_id" from "events" ' +
+          `where "events"."event_pubkey" = X'${pubkey}' and "events"."event_kind" = 0 ` +
+          'order by "events"."event_created_at" desc, "events"."event_id" asc limit 1',
+      )
+    })
+
+    it('does not hide reported, deleted or expired events, because they still hold the slot', () => {
+      const query = repository.findStoredReplaceable(pubkey, 0).toString()
+
+      expect(query).not.to.contain('reports')
+      expect(query).not.to.contain('deleted_at')
+      expect(query).not.to.contain('expires_at')
+    })
+
+    it('does not add the NIP-56 exclusion even when hideActionableReports is on', () => {
+      const settings = () => ({ nip56: { enabled: true, hideActionableReports: true } }) as any
+      const hiding = new EventRepository(dbClient, rrDbClient, settings)
+
+      expect(hiding.findStoredReplaceable(pubkey, 0).toString()).not.to.contain('reports')
+      expect(hiding.findByFilters([{ authors: [pubkey], kinds: [0] }]).toString()).to.contain('reports')
+    })
+
+    it('reads the primary, not the replica', () => {
+      const primaryTables: string[] = []
+      const replicaTables: string[] = []
+      const primary: any = (table: string) => {
+        primaryTables.push(table)
+        return (dbClient as any)(table)
+      }
+      const replica: any = (table: string) => {
+        replicaTables.push(table)
+        return (rrDbClient as any)(table)
+      }
+
+      new EventRepository(primary, replica).findStoredReplaceable(pubkey, 0)
+
+      expect(primaryTables).to.deep.equal(['events'])
+      expect(replicaTables).to.deep.equal([])
+    })
+  })
+
   describe('.findReconciliationItems', () => {
     const NOW_SECONDS = 1791658580
     const LIVE_EVENTS_CLAUSE =

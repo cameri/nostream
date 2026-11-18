@@ -779,12 +779,11 @@ export class EventMessageHandler implements IMessageHandler {
   }
 
   // Mirrors which of two kind-0 events the replaceable upsert keeps: the later created_at, and for equal
-  // created_at the lower id. A stored profile that is not newer (for example a replica that has not caught
-  // up yet) does not count as superseding.
+  // created_at the lower id. The stored profile is read the way the upsert sees it, so a profile that
+  // subscriptions hide (a NIP-56 report, a soft delete) still holds the slot. A stored profile that is not
+  // newer does not count as superseding.
   private async isSupersededProfile(event: Event): Promise<boolean> {
-    const [stored] = await this.eventRepository.findByFilters([
-      { authors: [event.pubkey], kinds: [EventKinds.SET_METADATA], limit: 1 },
-    ])
+    const [stored] = await this.eventRepository.findStoredReplaceable(event.pubkey, EventKinds.SET_METADATA)
     if (!stored) {
       return false
     }

@@ -2363,7 +2363,7 @@ describe('EventMessageHandler', () => {
 
   describe('processNip05MetadataIfCurrent', () => {
     let settings: Settings
-    let findByFilters: Sinon.SinonStub
+    let findStoredReplaceable: Sinon.SinonStub
     let processStub: Sinon.SinonStub
 
     const storedProfile = (createdAt: number, id: string) => ({
@@ -2376,11 +2376,11 @@ describe('EventMessageHandler', () => {
         info: { relay_url: 'relay_url' },
         nip05: { mode: 'enabled', verifyExpiration: 86400000, domainWhitelist: [], domainBlacklist: [] },
       } as any
-      findByFilters = sandbox.stub().resolves([])
+      findStoredReplaceable = sandbox.stub().resolves([])
       handler = new EventMessageHandler(
         {} as any,
         () => null,
-        { findByFilters } as any,
+        { findStoredReplaceable } as any,
         userRepository,
         () => settings,
         {} as any,
@@ -2395,14 +2395,12 @@ describe('EventMessageHandler', () => {
     })
 
     it('processes a profile that is the author\'s current one', async () => {
-      findByFilters.resolves([storedProfile(1000, event.id)])
+      findStoredReplaceable.resolves([storedProfile(1000, event.id)])
 
       await (handler as any).processNip05MetadataIfCurrent(event)
 
       expect(processStub).to.have.been.calledOnceWithExactly(event)
-      expect(findByFilters).to.have.been.calledOnceWithExactly([
-        { authors: [event.pubkey], kinds: [EventKinds.SET_METADATA], limit: 1 },
-      ])
+      expect(findStoredReplaceable).to.have.been.calledOnceWithExactly(event.pubkey, EventKinds.SET_METADATA)
     })
 
     it('processes a profile when none is stored', async () => {
@@ -2412,7 +2410,7 @@ describe('EventMessageHandler', () => {
     })
 
     it('ignores an older profile that a newer stored profile has replaced', async () => {
-      findByFilters.resolves([storedProfile(2000, 'a'.repeat(64))])
+      findStoredReplaceable.resolves([storedProfile(2000, 'a'.repeat(64))])
 
       await (handler as any).processNip05MetadataIfCurrent(event)
 
@@ -2420,7 +2418,7 @@ describe('EventMessageHandler', () => {
     })
 
     it('ignores a profile that lost the tie on created_at to a stored profile with a lower id', async () => {
-      findByFilters.resolves([storedProfile(1000, '1'.repeat(64))])
+      findStoredReplaceable.resolves([storedProfile(1000, '1'.repeat(64))])
 
       await (handler as any).processNip05MetadataIfCurrent(event)
 
@@ -2428,7 +2426,7 @@ describe('EventMessageHandler', () => {
     })
 
     it('processes a profile that wins the tie on created_at against a stored profile with a higher id', async () => {
-      findByFilters.resolves([storedProfile(1000, '9'.repeat(64))])
+      findStoredReplaceable.resolves([storedProfile(1000, '9'.repeat(64))])
 
       await (handler as any).processNip05MetadataIfCurrent(event)
 
@@ -2436,7 +2434,7 @@ describe('EventMessageHandler', () => {
     })
 
     it('processes a profile when the stored one is older, as with a replica that has not caught up', async () => {
-      findByFilters.resolves([storedProfile(500, 'a'.repeat(64))])
+      findStoredReplaceable.resolves([storedProfile(500, 'a'.repeat(64))])
 
       await (handler as any).processNip05MetadataIfCurrent(event)
 
@@ -2444,7 +2442,7 @@ describe('EventMessageHandler', () => {
     })
 
     it('processes the profile when the check fails', async () => {
-      findByFilters.rejects(new Error('db down'))
+      findStoredReplaceable.rejects(new Error('db down'))
 
       await (handler as any).processNip05MetadataIfCurrent(event)
 
@@ -2456,7 +2454,7 @@ describe('EventMessageHandler', () => {
 
       await (handler as any).processNip05MetadataIfCurrent(event)
 
-      expect(findByFilters).not.to.have.been.called
+      expect(findStoredReplaceable).not.to.have.been.called
       expect(processStub).to.have.been.calledOnce
     })
 
@@ -2465,7 +2463,7 @@ describe('EventMessageHandler', () => {
 
       await (handler as any).processNip05MetadataIfCurrent(event)
 
-      expect(findByFilters).not.to.have.been.called
+      expect(findStoredReplaceable).not.to.have.been.called
     })
   })
 

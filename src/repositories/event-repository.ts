@@ -21,7 +21,7 @@ import {
   EventExpirationTimeMetadataKey,
   EventKinds,
 } from '../constants/base'
-import { DatabaseClient, EventId } from '../@types/base'
+import { DatabaseClient, EventId, Pubkey } from '../@types/base'
 import { DBEvent, Event } from '../@types/event'
 import {
   EventPurgeCounts,
@@ -187,6 +187,24 @@ export class EventRepository implements IEventRepository {
     }
 
     return builder as unknown as IQueryResult<ReconciliationItem[]>
+  }
+
+  /**
+   * The event that holds an author's slot for a replaceable kind without a d-tag (0, 3, 10000-19999), as
+   * (created_at, id). It reads the row the replaceable upsert compares against, so it ignores what a
+   * subscription would hide: NIP-56 reported events, soft-deleted and expired rows still occupy the slot.
+   * It reads the primary rather than a replica, since the caller asks right after a write.
+   */
+  public findStoredReplaceable(pubkey: Pubkey, kind: number): IQueryResult<ReconciliationItem[]> {
+    logger('querying the stored replaceable event of kind %d for %s', kind, pubkey)
+
+    return this.masterDbClient<DBEvent>('events')
+      .select('events.event_created_at', 'events.event_id')
+      .where('events.event_pubkey', toBuffer(pubkey))
+      .where('events.event_kind', kind)
+      .orderBy('events.event_created_at', 'desc')
+      .orderBy('events.event_id', 'asc')
+      .limit(1) as unknown as IQueryResult<ReconciliationItem[]>
   }
 
   // Wraps every query so each keeps its own ORDER BY and LIMIT. first.union(rest) would put the

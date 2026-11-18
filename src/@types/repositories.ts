@@ -62,6 +62,7 @@ export interface IEventRepository {
   findByFilters(filters: SubscriptionFilter[], options?: EventQueryOptions): IQueryResult<DBEvent[]>
   countByFilters(filters: SubscriptionFilter[], options?: { timeoutMs?: number }): Promise<number>
   findReconciliationItems(filter: SubscriptionFilter, limit?: number): IQueryResult<ReconciliationItem[]>
+  findStoredReplaceable(pubkey: Pubkey, kind: number): IQueryResult<ReconciliationItem[]>
   deleteByPubkeyAndIds(pubkey: Pubkey, ids: EventId[]): Promise<number>
   deleteByPubkeyExceptKinds(pubkey: Pubkey, excludedKinds: number[]): Promise<number>
   hasActiveRequestToVanish(pubkey: Pubkey): Promise<boolean>
