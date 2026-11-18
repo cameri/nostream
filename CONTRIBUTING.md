@@ -115,6 +115,8 @@ postgres=# quit
 
 `.env.example` ships `DB_NAME=nostr_ts_relay` and `DB_USER=nostr_ts_relay`. If you copy that file instead of the block above, the relay connects as the `nostr_ts_relay` role, which the commands here never create: either set `DB_USER=postgres` in `.env`, or create that role and make it the database owner.
 
+The next step sets a server-wide Redis password, so read this first: on a Redis instance another application also uses, either run a dedicated instance for the relay, or leave the password alone, drop the `REDIS_URI` line above and put the existing credentials in `REDIS_*`. `REDIS_URI` takes precedence over the `REDIS_*` variables, so leaving it in place would send the relay to a password that no longer exists.
+
 Set the Redis password the default configuration expects, and verify it:
 
 ```
@@ -126,7 +128,7 @@ Ok
 127.0.0.1:6379> quit
 ```
 
-`CONFIG SET requirepass` is server-wide, so on a Redis instance another application also uses, either run a dedicated instance for the relay, or leave the password alone, drop the `REDIS_URI` line above and put the existing credentials in `REDIS_*`. `REDIS_URI` takes precedence over the `REDIS_*` variables, so leaving it in place would send the relay to a password that no longer exists.
+`CONFIG SET` lasts only until Redis restarts. On a dedicated instance, put `requirepass nostr_ts_relay` in the server's configuration file as well, so the password survives a restart.
 
 Run migrations (at least once and after pulling new changes):
 
