@@ -138,6 +138,28 @@ export interface DBPeeringInvoice {
   updated_at: Date
 }
 
+/** One budget counter, either `global` or `peer:<hex>`. */
+export interface PeeringBudgetUsage {
+  scope: string
+  periodStart: Date
+  periodEnd: Date
+  spentMsats: bigint
+}
+
+/** Admin view of one budget window, with invoice counts for its peer. */
+export interface PeeringBudgetSummary {
+  scope: 'peer' | 'global'
+  peerPubkey?: string
+  periodStart: Date
+  periodEnd: Date
+  limitMsats: bigint
+  spentMsats: bigint
+  remainingMsats: bigint
+  received: number
+  paid: number
+  held: number
+}
+
 export interface PeeringTermSnapshot {
   amountMsats: bigint
   periodSeconds: number

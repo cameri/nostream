@@ -1,6 +1,7 @@
 import { DatabaseClient } from '../@types/base'
 import {
   DBPeeringInvoice,
+  PeeringBudgetUsage,
   PeeringInvoice,
   PeeringInvoiceReason,
   PeeringInvoiceStatus,
@@ -214,5 +215,56 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
     return BigInt(row.spent_msats)
   }
 
+  public async addBudgetSpend(
+    scope: string,
+    periodStart: Date,
+    periodEnd: Date,
+    amountMsats: bigint,
+    client: DatabaseClient,
+  ): Promise<bigint> {
+    if (amountMsats < 0n) {
+      throw new Error('budget spend amount must be non-negative')
+    }
 
+    const result = await client.raw(
+      `INSERT INTO peering_budgets (scope, period_start, period_end, spent_msats)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (scope, period_start) DO UPDATE
+       SET spent_msats = peering_budgets.spent_msats + EXCLUDED.spent_msats,
+           period_end = EXCLUDED.period_end
+       RETURNING spent_msats`,
+      [scope, periodStart, periodEnd, amountMsats.toString()],
+    )
+
+    return BigInt(firstRow(result).spent_msats)
+  }
+
+  public async releaseBudget(
+    scope: string,
+    periodStart: Date,
+    amountMsats: bigint,
+    client: DatabaseClient,
+  ): Promise<void> {
+    if (amountMsats < 0n) {
+      throw new Error('budget release amount must be non-negative')
+    }
+
+    await client.raw(
+      `UPDATE peering_budgets
+       SET spent_msats = GREATEST(spent_msats - ?, 0)
+       WHERE scope = ? AND period_start = ?`,
+      [amountMsats.toString(), scope, periodStart],
+    )
+  }
+
+  public async listBudgets(): Promise<PeeringBudgetUsage[]> {
+    const rows = await this.dbClient<any>('peering_budgets').orderBy('period_start', 'desc')
+
+    return rows.map((row) => ({
+      scope: row.scope,
+      periodStart: row.period_start,
+      periodEnd: row.period_end,
+      spentMsats: BigInt(row.spent_msats),
+    }))
+  }
 }

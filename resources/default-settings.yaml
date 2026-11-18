@@ -208,16 +208,7 @@ peering:
   #     - pubkey: replace-with-peer-relay-pubkey-in-hex
   #       relayUrl: wss://peer.example.com
   #       enabled: true
-  #       # Reserved for the buyer workflow; not active in this slice.
-  #       budget: { amount: 10000, unit: sats, period: 2592000 }
   peers: []
-  # Reserved for the buyer workflow. This slice stores the policy settings;
-  # the payment and admin approval paths ship in follow-up slices.
-  autoPay:
-    enabled: false
-    # Optional cap across every peer, per this budget's own period. A zero
-    # amount means no global cap.
-    globalBudget: { amount: 0, unit: sats, period: 2592000 }
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
