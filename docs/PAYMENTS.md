@@ -14,7 +14,7 @@ Set `payments.enabled`, choose one processor, and restart the relay.
      - Set `limits.event.pubkey.minBalance` to the minimum balance in msats required to accept events (i.e. `1000000` to require a balance of `1000` sats)
    - Choose one of the following payment processors: `zebedee`, `nodeless`, `opennode`, `lnbits`, `lnurl`, `nwc`
 
-Each processor step ends with `nostream stop` and `nostream start`, which is the quick start's CLI. A host deployed with Docker Compose has no such command: recreate the relay instead, with `./deploy/recreate-relay.sh /opt/nostream` from a checkout or the host copy described in [DEPLOY-RUNBOOK.md](DEPLOY-RUNBOOK.md), which also lists the manual equivalent. Bootstrap does not install that script in `/opt/nostream`, so read that section before relying on it.
+Each processor step ends with `nostream stop` and `nostream start`, which is the quick start's CLI. A host deployed with Docker Compose has no such command: recreate the relay instead, with `./deploy/recreate-relay.sh /opt/nostream` from a checkout or the host copy described in [DEPLOY-RUNBOOK.md](DEPLOY-RUNBOOK.md), which also lists the manual equivalent. Run it as the user who ran `deploy/bootstrap.sh`, since that user owns `/opt/nostream/.env` and mode `600` keeps everyone else out. Bootstrap does not install the script, so read that section before relying on it.
 
 2. [ZEBEDEE](https://zebedee.io)
    - Complete the step "Before you begin"
