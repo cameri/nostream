@@ -294,6 +294,49 @@ describe('settings-config', () => {
       expect(issues.find((issue) => issue.path === 'peering.terms')?.message).to.include('payments must be enabled')
     })
 
+    it('accepts a per-peer buyer budget in sats', () => {
+      const issues = validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        payments: { enabled: true },
+        network: { maxPayloadSize: 1024 },
+        peering: {
+          ...settlementFreePeering,
+          peers: [
+            {
+              pubkey: 'a'.repeat(64),
+              relayUrl: 'wss://peer.example.com',
+              budget: { amount: 10000, unit: 'sats', period: 2592000 },
+            },
+          ],
+        },
+      } as any)
+
+      expect(issues.filter((issue) => issue.path.startsWith('peering'))).to.deep.equal([])
+    })
+
+    it('rejects a malformed per-peer budget', () => {
+      const issues = validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        payments: { enabled: true },
+        network: { maxPayloadSize: 1024 },
+        peering: {
+          ...settlementFreePeering,
+          peers: [
+            {
+              pubkey: 'a'.repeat(64),
+              relayUrl: 'wss://peer.example.com',
+              budget: { amount: 0.5, unit: 'usd', period: 0, extra: true },
+            },
+          ],
+        },
+      } as any)
+
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].budget.amount')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].budget.unit')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].budget.period')).to.equal(true)
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].budget.extra')).to.equal(true)
+    })
+
     it('rejects a proof-of-work requirement above the NIP-13 maximum', () => {
       const issues = peeringIssues({ ...settlementFreePeering, minRequestPowDifficulty: 257 })
 

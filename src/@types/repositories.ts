@@ -12,7 +12,7 @@ import {
   NotificationDeliveryStatus,
   OperatorNotificationChannelType,
 } from './operator-notifications'
-import { PeeringBudgetUsage, PeeringInvoice, PeeringInvoiceStatus, PeeringPayment } from './peering'
+import { PeeringInvoice, PeeringInvoiceStatus, PeeringPayment } from './peering'
 import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
@@ -128,17 +128,6 @@ export interface IPeeringInvoiceRepository {
     limitMsats: bigint,
     client: DatabaseClient,
   ): Promise<bigint | undefined>
-  /** Adds manual spend even when it exceeds the auto-pay limit. */
-  addBudgetSpend(
-    scope: string,
-    periodStart: Date,
-    periodEnd: Date,
-    amountMsats: bigint,
-    client: DatabaseClient,
-  ): Promise<bigint>
-  releaseBudget(scope: string, periodStart: Date, amountMsats: bigint, client: DatabaseClient): Promise<void>
-  /** Current and recent budget counters for the admin console. */
-  listBudgets(): Promise<PeeringBudgetUsage[]>
 }
 
 export interface IUserSubscriptionRepository {

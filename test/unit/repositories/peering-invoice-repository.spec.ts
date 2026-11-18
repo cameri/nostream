@@ -4,6 +4,15 @@ import { PeeringInvoiceStatus } from '../../../src/@types/peering'
 import { PeeringInvoiceRepository } from '../../../src/repositories/peering-invoice-repository'
 import { createRecordingKnex } from './recording-knex'
 
+const rejects = async (promise: Promise<unknown>): Promise<boolean> => {
+  try {
+    await promise
+    return false
+  } catch {
+    return true
+  }
+}
+
 describe('PeeringInvoiceRepository', () => {
   const peerPubkey = 'a'.repeat(64)
   const now = new Date('2026-11-18T12:00:00.000Z')
@@ -83,12 +92,18 @@ describe('PeeringInvoiceRepository', () => {
       reason: null,
       autoPaid: true,
       paidAt: now,
+      budgetPeriodStart: now,
+      budgetPeriodEnd: new Date(now.getTime() + 60_000),
+      termPeriodSeconds: 60,
     })
 
     expect(result?.status).to.equal(PeeringInvoiceStatus.PAID)
     expect(recording.queries[0].sql).to.include('"status"')
     expect(recording.queries[0].sql).to.include('"paid_at"')
     expect(recording.queries[0].sql).to.include('"auto_paid"')
+    expect(recording.queries[0].sql).to.include('"budget_period_start"')
+    expect(recording.queries[0].sql).to.include('"budget_period_end"')
+    expect(recording.queries[0].sql).to.include('"term_period_seconds"')
   })
 
   it('claims a state transition atomically', async () => {
@@ -118,6 +133,34 @@ describe('PeeringInvoiceRepository', () => {
     expect(recording.queries[0].sql).to.include('limit')
   })
 
+  it('throws when a duplicate row disappears before the fallback read', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([], [], [])
+
+    expect(await rejects(repository.insertIfNew(invoice))).to.equal(true)
+  })
+
+  it('re-reads a duplicate row when the counter update returns no row', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([], [row], [], [{ ...row, seen_count: 2 }])
+
+    const result = await repository.insertIfNew(invoice)
+
+    expect(result.inserted).to.equal(false)
+    expect(result.invoice.seenCount).to.equal(2)
+  })
+
+  it('rejects a negative budget reservation', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+
+    expect(
+      await rejects(repository.reserveBudget(`peer:${peerPubkey}`, now, now, -1n, 1_000n, recording.db)),
+    ).to.equal(true)
+  })
+
   it('refuses a first reservation that already exceeds the limit', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringInvoiceRepository(recording.db)
@@ -137,26 +180,10 @@ describe('PeeringInvoiceRepository', () => {
     expect(recording.queries[0].sql).to.include('<= CAST(')
   })
 
-  it('lists current budget counters for the admin console', async () => {    const recording = createRecordingKnex()
-    const repository = new PeeringInvoiceRepository(recording.db)
-    recording.respondWith([
-      {
-        scope: `peer:${peerPubkey}`,
-        period_start: now,
-        period_end: new Date(now.getTime() + 86_400_000),
-        spent_msats: '250000000',
-      },
-    ])
-
-    const result = await repository.listBudgets()
-
-    expect(result[0]).to.deep.include({ scope: `peer:${peerPubkey}`, spentMsats: 250_000_000n })
-  })
-
-  it('reserves and releases a budget atomically', async () => {
+  it('reserves a budget while the total stays inside the limit', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringInvoiceRepository(recording.db)
-    recording.respondWith([{ spent_msats: '250000000' }], [{ spent_msats: '500000000' }], 1)
+    recording.respondWith([{ spent_msats: '250000000' }])
 
     const reserved = await repository.reserveBudget(
       `peer:${peerPubkey}`,
@@ -166,19 +193,9 @@ describe('PeeringInvoiceRepository', () => {
       1_000_000_000n,
       recording.db,
     )
-    const manual = await repository.addBudgetSpend(
-      `peer:${peerPubkey}`,
-      now,
-      new Date(now.getTime() + 86_400_000),
-      250_000_000n,
-      recording.db,
-    )
-    await repository.releaseBudget(`peer:${peerPubkey}`, now, 250_000_000n, recording.db)
 
     expect(reserved).to.equal(250_000_000n)
-    expect(manual).to.equal(500_000_000n)
     expect(recording.queries[0].sql.toLowerCase()).to.include('on conflict')
     expect(recording.queries[0].sql).to.include('<=')
-    expect(recording.queries[2].sql.toLowerCase()).to.include('greatest')
   })
 })

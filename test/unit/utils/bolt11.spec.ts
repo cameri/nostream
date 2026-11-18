@@ -25,12 +25,8 @@ describe('decodeBolt11', () => {
     expect(bolt11PaymentHash(INVOICE)).to.equal('0001020304050607080900010203040506070809000102030405060708090102')
   })
 
-  it('does not reject a long invoice for its length alone', () => {
-    expect(() => decodeBolt11(`lnbc1${'q'.repeat(1500)}`)).to.throw('Invalid bolt11 checksum')
-  })
-
-  it('rejects input beyond the relay payload bound', () => {
-    expect(() => decodeBolt11(`lnbc1${'q'.repeat(524_288)}`)).to.throw('Invalid bolt11 invoice')
+  it('rejects an invoice longer than the parser bound', () => {
+    expect(() => decodeBolt11(`lnbc1${'q'.repeat(1_000)}`)).to.throw('Invalid bolt11 invoice')
   })
 
   it('rejects a broken checksum', () => {

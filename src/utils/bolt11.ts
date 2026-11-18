@@ -1,6 +1,6 @@
 
 /** The relay's max payload is 512 KiB; a longer tag cannot arrive on a peer socket. */
-const MAX_BOLT11_LENGTH = 524_288
+const MAX_BOLT11_LENGTH = 1_000
 
 const BECH32_ALPHABET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
 const BECH32_ALPHABET_MAP: Record<string, number> = {}

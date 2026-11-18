@@ -8,7 +8,6 @@ import { decodeBolt11 } from '../../../../src/utils/bolt11'
 
 const INVOICE =
   'lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh'
-const PAYMENT_HASH = '0001020304050607080900010203040506070809000102030405060708090102'
 const now = new Date('2026-11-18T12:00:00.000Z')
 When(
   'the buyer ingests one invoice twice and reserves against a {int} msat budget',
@@ -16,11 +15,13 @@ When(
     const db = getMasterDbClient()
     const repository = new PeeringInvoiceRepository(db)
     const peerPubkey = randomBytes(32).toString('hex')
+    const paymentHash = randomBytes(32).toString('hex')
     const scope = `peer:${peerPubkey}`
+    this.parameters.ledgerPaymentHash = paymentHash
     this.parameters.ledgerDb = db
     this.parameters.ledgerScopes = [scope]
     this.parameters.ledgerInvoice = {
-      paymentHash: PAYMENT_HASH,
+      paymentHash,
       eventId: `event-${peerPubkey}`,
       peerPubkey,
       bolt11: INVOICE,
@@ -51,7 +52,7 @@ Then(
   async function (this: World<Record<string, any>>) {
     const db = this.parameters.ledgerDb
     const scope = this.parameters.ledgerScopes[0]
-    const rows = await db('peering_invoices').where('payment_hash', PAYMENT_HASH)
+    const rows = await db('peering_invoices').where('payment_hash', this.parameters.ledgerPaymentHash)
     const budget = await db('peering_budgets').where('scope', scope).first()
     const decoded = decodeBolt11(INVOICE)
 
@@ -62,7 +63,7 @@ Then(
     expect(this.parameters.ledgerFirst).to.equal(600n)
     expect(this.parameters.ledgerSecond).to.be.undefined
     expect(String(budget.spent_msats)).to.equal('600')
-    expect(decoded.paymentHash).to.equal(PAYMENT_HASH)
+    expect(decoded.paymentHash).to.equal('0001020304050607080900010203040506070809000102030405060708090102')
     expect(decoded.amountMsats).to.equal(250_000_000n)
   },
 )
@@ -70,10 +71,13 @@ Then(
 After({ tags: '@peering-buyer-ledger' }, async function (this: World<Record<string, any>>) {
   const db = this.parameters.ledgerDb
   if (!db) return
-  await db('peering_invoices').where('payment_hash', PAYMENT_HASH).delete()
+  if (this.parameters.ledgerPaymentHash) {
+    await db('peering_invoices').where('payment_hash', this.parameters.ledgerPaymentHash).delete()
+  }
   if (this.parameters.ledgerScopes?.length) {
     await db('peering_budgets').whereIn('scope', this.parameters.ledgerScopes).delete()
   }
   this.parameters.ledgerDb = undefined
   this.parameters.ledgerScopes = []
+  this.parameters.ledgerPaymentHash = undefined
 })
