@@ -89,18 +89,18 @@ export DB_PASSWORD=postgres
 `DATABASE_URI` is not a duplicate of `DB_URI`: the relay reads `.env` and `DB_URI`, while `pnpm db:migrate` reads `DATABASE_URI` from the exported environment and otherwise falls back to the `DB_*` variables with `nostream` as the database name. Two traps follow: knex does not load `.env`, so a `DATABASE_URI` written there alone never reaches the migration; and migrating with only `DB_URI` set writes the schema into a database the relay never opens. Keep the two in step. The integration suite uses its own `nostr_ts_relay_test` database (see the tests section below).
 
 ```
-REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
+export REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
 
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_USER=default
-REDIS_PASSWORD=nostr_ts_relay
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+export REDIS_USER=default
+export REDIS_PASSWORD=nostr_ts_relay
 ```
 
 Generate a long random secret and set `SECRET`:
 
 ```
-SECRET=aaabbbccc...dddeeefff
+export SECRET=aaabbbccc...dddeeefff
 # Secret shortened for brevity
 ```
 

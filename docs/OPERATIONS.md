@@ -90,9 +90,9 @@ The importer:
 - Processes the file line-by-line to keep memory usage bounded.
 - Streams JSON array items one by one to keep memory usage bounded.
 - Validates NIP-01 schema, event id hash, and Schnorr signature before insertion.
-- Writes each batch as two statements: one multi-row insert for regular events, then an upsert for replaceable ones. There is no transaction spanning the batch, and a statement that fails counts its whole batch as skipped, so `Skipped` above can include events that were valid on their own.
+- Writes each flush as two statements: one multi-row insert for regular events, then one upsert for replaceable ones. A kind `5` delete or a request to vanish flushes first, so one batch can become several flushes. There is no transaction spanning them, and a statement that fails inserts nothing and counts its own events as skipped, which is why `Skipped` above can include events that were valid on their own. The insert runs first, so a failed upsert leaves that flush's regular events already written.
 - Skips duplicates through `ON CONFLICT DO NOTHING`, without failing the import.
-- Upserts replaceable events (kinds `0`, `3`, `41`, `10000`–`19999` and `30000`–`39999`) on `(event_pubkey, event_kind, event_deduplication)`, keeping the newer one. Two replaceable events for the same key inside one batch are refused by PostgreSQL (`ON CONFLICT DO UPDATE command cannot affect row a second time`), and that whole batch counts as skipped; `--batch-size 1` avoids that case, at the cost of one round trip per event.
+- Upserts replaceable events (kinds `0`, `3`, `41`, `10000`–`19999` and `30000`–`39999`) on `(event_pubkey, event_kind, event_deduplication)`, keeping the newer one. Two replaceable events sharing a key within one upsert can make PostgreSQL refuse the statement (`ON CONFLICT DO UPDATE command cannot affect row a second time`), and that upsert's events count as skipped. A batch dense in competing replaceable events is therefore the case to watch, and `--batch-size 1` avoids it at the cost of one round trip per event.
 - Prints progress in the format:
   `[Processed: 50,000 | Inserted: 45,000 | Skipped: 5,000 | Errors: 0]`
 
