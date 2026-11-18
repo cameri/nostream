@@ -10,7 +10,7 @@ Set `payments.enabled`, choose one processor, and restart the relay.
    - Create a `.env` file
    - On `.nostr/settings.yaml` file make the following changes:
      - Set `payments.enabled` to `true`
-     - Set `payments.feeSchedules.admission[0].enabled` to `true` (the admission schedules are a list; the relay reads the first one)
+     - Set `payments.feeSchedules.admission[0].enabled` to `true`. The schedules are a list and `[0]` is the entry you edit; the relay charges the sum of every enabled schedule whose pubkey whitelist does not cover the payer, so more than one entry costs more than one fee
      - Set `limits.event.pubkey.minBalance` to the minimum balance in msats required to accept events (i.e. `1000000` to require a balance of `1000` sats)
    - Choose one of the following payment processors: `zebedee`, `nodeless`, `opennode`, `lnbits`, `lnurl`, `nwc`
 
@@ -32,7 +32,7 @@ Set `payments.enabled`, choose one processor, and restart the relay.
 
 3. Nodeless
    - Complete the step "Before you begin"
-   - Sign up for a new account, create a new store and take note of the store ID (the `nodeless.io` domain no longer resolves, so the sign-up link is gone; existing stores still work with the keys below)
+   - The processor is not usable as shipped: `resources/default-settings.yaml` points `paymentsProcessors.nodeless.baseURL` at `https://nodeless.io`, and that domain no longer resolves, so invoice creation and checks fail at the network. The steps below apply if you have a working host to point that setting at
    - Go to Profile > API Tokens and generate a new key and take note of it
    - Create a store webhook with your Nodeless callback URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/nodeless`) and make sure to enable all of the events. Grab the generated store webhook secret
    - Set `NODELESS_API_KEY` and `NODELESS_WEBHOOK_SECRET` environment variables with generated API key and webhook secret, respectively
