@@ -10,7 +10,7 @@ Set `payments.enabled`, choose one processor, and restart the relay.
    - Create a `.env` file
    - On `.nostr/settings.yaml` file make the following changes:
      - Set `payments.enabled` to `true`
-     - Set `payments.feeSchedules.admission[0].enabled` to `true`. The schedules are a list and `[0]` is the entry you edit; the relay charges the sum of every enabled schedule whose pubkey whitelist does not cover the payer, so more than one entry costs more than one fee
+     - Set `payments.feeSchedules.admission[0].enabled` to `true`. The schedules are a list and `[0]` is the entry you edit; the relay charges the sum of every enabled schedule whose pubkey whitelist does not cover the payer, so more than one entry costs more than one fee. The invoice page quotes `[0]` alone (`get-invoice-controller.ts:56`), so with two enabled schedules it shows less than the invoice charges
      - Set `limits.event.pubkey.minBalance` to the minimum balance in msats required to accept events (i.e. `1000000` to require a balance of `1000` sats)
    - Choose one of the following payment processors: `zebedee`, `nodeless`, `opennode`, `lnbits`, `lnurl`, `nwc`
 
@@ -81,12 +81,12 @@ Set `payments.enabled`, choose one processor, and restart the relay.
     - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 6. [Alby](https://getalby.com/) or any LNURL Provider with [LNURL-verify](https://github.com/lnurl/luds/issues/182) support
-    - Complete the step "Before you begin"
+   - Complete the step "Before you begin"
    - [Create a new account](https://getalby.com/) if you don't have an LNURL
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `lnurl`
-     - Set `paymentsProcessors.lnurl.invoiceURL` to your LNURL (e.g. `https://getalby.com/lnurlp/your-username`, with your own username)
-    - Restart Nostream (`nostream stop` followed by `nostream start`)
+     - Set `paymentsProcessors.lnurl.invoiceURL` to your LNURL-pay address up to but excluding `/callback` (e.g. `https://getalby.com/lnurlp/your-username`, with your own username) — the processor requests `${invoiceURL}/callback`, so use a provider that follows that LUD-06 convention
+   - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 7. Nostr Wallet Connect (NIP-47 / NWC)
     - Complete the step "Before you begin"

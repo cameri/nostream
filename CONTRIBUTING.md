@@ -68,25 +68,25 @@ pnpm run cli -- start
 
 ### Development Quick Start (Standalone)
 
-Set the required environment variables (or copy `.env.example` to `.env` and edit it):
+Set and export the required environment variables (or copy `.env.example` to `.env` and edit it):
 
 ```
-DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay"
-DATABASE_URI="$DB_URI"
-DB_USER=postgres
+export DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay"
+export DATABASE_URI="$DB_URI"
+export DB_USER=postgres
 ```
 
 or:
 
 ```
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=nostr_ts_relay
-DB_USER=postgres
-DB_PASSWORD=postgres
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=nostr_ts_relay
+export DB_USER=postgres
+export DB_PASSWORD=postgres
 ```
 
-`DATABASE_URI` is not a duplicate of `DB_URI`: the relay reads `DB_URI`, while `pnpm db:migrate` reads `DATABASE_URI` and otherwise falls back to the `DB_*` variables with `nostream` as the database name. Migrating with only `DB_URI` set writes the schema into a database the relay never opens, so keep the two in step. The integration suite uses its own `nostr_ts_relay_test` database (see the tests section below).
+`DATABASE_URI` is not a duplicate of `DB_URI`: the relay reads `.env` and `DB_URI`, while `pnpm db:migrate` reads `DATABASE_URI` from the exported environment and otherwise falls back to the `DB_*` variables with `nostream` as the database name. Two traps follow: knex does not load `.env`, so a `DATABASE_URI` written there alone never reaches the migration; and migrating with only `DB_URI` set writes the schema into a database the relay never opens. Keep the two in step. The integration suite uses its own `nostr_ts_relay_test` database (see the tests section below).
 
 ```
 REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
@@ -113,6 +113,8 @@ postgres=# create database nostr_ts_relay;
 postgres=# quit
 ```
 
+`.env.example` ships `DB_NAME=nostr_ts_relay` and `DB_USER=nostr_ts_relay`. If you copy that file instead of the block above, the relay connects as the `nostr_ts_relay` role, which the commands here never create: either set `DB_USER=postgres` in `.env`, or create that role and make it the database owner.
+
 Set the Redis password the default configuration expects, and verify it:
 
 ```
@@ -124,7 +126,7 @@ Ok
 127.0.0.1:6379> quit
 ```
 
-`CONFIG SET requirepass` is server-wide, so on a Redis instance another application also uses, either run a dedicated instance for the relay or leave the password alone and put the existing credentials in `REDIS_*`.
+`CONFIG SET requirepass` is server-wide, so on a Redis instance another application also uses, either run a dedicated instance for the relay, or leave the password alone, drop the `REDIS_URI` line above and put the existing credentials in `REDIS_*`. `REDIS_URI` takes precedence over the `REDIS_*` variables, so leaving it in place would send the relay to a password that no longer exists.
 
 Run migrations (at least once and after pulling new changes):
 
