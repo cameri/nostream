@@ -75,6 +75,63 @@ const MAX_ADDRESSES_PER_REQUEST: usize = 100;
 /// tags collapse first, so the count is the work's, not the tag list's.
 const MAX_EVENT_IDS_PER_REQUEST: usize = 100;
 
+/// What one deletion request asks the store to delete, once its tags are read by this arm's
+/// rules: distinct `e` ids in first-seen order, and distinct `(kind, d)` addresses of the
+/// request's own author.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletionTargets {
+    pub ids: Vec<EventId>,
+    pub addresses: Vec<(Kind, String)>,
+}
+
+/// Why a deletion request is refused as a whole, before anything is deleted or stored. The
+/// `Display` is the `OK false` message the live arm sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeletionRefusal {
+    /// More than `MAX_ADDRESSES_PER_REQUEST` distinct addresses.
+    TooManyAddresses,
+    /// More than `MAX_EVENT_IDS_PER_REQUEST` distinct event ids.
+    TooManyEventIds,
+}
+
+impl std::fmt::Display for DeletionRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooManyAddresses => write!(
+                formatter,
+                "invalid: a deletion request may name at most {MAX_ADDRESSES_PER_REQUEST} addresses"
+            ),
+            Self::TooManyEventIds => write!(
+                formatter,
+                "invalid: a deletion request may name at most {MAX_EVENT_IDS_PER_REQUEST} events"
+            ),
+        }
+    }
+}
+
+/// Reads a kind-5's targets, or refuses it for naming too many.
+///
+/// This is the one reading of a deletion request's tags: the live arm below and the event import
+/// (`nostream-services`'s `event_import_service`, #1097) both call it, so an imported request
+/// deletes what the relay would have deleted for the same event, and is refused when the relay
+/// would refuse it. The address cap is checked first, as it always has been, so a request over
+/// both caps gets the address message.
+pub fn deletion_targets(event: &Event) -> Result<DeletionTargets, DeletionRefusal> {
+    let addresses = addresses(event);
+
+    if addresses.len() > MAX_ADDRESSES_PER_REQUEST {
+        return Err(DeletionRefusal::TooManyAddresses);
+    }
+
+    let ids = event_ids(event);
+
+    if ids.len() > MAX_EVENT_IDS_PER_REQUEST {
+        return Err(DeletionRefusal::TooManyEventIds);
+    }
+
+    Ok(DeletionTargets { ids, addresses })
+}
+
 /// The `delete` arm.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DeleteStrategy;
@@ -86,37 +143,14 @@ impl EventStrategy for DeleteStrategy {
         context: &'a HandlerContext,
     ) -> Pin<Box<dyn Future<Output = Result<(), RelayError>> + Send + 'a>> {
         Box::pin(async move {
-            let addresses = addresses(event);
+            let DeletionTargets { ids, addresses } = match deletion_targets(event) {
+                Ok(targets) => targets,
+                Err(refusal) => {
+                    context.send_ok(event.id, false, &refusal.to_string(), None);
 
-            if addresses.len() > MAX_ADDRESSES_PER_REQUEST {
-                context.send_ok(
-                    event.id,
-                    false,
-                    &format!(
-                        "invalid: a deletion request may name at most \
-                         {MAX_ADDRESSES_PER_REQUEST} addresses"
-                    ),
-                    None,
-                );
-
-                return Ok(());
-            }
-
-            let ids = event_ids(event);
-
-            if ids.len() > MAX_EVENT_IDS_PER_REQUEST {
-                context.send_ok(
-                    event.id,
-                    false,
-                    &format!(
-                        "invalid: a deletion request may name at most \
-                         {MAX_EVENT_IDS_PER_REQUEST} events"
-                    ),
-                    None,
-                );
-
-                return Ok(());
-            }
+                    return Ok(());
+                }
+            };
 
             if !ids.is_empty() {
                 context

@@ -313,6 +313,10 @@ impl Nip05Fetch for FakeNip05Fetch {
     }
 }
 
+/// One recorded `delete_by_addresses` call: the author, the `(kind, d)` addresses and the
+/// `created_at` no deleted row may be newer than.
+pub type AddressDelete = (Pubkey, Vec<(Kind, String)>, i64);
+
 /// An event repository holding its rows in memory.
 #[derive(Debug, Default)]
 pub struct InMemoryEventRepository {
@@ -321,6 +325,7 @@ pub struct InMemoryEventRepository {
     create_many_calls: Mutex<Vec<Vec<EventRecord>>>,
     upsert_many_calls: Mutex<Vec<Vec<EventRecord>>>,
     deletes: Mutex<Vec<(Pubkey, Vec<EventId>)>>,
+    address_deletes: Mutex<Vec<AddressDelete>>,
     reads: Mutex<u64>,
     purge_calls: Mutex<Vec<EventRetentionOptions>>,
     read_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
@@ -385,6 +390,14 @@ impl InMemoryEventRepository {
     /// Every `delete_by_pubkey_and_ids` call.
     pub fn deletes(&self) -> Vec<(Pubkey, Vec<EventId>)> {
         self.deletes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Every `delete_by_addresses` call.
+    pub fn address_deletes(&self) -> Vec<AddressDelete> {
+        self.address_deletes
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
@@ -580,11 +593,18 @@ impl EventRepository for InMemoryEventRepository {
 
     fn delete_by_addresses<'a>(
         &'a self,
-        _pubkey: &'a Pubkey,
-        _addresses: &'a [(Kind, String)],
-        _not_after: i64,
+        pubkey: &'a Pubkey,
+        addresses: &'a [(Kind, String)],
+        not_after: i64,
     ) -> StorageFuture<'a, u64> {
-        Box::pin(async { Ok(0) })
+        Box::pin(async move {
+            self.address_deletes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push((*pubkey, addresses.to_vec(), not_after));
+
+            Ok(addresses.len() as u64)
+        })
     }
 
     fn delete_by_pubkey_except_kinds<'a>(
