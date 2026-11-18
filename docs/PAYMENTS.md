@@ -10,7 +10,7 @@ Set `payments.enabled`, choose one processor, and restart the relay.
    - Create a `.env` file
    - On `.nostr/settings.yaml` file make the following changes:
      - Set `payments.enabled` to `true`
-     - Set `payments.feeSchedules.admission.enabled` to `true`
+     - Set `payments.feeSchedules.admission[0].enabled` to `true` (the admission schedules are a list; the relay reads the first one)
      - Set `limits.event.pubkey.minBalance` to the minimum balance in msats required to accept events (i.e. `1000000` to require a balance of `1000` sats)
    - Choose one of the following payment processors: `zebedee`, `nodeless`, `opennode`, `lnbits`, `lnurl`, `nwc`
 
@@ -30,9 +30,9 @@ Set `payments.enabled`, choose one processor, and restart the relay.
    - Restart Nostream (`nostream stop` followed by `nostream start`)
    - Read the in-depth guide for more information: [Set Up a Paid Nostr Relay with ZEBEDEE API](https://docs.zbdpay.com/payments/nostr/nostr-relay)
 
-3. [Nodeless](https://nodeless.io/?ref=587f477f-ba1c-4bd3-8986-8302c98f6731)
+3. Nodeless
    - Complete the step "Before you begin"
-   - [Sign up](https://nodeless.io/?ref=587f477f-ba1c-4bd3-8986-8302c98f6731) for a new account, create a new store and take note of the store ID
+   - Sign up for a new account, create a new store and take note of the store ID (the `nodeless.io` domain no longer resolves, so the sign-up link is gone; existing stores still work with the keys below)
    - Go to Profile > API Tokens and generate a new key and take note of it
    - Create a store webhook with your Nodeless callback URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/nodeless`) and make sure to enable all of the events. Grab the generated store webhook secret
    - Set `NODELESS_API_KEY` and `NODELESS_WEBHOOK_SECRET` environment variables with generated API key and webhook secret, respectively
@@ -60,6 +60,7 @@ Set `payments.enabled`, choose one processor, and restart the relay.
 
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `opennode`
+     - Set `paymentsProcessors.opennode.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/opennode`)
    - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 5. [LNBITS](https://lnbits.com/)
@@ -75,30 +76,31 @@ Set `payments.enabled`, choose one processor, and restart the relay.
       ```
     - On your `.nostr/settings.yaml` file make the following changes:
       - Set `payments.processor` to `lnbits`
-      - set `lnbits.baseURL` to your LNbits instance URL (e.g. `https://{YOUR_LNBITS_DOMAIN_HERE}/`)
+      - set `paymentsProcessors.lnbits.baseURL` to your LNbits instance URL (e.g. `https://{YOUR_LNBITS_DOMAIN_HERE}/`)
       - Set `paymentsProcessors.lnbits.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/lnbits`)
     - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 6. [Alby](https://getalby.com/) or any LNURL Provider with [LNURL-verify](https://github.com/lnurl/luds/issues/182) support
     - Complete the step "Before you begin"
-    - [Create a new account](https://getalby.com/user/new) if you don't have an LNURL
-    - On your `.nostr/settings.yaml` file make the following changes:
-      - Set `payments.processor` to `lnurl`
-      - Set `lnurl.invoiceURL` to your LNURL (e.g. `https://getalby.com/lnurlp/your-username`)
+   - [Create a new account](https://getalby.com/) if you don't have an LNURL
+   - On your `.nostr/settings.yaml` file make the following changes:
+     - Set `payments.processor` to `lnurl`
+     - Set `paymentsProcessors.lnurl.invoiceURL` to your LNURL (e.g. `https://getalby.com/lnurlp/your-username`, with your own username)
     - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 7. Nostr Wallet Connect (NIP-47 / NWC)
     - Complete the step "Before you begin"
     - Create an app connection in your NWC-compatible wallet and copy the generated NWC URL
-    - Set `NWC_URL` environment variable on your `.env` file
+   - Set `NWC_URL` environment variable on your `.env` file
 
-      ```
-      NWC_URL={NOSTR_WALLET_CONNECT_URL}
-      ```
+     ```
+     NWC_URL={NOSTR_WALLET_CONNECT_URL}
+     ```
 
-    - On your `.nostr/settings.yaml` file make the following changes:
-      - Set `payments.processor` to `nwc`
-    - Restart Nostream (`nostream stop` followed by `nostream start`)
+   - If you run the bundled `docker-compose.yml`, add `NWC_URL: ${NWC_URL}` to the relay service's `environment:` list first. The compose file forwards the other processors' keys but not this one, so the value in `.env` never reaches the container.
+   - On your `.nostr/settings.yaml` file make the following changes:
+     - Set `payments.processor` to `nwc`
+   - Restart Nostream (`nostream stop` followed by `nostream start`)
 
 8. Ensure payments are required for your public key
    - Visit https://{YOUR-DOMAIN}/

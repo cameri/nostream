@@ -3,9 +3,10 @@
 Running, backing up and maintaining a relay after it is set up.
 
 ## Running as a service
+
 By default this server will run continuously until you stop it with Ctrl+C or until the system restarts.
 
-You can [install as a systemd service](https://www.swissrouting.com/nostr.html#installing-as-a-service) if you want the server to run again automatically whenever the system is restarted. For example:
+To have it start again whenever the system restarts, install it as a systemd service. For example:
 
 ```
 $ nano /etc/systemd/system/nostream.service
@@ -46,6 +47,12 @@ journalctl -u nostream
 
 ## Importing events
 You can import NIP-01 events from `.jsonl` (JSON Lines) or `.json` (JSON array) files directly into the relay database.
+
+Under Docker Compose, Postgres is not published to the host, so run the import inside the relay container and give it a path the container can see:
+
+```
+docker compose exec nostream node src/cli/index.js import /home/node/.nostr/events.jsonl
+```
 
 Compressed `.jsonl` files are also supported and decompressed on-the-fly:
 
@@ -145,6 +152,8 @@ pnpm db:verify-index-impact
 ```
 
 It seeds ~200k synthetic events, drops the hot-path indexes, runs EXPLAIN (ANALYZE, BUFFERS) for each hot query, recreates the indexes, and prints a BEFORE/AFTER table. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](../CONFIGURATION.md).
+
+Point `DB_*` at a scratch database before running it: it inserts event rows and drops the indexes it is measuring, so against a live relay it both pollutes the store and leaves the hot paths unindexed while it runs.
 
 ## Relay maintenance
 
