@@ -719,3 +719,13 @@ I'm Cameri on most social networks. You can find me on Nostr by npub1qqqqqqyz0la
 ## License
 
 This project is MIT licensed.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=cameri%2Fnostream&type=date&logscale=&releases=&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cameri/nostream&type=date&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cameri/nostream&type=date&legend=bottom-right" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cameri/nostream&type=date&legend=bottom-right" />
+ </picture>
+</a>
