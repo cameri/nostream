@@ -90,8 +90,8 @@ The importer:
 - Processes the file line-by-line to keep memory usage bounded.
 - Streams JSON array items one by one to keep memory usage bounded.
 - Validates NIP-01 schema, event id hash, and Schnorr signature before insertion.
-- Inserts in database transactions per batch.
-- Skips duplicates without failing the whole import.
+- Writes each batch as two statements: one multi-row insert for regular events, then an upsert for replaceable ones. There is no transaction spanning the batch, and a statement that fails counts its whole batch as skipped, so `Skipped` above can include events that were valid on their own.
+- Skips duplicates through `ON CONFLICT DO NOTHING`, without failing the import.
 - Prints progress in the format:
   `[Processed: 50,000 | Inserted: 45,000 | Skipped: 5,000 | Errors: 0]`
 
