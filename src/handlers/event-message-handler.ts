@@ -802,10 +802,13 @@ export class EventMessageHandler implements IMessageHandler {
  * - `mismatch` / `invalid` are definitive: flip to unverified, null out
  *   lastVerifiedAt (the author is no longer the domain's owner), and bump
  *   failureCount relative to any prior row.
- * - `error` is transient: keep the prior isVerified/lastVerifiedAt (if any)
- *   so previously-verified authors aren't blocked by a single network hiccup,
- *   but still bump failureCount + lastCheckedAt so the re-verification backoff
- *   can take effect.
+ * - `error` is transient: keep the prior isVerified/lastVerifiedAt so
+ *   previously-verified authors aren't blocked by a single network hiccup, but
+ *   only when the identifier is the one that was verified. A changed identifier
+ *   (or domain) has not been proven yet, so it starts unverified instead of
+ *   inheriting the earlier identity's verification. failureCount and
+ *   lastCheckedAt are bumped either way so the re-verification backoff can
+ *   take effect.
  */
 function buildMetadataVerification(
   pubkey: string,
@@ -845,17 +848,23 @@ function buildMetadataVerification(
         updatedAt: now,
       }
     case 'error':
-    default:
+    default: {
+      const sameIdentity =
+        existing !== undefined &&
+        existing.nip05.toLowerCase() === nip05.toLowerCase() &&
+        existing.domain.toLowerCase() === domain.toLowerCase()
+
       return {
         pubkey,
         nip05,
         domain,
-        isVerified: existing?.isVerified ?? false,
-        lastVerifiedAt: existing?.lastVerifiedAt ?? null,
+        isVerified: sameIdentity ? existing.isVerified : false,
+        lastVerifiedAt: sameIdentity ? existing.lastVerifiedAt : null,
         lastCheckedAt: now,
         failureCount: priorFailureCount + 1,
         createdAt,
         updatedAt: now,
       }
+    }
   }
 }

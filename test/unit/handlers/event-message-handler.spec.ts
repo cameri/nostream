@@ -2547,6 +2547,71 @@ describe('EventMessageHandler', () => {
       expect(upsertArg.lastCheckedAt).to.be.an.instanceOf(Date)
     })
 
+    describe('on a transient error when the identifier changed', () => {
+      const priorVerifiedAt = new Date(Date.now() - 1000)
+      const priorRow = () => ({
+        pubkey: event.pubkey,
+        nip05: 'alice@example.com',
+        domain: 'example.com',
+        isVerified: true,
+        lastVerifiedAt: priorVerifiedAt,
+        lastCheckedAt: priorVerifiedAt,
+        failureCount: 1,
+        createdAt: priorVerifiedAt,
+        updatedAt: priorVerifiedAt,
+      })
+
+      const run = async (nip05: string) => {
+        nip05VerificationRepository.findByPubkey.resolves(priorRow())
+        verifyStub.resolves({ status: 'error', reason: 'ETIMEDOUT' })
+        event.kind = EventKinds.SET_METADATA
+        event.content = JSON.stringify({ nip05 })
+
+        ;(handler as any).processNip05Metadata(event)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+
+        return nip05VerificationRepository.upsert.firstCall.args[0]
+      }
+
+      it('does not give a new domain the earlier verification', async () => {
+        const upsertArg = await run('alice@other.example')
+
+        expect(upsertArg.nip05).to.equal('alice@other.example')
+        expect(upsertArg.domain).to.equal('other.example')
+        expect(upsertArg.isVerified).to.be.false
+        expect(upsertArg.lastVerifiedAt).to.be.null
+        expect(upsertArg.failureCount).to.equal(2)
+      })
+
+      it('does not give a new local part on the same domain the earlier verification', async () => {
+        const upsertArg = await run('bob@example.com')
+
+        expect(upsertArg.isVerified).to.be.false
+        expect(upsertArg.lastVerifiedAt).to.be.null
+      })
+
+      it('still keeps the verification when only the letter case differs', async () => {
+        const upsertArg = await run('Alice@Example.com')
+
+        expect(upsertArg.isVerified).to.be.true
+        expect(upsertArg.lastVerifiedAt).to.equal(priorVerifiedAt)
+      })
+
+      it('starts unverified when there was no earlier row', async () => {
+        nip05VerificationRepository.findByPubkey.resolves(undefined)
+        verifyStub.resolves({ status: 'error', reason: 'ETIMEDOUT' })
+        event.kind = EventKinds.SET_METADATA
+        event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+        ;(handler as any).processNip05Metadata(event)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+
+        const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
+        expect(upsertArg.isVerified).to.be.false
+        expect(upsertArg.lastVerifiedAt).to.be.null
+      })
+    })
+
     it('handles verification errors gracefully (thrown by verifier)', async () => {
       nip05VerificationRepository.findByPubkey.resolves(undefined)
       verifyStub.rejects(new Error('network error'))
