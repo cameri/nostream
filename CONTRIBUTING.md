@@ -71,7 +71,8 @@ pnpm run cli -- start
 Set the required environment variables (or copy `.env.example` to `.env` and edit it):
 
 ```
-DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
+DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay"
+DATABASE_URI="$DB_URI"
 DB_USER=postgres
 ```
 
@@ -84,6 +85,8 @@ DB_NAME=nostr_ts_relay
 DB_USER=postgres
 DB_PASSWORD=postgres
 ```
+
+`DATABASE_URI` is not a duplicate of `DB_URI`: the relay reads `DB_URI`, while `pnpm db:migrate` reads `DATABASE_URI` and otherwise falls back to the `DB_*` variables with `nostr` as the database name. Migrating with only `DB_URI` set writes the schema into a database the relay never opens, so keep the two in step. The integration suite uses its own `nostr_ts_relay_test` database (see the tests section below).
 
 ```
 REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
@@ -102,7 +105,7 @@ SECRET=aaabbbccc...dddeeefff
 ```
 
 Create the database the relay will use, with the connection values you just set
-(`localhost:5432` and `postgres` below):
+(`localhost:5432`, user `postgres`, database `nostr_ts_relay`):
 
 ```
 $ psql -h localhost -p 5432 -U postgres -W
@@ -118,7 +121,10 @@ $ redis-cli
 OK
 127.0.0.1:6379> AUTH nostr_ts_relay
 Ok
+127.0.0.1:6379> quit
 ```
+
+`CONFIG SET requirepass` is server-wide, so on a Redis instance another application also uses, either run a dedicated instance for the relay or leave the password alone and put the existing credentials in `REDIS_*`.
 
 Run migrations (at least once and after pulling new changes):
 
