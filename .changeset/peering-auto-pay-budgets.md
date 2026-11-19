@@ -2,9 +2,9 @@
 "nostream": minor
 ---
 
-feat(peering): add the buyer invoice ledger and budget primitives
+feat(peering): decide and pay peer invoices within budgets
 
-Adds the storage and decoding foundation for buying peering: a
-`peering_invoices` ledger deduped by BOLT11 payment hash, per-peer/global
-`peering_budgets` counters, a narrow BOLT11 decoder, and the buyer settings
-contracts. Automatic payment and admin approval ship in the follow-up slices.
+Adds the buying-side policy: verify a peer invoice against its advertised
+NIP-11 term, dedupe on the payment hash, reserve per-peer/global budget
+atomically, pay through the configured wallet, and hold anything outside the
+envelope for operator approval.
