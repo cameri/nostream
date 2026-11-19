@@ -204,7 +204,8 @@ mod tests {
             path: "info.name".to_owned(),
             value: json!("New"),
         }];
-        let (next_user, next_merged) = apply_changes(&user, &merged, &changes).unwrap();
+        let defaults = merged.clone();
+        let (next_user, next_merged) = apply_changes(&user, &merged, &defaults, &changes).unwrap();
         assert_eq!(
             next_user["info"]["name"],
             serde_yaml::Value::String("New".to_owned())
