@@ -207,14 +207,18 @@ The first cut kept a private `HashMap<key, VecDeque<instant>>` in `AdminState`. 
 three ways the shared type cannot be: it recorded refused hits (EWMA stores the new rate before
 the verdict, the sliding window records only allowed ones), it never evicted a key (the shared
 store caps at `MAX_STORE_KEYS` = 65,536 and sweeps on admit), and it hard-coded one strategy while
-the capture selects one from settings. **The lesson is the trait**: had the admin path taken the
-`Limiter` trait from the start, the store's own refusal rule would have been the only reachable
-one, and the wrong rule could not have been written.
+the capture selects one from settings. **The lesson is the shared type**: the two strategies
+exist behind one trait, and what confines the rule is the concrete `RateLimiter` that
+`from_settings` builds — the trait alone admits any implementor (the test double implements it),
+so a private store could still have been written beside it. Taking the concrete shared limiter is
+what makes the store's own refusal rule the only reachable one.
 
-The architecture review's remedy was to delete the private store and port the sliding window
-under it; the operator ruled for the shared EWMA instead ("I don't think we need to port the
-sliding-window, the EWMA is superior"), and both strategies are what the factory offers. This is
-his decision, recorded as his.
+The architecture review asked for the tree's already-ported limiter to be used instead of the
+private store (the sliding window existed at the base — `limits.rs`, `struct
+SlidingWindowRateLimiter`; no lens asked for it to be ported). The operator ruled for the shared
+EWMA as the default ("I don't think we need to port the sliding-window, the EWMA is superior"),
+with the settings switch keeping the sliding window selectable, as the capture's factory offers
+both. This is his decision, recorded as his.
 
 The refusal rule follows the capture's limiter, not the sliding window's: a refused hit **does**
 advance the rate, and a key past `ceil(period / 1000)` s starts fresh. `tests/rate_limit.rs`
