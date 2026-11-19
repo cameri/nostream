@@ -189,7 +189,10 @@ pub fn filter_against_defaults(settings: &Value, defaults: &Value) -> Value {
             let Value::String(name) = key else {
                 continue;
             };
-            if !defaults.contains_key(name.as_str()) && name != "passwordHash" {
+            // `admin.passwordHash` is written by the console and carried by no defaults, so
+            // `admin` recurses even when the defaults do not name it; only `passwordHash`
+            // survives inside.
+            if !defaults.contains_key(name.as_str()) && name != "passwordHash" && name != "admin" {
                 continue;
             }
             let sub_schema = defaults
