@@ -253,6 +253,28 @@ describe('EventMessageHandler', () => {
       expect(strategyExecuteStub).to.have.been.calledOnceWithExactly(event)
     })
 
+    it('hands the event to the NIP-05 handling after the strategy has run', async () => {
+      isEventValidStub.returns(undefined)
+      canAcceptEventStub.returns(undefined)
+      const nip05Stub = sandbox.stub(EventMessageHandler.prototype, 'processNip05MetadataIfCurrent' as any).resolves()
+
+      await handler.handleMessage(message)
+
+      expect(nip05Stub).to.have.been.calledOnceWithExactly(event)
+      expect(nip05Stub).to.have.been.calledAfter(strategyExecuteStub)
+    })
+
+    it('does not run the NIP-05 handling when the strategy rejects', async () => {
+      isEventValidStub.returns(undefined)
+      canAcceptEventStub.returns(undefined)
+      strategyExecuteStub.rejects()
+      const nip05Stub = sandbox.stub(EventMessageHandler.prototype, 'processNip05MetadataIfCurrent' as any).resolves()
+
+      await handler.handleMessage(message)
+
+      expect(nip05Stub).not.to.have.been.called
+    })
+
     it('does not reject if strategy rejects', async () => {
       isEventValidStub.returns(undefined)
       canAcceptEventStub.returns(undefined)
@@ -2336,6 +2358,112 @@ describe('EventMessageHandler', () => {
       const enriched = (handler as any).addExpirationMetadata(expiringEvent)
 
       expect((enriched as any)[EventExpirationTimeMetadataKey]).to.equal(1665547000)
+    })
+  })
+
+  describe('processNip05MetadataIfCurrent', () => {
+    let settings: Settings
+    let findStoredReplaceable: Sinon.SinonStub
+    let processStub: Sinon.SinonStub
+
+    const storedProfile = (createdAt: number, id: string) => ({
+      event_id: Buffer.from(id, 'hex'),
+      event_created_at: createdAt,
+    })
+
+    beforeEach(() => {
+      settings = {
+        info: { relay_url: 'relay_url' },
+        nip05: { mode: 'enabled', verifyExpiration: 86400000, domainWhitelist: [], domainBlacklist: [] },
+      } as any
+      findStoredReplaceable = sandbox.stub().resolves([])
+      handler = new EventMessageHandler(
+        {} as any,
+        () => null,
+        { findStoredReplaceable } as any,
+        userRepository,
+        () => settings,
+        {} as any,
+        {} as any,
+        () => ({ hit: async () => ({ limited: false }) }),
+        {} as any,
+      )
+      processStub = sandbox.stub(handler as any, 'processNip05Metadata')
+      event.kind = EventKinds.SET_METADATA
+      event.created_at = 1000
+      event.id = '5'.repeat(64)
+    })
+
+    it('processes a profile that is the author\'s current one', async () => {
+      findStoredReplaceable.resolves([storedProfile(1000, event.id)])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnceWithExactly(event)
+      expect(findStoredReplaceable).to.have.been.calledOnceWithExactly(event.pubkey, EventKinds.SET_METADATA)
+    })
+
+    it('processes a profile when none is stored', async () => {
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('ignores an older profile that a newer stored profile has replaced', async () => {
+      findStoredReplaceable.resolves([storedProfile(2000, 'a'.repeat(64))])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).not.to.have.been.called
+    })
+
+    it('ignores a profile that lost the tie on created_at to a stored profile with a lower id', async () => {
+      findStoredReplaceable.resolves([storedProfile(1000, '1'.repeat(64))])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).not.to.have.been.called
+    })
+
+    it('processes a profile that wins the tie on created_at against a stored profile with a higher id', async () => {
+      findStoredReplaceable.resolves([storedProfile(1000, '9'.repeat(64))])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('processes a profile when the stored one is older, as with a replica that has not caught up', async () => {
+      findStoredReplaceable.resolves([storedProfile(500, 'a'.repeat(64))])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('processes the profile when the check fails', async () => {
+      findStoredReplaceable.rejects(new Error('db down'))
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('does not look anything up for other kinds', async () => {
+      event.kind = EventKinds.TEXT_NOTE
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(findStoredReplaceable).not.to.have.been.called
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('does not look anything up when NIP-05 is disabled', async () => {
+      settings.nip05.mode = 'disabled'
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(findStoredReplaceable).not.to.have.been.called
     })
   })
 
