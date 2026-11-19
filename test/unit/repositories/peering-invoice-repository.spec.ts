@@ -205,5 +205,7 @@ describe('PeeringInvoiceRepository', () => {
     expect(reserved).to.equal(250_000_000n)
     expect(recording.queries[0].sql.toLowerCase()).to.include('on conflict')
     expect(recording.queries[0].sql).to.include('<=')
+    expect(recording.queries[0].bindings).to.have.length(8)
+    expect(recording.queries[0].bindings[6]).to.equal('1000000000')
   })
 })

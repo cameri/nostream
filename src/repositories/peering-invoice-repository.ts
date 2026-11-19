@@ -203,6 +203,7 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
         amountMsats.toString(),
         amountMsats.toString(),
         limitMsats.toString(),
+        limitMsats.toString(),
         amountMsats.toString(),
       ],
     )
