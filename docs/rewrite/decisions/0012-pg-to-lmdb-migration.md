@@ -154,6 +154,28 @@ effective uid, read from `/proc/self/status`, because `std::fs` exposes the file
 not the caller's and the alternative was a dependency for one integer. The target the run
 writes into is printed with the summary.
 
+The target is then opened through a descriptor held from before the store's open, not through its
+path: the pin's own directory handle is named `/proc/self/fd/<n>` (the answer is probed at run
+time, so a host without procfs, and macOS, keeps the path), and the store root, every manifest
+write and the summary's `Store:` line resolve through it. What that changes is who can win the
+interval: an actor who renames the target away after the pin no longer redirects the store into
+the replacement, and `verify` — a post-open cross-check of `stat` against the pinned inode where
+procfs answers, and the only check where it does not — refuses a run whose operator's path no
+longer denotes the pinned directory. It narrows the window and does not close it: heed
+canonicalises the path before `mdb_env_open` (`heed-0.20.5/src/env.rs:239,305`), so the mapping
+still resolves an absolute name, and a rename inside that pair still reaches the store. Closing
+it needs an fd-relative environment open inside heed, which is a dependency change and not a
+change here.
+
+No line the command prints names the descriptor: every message built from a root-joined path is
+translated back to the target the operator typed, because `/proc/self/fd/<n>` dies with the
+process and is not a path anyone can act on. The cost of the pin, recorded rather than left to be
+discovered: `--verify` now opens the target directory itself, so it needs **read** permission on
+the target where the path-only version needed search alone, and a `0300` target is refused by the
+pin with the target's own path in the line. That is accepted and not mitigated — the target is a
+directory this command writes into, the copy arm has always needed the write bit, and a
+directory the caller may only search is not one to trust with a store.
+
 `nostream-cli migrate pg-to-lmdb` takes `--target <DIR>`, `--batch-size <N>` and `--verify`,
 and nothing else. `--target` is required with no default: a default of the working directory
 would let a mistyped run write a store where none was meant, and verify needs it too because

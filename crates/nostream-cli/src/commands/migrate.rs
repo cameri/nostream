@@ -14,6 +14,8 @@ use std::fs;
 use std::io;
 use std::io::Write;
 #[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -45,6 +47,21 @@ pub struct MigrateOptions {
 /// `migrate pg-to-lmdb`: the copy, or the verification pass when `verify` is set.
 #[cfg(unix)]
 pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
+    run_with(options, out, || {})
+}
+
+/// The command over a step injected between the target's pin and the root derived from it.
+///
+/// Nothing in the command renames its target, so production passes an empty closure; it is how a
+/// test reaches the interval between the pin and the store's open, which no request the command
+/// makes can block on — the same split `refuse_unsafe_target_for`'s `caller` makes for the uid
+/// branch.
+#[cfg(unix)]
+fn run_with(
+    options: MigrateOptions,
+    out: &mut dyn Write,
+    mut after_pin: impl FnMut(),
+) -> Result<CommandOutput, CliError> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -63,14 +80,20 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             if !store_present(&options) {
                 return no_store(&options, out);
             }
-            if read_manifest(&options.target)?.is_none() {
+            if read_manifest(&options.target, &options.target)?.is_none() {
                 return no_manifest(&options.target, out);
             }
-            let target = open_existing_target(&options.target).await?;
-            return verify_with(&target, &options, out).await;
+            // The pin is taken after both answers, so a target that is not there is refused by
+            // the pre-check's line rather than by a failed open; from here the store and the
+            // manifest are read through the descriptor.
+            let pin = TargetPin::pin(&options.target)?;
+            after_pin();
+            let root = pin.root();
+            let target = open_existing_target(&root, &options.target).await?;
+            return verify_with(&target, &root, &options, out).await;
         }
 
-        let existing = read_manifest(&options.target)?;
+        let existing = read_manifest(&options.target, &options.target)?;
 
         // A complete manifest is verified rather than copied, and the source is never opened:
         // a finished migration must not need Postgres to still be reachable.
@@ -81,8 +104,11 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             if !store_present(&options) {
                 return no_store(&options, out);
             }
-            let target = open_existing_target(&options.target).await?;
-            return verify_with(&target, &options, out).await;
+            let pin = TargetPin::pin(&options.target)?;
+            after_pin();
+            let root = pin.root();
+            let target = open_existing_target(&root, &options.target).await?;
+            return verify_with(&target, &root, &options, out).await;
         }
 
         // R7's store requirement, answered before the source is dialled so a missing store is
@@ -107,9 +133,11 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
             CliError::Migrate(format!("could not read the source at {described}: {error}"))
         })?;
         let pin = create_target(&options)?;
-        let target = open_target(&options.target).await?;
+        after_pin();
+        let root = pin.root();
+        let target = open_target(&root, &options.target).await?;
         pin.verify(&options.target)?;
-        migrate_with(&source, &target, &options, out).await
+        migrate_with(&source, &target, &root, &options, out).await
     })
 }
 
@@ -119,14 +147,18 @@ pub fn run(options: MigrateOptions, out: &mut dyn Write) -> Result<CommandOutput
 /// Every batch's rows are written to the store and then folded into the manifest, which is
 /// replaced after each batch; a batch that fails leaves the previous batch's `after`, `rows` and
 /// `checksum` in place, so the next run resumes at the refused row.
+///
+/// `root` is the path the store and the manifest are read and written through: the target's own
+/// descriptor spelling where procfs answers, and the operator's path otherwise.
 pub async fn migrate_with(
     source: &dyn MigrationSource,
     target: &dyn MigrationTarget,
+    root: &Path,
     options: &MigrateOptions,
     out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
     refuse_zero_batch(options)?;
-    let existing = read_manifest(&options.target)?;
+    let existing = read_manifest(root, &options.target)?;
     let mut manifest = existing.clone().unwrap_or_else(Manifest::fresh);
 
     // A store that already holds rows and carries no manifest is not this tool's. Copying over
@@ -172,11 +204,11 @@ pub async fn migrate_with(
     // R6: written before the first `read_batch`, so a store this tool has begun to fill always
     // carries a manifest and a crash after the first batch resumes rather than being refused.
     if existing.is_none() {
-        write_manifest(&options.target, &manifest)?;
+        write_manifest(root, &options.target, &manifest)?;
     }
 
     if manifest.complete() {
-        return verify_with(target, options, out).await;
+        return verify_with(target, root, options, out).await;
     }
 
     let started = Instant::now();
@@ -225,7 +257,7 @@ pub async fn migrate_with(
             entry.checksum = sum.to_hex();
             entry.after = after.as_deref().map(hex::encode).unwrap_or_default();
             entry.complete = complete;
-            write_manifest(&options.target, &manifest)?;
+            write_manifest(root, &options.target, &manifest)?;
 
             if complete {
                 break;
@@ -237,13 +269,13 @@ pub async fn migrate_with(
     let rate = events.saturating_mul(1_000) / ms.max(1);
     writeln!(out, "Migrated {total} rows in {ms} ms").map_err(write_failed)?;
     writeln!(out, "Events throughput: {rate} events/s").map_err(write_failed)?;
-    // Where the copy landed: a target that was redirected or mistyped is visible here rather
-    // than as a store the operator cannot find.
+    // Where the copy landed, resolved through the root it wrote through: a target that was
+    // redirected or mistyped is visible here rather than as a store the operator cannot find.
     writeln!(
         out,
         "Store: {}",
-        fs::canonicalize(store_path(options))
-            .unwrap_or_else(|_| store_path(options))
+        fs::canonicalize(store_path(root))
+            .unwrap_or_else(|_| store_path(root))
             .display()
     )
     .map_err(write_failed)?;
@@ -256,13 +288,17 @@ pub async fn migrate_with(
 ///
 /// Every table is paged to its end, so a table longer than one page is read rather than cut at
 /// its first. The pass writes nothing to the store and never opens the source.
+///
+/// `root` is the path the store and the manifest are read through: the target's own descriptor
+/// spelling where procfs answers, and the operator's path otherwise.
 pub async fn verify_with(
     target: &dyn MigrationTarget,
+    root: &Path,
     options: &MigrateOptions,
     out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
     refuse_zero_batch(options)?;
-    let Some(manifest) = read_manifest(&options.target)? else {
+    let Some(manifest) = read_manifest(root, &options.target)? else {
         return no_manifest(&options.target, out);
     };
 
@@ -485,6 +521,16 @@ fn sum_words(limbs: &mut [u64; 4], words: &[[u8; 8]]) {
     }
 }
 
+/// A message about `root` rewritten to name the target the operator typed.
+///
+/// The root is the pin's descriptor spelling where procfs answers, and a descriptor number dies
+/// with this process and means nothing in the operator's shell: every message the command builds
+/// from a root-joined path passes through here first. Where the root is the target itself — no
+/// procfs, or a caller that opens the operator's own path — this replaces the text with itself.
+fn operator_message(message: String, root: &Path, target: &Path) -> String {
+    message.replace(&root.display().to_string(), &target.display().to_string())
+}
+
 /// The manifest's path under a target root.
 fn manifest_path(target: &Path) -> PathBuf {
     target.join(MANIFEST_FILE)
@@ -499,22 +545,31 @@ fn named_list(names: &[&str]) -> String {
     }
 }
 
-/// The manifest at the target, or `None` when there is none.
-fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
-    let path = manifest_path(target);
+/// The manifest at `root`, or `None` when there is none.
+///
+/// `target` is the path the operator named: the root's spelling is translated back to it in every
+/// message here, because a descriptor number means nothing in their shell.
+fn read_manifest(root: &Path, target: &Path) -> Result<Option<Manifest>, CliError> {
+    let shown = |message: String| operator_message(message, root, target);
+    let path = manifest_path(root);
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(CliError::Migrate(format!("{}: {error}", path.display()))),
+        Err(error) => {
+            return Err(CliError::Migrate(shown(format!(
+                "{}: {error}",
+                path.display()
+            ))));
+        }
     };
     let manifest: Manifest = serde_json::from_slice(&bytes)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", path.display()))))?;
     if manifest.format != MANIFEST_FORMAT {
-        return Err(CliError::Migrate(format!(
+        return Err(CliError::Migrate(shown(format!(
             "{}: manifest format {} is not supported; this tool reads and writes {MANIFEST_FORMAT}",
             path.display(),
             manifest.format
-        )));
+        ))));
     }
 
     // A manifest is this tool's only when it describes all nine tables and the two it leaves
@@ -529,21 +584,21 @@ fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
     if named != expected {
         let missing: Vec<&str> = expected.difference(&named).copied().collect();
         let unknown: Vec<&str> = named.difference(&expected).copied().collect();
-        return Err(CliError::Migrate(format!(
+        return Err(CliError::Migrate(shown(format!(
             "{}: the manifest does not name this tool's nine tables (missing: {}; unknown: {})",
             path.display(),
             named_list(&missing),
             named_list(&unknown)
-        )));
+        ))));
     }
     if manifest.not_migrated != MigratedTable::NOT_MIGRATED {
         let named: Vec<&str> = manifest.not_migrated.iter().map(String::as_str).collect();
-        return Err(CliError::Migrate(format!(
+        return Err(CliError::Migrate(shown(format!(
             "{}: the manifest's not_migrated is not the two tables this tool leaves alone (it \
              names: {})",
             path.display(),
             named_list(&named)
-        )));
+        ))));
     }
     Ok(Some(manifest))
 }
@@ -556,20 +611,24 @@ fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
 /// world-readable copy of it; the store's own files are heed's 0600. Creating exclusively
 /// refuses an entry already at the temporary path, which is how a planted symlink would
 /// otherwise redirect the write and be renamed into place.
-fn write_manifest(target: &Path, manifest: &Manifest) -> Result<(), CliError> {
-    let path = manifest_path(target);
+///
+/// `target` is the path the operator named: the root's spelling is translated back to it in every
+/// message here.
+fn write_manifest(root: &Path, target: &Path, manifest: &Manifest) -> Result<(), CliError> {
+    let shown = |message: String| operator_message(message, root, target);
+    let path = manifest_path(root);
     let temporary = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(manifest)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", path.display()))))?;
 
     match fs::remove_file(&temporary) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => {
-            return Err(CliError::Migrate(format!(
+            return Err(CliError::Migrate(shown(format!(
                 "{}: {error}",
                 temporary.display()
-            )));
+            ))));
         }
     }
 
@@ -584,28 +643,29 @@ fn write_manifest(target: &Path, manifest: &Manifest) -> Result<(), CliError> {
     open_options.mode(0o600);
     let mut file = open_options
         .open(&temporary)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", temporary.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", temporary.display()))))?;
     file.write_all(&bytes)
         .and_then(|()| file.sync_all())
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", temporary.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", temporary.display()))))?;
     drop(file);
 
     fs::rename(&temporary, &path)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
-    sync_directory_of(&path)
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", path.display()))))?;
+    sync_directory_of(&path, root, target)
 }
 
 /// Makes a rename inside a directory durable.
 ///
 /// A rename changes the directory, not the file, and an unsynced directory can lose that
 /// entry on power loss even though the file's own content was synced.
-fn sync_directory_of(path: &Path) -> Result<(), CliError> {
+fn sync_directory_of(path: &Path, root: &Path, target: &Path) -> Result<(), CliError> {
+    let shown = |message: String| operator_message(message, root, target);
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let directory = fs::File::open(parent)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", parent.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", parent.display()))))?;
     directory
         .sync_all()
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", parent.display())))
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", parent.display()))))
 }
 
 /// The source the run reads, as the setting that named it: `db.internal:5432/nostream (from
@@ -761,7 +821,7 @@ fn effective_uid() -> Option<u32> {
 
 #[cfg(unix)]
 fn refuse_unsafe_target_for(options: &MigrateOptions, caller: Option<u32>) -> Result<(), CliError> {
-    for path in [&options.target, &store_path(options)] {
+    for path in [&options.target, &store_path(&options.target)] {
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
@@ -919,13 +979,35 @@ fn refuse_swappable_ancestry(target: &Path, caller: Option<u32>) -> Result<(), C
     }
 }
 
-/// A handle and device/inode pin that closes the TOCTOU window between target creation
-/// and store open. Holding the file handle keeps the directory inode active, and verify
-/// ensures the directory opened by LMDB is the exact inode judged by the security checks.
+/// The root `path` is opened through: the descriptor's own procfs spelling where procfs
+/// answers, and `path` unchanged where it does not.
+///
+/// The answer is a parameter rather than a probe, so a test can drive the branch a host without
+/// `/proc` would take — the same split `refuse_unsafe_target_for` makes for the caller's uid.
+#[cfg(unix)]
+fn root_for(handle: &fs::File, path: &Path, procfs: bool) -> PathBuf {
+    if procfs {
+        PathBuf::from(format!("/proc/self/fd/{}", handle.as_raw_fd()))
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// A handle and device/inode pin on the target directory, taken before the store opens.
+///
+/// Holding the handle keeps the directory inode alive and names it through `root`, so the store
+/// and every manifest write after the pin resolve to the inode the security checks judged,
+/// however the operator's path is renamed afterwards. That narrows the TOCTOU window between
+/// target creation and store open and does not close it: heed canonicalises the spelling before
+/// `mdb_env_open` (`heed-0.20.5/src/env.rs:239,305`), so the mapping itself still resolves a
+/// name. `verify` is the post-open cross-check of the operator's path, and the only check where
+/// procfs is absent.
 #[cfg(unix)]
 #[derive(Debug)]
 struct TargetPin {
-    _handle: fs::File,
+    handle: fs::File,
+    /// The path the pin was taken at, which is the root where procfs does not answer.
+    path: PathBuf,
     dev: u64,
     ino: u64,
 }
@@ -939,10 +1021,21 @@ impl TargetPin {
             .metadata()
             .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
         Ok(Self {
-            _handle: file,
+            handle: file,
+            path: path.to_path_buf(),
             dev: metadata.dev(),
             ino: metadata.ino(),
         })
+    }
+
+    /// The root the store and the manifest are opened through: the pin's own descriptor where
+    /// procfs answers, and the path the pin was taken at otherwise.
+    fn root(&self) -> PathBuf {
+        root_for(
+            &self.handle,
+            &self.path,
+            Path::new("/proc/self/fd").is_dir(),
+        )
     }
 
     fn verify(&self, path: &Path) -> Result<(), CliError> {
@@ -964,12 +1057,20 @@ impl TargetPin {
 
 #[cfg(not(unix))]
 #[derive(Debug)]
-struct TargetPin;
+struct TargetPin {
+    path: PathBuf,
+}
 
 #[cfg(not(unix))]
 impl TargetPin {
-    fn pin(_path: &Path) -> Result<Self, CliError> {
-        Ok(Self)
+    fn pin(path: &Path) -> Result<Self, CliError> {
+        Ok(Self {
+            path: path.to_path_buf(),
+        })
+    }
+
+    fn root(&self) -> PathBuf {
+        self.path.clone()
     }
 
     fn verify(&self, _path: &Path) -> Result<(), CliError> {
@@ -978,7 +1079,8 @@ impl TargetPin {
 }
 
 /// Creates the target when it is missing, judges what is on disk, and pins the directory
-/// handle to close the TOCTOU window before the store opens.
+/// handle the store is opened through. The pin narrows, and does not close, the TOCTOU window
+/// between this check and the store's open.
 #[cfg(unix)]
 fn create_target(options: &MigrateOptions) -> Result<TargetPin, CliError> {
     fs::DirBuilder::new()
@@ -1015,7 +1117,7 @@ fn no_store(options: &MigrateOptions, out: &mut dyn Write) -> Result<CommandOutp
         out,
         "No store at {}: a re-run resumes once the store is back. To start over, use a fresh \
          --target, or remove {} and the store together",
-        store_path(options).display(),
+        store_path(&options.target).display(),
         manifest_path(&options.target).display()
     )
     .map_err(write_failed)?;
@@ -1025,9 +1127,9 @@ fn no_store(options: &MigrateOptions, out: &mut dyn Write) -> Result<CommandOutp
     })
 }
 
-/// The store's directory under a target root: the environment `LmdbBackend::open` would create.
-fn store_path(options: &MigrateOptions) -> PathBuf {
-    nostream_storage::backend::store_dir(&options.target)
+/// The store's directory under a root: the environment `LmdbBackend::open` would create.
+fn store_path(root: &Path) -> PathBuf {
+    nostream_storage::backend::store_dir(root)
 }
 
 /// Whether the target already holds an LMDB environment, asked the way R8 asks it: `<target>/
@@ -1084,7 +1186,7 @@ fn check_resume_store(
         return Err(CliError::Migrate(format!(
             "No store at {}: the manifest records progress, so a re-run resumes once the store is \
              back. To start over, use a fresh --target, or remove {} and the store together",
-            store_path(options).display(),
+            store_path(&options.target).display(),
             manifest_path(&options.target).display()
         )));
     }
@@ -1092,17 +1194,20 @@ fn check_resume_store(
 }
 
 /// Opens the store a copy writes, creating it when it is not there.
-async fn open_target(root: &Path) -> Result<LmdbBackend, CliError> {
+///
+/// A failure names `target`, the path the operator typed: the open went through `root`, whose
+/// spelling means nothing outside this process.
+async fn open_target(root: &Path, target: &Path) -> Result<LmdbBackend, CliError> {
     LmdbBackend::open(root)
         .await
-        .map_err(|error| CliError::Migrate(error.to_string()))
+        .map_err(|error| CliError::Migrate(operator_message(error.to_string(), root, target)))
 }
 
 /// Opens the store a verify reads, read-only and creating nothing (R8).
-async fn open_existing_target(root: &Path) -> Result<LmdbBackend, CliError> {
+async fn open_existing_target(root: &Path, target: &Path) -> Result<LmdbBackend, CliError> {
     LmdbBackend::open_existing(root)
         .await
-        .map_err(|error| CliError::Migrate(error.to_string()))
+        .map_err(|error| CliError::Migrate(operator_message(error.to_string(), root, target)))
 }
 
 /// A failure of one table's read or write, naming the table so an operator knows which row
@@ -1329,7 +1434,7 @@ mod tests {
 
         check_resume_store(Some(&manifest), &options)
             .expect("the store the manifest needs is there");
-        open_target(&options.target)
+        open_target(&options.target, &options.target)
             .await
             .expect("the writable open after the check succeeds");
     }
@@ -1402,6 +1507,193 @@ mod tests {
                 .to_string()
                 .contains("replaced between check and open"),
             "{error}"
+        );
+    }
+
+    /// A host with procfs names the pinned directory by its descriptor, and one without it has
+    /// nothing but the path: both halves are the `root_for` branch, and the third assertion is
+    /// the wiring from the real probe to the helper on a host where it answers.
+    #[test]
+    #[cfg(unix)]
+    #[allow(clippy::expect_used)]
+    fn the_root_is_the_descriptor_when_procfs_answers_and_the_path_otherwise() {
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let target = temporary.path().join("target");
+        fs::create_dir(&target).expect("the target is created");
+        let handle = fs::File::open(&target).expect("the target is opened");
+
+        assert_eq!(
+            root_for(&handle, &target, true),
+            PathBuf::from(format!("/proc/self/fd/{}", handle.as_raw_fd())),
+            "the descriptor branch names the handle's own number"
+        );
+        assert_eq!(
+            root_for(&handle, &target, false),
+            target,
+            "without procfs the operator's path is the root, unchanged"
+        );
+
+        if Path::new("/proc/self/fd").is_dir() {
+            let pin = TargetPin::pin(&target).expect("the target is pinned");
+            assert_eq!(
+                pin.root(),
+                PathBuf::from(format!("/proc/self/fd/{}", pin.handle.as_raw_fd())),
+                "the pin's root is its own descriptor"
+            );
+        }
+    }
+
+    /// The swap this job exists for: the pin is taken, the target is renamed away through its
+    /// parent and a fresh directory takes its name, and the store is then opened through the
+    /// descriptor. The store lands in the directory the pin holds whatever the operator's path
+    /// now names, and `verify` refuses the path that no longer denotes it.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[allow(clippy::expect_used)]
+    async fn a_target_swapped_after_the_pin_keeps_the_store_in_the_pinned_directory() {
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let target = temporary.path().join("target");
+        fs::create_dir(&target).expect("the target is created");
+        let options = MigrateOptions {
+            target: target.clone(),
+            batch_size: 1_000,
+            verify: false,
+        };
+        let pin = create_target(&options).expect("the target is pinned");
+
+        let moved = temporary.path().join("moved");
+        fs::rename(&target, &moved).expect("the target is renamed away");
+        fs::create_dir(&target).expect("the replacement is created");
+
+        open_target(&pin.root(), &target)
+            .await
+            .expect("the store opens through the descriptor");
+
+        assert!(
+            fs::metadata(moved.join("lmdb").join("data.mdb")).is_ok(),
+            "the store landed in the directory the pin holds"
+        );
+        assert!(
+            fs::metadata(target.join("lmdb")).is_err(),
+            "and nothing was written into the replacement"
+        );
+        let error = pin
+            .verify(&target)
+            .expect_err("the operator's path no longer names the pinned inode");
+        assert!(
+            error
+                .to_string()
+                .contains("replaced between check and open"),
+            "{error}"
+        );
+    }
+
+    /// Copies an environment's files into a directory of their own, so the copy is an inode no
+    /// environment in this process has opened: heed registers an environment by its canonical
+    /// path, and a second open of one path with different flags is refused.
+    #[allow(clippy::expect_used)]
+    fn copy_store(from: &Path, into: &Path) {
+        fs::create_dir_all(into).expect("the copied store directory is made");
+        for entry in fs::read_dir(from).expect("the store directory reads") {
+            let entry = entry.expect("an entry reads");
+            fs::copy(entry.path(), into.join(entry.file_name())).expect("the store file is copied");
+        }
+    }
+
+    /// An environment with no rows and a manifest that records it complete, both written where
+    /// the command is not going to look: a test copies them to its target, so what the command
+    /// opens there is an inode this process has never opened.
+    #[allow(clippy::expect_used)]
+    fn prepared_migration() -> tempfile::TempDir {
+        let prepared = tempfile::tempdir().expect("a temporary directory");
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("the test runtime builds")
+            .block_on(async {
+                LmdbBackend::open(prepared.path())
+                    .await
+                    .expect("the store opens");
+            });
+        let mut manifest = Manifest::fresh();
+        for table in MigratedTable::ALL {
+            manifest.entry(table).complete = true;
+        }
+        write_manifest(prepared.path(), prepared.path(), &manifest)
+            .expect("the manifest is written");
+        prepared
+    }
+
+    /// Runs the command over a target that is swapped in the interval between its pin and the
+    /// store's open: the target is renamed away through its parent, and a fresh directory takes
+    /// its name holding a store of its own.
+    ///
+    /// The step also asserts that it ran: both tests below would pass on an unswapped target, so
+    /// a deleted `after_pin()` call would leave them green and the seam unguarded.
+    #[allow(clippy::expect_used)]
+    fn run_over_a_swap(verify: bool) -> (CommandOutput, String) {
+        let prepared = prepared_migration();
+        let temporary = tempfile::tempdir().expect("a temporary directory");
+        let target = temporary.path().join("target");
+        let moved = temporary.path().join("moved");
+        copy_store(&prepared.path().join("lmdb"), &target.join("lmdb"));
+        fs::copy(
+            prepared.path().join(MANIFEST_FILE),
+            target.join(MANIFEST_FILE),
+        )
+        .expect("the manifest is copied");
+
+        let stepped = std::cell::Cell::new(false);
+        let mut out = Vec::new();
+        let output = run_with(
+            MigrateOptions {
+                target: target.clone(),
+                batch_size: 1_000,
+                verify,
+            },
+            &mut out,
+            || {
+                stepped.set(true);
+                fs::rename(&target, &moved).expect("the target is renamed away");
+                copy_store(&prepared.path().join("lmdb"), &target.join("lmdb"));
+            },
+        )
+        .expect("the command answers rather than failing");
+        assert!(
+            stepped.get(),
+            "the command ran the step between the pin and the store's open"
+        );
+        (
+            output,
+            String::from_utf8(out).expect("the command writes utf-8"),
+        )
+    }
+
+    /// `run`'s `--verify` arm takes its own pin, and this is the half no grep can show: only the
+    /// pinned directory holds the manifest, so an arm that opened the bare path answers
+    /// `No manifest at …` and exits 1 where this exits 0.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn the_verify_arm_reads_the_store_its_pin_names_rather_than_the_replacement() {
+        let (output, text) = run_over_a_swap(true);
+        assert_eq!(output.exit_code, 0, "got:\n{text}");
+        assert!(
+            text.contains("Verified 9 tables"),
+            "the arm read the store its pin names, got:\n{text}"
+        );
+    }
+
+    /// The same swap on the other arm that verifies: a complete manifest with no `--verify` set.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn the_completed_manifest_arm_reads_the_store_its_pin_names_rather_than_the_replacement() {
+        let (output, text) = run_over_a_swap(false);
+        assert_eq!(output.exit_code, 0, "got:\n{text}");
+        assert!(
+            text.contains("Verified 9 tables"),
+            "the arm read the store its pin names, got:\n{text}"
         );
     }
 }

@@ -13,6 +13,7 @@
 #![cfg(unix)]
 
 use std::collections::BTreeMap;
+use std::os::fd::AsRawFd;
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -415,7 +416,7 @@ async fn a_clean_run_copies_every_table_and_a_second_run_writes_nothing() {
     let options = options(directory.path(), 1_000);
 
     let mut out = Vec::new();
-    let output = migrate::migrate_with(&source, &target, &options, &mut out)
+    let output = migrate::migrate_with(&source, &target, &options.target, &options, &mut out)
         .await
         .expect("the copy runs");
     assert_eq!(output.exit_code, 0);
@@ -532,7 +533,7 @@ async fn a_clean_run_copies_every_table_and_a_second_run_writes_nothing() {
         .expect("the usage reads")
         .used_bytes;
     let mut out = Vec::new();
-    let output = migrate::migrate_with(&counting, &target, &options, &mut out)
+    let output = migrate::migrate_with(&counting, &target, &options.target, &options, &mut out)
         .await
         .expect("the second run succeeds");
     assert_eq!(output.exit_code, 0);
@@ -601,6 +602,7 @@ async fn an_interrupted_run_resumes_to_the_clean_run_manifest() {
     migrate::migrate_with(
         &StubSource::new(source_rows()),
         &clean_target,
+        &clean_options.target,
         &clean_options,
         &mut Vec::new(),
     )
@@ -615,9 +617,15 @@ async fn an_interrupted_run_resumes_to_the_clean_run_manifest() {
         .expect("the store opens");
     let options = options(directory.path(), 1);
     let failing = StubSource::failing_at(source_rows(), 1);
-    let error = migrate::migrate_with(&failing, &target, &options, &mut Vec::new())
-        .await
-        .expect_err("the second read fails");
+    let error = migrate::migrate_with(
+        &failing,
+        &target,
+        &options.target,
+        &options,
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("the second read fails");
     assert!(
         matches!(error, nostream_cli::CliError::Migrate(_)),
         "a migration failure is the variant `main` prints as `Migration failed:` and exits 1 for"
@@ -637,7 +645,7 @@ async fn an_interrupted_run_resumes_to_the_clean_run_manifest() {
     // The healthy source over the same target, at --batch-size 1 too.
     let resumed = StubSource::new(source_rows());
     let mut out = Vec::new();
-    let output = migrate::migrate_with(&resumed, &target, &options, &mut out)
+    let output = migrate::migrate_with(&resumed, &target, &options.target, &options, &mut out)
         .await
         .expect("the resumed run succeeds");
     let calls = resumed.calls();
@@ -668,10 +676,12 @@ async fn manifest_of(rows: Vec<MigrationRow>) -> Value {
     let target = LmdbBackend::open(directory.path())
         .await
         .expect("the store opens");
+    let options = options(directory.path(), 1_000);
     migrate::migrate_with(
         &StubSource::new(rows),
         &target,
-        &options(directory.path(), 1_000),
+        &options.target,
+        &options,
         &mut Vec::new(),
     )
     .await
@@ -741,9 +751,15 @@ async fn verify_accepts_the_runs_own_target_and_rejects_a_changed_row() {
         .collect();
     // Five events at --batch-size 2 is three pages, so a verify that reads one page sees two.
     let options = options(directory.path(), 2);
-    migrate::migrate_with(&StubSource::new(rows), &target, &options, &mut Vec::new())
-        .await
-        .expect("the copy succeeds");
+    migrate::migrate_with(
+        &StubSource::new(rows),
+        &target,
+        &options.target,
+        &options,
+        &mut Vec::new(),
+    )
+    .await
+    .expect("the copy succeeds");
 
     let before = target
         .map_usage()
@@ -751,7 +767,7 @@ async fn verify_accepts_the_runs_own_target_and_rejects_a_changed_row() {
         .expect("the usage reads")
         .used_bytes;
     let mut out = Vec::new();
-    let output = migrate::verify_with(&target, &options, &mut out)
+    let output = migrate::verify_with(&target, &options.target, &options, &mut out)
         .await
         .expect("the verify runs");
     assert_eq!(output.exit_code, 0);
@@ -766,7 +782,7 @@ async fn verify_accepts_the_runs_own_target_and_rejects_a_changed_row() {
         .expect("the changed row is written");
 
     let mut out = Vec::new();
-    let output = migrate::verify_with(&target, &options, &mut out)
+    let output = migrate::verify_with(&target, &options.target, &options, &mut out)
         .await
         .expect("the verify runs");
     assert_eq!(output.exit_code, 1);
@@ -854,6 +870,7 @@ fn verify_creates_nothing_and_rejects_a_target_with_no_store_or_no_manifest() {
         migrate::migrate_with(
             &StubSource::new(source_rows()),
             &target,
+            &copy.target,
             &copy,
             &mut Vec::new(),
         )
@@ -933,10 +950,12 @@ async fn a_crash_between_the_first_batch_and_the_manifest_write_resumes_to_the_c
     let clean_store = LmdbBackend::open(clean.path())
         .await
         .expect("the store opens");
+    let clean_options = options(clean.path(), 1_000);
     migrate::migrate_with(
         &StubSource::new(source_rows()),
         &clean_store,
-        &options(clean.path(), 1_000),
+        &clean_options.target,
+        &clean_options,
         &mut Vec::new(),
     )
     .await
@@ -959,6 +978,7 @@ async fn a_crash_between_the_first_batch_and_the_manifest_write_resumes_to_the_c
     let error = migrate::migrate_with(
         &StubSource::failing_at(source_rows(), 0),
         &store,
+        &options.target,
         &options,
         &mut Vec::new(),
     )
@@ -997,9 +1017,10 @@ async fn a_crash_between_the_first_batch_and_the_manifest_write_resumes_to_the_c
 
     // The resume replays that batch from the fresh manifest's own cursor.
     let resumed = StubSource::new(source_rows());
-    let output = migrate::migrate_with(&resumed, &store, &options, &mut Vec::new())
-        .await
-        .expect("the resume succeeds");
+    let output =
+        migrate::migrate_with(&resumed, &store, &options.target, &options, &mut Vec::new())
+            .await
+            .expect("the resume succeeds");
     assert_eq!(output.exit_code, 0);
     assert_eq!(
         resumed.calls().first(),
@@ -1102,9 +1123,15 @@ async fn the_run_prints_a_rate_consistent_with_its_own_events_and_milliseconds()
     let options = options(directory.path(), 200);
 
     let mut out = Vec::new();
-    migrate::migrate_with(&StubSource::new(rows), &target, &options, &mut out)
-        .await
-        .expect("the copy succeeds");
+    migrate::migrate_with(
+        &StubSource::new(rows),
+        &target,
+        &options.target,
+        &options,
+        &mut out,
+    )
+    .await
+    .expect("the copy succeeds");
     let (rows, ms, rate, store) = summary(&output_text(out));
     assert_eq!(
         store,
@@ -1159,6 +1186,7 @@ async fn a_migrated_event_keeps_first_seen_deduplication_and_its_deleted_state()
     migrate::migrate_with(
         &StubSource::new(rows.clone()),
         &target,
+        &options(directory.path(), 1_000).target,
         &options(directory.path(), 1_000),
         &mut Vec::new(),
     )
@@ -1265,9 +1293,15 @@ async fn a_refused_row_stops_the_run_and_keeps_the_resume_point() {
         .collect();
     // The refused row is in the second batch of two.
     let options = options(directory.path(), 2);
-    let error = migrate::migrate_with(&StubSource::new(rows), &target, &options, &mut Vec::new())
-        .await
-        .expect_err("the refused key fails the batch");
+    let error = migrate::migrate_with(
+        &StubSource::new(rows),
+        &target,
+        &options.target,
+        &options,
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("the refused key fails the batch");
     assert!(
         matches!(error, nostream_cli::CliError::Migrate(_)),
         "a migration failure is the variant `main` prints as `Migration failed:` and exits 1 for"
@@ -1293,9 +1327,15 @@ async fn a_refused_row_stops_the_run_and_keeps_the_resume_point() {
 
     // The resume point is usable: a healthy source continues where the refused row stopped.
     let resumed = StubSource::new(vec![MigrationRow::Event(event_record(3, "fine"))]);
-    let output = migrate::migrate_with(&resumed, &target, &options, &mut Vec::new())
-        .await
-        .expect("the run resumes after the refusal");
+    let output = migrate::migrate_with(
+        &resumed,
+        &target,
+        &options.target,
+        &options,
+        &mut Vec::new(),
+    )
+    .await
+    .expect("the run resumes after the refusal");
     assert_eq!(output.exit_code, 0);
     assert_eq!(resumed.calls()[0].0, MigratedTable::Events);
     assert_eq!(
@@ -1330,6 +1370,7 @@ async fn a_target_with_rows_and_no_manifest_is_refused() {
     let error = migrate::migrate_with(
         &source,
         &target,
+        &options(directory.path(), 1_000).target,
         &options(directory.path(), 1_000),
         &mut Vec::new(),
     )
@@ -1372,6 +1413,7 @@ async fn a_target_with_rows_and_no_manifest_is_refused() {
     let output = migrate::migrate_with(
         &StubSource::new(source_rows()),
         &clean,
+        &options(empty.path(), 1_000).target,
         &options(empty.path(), 1_000),
         &mut Vec::new(),
     )
@@ -1409,6 +1451,7 @@ async fn a_manifest_of_another_format_is_refused_before_anything_is_written() {
     let error = migrate::migrate_with(
         &source,
         &target,
+        &options(directory.path(), 1_000).target,
         &options(directory.path(), 1_000),
         &mut Vec::new(),
     )
@@ -1428,9 +1471,15 @@ async fn a_manifest_of_another_format_is_refused_before_anything_is_written() {
         "nothing was written"
     );
 
-    let error = migrate::verify_with(&target, &options(directory.path(), 1_000), &mut Vec::new())
-        .await
-        .expect_err("format 2 is refused by verify too");
+    let verify_options = options(directory.path(), 1_000);
+    let error = migrate::verify_with(
+        &target,
+        &verify_options.target,
+        &verify_options,
+        &mut Vec::new(),
+    )
+    .await
+    .expect_err("format 2 is refused by verify too");
     assert!(error.to_string().contains("format 2"), "{error}");
 }
 
@@ -1457,6 +1506,7 @@ async fn a_manifest_that_does_not_name_the_nine_tables_is_refused() {
     let error = migrate::migrate_with(
         &source,
         &target,
+        &options(directory.path(), 1_000).target,
         &options(directory.path(), 1_000),
         &mut Vec::new(),
     )
@@ -1495,6 +1545,7 @@ async fn a_manifest_that_does_not_name_the_nine_tables_is_refused() {
     let error = migrate::migrate_with(
         &StubSource::new(source_rows()),
         &target,
+        &options(directory.path(), 1_000).target,
         &options(directory.path(), 1_000),
         &mut Vec::new(),
     )
@@ -1530,6 +1581,7 @@ async fn a_manifest_that_does_not_name_the_nine_tables_is_refused() {
     let error = migrate::migrate_with(
         &StubSource::new(source_rows()),
         &target,
+        &options(directory.path(), 1_000).target,
         &options(directory.path(), 1_000),
         &mut Vec::new(),
     )
@@ -1550,19 +1602,15 @@ async fn a_zero_batch_is_refused_instead_of_looping() {
         .await
         .expect("the store opens");
 
+    let zero = options(directory.path(), 0);
     let source = StubSource::new(source_rows());
-    let error = migrate::migrate_with(
-        &source,
-        &target,
-        &options(directory.path(), 0),
-        &mut Vec::new(),
-    )
-    .await
-    .expect_err("a batch of zero is refused");
+    let error = migrate::migrate_with(&source, &target, &zero.target, &zero, &mut Vec::new())
+        .await
+        .expect_err("a batch of zero is refused");
     assert!(error.to_string().contains("--batch-size"), "{error}");
     assert_eq!(source.calls().len(), 0, "nothing was read");
 
-    let error = migrate::verify_with(&target, &options(directory.path(), 0), &mut Vec::new())
+    let error = migrate::verify_with(&target, &zero.target, &zero, &mut Vec::new())
         .await
         .expect_err("a batch of zero is refused by verify too");
     assert!(error.to_string().contains("--batch-size"), "{error}");
@@ -1760,6 +1808,7 @@ fn a_manifest_that_records_progress_over_a_missing_store_is_refused() {
         migrate::migrate_with(
             &StubSource::failing_at(source_rows(), 1),
             &target,
+            &partial_options.target,
             &partial_options,
             &mut Vec::new(),
         )
@@ -1840,6 +1889,7 @@ fn a_manifest_that_records_progress_over_a_missing_store_is_refused() {
         let output = migrate::migrate_with(
             &StubSource::new(source_rows()),
             &target,
+            &copy.target,
             &copy,
             &mut Vec::new(),
         )
@@ -1912,6 +1962,7 @@ fn the_binary_verifies_a_store_this_process_wrote() {
         let output = migrate::migrate_with(
             &StubSource::new(source_rows()),
             &target,
+            &options(directory.path(), 1_000).target,
             &options(directory.path(), 1_000),
             &mut Vec::new(),
         )
@@ -1962,6 +2013,7 @@ async fn the_row_checksum_matches_an_independent_computation() {
     migrate::migrate_with(
         &source,
         &target,
+        &options(directory.path(), 1_000).target,
         &options(directory.path(), 1_000),
         &mut Vec::new(),
     )
@@ -2012,6 +2064,7 @@ async fn a_manifest_that_counts_rows_over_a_store_without_them_is_refused() {
     let error = migrate::migrate_with(
         &StubSource::new(source_rows()),
         &target,
+        &options(directory.path(), 1_000).target,
         &options(directory.path(), 1_000),
         &mut Vec::new(),
     )
@@ -2046,6 +2099,7 @@ async fn the_manifest_is_private_and_its_temporary_path_is_not_followed() {
     migrate::migrate_with(
         &StubSource::new(vec![MigrationRow::Event(event_record(1, "golden"))]),
         &target,
+        &options(directory.path(), 1_000).target,
         &options(directory.path(), 1_000),
         &mut Vec::new(),
     )
@@ -2504,6 +2558,7 @@ async fn the_summary_names_the_canonical_store_not_the_argument() {
     migrate::migrate_with(
         &StubSource::new(vec![MigrationRow::Event(event_record(1, "golden"))]),
         &target,
+        &options(&argument, 1_000).target,
         &options(&argument, 1_000),
         &mut out,
     )
@@ -2572,5 +2627,140 @@ fn a_schemeless_source_uri_is_refused() {
     assert!(
         !stderr.contains("secret"),
         "the password is not printed: {stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// The descriptor: the store, the manifest and the summary follow the pinned directory.
+// ---------------------------------------------------------------------------------------
+
+// The attack's own order, so the store's open is the one under test: the target is pinned, the
+// pin's descriptor becomes the root, the target is renamed away through its parent and a fresh
+// directory takes the name, and only then is the store opened. A path-based open would put the
+// store, the manifest and the summary in the replacement.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_copy_through_the_descriptor_writes_the_manifest_into_the_pinned_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temporary = tempfile::tempdir().expect("a temporary directory");
+    let target = temporary.path().join("target");
+    std::fs::create_dir(&target).expect("the target is created");
+    let pin = std::fs::File::open(&target).expect("the target is pinned");
+    let root = std::path::PathBuf::from(format!("/proc/self/fd/{}", pin.as_raw_fd()));
+
+    let moved = temporary.path().join("moved");
+    std::fs::rename(&target, &moved).expect("the target is renamed away");
+    std::fs::create_dir(&target).expect("the replacement is created");
+
+    let store = LmdbBackend::open(&root).await.expect("the store opens");
+    let mut out = Vec::new();
+    let output = migrate::migrate_with(
+        &StubSource::new(source_rows()),
+        &store,
+        &root,
+        &options(&target, 1_000),
+        &mut out,
+    )
+    .await
+    .expect("the copy succeeds");
+
+    // The narrowing, recorded rather than tested: heed resolved the descriptor spelling to an
+    // absolute name before it mapped the store, so the environment is named by the pinned
+    // directory's current path.
+    let landed = std::fs::canonicalize(moved.join("lmdb")).expect("the store exists");
+    assert_eq!(store.env().path(), landed.as_path());
+    assert_eq!(output.exit_code, 0);
+    let manifest = std::fs::symlink_metadata(moved.join("migration-manifest.json"))
+        .expect("the manifest is in the pinned directory");
+    assert!(
+        !manifest.file_type().is_symlink(),
+        "the manifest is a file, not a link"
+    );
+    assert_eq!(
+        manifest.permissions().mode() & 0o777,
+        0o600,
+        "the manifest is readable by its owner alone"
+    );
+    assert!(
+        entries(&target).is_empty(),
+        "nothing was written into the replacement"
+    );
+    let text = output_text(out);
+    assert!(
+        text.contains(&format!("Store: {}", landed.display())),
+        "the summary names where the store landed, got:\n{text}"
+    );
+}
+
+// The verify half: the manifest it reads is the pinned directory's, which after the swap the
+// operator's path no longer holds. A path-based verify answers `No manifest at …` here.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_verify_through_the_descriptor_reads_the_pinned_store() {
+    let temporary = tempfile::tempdir().expect("a temporary directory");
+    let target = temporary.path().join("target");
+    std::fs::create_dir(&target).expect("the target is created");
+    let pin = std::fs::File::open(&target).expect("the target is pinned");
+    let root = std::path::PathBuf::from(format!("/proc/self/fd/{}", pin.as_raw_fd()));
+
+    let store = LmdbBackend::open(&root).await.expect("the store opens");
+    migrate::migrate_with(
+        &StubSource::new(source_rows()),
+        &store,
+        &root,
+        &options(&target, 1_000),
+        &mut Vec::new(),
+    )
+    .await
+    .expect("the copy succeeds");
+
+    let moved = temporary.path().join("moved");
+    std::fs::rename(&target, &moved).expect("the target is renamed away");
+    std::fs::create_dir(&target).expect("the replacement is created");
+
+    let mut out = Vec::new();
+    let output = migrate::verify_with(&store, &root, &options(&target, 1_000), &mut out)
+        .await
+        .expect("the verify reads the pinned manifest");
+
+    assert_eq!(output.exit_code, 0);
+    assert!(
+        output_text(out).contains("Verified 9 tables"),
+        "the verify read the manifest through the descriptor"
+    );
+}
+
+// A store that will not open names the target the operator typed, not the descriptor the command
+// opened it through: `/proc/self/fd/<n>` dies with this process and means nothing in their shell.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_store_that_will_not_open_names_the_target_not_the_descriptor() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = directory.path().join("target");
+    std::fs::create_dir(&target).expect("the target is created");
+    let store = target.join("lmdb");
+    std::fs::create_dir(&store).expect("the store directory is made");
+    std::fs::write(store.join("data.mdb"), b"not an lmdb file").expect("the file is written");
+    // A complete manifest, so both pre-checks pass and the run reaches the store's open.
+    write_manifest_fixture(&target, true);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(&target)
+        .arg("--verify")
+        .env("DB_URI", "not-a-url")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&store.display().to_string()),
+        "the failure names the store the operator named: {stderr}"
+    );
+    assert!(
+        !stderr.contains("/proc/self/fd"),
+        "and never the descriptor: {stderr}"
     );
 }
