@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Typed settings, loading and validation for the nostream rewrite"
 
 [dependencies]
+chrono.workspace = true
 nostream-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true

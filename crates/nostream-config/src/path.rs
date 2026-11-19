@@ -225,6 +225,58 @@ pub fn set_by_path(document: &Value, path: &str, value: Value) -> Result<Value, 
     Ok(clone)
 }
 
+/// Removes the value at `path`, the way the capture's `undefined` is written: a cleared
+/// override is an absent key, so the next read shows the default.
+pub fn remove_by_path(document: &Value, path: &str) -> Result<Value, PathError> {
+    let tokens = parse_path(path)?;
+    let mut clone = document.clone();
+    let Some((last, parents)) = tokens.split_last() else {
+        return Err(PathError::Required);
+    };
+
+    let mut current = &mut clone;
+    for token in parents {
+        let next = match token {
+            PathToken::Key(key) => {
+                let Value::Mapping(mapping) = current else {
+                    return Ok(clone);
+                };
+                let Some(next) = mapping.get_mut(key.as_str()) else {
+                    return Ok(clone);
+                };
+                next
+            }
+            PathToken::Index(index) => {
+                let Value::Sequence(sequence) = current else {
+                    return Ok(clone);
+                };
+                let Some(next) = sequence.get_mut(*index) else {
+                    return Ok(clone);
+                };
+                next
+            }
+        };
+        current = next;
+    }
+
+    match last {
+        PathToken::Key(key) => {
+            if let Value::Mapping(mapping) = current {
+                mapping.remove(key.as_str());
+            }
+        }
+        PathToken::Index(index) => {
+            if let Value::Sequence(sequence) = current
+                && *index < sequence.len()
+            {
+                sequence.remove(*index);
+            }
+        }
+    }
+
+    Ok(clone)
+}
+
 fn path_exists_in_schema(schema: &Value, tokens: &[PathToken]) -> bool {
     let mut current = schema;
     for token in tokens {

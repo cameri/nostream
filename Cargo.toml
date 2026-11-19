@@ -12,6 +12,7 @@ repository = "https://github.com/cameri/nostream"
 [workspace.dependencies]
 aes = "0.8"
 anyhow = "1"
+axum = "0.8"
 base64 = "0.22.1"
 cbc = { version = "0.1", features = ["alloc", "block-padding"] }
 chacha20 = "0.10.2"
@@ -22,6 +23,8 @@ futures-util = "0.3"
 getrandom = "0.3"
 heed = { version = "0.20", features = ["read-txn-no-tls"] }
 hex = "0.4.3"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
 hkdf = "0.13.0"
 hmac = "0.13.0"
 negentropy = "0.5.2"
@@ -37,6 +40,7 @@ opentelemetry = "0.33.1"
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["trace", "grpc-tonic"] }
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace", "rt-tokio"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+scrypt = "0.11"
 secp256k1 = "0.33.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

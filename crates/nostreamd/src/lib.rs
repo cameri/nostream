@@ -41,6 +41,7 @@
 //! has no module here either.
 
 pub mod acceptor;
+pub mod admin_http;
 pub mod error;
 pub mod settings_gate;
 pub mod telemetry;

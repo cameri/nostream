@@ -61,4 +61,24 @@ pub enum ConfigError {
     /// The defaults document is not a mapping.
     #[error("{path} does not contain a settings mapping")]
     NotAMapping { path: PathBuf },
+
+    /// A settings document could not be written, backed up or audited.
+    #[error("failed to write {path}: {source}")]
+    Write {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// A restore named a file the backups directory never holds.
+    #[error("Invalid backup filename")]
+    InvalidBackupFilename,
+
+    /// A restore named a well-formed backup that is not there.
+    #[error("Backup not found")]
+    BackupNotFound,
+
+    /// A restored backup does not validate over the defaults.
+    #[error("Backup failed validation: {paths}")]
+    BackupInvalid { paths: String },
 }

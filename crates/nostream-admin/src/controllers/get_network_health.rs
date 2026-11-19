@@ -1,10 +1,25 @@
-//! `get-network-health-controller.ts`.
+//! `GET <prefix>/admin/network-health`: the latest probe snapshot, or `null`. Mirrors
+//! `src/controllers/admin/get-network-health-controller.ts` with D3's answer: no run is
+//! recorded in this slice, so the console gets its empty state.
 
-use crate::error::AdminError;
+use std::sync::Arc;
 
-/// Phase 1 stub — job 005; will reports the network-health comparison; see `src/controllers/admin/get-network-health-controller.ts`.
-pub async fn handle() -> Result<(), AdminError> {
-    Err(AdminError::NotImplemented {
-        module: "admin::controllers::get_network_health",
-    })
+use axum::extract::State;
+use axum::http::StatusCode;
+use serde_json::json;
+
+use crate::controllers::admin_auth_middleware::Session;
+use crate::controllers::admin_rate_limit_middleware::AdminRateLimited;
+use crate::controllers::with_admin_controller_request_handler::{HandlerResult, json_response};
+use crate::state::AdminState;
+
+pub async fn handle(
+    State(state): State<Arc<AdminState>>,
+    _limited: AdminRateLimited,
+    _session: Session,
+) -> HandlerResult {
+    Ok(json_response(
+        StatusCode::OK,
+        &json!({ "snapshot": state.latest_probe_snapshot() }),
+    ))
 }
