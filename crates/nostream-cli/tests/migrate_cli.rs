@@ -2730,3 +2730,37 @@ async fn a_verify_through_the_descriptor_reads_the_pinned_store() {
         "the verify read the manifest through the descriptor"
     );
 }
+
+// A store that will not open names the target the operator typed, not the descriptor the command
+// opened it through: `/proc/self/fd/<n>` dies with this process and means nothing in their shell.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_store_that_will_not_open_names_the_target_not_the_descriptor() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let target = directory.path().join("target");
+    std::fs::create_dir(&target).expect("the target is created");
+    let store = target.join("lmdb");
+    std::fs::create_dir(&store).expect("the store directory is made");
+    std::fs::write(store.join("data.mdb"), b"not an lmdb file").expect("the file is written");
+    // A complete manifest, so both pre-checks pass and the run reaches the store's open.
+    write_manifest_fixture(&target, true);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["migrate", "pg-to-lmdb", "--target"])
+        .arg(&target)
+        .arg("--verify")
+        .env("DB_URI", "not-a-url")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&store.display().to_string()),
+        "the failure names the store the operator named: {stderr}"
+    );
+    assert!(
+        !stderr.contains("/proc/self/fd"),
+        "and never the descriptor: {stderr}"
+    );
+}

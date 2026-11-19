@@ -80,7 +80,7 @@ fn run_with(
             if !store_present(&options) {
                 return no_store(&options, out);
             }
-            if read_manifest(&options.target)?.is_none() {
+            if read_manifest(&options.target, &options.target)?.is_none() {
                 return no_manifest(&options.target, out);
             }
             // The pin is taken after both answers, so a target that is not there is refused by
@@ -88,12 +88,12 @@ fn run_with(
             // manifest are read through the descriptor.
             let pin = TargetPin::pin(&options.target)?;
             after_pin();
-            let root = pin.root(&options.target);
-            let target = open_existing_target(&root).await?;
+            let root = pin.root();
+            let target = open_existing_target(&root, &options.target).await?;
             return verify_with(&target, &root, &options, out).await;
         }
 
-        let existing = read_manifest(&options.target)?;
+        let existing = read_manifest(&options.target, &options.target)?;
 
         // A complete manifest is verified rather than copied, and the source is never opened:
         // a finished migration must not need Postgres to still be reachable.
@@ -106,8 +106,8 @@ fn run_with(
             }
             let pin = TargetPin::pin(&options.target)?;
             after_pin();
-            let root = pin.root(&options.target);
-            let target = open_existing_target(&root).await?;
+            let root = pin.root();
+            let target = open_existing_target(&root, &options.target).await?;
             return verify_with(&target, &root, &options, out).await;
         }
 
@@ -134,8 +134,8 @@ fn run_with(
         })?;
         let pin = create_target(&options)?;
         after_pin();
-        let root = pin.root(&options.target);
-        let target = open_target(&root).await?;
+        let root = pin.root();
+        let target = open_target(&root, &options.target).await?;
         pin.verify(&options.target)?;
         migrate_with(&source, &target, &root, &options, out).await
     })
@@ -158,7 +158,7 @@ pub async fn migrate_with(
     out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
     refuse_zero_batch(options)?;
-    let existing = read_manifest(root)?;
+    let existing = read_manifest(root, &options.target)?;
     let mut manifest = existing.clone().unwrap_or_else(Manifest::fresh);
 
     // A store that already holds rows and carries no manifest is not this tool's. Copying over
@@ -204,7 +204,7 @@ pub async fn migrate_with(
     // R6: written before the first `read_batch`, so a store this tool has begun to fill always
     // carries a manifest and a crash after the first batch resumes rather than being refused.
     if existing.is_none() {
-        write_manifest(root, &manifest)?;
+        write_manifest(root, &options.target, &manifest)?;
     }
 
     if manifest.complete() {
@@ -257,7 +257,7 @@ pub async fn migrate_with(
             entry.checksum = sum.to_hex();
             entry.after = after.as_deref().map(hex::encode).unwrap_or_default();
             entry.complete = complete;
-            write_manifest(root, &manifest)?;
+            write_manifest(root, &options.target, &manifest)?;
 
             if complete {
                 break;
@@ -298,7 +298,7 @@ pub async fn verify_with(
     out: &mut dyn Write,
 ) -> Result<CommandOutput, CliError> {
     refuse_zero_batch(options)?;
-    let Some(manifest) = read_manifest(root)? else {
+    let Some(manifest) = read_manifest(root, &options.target)? else {
         return no_manifest(&options.target, out);
     };
 
@@ -521,11 +521,17 @@ fn sum_words(limbs: &mut [u64; 4], words: &[[u8; 8]]) {
     }
 }
 
-/// The manifest's path under a target root.
+/// A message about `root` rewritten to name the target the operator typed.
 ///
-/// `shortcut: a failure in the manifest exchange names this root, which on the procfs path is the
-/// descriptor's spelling rather than the operator's; upgrade when a failure an operator reads
-/// needs their own path, which costs a second parameter on four private functions.
+/// The root is the pin's descriptor spelling where procfs answers, and a descriptor number dies
+/// with this process and means nothing in the operator's shell: every message the command builds
+/// from a root-joined path passes through here first. Where the root is the target itself — no
+/// procfs, or a caller that opens the operator's own path — this replaces the text with itself.
+fn operator_message(message: String, root: &Path, target: &Path) -> String {
+    message.replace(&root.display().to_string(), &target.display().to_string())
+}
+
+/// The manifest's path under a target root.
 fn manifest_path(target: &Path) -> PathBuf {
     target.join(MANIFEST_FILE)
 }
@@ -539,22 +545,31 @@ fn named_list(names: &[&str]) -> String {
     }
 }
 
-/// The manifest at the target, or `None` when there is none.
-fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
-    let path = manifest_path(target);
+/// The manifest at `root`, or `None` when there is none.
+///
+/// `target` is the path the operator named: the root's spelling is translated back to it in every
+/// message here, because a descriptor number means nothing in their shell.
+fn read_manifest(root: &Path, target: &Path) -> Result<Option<Manifest>, CliError> {
+    let shown = |message: String| operator_message(message, root, target);
+    let path = manifest_path(root);
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(CliError::Migrate(format!("{}: {error}", path.display()))),
+        Err(error) => {
+            return Err(CliError::Migrate(shown(format!(
+                "{}: {error}",
+                path.display()
+            ))));
+        }
     };
     let manifest: Manifest = serde_json::from_slice(&bytes)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", path.display()))))?;
     if manifest.format != MANIFEST_FORMAT {
-        return Err(CliError::Migrate(format!(
+        return Err(CliError::Migrate(shown(format!(
             "{}: manifest format {} is not supported; this tool reads and writes {MANIFEST_FORMAT}",
             path.display(),
             manifest.format
-        )));
+        ))));
     }
 
     // A manifest is this tool's only when it describes all nine tables and the two it leaves
@@ -569,21 +584,21 @@ fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
     if named != expected {
         let missing: Vec<&str> = expected.difference(&named).copied().collect();
         let unknown: Vec<&str> = named.difference(&expected).copied().collect();
-        return Err(CliError::Migrate(format!(
+        return Err(CliError::Migrate(shown(format!(
             "{}: the manifest does not name this tool's nine tables (missing: {}; unknown: {})",
             path.display(),
             named_list(&missing),
             named_list(&unknown)
-        )));
+        ))));
     }
     if manifest.not_migrated != MigratedTable::NOT_MIGRATED {
         let named: Vec<&str> = manifest.not_migrated.iter().map(String::as_str).collect();
-        return Err(CliError::Migrate(format!(
+        return Err(CliError::Migrate(shown(format!(
             "{}: the manifest's not_migrated is not the two tables this tool leaves alone (it \
              names: {})",
             path.display(),
             named_list(&named)
-        )));
+        ))));
     }
     Ok(Some(manifest))
 }
@@ -596,20 +611,24 @@ fn read_manifest(target: &Path) -> Result<Option<Manifest>, CliError> {
 /// world-readable copy of it; the store's own files are heed's 0600. Creating exclusively
 /// refuses an entry already at the temporary path, which is how a planted symlink would
 /// otherwise redirect the write and be renamed into place.
-fn write_manifest(target: &Path, manifest: &Manifest) -> Result<(), CliError> {
-    let path = manifest_path(target);
+///
+/// `target` is the path the operator named: the root's spelling is translated back to it in every
+/// message here.
+fn write_manifest(root: &Path, target: &Path, manifest: &Manifest) -> Result<(), CliError> {
+    let shown = |message: String| operator_message(message, root, target);
+    let path = manifest_path(root);
     let temporary = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(manifest)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", path.display()))))?;
 
     match fs::remove_file(&temporary) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => {
-            return Err(CliError::Migrate(format!(
+            return Err(CliError::Migrate(shown(format!(
                 "{}: {error}",
                 temporary.display()
-            )));
+            ))));
         }
     }
 
@@ -624,28 +643,29 @@ fn write_manifest(target: &Path, manifest: &Manifest) -> Result<(), CliError> {
     open_options.mode(0o600);
     let mut file = open_options
         .open(&temporary)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", temporary.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", temporary.display()))))?;
     file.write_all(&bytes)
         .and_then(|()| file.sync_all())
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", temporary.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", temporary.display()))))?;
     drop(file);
 
     fs::rename(&temporary, &path)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
-    sync_directory_of(&path)
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", path.display()))))?;
+    sync_directory_of(&path, root, target)
 }
 
 /// Makes a rename inside a directory durable.
 ///
 /// A rename changes the directory, not the file, and an unsynced directory can lose that
 /// entry on power loss even though the file's own content was synced.
-fn sync_directory_of(path: &Path) -> Result<(), CliError> {
+fn sync_directory_of(path: &Path, root: &Path, target: &Path) -> Result<(), CliError> {
+    let shown = |message: String| operator_message(message, root, target);
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let directory = fs::File::open(parent)
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", parent.display())))?;
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", parent.display()))))?;
     directory
         .sync_all()
-        .map_err(|error| CliError::Migrate(format!("{}: {error}", parent.display())))
+        .map_err(|error| CliError::Migrate(shown(format!("{}: {error}", parent.display()))))
 }
 
 /// The source the run reads, as the setting that named it: `db.internal:5432/nostream (from
@@ -986,6 +1006,8 @@ fn root_for(handle: &fs::File, path: &Path, procfs: bool) -> PathBuf {
 #[derive(Debug)]
 struct TargetPin {
     handle: fs::File,
+    /// The path the pin was taken at, which is the root where procfs does not answer.
+    path: PathBuf,
     dev: u64,
     ino: u64,
 }
@@ -1000,15 +1022,20 @@ impl TargetPin {
             .map_err(|error| CliError::Migrate(format!("{}: {error}", path.display())))?;
         Ok(Self {
             handle: file,
+            path: path.to_path_buf(),
             dev: metadata.dev(),
             ino: metadata.ino(),
         })
     }
 
     /// The root the store and the manifest are opened through: the pin's own descriptor where
-    /// procfs answers, and the operator's path otherwise.
-    fn root(&self, path: &Path) -> PathBuf {
-        root_for(&self.handle, path, Path::new("/proc/self/fd").is_dir())
+    /// procfs answers, and the path the pin was taken at otherwise.
+    fn root(&self) -> PathBuf {
+        root_for(
+            &self.handle,
+            &self.path,
+            Path::new("/proc/self/fd").is_dir(),
+        )
     }
 
     fn verify(&self, path: &Path) -> Result<(), CliError> {
@@ -1030,16 +1057,20 @@ impl TargetPin {
 
 #[cfg(not(unix))]
 #[derive(Debug)]
-struct TargetPin;
+struct TargetPin {
+    path: PathBuf,
+}
 
 #[cfg(not(unix))]
 impl TargetPin {
-    fn pin(_path: &Path) -> Result<Self, CliError> {
-        Ok(Self)
+    fn pin(path: &Path) -> Result<Self, CliError> {
+        Ok(Self {
+            path: path.to_path_buf(),
+        })
     }
 
-    fn root(&self, path: &Path) -> PathBuf {
-        path.to_path_buf()
+    fn root(&self) -> PathBuf {
+        self.path.clone()
     }
 
     fn verify(&self, _path: &Path) -> Result<(), CliError> {
@@ -1163,17 +1194,20 @@ fn check_resume_store(
 }
 
 /// Opens the store a copy writes, creating it when it is not there.
-async fn open_target(root: &Path) -> Result<LmdbBackend, CliError> {
+///
+/// A failure names `target`, the path the operator typed: the open went through `root`, whose
+/// spelling means nothing outside this process.
+async fn open_target(root: &Path, target: &Path) -> Result<LmdbBackend, CliError> {
     LmdbBackend::open(root)
         .await
-        .map_err(|error| CliError::Migrate(error.to_string()))
+        .map_err(|error| CliError::Migrate(operator_message(error.to_string(), root, target)))
 }
 
 /// Opens the store a verify reads, read-only and creating nothing (R8).
-async fn open_existing_target(root: &Path) -> Result<LmdbBackend, CliError> {
+async fn open_existing_target(root: &Path, target: &Path) -> Result<LmdbBackend, CliError> {
     LmdbBackend::open_existing(root)
         .await
-        .map_err(|error| CliError::Migrate(error.to_string()))
+        .map_err(|error| CliError::Migrate(operator_message(error.to_string(), root, target)))
 }
 
 /// A failure of one table's read or write, naming the table so an operator knows which row
@@ -1400,7 +1434,7 @@ mod tests {
 
         check_resume_store(Some(&manifest), &options)
             .expect("the store the manifest needs is there");
-        open_target(&options.target)
+        open_target(&options.target, &options.target)
             .await
             .expect("the writable open after the check succeeds");
     }
@@ -1502,7 +1536,7 @@ mod tests {
         if Path::new("/proc/self/fd").is_dir() {
             let pin = TargetPin::pin(&target).expect("the target is pinned");
             assert_eq!(
-                pin.root(&target),
+                pin.root(),
                 PathBuf::from(format!("/proc/self/fd/{}", pin.handle.as_raw_fd())),
                 "the pin's root is its own descriptor"
             );
@@ -1531,7 +1565,7 @@ mod tests {
         fs::rename(&target, &moved).expect("the target is renamed away");
         fs::create_dir(&target).expect("the replacement is created");
 
-        open_target(&pin.root(&target))
+        open_target(&pin.root(), &target)
             .await
             .expect("the store opens through the descriptor");
 
@@ -1585,13 +1619,17 @@ mod tests {
         for table in MigratedTable::ALL {
             manifest.entry(table).complete = true;
         }
-        write_manifest(prepared.path(), &manifest).expect("the manifest is written");
+        write_manifest(prepared.path(), prepared.path(), &manifest)
+            .expect("the manifest is written");
         prepared
     }
 
     /// Runs the command over a target that is swapped in the interval between its pin and the
     /// store's open: the target is renamed away through its parent, and a fresh directory takes
     /// its name holding a store of its own.
+    ///
+    /// The step also asserts that it ran: both tests below would pass on an unswapped target, so
+    /// a deleted `after_pin()` call would leave them green and the seam unguarded.
     #[allow(clippy::expect_used)]
     fn run_over_a_swap(verify: bool) -> (CommandOutput, String) {
         let prepared = prepared_migration();
@@ -1605,6 +1643,7 @@ mod tests {
         )
         .expect("the manifest is copied");
 
+        let stepped = std::cell::Cell::new(false);
         let mut out = Vec::new();
         let output = run_with(
             MigrateOptions {
@@ -1614,11 +1653,16 @@ mod tests {
             },
             &mut out,
             || {
+                stepped.set(true);
                 fs::rename(&target, &moved).expect("the target is renamed away");
                 copy_store(&prepared.path().join("lmdb"), &target.join("lmdb"));
             },
         )
         .expect("the command answers rather than failing");
+        assert!(
+            stepped.get(),
+            "the command ran the step between the pin and the store's open"
+        );
         (
             output,
             String::from_utf8(out).expect("the command writes utf-8"),

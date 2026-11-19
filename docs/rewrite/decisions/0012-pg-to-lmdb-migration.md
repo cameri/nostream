@@ -167,6 +167,15 @@ still resolves an absolute name, and a rename inside that pair still reaches the
 it needs an fd-relative environment open inside heed, which is a dependency change and not a
 change here.
 
+No line the command prints names the descriptor: every message built from a root-joined path is
+translated back to the target the operator typed, because `/proc/self/fd/<n>` dies with the
+process and is not a path anyone can act on. The cost of the pin, recorded rather than left to be
+discovered: `--verify` now opens the target directory itself, so it needs **read** permission on
+the target where the path-only version needed search alone, and a `0300` target is refused by the
+pin with the target's own path in the line. That is accepted and not mitigated — the target is a
+directory this command writes into, the copy arm has always needed the write bit, and a
+directory the caller may only search is not one to trust with a store.
+
 `nostream-cli migrate pg-to-lmdb` takes `--target <DIR>`, `--batch-size <N>` and `--verify`,
 and nothing else. `--target` is required with no default: a default of the working directory
 would let a mistyped run write a store where none was meant, and verify needs it too because
