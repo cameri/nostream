@@ -65,9 +65,10 @@ const setupBuyer = (
   } as Settings
   const payInvoice = Sinon.stub().resolves(PAYMENT_HASH)
   const notificationOutboxRepository = { enqueue: Sinon.stub().resolves() }
+  const repository = new PeeringInvoiceRepository(db)
   const service = new PeeringBuyerService(
     db,
-    new PeeringInvoiceRepository(db),
+    repository,
     { payInvoice } as any,
     notificationOutboxRepository as any,
     () => settings,
@@ -75,6 +76,7 @@ const setupBuyer = (
   )
 
   world.parameters.autoPayService = service
+  world.parameters.autoPayRepository = repository
   world.parameters.autoPayPeer = peer
   world.parameters.autoPayPayInvoice = payInvoice
   world.parameters.autoPayAdvertisement = {
@@ -122,6 +124,7 @@ After({ tags: '@peering-auto-pay' }, async function (this: World<Record<string, 
     this.parameters.autoPayPayInvoice = undefined
     this.parameters.autoPayResult = undefined
     this.parameters.autoPayEvent = undefined
+    this.parameters.autoPayRepository = undefined
   }
 })
 
@@ -146,6 +149,56 @@ When(
     )
   },
 )
+
+
+When('a paying buyer invoice is recovered from the wallet', async function (this: World<Record<string, any>>) {
+  const { privateKey, pubkey } = await randomPeer()
+  this.parameters.autoPayPeerPubkey = pubkey
+  this.parameters.autoPayPeers.push(pubkey)
+  this.parameters.autoPayScopes.push(`peer:${pubkey}`)
+
+  const { service, peer, payInvoice } = setupBuyer(this, 1000000000)
+  const now = new Date()
+  const repository = this.parameters.autoPayRepository as PeeringInvoiceRepository
+  await repository.insertIfNew(
+    {
+      paymentHash: PAYMENT_HASH,
+      eventId: `event-${pubkey}`,
+      peerPubkey: pubkey,
+      bolt11: INVOICE,
+      amountMsats: TERM_MSATS,
+      status: PeeringInvoiceStatus.PAYING,
+      reason: null,
+      autoPaid: true,
+      budgetPeriodStart: now,
+      budgetPeriodEnd: new Date(now.getTime() + 60_000),
+      termPeriodSeconds: TERM_SECONDS,
+      expiresAt: null,
+      seenCount: 1,
+      paidAt: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  )
+  await repository.reserveBudget(`peer:${pubkey}`, now, new Date(now.getTime() + 60_000), TERM_MSATS, 1_000_000_000n, this.parameters.autoPayDb)
+  ;(service as any).paymentsService.getInvoiceFromPaymentsProcessor = Sinon.stub().resolves({ status: 'completed' })
+  this.parameters.autoPayPayInvoice = payInvoice
+  this.parameters.autoPayResult = await service.recover(now)
+})
+
+Then('the invoice is paid without refunding its budget', async function (this: World<Record<string, any>>) {
+  expect(this.parameters.autoPayResult).to.equal(1)
+  expect(this.parameters.autoPayPayInvoice).not.to.have.been.called
+
+  const row = await this.parameters.autoPayDb('peering_invoices').where('payment_hash', PAYMENT_HASH).first()
+  expect(row.status).to.equal('paid')
+  expect(row.auto_paid).to.equal(true)
+
+  const budget = await this.parameters.autoPayDb('peering_budgets')
+    .where('scope', `peer:${this.parameters.autoPayPeerPubkey}`)
+    .first()
+  expect(String(budget.spent_msats)).to.equal(TERM_MSATS.toString())
+})
 
 Then(
   'the buyer invoice is paid and the budget records the spend',

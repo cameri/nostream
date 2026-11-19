@@ -407,6 +407,37 @@ describe('PeeringBuyerService', () => {
     )
   })
 
+
+  it('does not pay a manual invoice when recording spend fails', async () => {
+    peer.budget = undefined
+    const held = await service.handleInvoice(peer, advertisement, event, now)
+    expect(held.reason).to.equal(PeeringInvoiceReason.BUDGET_NOT_CONFIGURED)
+
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
+    invoiceRepository.claim.resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+    invoiceRepository.addBudgetSpend.rejects(new Error('budget store down'))
+
+    const result = await service.approve(PAYMENT_HASH, now)
+
+    expect(paymentsService.payInvoice).not.to.have.been.called
+    expect(result.status).to.equal(PeeringInvoiceStatus.HELD)
+    expect(result.reason).to.equal(PeeringInvoiceReason.BUDGET_EXCEEDED)
+  })
+
+  it('keeps a failed payment recoverable when the refund also fails', async () => {
+    paymentsService.payInvoice.rejects(new Error('wallet down'))
+    invoiceRepository.releaseBudget.rejects(new Error('budget store down'))
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAYING)
+    expect(result.reason).to.equal(PeeringInvoiceReason.PAYMENT_FAILED)
+    expect(invoiceRepository.update).not.to.have.been.calledWith(
+      PAYMENT_HASH,
+      Sinon.match({ status: PeeringInvoiceStatus.HELD }),
+    )
+  })
+
   it('summarizes per-peer and global budget spend', async () => {
     const window = peeringBudgetWindow(now, 2592000)
     invoiceRepository.countInWindow.resolves({ received: 2, paid: 1, held: 1 })

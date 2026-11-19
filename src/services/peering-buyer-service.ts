@@ -424,7 +424,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     reservation?: ReserveResult,
   ): Promise<PeeringInvoice> {
     const current = reservation ?? (await this.reserve(invoice, peerBudget, auto, now))
-    if (!current.reserved && auto) {
+    if (!current.reserved) {
       return this.hold(invoice, PeeringInvoiceReason.BUDGET_EXCEEDED)
     }
 
@@ -440,8 +440,10 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         })
       } catch (error) {
         logger('unable to persist the reserved budget for %s: %o', invoice.paymentHash, error)
-        await this.release(invoice, current, now)
-        return this.hold(invoice, PeeringInvoiceReason.PAYMENT_FAILED)
+        const released = await this.release(invoice, current, now)
+        return released
+          ? this.hold(invoice, PeeringInvoiceReason.PAYMENT_FAILED)
+          : { ...invoice, status: PeeringInvoiceStatus.PAYING, reason: PeeringInvoiceReason.PAYMENT_FAILED }
       }
     }
 
@@ -454,7 +456,17 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         error instanceof PaymentsProcessorCannotPayError
           ? PeeringInvoiceReason.UNSUPPORTED_PROCESSOR
           : PeeringInvoiceReason.PAYMENT_FAILED
-      await this.release(invoice, current, now)
+      const released = await this.release(invoice, current, now)
+      if (!released) {
+        await this.invoiceRepository.update(invoice.paymentHash, {
+          status: PeeringInvoiceStatus.PAYING,
+          reason,
+          autoPaid: false,
+          termPeriodSeconds,
+        })
+        return { ...invoice, status: PeeringInvoiceStatus.PAYING, reason, autoPaid: false }
+      }
+
       const held = await this.invoiceRepository.update(invoice.paymentHash, {
         status: PeeringInvoiceStatus.HELD,
         reason,
@@ -607,9 +619,9 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     }
   }
 
-  private async release(invoice: PeeringInvoice, reservation: ReserveResult, now: Date): Promise<void> {
+  private async release(invoice: PeeringInvoice, reservation: ReserveResult, now: Date): Promise<boolean> {
     if (!reservation.reserved) {
-      return
+      return true
     }
 
     const transaction = new Transaction(this.dbClient)
@@ -635,11 +647,13 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       }
       await transaction.commit()
       started = false
+      return true
     } catch (error) {
       if (started) {
         await transaction.rollback()
       }
       logger('unable to release the peering budget for %s: %o', invoice.paymentHash, error)
+      return false
     }
   }
 

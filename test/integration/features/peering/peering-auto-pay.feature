@@ -21,3 +21,7 @@ Feature: Paid peering auto-pay
     When a trusted peer sends a 250000000 msat invoice with a 100 sat budget
     And the operator approves the held invoice
     Then the invoice is paid manually and the spend is recorded
+
+  Scenario: An interrupted payment is recovered from the wallet
+    When a paying buyer invoice is recovered from the wallet
+    Then the invoice is paid without refunding its budget
