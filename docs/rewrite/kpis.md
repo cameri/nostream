@@ -143,9 +143,14 @@ should have caught it.
 |---|---|---|
 | NIP parity | `docs/rewrite/nip-porting.md` (to build) | a script over the ledger; `grep -c` over `crates/**/*.rs` for the stub check this document retires |
 | performance | `docs/rewrite/benchmarks/lmdb-50k-seed7.json` | `cargo run --release -p nostream-storage --example bench -- --backend lmdb --events 50000 --seed 7 --repeats 3 --verify --out /tmp/bench-lmdb.json` — `--out` is required and has no default |
-| migration safety | `crates/nostream-cli/tests/migrate_cli.rs` (committed swap cases); the 300-round campaign is job-time, not committed | `cargo test -p nostream-cli --test migrate_cli` per release; the campaign repeats the same assertion at scale |
+| migration safety | `crates/nostream-cli/tests/migrate_cli.rs` (committed swap cases); the 300-round campaign is job-time, not committed | `cargo test -p nostream-cli --test migrate_cli` **on Linux, with `/proc/self/fd` present**; the campaign repeats the same assertion at scale |
 | review share, rounds | `.factory/jobs/*/runs.jsonl`, workspace only (§9) | sum `spans.sessions[].cost` by agent: `reviewer` and `approver` against `builder` |
 | escapes | `.factory/jobs/*/runs.jsonl`, workspace only (§9) | `outcome` and `regret` lines |
+
+**The platform is part of the migration measurement.** The swap cases are
+`#[cfg(target_os = "linux")]` (`migrate_cli.rs:2641,2698,2736`), so the same command on macOS
+passes while skipping every directory-pin test. A green run anywhere else is not evidence for
+this KPI, and the release record must name the host it ran on.
 
 **Order of work.** The parity ledger is the only one of the six that needs building before it
 can report; the migration campaign needs a committed harness before it can run per release; the
