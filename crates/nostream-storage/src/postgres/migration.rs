@@ -8,7 +8,7 @@
 //!
 //! Nothing here writes. The migration issues no `INSERT`, `UPDATE`, `DELETE` or DDL against the
 //! source, and never runs the embedded migrator: a source that has not been migrated fails with
-//! the driver's own error (`docs/rewrite/decisions/0012-pg-to-lmdb-migration.md`, D12).
+//! the driver's own error (`docs/rewrite/decisions/0013-pg-to-lmdb-migration.md`, D12).
 
 use sqlx::Row;
 use sqlx::postgres::PgRow;

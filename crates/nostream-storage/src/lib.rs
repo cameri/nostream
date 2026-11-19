@@ -29,7 +29,7 @@
 //! trigger-maintained index whose LMDB `tags` database the event write path keeps), and
 //! `events.first_seen` is stored but never indexed
 //! (`docs/rewrite/decisions/0011-lmdb-backend.md`,
-//! `docs/rewrite/decisions/0012-pg-to-lmdb-migration.md`).
+//! `docs/rewrite/decisions/0013-pg-to-lmdb-migration.md`).
 
 pub mod backend;
 pub mod error;

@@ -3,7 +3,7 @@
 //! This module exists for one caller — `nostream-cli migrate pg-to-lmdb` — and is **not** a
 //! general read or write surface. Nothing in the relay, the daemon or the repository traits may
 //! use it, and a second caller needs a decision record first
-//! (`docs/rewrite/decisions/0012-pg-to-lmdb-migration.md`, D1).
+//! (`docs/rewrite/decisions/0013-pg-to-lmdb-migration.md`, D1).
 //!
 //! It lives here rather than in the CLI because the pieces a copy needs are in this crate: the
 //! Postgres row decoders (`crate::postgres::rows`), the event column list, and the LMDB
@@ -220,7 +220,7 @@ impl MigrationRow {
 /// Reads one table of the source, a keyset page at a time.
 ///
 /// The implementation issues no statement but these reads: the migration never writes to the
-/// source (`docs/rewrite/decisions/0012-pg-to-lmdb-migration.md`, D12).
+/// source (`docs/rewrite/decisions/0013-pg-to-lmdb-migration.md`, D12).
 pub trait MigrationSource: Send + Sync {
     /// The rows of `table` after `after`, in the table's key order, at most `limit` of them.
     ///
