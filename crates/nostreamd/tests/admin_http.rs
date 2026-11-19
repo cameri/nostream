@@ -58,6 +58,9 @@ fn start_daemon() -> (Daemon, tempfile::TempDir) {
         .arg("info")
         .current_dir(&workspace)
         .env("SECRET", "a-test-secret")
+        // One runtime worker, so a verification that ran on the runtime would stall the
+        // listener: `main.rs` builds the runtime with `.worker_threads(WORKER_COUNT)`.
+        .env("WORKER_COUNT", "1")
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -179,15 +182,18 @@ async fn the_daemon_serves_the_admin_page_and_the_wire_on_one_port() {
     assert_eq!(body, "Not Found");
 }
 
-/// D15 — scrypt runs on the blocking pool, so a login does not stall the listener that also
-/// serves the wire: a `GET /admin/session` answers while the verification is still running.
+/// D15 — scrypt runs on the blocking pool. With **one** runtime worker (`WORKER_COUNT=1`, the
+/// value `main.rs` hands `.worker_threads`), a verification that ran on the runtime would leave
+/// the listener unable to answer until it finished: measured, the synchronous path returns from
+/// `GET /admin/session` after about 1.7 s, and the offloaded one in about 13 ms. The bound is
+/// **500 ms** — far above the offload's cost and far below the synchronous path's.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_login_verification_does_not_stall_the_listener() {
     let (daemon, _temp) = start_daemon();
     let port = daemon.port;
     assert_eq!(wait_for_daemon(port).await, 401);
 
-    // The WebSocket upgrade is answered first, so the wire is live before the login starts.
+    // The wire is live before the login starts: the NIP-42 challenge is the first frame.
     let (mut client, _response) =
         tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/"))
             .await
@@ -204,13 +210,18 @@ async fn a_login_verification_does_not_stall_the_listener() {
         tokio::spawn(
             async move { post_json(port, "/admin/login", "{\"password\":\"hunter2\"}").await },
         );
+    // Let the request reach the daemon before the probe goes out.
+    tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // While the scrypt verification is in flight the listener still answers.
+    let started = Instant::now();
     let (status, _body) = request(port, "/admin/session").await;
+    let elapsed = started.elapsed();
+    println!("listener answered in {elapsed:?}");
     assert_eq!(status, 401, "the listener answered during the verification");
     assert!(
-        !login.is_finished(),
-        "the login was still verifying when the session request came back"
+        elapsed < Duration::from_millis(500),
+        "the listener answered in {elapsed:?} with one runtime worker; the bound is 500 ms \
+         (offload ~13 ms, a verification on the runtime ~1.7 s)"
     );
 
     let (status, _body) = login.await.expect("the login task");

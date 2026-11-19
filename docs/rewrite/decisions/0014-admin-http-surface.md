@@ -19,7 +19,7 @@ and the daemon answered no HTTP request at all — a plain `GET` died in the Web
 (`crates/nostream-relay/src/relay.rs:315-329`), measured as `curl: (52) Empty reply from
 server` on every admin path.
 
-The thirteen decisions below are the ones a reader would otherwise have to reconstruct from
+The seventeen decisions below are the ones a reader would otherwise have to reconstruct from
 the diff. Each is recorded with its reason and the evidence that produced it.
 
 ## Decisions
