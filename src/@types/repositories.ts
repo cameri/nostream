@@ -140,6 +140,12 @@ export interface IPeeringInvoiceRepository {
   releaseBudget(scope: string, periodStart: Date, amountMsats: bigint, client: DatabaseClient): Promise<void>
   /** Current and recent budget counters for the admin console. */
   listBudgets(): Promise<PeeringBudgetUsage[]>
+  /** Invoice counts in one budget window, optionally for one peer. */
+  countInWindow(
+    peerPubkey: string | undefined,
+    start: Date,
+    end: Date,
+  ): Promise<{ received: number; paid: number; held: number }>
 }
 
 export interface IUserSubscriptionRepository {

@@ -258,6 +258,29 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
     )
   }
 
+  public async countInWindow(
+    peerPubkey: string | undefined,
+    start: Date,
+    end: Date,
+  ): Promise<{ received: number; paid: number; held: number }> {
+    const result = await this.dbClient.raw(
+      `SELECT COUNT(*) AS received,
+              COUNT(*) FILTER (WHERE status = 'paid') AS paid,
+              COUNT(*) FILTER (WHERE status IN ('held', 'failed')) AS held
+       FROM peering_invoices
+       WHERE created_at >= ? AND created_at < ?
+       ${peerPubkey ? 'AND peer_pubkey = ?' : ''}`,
+      peerPubkey ? [start, end, toBuffer(peerPubkey)] : [start, end],
+    )
+    const row = firstRow(result) ?? {}
+
+    return {
+      received: Number(row.received ?? 0),
+      paid: Number(row.paid ?? 0),
+      held: Number(row.held ?? 0),
+    }
+  }
+
   public async listBudgets(): Promise<PeeringBudgetUsage[]> {
     const rows = await this.dbClient<any>('peering_budgets').orderBy('period_start', 'desc')
 

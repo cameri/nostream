@@ -78,6 +78,7 @@ describe('PeeringBuyerService', () => {
       addBudgetSpend: sandbox.stub().resolves(250_000_000n),
       releaseBudget: sandbox.stub().resolves(),
       listBudgets: sandbox.stub().resolves([]),
+      countInWindow: sandbox.stub().resolves({ received: 0, paid: 0, held: 0 }),
     }
 
     paymentsService = {
@@ -291,8 +292,51 @@ describe('PeeringBuyerService', () => {
 
     const result = await service.handleInvoice(peer, advertisement, event, now)
 
-    expect(invoiceRepository.releaseBudget).to.have.been.calledTwice
+    expect(invoiceRepository.releaseBudget).not.to.have.been.called
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAYING)
     expect(result.reason).to.equal(PeeringInvoiceReason.PAYMENT_FAILED)
+  })
+
+  it('keeps the charge when the wallet paid but the paid update fails', async () => {
+    invoiceRepository.update
+      .onFirstCall()
+      .resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+      .onSecondCall()
+      .rejects(new Error('database down'))
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(invoiceRepository.releaseBudget).not.to.have.been.called
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAYING)
+  })
+
+  it('recovers a paying invoice from the wallet result', async () => {
+    invoiceRepository.list.resolves([invoice({ status: PeeringInvoiceStatus.PAYING })])
+    paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'completed' })
+
+    expect(await service.recover(now)).to.equal(1)
+    expect(invoiceRepository.update).to.have.been.calledWith(
+      PAYMENT_HASH,
+      Sinon.match({ status: PeeringInvoiceStatus.PAID }),
+    )
+  })
+
+  it('releases and holds a paying invoice the wallet reports expired', async () => {
+    invoiceRepository.list.resolves([
+      invoice({
+        status: PeeringInvoiceStatus.PAYING,
+        budgetPeriodStart: now,
+        budgetPeriodEnd: new Date(now.getTime() + 60_000),
+      }),
+    ])
+    paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
+
+    expect(await service.recover(now)).to.equal(1)
+    expect(invoiceRepository.releaseBudget).to.have.been.calledOnce
+    expect(invoiceRepository.update).to.have.been.calledWith(
+      PAYMENT_HASH,
+      Sinon.match({ status: PeeringInvoiceStatus.HELD }),
+    )
   })
 
   it('still records a payment when the notification outbox fails', async () => {
@@ -313,12 +357,51 @@ describe('PeeringBuyerService', () => {
     await expect(service.reject(PAYMENT_HASH)).to.be.rejectedWith('not awaiting a decision')
   })
 
+
+  it('records a malformed invoice instead of dropping it', async () => {
+    event.tags = event.tags.filter((tag) => tag[0] !== 'bolt11')
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(paymentsService.payInvoice).not.to.have.been.called
+    expect(result.reason).to.equal(PeeringInvoiceReason.INVALID_INVOICE)
+    expect(invoiceRepository.insertIfNew).to.have.been.calledWith(
+      Sinon.match({ paymentHash: Sinon.match(/^invalid:/), amountMsats: 0n }),
+    )
+  })
+
+  it('persists the known period when holding an invoice', async () => {
+    settings.peering!.autoPay!.enabled = false
+
+    await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(invoiceRepository.update).to.have.been.calledWith(
+      PAYMENT_HASH,
+      Sinon.match({ status: PeeringInvoiceStatus.HELD, termPeriodSeconds: 2592000 }),
+    )
+  })
+
+  it('records manual global spend when the peer has no budget', async () => {
+    peer.budget = undefined
+    const held = await service.handleInvoice(peer, advertisement, event, now)
+    expect(held.reason).to.equal(PeeringInvoiceReason.BUDGET_NOT_CONFIGURED)
+
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
+    invoiceRepository.claim.resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+    await service.approve(PAYMENT_HASH, now)
+
+    expect(invoiceRepository.addBudgetSpend).to.have.been.calledOnceWith(
+      'global',
+      Sinon.match.any,
+      Sinon.match.any,
+      250_000_000n,
+      Sinon.match.any,
+    )
+  })
+
   it('summarizes per-peer and global budget spend', async () => {
     const window = peeringBudgetWindow(now, 2592000)
-    invoiceRepository.list.resolves([
-      invoice({ status: PeeringInvoiceStatus.PAID, createdAt: now, amountMsats: 250_000_000n }),
-      invoice({ status: PeeringInvoiceStatus.HELD, createdAt: now, amountMsats: 250_000_000n }),
-    ])
+    invoiceRepository.countInWindow.resolves({ received: 2, paid: 1, held: 1 })
     invoiceRepository.listBudgets.resolves([
       { scope: `peer:${PEER}`, periodStart: window.start, periodEnd: window.end, spentMsats: 250_000_000n },
       { scope: 'global', periodStart: window.start, periodEnd: window.end, spentMsats: 250_000_000n },

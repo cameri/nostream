@@ -88,6 +88,8 @@ export interface IPeeringBuyerService {
   list(statuses?: PeeringInvoiceStatus[], limit?: number): Promise<PeeringInvoice[]>
   /** Spend, remaining budget and invoice counts for the current period. */
   budgetSummary(now?: Date): Promise<PeeringBudgetSummary[]>
+  /** Finishes invoices left in PAYING by a restart, before retrying anything. */
+  recover(now?: Date): Promise<number>
 }
 
 export interface ISubscriptionService {

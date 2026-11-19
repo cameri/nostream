@@ -169,6 +169,17 @@ describe('PeeringInvoiceRepository', () => {
     expect(recording.queries).to.be.empty
   })
 
+  it('counts invoices in a budget window without a capped list', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([{ received: '2', paid: '1', held: '1' }])
+
+    const counts = await repository.countInWindow(peerPubkey, now, new Date(now.getTime() + 60_000))
+
+    expect(counts).to.deep.equal({ received: 2, paid: 1, held: 1 })
+    expect(recording.queries[0].sql.toLowerCase()).to.include('filter (where status =')
+  })
+
   it('refuses a first reservation that already exceeds the limit', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringInvoiceRepository(recording.db)
