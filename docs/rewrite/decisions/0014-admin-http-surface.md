@@ -166,6 +166,20 @@ The narrowing this job takes: an `npub` in a moderation action's `pubkey` is ref
 capture's message, because this tree has no bech32 decoder and the relay already refuses the
 same form for the same reason (`crates/nostream-relay/src/handlers/subscribe.rs:152-153`).
 
+**A relay-path change leaves the page and the cookie ahead of the mount, and that is the
+capture's behaviour** — adjudicated 2026-11-19, not fixed. When `info.relay_url`'s path moves
+from `/old` to `/new` without a restart, the next page render points its scripts at
+`/new/admin/assets/…` and a login or logout sets the cookie's `Path` to `/new/admin`, while the
+router stays mounted under `/old/admin`; the console then fails to load until the process
+restarts. The capture does exactly this: the page's prefix comes from the settings read at
+request time (`src/handlers/request-handlers/get-admin-dashboard-request-handler.ts:19`,
+`getPublicPathPrefix(req, currentSettings)`), the cookie's `Path` likewise
+(`src/utils/admin-session.ts:27,34`), and its router is mounted once when the app is built
+(`src/routes/index.ts:38` → `src/factories/web-app-factory.ts:51`). Pinning the page and the
+cookie to the mount-time prefix here would be a second convention for the same value, and the
+console's recovery — a restart — is the one the operator already knows from the capture. The
+same `info.relay_url` edit therefore keeps this record's rule rather than gaining a new one.
+
 ### D11 — The oracle derives its routes from the console and speaks HTTP/1.1 by hand
 
 `crates/nostream-admin/tests/console_parity.rs` reads `resources/admin/assets/*.js` at test
