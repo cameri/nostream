@@ -3,6 +3,7 @@
 //! | case | what it proves |
 //! |---|---|
 //! | `the_settings_file_is_private_from_creation` | with a `022` umask the document is `0600` the moment the handle exists, so another local user never sees it |
+//! | `a_stale_temporary_file_does_not_fail_the_save` | a `.settings.<pid>.0.tmp` left by an interrupted save of an earlier process that wore this pid is stepped over, not fatal |
 //!
 //! The case runs in a child process of its own, because `umask` is process-wide, and the one
 //! that matters is the shell's. A thread watches the config directory while the save runs, so
@@ -163,5 +164,44 @@ fn assert_private_from_creation() {
     assert_eq!(
         parsed, document,
         "the save writes the document it was given"
+    );
+}
+
+#[test]
+fn a_stale_temporary_file_does_not_fail_the_save() {
+    let temp = tempfile::tempdir().expect("a temporary directory");
+    let config_dir = temp.path().join("config");
+    std::fs::create_dir_all(&config_dir).expect("the config directory");
+    let paths = SettingsPaths::from_config_dir(temp.path(), &config_dir);
+
+    // The save this process makes is its first, so it reaches for `.0` first; that name is an
+    // interrupted save's, from a process that wore this pid before this one.
+    let stale = config_dir.join(format!(".settings.{}.0.tmp", std::process::id()));
+    std::fs::write(&stale, "info:\n  name: stale\n").expect("the stale temporary file");
+
+    let document: serde_yaml::Value =
+        serde_yaml::from_str("info:\n  name: Example\n").expect("the document");
+    nostream_config::store::save_with_backup(&paths, &document, chrono::Utc::now())
+        .expect("a stale temporary name from an earlier process must not fail this save");
+
+    let mode = std::fs::metadata(&paths.settings_file)
+        .expect("the settings file")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600, "the saved file is still private");
+
+    let stale_content = std::fs::read_to_string(&stale).expect("the stale file is left alone");
+    assert_eq!(
+        stale_content, "info:\n  name: stale\n",
+        "the save steps over another writer's file instead of removing or overwriting it"
+    );
+
+    let mut temporaries = temporary_settings_files(&config_dir);
+    temporaries.sort();
+    assert_eq!(
+        temporaries,
+        vec![format!(".settings.{}.0.tmp", std::process::id())],
+        "the fresh save leaves no second temporary file"
     );
 }

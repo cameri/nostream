@@ -8,7 +8,7 @@
 //! file; the loader reads them.
 
 use std::fs;
-use std::io::Write as _;
+use std::io::{ErrorKind, Write as _};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -112,12 +112,7 @@ pub fn save_with_backup(
         })?;
     }
 
-    let temporary = paths.config_base_dir.join(format!(
-        ".settings.{}.{}.tmp",
-        std::process::id(),
-        next_temp()
-    ));
-    let write = || -> std::io::Result<()> {
+    let write = |temporary: &Path| -> std::io::Result<()> {
         // Created with the file's final mode, so the document is never readable by another
         // local user even for the instant before the rename (`fs::write` would create it at
         // `0666 & ~umask` and leave the chmod a window behind).
@@ -128,25 +123,56 @@ pub fn save_with_backup(
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let mut file = options.open(&temporary)?;
+        let mut file = options.open(temporary)?;
         file.write_all(serialized.as_bytes())?;
         drop(file);
-        fs::rename(&temporary, &paths.settings_file)
+        fs::rename(temporary, &paths.settings_file)
     };
-    write().map_err(|source| {
-        let _ = fs::remove_file(&temporary);
-        ConfigError::Write {
-            path: paths.settings_file.clone(),
-            source,
+
+    // The name is exclusive, so a `.settings.<pid>.<n>.tmp` left behind by an interrupted save
+    // of an earlier process that wore this pid must move this one to the next candidate rather
+    // than fail it; the taken names are never removed, because they are not this save's.
+    let mut taken: Vec<String> = Vec::new();
+    for _ in 0..TEMPORARY_ATTEMPTS {
+        let name = temporary_name();
+        let temporary = paths.config_base_dir.join(&name);
+        match write(&temporary) {
+            Ok(()) => return Ok(()),
+            Err(source) if source.kind() == ErrorKind::AlreadyExists => taken.push(name),
+            Err(source) => {
+                let _ = fs::remove_file(&temporary);
+                return Err(ConfigError::Write {
+                    path: paths.settings_file.clone(),
+                    source,
+                });
+            }
         }
+    }
+    Err(ConfigError::Write {
+        path: paths.settings_file.clone(),
+        source: std::io::Error::new(
+            ErrorKind::AlreadyExists,
+            format!(
+                "no free temporary settings file name after {TEMPORARY_ATTEMPTS} tries: {}",
+                taken.join(", ")
+            ),
+        ),
     })
 }
 
-/// The temporary file's counter, so two saves in one process never share a name (the capture
-/// stamps `Date.now()` into it for the same reason).
-fn next_temp() -> u64 {
+/// How many candidate temporary names one save tries before giving up. Small on purpose: the
+/// names are exclusive, so a run of taken ones means a run of interrupted saves, not contention.
+const TEMPORARY_ATTEMPTS: u64 = 5;
+
+/// One candidate temporary file name. The counter, never the candidate's index, is what makes
+/// the name this process's: a name already on disk is retried, never overwritten.
+fn temporary_name() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    COUNTER.fetch_add(1, Ordering::Relaxed)
+    format!(
+        ".settings.{}.{}.tmp",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 /// Appends one JSON line to the settings audit file (`appendSettingsAuditLog`).
