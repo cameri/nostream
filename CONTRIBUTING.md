@@ -68,38 +68,67 @@ pnpm run cli -- start
 
 ### Development Quick Start (Standalone)
 
-Set the required environment variables (or copy `.env.example` to `.env` and edit it):
+Set and export the required environment variables (or copy `.env.example` to `.env` and edit it):
 
 ```
-DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
-DB_USER=postgres
+export DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay"
+export DATABASE_URI="$DB_URI"
+export DB_USER=postgres
 ```
 
 or:
 
 ```
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=nostr_ts_relay
-DB_USER=postgres
-DB_PASSWORD=postgres
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=nostr_ts_relay
+export DB_USER=postgres
+export DB_PASSWORD=postgres
 ```
 
-```
-REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
+`DATABASE_URI` is not a duplicate of `DB_URI`: the relay reads `.env` and `DB_URI`, while `pnpm db:migrate` reads `DATABASE_URI` from the exported environment and otherwise falls back to the `DB_*` variables with `nostream` as the database name. Two traps follow: knex does not load `.env`, so a `DATABASE_URI` written there alone never reaches the migration; and migrating with only `DB_URI` set writes the schema into a database the relay never opens. Keep the two in step. The integration suite uses its own `nostr_ts_relay_test` database (see the tests section below).
 
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_USER=default
-REDIS_PASSWORD=nostr_ts_relay
+```
+export REDIS_URI="redis://default:nostr_ts_relay@localhost:6379"
+
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+export REDIS_USER=default
+export REDIS_PASSWORD=nostr_ts_relay
 ```
 
 Generate a long random secret and set `SECRET`:
 
 ```
-SECRET=aaabbbccc...dddeeefff
+export SECRET=aaabbbccc...dddeeefff
 # Secret shortened for brevity
 ```
+
+Create the database the relay will use, with the connection values you just set
+(`localhost:5432`, user `postgres`, database `nostr_ts_relay`):
+
+```
+$ psql -h localhost -p 5432 -U postgres -W
+postgres=# create database nostr_ts_relay;
+postgres=# quit
+```
+
+`.env.example` ships `DB_NAME=nostr_ts_relay` and `DB_USER=nostr_ts_relay`. If you copy that file instead of the block above, the relay connects as the `nostr_ts_relay` role, which the commands here never create: either set `DB_USER=postgres` in `.env`, or create that role and make it the database owner.
+
+The next step sets a server-wide Redis password, so read this first: on a Redis instance another application also uses, either run a dedicated instance for the relay, or leave the password alone, drop the `REDIS_URI` line above and put the existing credentials in `REDIS_*`. `REDIS_URI` takes precedence over the `REDIS_*` variables, so leaving it in place would send the relay to a password that no longer exists.
+
+Set the Redis password the default configuration expects, and verify it:
+
+```
+$ redis-cli
+127.0.0.1:6379> CONFIG SET requirepass "nostr_ts_relay"
+OK
+127.0.0.1:6379> AUTH nostr_ts_relay
+Ok
+127.0.0.1:6379> quit
+```
+
+`CONFIG SET` lasts only until Redis restarts. On a dedicated instance, put `requirepass nostr_ts_relay` in the server's configuration file as well, so the password survives a restart.
 
 Run migrations (at least once and after pulling new changes):
 
@@ -211,21 +240,24 @@ Change to the project's directory:
 cd /path/to/nostream
 ```
 
-Set the following environment variables:
+The relay prefers `DB_URI` over `DB_*`, and the CLI starts with `node --env-file-if-exists=.env`, which fills in a variable that is not already set. So a `DB_URI` left in `.env` by the quick start, or exported in this shell, silently points the tests at the development database: they write their fixtures there and delete them again, and the run proves nothing about a clean schema. Use whichever form matches how you configure the relay:
 
 ```
-DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
+export DB_URI="postgresql://postgres:postgres@localhost:5432/nostr_ts_relay_test"
 
 or
 
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=nostr_ts_relay_test
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_MIN_POOL_SIZE=1
-DB_MAX_POOL_SIZE=2
+export DB_URI=''
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=nostr_ts_relay_test
+export DB_USER=postgres
+export DB_PASSWORD=postgres
+export DB_MIN_POOL_SIZE=1
+export DB_MAX_POOL_SIZE=2
 ```
+
+The empty `DB_URI` is deliberate: `--env-file-if-exists` does not overwrite a variable that already exists, so an empty value stops `.env` from supplying the development database, and the client treats it as unset.
 
 Run the integration tests:
 

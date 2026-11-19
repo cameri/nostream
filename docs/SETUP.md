@@ -571,6 +571,6 @@ Test a restore before you need one.
 
 ## Next Steps
 
-- **Monetize with Admission Fees:** See [`Accepting Payments`](../README.md#accepting-payments) to enable Lightning / LNURL / Zebedee pay-to-relay features.
+- **Monetize with Admission Fees:** See [`Accepting Payments`](PAYMENTS.md) to enable Lightning / LNURL / Zebedee pay-to-relay features.
 - **Onion & I2P Hidden Services:** See [`CLI Reference & Common Workflows`](../CLI.md#common-workflows) to expose your relay anonymously.
 - **Admin Console & Operations:** See [`Configuration`](../CONFIGURATION.md) to enable the web-based Operator Console at `/admin`.
