@@ -3,7 +3,7 @@
 //!
 //! | case | what it proves |
 //! |---|---|
-//! | `every_console_route_is_served` | each derived API path answers below 500, each asset returns the file's bytes, both pages return HTML |
+//! | `every_console_route_is_served` | each derived API path answers the status R5's table names for it, each asset returns the file's bytes, both pages return HTML |
 //! | `the_derivation_finds_every_console_route` | the derivation is the set it claims: 26 `(method, path)` entries over 24 paths, 2 pages, 7 assets |
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -285,6 +285,41 @@ fn concrete(path: &str) -> String {
     path.replace(":pubkey", &"02".repeat(32))
 }
 
+/// The statuses R5 names for a route (its success column plus its "other statuses"), so a
+/// request that lands on the router's fallback `404` — or on a method the route does not
+/// take, `405` — is a failure and not "served". A `404` is named only where R5 names one.
+fn expected_statuses(method: &str, path: &str) -> &'static [u16] {
+    match (method, path) {
+        ("GET", "/session") => &[200],
+        ("POST", "/login") => &[200, 400, 401, 500],
+        ("POST", "/logout") => &[200],
+        ("GET", "/metrics") => &[200],
+        ("GET", "/network-health") => &[200],
+        ("GET", "/network-health/history") => &[200, 400],
+        ("POST", "/network-health/run") => &[200, 400, 409, 502],
+        ("GET", "/settings") => &[200],
+        ("GET", "/settings/schema") => &[200],
+        ("POST", "/settings/validate") => &[200],
+        ("GET", "/settings/backups") => &[200],
+        ("POST", "/settings/restore") => &[200, 400, 415],
+        ("PATCH", "/settings") => &[200, 400],
+        ("GET", "/notifications") => &[200],
+        ("PATCH", "/notifications") => &[200, 400],
+        ("POST", "/notifications/test") => &[200, 400, 502],
+        ("GET", "/notifications/deliveries") => &[200, 400],
+        ("GET", "/ops/workers") => &[200],
+        ("GET", "/ops/nip05-verifications") => &[200, 400],
+        ("POST", "/ops/nip05-verifications/:pubkey/reverify") => &[200, 400, 404, 409, 502],
+        ("GET", "/ops/storage/counts") => &[200, 400, 500, 504],
+        ("GET", "/audit-log") => &[200],
+        ("GET", "/diagnostics/export") => &[200],
+        ("GET", "/moderation/limits") => &[200],
+        ("GET", "/moderation/stats") => &[200, 400, 500, 504],
+        ("POST", "/moderation/actions") => &[200, 400],
+        _ => panic!("no R5 row for {method} {path}"),
+    }
+}
+
 #[tokio::test]
 async fn the_derivation_finds_every_console_route() {
     let (api, pages, assets) = derive();
@@ -349,9 +384,10 @@ async fn every_console_route_is_served() {
                 matches!(endpoint.method.as_str(), "POST" | "PATCH").then_some(b"{}".as_slice()),
             )
             .await;
-        if response.status >= 500 {
+        let named = expected_statuses(&endpoint.method, &endpoint.path);
+        if !named.contains(&response.status) {
             unserved.push(format!(
-                "{} {} → {}",
+                "{} {} → {} (R5 names {named:?})",
                 endpoint.method, endpoint.path, response.status
             ));
         }
@@ -387,7 +423,13 @@ async fn every_console_route_is_served() {
         assets.len(),
     );
     println!("unserved: {}", unserved.len());
-    assert!(unserved.is_empty(), "unserved: {unserved:#?}");
+    assert!(
+        unserved.is_empty(),
+        "unserved: {} of {} derived routes: {unserved:#?}",
+        unserved.len(),
+        api.len()
+    );
+    println!("unserved: {}", unserved.len());
 }
 
 /// Runs the derivation against a synthetic source, so the parser itself is pinned and not just
