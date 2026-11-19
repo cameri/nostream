@@ -132,7 +132,7 @@ When(
   'a trusted peer sends a {int} msat invoice with a {int} sat budget',
   async function (this: World<Record<string, any>>, amountMsats: number, budgetSats: number) {
     expect(amountMsats).to.equal(Number(TERM_MSATS))
-    const { privateKey, pubkey } = await randomPeer()
+    const { pubkey } = await randomPeer()
     this.parameters.autoPayPeerPubkey = pubkey
     this.parameters.autoPayPeers.push(pubkey)
     this.parameters.autoPayScopes.push(`peer:${pubkey}`)
@@ -152,12 +152,12 @@ When(
 
 
 When('a paying buyer invoice is recovered from the wallet', async function (this: World<Record<string, any>>) {
-  const { privateKey, pubkey } = await randomPeer()
+  const { pubkey } = await randomPeer()
   this.parameters.autoPayPeerPubkey = pubkey
   this.parameters.autoPayPeers.push(pubkey)
   this.parameters.autoPayScopes.push(`peer:${pubkey}`)
 
-  const { service, peer, payInvoice } = setupBuyer(this, 1000000000)
+  const { service, payInvoice } = setupBuyer(this, 1000000000)
   const now = new Date()
   const repository = this.parameters.autoPayRepository as PeeringInvoiceRepository
   await repository.insertIfNew(
