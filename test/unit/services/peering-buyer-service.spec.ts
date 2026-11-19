@@ -236,6 +236,83 @@ describe('PeeringBuyerService', () => {
     expect(paymentsService.payInvoice).not.to.have.been.called
   })
 
+
+  it('holds an invoice when the peer advertises an invalid term', async () => {
+    const result = await service.handleInvoice(
+      peer,
+      {
+        ...advertisement,
+        terms: [
+          { amount: 1000, unit: 'msats', period: 3600 },
+          { amount: 2000, unit: 'msats', period: 3600 },
+        ],
+      },
+      event,
+      now,
+    )
+
+    expect(paymentsService.payInvoice).not.to.have.been.called
+    expect(result.reason).to.equal(PeeringInvoiceReason.AMOUNT_MISMATCH)
+  })
+
+  it('holds an invoice when the peer has no budget configured', async () => {
+    peer.budget = undefined
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(paymentsService.payInvoice).not.to.have.been.called
+    expect(result.reason).to.equal(PeeringInvoiceReason.BUDGET_NOT_CONFIGURED)
+  })
+
+  it('holds an expired invoice without reserving a budget', async () => {
+    event.tags = event.tags.map((tag) =>
+      tag[0] === 'expiration' ? ['expiration', String(Math.floor(now.getTime() / 1000) - 1)] : tag,
+    )
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(paymentsService.payInvoice).not.to.have.been.called
+    expect(invoiceRepository.reserveBudget).not.to.have.been.called
+    expect(result.reason).to.equal(PeeringInvoiceReason.EXPIRED)
+  })
+
+  it('holds when the global budget has no room even if the peer budget does', async () => {
+    invoiceRepository.reserveBudget.onFirstCall().resolves(250_000_000n)
+    invoiceRepository.reserveBudget.onSecondCall().resolves(undefined)
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(paymentsService.payInvoice).not.to.have.been.called
+    expect(result.reason).to.equal(PeeringInvoiceReason.BUDGET_EXCEEDED)
+  })
+
+  it('holds when the processor reports a different payment hash', async () => {
+    paymentsService.payInvoice.resolves('f'.repeat(64))
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(invoiceRepository.releaseBudget).to.have.been.calledTwice
+    expect(result.reason).to.equal(PeeringInvoiceReason.PAYMENT_FAILED)
+  })
+
+  it('still records a payment when the notification outbox fails', async () => {
+    notificationOutboxRepository.enqueue.rejects(new Error('outbox down'))
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAID)
+  })
+
+  it('throws when approving an unknown or already-decided invoice', async () => {
+    invoiceRepository.findByHash.resolves(undefined)
+    await expect(service.approve(PAYMENT_HASH, now)).to.be.rejectedWith('not found')
+
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.PAID }))
+    invoiceRepository.claim.resolves(undefined)
+    await expect(service.approve(PAYMENT_HASH, now)).to.be.rejectedWith('not awaiting approval')
+    await expect(service.reject(PAYMENT_HASH)).to.be.rejectedWith('not awaiting a decision')
+  })
+
   it('summarizes per-peer and global budget spend', async () => {
     const window = peeringBudgetWindow(now, 2592000)
     invoiceRepository.list.resolves([
