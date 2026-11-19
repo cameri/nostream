@@ -1,0 +1,105 @@
+{
+  "tools": [
+    {
+      "description": "Read one stored event by its exact 64-character hex id; null when no such id is stored",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "The event's 64-character lowercase hex id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "get_event"
+    },
+    {
+      "description": "List stored events matching the given kinds, authors, ids, since and until, up to limit",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "authors": {
+            "description": "Author pubkey hex prefixes.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "ids": {
+            "description": "Event id hex prefixes.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kinds": {
+            "description": "Kinds to select; absent selects every kind.",
+            "items": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "limit": {
+            "description": "Page size; absent leaves the store's own default in charge.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "since": {
+            "description": "Events created at or after this unix second.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "until": {
+            "description": "Events created at or before this unix second.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_events"
+    },
+    {
+      "description": "Read the merged settings document, narrowed to the defaults' keys and redacted",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "settings_get"
+    },
+    {
+      "description": "Write settings: one path as {\"path\": \"wot.enabled\", \"value\": false}, or several as {\"changes\": [{\"path\": …, \"value\": …}, …]}",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "name": "settings_set"
+    }
+  ]
+}

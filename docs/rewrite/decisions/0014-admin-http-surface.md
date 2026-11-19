@@ -272,6 +272,40 @@ route states. The LMDB backend's `count_by_filters` may complete synchronously i
 in which case the gather buys nothing on that backend and costs nothing; it is the Postgres
 backend, whose query is a real await, that the shape is for.
 
+### D18 — The audit vocabulary gains one `mcp.*` action per tool
+
+The MCP server writes its calls to the same `<config>/admin-audit.jsonl` (D9), one line per
+executed call, and it extends the recorded action vocabulary by **four names** rather than
+reusing one:
+
+| action | written by |
+|---|---|
+| `mcp.settings_get` | a dispatched `settings_get` |
+| `mcp.settings_set` | a dispatched `settings_set` |
+| `mcp.list_events` | a dispatched `list_events` |
+| `mcp.get_event` | a dispatched `get_event` |
+
+**These extend the capture's nine names; they do not replace them.** The capture's vocabulary is
+a closed nine-name union (`src/@types/admin-audit.ts:1-10`), and the rewrite's writer takes
+`&str` (`crates/nostream-admin/src/state.rs:497`), so a new name is accepted and stored without
+a schema change. Each name is `mcp.` plus the tool's own name, and each is a named constant in
+`crates/nostream-mcp`.
+
+**One name per tool, not one `mcp.tool_call` with the tool in `detail`.** The console's trust page
+renders `entry.action` verbatim (`resources/admin/assets/admin-trust.js:93`), so the action column
+is the only place an operator reads *which* surface did what without opening the entry: a single
+`mcp.tool_call` would print the same words for four different operations and push the distinction
+into a field the page does not show. The cost is one more line in this record; the alternative
+costs the column its meaning.
+
+**What each line carries.** `detail` holds `{"tool": "<name>"}`, plus `{"paths": [...]}` for
+`settings_set` (the paths requested, never a value), and `remoteAddress` is omitted because a
+stdio caller has no address (`state.rs:509-525`). The line is appended at dispatch, before the
+tool's work, so the file's order is the dispatch order: `mcp.settings_set` precedes the
+`settings.updated` line the shared write path then appends, and a call the credential gate
+refuses appends nothing at all — matching `admin_auth_middleware.rs:52-63`, which logs a warning
+and writes nothing.
+
 ## Evidence
 
 Measured in this job's worktree at `factory/032-admin-console-parity`:

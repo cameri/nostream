@@ -38,6 +38,10 @@ struct Cli {
     /// Override the log level (info, debug, warn, error).
     #[arg(long)]
     log_level: Option<String>,
+
+    /// Serve the admin MCP server on stdin/stdout and exit when stdin closes. Binds no socket.
+    #[arg(long)]
+    mcp_stdio: bool,
 }
 
 fn main() -> ExitCode {
@@ -81,12 +85,22 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
         return Err(DaemonError::MissingSecret);
     }
 
+    let writer = if cli.mcp_stdio {
+        telemetry::LogWriter::Stderr
+    } else {
+        telemetry::LogWriter::Stdout
+    };
     telemetry::init(
         &settings,
         telemetry::resolve_filter(cli.log_level.as_deref()),
+        writer,
     )
     .map_err(|error| DaemonError::Setup(error.to_string()))?;
 
+    let config_dir = paths.config_base_dir;
+
+    // R17: the MCP mode serves stdin/stdout and returns; it binds no socket and opens no
+    // store of its own, so `--listen-port` is not read on this path.
     let port = cli
         .listen_port
         .or_else(|| {
@@ -101,7 +115,6 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
         })
         .unwrap_or(8008u16);
     let listen = SocketAddr::from((Ipv4Addr::UNSPECIFIED, port));
-    let config_dir = paths.config_base_dir;
 
     // R4: `WORKER_COUNT`, then `workers.count`, then the CPU count.
     let worker_threads = nostream_services::scheduler::resolve_worker_count(
@@ -118,6 +131,14 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
         .enable_all()
         .build()
         .map_err(|error| DaemonError::Setup(format!("tokio runtime: {error}")))?;
+
+    if cli.mcp_stdio {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        return runtime.block_on(async move {
+            nostreamd::mcp_stdio::serve(cwd, config_dir).await?;
+            Ok(ExitCode::SUCCESS)
+        });
+    }
 
     runtime.block_on(async move { serve(listen, settings, config_dir, port).await })
 }
