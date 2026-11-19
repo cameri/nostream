@@ -710,6 +710,13 @@ pub trait Nip05VerificationRepository: Send + Sync {
         limit: u64,
     ) -> StorageFuture<'a, Vec<Nip05Verification>>;
 
+    /// Lists the verification records the admin console pages through, newest check first.
+    ///
+    /// This is the console's listing and not a maintenance query: it carries no due
+    /// predicate, so a freshly checked record is still listed, and `limit` is the number of
+    /// rows to load, never a sentinel.
+    fn list_verifications<'a>(&'a self, limit: u64) -> StorageFuture<'a, Vec<Nip05Verification>>;
+
     /// Deletes the verification record of one pubkey, returning the row count.
     fn delete_by_pubkey<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, u64>;
 }

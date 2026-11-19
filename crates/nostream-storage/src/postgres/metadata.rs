@@ -115,6 +115,28 @@ where
     rows.iter().map(super::rows::nip05_verification).collect()
 }
 
+/// `Nip05VerificationRepository::list_verifications`: the record set newest check first.
+pub(crate) async fn nip05_list<'e, E>(
+    executor: E,
+    limit: u64,
+) -> Result<Vec<Nip05Verification>, StorageError>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let mut args = Args::default();
+    let limit_slot = args.push(Arg::BigInt(limit as i64));
+    let sql = format!(
+        "SELECT {NIP05_COLUMNS} FROM nip05_verifications ORDER BY last_checked_at DESC \
+         LIMIT {limit_slot}"
+    );
+    let rows = EventQuery { sql, args }
+        .into_query()
+        .fetch_all(executor)
+        .await?;
+
+    rows.iter().map(super::rows::nip05_verification).collect()
+}
+
 /// `Nip05VerificationRepository::delete_by_pubkey`.
 pub(crate) async fn nip05_delete_by_pubkey<'e, E>(
     executor: E,

@@ -20,9 +20,13 @@ pub const DEFAULT_LIMIT: u64 = 50;
 /// The list's page-size cap (`MAX_LIMIT`).
 pub const MAX_LIMIT: u64 = 200;
 
-/// A window wide enough that every record is "due", used to read the whole record set through
-/// the one listing query the repository provides.
-const ALL_RECORDS_FREQUENCY_MS: i64 = 3_153_600_000_000;
+/// The record set the console page materialises before it filters and pages: the store lists
+/// the newest this many checks, and the page's own `limit` (200 at most) and `offset` select
+/// from them.
+///
+/// shortcut: the filters and the total are computed in memory over at most this many records,
+/// upgrade when the store can list by domain, verified state and failure count itself.
+pub const LIST_RECORDS_CAP: u64 = 2_000;
 
 /// `getNip05VerifyExpirationMs`.
 pub fn verify_expiration_ms(settings: &Settings) -> u64 {
@@ -122,7 +126,7 @@ pub async fn list_for_admin(
     let mut records = state
         .stores()
         .nip05
-        .find_pending_verifications(ALL_RECORDS_FREQUENCY_MS, i32::MAX, u64::MAX)
+        .list_verifications(LIST_RECORDS_CAP)
         .await?;
 
     records.retain(|record| {
@@ -154,8 +158,14 @@ pub async fn list_for_admin(
     Ok((rows, total))
 }
 
-/// `reverifyNip05Verification`: verify, apply the outcome, upsert. A non-`Verified` outcome is
-/// the caller's `502` (R10).
+/// `reverifyNip05Verification`: verify, apply the outcome, upsert, and only then answer.
+///
+/// Every outcome is saved, with the capture's own rule (`buildMetadataVerification`,
+/// `src/handlers/event-message-handler.ts:800-870`): `verified` clears the failure count and
+/// stamps `lastVerifiedAt`; `mismatch`/`invalid` are definitive and unverify the row;
+/// `error` is transient, so the row keeps its `isVerified`/`lastVerifiedAt` and only the
+/// failure count and check time move. A non-`Verified` outcome is the caller's `502` (R10),
+/// answered after the save so the next maintenance pass sees the failure.
 pub async fn reverify(
     state: &AdminState,
     record: &Nip05Verification,
@@ -173,22 +183,29 @@ pub async fn reverify(
     updated.last_checked_at = now;
     updated.updated_at = now;
 
-    match outcome {
+    match &outcome {
         VerificationOutcome::Verified => {
             updated.is_verified = true;
             updated.last_verified_at = Some(now);
             updated.failure_count = 0;
         }
         VerificationOutcome::Mismatch | VerificationOutcome::Invalid { .. } => {
-            return Err(AdminError::Internal("Re-verification failed".to_owned()));
+            updated.is_verified = false;
+            updated.last_verified_at = None;
+            updated.failure_count = updated.failure_count.saturating_add(1);
         }
         VerificationOutcome::Error { .. } => {
-            return Err(AdminError::Internal("Re-verification failed".to_owned()));
+            updated.failure_count = updated.failure_count.saturating_add(1);
         }
     }
 
     state.stores().nip05.upsert(&updated).await?;
-    Ok(updated)
+
+    if matches!(outcome, VerificationOutcome::Verified) {
+        Ok(updated)
+    } else {
+        Err(AdminError::Internal("Re-verification failed".to_owned()))
+    }
 }
 
 /// Parses a `:pubkey` path segment the way `pubkeySchema` does.

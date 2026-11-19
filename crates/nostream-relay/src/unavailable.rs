@@ -205,6 +205,10 @@ impl Nip05VerificationRepository for UnavailableNip05Repository {
         Box::pin(async { Err(unavailable()) })
     }
 
+    fn list_verifications<'a>(&'a self, _limit: u64) -> StorageFuture<'a, Vec<Nip05Verification>> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
     fn delete_by_pubkey<'a>(&'a self, _pubkey: &'a Pubkey) -> StorageFuture<'a, u64> {
         Box::pin(async { Err(unavailable()) })
     }

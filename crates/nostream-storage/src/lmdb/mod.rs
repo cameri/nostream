@@ -847,6 +847,13 @@ impl Nip05VerificationRepository for LmdbBackend {
         })
     }
 
+    fn list_verifications<'a>(&'a self, limit: u64) -> StorageFuture<'a, Vec<Nip05Verification>> {
+        Box::pin(async move {
+            self.read(move |txn, databases| metadata::nip05_list(txn, databases, limit))
+                .await
+        })
+    }
+
     fn delete_by_pubkey<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, u64> {
         Box::pin(async move {
             let pubkey = *pubkey;
