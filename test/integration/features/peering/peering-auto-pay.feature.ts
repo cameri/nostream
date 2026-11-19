@@ -132,7 +132,7 @@ When(
   'a trusted peer sends a {int} msat invoice with a {int} sat budget',
   async function (this: World<Record<string, any>>, amountMsats: number, budgetSats: number) {
     expect(amountMsats).to.equal(Number(TERM_MSATS))
-    const { pubkey } = await randomPeer()
+    const { privateKey, pubkey } = await randomPeer()
     this.parameters.autoPayPeerPubkey = pubkey
     this.parameters.autoPayPeers.push(pubkey)
     this.parameters.autoPayScopes.push(`peer:${pubkey}`)
