@@ -1224,7 +1224,7 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
 
       if (peering.autoPay.globalBudget !== undefined) {
         validatePeeringTermValue(peering.autoPay.globalBudget, 'peering.autoPay.globalBudget', issues, {
-          allowZero: true,
+          allowZero: false,
         })
       }
 

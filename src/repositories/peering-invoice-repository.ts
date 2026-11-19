@@ -194,7 +194,7 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
        ON CONFLICT (scope, period_start) DO UPDATE
        SET spent_msats = peering_budgets.spent_msats + EXCLUDED.spent_msats,
            period_end = EXCLUDED.period_end
-       WHERE peering_budgets.spent_msats + EXCLUDED.spent_msats <= CAST(? AS bigint)
+       WHERE peering_budgets.spent_msats <= CAST(? AS bigint) - CAST(? AS bigint)
        RETURNING spent_msats`,
       [
         scope,
@@ -203,7 +203,7 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
         amountMsats.toString(),
         amountMsats.toString(),
         limitMsats.toString(),
-        limitMsats.toString(),
+        amountMsats.toString(),
       ],
     )
     const row = firstRow(result)

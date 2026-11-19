@@ -8,6 +8,7 @@ chai.use(chaiAsPromised)
 
 import * as eventUtils from '../../../src/utils/event'
 import { Invoice, InvoicePurpose, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
+import { PaymentsProcessorCannotPayError } from '../../../src/@types/clients'
 import { OperatorNotificationEventType } from '../../../src/@types/operator-notifications'
 import { PENDING_INVOICE_PAGE_SIZE, PaymentsService } from '../../../src/services/payments-service'
 
@@ -54,6 +55,7 @@ describe('PaymentsService', () => {
     paymentsProcessor = {
       createInvoice: sandbox.stub(),
       getInvoice: sandbox.stub(),
+      payInvoice: sandbox.stub(),
     }
 
     userRepository = {
@@ -211,6 +213,21 @@ describe('PaymentsService', () => {
     })
   })
 
+
+  describe('payInvoice', () => {
+    it('pays through the processor and returns the payment hash', async () => {
+      paymentsProcessor.payInvoice.resolves({ paymentHash: 'paid-hash' })
+
+      expect(await service.payInvoice('lnbc1invoice')).to.equal('paid-hash')
+      expect(paymentsProcessor.payInvoice).to.have.been.calledOnceWith({ bolt11: 'lnbc1invoice' })
+    })
+
+    it('fails closed when the processor cannot spend', async () => {
+      delete paymentsProcessor.payInvoice
+
+      await expect(service.payInvoice('lnbc1invoice')).to.be.rejectedWith(PaymentsProcessorCannotPayError)
+    })
+  })
 
   describe('createInvoice', () => {
     const invoiceResponse = {

@@ -209,6 +209,14 @@ peering:
   #       relayUrl: wss://peer.example.com
   #       enabled: true
   peers: []
+  # Buying side automatic payment. Invoices are paid only when the peer is
+  # configured above, the amount matches the peer's advertised NIP-11 terms,
+  # the payment hash has not been seen, and both budgets have room. Anything
+  # else is held for operator approval.
+  autoPay:
+    enabled: false
+    # Optional cap across every peer, per this budget's own period.
+    globalBudget: { amount: 100000, unit: sats, period: 2592000 }
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.
