@@ -110,6 +110,8 @@ export interface PeeringInvoice {
   autoPaid: boolean
   budgetPeriodStart?: Date | null
   budgetPeriodEnd?: Date | null
+  globalBudgetPeriodStart?: Date | null
+  globalBudgetPeriodEnd?: Date | null
   /** Period this invoice buys from the peer, from the advertised term. */
   termPeriodSeconds?: number | null
   expiresAt?: Date | null
@@ -130,6 +132,8 @@ export interface DBPeeringInvoice {
   auto_paid: boolean
   budget_period_start: Date | null
   budget_period_end: Date | null
+  global_budget_period_start: Date | null
+  global_budget_period_end: Date | null
   term_period_seconds: number | null
   expires_at: Date | null
   seen_count: number

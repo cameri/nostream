@@ -23,6 +23,8 @@ const toRow = (invoice: PeeringInvoice): DBPeeringInvoice => ({
   auto_paid: invoice.autoPaid,
   budget_period_start: invoice.budgetPeriodStart ?? null,
   budget_period_end: invoice.budgetPeriodEnd ?? null,
+  global_budget_period_start: invoice.globalBudgetPeriodStart ?? null,
+  global_budget_period_end: invoice.globalBudgetPeriodEnd ?? null,
   term_period_seconds: invoice.termPeriodSeconds ?? null,
   expires_at: invoice.expiresAt ?? null,
   seen_count: invoice.seenCount,
@@ -42,6 +44,8 @@ const fromRow = (row: DBPeeringInvoice): PeeringInvoice => ({
   autoPaid: Boolean(row.auto_paid),
   budgetPeriodStart: row.budget_period_start,
   budgetPeriodEnd: row.budget_period_end,
+  globalBudgetPeriodStart: row.global_budget_period_start,
+  globalBudgetPeriodEnd: row.global_budget_period_end,
   termPeriodSeconds: row.term_period_seconds,
   expiresAt: row.expires_at,
   seenCount: row.seen_count,
@@ -113,6 +117,8 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
         | 'paidAt'
         | 'budgetPeriodStart'
         | 'budgetPeriodEnd'
+        | 'globalBudgetPeriodStart'
+        | 'globalBudgetPeriodEnd'
         | 'termPeriodSeconds'
       >
     >,
@@ -136,6 +142,12 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
     }
     if (changes.budgetPeriodEnd !== undefined) {
       patch.budget_period_end = changes.budgetPeriodEnd
+    }
+    if (changes.globalBudgetPeriodStart !== undefined) {
+      patch.global_budget_period_start = changes.globalBudgetPeriodStart
+    }
+    if (changes.globalBudgetPeriodEnd !== undefined) {
+      patch.global_budget_period_end = changes.globalBudgetPeriodEnd
     }
     if (changes.termPeriodSeconds !== undefined) {
       patch.term_period_seconds = changes.termPeriodSeconds

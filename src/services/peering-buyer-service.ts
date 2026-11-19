@@ -195,6 +195,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
           await this.invoiceRepository.update(invoice.paymentHash, {
             status: PeeringInvoiceStatus.PAID,
             reason: null,
+            autoPaid: invoice.autoPaid,
             paidAt: now,
           })
           changed++
@@ -204,14 +205,55 @@ export class PeeringBuyerService implements IPeeringBuyerService {
             ...(invoice.budgetPeriodStart && invoice.budgetPeriodEnd
               ? { peerWindow: { start: invoice.budgetPeriodStart, end: invoice.budgetPeriodEnd } }
               : {}),
+            ...(invoice.globalBudgetPeriodStart && invoice.globalBudgetPeriodEnd
+              ? { globalWindow: { start: invoice.globalBudgetPeriodStart, end: invoice.globalBudgetPeriodEnd } }
+              : {}),
           }
-          await this.release(invoice, reservation, now)
-          await this.invoiceRepository.update(invoice.paymentHash, {
-            status: PeeringInvoiceStatus.HELD,
-            reason: PeeringInvoiceReason.PAYMENT_FAILED,
-            autoPaid: false,
-          })
-          changed++
+          const transaction = new Transaction(this.dbClient)
+          let started = false
+          try {
+            await transaction.begin()
+            started = true
+            const claimed = await this.invoiceRepository.claim(
+              invoice.paymentHash,
+              [PeeringInvoiceStatus.PAYING],
+              PeeringInvoiceStatus.HELD,
+              transaction.transaction,
+            )
+            if (!claimed) {
+              await transaction.rollback()
+              continue
+            }
+            if (reservation.peerWindow) {
+              await this.invoiceRepository.releaseBudget(
+                `peer:${invoice.peerPubkey.toLowerCase()}`,
+                reservation.peerWindow.start,
+                invoice.amountMsats,
+                transaction.transaction,
+              )
+            }
+            if (reservation.globalWindow) {
+              await this.invoiceRepository.releaseBudget(
+                'global',
+                reservation.globalWindow.start,
+                invoice.amountMsats,
+                transaction.transaction,
+              )
+            }
+            await this.invoiceRepository.update(
+              invoice.paymentHash,
+              { reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false },
+              transaction.transaction,
+            )
+            await transaction.commit()
+            started = false
+            changed++
+          } catch (error) {
+            if (started) {
+              await transaction.rollback()
+            }
+            logger('unable to release and hold recovering invoice %s: %o', invoice.paymentHash, error)
+          }
         }
       } catch (error) {
         logger('unable to recover peering invoice %s: %o', invoice.paymentHash, error)
@@ -386,11 +428,14 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       return this.hold(invoice, PeeringInvoiceReason.BUDGET_EXCEEDED)
     }
 
-    if (current.peerWindow) {
+    if (current.peerWindow || current.globalWindow) {
       try {
         await this.invoiceRepository.update(invoice.paymentHash, {
-          budgetPeriodStart: current.peerWindow.start,
-          budgetPeriodEnd: current.peerWindow.end,
+          autoPaid: auto,
+          budgetPeriodStart: current.peerWindow?.start ?? null,
+          budgetPeriodEnd: current.peerWindow?.end ?? null,
+          globalBudgetPeriodStart: current.globalWindow?.start ?? null,
+          globalBudgetPeriodEnd: current.globalWindow?.end ?? null,
           termPeriodSeconds,
         })
       } catch (error) {

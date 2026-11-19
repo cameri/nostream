@@ -317,7 +317,7 @@ describe('PeeringBuyerService', () => {
     expect(await service.recover(now)).to.equal(1)
     expect(invoiceRepository.update).to.have.been.calledWith(
       PAYMENT_HASH,
-      Sinon.match({ status: PeeringInvoiceStatus.PAID }),
+      Sinon.match({ status: PeeringInvoiceStatus.PAID, autoPaid: false }),
     )
   })
 
@@ -325,17 +325,25 @@ describe('PeeringBuyerService', () => {
     invoiceRepository.list.resolves([
       invoice({
         status: PeeringInvoiceStatus.PAYING,
+        autoPaid: true,
         budgetPeriodStart: now,
         budgetPeriodEnd: new Date(now.getTime() + 60_000),
+        globalBudgetPeriodStart: now,
+        globalBudgetPeriodEnd: new Date(now.getTime() + 60_000),
       }),
     ])
     paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
 
     expect(await service.recover(now)).to.equal(1)
-    expect(invoiceRepository.releaseBudget).to.have.been.calledOnce
+    expect(invoiceRepository.claim).to.have.been.calledWith(
+      PAYMENT_HASH,
+      [PeeringInvoiceStatus.PAYING],
+      PeeringInvoiceStatus.HELD,
+    )
+    expect(invoiceRepository.releaseBudget).to.have.been.calledTwice
     expect(invoiceRepository.update).to.have.been.calledWith(
       PAYMENT_HASH,
-      Sinon.match({ status: PeeringInvoiceStatus.HELD }),
+      Sinon.match({ reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false }),
     )
   })
 

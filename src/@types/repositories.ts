@@ -109,7 +109,20 @@ export interface IPeeringInvoiceRepository {
   findByHash(paymentHash: string, client?: DatabaseClient): Promise<PeeringInvoice | undefined>
   update(
     paymentHash: string,
-    changes: Partial<Pick<PeeringInvoice, 'status' | 'reason' | 'autoPaid' | 'paidAt' | 'budgetPeriodStart' | 'budgetPeriodEnd' | 'termPeriodSeconds'>>,
+    changes: Partial<
+      Pick<
+        PeeringInvoice,
+        | 'status'
+        | 'reason'
+        | 'autoPaid'
+        | 'paidAt'
+        | 'budgetPeriodStart'
+        | 'budgetPeriodEnd'
+        | 'globalBudgetPeriodStart'
+        | 'globalBudgetPeriodEnd'
+        | 'termPeriodSeconds'
+      >
+    >,
     client?: DatabaseClient,
   ): Promise<PeeringInvoice | undefined>
   /** Atomically moves one row from an allowed state; undefined when another writer won. */
