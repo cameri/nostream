@@ -216,7 +216,8 @@ peering:
   autoPay:
     enabled: false
     # Optional cap across every peer, per this budget's own period.
-    globalBudget: { amount: 100000, unit: sats, period: 2592000 }
+    # A zero amount means no global cap.
+    globalBudget: { amount: 0, unit: sats, period: 2592000 }
 network:
   maxPayloadSize: 524288
   # Uncomment only when using a trusted reverse proxy and configuring trustedProxies.

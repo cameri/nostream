@@ -346,6 +346,23 @@ describe('settings-config', () => {
       expect(issues.some((issue) => issue.path === 'peering.peers[0].budget.amount')).to.equal(true)
     })
 
+    it('accepts a zero global budget as no cap', () => {
+      const issues = validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        payments: { enabled: true },
+        network: { maxPayloadSize: 1024 },
+        peering: {
+          ...settlementFreePeering,
+          autoPay: {
+            enabled: true,
+            globalBudget: { amount: 0, unit: 'sats', period: 2592000 },
+          },
+        },
+      } as any)
+
+      expect(issues.filter((issue) => issue.path.startsWith('peering'))).to.deep.equal([])
+    })
+
     it('rejects auto-pay while payments are disabled', () => {
       const issues = validateSettings({
         info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
