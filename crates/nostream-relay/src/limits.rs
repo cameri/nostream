@@ -338,6 +338,17 @@ impl EwmaRateLimiter {
     }
 }
 
+/// The strategy `limits.rateLimiter.strategy` names, `ewma` when the settings are silent
+/// (`rateLimiterFactory`'s default). A surface that builds its own limiter asks this rather
+/// than repeating the default.
+pub fn strategy_from_settings(settings: &Settings) -> RateLimiterStrategy {
+    settings
+        .limits
+        .as_ref()
+        .and_then(|limits| limits.rate_limiter.as_ref())
+        .map_or(RateLimiterStrategy::Ewma, |limiter| limiter.strategy)
+}
+
 /// `IRateLimiter`: one window, one verdict.
 pub trait Limiter: Send + Sync + std::fmt::Debug {
     /// Counts one hit and reports whether it is limited.
@@ -378,13 +389,7 @@ pub enum RateLimiter {
 impl RateLimiter {
     /// The limiter `limits.rateLimiter.strategy` selects, `ewma` by default.
     pub fn from_settings(settings: &Settings, clock: Arc<dyn Clock>) -> Self {
-        let strategy = settings
-            .limits
-            .as_ref()
-            .and_then(|limits| limits.rate_limiter.as_ref())
-            .map_or(RateLimiterStrategy::Ewma, |limiter| limiter.strategy);
-
-        match strategy {
+        match strategy_from_settings(settings) {
             RateLimiterStrategy::SlidingWindow => {
                 Self::SlidingWindow(SlidingWindowRateLimiter::new(clock))
             }

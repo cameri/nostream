@@ -138,6 +138,31 @@ pub(crate) fn nip05_find_pending(
     Ok(verifications)
 }
 
+/// `Nip05VerificationRepository::list_verifications`: the record set newest check first, at
+/// most `limit` rows.
+pub(crate) fn nip05_list(
+    txn: &RoTxn<'_>,
+    databases: &Databases,
+    limit: u64,
+) -> Result<Vec<Nip05Verification>, StorageError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let mut verifications = Vec::new();
+    for entry in databases.nip05_by_last_checked_at.rev_iter(txn)? {
+        let (key, _) = entry?;
+        let pubkey = encoding::pubkey_from(&key[8..])?;
+        let Some(verification) = nip05_find_by_pubkey(txn, databases, &pubkey)? else {
+            continue;
+        };
+        verifications.push(verification);
+        if verifications.len() as u64 >= limit {
+            break;
+        }
+    }
+    Ok(verifications)
+}
+
 /// `Nip05VerificationRepository::delete_by_pubkey`.
 pub(crate) fn nip05_delete_by_pubkey(
     txn: &mut RwTxn<'_>,

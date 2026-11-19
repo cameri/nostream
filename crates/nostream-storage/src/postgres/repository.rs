@@ -239,6 +239,10 @@ impl Nip05VerificationRepository for PostgresBackend {
         })
     }
 
+    fn list_verifications<'a>(&'a self, limit: u64) -> StorageFuture<'a, Vec<Nip05Verification>> {
+        Box::pin(async move { metadata::nip05_list(&self.master, limit).await })
+    }
+
     fn delete_by_pubkey<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, u64> {
         Box::pin(async move { metadata::nip05_delete_by_pubkey(&self.master, pubkey).await })
     }

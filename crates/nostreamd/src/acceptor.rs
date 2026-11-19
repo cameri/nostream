@@ -58,4 +58,21 @@ impl Acceptor {
 
         relay.serve(self.listener, shutdown).await;
     }
+
+    /// Serves the listener through `relay`, handing every socket whose head is not a WebSocket
+    /// upgrade to `http` (D1: one listener, one port).
+    ///
+    /// The accept loop, the drain deadline and the hidden-content refresh stay the relay's; the
+    /// dispatch is `nostream-relay`'s `dispatch` module, which peeks the head without consuming
+    /// it. [`Acceptor::run`] remains the relay-only path the crate's tests start.
+    pub async fn run_with_http(
+        self,
+        relay: Arc<Relay>,
+        http: Arc<dyn nostream_relay::dispatch::HttpFallback>,
+        shutdown: ShutdownState,
+    ) {
+        tracing::debug!(at = %self.local_addr, "the relay takes the listener, with the admin surface beside it");
+
+        relay.serve_with(self.listener, shutdown, Some(http)).await;
+    }
 }

@@ -29,6 +29,7 @@ use nostream_core::{Event, messages};
 
 use crate::connection::{AcceptedTransport, Connection, ConnectionContext};
 use crate::connection_cap::ConnectionCap;
+use crate::dispatch::{HttpFallback, Protocol, classify_socket};
 use crate::handlers::{self, HandlerContext, Stores};
 use crate::hidden_content::{DEFAULT_REFRESH_INTERVAL, HiddenContentCache};
 use crate::limits::RateLimits;
@@ -254,6 +255,22 @@ impl Relay {
     /// `config.drain_timeout` for the connections to finish and then aborts the rest
     /// (`drainClients`, `web-socket-server-adapter.ts:67-95`).
     pub async fn serve(self: &Arc<Self>, listener: TcpListener, shutdown: ShutdownState) {
+        self.serve_with(listener, shutdown, None).await;
+    }
+
+    /// Serves the listener, handing every socket whose first bytes are not a WebSocket upgrade
+    /// to `http`.
+    ///
+    /// The head is peeked, not consumed (D1): the relay's upgrade path reads the same bytes it
+    /// would have read without a fallback. The accept loop, the drain deadline and the
+    /// hidden-content refresh are the ones [`Relay::serve`] owns — this is the same loop with
+    /// one branch added.
+    pub async fn serve_with(
+        self: &Arc<Self>,
+        listener: TcpListener,
+        shutdown: ShutdownState,
+        http: Option<Arc<dyn HttpFallback>>,
+    ) {
         let hidden_task = self.hidden.start(
             Arc::clone(&self.stores.reports),
             Arc::clone(&self.settings),
@@ -270,9 +287,20 @@ impl Relay {
                         Ok((stream, peer)) => {
                             let relay = Arc::clone(self);
                             let shutdown = shutdown.clone();
+                            let http = http.clone();
 
                             connections.spawn(async move {
-                                relay.handle_socket(stream, peer, shutdown).await;
+                                match http {
+                                    None => relay.handle_socket(stream, peer, shutdown).await,
+                                    Some(http) => match classify_socket(&stream).await {
+                                        Protocol::Http => http.serve(stream, peer).await,
+                                        // The upgrade itself reads the peeked bytes, and a
+                                        // head that never completed is the relay's case too.
+                                        Protocol::WebSocket | Protocol::Unknown => {
+                                            relay.handle_socket(stream, peer, shutdown).await;
+                                        }
+                                    },
+                                }
                             });
                         }
                         Err(error) => {

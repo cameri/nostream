@@ -231,6 +231,13 @@ async fn the_repository_traits_are_dyn_compatible() {
             unsupported("noop::nip05::find_pending_verifications")
         }
 
+        fn list_verifications<'a>(
+            &'a self,
+            _limit: u64,
+        ) -> StorageFuture<'a, Vec<Nip05Verification>> {
+            unsupported("noop::nip05::list_verifications")
+        }
+
         fn delete_by_pubkey<'a>(&'a self, _pubkey: &'a Pubkey) -> StorageFuture<'a, u64> {
             unsupported("noop::nip05::delete_by_pubkey")
         }

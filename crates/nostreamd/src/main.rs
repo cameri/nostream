@@ -187,9 +187,9 @@ async fn serve(
         keys: Arc::new(relay_keys),
         stores: Arc::clone(&service_stores),
         hub: relay.hub(),
-        http,
-        fetch,
-        config_dir,
+        http: Arc::clone(&http),
+        fetch: Arc::clone(&fetch),
+        config_dir: config_dir.clone(),
     };
 
     // R8: one `relay.restarted` row per process. A failure is logged, never fatal.
@@ -212,10 +212,31 @@ async fn serve(
         }
     }
 
+    // R12: the admin surface is composed from the pieces this function already built — the
+    // same `Arc<ServiceStores>`, the same HTTP and NIP-05 seams, `SECRET` as a value.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let admin_paths = SettingsPaths::from_config_dir(&cwd, config_dir.clone());
+    let (admin_state, admin_router) = nostreamd::admin_http::compose(
+        admin_paths,
+        cwd.join("resources"),
+        Arc::clone(&service_stores),
+        Arc::clone(&http),
+        Arc::clone(&fetch),
+    )?;
+    nostreamd::admin_http::warn_when_the_surface_has_no_secret(&admin_state);
+
     tracing::info!(at = %acceptor.local_addr(), "the acceptor is listening");
 
     let connection_shutdown = shutdown.clone();
-    let accept_task = tokio::spawn(acceptor.run(relay, connection_shutdown));
+    let http_fallback = nostreamd::admin_http::AdminHttp::new(admin_router);
+    let accept_task =
+        tokio::spawn(acceptor.run_with_http(relay, http_fallback, connection_shutdown));
+
+    let heartbeat_state = Arc::clone(&admin_state);
+    let heartbeat_shutdown = shutdown.clone();
+    let heartbeat_task = tokio::spawn(async move {
+        nostreamd::admin_http::publish_heartbeats(heartbeat_state, heartbeat_shutdown).await
+    });
 
     let workers_context = context.clone();
     let workers_shutdown = shutdown.clone();
@@ -244,10 +265,14 @@ async fn serve(
         .await
         .map_err(|error| DaemonError::Setup(format!("tor task: {error}")))
         .and_then(std::convert::identity);
+    let heartbeat_result = heartbeat_task
+        .await
+        .map_err(|error| DaemonError::Setup(format!("heartbeat task: {error}")));
     for (name, result) in [
         ("acceptor", accept_result),
         ("workers", workers_result),
         ("tor", tor_result),
+        ("heartbeats", heartbeat_result),
     ] {
         if let Err(error) = result {
             tracing::warn!(task = name, error = %error, "background task ended with an error");

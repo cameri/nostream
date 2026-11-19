@@ -1077,6 +1077,20 @@ impl Nip05VerificationRepository for InMemoryNip05Repository {
         Box::pin(async move { Ok(Vec::new()) })
     }
 
+    fn list_verifications<'a>(&'a self, limit: u64) -> StorageFuture<'a, Vec<Nip05Verification>> {
+        Box::pin(async move {
+            let rows = self
+                .rows
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut verifications: Vec<Nip05Verification> = rows.values().cloned().collect();
+            verifications
+                .sort_by_key(|verification| std::cmp::Reverse(verification.last_checked_at));
+            verifications.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+            Ok(verifications)
+        })
+    }
+
     fn delete_by_pubkey<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, u64> {
         Box::pin(async move {
             Ok(self
