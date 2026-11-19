@@ -422,7 +422,6 @@ async fn every_console_route_is_served() {
         pages.len(),
         assets.len(),
     );
-    println!("unserved: {}", unserved.len());
     assert!(
         unserved.is_empty(),
         "unserved: {} of {} derived routes: {unserved:#?}",

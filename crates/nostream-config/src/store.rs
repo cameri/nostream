@@ -324,4 +324,18 @@ mod tests {
         assert_eq!(filtered["admin"]["passwordHash"], Value::String("x".into()));
         assert!(filtered.get("other").is_none());
     }
+
+    #[test]
+    fn a_defaults_document_without_admin_drops_the_password_hash() {
+        // The capture's rule is `hasOwn(defaults, key) || key === 'passwordHash'`
+        // (`settings-config.ts:507-513`): with no `admin` in the defaults the whole object goes,
+        // passwordHash and all. An escape for `admin` would keep it, so this case is the one that
+        // tells the two rules apart.
+        let defaults: Value = serde_yaml::from_str("a:\n  b: 1\n").unwrap();
+        let settings: Value =
+            serde_yaml::from_str("admin:\n  passwordHash: x\npasswordHash: y\n").unwrap();
+        let filtered = filter_against_defaults(&settings, &defaults);
+        assert!(filtered.get("admin").is_none(), "{filtered:?}");
+        assert_eq!(filtered["passwordHash"], Value::String("y".into()));
+    }
 }
