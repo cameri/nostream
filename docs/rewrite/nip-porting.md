@@ -54,10 +54,10 @@ red, in the same shape as a `build.md` row's `inversion:`.
 | 13 | `nip-13.feature` | `nostream-relay/tests/handlers.rs::the_static_proof_of_work_requirements_are_enforced` | an event under the leading-zero-bit floor is accepted | **partial** — the `nonce`/`difficulty` tag is never exercised |
 | 14 | `test/unit/schemas/event-schema.spec.ts` (`accepts subject tag on text note events`) | `nostream-relay/tests/nip_vectors.rs::nip14_a_kind_1_event_returns_its_subject_tag` | the `subject` tag is dropped or rewritten across store and serve | ported |
 | 15 | tombstone — EOSE is the `nip-01.feature` row | `nostream-relay/tests/handlers.rs::req_streams_a_stored_event_then_eose` | EOSE is omitted, or sent before the stored events | ported |
-| 16 | `nip-16.feature` | `nostream-relay/tests/strategies.rs::replaceable_upserts_the_event`, `::ephemeral_sends_ok_and_broadcasts_without_storing` | a replaced event is kept, or an ephemeral one is stored | ported |
+| 16 | `nip-16.feature` | `nostream-relay/tests/nip_vectors.rs::nip28_channel_metadata_is_replaceable_and_channel_events_are_not` (over the wire: two kind 41s, one served); `strategies.rs::replaceable_upserts_the_event`, `::ephemeral_sends_ok_and_broadcasts_without_storing` | the upsert stops being keyed on `(author, kind)`, a newer replaceable stops displacing the older, or an ephemeral is stored | ported — the strategy tests assert the upsert *call*, the wire test asserts the surviving row |
 | 17 | `nip-17.feature` | `nostream-relay/tests/strategies.rs::gift_wrap_stores_a_valid_wrap`; `handlers.rs::inner_kinds_must_be_gift_wrapped` | a kind 1059 wrap is refused, or a bare 13/14/15/444 is accepted | ported |
 | 20 | `test/unit/handlers/event-message-handler.spec.ts` (the OK assertions) | `nostream-relay/tests/handlers.rs::the_default_strategy_answers_ok_and_duplicate`, `::a_restricted_only_req_from_an_unauthenticated_client_is_closed` | a duplicate is accepted twice, or CLOSED loses its machine-readable prefix | ported |
-| 22 | `nip-22.feature` | `nostream-relay/tests/nip_vectors.rs::nip22_a_kind_1111_comment_is_stored_and_served_unchanged` | a comment's `K`/`E`/`P`/`k`/`e`/`p` tags are dropped or reordered on re-serve | ported — the code implements Comment, not the retired `created_at` limits |
+| 22 | `nip-22.feature` | `nostream-relay/tests/nip_vectors.rs::nip22_a_kind_1111_comment_is_stored_and_served_unchanged` | a comment's `K`/`E`/`P`/`k`/`e`/`p` tag is dropped on re-serve — the test asserts each tag with `contains`, so reordering stays green | ported — the code implements Comment, not the retired `created_at` limits |
 | 25 | `nip-25.feature` | `nostream-core/tests/wire_codec.rs::strict_event_schema_checks_the_refinements` | a kind 7 with no `e`/`a` target is accepted | **partial** — content `+`/`-`/emoji is never asserted, and no reaction is stored or served |
 | 28 | `nip-28.feature` | `nostream-relay/tests/nip_vectors.rs::nip28_channel_metadata_is_replaceable_and_channel_events_are_not` | kind 41 stops replacing, or kind 42 starts replacing | **partial** — kinds 43–49 are not exercised |
 | 33 | `nip-33.feature` | `nostream-relay/tests/strategies.rs::parameterized_replaceable_uses_the_first_d_tag_value`; `nip_vectors.rs::nip89_recommendation_and_handler_events_are_stored_and_served` | the dedup key becomes a later `d` value, or the older `d`-twin is served | ported |
@@ -66,7 +66,7 @@ red, in the same shape as a `build.md` row's `inversion:`.
 | 43 | `test/unit/handlers/event-message-handler.spec.ts`, `event-strategies/invite-request-event-strategy.spec.ts`, `leave-request-event-strategy.spec.ts` | `nostream-relay/tests/handlers.rs::an_invite_request_mints_one_kind_28935_event_before_eose`; `strategies.rs::the_join_request_admits_and_answers_with_the_welcome` | the invite is minted twice, minted for an unauthenticated socket, or a join is admitted without spending the code | **partial** — no kind 13534 membership list and no relay-signed membership event |
 | 44 | `test/unit/utils/nip44.spec.ts` | `nostream-core/tests/nip44_parity.rs::produces_the_canonical_payload_from_the_nip44_spec_test_vector`, `::decrypts_the_canonical_nip44_spec_test_vector` | one byte of the canonical v2 payload changes, in either direction | ported |
 | 45 | `nip-45.feature`, `test/unit/handlers/count-message-handler.spec.ts` | `nostream-relay/tests/handlers.rs::count_answers_with_the_count_object` | the `COUNT` reply shape changes, or a disabled COUNT is still answered | **partial** — every COUNT test counts an empty store; no non-empty match set is counted |
-| 50 | `nip-50.feature` | `nostream-relay/tests/nip_vectors.rs::nip50_a_search_filter_is_served_only_when_enabled` | a search filter is accepted with the setting off, or returns non-matching events | **partial** — rank ordering is not asserted anywhere |
+| 50 | `nip-50.feature` | `nostream-storage/tests/parity_lmdb.rs::a_search_returns_the_recorded_rows_in_rank_order`, `::a_search_orders_by_proximity_then_event_id`, `::a_limited_count_counts_the_rank_page`; `nostream-relay/tests/nip_vectors.rs::nip50_a_search_filter_is_served_only_when_enabled` | the recorded rank order changes, a proximity tie stops breaking on event id, or a non-matching note is served with the setting on | **partial** — rank order is proven at the store; the relay test asserts membership only, so nothing asserts that the served frame order matches the store's rank |
 | 65 | `nip-65.feature` | `nostream-relay/tests/nip_vectors.rs::nip65_a_relay_list_is_stored_and_replaces_the_previous_one` | a second kind 10002 stops replacing the first | ported |
 | 77 | `test/unit/handlers/neg-open-message-handler.spec.ts` | none — the relay answers `NEG-OPEN` with `["NOTICE","invalid: Invalid input"]` (`handlers.rs::an_invalid_frame_gets_the_capture_notice`) and both encoders return `NotImplemented` | negentropy sync never happens, which is today's whole surface | **open** — `negentropy_parity.rs` asserts library frames, never relay sync |
 
@@ -95,13 +95,19 @@ instead of a percentage:
   relay's own URI (decision D1 defers it), and NIP-77 needs negentropy on the wire — the relay
   answers `NEG-OPEN` as an invalid frame today. Neither moves until someone builds it, and
   neither can be closed by a test.
-- **Eight are branches a test was never written for**, each named in its row: `limit: 0` on the
+- **Seven are branches a test was never written for**, each named in its row: `limit: 0` on the
   wire (01), the restricted-read default (04), the `nonce`/`difficulty` tag (13), reaction
-  content and store/serve (25), kinds 43–49 (28), a non-empty `COUNT` (45), rank ordering (50),
-  and the kind 13534 membership list (43).
+  content and store/serve (25), kinds 43–49 (28), a non-empty `COUNT` (45), and served-frame
+  order matching the store's rank (50). The behaviour exists in each case; only the test is
+  missing.
+- **One needs code, not a test.** NIP-43's kind 13534 membership list and its relay-signed
+  membership event do not exist in Rust: `JoinRequestStrategy` spends the invite, admits the
+  pubkey and answers the welcome, and nothing mints or serves a membership list. Counting it
+  among the "test-only" rows would let cutover work skip building it.
 - **One is a counting artefact worth naming.** NIP-15 is a tombstone whose behaviour is EOSE,
   so its row cites the base-protocol test; that is not double-counting NIP-01, because the two
   rows ask different questions of the same assertion.
 
-Closing the eight partials is test work, not port work: the behaviour exists and a test for it
-does not. That distinction is the reason the status column has three values rather than two.
+So of the ten rows short of `ported`: two need a surface built (11, 77), one needs a feature
+built (43), and seven need a test written. Only the last seven are cheap, and none of them is
+optional — the gate counts `ported` rows, not intentions.
