@@ -50,6 +50,7 @@ export const PEERING_SYNC_RECONNECT_DELAY_MS = 5_000
 export const PEERING_SYNC_EVENT_BATCH_SIZE = 500
 export const PEERING_SYNC_PEER_REFRESH_MS = 30_000
 export const PEERING_SYNC_STATE_HEARTBEAT_MS = 60_000
+export const PEERING_BUYER_RECOVERY_INTERVAL_MS = 60_000
 export const PEERING_SYNC_MAX_PENDING_EVENTS = 500
 export const PEERING_SYNC_MAX_PENDING_EVENT_BYTES = 8 * 1024 * 1024
 export const PEERING_SYNC_MAX_SCOPE_SPLIT_DEPTH = 20
@@ -729,6 +730,7 @@ export class PeeringSyncWorker implements IRunnable {
   private sessions = new Map<string, PeeringPeerSession>()
   private heartbeatTimer: NodeJS.Timeout | undefined
   private peerRefreshTimer: NodeJS.Timeout | undefined
+  private buyerRecoveryTimer: NodeJS.Timeout | undefined
   private watchers: FSWatcher[] | undefined
   private lastRunFinishedAt: string | undefined
   private lastError: string | undefined
@@ -755,6 +757,13 @@ export class PeeringSyncWorker implements IRunnable {
     this.publishHeartbeat()
     this.heartbeatTimer = setInterval(() => this.publishHeartbeat(), ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS)
     this.heartbeatTimer.unref()
+
+    void this.recoverPayingInvoices()
+    this.buyerRecoveryTimer = setInterval(
+      () => void this.recoverPayingInvoices(),
+      PEERING_BUYER_RECOVERY_INTERVAL_MS,
+    )
+    this.buyerRecoveryTimer.unref()
 
     // `watchSettings` invalidates the cached settings document; this periodic
     // pass also replaces a session when only its relay URL changed, which a
@@ -834,6 +843,17 @@ export class PeeringSyncWorker implements IRunnable {
     })
   }
 
+  private async recoverPayingInvoices(): Promise<void> {
+    try {
+      const changed = await this.options.buyerService?.recover()
+      if (changed) {
+        logger('recovered %d paying peering invoice(s)', changed)
+      }
+    } catch (error) {
+      logger.error('unable to recover paying peering invoices: %o', error)
+    }
+  }
+
   private onError(error: Error): void {
     logger('error: %o', error)
     this.lastError = error.message
@@ -852,6 +872,8 @@ export class PeeringSyncWorker implements IRunnable {
     this.heartbeatTimer = undefined
     clearInterval(this.peerRefreshTimer)
     this.peerRefreshTimer = undefined
+    clearInterval(this.buyerRecoveryTimer)
+    this.buyerRecoveryTimer = undefined
     if (Array.isArray(this.watchers)) {
       for (const watcher of this.watchers) {
         watcher.close()

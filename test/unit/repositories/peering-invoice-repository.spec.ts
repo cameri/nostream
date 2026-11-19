@@ -178,6 +178,8 @@ describe('PeeringInvoiceRepository', () => {
 
     expect(counts).to.deep.equal({ received: 2, paid: 1, held: 1 })
     expect(recording.queries[0].sql.toLowerCase()).to.include('filter (where status =')
+  })
+
   it('records manual spend, releases it and reads budget rows', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringInvoiceRepository(recording.db)

@@ -479,6 +479,22 @@ describe('PeeringSyncWorker', () => {
     expect(stateStore.published.some((state) => state.lastError === 'peer does not advertise peering')).to.equal(true)
   })
 
+
+  it('recovers interrupted payments on start', async () => {
+    let recovered = 0
+    startWorker([], {
+      buyerService: {
+        recover: async () => {
+          recovered++
+          return 0
+        },
+      },
+    })
+
+    await waitFor(() => recovered > 0)
+    expect(recovered).to.be.greaterThan(0)
+  })
+
   it('hands a paid peer invoice to the buyer service', async () => {
     const calls: any[][] = []
     const terms = [{ amount: 250_000_000, unit: 'msats', period: 2592000 }]
